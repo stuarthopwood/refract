@@ -19,27 +19,27 @@ export interface ScreenHeaderProps {
   children?: ReactNode
   /** Reserves the native window-controls overlay width at the right end (the screen spans the title bar). */
   reservesWindowControls?: boolean
+  /** Caps the content at the same max-w-5xl column as the screen body; the band itself stays full width. */
+  contained?: boolean
 }
 
-export function ScreenHeader({ title, headingRef, backLabel, onBack, count, children, reservesWindowControls = false }: ScreenHeaderProps) {
+export function ScreenHeader({ title, headingRef, backLabel, onBack, count, children, reservesWindowControls = false, contained = false }: ScreenHeaderProps) {
   return (
-    <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center gap-2 px-4">
-      {backLabel && onBack && (
-        <IconButton label={backLabel} side="bottom" className="no-drag-region" onClick={onBack}>
-          <ArrowLeftIcon aria-hidden />
-        </IconButton>
-      )}
-      <h1 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
-        {title}
-      </h1>
-      {count && <span className="truncate text-xs text-muted-foreground">{count}</span>}
-      {children && <div className="no-drag-region ml-auto flex items-center gap-2">{children}</div>}
+    <div className="drag-region titlebar-surface flex h-10 shrink-0 items-center">
+      <div className={`flex h-full min-w-0 flex-1 items-center gap-2 px-4${contained ? ' mx-auto max-w-5xl' : ''}`}>
+        {backLabel && onBack && (
+          <IconButton label={backLabel} side="bottom" className="no-drag-region" onClick={onBack}>
+            <ArrowLeftIcon aria-hidden />
+          </IconButton>
+        )}
+        <h1 ref={headingRef} tabIndex={-1} className="text-sm font-semibold outline-none">
+          {title}
+        </h1>
+        {count && <span className="truncate text-xs text-muted-foreground">{count}</span>}
+        {children && <div className="no-drag-region ml-auto flex items-center gap-2">{children}</div>}
+      </div>
       {reservesWindowControls && (
-        <div
-          aria-hidden
-          className={`no-drag-region shrink-0${children ? '' : ' ml-auto'}`}
-          style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }}
-        />
+        <div aria-hidden className="no-drag-region shrink-0" style={{ width: 'calc(100vw - env(titlebar-area-width, 100vw))' }} />
       )}
     </div>
   )

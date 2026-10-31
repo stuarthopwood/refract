@@ -5,6 +5,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { CopyButton } from '@/components/ui/copy-button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { InlineStatus } from '@/components/InlineStatus'
+import { ScreenSection } from '@/components/ScreenSection'
 import { cn } from '@/lib/utils'
 import { ompSummaryLine, splitOmpProviders } from '@/lib/account-format'
 import { useAccountsStore } from '@/state'
@@ -53,17 +54,13 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
   }
 
   return (
-    <section aria-labelledby="omp-providers-heading" aria-busy={initialLoading || undefined} className="flex min-w-0 flex-col gap-2">
-      <div className="flex min-w-0 items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h3 id="omp-providers-heading" className="truncate text-sm font-medium">
-            OMP provider sign-in
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            Refract uses the model providers your local OMP agent is signed in to. These are separate from your GitHub accounts.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
+    <ScreenSection
+      title="OMP provider sign-in"
+      headingLevel={3}
+      busy={initialLoading}
+      note="Refract uses the model providers your local OMP agent is signed in to. These are separate from your GitHub accounts."
+      actions={
+        <>
           {refreshing && total > 0 && (
             <InlineStatus tone="loading" density="compact" className="p-0">
               Checking…
@@ -74,15 +71,15 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
             variant="text"
             size="sm"
             aria-disabled={refreshing || undefined}
-            className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
             onClick={() => {
               if (!refreshing) void handleRefresh()
             }}
           >
             Check again
           </Button>
-        </div>
-      </div>
+        </>
+      }
+    >
       {initialLoading ? (
         <div className="flex flex-col gap-2">
           <InlineStatus tone="loading" density="compact" className="p-0">
@@ -162,6 +159,6 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
         </InlineStatus>
         <CopyButton showLabel getText={() => 'omp login'} label="Copy command" announcement="Command copied to clipboard" />
       </div>
-    </section>
+    </ScreenSection>
   )
 }

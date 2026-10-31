@@ -67,7 +67,8 @@ export function FilterTabs<T extends string>({ value, onValueChange, tabs, revea
       >
         <TabsList aria-label={ariaLabel} className="h-8 w-max shrink-0 justify-start gap-1 rounded-none bg-transparent p-0">
           {tabs.map((tab) => (
-            <TabsTrigger key={tab.value} value={tab.value} className={FILTER_TAB_TRIGGER_CLASS}>
+            // No TabsContent is rendered, so Radix's aria-controls would point at nothing.
+            <TabsTrigger key={tab.value} value={tab.value} aria-controls={undefined} className={FILTER_TAB_TRIGGER_CLASS}>
               {tab.label}
             </TabsTrigger>
           ))}

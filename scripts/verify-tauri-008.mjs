@@ -12,6 +12,7 @@ import { spawnSync } from 'node:child_process';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
 import { gitHead, buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
+import { checkMenuKeyboard, checkGithubCliAndUpdate, checkDialogFocusReturn, DIALOG_OPEN, HEALTH_SETTLED, healthShot } from './verify-tauri-008-extra.mjs';
 import { addRepository, pressTab, pressEscape, getActiveElementAccessibleName } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,7 @@ mkdirSync(SHOTS_DIR, { recursive: true });
 
 const THEMES = ['theme-dark', 'theme-dark-high-contrast'];
 const MENU_ORDER = ['Manage accounts', 'Manage sessions', 'Theme', 'Keyboard shortcuts', 'Health check', "What's new"];
+const GH_LABEL = /^(Sign in|GitHub CLI missing|GitHub unavailable|Checking GitHub sign-in|.+, (signed in to GitHub|can't reach GitHub|GitHub sign-in needs attention))$/;
 const REPORT = [];
 let passed = 0;
 function log(line) {
@@ -60,7 +62,7 @@ async function runChecks(cdp, { repoDir }) {
   const label = await cdp.evaluate(`${NAME_BUTTON}.getAttribute('aria-label')`);
   const visible = await cdp.evaluate(`${NAME_BUTTON}.textContent.trim()`);
   log(`profile item label "${label}", text "${visible}"`);
-  assert(/sign|github/i.test(label), 'profile item has an accessible name naming the GitHub state (FR-004, FR-005)');
+  assert(GH_LABEL.test(label), 'profile item has an accessible name naming the GitHub state (FR-004, FR-005)');
   assert(visible.length > 0, 'profile item shows a visible name or "Sign in" (FR-004)');
 
   // FR-005: keyboard order and visible focus on the profile item and the cog.
@@ -74,13 +76,10 @@ async function runChecks(cdp, { repoDir }) {
   assert(focusedName.name === label, 'profile item takes keyboard focus with its accessible name');
   const focusStyle = await cdp.evaluate(`(() => { const s = getComputedStyle(${NAME_BUTTON}); return { outline: s.outlineStyle, shadow: s.boxShadow }; })()`);
   assert(focusStyle.outline !== 'none' || focusStyle.shadow !== 'none', 'profile item shows a visible focus indicator (FR-005, SC-006)');
-  const tabOrder = [];
-  for (let i = 0; i < 3; i++) {
-    await pressTab(cdp);
-    tabOrder.push((await getActiveElementAccessibleName(cdp)).name);
-  }
-  log(`tab order after the profile item: ${JSON.stringify(tabOrder)}`);
-  assert(tabOrder.includes('Settings'), 'the Settings cog is reachable by Tab right after the profile item (FR-005)');
+  await pressTab(cdp);
+  const nextStop = (await getActiveElementAccessibleName(cdp)).name;
+  log(`next Tab stop after the profile item: ${nextStop}`);
+  assert(nextStop === 'Settings', 'the Settings cog is the very next Tab stop after the profile item (FR-005)');
 
   const unnamed = await cdp.evaluate(UNNAMED);
   assert(unnamed.length === 0, `every icon-only button has an accessible name ${JSON.stringify(unnamed)} (FR-027)`);
@@ -114,7 +113,7 @@ async function runChecks(cdp, { repoDir }) {
   // Cog opens Settings (FR-002).
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened from the cog' });
-  assert(true, 'the cog opens Settings (FR-002)');
+  assert(await cdp.evaluate(`!!document.querySelector('[aria-label="Back to chat"]')`), 'the cog opens Settings (FR-002)');
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'back to chat' });
 
@@ -129,14 +128,24 @@ async function runChecks(cdp, { repoDir }) {
   await shot(cdp, 'theme-dark-manage-accounts.png');
   await pressEscape(cdp);
   await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Manage accounts closed' });
+  await cdp.waitFor(`document.activeElement === ${NAME_BUTTON}`, { timeoutMs: 5_000, label: 'focus returns after Manage accounts' });
+  assert(await cdp.evaluate(`document.activeElement === ${NAME_BUTTON}`), 'focus returns to the profile item after Manage accounts closes');
+
+  await checkMenuKeyboard(cdp, { nameButton: NAME_BUTTON, assert });
+  await checkGithubCliAndUpdate(cdp, { nameButton: NAME_BUTTON, assert, log });
 
   // Keyboard shortcuts dialog (FR-020).
-  await openMenu(cdp);
-  await clickMenuItem(cdp, 'Keyboard shortcuts');
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Keyboard shortcuts open' });
-  assert((await cdp.evaluate(`document.querySelector('[role="dialog"]').innerText`)).includes('Keyboard shortcuts'), 'Keyboard shortcuts dialog opens (FR-020)');
-  await pressEscape(cdp);
-  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 10_000, label: 'Keyboard shortcuts closed' });
+  await checkDialogFocusReturn(cdp, {
+    nameButton: NAME_BUTTON, assert, itemText: 'Keyboard shortcuts', readyExpr: DIALOG_OPEN,
+    inside: async () => assert((await cdp.evaluate(`document.querySelector('[role="dialog"]').innerText`)).includes('Keyboard shortcuts'), 'Keyboard shortcuts dialog opens (FR-020)')
+  });
+  await checkDialogFocusReturn(cdp, {
+    nameButton: NAME_BUTTON, assert, itemText: 'Health check', readyExpr: HEALTH_SETTLED,
+    inside: async () => {
+      await healthShot(cdp, SHOTS_DIR);
+      assert(/Git|OMP/.test(await cdp.evaluate(`document.querySelector('[role="dialog"]').innerText`)), 'Health check dialog lists the Git and OMP checks');
+    }
+  });
 
   // Manage sessions screen (FR-025).
   const overflow = await cdp.evaluate(`(() => { const s = ${NAME_BUTTON}.querySelector('span.truncate'); return s ? getComputedStyle(s).textOverflow : 'none'; })()`);
@@ -149,7 +158,7 @@ async function runChecks(cdp, { repoDir }) {
     await sleep(300);
     await shot(cdp, `${cls}-manage-sessions.png`);
   }
-  assert(true, 'Manage sessions screen opens from the menu (FR-025)');
+  assert(await cdp.evaluate(`/Manage sessions/.test(document.body.innerText)`), 'Manage sessions screen opens from the menu (FR-025)');
   await setTheme(cdp, 'theme-dark');
 }
 
