@@ -137,7 +137,7 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
             ref={checkAgainRef}
             variant="outline"
             aria-disabled={loading || undefined}
-            className="min-w-28 aria-disabled:pointer-events-none aria-disabled:opacity-50"
+            className="min-w-28 aria-disabled:opacity-50"
             onClick={() => {
               if (!loading) void runCheck(true)
             }}

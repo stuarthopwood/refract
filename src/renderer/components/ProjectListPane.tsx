@@ -274,7 +274,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
                   variant="outline"
                   size="sm"
                   aria-disabled={loading}
-                  className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+                  className="aria-disabled:opacity-50"
                   onClick={() => {
                     if (loading) return
                     askedForMore.current = true

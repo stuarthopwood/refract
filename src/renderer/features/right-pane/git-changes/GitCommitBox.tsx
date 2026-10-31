@@ -187,7 +187,7 @@ export function GitCommitBox({ sessionId }: { sessionId: string }) {
           size="sm"
           aria-disabled={disabledReason !== null || committing}
           aria-describedby={describedBy}
-          className="aria-disabled:pointer-events-none aria-disabled:opacity-50"
+          className="aria-disabled:opacity-50"
           title={disabledReason ?? undefined}
           onClick={() => void handleCommit()}
         >
