@@ -11,7 +11,7 @@ Issues: #1488 (literal-colour lint and verify script leftovers from #1473) and #
 - FR-001 `countLiteralColours` blanks comments using `scanTypeScriptComments` (tokenizer-aware, linear).
 - FR-002 `HEX_QUOTED` excludes `url("#id")`, `url('#id')` and `#id` arguments of `querySelector`, `querySelectorAll`, `closest`, `matches`.
 - FR-003 `HEX_INLINE` 3-4 digit matches need a digit or one repeated letter.
-- FR-004 `rgb(`, `rgba(`, `hsl(`, `hsla(` followed by a number count as literal colours; baseline re-written.
+- FR-004 `rgb(`, `rgba(`, `hsl(`, `hsla(`, `hwb(`, `oklab(`, `oklch(`, `lab(`, `lch(` followed by a number count as literal colours; baseline re-written.
 - FR-005 `verify-tauri-083.mjs`: default `SHOTS_DIR` from `mkdtemp`; background assertion rejects zero alpha; radio found by exact `aria-labelledby` name.
 - FR-006 `measureLines` counts a line that opens a multi-line comment after code as a comment line that starts the block.
 - FR-007 `check:comment-density` exits 1 on stale baseline entries.

@@ -35,8 +35,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const shot = (cdp, name) => cdp.screenshot(path.join(SHOTS_DIR, name));
 
 const THEMES = ['Dark', 'Obsidian'];
-// Computed colours end in `, 0)` (legacy rgba) or `/ 0)` (oklab, color) when fully transparent.
-const isTransparent = (colour) => /(?:,|\/)\s*0(?:\.0+)?%?\s*\)$/.test(colour);
+// Computed colours end in `, 0)` only for rgba(), or `/ 0)` (oklab, color) when fully transparent; rgb(r, g, 0) is opaque.
+const isTransparent = (colour) => /^rgba\((?:[^,]+,){3}\s*0(?:\.0+)?\s*\)$/.test(colour) || /\/\s*0(?:\.0+)?%?\s*\)$/.test(colour);
 const radio = (name) =>
   `Array.from(document.querySelectorAll('[role="radio"]')).find((el) => document.getElementById(el.getAttribute('aria-labelledby'))?.textContent.trim() === ${JSON.stringify(name)})`;
 const openAppearance = async (cdp) => {
