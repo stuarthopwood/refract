@@ -742,6 +742,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           )}
           <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} markdownSegments={markdownSegments} />
           <ComposerTextarea
+            ref={textareaRef}
             role="combobox"
             aria-label="Message"
             aria-autocomplete="list"
