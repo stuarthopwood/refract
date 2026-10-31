@@ -1,6 +1,7 @@
 // Pull requests view state (issue #874, spec 057): one cross-Project list, so a flat store like
 // `issues-store.ts` rather than per-repository slices. Fetches on open, on a filter change, on
-// explicit Refresh and on "Show more" only, never on a timer. A separate cross-Project "active`n// count" slice (issue #569) feeds the sidebar badge and is independent of the list.
+// explicit Refresh and on "Show more" only, never on a timer. A separate cross-Project "active
+// count" slice (issue #569) feeds the sidebar badge and is independent of the list.
 import { create } from 'zustand'
 import type { IpcError, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
@@ -11,6 +12,8 @@ export const PAGE_SIZE = 50
 export const MAX_ROWS = 200
 /** The smallest page the list IPC accepts; the badge shows "30+" from 30 rows. */
 export const ACTIVE_COUNT_LIMIT = 50
+/** The IPC rejects more than 40 Projects, so the badge covers the first 40. */
+export const ACTIVE_COUNT_PROJECTS = 40
 
 export interface PullRequestsActiveCount {
   count: number | null
@@ -157,7 +160,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     // window-focus refresh and the mount effect (both skip while loading).
     let result: Result<{ items: PullRequestAcrossItem[]; fetchedAt: string }>
     try {
-      result = await window.refract.pullRequests.listAcross('all', 'open', allRepositoryIds, '', ACTIVE_COUNT_LIMIT)
+      result = await window.refract.pullRequests.listAcross('all', 'open', allRepositoryIds.slice(0, ACTIVE_COUNT_PROJECTS), '', ACTIVE_COUNT_LIMIT)
     } catch {
       if (activeCountSequence === sequence) set({ activeCount: emptyActiveCount() })
       return
