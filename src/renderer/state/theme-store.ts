@@ -19,6 +19,8 @@ interface ThemeState {
 }
 
 let latestSaveId = 0
+// Optimistic picks clear customId before the save lands, so the persisted custom theme is tracked separately.
+let confirmedCustomId: string | null = null
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
  theme: 'dark',
@@ -41,7 +43,7 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     if (requestId !== latestSaveId) return true
     set({ theme: result.value.theme })
     // Picking a built-in preset leaves any custom theme.
-    if (previous.customId !== null) return get().saveCustom(null)
+    if (confirmedCustomId !== null) return get().saveCustom(null)
     return true
    }
    rollback()
@@ -57,12 +59,13 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
 
  saveCustom: async (id) => {
   const requestId = ++latestSaveId
-  const previousCustomId = get().customId
+  const previousCustomId = confirmedCustomId
   set({ customId: id })
   const result = await window.refract.themes.setCustom(id)
   if (result.ok) {
+   confirmedCustomId = result.value.customTheme ?? null
    if (requestId !== latestSaveId) return true
-   set({ customId: result.value.customTheme ?? null })
+   set({ customId: confirmedCustomId })
    if (id !== null) toast.info('Custom theme applied. If it is hard to read, press Ctrl+Shift+0 to reset to Dark.', { id: 'custom-theme-applied' })
    return true
   }
@@ -87,7 +90,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   set({ customThemes: themes, rejected })
  },
 
- setTheme: (theme, customId) => set(customId === undefined ? { theme } : { theme, customId }),
+ setTheme: (theme, customId) => {
+  if (customId !== undefined) confirmedCustomId = customId
+  set(customId === undefined ? { theme } : { theme, customId })
+ },
 
  resetToDark: async () => {
   const ok = await get().save('dark')
@@ -140,6 +146,7 @@ useThemeStore.subscribe((state, prev) => {
 
 /** Seeds this store from the synchronous bootstrap and applies the matching class and tokens. */
 export function initThemeStore(theme: ThemeId, custom?: CustomTheme | null): void {
+ confirmedCustomId = custom?.id ?? null
  useThemeStore.setState({ theme, customId: custom?.id ?? null, customThemes: custom ? [custom] : [] })
  applyTheme(useThemeStore.getState())
 }
