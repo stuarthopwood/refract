@@ -14,20 +14,24 @@ const STATE_PILL_CLASS: Record<PullRequestState, string> = {
 
 export interface StatePillProps {
   state: PullRequestState
+  /** `subtle` is an outline pill for dense chrome such as the chat header; the state still reads by icon and word. */
+  variant?: 'solid' | 'subtle'
   className?: string
   /** Classes for the label word, so a narrow host can hide it and keep the icon. */
   labelClassName?: string
 }
 
-export function StatePill({ state, className, labelClassName }: StatePillProps) {
+export function StatePill({ state, variant = 'solid', className, labelClassName }: StatePillProps) {
   const display = PULL_REQUEST_STATE_DISPLAY[state]
   const Icon = display.icon
 
   return (
     <span
       className={cn(
-        'inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs forced-color-adjust-none forced-colors:border forced-colors:border-[ButtonText]',
-        STATE_PILL_CLASS[state],
+        'inline-flex w-fit shrink-0 items-center gap-1 whitespace-nowrap rounded-md px-2 py-1 text-xs',
+        variant === 'solid'
+          ? cn('forced-color-adjust-none forced-colors:border forced-colors:border-[ButtonText]', STATE_PILL_CLASS[state])
+          : 'border border-border text-foreground forced-colors:border-[ButtonText]',
         className
       )}
     >

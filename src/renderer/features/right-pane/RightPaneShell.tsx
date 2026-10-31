@@ -92,8 +92,8 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         {activePanelId === 'git-changes' && <GitChangesPanel sessionId={sessionId} />}
         {activePanelId === 'outline' && <OutlinePanel sessionId={sessionId} />}
         {activePanelId === 'session-usage' && <SessionUsagePanel sessionId={sessionId} />}
-        {activePanelId === 'pull-request' && <PinnedPullRequestPanel />}
-        {activePanelId === 'issue' && <PinnedIssuePanel />}
+        {activePanelId === 'pull-request' && <PinnedPullRequestPanel sessionId={sessionId} />}
+        {activePanelId === 'issue' && <PinnedIssuePanel sessionId={sessionId} />}
       </div>
       <HandleHitStrip />
     </div>
