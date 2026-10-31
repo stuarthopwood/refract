@@ -114,7 +114,8 @@ async function main() {
     badge = await cdp.evaluate(`${NAV('Pull requests')}.getAttribute('aria-label')`);
     const beforeView = calls().filter((l) => l.includes('"search", "prs"'));
     check(badge === 'Pull requests, 4 active', 'Sidebar badge counts open pull requests across both Projects before the view is opened', badge);
-    check(beforeView.length === 1 && beforeView[0].includes('"octocat/hello-world"') && beforeView[0].includes('"octocat/spoon-knife"'), 'One cross-Project search fed the badge', `${beforeView.length} search call(s)`);
+    const lastSearch = beforeView[beforeView.length - 1] ?? '';
+    check(lastSearch.includes('"octocat/hello-world"') && lastSearch.includes('"octocat/spoon-knife"'), 'The latest search behind the badge spans both Projects in one call', `${beforeView.length} search call(s)`);
     await shot(cdp, '01-sidebar-count.png');
 
     // 2. #1361 item 4: the list issues no per-row gh pr view; detail loads for the selected row only.
@@ -136,7 +137,6 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('#pull-request-filters-panel')`, { timeoutMs: 5_000, label: 'filters panel' });
     check(await cdp.evaluate(`!!document.querySelector('button[aria-label^="Project:"]')`), 'Project filter is visible in the Filters panel');
     await shot(cdp, '04-project-filter-visible.png');
-    await cdp.click(`document.querySelector('button[aria-label^="Filters"]')`);
 
     // 4. #1361 items 3, 8: the failed-Show-more alert reads with a full stop; the cap note shows when more than the cap exists.
     await search('bulk');

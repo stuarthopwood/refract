@@ -65,13 +65,11 @@ export function ViewsNavGroup() {
   // `null` covers never fetched, zero and unavailable alike: all render as nothing (#569 decision 4).
   const activeCountLabel =
     githubStatus === 'ready' && activeCount !== null && activeCount > 0 ? (activeCount >= 30 ? '30+' : String(activeCount)) : null
-  // Fetches once when GitHub is ready and Projects exist, never on a timer; focus refresh and the
+  // Fetches when GitHub is ready and the Project set changes, never on a timer; focus refresh and the
   // explicit Refresh live in `init-stores.ts` and the list. The count spans every Project.
   useEffect(() => {
     if (repositoryIdsKey === '' || githubStatus !== 'ready') return
-    const { activeCount: cached, refreshActiveCount } = usePullRequestsStore.getState()
-    if (cached.fetchedAt !== null || cached.loading) return
-    void refreshActiveCount(repositoryIdsKey.split('|'))
+    void usePullRequestsStore.getState().refreshActiveCount(repositoryIdsKey.split('|'))
   }, [repositoryIdsKey, githubStatus])
 
   function handleOpenPullRequests(): void {
