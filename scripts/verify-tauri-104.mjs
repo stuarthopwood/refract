@@ -77,7 +77,7 @@ async function main() {
     await openAppearance();
     const heading = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="radiogroup"] p')).map((p) => p.textContent.trim())`);
     check(heading.includes('Built-in themes') && !heading.includes('Built-in'), 'Appearance names the group "Built-in themes"', heading);
-    const hint = await cdp.evaluate(`document.body.innerText.includes("renamed to '--mermaid-cscale-11'")`);
+    const hint = await waitFor(`document.body.innerText.includes("renamed to '--mermaid-cscale-11'")`, 'rename hint shown').then(() => true, () => false);
     check(hint === true, 'a theme file using the old mermaid-cscale-12 name is rejected with the renamed-token hint', hint);
     await cdp.click(radio('Per Element'));
     await waitFor(`${radio('Per Element')}?.getAttribute('aria-checked') === 'true'`, 'custom theme active');

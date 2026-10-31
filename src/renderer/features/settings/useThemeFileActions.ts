@@ -70,6 +70,7 @@ export function useThemeFileActions() {
     setBusy(true)
     setRemoveError(null)
     let succeeded = false
+    const wasActive = pendingRemove.id === useThemeStore.getState().customId
     try {
       const result = await window.refract.themes.remove(pendingRemove.id)
       if (!result.ok) {
@@ -78,7 +79,7 @@ export function useThemeFileActions() {
       }
       succeeded = true
       removed.current = true
-      if (pendingRemove.id === useThemeStore.getState().customId) toast.dismiss('custom-theme-applied')
+      if (wasActive) toast.dismiss('custom-theme-applied')
       if (!(await refresh())) toast.error('Theme removed, but the theme list could not be refreshed.')
     } catch (err) {
       if (!succeeded) setRemoveError(errorMessage(err))
