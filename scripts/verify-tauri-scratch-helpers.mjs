@@ -226,7 +226,7 @@ export async function axText(cdp, selectorExpr) {
   return names.length > 0 ? names.join('') : null;
 }
 
-/** Drives the real Profile-menu Theme submenu (`theme.preview` only moves the title-bar overlay).
+/** Drives the real Profile-menu Theme submenu (no IPC theme call changes the `<html>` class).
  * Hovers before clicking, as Radix's `DropdownMenuSub` opens on pointer-enter. Waits for all menus
  * to be closed, then for an open one containing Theme, because a still-closing menu from a prior
  * call eats the click. Theme rows are `role="menuitemradio"`; the trigger stays `menuitem`. */

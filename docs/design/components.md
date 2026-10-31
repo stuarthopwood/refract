@@ -280,6 +280,8 @@ A pane banner (Worktree missing, Terminated unexpectedly, The agent stopped, sta
 - **Placement exception (recorded):** `StopBanner` stays under the pane header, while `AgentStoppedBar` and `RetryLine` sit above the composer in `ComposerAboveStack`; the stop banner replaces the composer path, the other two accompany it.
 - Other rows in the family (for example the Turn error row, #1284) reuse `PaneBanner` rather than a hand-styled copy.
 
+**RoleRow inline warning note.** A role row's `warning` prop (for example a WATCHDOG.yml roster overriding the Advisor role, #1409) renders as a muted line under the picker with a warning triangle and a bold "Warning:" lead, wrapping anywhere. It is an inline note, not a `PaneBanner`: it belongs to one row, has no actions, and is linked to the select through `aria-describedby`.
+
 ## Usage view components (spec 060, #1331)
 
 Five shared pieces carry the Usage view; reuse them rather than copying.

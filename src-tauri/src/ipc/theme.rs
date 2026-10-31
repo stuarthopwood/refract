@@ -1,6 +1,4 @@
-// Theme IPC channels `theme.preview`/`theme.set` (#791). `theme.preview` only validates: the
-// window uses native decorations, so there is no title-bar overlay to update.
-// A bad id is `invalid-theme`, not `invalid-argument`, so the renderer can tell them apart.
+// Theme IPC channel `theme.set` (#791). A bad id is `invalid-theme`, not `invalid-argument`, so the renderer can tell them apart.
 
 use serde_json::Value;
 
@@ -9,7 +7,6 @@ use crate::store::settings::ThemeId;
 use super::{arg_str, AppState, Dispatcher, HandlerFuture, IpcError};
 
 pub fn register(d: &mut Dispatcher) {
-    d.register("theme.preview", theme_preview);
     d.register("theme.set", theme_set);
 }
 
@@ -25,34 +22,6 @@ fn describe_value(value: &Value) -> String {
     } else {
         text
     }
-}
-
-/// Validates `theme.preview`'s argument. A missing argument is rejected too (Electron parity);
-/// only an explicit `null` means "revert".
-fn validate_preview_arg(arg: Option<&Value>) -> Result<(), IpcError> {
-    match arg {
-        Some(Value::Null) => Ok(()),
-        Some(Value::String(id)) if parse_theme_id(id).is_some() => Ok(()),
-        Some(other) => Err(IpcError::new(
-            "invalid-theme",
-            format!(
-                "theme.preview expects a known theme id or null, got {}",
-                describe_value(other)
-            ),
-        )),
-        None => Err(IpcError::new(
-            "invalid-theme",
-            "theme.preview expects a known theme id or null, got no argument",
-        )),
-    }
-}
-
-/// `theme.preview(themeId | null)`: validates the id (or `null` to revert); never persisted.
-pub fn theme_preview(_state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        validate_preview_arg(args.first())?;
-        Ok(Value::Null)
-    })
 }
 
 /// `theme.set(themeId)`: persists the choice and broadcasts `settings:changed` to every window.
@@ -117,22 +86,5 @@ mod tests {
         let described = describe_value(&huge);
         assert!(described.chars().count() <= 203);
         assert!(described.ends_with('…'));
-    }
-
-    #[test]
-    fn validate_preview_arg_accepts_a_known_id_or_explicit_null_rejects_everything_else() {
-        assert!(validate_preview_arg(Some(&Value::String("dark".to_string()))).is_ok());
-        assert!(validate_preview_arg(Some(&Value::Null)).is_ok());
-        assert_eq!(
-            validate_preview_arg(Some(&Value::String("not-a-theme".to_string())))
-                .unwrap_err()
-                .code,
-            "invalid-theme"
-        );
-        // A missing argument is rejected, unlike an explicit `null`.
-        assert_eq!(
-            validate_preview_arg(None).unwrap_err().code,
-            "invalid-theme"
-        );
     }
 }

@@ -343,11 +343,12 @@ export interface SparklineProps {
 
 export function Sparkline({ label, values, className }: SparklineProps) {
   const max = Math.max(1e-9, ...values)
+  const summary = values.length > 0 ? `${label}, latest ${values[values.length - 1]}, low ${Math.min(...values)}, high ${Math.max(...values)}` : label
   const step = values.length > 1 ? 100 / (values.length - 1) : 0
   const points = values.map((v, i) => `${(i * step).toFixed(2)},${(28 - (v / max) * 26).toFixed(2)}`).join(' ')
   const last = values.length > 0 ? points.split(' ')[values.length - 1]?.split(',') : null
   return (
-    <svg role="img" aria-label={label} viewBox="0 0 100 30" preserveAspectRatio="none" className={cn('h-8 w-full', className)}>
+    <svg role="img" aria-label={summary} viewBox="0 0 100 30" preserveAspectRatio="none" className={cn('h-8 w-full', className)}>
       <polyline points={points} fill="none" stroke="var(--foreground)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
       {last && <circle cx={last[0]} cy={last[1]} r="2" fill="var(--foreground)" />}
     </svg>

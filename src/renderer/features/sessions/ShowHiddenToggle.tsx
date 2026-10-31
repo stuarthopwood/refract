@@ -4,13 +4,16 @@ import { CountBadge } from '@/components/ui/count-badge'
 import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { cn } from '@/lib/utils'
 import { useSessionListStore, useSessionsStore } from '@/state'
 import { hiddenSummary } from './sessionDisplay'
 
 function focusCollapseAll(): void {
-  requestAnimationFrame(() => document.querySelector<HTMLElement>('button[aria-label="Collapse all groups"]')?.focus())
+  requestAnimationFrame(() =>
+    document.querySelector<HTMLElement>('[data-collapse-all-groups], button[aria-label="Collapse all groups"]')?.focus()
+  )
 }
 
 // Issue #748: the Show hidden toggle in the session list's toolbar row. Rendered only while a
@@ -42,6 +45,8 @@ export function ShowHiddenToggle() {
     // The toggle unmounts as soon as this runs, so capture whether it held focus first.
     const hadFocus = document.activeElement?.hasAttribute('data-show-hidden-toggle') ?? false
     useSessionListStore.getState().setShowHidden(false)
+    // This component unmounts now, so its own live region cannot speak; use the app-level announcer.
+    useChatAreaAnnouncer.getState().announce('Show hidden turned off, no hidden sessions')
     if (hadFocus) focusCollapseAll()
   }, [hidden, showHidden])
   if (hidden === 0 && !showHidden) return null

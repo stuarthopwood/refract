@@ -2,8 +2,8 @@ import { cloneElement, useEffect, useRef, useState } from 'react'
 import type { ReactElement } from 'react'
 import { CopyIcon, CpuIcon, FileDiffIcon, FolderIcon, GitBranchIcon, MapPinIcon } from 'lucide-react'
 import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
-import { Button } from '@/components/ui/button'
 import { useAnyMenuOpen } from '@/components/ui/exclusive-menu'
+import { IconButton } from '@/components/IconButton'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { useSessionsStore } from '@/state'
@@ -118,6 +118,14 @@ export function SessionDetailsCard({
                   session.worktreePath
                 )}
               </p>
+              {[
+                { label: 'Copy path', icon: CopyIcon, run: copyPath },
+                { label: REVEAL_ACTION_LABEL, icon: RevealActionIcon, run: reveal }
+              ].map(({ label, icon: Icon, run }) => (
+                <IconButton key={label} label={label} size="icon-xs" className="shrink-0" onClick={() => void run()}>
+                  <Icon aria-hidden />
+                </IconButton>
+              ))}
             </div>
             {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). */}
             <div className="flex flex-col gap-1">
@@ -151,16 +159,6 @@ export function SessionDetailsCard({
                   <DiffStatLine stat={diffStatResult} />
                 </span>
               )}
-            </div>
-            <div className="flex items-center justify-end gap-2 pt-1">
-              <Button variant="ghost" size="xs" onClick={() => void copyPath()}>
-                <CopyIcon aria-hidden />
-                Copy path
-              </Button>
-              <Button variant="ghost" size="xs" onClick={() => void reveal()}>
-                <RevealActionIcon aria-hidden />
-                {REVEAL_ACTION_LABEL}
-              </Button>
             </div>
           </div>
         </HoverCardContent>

@@ -3,6 +3,7 @@ import type { ComponentProps, ComponentType, KeyboardEvent, Ref } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/features/chat/pickerShared'
 import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { StateIcon } from './sessionDisplay'
@@ -11,12 +12,23 @@ import type { GroupWaitingState } from './sessionDisplay'
 export const GROUP_HEADER_ACTIONS_WIDTH_PX = 80
 export const GROUP_HEADER_ACTIONS_OFFSET_PX = 88
 
-const GROUP_HEADER_ROW_CLASS =
-  'group flex items-center gap-1 rounded-md px-1 hover:bg-sidebar-accent has-[:focus-visible]:bg-sidebar-accent forced-colors:hover:outline forced-colors:hover:outline-1 forced-colors:hover:outline-[Highlight]'
+// Hidden at rest via opacity (stays in the Tab order); revealed on group hover/focus, own aria-expanded, and under (hover: none) (#567).
+// `dark:hover:` / `aria-expanded:` fills beat the Button base's `dark:hover:bg-row-hover-bg`, which equals the selected row; the focus class restores a forced-colours outline.
+export const HEADER_ACTION_BUTTON_CLASS = cn(
+  'text-muted-foreground opacity-0 transition-opacity duration-150',
+  'hover:bg-sidebar-border hover:text-foreground dark:hover:bg-sidebar-border aria-expanded:bg-sidebar-border',
+  'group-hover:opacity-100 group-focus-within:opacity-100 aria-expanded:opacity-100 focus-visible:opacity-100',
+  '[@media(hover:none)]:opacity-100',
+  COMPOSER_BUTTON_FOCUS_CLASS
+)
+
+const GROUP_HEADER_ROW_BASE_CLASS = 'group flex items-center gap-1 px-1'
+const GROUP_HEADER_ROW_FILL_CLASS =
+  'rounded-md hover:bg-sidebar-accent has-[:focus-visible]:bg-sidebar-accent forced-colors:hover:outline forced-colors:hover:outline-1 forced-colors:hover:outline-[Highlight] forced-colors:has-[:focus-visible]:outline forced-colors:has-[:focus-visible]:outline-1 forced-colors:has-[:focus-visible]:outline-[Highlight]'
 
 /** One rounded hover/keyboard-focus fill across a whole header row, buttons included (#1422). `plain` drops it while renaming. */
 export function GroupHeaderRow({ plain, className, ...props }: ComponentProps<'div'> & { plain?: boolean }) {
-  return <div {...props} className={cn(plain ? 'group flex items-center gap-1 px-1' : GROUP_HEADER_ROW_CLASS, className)} />
+  return <div {...props} className={cn(GROUP_HEADER_ROW_BASE_CLASS, !plain && GROUP_HEADER_ROW_FILL_CLASS, className)} />
 }
 
 // Shared trigger styling for the Repository and Archived headers so they cannot drift. `icon` is decorative;

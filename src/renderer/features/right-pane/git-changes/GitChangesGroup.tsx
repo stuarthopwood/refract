@@ -10,7 +10,8 @@ import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useGitChangesStore } from '@/state'
-import { GroupHeaderRow, GroupHeaderTrigger } from '@/features/sessions/GroupHeader'
+import { GroupHeaderRow, GroupHeaderTrigger, HEADER_ACTION_BUTTON_CLASS } from '@/features/sessions/GroupHeader'
+import { cn } from '@/lib/utils'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import { GitChangesFileRow } from './GitChangesFileRow'
 import { focusNearestGroupTrigger } from './focus'
@@ -83,7 +84,7 @@ export function GitChangesGroup({
   }
 
   return (
-    <div className="group flex flex-col">
+    <div className="flex flex-col">
       <Collapsible open={open} onOpenChange={onOpenChange}>
         <GroupHeaderRow>
           <GroupHeaderTrigger label={label} count={entries.length} triggerRef={triggerRef} />
@@ -100,7 +101,7 @@ export function GitChangesGroup({
                   // Low item (#1111): `aria-disabled:opacity-50` -- every other busy control in
                   // this panel dims while pending (`GitChangesFileRow.tsx`'s kebab trigger, the
                   // Commit button); this one didn't.
-                  className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 aria-disabled:opacity-50"
+                  className={cn('shrink-0 aria-disabled:opacity-50', HEADER_ACTION_BUTTON_CLASS)}
                   onClick={() => void runBulkAction()}
                 >
                   {bulkPending ? <Loader2Icon aria-hidden className="size-4 animate-spin" /> : <bulk.icon aria-hidden className="size-4" />}

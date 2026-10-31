@@ -8,13 +8,18 @@ interface ChatWidthState {
   setChatWidth(chatWidth: ChatWidth): void
 }
 
+let latestSaveId = 0
+
 export const useChatWidthStore = create<ChatWidthState>((set) => ({
   chatWidth: 'full',
 
   save: async (width) => {
+    const requestId = ++latestSaveId
     try {
       const result = await window.refract.settings.setChatWidth(width)
       if (result.ok) {
+        // A newer choice is in flight; applying this older result would flip the picker back.
+        if (requestId !== latestSaveId) return true
         set({ chatWidth: result.value.chatWidth })
         return true
       }

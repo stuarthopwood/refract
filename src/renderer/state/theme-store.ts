@@ -18,6 +18,8 @@ interface ThemeState {
  setTheme(theme: ThemeId, customId?: string | null): void
 }
 
+let latestSaveId = 0
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
  theme: 'dark',
  customId: null,
@@ -25,9 +27,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
  rejected: [],
 
  save: async (id) => {
+  const requestId = ++latestSaveId
   try {
    const result = await window.refract.theme.set(id)
    if (result.ok) {
+    // A newer choice is in flight; applying this older result would flip the picker back.
+    if (requestId !== latestSaveId) return true
     set({ theme: result.value.theme })
     // Picking a built-in preset leaves any custom theme.
     if (get().customId !== null) return get().saveCustom(null)
@@ -43,8 +48,10 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
  },
 
  saveCustom: async (id) => {
+  const requestId = ++latestSaveId
   const result = await window.refract.themes.setCustom(id)
   if (result.ok) {
+   if (requestId !== latestSaveId) return true
    set({ customId: result.value.customTheme ?? null })
    if (id !== null) toast.info('Custom theme applied. If it is hard to read, press Ctrl+Shift+0 to reset to Dark.', { id: 'custom-theme-applied' })
    return true

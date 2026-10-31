@@ -30,7 +30,7 @@ export interface UsageFilters {
   project?: string | null
   model?: string | null
   reasoning?: string | null
-  agentType?: 'main' | 'subagent' | null
+  agentType?: 'main' | 'subagent' | 'advisor' | null
   /** A Refract Session directory; counts every conversation file at or below it. */
   sessionDir?: string | null
 }

@@ -348,7 +348,6 @@ export const IPC_REQUESTS = {
   ISSUES_VIEW: 'issues.view',
   HOME_LAST_MESSAGES: 'home.lastMessages',
   HOME_CLOSED_BRANCHES: 'home.closedBranches',
-  THEME_PREVIEW: 'theme.preview',
   THEME_SET: 'theme.set',
   THEME_SET_CUSTOM: 'theme.setCustom',
   THEMES_LIST: 'themes.list',
@@ -557,7 +556,6 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   };
 
   theme: {
-    preview(themeId: ThemeId | null): Promise<Result<void>>;
     set(themeId: ThemeId): Promise<Result<Settings>>;
   };
   themes: ThemesApi;

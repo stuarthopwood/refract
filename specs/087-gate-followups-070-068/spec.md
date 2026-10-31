@@ -19,7 +19,7 @@ The spec 070 and spec 068 gates left Medium and Low findings: the usage agent fi
 ## Functional requirements
 
 - FR-001 `UsageFilters.tsx` offers `advisor` ("Advisor") in the agent filter.
-- FR-002 `LoadingOverlay` delays its blur and loading card ~150 ms; `aria-busy` and `inert` apply immediately. `SessionStartNotice` and `PausedBody` use it.
+- FR-002 `LoadingOverlay` delays its blur and loading card ~150 ms (`delayMs`, default 150); `aria-busy` and `inert` apply immediately. `PausedBody` uses it (`delayMs={0}` so Resume takes focus at once).
 - FR-003 `CompactList` shows truncated text through the shared Tooltip, not `title`.
 - FR-004 Compact `Sparkline` `aria-label` ends with "latest X, low Y, high Z".
 - FR-005 Removing an Issues-list label pill announces "Removed label filter {name}" through `useChatAreaAnnouncer`.
@@ -43,6 +43,7 @@ The spec 070 and spec 068 gates left Medium and Low findings: the usage agent fi
 |---|---|
 | Usage session filter sargable (#1452) | skipped: schema migration, backfill and re-ingest for an unmeasured scan on a small local DB |
 | Settings roster check only the agent dir (#1452) | skipped: Settings has no Session cwd by design |
+| `SessionStartNotice` onto `LoadingOverlay` (#1452) | skipped: it has no blur of its own and `inert` would block keyboard reading of the dimmed history |
 | Loading-overlay screenshot (#1452) | skipped: the fake gh has no delay hook |
 | Agents badge per-theme accent token, Obsidian hover contrast (#1446) | skipped: spec 086 owns theme tokens and contrast |
 
@@ -50,3 +51,4 @@ The spec 070 and spec 068 gates left Medium and Low findings: the usage agent fi
 
 - `pnpm ci:local` passes. `verify-tauri-087.mjs` passes from the committed HEAD and `report.json.gitHead` equals it.
 - Six-reviewer gate: PASS from every gating reviewer after the last code change.
+
