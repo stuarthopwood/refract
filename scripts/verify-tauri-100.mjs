@@ -77,6 +77,13 @@ const ringProbe = (selector) => `(() => {
   return { boxShadow: cs.boxShadow, outlineStyle: cs.outlineStyle, outlineWidth: cs.outlineWidth, border: cs.borderTopColor, focusVisible: el.matches(':focus-visible') };
 })()`;
 
+// A real keydown puts the page in keyboard modality so a scripted .focus() matches :focus-visible.
+async function primeKeyboard(cdp) {
+  await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 16, key: 'Shift', code: 'ShiftLeft' });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 16, key: 'Shift', code: 'ShiftLeft' });
+}
+
 async function checkPullRequests(cdp) {
   await cdp.clickByText('Pull requests');
   await cdp.waitFor(`document.querySelectorAll('[data-pr-row]').length > 0`, { timeoutMs: 30_000, label: 'PR rows' });
@@ -123,6 +130,7 @@ async function checkPullRequests(cdp) {
     return { copyW: Math.round(copy.width), copyH: Math.round(copy.height) };
   })()`);
   assert(targets.copyW >= 24 && targets.copyH >= 24, `Copy link target is at least 24px (${targets.copyW}x${targets.copyH})`);
+  await primeKeyboard(cdp);
   const copyFocus = await cdp.evaluate(ringProbe(`${headerOf}.querySelector('button[aria-label="Copy link"]')`));
   const refreshFocus = await cdp.evaluate(ringProbe(`${headerOf}.querySelector('button[aria-label="Refresh this pull request"]')`));
   log(`focus parity: copy ${JSON.stringify(copyFocus)} refresh ${JSON.stringify(refreshFocus)}`);
@@ -207,6 +215,7 @@ async function invalidRing(cdp, selector, label, shotName) {
   await sleep(400);
   const invalid = await probe();
   assert(invalid.boxShadow !== before.boxShadow && invalid.boxShadow !== 'none', `aria-invalid draws a ring on the ${label}`);
+  await primeKeyboard(cdp);
   await cdp.evaluate(`${selector}.focus()`);
   await sleep(400);
   const focused = await probe();
@@ -236,6 +245,7 @@ async function checkManageSessions(cdp) {
   await sleep(300);
 
   const INPUT = `document.querySelector('input[type="search"], input[type="text"], input:not([type])')`;
+  await primeKeyboard(cdp);
   const inputFocus = await cdp.evaluate(ringProbe(INPUT));
   const triggerFocus = await cdp.evaluate(ringProbe(trigger));
   log(`field ring parity: input ${JSON.stringify(inputFocus)} trigger ${JSON.stringify(triggerFocus)}`);
