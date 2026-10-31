@@ -168,6 +168,7 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
                 options,
                 option_details,
                 input_kind: "choice",
+                secret: false,
             })
         }
         "input" | "editor" => DialogClassification::Request(PendingRequest::Question {
@@ -181,6 +182,7 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
             options: vec![],
             option_details: None,
             input_kind: "text",
+            secret: method == "input" && frame.get("secret").and_then(Value::as_bool) == Some(true),
         }),
         "confirm" => DialogClassification::Request(PendingRequest::Question {
             request_id: id,
@@ -196,6 +198,7 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
             options: vec!["Yes".to_string(), "No".to_string()],
             option_details: None,
             input_kind: "confirm",
+            secret: false,
         }),
         "ask" => match parse_ask_questions(frame) {
             Some(questions) => DialogClassification::Request(PendingRequest::Ask {

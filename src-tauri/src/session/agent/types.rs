@@ -112,6 +112,9 @@ pub enum PendingRequest {
         #[serde(skip_serializing_if = "Option::is_none")]
         option_details: Option<Vec<Option<String>>>,
         input_kind: &'static str,
+        /// OMP 18.13.2 `secret: true`: the renderer masks the field and never echoes the answer.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
+        secret: bool,
     },
     #[serde(rename = "ask")]
     Ask {

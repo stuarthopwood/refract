@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { SecretInput } from '@/components/SecretInput'
 import { OPTION_FILL_CLASS } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { ToolIcon } from '@/components/ToolIcon'
@@ -313,6 +314,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
       return
     }
     setResolved({ kind, detail })
+    if (request.kind === 'question' && request.secret) setText('')
   }
 
   if (resolved) {
@@ -348,6 +350,16 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   }
 
   const trimmedText = text.trim()
+  const answerSummary = request.secret ? 'Secret entered' : trimmedText
+  const textFieldProps = {
+    value: text,
+    disabled: busy,
+    placeholder: request.secret ? 'Enter the secret' : 'Type an answer',
+    onChange: (event: React.ChangeEvent<HTMLInputElement>) => setText(event.target.value),
+    onKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Enter' && trimmedText) void answer({ value: trimmedText }, 'answered', answerSummary)
+    }
+  }
   const { heading, body } = splitQuestionHeading(request.title)
   const safeRequestId = request.requestId.replace(/[^a-zA-Z0-9_-]/g, '-')
   const headingTitleId = `${safeRequestId}-ask-heading-title`
@@ -429,19 +441,11 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
         )}
         {request.inputKind === 'text' && (
           <div className="flex gap-2">
-            <Input
-              value={text}
-              disabled={busy}
-              placeholder="Type an answer"
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && trimmedText) void answer({ value: trimmedText }, 'answered', trimmedText)
-              }}
-            />
+            {request.secret ? <SecretInput {...textFieldProps} aria-label="Secret" /> : <Input {...textFieldProps} />}
             <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
               Cancel
             </Button>
-            <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: trimmedText }, 'answered', trimmedText)}>
+            <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: trimmedText }, 'answered', answerSummary)}>
               Send
             </Button>
           </div>

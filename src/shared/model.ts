@@ -368,7 +368,7 @@ export interface AskQuestion { id: string; question: string; header?: string; op
 /** `requestId` is the `id` of the OMP `extension_ui_request`. */
 export type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[]; options?: string[] } // #1140: OMP's own option labels, answered verbatim
-  | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm' }
+  | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm'; secret?: boolean }
   | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number };
 
 /** Derived from OMP by scanning `Session.sessionDir` for `*.jsonl` files; not stored by Refract. */
