@@ -91,7 +91,11 @@ export function ContextShakeMenu({ sessionId, figure, notice, children }: { sess
 
   return (
     <>
-      <DropdownMenu modal={false} open={menuOpen} onOpenChange={(next) => { setMenuOpen(next); setTipOpen(false) }}>
+      <DropdownMenu modal={false} open={menuOpen} onOpenChange={(next) => {
+          if (next) clickedOutsideRef.current = false
+          setMenuOpen(next)
+          setTipOpen(false)
+        }}>
         <Tooltip open={Boolean(notice) && tipOpen && !menuOpen} onOpenChange={(next) => !suppressTipRef.current && setTipOpen(next)}>
           <TooltipTrigger asChild aria-describedby={undefined}>
             <DropdownMenuTrigger asChild ref={triggerRef} onContextMenu={openOnContextMenu}>{children}</DropdownMenuTrigger>
