@@ -446,24 +446,47 @@ for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows
 
 // ---- print the table ---------------------------------------------------------------------
 
+// Reads the PAIRS tuple array out of themeContrast.ts: bracket-match the literal, then parse it as JSON (strings and numbers only).
+function readInAppPairs(src) {
+  const start = src.indexOf('[', src.indexOf('=', src.indexOf('const PAIRS')))
+  let depth = 0
+  let quote = null
+  let end = -1
+  for (let i = start; i < src.length && end < 0; i++) {
+    const c = src[i]
+    if (quote) {
+      if (c === quote) quote = null
+    } else if (c === "'" || c === '"') quote = c
+    else if (c === '/' && src[i + 1] === '/') i = src.indexOf('\n', i)
+    else if (c === '[') depth++
+    else if (c === ']' && --depth === 0) end = i
+  }
+  const literal = src
+    .slice(start, end + 1)
+    .replace(/^\s*\/\/.*$/gm, '')
+    .replace(/'/g, '"')
+    .replace(/,(\s*\])/g, '$1')
+  return JSON.parse(literal)
+}
 // The in-app custom-theme warnings must be a subset of this gate's pairs (same fg/bg, same or looser floor), or they drift apart.
 const inAppSrc = readFileSync(path.join(repoRoot, 'src/renderer/lib/themeContrast.ts'), 'utf-8')
 const gateKeys = new Map()
 for (const p of [...PAIRS, ...COMMAND_PILL_PAIRS, ...READOUT_CARD_PAIRS, ...MARKDOWN_PAIRS]) {
+  // The in-app warnings run on every theme, so a pair scoped to some themes does not cover them.
+  if (p.onlyThemes || p.informationalThemes) continue
   const key = `${p.fg}|${p.bg}`
   gateKeys.set(key, Math.min(p.min, gateKeys.get(key) ?? Infinity))
 }
 // Gated by userBubbleContrastRows rather than a plain pair.
 gateKeys.set('chat-user-bubble-fg|chat-user-bubble-bg', 4.5)
-for (const m of inAppSrc.matchAll(/\[\s*'([\w-]+)',\s*'([\w-]+)',\s*([\d.]+),/g)) {
+for (const [fg, bg, min] of readInAppPairs(inAppSrc)) {
   checkedCount++
-  const gateMin = gateKeys.get(`${m[1]}|${m[2]}`)
-  if (gateMin === undefined || gateMin < Number(m[3])) {
+  const gateMin = gateKeys.get(`${fg}|${bg}`)
+  if (gateMin === undefined || gateMin < min) {
     failCount++
-    rows.push({ themeId: 'in-app', fg: m[1], bg: m[2], min: m[3], ratio: null, pass: false, note: 'in-app pair missing from the gate or its floor is lower there' })
+    rows.push({ themeId: 'in-app', fg, bg, min, ratio: null, pass: false, note: 'in-app pair missing from the gate or its floor is lower there' })
   }
 }
-
 const header = ['theme', 'pair', 'ratio', 'min', 'result']
 const widths = [18, 38, 8, 5, 6]
 function row(cells) {

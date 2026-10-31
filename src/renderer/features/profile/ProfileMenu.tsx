@@ -52,17 +52,17 @@ export interface ProfileMenuContentProps {
 }
 
 function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void }) {
-  const { builtins, customs, isActive, choose } = useThemeEntries()
-  const activeEntry = [...builtins, ...customs].find(isActive)
+  const { builtins, customs, all, isActive, choose } = useThemeEntries()
+  const activeEntry = all.find(isActive)
+  const [open, setOpen] = useState(false)
+  const subContentRef = useRef<HTMLDivElement>(null)
+  const activeItemRef = useRef<HTMLDivElement>(null)
   const renderItem = (e: ThemeEntry) => (
     <DropdownMenuRadioItem key={e.key} value={e.key} ref={e === activeEntry ? activeItemRef : undefined}>
       <span className="min-w-0 flex-1 truncate">{e.name}</span>
       <ThemeSwatchChip swatch={e.swatch} swatchPrimary={e.swatchPrimary} />
     </DropdownMenuRadioItem>
   )
-  const [open, setOpen] = useState(false)
-  const subContentRef = useRef<HTMLDivElement>(null)
-  const activeItemRef = useRef<HTMLDivElement>(null)
 
   return (
     <DropdownMenuSub
@@ -86,11 +86,11 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
         <DropdownMenuRadioGroup
           value={activeEntry?.key}
           onValueChange={(value) => {
-            const entry = [...builtins, ...customs].find((e) => e.key === value)
+            const entry = all.find((e) => e.key === value)
             if (entry) void choose(entry).then((ok) => ok && onThemeApplied(entry.name))
           }}
         >
-          {customs.length > 0 && <DropdownMenuLabel>Built-in</DropdownMenuLabel>}
+          {customs.length > 0 && <DropdownMenuLabel>Built-in themes</DropdownMenuLabel>}
           {builtins.map(renderItem)}
           {customs.length > 0 && <DropdownMenuLabel>Custom</DropdownMenuLabel>}
           {customs.map(renderItem)}

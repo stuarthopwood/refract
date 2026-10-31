@@ -146,7 +146,12 @@ pub fn parse_theme(id: &str, text: &str) -> Result<ThemeFile, String> {
     for (token, value) in &raw.tokens {
         if !allowed.contains(token) {
             let shown: String = token.chars().take(40).collect();
-            return Err(format!("'--{shown}' isn't a Refract colour token"));
+            let hint = match token.as_str() {
+                "mermaid-cscale-12" => " (renamed to '--mermaid-cscale-11')",
+                "mermaid-cscale-label-12" => " (renamed to '--mermaid-cscale-label-11')",
+                _ => "",
+            };
+            return Err(format!("'--{shown}' isn't a Refract colour token{hint}"));
         }
         if !is_valid_colour(value) {
             return Err(format!("the value of '--{token}' isn't a supported colour"));
