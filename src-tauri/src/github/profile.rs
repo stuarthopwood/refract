@@ -37,7 +37,21 @@ pub fn truncate_display_name(name: &str) -> String {
 fn is_invisible_format(c: char) -> bool {
     matches!(
         c as u32,
-        0x00AD | 0x061C | 0x180E | 0x200B..=0x200F | 0x202A..=0x202E | 0x2060..=0x2064 | 0x2066..=0x206F | 0xFEFF
+        0x00AD
+            | 0x034F
+            | 0x061C
+            | 0x115F..=0x1160
+            | 0x180E
+            | 0x200B..=0x200F
+            | 0x202A..=0x202E
+            | 0x2060..=0x2064
+            | 0x2066..=0x206F
+            | 0x3164
+            | 0xFE00..=0xFE0F
+            | 0xFEFF
+            | 0xFFA0
+            | 0xFFF9..=0xFFFB
+            | 0xE0000..=0xE007F
     )
 }
 const MAX_AVATAR_REDIRECTS: u32 = 5;

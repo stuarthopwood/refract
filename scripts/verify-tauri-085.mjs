@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live CDP check for spec 085 UI paths (Home, Settings, ChatHeader) against a built Tauri debug exe with fake `omp`,
 // a scratch REFRACT_DATA_DIR and its own debugging port (never %APPDATA%\refract-tauri).
-// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_085_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-085-ui.mjs
+// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_085_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-085.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -65,7 +65,7 @@ async function runChecks(cdp, { repoDir }) {
     log(`tooltip on hover: ${tip}`);
     await shot(cdp, '02-disabled-hover-tooltip.png');
     assert(!!tip, 'Hovering an aria-disabled button shows its reason tooltip');
-  } else log('SKIP: no visible aria-disabled button reached');
+  } else assert(false, 'a visible aria-disabled button is reachable on the scratch session');
 
   const src = readFileSync(path.join(REPO_ROOT, 'src', 'renderer', 'components', 'ui', 'button.tsx'), 'utf8');
   assert(src.includes('not-aria-disabled:translate-y-px'), 'Button press nudge is suppressed when aria-disabled (source check)');
@@ -79,7 +79,7 @@ function buildShim(dir) {
 
 async function main() {
   const head = gitHead(REPO_ROOT);
-  log(`verify-tauri-085-ui: head ${head}, shots ${SHOTS_DIR}`);
+  log(`verify-tauri-085: head ${head}, shots ${SHOTS_DIR}`);
   let shimDir, dataDir, importDir, exeDir, repoA, child, cdp;
   let ok = false;
   try {
@@ -112,7 +112,7 @@ async function main() {
     if (!isTargetOwningPort(port, launched.targetPid)) throw new Error('CDP target is not owned by the launched process');
     log(`app pid ${launched.targetPid}, port ${port}, data dir ${dataDir}`);
     await runChecks(cdp, { repoDir: repoA });
-    log(`verify-tauri-085-ui: ALL PASS (${passed} checks) at head ${head}`);
+    log(`verify-tauri-085: ALL PASS (${passed} checks) at head ${head}`);
     ok = true;
   } finally {
     writeFileSync(path.join(SHOTS_DIR, 'report.txt'), REPORT.join('\n'));
@@ -124,7 +124,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('verify-tauri-085-ui: FAIL');
+  console.error('verify-tauri-085: FAIL');
   console.error(err);
   process.exitCode = 1;
 });

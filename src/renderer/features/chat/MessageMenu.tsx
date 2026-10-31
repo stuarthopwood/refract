@@ -14,9 +14,16 @@ import { TranscriptKebab, TranscriptMenu } from './TranscriptMenu'
 const NOTHING = 'Nothing to copy: this message only contains hidden characters'
 
 // Distinguishes one row's kebab from the next by the message's opening words.
+const SNIPPET_SEGMENTER = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+
 function messageSnippet(text: string): string {
-  const flat = text.replace(/\s+/g, ' ').trim()
-  const graphemes = Array.from(new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(flat), (s) => s.segment)
+  // 256 UTF-16 units cover 32 graphemes of real text; segmenting the whole message is wasted work.
+  const flat = text.slice(0, 256).replace(/\s+/g, ' ').trim()
+  const graphemes: string[] = []
+  for (const { segment } of SNIPPET_SEGMENTER.segment(flat)) {
+    graphemes.push(segment)
+    if (graphemes.length > 32) break
+  }
   return graphemes.length > 32 ? `${graphemes.slice(0, 32).join('').trimEnd()}…` : flat
 }
 

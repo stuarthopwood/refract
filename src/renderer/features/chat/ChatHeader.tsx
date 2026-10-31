@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useSessionsStore } from '@/state'
 import { closeChatFind, EMPTY_CHAT_FIND, openChatFind, useChatFindStore } from '@/state/chat-find-store'
 import { displayLabel, displayStatus, StateIcon } from '@/features/sessions/sessionDisplay'
+import type { PauseState } from '../../../shared/ipc-pause'
 import { canTogglePause, setSessionPaused } from './pauseActions'
 import { HiddenMarker } from '@/features/sessions/HiddenMarker'
 import { ConversationSwitcher } from './ConversationSwitcher'
@@ -20,7 +21,7 @@ interface ChatHeaderProps {
   reservesWindowControls: boolean
 }
 
-function pauseLabel(pause: unknown, name: string): string {
+function pauseLabel(pause: PauseState | undefined, name: string): string {
   if (pause === 'pausing') return `Cancel pause for ${name}`
   return pause ? `Resume ${name}` : `Pause ${name} after this turn`
 }
