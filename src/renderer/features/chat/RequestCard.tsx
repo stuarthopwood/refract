@@ -441,6 +441,9 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
             <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: trimmedText }, 'answered', trimmedText)}>
               Send
             </Button>
+            <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
+              Cancel
+            </Button>
           </div>
         )}
         {error && (
@@ -449,11 +452,13 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           </Alert>
         )}
       </CardContent>
-      <CardFooter>
+      {request.inputKind !== 'text' && (
+        <CardFooter>
         <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
           Cancel
         </Button>
-      </CardFooter>
+        </CardFooter>
+      )}
     </Card>
   )
 }

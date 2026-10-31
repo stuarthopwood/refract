@@ -3,6 +3,7 @@
 import type { RefObject } from 'react'
 import { FilterTabs } from '@/components/FilterTabs'
 import { ListToolbar } from '@/components/ListToolbar'
+import { FILTER_PICKER_CLASS } from '@/components/ProjectListPane'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Repository } from '../../../shared/model'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
@@ -68,7 +69,7 @@ export function ManageSessionsToolbar({
       />
 
       <Select value={filters.repositoryId} onValueChange={(value) => onFiltersChange({ ...filters, repositoryId: value })}>
-        <SelectTrigger aria-label="Filter by project">
+        <SelectTrigger aria-label="Filter by project" className={FILTER_PICKER_CLASS}>
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
