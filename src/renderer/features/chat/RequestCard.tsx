@@ -438,6 +438,9 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                 if (event.key === 'Enter' && trimmedText) void answer({ value: trimmedText }, 'answered', trimmedText)
               }}
             />
+            <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
+              Cancel
+            </Button>
             <Button size="sm" disabled={busy || !trimmedText} onClick={() => void answer({ value: trimmedText }, 'answered', trimmedText)}>
               Send
             </Button>
@@ -449,11 +452,13 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           </Alert>
         )}
       </CardContent>
-      <CardFooter>
-        <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
-          Cancel
-        </Button>
-      </CardFooter>
+      {request.inputKind !== 'text' && (
+        <CardFooter>
+          <Button size="sm" variant="ghost" className="dark:hover:bg-muted" disabled={busy} onClick={() => void answer({ cancelled: true }, 'cancelled')}>
+            Cancel
+          </Button>
+        </CardFooter>
+      )}
     </Card>
   )
 }

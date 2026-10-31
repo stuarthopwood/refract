@@ -114,7 +114,7 @@ export function CopyButton({ getText, onCopy, label, announcement, className, ta
         </Button>
       ) : (
         <Tooltip>
-          <TooltipTrigger asChild>
+          <TooltipTrigger asChild aria-describedby={undefined}>
             <Button
               type="button"
               variant="ghost"

@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.19.0 (2026-10-31)
+
+### Features
+
+- feat(design): derive Mermaid, Shiki and scrollbar colours from theme tokens (https://github.com/stuarthopwood/refract/pull/1493)
+- feat(gate-followups): spec 068 and 070 gate follow-ups for usage, roster, session list and settings (https://github.com/stuarthopwood/refract/pull/1496)
+- feat(themes): theme contrast gate covers derived tokens, shared theme entries and row menu fixes (https://github.com/stuarthopwood/refract/pull/1498)
+- feat(ui): PR and issue detail header polish, invalid field ring and shared select defaults (https://github.com/stuarthopwood/refract/pull/1502)
+
+### Fixes
+
+- fix(gate-leftovers): reason tooltips on disabled buttons and spec 082 Lows (https://github.com/stuarthopwood/refract/pull/1494)
+
+### Other
+
+- chore(design): harden literal-colour and comment-density gates (https://github.com/stuarthopwood/refract/pull/1500)
+
 ## v0.18.0 (2026-10-31)
 
 ### Features

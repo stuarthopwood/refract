@@ -227,6 +227,7 @@ export function RepositoryGroup({
             shortcut={['Ctrl', 'N']}
             aria-disabled={creating || undefined}
             className={cn(HEADER_ACTION_BUTTON_CLASS, (creating || active.length === 0) && 'opacity-100', 'aria-disabled:[&_svg]:opacity-50')}
+            aria-keyshortcuts={undefined}
             // No `aria-keyshortcuts`: Ctrl+N reaches only one repository's button, so others would advertise a false chord.
             // Ctrl+N's fallback focuses the first `[data-quick-create-session]` in DOM order (App.tsx).
             data-quick-create-session

@@ -52,7 +52,7 @@ export function PerModelThresholdTable({ id, value, fallbackTokens, disabled, de
 
   const picker = (rowId: string, label: string, current: string | undefined, onPick: (selector: string) => void) => (
     <Select value={current ?? ''} onValueChange={onPick} disabled={disabled}>
-      <SelectTrigger id={rowId} aria-label={label} aria-describedby={describedBy} className="w-64">
+      <SelectTrigger id={rowId} aria-label={label} aria-describedby={describedBy} className="w-64 max-w-full">
         <SelectValue placeholder="Choose a model" />
       </SelectTrigger>
       <SelectContent>
