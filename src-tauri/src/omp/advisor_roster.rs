@@ -57,7 +57,9 @@ pub fn openable_target(path: &Path) -> Option<PathBuf> {
     if !canonical.is_file() {
         return None;
     }
-    let name = NAMES_LONGEST_FIRST.into_iter().find(|name| path.ends_with(name))?;
+    let name = NAMES_LONGEST_FIRST
+        .into_iter()
+        .find(|name| path.ends_with(name))?;
     let mut root = path.to_path_buf();
     for _ in Path::new(name).components() {
         root.pop();
@@ -83,7 +85,10 @@ fn same_path(canonical: &Path, expected: &Path) -> bool {
         match (left.next(), right.next()) {
             (None, None) => return true,
             (Some(a), Some(b)) => {
-                let (a, b) = (a.as_os_str().to_string_lossy(), b.as_os_str().to_string_lossy());
+                let (a, b) = (
+                    a.as_os_str().to_string_lossy(),
+                    b.as_os_str().to_string_lossy(),
+                );
                 if !a.eq_ignore_ascii_case(&b) {
                     return false;
                 }
