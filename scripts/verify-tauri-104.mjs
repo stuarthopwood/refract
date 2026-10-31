@@ -119,7 +119,7 @@ async function main() {
 
     await openAppearance();
     await cdp.click(radio('Dark'));
-    await waitFor(`?.getAttribute('aria-checked') === 'true'`, 'Dark checked');
+    await waitFor(`${radio('Dark')}?.getAttribute('aria-checked') === 'true'`, 'Dark checked');
     await cdp.click(radio('Per Element'));
     await waitFor(`document.body.innerText.includes('Custom theme applied')`, 'applied toast raised right before removal');
     await cdp.click(kebab('Actions for Per Element'));
