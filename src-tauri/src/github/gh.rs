@@ -1,5 +1,5 @@
 // `gh` access for pull request management: no shell, argument arrays, and an absolute resolved
-// path (Windows would otherwise search `cwd` before PATH). `pr_lookup.rs` keeps its own plumbing.
+// path (Windows would otherwise search `cwd` before PATH).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
