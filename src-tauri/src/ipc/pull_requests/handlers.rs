@@ -477,6 +477,7 @@ pub(super) fn pull_requests_new_session_from_pull_request(
             stopped_on_request_conversation: None,
             stopped_on_request_at_size: None,
             pinned_model: false,
+            origin_issue: None,
         };
 
         if let Err(err) = state
