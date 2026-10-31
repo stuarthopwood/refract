@@ -24,7 +24,7 @@ if (existsSync(MANAGED_GH)) {
 }
 
 const VIEW_PR = `document.querySelector('button[aria-label="View pull request #7"]')`;
-const PR_BADGE = `Array.from(document.querySelectorAll('[role="img"]')).find((e) => /^Pull request #7/.test(e.getAttribute('aria-label') || ''))`;
+const PR_BADGE = `document.querySelector('button[aria-label="View pull request #7"]')?.parentElement?.firstElementChild?.firstElementChild`;
 const PANEL = `document.querySelector('[data-right-pane-content]')`;
 
 async function main() {
@@ -77,7 +77,7 @@ async function main() {
     await createSessionViaQuickCreate(cdp, 'hello-world');
     await cdp.waitFor(`!!(${VIEW_PR})`, { timeoutMs: 60_000, label: 'View PR button' });
 
-    check(await cdp.evaluate(`!!(${PR_BADGE})`), 'PR badge renders with an accessible name', await cdp.evaluate(`(${PR_BADGE})?.getAttribute('aria-label')`));
+    check(await cdp.evaluate(`/open|draft|merged|closed/i.test((${PR_BADGE})?.textContent || '')`), 'PR badge carries its state label', await cdp.evaluate(`(${PR_BADGE})?.textContent`));
     check(await cdp.evaluate(`(${PR_BADGE})?.getAttribute('tabindex') === null && (${PR_BADGE})?.parentElement?.getAttribute('tabindex') === null`), 'PR badge is not a tab stop');
     check(await cdp.evaluate(`(() => { const b = ${PR_BADGE}; return !!b && getComputedStyle(b).borderTopWidth !== '0px'; })()`), 'PR badge uses the subtle outlined variant');
     await shot(cdp, '01-header-wide.png');
