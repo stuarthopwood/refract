@@ -242,7 +242,7 @@ export type PullRequestChecks = 'pass' | 'fail' | 'pending';
 
 export interface LinkedIssue {
   number: number;
-  state: 'open' | 'closed';
+  state: 'open' | 'closed' | 'unknown';
   title: string;
 }
 

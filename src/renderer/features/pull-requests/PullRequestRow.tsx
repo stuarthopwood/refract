@@ -2,17 +2,13 @@
 // number, check status (icon + text, never colour alone -- FR-030), repository, time since last
 // updated, and author.
 import {
-  CheckCircle2Icon,
-  CircleDashedIcon,
   GitMergeIcon,
   GitPullRequestClosedIcon,
   GitPullRequestDraftIcon,
-  GitPullRequestIcon,
-  LoaderCircleIcon,
-  XCircleIcon
+  GitPullRequestIcon
 } from 'lucide-react'
 import { useId, type ComponentType } from 'react'
-import type { PullRequestState, PullRequestSummary } from '../../../shared/github'
+import type { PullRequestState } from '../../../shared/github'
 import type { PullRequestAcrossItem } from '../../../shared/ipc-pull-requests'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
@@ -38,12 +34,8 @@ export interface CheckStateDisplay extends CheckDisplay {
   colorClass: string
 }
 
-export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckStateDisplay> = {
-  passed: { icon: CheckCircle2Icon, label: 'Checks passed', colorClass: 'text-severity-success' },
-  failed: { icon: XCircleIcon, label: 'Checks failed', colorClass: 'text-severity-error' },
-  pending: { icon: LoaderCircleIcon, label: 'Checks running', colorClass: 'text-severity-warning' },
-  none: { icon: CircleDashedIcon, label: 'No checks', colorClass: 'text-muted-foreground' }
-}
+// Re-exported for PullRequestDetail, still importing it from here (follow-up: lane #1501 owns that file).
+export { CHECK_STATE_DISPLAY } from './check-display'
 
 /** High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged was never
  * visibly conveyed anywhere -- neither the list row nor the detail header. Icon + text, same

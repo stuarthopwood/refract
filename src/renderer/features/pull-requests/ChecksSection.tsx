@@ -9,7 +9,7 @@ import { RowKebabMenu } from '@/components/RowKebabMenu'
 import type { RowMenuEntry } from '@/components/RowKebabMenu'
 import { cn } from '@/lib/utils'
 import type { CheckOutcome, PullRequestCheck, PullRequestDetail } from '../../../shared/github'
-import { CHECK_STATE_DISPLAY } from './PullRequestRow'
+import { CHECK_STATE_DISPLAY } from './check-display'
 
 interface OutcomeDisplay {
   icon: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>
