@@ -1,5 +1,4 @@
 {
-  "src/renderer/features/chat/MermaidBlock.tsx": 1,
   "src/renderer/features/sessions/ProjectColorPopover.tsx": 3,
   "src/renderer/lib/projectColor.ts": 1,
   "src/renderer/lib/themeContrast.ts": 1,

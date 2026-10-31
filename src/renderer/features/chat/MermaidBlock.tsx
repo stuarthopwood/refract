@@ -7,8 +7,9 @@ import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
 import { actionMenuItem, menuSeparator } from '@/features/palette/menuItems'
-import { notify, useActiveThemeId } from '@/state'
-import { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
+import { notify, useThemeKey } from '@/state'
+import { withResolvedTokens } from '@/lib/resolveCssColour'
+import { buildMermaidThemeVariables, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
 import { CodeBlock } from './CodeBlock'
 import { copyLinkText } from './linkClipboard'
 import { svgToPngBase64 } from './mermaidImage'
@@ -65,12 +66,12 @@ function errorMessage(err: unknown): string {
 }
 
 async function diagramPng(svg: string, image: HTMLImageElement | null): Promise<string> {
-  const background = image ? getComputedStyle(image).backgroundColor : '#ffffff'
+  const background = getComputedStyle(image ?? document.body).backgroundColor
   return svgToPngBase64(svg, background)
 }
 
 export function MermaidBlock({ code, streaming }: { code: string; streaming: boolean }) {
-  const activeThemeId = useActiveThemeId()
+  const themeKey = useThemeKey()
   const [showSource, setShowSource] = React.useState(false)
   const [result, setResult] = React.useState<{
     svg: string
@@ -102,14 +103,18 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
     void (async () => {
       try {
         const mermaid = (await getMermaid()).default
+        const { themeVariables, themeCSS } = withResolvedTokens('mermaid-', (read) => ({
+          themeVariables: buildMermaidThemeVariables(read),
+          themeCSS: getMermaidThemeCSS(read)
+        }))
         mermaid.initialize({
           startOnLoad: false,
           securityLevel: 'strict',
           suppressErrorRendering: true,
           theme: 'dark',
-          themeVariables: MERMAID_THEME_VARIABLES[activeThemeId],
+          themeVariables,
           // Patches Mermaid CSS gaps `themeVariables` can't reach (see `getMermaidThemeCSS`).
-          themeCSS: getMermaidThemeCSS(activeThemeId)
+          themeCSS
         } satisfies MermaidConfig)
         const rendered = await Promise.race([
           mermaid.render(`mermaid-${reactId}`, code),
@@ -132,7 +137,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
       cancelled = true
       if (timeoutId !== undefined) clearTimeout(timeoutId)
     }
-  }, [code, activeThemeId, streaming, reactId])
+  }, [code, themeKey, streaming, reactId])
 
   if (streaming) {
     return <CodeBlock code={code} lang="mermaid" streaming />

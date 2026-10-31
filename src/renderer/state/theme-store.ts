@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { toast } from 'sonner'
-import { isThemeId } from '../../shared/themes'
+import { CSS_VARIABLES_SYNTAX_THEME, THEMES, isThemeId } from '../../shared/themes'
 import type { ThemeId } from '../../shared/themes'
 import type { CustomTheme, RejectedTheme } from '../../shared/ipc-themes'
 import { applyTokens, clearTokens } from '../lib/themeTokens'
@@ -129,4 +129,18 @@ export function initThemeStore(theme: ThemeId, custom?: CustomTheme | null): voi
 /** Convenience hook for a component that only needs to know what to render/highlight right now */
 export function useActiveThemeId(): ThemeId {
  return useThemeStore(activeThemeId)
+}
+
+/** Changes whenever the applied theme's colours change (preset, custom pick, or custom token edit). */
+export function useThemeKey(): string {
+ return useThemeStore((s) => `${s.theme}|${s.customId ?? ''}|${JSON.stringify(activeCustomTheme(s)?.tokens ?? {})}`)
+}
+
+/** Shiki theme for code blocks: a custom theme that overrides any syntax token needs the CSS-variables theme. */
+export function useSyntaxTheme(): string {
+ return useThemeStore((s) => {
+  const tokens = activeCustomTheme(s)?.tokens ?? {}
+  const overridden = Object.keys(tokens).some((k) => k === 'code-block-fg' || k.startsWith('syntax-'))
+  return overridden ? CSS_VARIABLES_SYNTAX_THEME : THEMES[activeThemeId(s)].syntaxTheme
+ })
 }

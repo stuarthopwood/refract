@@ -152,23 +152,25 @@ window.__ready = true
 </script></body></html>`
   )
 
-  // Import the app's own mermaidTheme.ts (the module MermaidBlock uses) via Node's TS support, copied to `.mts` so it loads as ESM despite `"type": "commonjs"`.
-  // It imports `./mermaidThemeData` and Node needs an explicit extension for relative specifiers, so copy that too
-  // (no runtime imports of its own) and rewrite the specifier to the copy's `.mts` name.
+  // Load the app's own mermaidTheme.ts (the builder MermaidBlock uses), copied to `.mts` so it loads as ESM despite `"type": "commonjs"`,
+  // and feed it each theme's parsed `--mermaid-*` tokens exactly as the renderer resolves them.
   const tsSourcePath = path.join(repoRoot, 'src/shared/mermaidTheme.ts')
   const mtsPath = path.join(workDir, 'mermaidTheme.mts')
-  const mermaidThemeDataSourcePath = path.join(repoRoot, 'src/shared/mermaidThemeData.ts')
-  const mermaidThemeDataMtsPath = path.join(workDir, 'mermaidThemeData.mts')
-  cpSync(mermaidThemeDataSourcePath, mermaidThemeDataMtsPath)
-  const mermaidThemeSource = readFileSync(tsSourcePath, 'utf-8').replace(
-    /(['"])\.\/mermaidThemeData\1/g,
-    "$1./mermaidThemeData.mts$1"
+  cpSync(tsSourcePath, mtsPath)
+  const { buildMermaidThemeVariables, getMermaidThemeCSS } = await import(pathToFileURL(mtsPath).href)
+  const { themes: parsedThemes } = await import('./theme-tokens.mjs')
+  const { linearToHex: toHex } = await import('./contrast-math.mjs')
+  const readerFor = (themeId) => (name) => {
+    const token = parsedThemes[themeId]?.[`mermaid-${name}`]
+    if (!token) throw new Error(`check-mermaid-contrast: --mermaid-${name} missing for ${themeId}`)
+    return toHex(token.linear)
+  }
+  const MERMAID_THEME_VARIABLES = Object.fromEntries(
+    Object.keys(parsedThemes).map((themeId) => [themeId, buildMermaidThemeVariables(readerFor(themeId))])
   )
-  writeFileSync(mtsPath, mermaidThemeSource)
-  const { MERMAID_THEME_VARIABLES, getMermaidThemeCSS } = await import(pathToFileURL(mtsPath).href)
 
   const themeCSSByTheme = Object.fromEntries(
-    Object.keys(MERMAID_THEME_VARIABLES).map((themeId) => [themeId, getMermaidThemeCSS(themeId)])
+    Object.keys(MERMAID_THEME_VARIABLES).map((themeId) => [themeId, getMermaidThemeCSS(readerFor(themeId))])
   )
 
   // Hard failure, no `primaryColor` fallback: every declared theme must resolve a real `--card`, or shape and pie checks use the wrong backdrop.
