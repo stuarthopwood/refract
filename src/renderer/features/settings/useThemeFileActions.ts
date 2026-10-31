@@ -51,8 +51,8 @@ export function useThemeFileActions() {
         return
       }
       removed.current = true
-      setPendingRemove(null)
       await refresh()
+      setPendingRemove(null)
     } finally {
       setBusy(false)
     }
