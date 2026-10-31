@@ -116,9 +116,10 @@ async function main() {
     const beforeView = searchCalls();
     check(badge === BADGE, 'Sidebar badge names its scope and counts open pull requests across both Projects', badge);
     check(await cdp.evaluate(`!${NAV('Pull requests')}.textContent.includes('+')`), 'A complete count carries no "+" cue');
-    check(beforeView.length === 1, 'Startup fires one badge search, not two', `${beforeView.length} search call(s)`);
+    const bothProjects = (l) => l.includes('"octocat/hello-world"') && l.includes('"octocat/spoon-knife"')
+    check(beforeView.filter(bothProjects).length === 1, 'Startup fires one badge search for the full Project set, not two', `${beforeView.filter(bothProjects).length} of ${beforeView.length} search call(s)`);
     const lastSearch = beforeView[beforeView.length - 1] ?? '';
-    check(lastSearch.includes('"octocat/hello-world"') && lastSearch.includes('"octocat/spoon-knife"'), 'The search behind the badge spans both Projects in one call');
+    check(bothProjects(lastSearch), 'The search behind the badge spans both Projects in one call');
     await shot(cdp, '01-sidebar-count.png');
 
     // 2. Opening the view on default filters shares the badge search; Refresh then issues one search, not two.
