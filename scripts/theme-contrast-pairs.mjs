@@ -23,6 +23,12 @@ export const PAIRS = [
   { fg: 'foreground', bg: 'viewer-tint', min: 4.5 }, { fg: 'muted-foreground', bg: 'viewer-tint', min: 4.5 }, // spec 038: the viewer's own PR card header text
   { fg: 'agent-message', bg: 'background', min: 4.5 }, { fg: 'agent-message', bg: 'muted', min: 4.5 }, // #838: AgentMessageRow glyph + label, at rest and on the trigger's hover:bg-muted
   { fg: 'send', bg: 'background', min: 3, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
+  // `--composer-background` is transparent except in Dark high contrast, so Send is measured against `--background` elsewhere (#927, #551).
+  { fg: 'send', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
+  // Hint text sits on `--composer-background` (own per-theme fill), unlike the page `--background`.
+  { fg: 'muted-foreground', bg: 'composer-background', min: 4.5, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'composer-focus', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'composer-control-border', bg: 'composer-background', min: 3, onlyThemes: ['dark-high-contrast'] },
   { fg: 'secondary-foreground', bg: 'secondary', min: 4.5 },
   { fg: 'muted-foreground', bg: 'background', min: 4.5 },
   { fg: 'accent-foreground', bg: 'accent', min: 4.5 },
