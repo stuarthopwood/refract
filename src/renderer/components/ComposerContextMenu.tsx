@@ -90,6 +90,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
           el?.focus()
           if (!el || !action) return
           if (typeof action === 'object') {
+            if (document.activeElement !== el) return
             el.setSelectionRange(spell.start, spell.end)
             document.execCommand('insertText', false, action.replace)
           } else if (action === 'add-word') void window.refract.spellcheck.add(spell.word, navigator.language).catch(() => undefined)

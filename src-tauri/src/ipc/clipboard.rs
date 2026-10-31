@@ -11,6 +11,18 @@ pub fn register(d: &mut Dispatcher) {
     d.register("clipboard.writeImage", clipboard_write_image);
 }
 
+/// `clipboard.readText` exposes whatever the user last copied, so only the main window may ask (#1383).
+pub fn refuse_caller(channel: &str, window_label: &str) -> Option<Value> {
+    if channel != "clipboard.readText" || window_label == "main" {
+        return None;
+    }
+    log::warn!("clipboard.readText refused for window {window_label}");
+    Some(serde_json::json!({
+        "ok": false,
+        "error": { "code": "clipboard-failed", "message": "The clipboard could not be read" }
+    }))
+}
+
 /// Larger images are refused for both copy and save; the renderer reports the failure (#471, #1454).
 pub(super) const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: u64 = 16_000_000;
@@ -133,10 +145,17 @@ pub fn clipboard_write_text(state: AppState, args: Vec<Value>) -> HandlerFuture 
         let Some(app_handle) = app_handle else {
             return Err(IpcError::new("clipboard-failed", "No window yet"));
         };
+        let failed = || IpcError::new("clipboard-failed", "The clipboard could not be written");
         tokio::task::spawn_blocking(move || app_handle.clipboard().write_text(text))
             .await
-            .map_err(|err| IpcError::new("clipboard-failed", err.to_string()))?
-            .map_err(|err| IpcError::new("clipboard-failed", err.to_string()))?;
+            .map_err(|err| {
+                log::warn!("clipboard.writeText join failed: {err}");
+                failed()
+            })?
+            .map_err(|err| {
+                log::warn!("clipboard.writeText failed: {err}");
+                failed()
+            })?;
         Ok(Value::Null)
     })
 }

@@ -77,25 +77,25 @@ interface TextEditItemsOptions {
 export function textEditItems({ editable, hasSelection, hasText, onSelect }: TextEditItemsOptions) {
   return (
     <>
-      <ContextMenuItem icon={ScissorsIcon} disabled={!editable || !hasSelection} onSelect={() => onSelect('cut')}>
+      <ContextMenuItem icon={ScissorsIcon} disabled={!editable || !hasSelection} onSelect={() => onSelect('cut')} aria-keyshortcuts="Control+X">
         Cut
-        <ContextMenuShortcut>Ctrl+X</ContextMenuShortcut>
+        <ContextMenuShortcut aria-hidden>Ctrl+X</ContextMenuShortcut>
       </ContextMenuItem>
-      <ContextMenuItem icon={CopyIcon} disabled={!hasSelection} onSelect={() => onSelect('copy')}>
+      <ContextMenuItem icon={CopyIcon} disabled={!hasSelection} onSelect={() => onSelect('copy')} aria-keyshortcuts="Control+C">
         Copy
-        <ContextMenuShortcut>Ctrl+C</ContextMenuShortcut>
+        <ContextMenuShortcut aria-hidden>Ctrl+C</ContextMenuShortcut>
       </ContextMenuItem>
-      <ContextMenuItem icon={ClipboardPasteIcon} disabled={!editable} onSelect={() => onSelect('paste')}>
+      <ContextMenuItem icon={ClipboardPasteIcon} disabled={!editable} onSelect={() => onSelect('paste')} aria-keyshortcuts="Control+V">
         Paste
-        <ContextMenuShortcut>Ctrl+V</ContextMenuShortcut>
+        <ContextMenuShortcut aria-hidden>Ctrl+V</ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuItem icon={ClipboardTypeIcon} disabled={!editable} onSelect={() => onSelect('paste-text')}>
         Paste as plain text
       </ContextMenuItem>
       <ContextMenuSeparator />
-      <ContextMenuItem icon={TextSelectIcon} disabled={!hasText} onSelect={() => onSelect('select-all')}>
+      <ContextMenuItem icon={TextSelectIcon} disabled={!hasText} onSelect={() => onSelect('select-all')} aria-keyshortcuts="Control+A">
         Select all
-        <ContextMenuShortcut>Ctrl+A</ContextMenuShortcut>
+        <ContextMenuShortcut aria-hidden>Ctrl+A</ContextMenuShortcut>
       </ContextMenuItem>
     </>
   )

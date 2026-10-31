@@ -4,6 +4,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuShortcut, 
 import { textEditItems, type TextEditAction } from '@/features/palette/menuItems'
 import { copySelection, runTextFieldAction, type TextField } from './textFieldActions'
 import { useBlockNativeContextMenu } from './useBlockNativeContextMenu'
+import { keyboardMenuAnchor } from '@/lib/menuAnchor'
 
 type Target = { kind: 'field'; hasSelection: boolean; editable: boolean; hasText: boolean } | { kind: 'selection' }
 
@@ -53,9 +54,7 @@ export function AppContextMenu() {
     let { clientX, clientY } = event
     // A keyboard-raised event (Shift+F10, Menu key) carries no pointer position.
     if (clientX === 0 && clientY === 0 && event.target instanceof Element) {
-      const rect = event.target.getBoundingClientRect()
-      clientX = rect.left
-      clientY = rect.bottom
+      ;({ x: clientX, y: clientY } = keyboardMenuAnchor(field ?? event.target))
     }
     triggerRef.current.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX, clientY }))
   }, [])
