@@ -11,7 +11,7 @@ export interface RowMenuEntry {
   icon?: LucideIcon
   destructive?: boolean
   disabled?: boolean
-/** Renders the entry as a new-tab link (`ExternalLink` opens https only) instead of calling `onSelect`; its own icon replaces `icon`. */
+  /** Renders the entry as a new-tab link (`ExternalLink` opens https only) instead of calling `onSelect`; its own icon replaces `icon`. */
   href?: string
   onSelect?(): void
 }

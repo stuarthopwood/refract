@@ -1,7 +1,7 @@
 // The Overview's Checks section (spec 038 FR-011, FR-012): the overall state, then the checks
 // grouped by outcome -- only Action required and Failing expanded; Pending, Successful, Neutral
 // and Skipped collapsed. Every row pairs its status icon with the outcome word (never colour
-// alone) and offers "Open details" through a plain http(s) anchor, as ChangesTab does (no IPC).
+// alone) and offers "Open details" through an https ExternalLink, as ChangesTab does (no IPC).
 import { ChevronRightIcon, CircleAlertIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
