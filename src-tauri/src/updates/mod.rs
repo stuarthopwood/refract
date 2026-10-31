@@ -145,7 +145,9 @@ pub async fn verify_downloaded_installer(
     .await
     {
         Ok(result) => {
-            result.map_err(|reason| (installer::UpdateErrorCode::ChecksumMismatch, reason))
+            result
+                .map(|_| ())
+                .map_err(|reason| (installer::UpdateErrorCode::ChecksumMismatch, reason))
         }
         Err(_) => Err((
             installer::UpdateErrorCode::UpdateUnavailable,
@@ -233,9 +235,11 @@ async fn verify_and_schedule(
     updates_dir: &Path,
     relaunch: Option<std::path::PathBuf>,
 ) -> Result<(), String> {
-    install_on_quit::verify_installer_before_quit(installer_path, updates_dir).await?;
+    let verified_sha256 =
+        install_on_quit::verify_installer_before_quit(installer_path, updates_dir).await?;
     install_on_quit::schedule_install_on_quit(
         installer_path,
+        &verified_sha256,
         std::process::id(),
         relaunch.as_deref(),
     )

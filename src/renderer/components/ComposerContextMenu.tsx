@@ -13,11 +13,14 @@ interface SpellState {
   word: string
   start: number
   end: number
+  misspelt: boolean
   suggestions: string[]
 }
 
-const NO_SPELL: SpellState = { word: '', start: 0, end: 0, suggestions: [] }
+const NO_SPELL: SpellState = { word: '', start: 0, end: 0, misspelt: false, suggestions: [] }
 const WORD_CHAR = /[\p{L}\p{M}'’]/u
+const MIN_SPELL_CHARS = 2
+const MAX_SPELL_CHARS = 64
 
 // The selection when it is one word, else the word around the caret.
 function wordAt(el: HTMLTextAreaElement): { word: string; start: number; end: number } | null {
@@ -58,9 +61,9 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
         const epoch = ++spellEpochRef.current
         setSpell(NO_SPELL)
         const target = el.readOnly || el.disabled ? null : wordAt(el)
-        if (target) {
+        if (target && target.word.length >= MIN_SPELL_CHARS && target.word.length <= MAX_SPELL_CHARS) {
           void window.refract.spellcheck.suggest(target.word, navigator.language).then((result) => {
-            if (result.ok && epoch === spellEpochRef.current) setSpell({ ...target, suggestions: result.value })
+            if (result.ok && epoch === spellEpochRef.current) setSpell({ ...target, ...result.value })
           }).catch(() => undefined)
         }
         copyTextRef.current = el.value.slice(el.selectionStart ?? 0, el.selectionEnd ?? 0)
@@ -85,7 +88,7 @@ export function ComposerContextMenu({ children }: { children: ReactNode }) {
           if (typeof action === 'object') {
             el.setSelectionRange(spell.start, spell.end)
             document.execCommand('insertText', false, action.replace)
-          } else if (action === 'add-word') void window.refract.spellcheck.add(spell.word, navigator.language)
+          } else if (action === 'add-word') void window.refract.spellcheck.add(spell.word, navigator.language).catch(() => undefined)
           else void runTextFieldAction(el, action, copyTextRef.current)
         }}
       >

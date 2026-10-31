@@ -20,7 +20,7 @@ fn word_and_language(args: &[Value], method: &str) -> Result<(String, String), I
         (Some(word), Some(language))
             if !word.is_empty()
                 && word.chars().count() <= MAX_WORD_CHARS
-                && !word.chars().any(char::is_whitespace)
+                && !word.chars().any(|c| c.is_whitespace() || c.is_control())
                 && !language.is_empty()
                 && language.len() <= 35
                 && language
@@ -38,13 +38,11 @@ fn word_and_language(args: &[Value], method: &str) -> Result<(String, String), I
 fn spellcheck_suggest(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let (word, language) = word_and_language(&args, "spellcheck.suggest")?;
-        let suggestions = tokio::task::spawn_blocking(move || platform::suggest(&word, &language))
+        let (misspelt, suggestions) = tokio::task::spawn_blocking(move || platform::suggest(&word, &language))
             .await
             .map_err(|err| IpcError::new("spellcheck-failed", err.to_string()))?
             .map_err(|message| IpcError::new("spellcheck-failed", message))?;
-        Ok(Value::Array(
-            suggestions.into_iter().map(Value::String).collect(),
-        ))
+        Ok(serde_json::json!({ "misspelt": misspelt, "suggestions": suggestions }))
     })
 }
 
@@ -103,17 +101,17 @@ mod platform {
             .map_err(unavailable)
     }
 
-    pub fn suggest(word: &str, language: &str) -> Result<Vec<String>, String> {
+    pub fn suggest(word: &str, language: &str) -> Result<(bool, Vec<String>), String> {
         let _com = ComScope::new();
         let Some(checker) = open(language)? else {
-            return Ok(Vec::new());
+            return Ok((false, Vec::new()));
         };
         let text = HSTRING::from(word);
         let errors = unsafe { checker.Check(&text) }.map_err(|e| e.to_string())?;
         // `Next` returns S_FALSE with no item when the word is spelled correctly.
         let mut first: Option<ISpellingError> = None;
         if unsafe { errors.Next(&mut first) } != S_OK || first.is_none() {
-            return Ok(Vec::new());
+            return Ok((false, Vec::new()));
         }
         let list = unsafe { checker.Suggest(&text) }.map_err(|e| e.to_string())?;
         let mut out = Vec::new();
@@ -129,7 +127,7 @@ mod platform {
             }
             unsafe { CoTaskMemFree(Some(item[0].0 as *const _)) };
         }
-        Ok(out)
+        Ok((true, out))
     }
 
     pub fn add(word: &str, language: &str) -> Result<(), String> {
@@ -144,8 +142,8 @@ mod platform {
 }
 #[cfg(not(target_os = "windows"))]
 mod platform {
-    pub fn suggest(_word: &str, _language: &str) -> Result<Vec<String>, String> {
-        Ok(Vec::new())
+    pub fn suggest(_word: &str, _language: &str) -> Result<(bool, Vec<String>), String> {
+        Ok((false, Vec::new()))
     }
     pub fn add(_word: &str, _language: &str) -> Result<(), String> {
         Ok(())

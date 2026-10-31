@@ -46,6 +46,7 @@ import type {
   Unsubscribe
 } from '../shared/ipc'
 import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-attachments'
+import type { SpellSuggestion } from '../shared/ipc-spellcheck'
 import type { StopResult } from '../shared/stop-result'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
 import type { MessageImageData } from '../shared/ipc-images'
@@ -208,7 +209,7 @@ const refract: RefractApi = {
   },
 
   spellcheck: {
-    suggest: (word, language) => request<string[]>(IPC_REQUESTS.SPELLCHECK_SUGGEST, word, language),
+    suggest: (word, language) => request<SpellSuggestion>(IPC_REQUESTS.SPELLCHECK_SUGGEST, word, language),
     add: (word, language) => request<void>(IPC_REQUESTS.SPELLCHECK_ADD, word, language)
   },
 

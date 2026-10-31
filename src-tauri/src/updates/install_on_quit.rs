@@ -17,11 +17,12 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const SIGNATURE_VERIFY_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Re-verifies a `downloaded` installer before scheduling it: it must sit directly in
-/// `updates_dir`, match its `.sha256` sibling, and still pass the Authenticode check.
+/// `updates_dir`, match its `.sha256` sibling, and still pass the Authenticode check. Returns the
+/// verified digest so the helper can re-check it after the quit wait.
 pub async fn verify_installer_before_quit(
     installer_path: &Path,
     updates_dir: &Path,
-) -> Result<(), String> {
+) -> Result<String, String> {
     if !installer_is_directly_inside(installer_path, updates_dir) {
         return Err(format!(
             "installer path {} is not directly inside {}",
@@ -29,6 +30,7 @@ pub async fn verify_installer_before_quit(
             updates_dir.display()
         ));
     }
+    reject_redirected_installer(installer_path, updates_dir).await?;
 
     let checksum_path = sha256_sibling(installer_path);
     let expected = tokio::fs::read_to_string(&checksum_path)
@@ -65,12 +67,50 @@ pub async fn verify_installer_before_quit(
         }
     }
 
+    Ok(actual)
+}
+
+#[cfg(windows)]
+const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+
+// A junction or symlink in the path would let the lexical check pass for a file elsewhere.
+async fn reject_redirected_installer(
+    installer_path: &Path,
+    updates_dir: &Path,
+) -> Result<(), String> {
+    let redirected = || {
+        format!(
+            "installer path {} resolves outside {}",
+            installer_path.display(),
+            updates_dir.display()
+        )
+    };
+    let real_dir = tokio::fs::canonicalize(updates_dir)
+        .await
+        .map_err(|err| format!("could not resolve {}: {err}", updates_dir.display()))?;
+    let real_file = tokio::fs::canonicalize(installer_path)
+        .await
+        .map_err(|err| format!("could not resolve {}: {err}", installer_path.display()))?;
+    if real_file.parent() != Some(real_dir.as_path()) {
+        return Err(redirected());
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        let meta = tokio::fs::symlink_metadata(installer_path)
+            .await
+            .map_err(|err| err.to_string())?;
+        if meta.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return Err(redirected());
+        }
+    }
     Ok(())
 }
 
 /// Spawns the helper that hands the install off to a WMI-created process.
 pub async fn schedule_install_on_quit(
     installer_path: &Path,
+    verified_sha256: &str,
     refract_pid: u32,
     relaunch_path: Option<&Path>,
 ) -> Result<(), String> {
@@ -83,9 +123,9 @@ pub async fn schedule_install_on_quit(
         unix_seconds(),
         installer_path.display()
     );
-    if let Err(err) = tokio::fs::write(&log_path, header).await {
-        log::warn!("could not write {}: {err}", log_path.display());
-    }
+    tokio::fs::write(&log_path, header)
+        .await
+        .map_err(|err| format!("could not write {}: {err}", log_path.display()))?;
 
     // The script is fixed text passed as -EncodedCommand; every path reaches it through `$env:` only.
     let encoded = encode_powershell_command(INSTALL_HELPER_SCRIPT);
@@ -115,6 +155,7 @@ pub async fn schedule_install_on_quit(
         .creation_flags(CREATE_NO_WINDOW)
         .kill_on_drop(true)
         .env("REFRACT_INSTALLER_PATH", installer_path)
+        .env("REFRACT_INSTALLER_SHA256", verified_sha256)
         .env("REFRACT_INSTALL_LOG", &log_path)
         .env("REFRACT_WAIT_PID", refract_pid.to_string());
     if let Some(relaunch_path) = relaunch_path {
@@ -157,9 +198,11 @@ pub async fn schedule_install_on_quit(
 const INSTALL_HELPER_SCRIPT: &str = r#"
 $log = $env:REFRACT_INSTALL_LOG
 function Log($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format o) + ' ' + $m) -Encoding UTF8 }
-$code = -1
+$code = [int]::MinValue
 try {
   Wait-Process -Id ([int]$env:REFRACT_WAIT_PID) -ErrorAction SilentlyContinue
+  $hash = (Get-FileHash -LiteralPath $env:REFRACT_INSTALLER_PATH -Algorithm SHA256 -ErrorAction Stop).Hash
+  if ($hash -ne $env:REFRACT_INSTALLER_SHA256) { throw 'installer changed after it was verified' }
   Log 'installer starting'
   $out = $log + '.out'; $err = $log + '.err'
   $p = Start-Process -FilePath $env:REFRACT_INSTALLER_PATH -ArgumentList '/S','/UPDATE' -Wait -PassThru -ErrorAction Stop -RedirectStandardOutput $out -RedirectStandardError $err
@@ -209,11 +252,15 @@ async fn append_log(log_path: &Path, line: &str) {
     }
 }
 
-/// The last `result: exit=N` the helper logged, if any.
+/// Logged as the exit when the helper never ran the installer (a real installer can exit -1).
+const HELPER_NOT_STARTED: i64 = i32::MIN as i64;
+
+/// The last `result: exit=N` the helper logged, if any; the marker must start the line's message.
 fn parse_helper_exit_code(log: &str) -> Option<i64> {
-    log.lines()
-        .rev()
-        .find_map(|line| line.split_once("result: exit=")?.1.trim().parse().ok())
+    log.lines().rev().find_map(|line| {
+        let (_, message) = line.split_once(' ')?;
+        message.strip_prefix("result: exit=")?.trim().parse().ok()
+    })
 }
 
 /// Cause-bearing `lastError` for an update that never took effect, read from the helper's log.
@@ -228,7 +275,7 @@ async fn install_failure_message(log_path: Option<&Path>) -> String {
         Some(0) => format!(
             "The installer reported success (exit code 0) but the version did not change. {suffix} {location}"
         ),
-        Some(-1) => format!(
+        Some(HELPER_NOT_STARTED) => format!(
             "The update installer could not be started. {suffix} {location}"
         ),
         Some(code) => format!(
@@ -323,11 +370,9 @@ pub async fn resolve_startup_state(
     }
 }
 
-/// Prefers `pwsh` on `PATH`, else the always-present Windows PowerShell 5.1.
+/// Windows PowerShell 5.1 from System32 only: a `pwsh` found on `PATH` is user-writable ground
+/// for the process that installs an update.
 fn resolve_powershell() -> PathBuf {
-    if let Ok(path) = which::which_global("pwsh") {
-        return path;
-    }
     let system_root = std::env::var("SystemRoot")
         .or_else(|_| std::env::var("windir"))
         .unwrap_or_else(|_| "C:\\Windows".to_string());
