@@ -143,6 +143,26 @@ impl SessionAgent {
         true
     }
 
+    /// The Session's pending requests, for a lane that must act on ones already waiting.
+    pub(in crate::session) async fn pending_requests(&self) -> Vec<super::PendingRequest> {
+        self.state.lock().await.pending.clone()
+    }
+
+    /// Transcript notice for a lane (Away mode records its automatic actions this way).
+    pub(in crate::session) async fn lane_notice(&self, text: String, level: &str) {
+        self.append_notice(text, level).await;
+    }
+
+    /// Reads status and process presence under the lane's own lock, so a turn cannot start between them.
+    pub(in crate::session) async fn with_working_mode_and_status<R>(
+        &self,
+        f: impl FnOnce(&mut crate::session::working_mode::State, SessionStatus, bool) -> R,
+    ) -> R {
+        let mut state = self.state.lock().await;
+        let (status, has_process) = (state.status, state.process.is_some());
+        f(&mut state.working_mode, status, has_process)
+    }
+
     /// The Conversation file path, or `None` for a Session that has never sent a message.
     pub(in crate::session) async fn current_conversation_path(&self) -> Option<String> {
         self.registry

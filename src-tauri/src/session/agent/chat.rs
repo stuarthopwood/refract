@@ -57,6 +57,11 @@ impl SessionAgent {
             );
             (proc, working)
         };
+        let text = if working || force_follow_up {
+            text
+        } else {
+            crate::session::working_mode::decorate_prompt(self, text).await
+        };
         let mut cmd = json!({ "type": "prompt", "message": text });
         if let Some(images) = images {
             if !images.is_empty() {

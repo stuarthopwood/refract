@@ -163,7 +163,8 @@ impl SessionAgent {
             }
             DialogClassification::Request(request) => {
                 // push_pending_request handles the row, NeedsYou, and the emit in one call.
-                self.push_pending_request(request).await;
+                self.push_pending_request(request.clone()).await;
+                crate::session::working_mode::away::on_request(self, request).await;
             }
         }
     }
@@ -184,6 +185,7 @@ impl SessionAgent {
         self.settle_turn_pending().await;
         self.set_status(SessionStatus::Idle, None, None).await;
         crate::session::token_guard::on_turn_settled(self, generation).await;
+        crate::session::working_mode::on_turn_settled(self).await;
         // Spawned so the get_state round trip does not block the frame loop. Tagged with generation counters.
         // sync_from_state re-checks both counters before writing, so stale replies are dropped.
         let agent = self.arc();

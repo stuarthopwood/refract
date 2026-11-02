@@ -155,10 +155,12 @@ impl SessionAgent {
         self.clear_stopped_on_request_marker().await;
 
         let approval_mode = self.settings.lock().await.get().approval_mode;
-        let opts = OmpProcessOptions::new(
+        let mut opts = OmpProcessOptions::new(
             PathBuf::from(&session.worktree_path),
             to_process_mode(approval_mode),
         );
+        // Always set, so a Session out of Plan overrides a global plan.defaultOnStartup.
+        opts.plan_mode = Some(crate::session::working_mode::plan_for_launch(self).await);
 
         // Process-wide start slot and low-memory defer.
         let slot_guard = crate::session::start_queue::acquire_slot(self).await?;
@@ -427,6 +429,7 @@ impl SessionAgent {
                         crate::session::side_chat::on_exit(&agent, code, requested).await;
                         // Gated on `is_current`, so a stale exit cannot affect a newer life.
                         if is_current {
+                            crate::session::working_mode::on_exit(&agent, requested).await;
                             crate::session::advisor::on_exit(&agent).await;
                             crate::session::readout::on_exit(&agent, code, requested).await;
                             crate::session::subagents::on_exit(

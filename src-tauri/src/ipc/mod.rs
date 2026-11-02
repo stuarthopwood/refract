@@ -62,6 +62,7 @@ pub mod token_guard;
 pub mod updates;
 pub mod usage;
 pub mod usage_prefs;
+pub mod working_mode;
 
 /// Shared state passed to every handler. Each store has its own lock, so one slow write never
 /// blocks another store. `session_manager` shares the same store instances, never copies.
@@ -194,6 +195,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     updates::register(dispatcher);
     model_roles::register(dispatcher);
     model::register(dispatcher);
+    working_mode::register(dispatcher);
     crate::shell::menu::register(dispatcher);
 }
 
