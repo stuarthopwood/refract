@@ -168,9 +168,16 @@ async function runChecks(cdp, { repoA, repoAName }) {
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 15_000, label: 'Project rendered' });
   await createSessionViaQuickCreate(cdp, repoAName);
 
-  await capture(cdp, 'panel-tab-bar', `document.querySelector('[role="tablist"]')`);
+  await capture(cdp, 'panel-tab-bar', `document.querySelector('[role="tablist"][aria-label="Open panels"]')`, async () => {
+    const open = await cdp.evaluate(`document.querySelector('[data-rail-toggle]')?.getAttribute('aria-expanded')`);
+    if (open !== 'true') await cdp.click(`document.querySelector('[data-rail-toggle]')`);
+    for (const i of [0, 1]) {
+      await cdp.click(`document.querySelectorAll('[role="toolbar"][aria-label="Panels"] button')[${i}]`);
+      await sleep(500);
+    }
+  });
 
-  await capture(cdp, 'manage-sessions-toolbar', `document.querySelector('section [role="tablist"]')`, async () => {
+  await capture(cdp, 'manage-sessions-toolbar', `document.querySelector('[role="tablist"]')`, async () => {
     await openProfileItem(cdp, 'Manage sessions');
     await cdp.waitFor(`!!document.querySelector('ul[aria-label="All sessions across projects"]')`, { timeoutMs: 15_000, label: 'Manage list' });
   });
@@ -186,10 +193,8 @@ async function runChecks(cdp, { repoA, repoAName }) {
     await cdp.waitFor(`!!document.querySelector('[role="region"][aria-label="Home"]')`, { timeoutMs: 15_000, label: 'Home view' });
   });
 
-  await capture(cdp, 'settings-chat-row-spacing', `document.querySelector('[role="radiogroup"], [data-slot="toggle-group"]')?.closest('section, div')`, async () => {
-    await openProfileItem(cdp, 'Settings').catch(async () => clickNav(cdp, 'Settings'));
-    await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
-  });
+  await openProfileItem(cdp, 'Settings').catch(async () => clickNav(cdp, 'Settings'));
+  await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
   const groups = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-slot="toggle-group"]')).map((g, i) => ({ i, label: g.getAttribute('aria-label') || g.closest('section,div')?.textContent.slice(0, 30) }))`).catch(() => []);
   for (const g of groups) {
     await capture(cdp, `settings-toggle-group-${g.i}`, `document.querySelectorAll('[data-slot="toggle-group"]')[${g.i}]`);

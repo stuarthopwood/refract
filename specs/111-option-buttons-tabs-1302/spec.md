@@ -1,6 +1,6 @@
 # Spec 111: Option buttons and tabs, one look app-wide (issue #1302)
 
-Status: in progress. Grill outcomes: the decision block at the top of #1302 (Stuart, 2026-11-02). Closes #1302. Specify route hand-authored (no slash prompts in this lane); clarify, plan and analyze are folded into the decisions below.
+Status: gate passed, awaiting merge. Grill outcomes: the decision block at the top of #1302 (Stuart, 2026-11-02). Closes #1302. Specify route hand-authored (no slash prompts in this lane); clarify, plan and analyze are folded into the decisions below.
 
 ## Requirements
 
