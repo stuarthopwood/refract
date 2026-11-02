@@ -59,6 +59,8 @@ async function main() {
 
     const repoName = path.basename(dirs.repo);
     await addRepository(cdp, dirs.repo);
+    await createSessionViaQuickCreate(cdp, repoName);
+    await latestSessionIdAndName(cdp, repoName, []);
     await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
     await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Advanced')`);
@@ -74,9 +76,6 @@ async function main() {
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, '110-advanced-session-start.png'));
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
-
-    await createSessionViaQuickCreate(cdp, repoName);
-    await latestSessionIdAndName(cdp, repoName, []);
 
     await openKebab(cdp, repoName);
     const before = await cdp.evaluate(`(${MENU_ITEM('prewalk')})?.textContent ?? null`);
