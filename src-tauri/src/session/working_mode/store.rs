@@ -17,7 +17,9 @@ fn file() -> PathBuf {
 
 pub(super) async fn load(session_id: &str) -> Option<WorkingMode> {
     let _guard = STORE_LOCK.lock().await;
-    let modes: Modes = read_json_file(&file(), Modes::new).await.unwrap_or_default();
+    let modes: Modes = read_json_file(&file(), Modes::new)
+        .await
+        .unwrap_or_default();
     modes.get(session_id).copied()
 }
 

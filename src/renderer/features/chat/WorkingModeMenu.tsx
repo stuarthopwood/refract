@@ -6,6 +6,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
+import { Button } from '@/components/ui/button'
 import { ValueCrossfade } from '@/components/ValueCrossfade'
 import { useSessionsStore } from '@/state'
 import { cn } from '@/lib/utils'
@@ -44,15 +45,17 @@ export function WorkingModeMenu({ sessionId }: { sessionId: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="xs"
           aria-label={`${current.label}, working mode${pendingLabel ? `. ${pendingLabel}` : ''}`}
           className={cn(PICKER_TRIGGER_CLASS)}
         >
           <CurrentIcon aria-hidden className="size-4" />
           <ValueCrossfade scope={sessionId} value={current.label} />
           {pendingLabel && <span className="text-muted-foreground">&middot; Switches when the turn ends</span>}
-        </button>
+        </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuRadioGroup value={currentMode} onValueChange={(value) => handleSelect(value as WorkingMode)}>

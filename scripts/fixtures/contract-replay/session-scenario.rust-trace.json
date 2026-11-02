@@ -82,7 +82,8 @@
           "sessionId": "<SESSION_ID>",
           "status": "idle",
           "transcript": [],
-          "unread": false
+          "unread": false,
+          "workingMode": "interactive"
         },
         "subagents": []
       }
@@ -102,7 +103,8 @@
       "sessionId": "<SESSION_ID>",
       "status": "idle",
       "transcript": [],
-      "unread": false
+      "unread": false,
+      "workingMode": "interactive"
     }
   },
   {
@@ -179,7 +181,8 @@
           "requestId": "dlg-1"
         }
       ],
-      "unread": false
+      "unread": false,
+      "workingMode": "interactive"
     }
   },
   {
@@ -250,7 +253,8 @@
           "text": "xyzzy9"
         }
       ],
-      "unread": true
+      "unread": true,
+      "workingMode": "interactive"
     }
   }
 ]
