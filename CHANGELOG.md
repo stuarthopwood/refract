@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.23.0 (2026-11-02)
+
+### Features
+
+- feat(au): composer working-mode menu (Interactive, Plan, Grill, Away) (https://github.com/stuarthopwood/refract/pull/1574)
+
+### Other
+
+- style(av): one option-button and tab look app-wide (https://github.com/stuarthopwood/refract/pull/1570)
+- docs(plan): file #1571 usage project labels (p1) (https://github.com/stuarthopwood/refract/pull/1572)
+- docs(plan): amend #1571 to cover the usage project filter (https://github.com/stuarthopwood/refract/pull/1573)
+- docs(plan): file #1575 review dialog verdict picker (p1) (https://github.com/stuarthopwood/refract/pull/1576)
+- docs(plan): file #1577 composer role cards (p1) (https://github.com/stuarthopwood/refract/pull/1578)
+
 ## v0.22.0 (2026-11-02)
 
 ### Features
