@@ -118,6 +118,9 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   const askResp = responses(ompLog).find((l) => l.includes('"answers"'));
   assert(!!askResp && askResp.includes('SQLite'), `Away answered the ask with the recommended option: ${askResp}`);
   await cdp.screenshot(path.join(SHOTS_DIR, '06-away-answered.png'));
+  await cdp.waitFor(`document.body.innerText.includes('Pick a deploy target')`, { timeoutMs: 20_000, label: 'select question cancelled and recorded' });
+  const cancelled = responses(ompLog).find((l) => l.includes('"id":"q-1"') && l.includes('"cancelled":true'));
+  assert(!!cancelled && !responses(ompLog).some((l) => l.includes('Production')), `Away cancelled the select question, picked nothing: ${cancelled}`);
   await cdp.waitFor(`document.body.innerText.includes('Not approved: the user is away')`, { timeoutMs: AWAY_TIMEOUT_MS + 25_000, label: 'approval denied after the shortened timeout' });
   const denial = responses(ompLog).find((l) => l.includes('"id":"appr-1"') && l.includes('"value":"Deny"'));
   assert(!!denial && !responses(ompLog).some((l) => l.includes('Approve"')), `approval appr-1 was denied, never approved: ${denial}`);

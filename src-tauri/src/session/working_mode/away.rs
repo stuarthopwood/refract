@@ -11,6 +11,7 @@ pub const ASK_FALLBACK: &str =
     "The user is away. Choose the best option yourself, state your choice, and continue.";
 pub const APPROVAL_DENIAL: &str =
     "Not approved: the user is away. Pick a safe alternative or skip this step and continue.";
+pub const QUESTION_DECLINED: &str = "cancelled because the user is away";
 
 const DEFAULT_APPROVAL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 // Test-only: shortens the denial delay for the live check; debug builds only.
@@ -21,6 +22,7 @@ const STEER_TIMEOUT_MS: u64 = 60_000;
 pub enum Kind {
     Answered,
     Denied,
+    Declined,
 }
 
 #[derive(Clone)]
@@ -110,7 +112,20 @@ pub(in crate::session) async fn on_request(agent: &SessionAgent, request: Pendin
             target,
             ..
         } => watch_approval(agent, request_id, format!("{tool} {target}")).await,
-        PendingRequest::Question { .. } => {}
+        PendingRequest::Question { request_id, title, .. } => {
+            decline_question(agent, request_id, title).await
+        }
+    }
+}
+
+// select/input/confirm dialogs carry no recommendation and may grant something, so Away cancels them.
+async fn decline_question(agent: &SessionAgent, request_id: String, title: String) {
+    match agent
+        .answer_request(request_id, json!({ "cancelled": true }))
+        .await
+    {
+        Ok(()) => record(agent, Kind::Declined, title, QUESTION_DECLINED.to_string()).await,
+        Err(err) => log::warn!("away: could not cancel question: {err}"),
     }
 }
 
@@ -170,6 +185,9 @@ async fn record(agent: &SessionAgent, kind: Kind, question: String, outcome: Str
         Kind::Denied => {
             format!("Automatic (Away mode): denied approval for \"{question}\". {outcome}")
         }
+        Kind::Declined => {
+            format!("Automatic (Away mode): question \"{question}\" {outcome}.")
+        }
     };
     agent
         .with_working_mode_state(|s| {
@@ -194,6 +212,7 @@ pub(in crate::session) async fn summarise(agent: &SessionAgent) {
             .map(|e| match e.kind {
                 Kind::Answered => format!("- Answered \"{}\" with {}.", e.question, e.outcome),
                 Kind::Denied => format!("- Denied approval for \"{}\".", e.question),
+                Kind::Declined => format!("- Cancelled question \"{}\".", e.question),
             })
             .collect::<Vec<_>>()
             .join("\n");

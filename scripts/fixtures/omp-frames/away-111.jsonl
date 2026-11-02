@@ -16,6 +16,8 @@
 {"type":"extension_ui_request","id":"ask-dlg-1","method":"ask","questions":[{"id":"db","question":"Which database?","header":"Database","options":[{"label":"Postgres"},{"label":"SQLite"}],"multi":false,"recommended":1}]}
 {"__wait__":["extension_ui_response"]}
 {"type":"tool_execution_end","toolCallId":"call-ask-1","toolName":"ask","result":{"content":[{"type":"text","text":"Asked user 1 question"}],"details":{"results":[{"id":"db","selectedOptions":["SQLite"],"timedOut":false}]}},"isError":false}
+{"type":"extension_ui_request","id":"q-1","method":"select","title":"Pick a deploy target","options":["Staging","Production"]}
+{"__wait__":["extension_ui_response"]}
 {"type":"tool_execution_start","toolCallId":"bash-1","toolName":"bash","args":{"command":"pnpm install"},"intent":"Installing dependencies"}
 {"type":"extension_ui_request","id":"appr-1","method":"select","title":"Allow tool: bash\nCommand: pnpm install","options":["Approve","Deny"]}
 {"__wait__":["extension_ui_response"]}

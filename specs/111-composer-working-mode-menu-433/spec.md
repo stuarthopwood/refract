@@ -29,7 +29,7 @@ A per-Session single-choice working-mode menu beside the Approval mode pill: Int
 - Plan proposal/approval over RPC is unverified (needs a billed run); no review pane is built.
 - The denial reason is sent as a best-effort steer prompt; OMP may ignore it.
 - Grill is not applied to queued follow-ups, only prompts sent while idle.
-- Question dialogs (non-ask, non-approval) stay pending in Away.
+- Away cancels non-ask, non-approval dialogs (OMP `select`, `input`, `editor`, `confirm`, `PendingRequest::Question`) at once and records them; they carry no recommendation and may grant something, so Away never picks an option.
 - `REFRACT_AWAY_APPROVAL_TIMEOUT_MS` shortens the 5-minute denial timer in debug builds only (live check).
 - The restart for a Plan switch may briefly flash a stopped state.
 
