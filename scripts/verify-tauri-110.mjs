@@ -66,6 +66,7 @@ async function main() {
     await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
     await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Advanced')`);
+    await cdp.waitFor(`document.body.textContent.includes('File read line limit')`, { timeoutMs: 15_000, label: 'Advanced section rendered' });
     for (const label of ['File read line limit', 'Summarise files on read', 'Automatic todo lists', 'Start Sessions with prewalk', 'Start in plan mode']) {
       const found = await cdp.evaluate(`document.body.textContent.includes(${JSON.stringify(label)})`);
       findings.push(`Advanced row "${label}": ${found}`);
