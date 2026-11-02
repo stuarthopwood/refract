@@ -86,6 +86,7 @@ struct AgentState {
     #[allow(dead_code)]
     termination: crate::session::termination::State,
     token_guard: crate::session::token_guard::State,
+    working_mode: crate::session::working_mode::State,
     pause: pause::State,
 }
 
@@ -172,6 +173,7 @@ impl SessionAgent {
                 start_queue: Default::default(),
                 termination: Default::default(),
                 token_guard: Default::default(),
+                working_mode: Default::default(),
                 pause: Default::default(),
             }),
             status_tx,
@@ -229,6 +231,7 @@ impl SessionAgent {
 
     pub(super) async fn emit_status(&self) {
         self.ensure_pause_loaded().await;
+        crate::session::working_mode::ensure_loaded(self).await;
         let state = self.state.lock().await;
         let payload = self.status_event_locked(&state);
         drop(state);
@@ -301,6 +304,7 @@ impl SessionAgent {
         let (current_role, pinned) = self.role_summary_fields().await;
         let pending_selection = crate::session::pending_selection::wire(self).await;
         self.ensure_pause_loaded().await;
+        crate::session::working_mode::ensure_loaded(self).await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "status": state.status,
@@ -324,12 +328,14 @@ impl SessionAgent {
         if let Some(pause) = pause::wire_value(&state) {
             object.insert("pause".to_string(), pause.into());
         }
+        state.working_mode.insert_wire(object);
         payload
     }
 
     /// Shape the renderer requires when a Session pane opens.
     pub async fn runtime_view(&self) -> Value {
         self.ensure_pause_loaded().await;
+        crate::session::working_mode::ensure_loaded(self).await;
         let state = self.state.lock().await;
         let mut payload = json!({
             "sessionId": self.session_id,
@@ -486,5 +492,10 @@ impl SessionAgent {
         with_token_guard_state,
         token_guard,
         crate::session::token_guard::State
+    );
+    with_lane_state!(
+        with_working_mode_state,
+        working_mode,
+        crate::session::working_mode::State
     );
 }

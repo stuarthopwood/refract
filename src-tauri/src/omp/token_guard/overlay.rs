@@ -95,6 +95,17 @@ pub async fn write(dir: &Path, values: &ValueMap) -> io::Result<PathBuf> {
     Ok(file)
 }
 
+/// Like `write`, into a per-plan-state file, so concurrent Sessions never rewrite one another's overlay.
+pub async fn write_plan_variant(dir: &Path, values: &ValueMap, plan: bool) -> io::Result<PathBuf> {
+    let file = dir.join(if plan {
+        "token-guard-overlay-plan-on.yml"
+    } else {
+        "token-guard-overlay-plan-off.yml"
+    });
+    super::write_atomic_if_changed(&file, render(values).as_bytes()).await?;
+    Ok(file)
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::values::defaults;

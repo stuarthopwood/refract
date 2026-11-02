@@ -66,7 +66,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
               unread: event.unread,
               pause: event.pause,
               launchedMode: event.launchedMode,
-              pendingMode: event.pendingMode
+              pendingMode: event.pendingMode,
+              workingMode: event.workingMode,
+              workingModePending: event.workingModePending ?? null
             }
           : session
       )

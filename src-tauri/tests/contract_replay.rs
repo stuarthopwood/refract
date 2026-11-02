@@ -364,6 +364,8 @@ fn scrub_known_divergences(value: &mut Value) {
             if map.contains_key("conversations") && map.contains_key("subagents") {
                 map.remove("advisorOn");
             }
+            // Issue #433: `workingMode` is a Rust-only per-Session field on summaries/runtime views.
+            map.remove("workingMode");
             // Issue #741: a Session's own `pinnedModel` field (the persisted pin state) is a
             // brand-new, Rust-only field -- `shared/ipc.ts`'s own doc comment already notes
             // Electron never ports this family either, so it never appears on that shell's

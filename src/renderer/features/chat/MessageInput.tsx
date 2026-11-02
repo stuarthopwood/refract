@@ -24,7 +24,7 @@ import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
 import { useSlashMenuCompletion } from './useSlashMenuCompletion'
-import { ApprovalModePill } from './ApprovalModePill'
+import { ComposerModePills } from './ComposerModePills'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ReasoningPicker } from './ComposerPickers'
 import { ModelPicker } from './ModelPicker'
@@ -850,7 +850,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
           </ComposerActions>
         </ComposerField>
         <ComposerFooter>
-          <ApprovalModePill sessionId={sessionId} />
+          <ComposerModePills sessionId={sessionId} />
           <ModelPicker sessionId={sessionId} />
           <ReasoningPicker sessionId={sessionId} />
           <ComposerBranchLabel sessionId={sessionId} />

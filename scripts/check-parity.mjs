@@ -344,6 +344,7 @@ const REQUEST_LANES = {
   MODEL_APPLY_ROLE: 'RM',
   MODEL_LIST_ROLES: 'RM',
   MODEL_SET_THINKING_LEVEL: 'RM', // #564, ipc/model.rs
+  WORKING_MODE_SET: 'AU', // #433, ipc/working_mode.rs
   USAGE_START: 'U', // #1331, ipc/usage.rs and ipc/usage_prefs.rs
   USAGE_STOP: 'U',
   USAGE_STATUS: 'U',

@@ -30,6 +30,7 @@ import type {
   TranscriptItem,
 } from './model';
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames'; import type { ModelApi, RoleChangeSummary } from './ipc-model';
+import type { WorkingMode, WorkingModeApi } from './workingMode';
 import type { AdvisorRosterApi, AdvisorRosterDetected } from './ipc-advisor-roster';
 import type { AttachmentsApi } from './ipc-attachments'; import type { ClipboardApi } from './ipc-clipboard'; import type { SpellcheckApi } from './ipc-spellcheck'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
 import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi, SessionWithKickoff } from './ipc-issues'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
@@ -115,6 +116,8 @@ export interface SessionSummary extends Session {
   unread: boolean;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
+  workingMode?: WorkingMode;
+  workingModePending?: WorkingMode | null;
   pinned?: boolean;
   pendingSelection?: {
     role: string | null;
@@ -141,6 +144,8 @@ export interface SessionRuntimeView {
   pendingToolNames?: string[];
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
+  workingMode?: WorkingMode;
+  workingModePending?: WorkingMode | null;
   unread: boolean;
   transcript: TranscriptItem[];
   queue: { followUp: string[]; steering: string[] };
@@ -183,6 +188,8 @@ export interface SessionStatusEvent {
   unread: boolean;
   launchedMode: ApprovalMode;
   pendingMode: ApprovalMode | null;
+  workingMode?: WorkingMode;
+  workingModePending?: WorkingMode | null;
 }
 
 
@@ -328,6 +335,7 @@ export const IPC_REQUESTS = {
   MODEL_APPLY_ROLE: 'model.applyRole',
   MODEL_LIST_ROLES: 'model.listRoles',
   MODEL_SET_THINKING_LEVEL: 'model.setThinkingLevel',
+  WORKING_MODE_SET: 'workingMode.set',
   WINDOW_POPUP_MENU: 'window.popupMenu',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_LIST_ACROSS: 'pullRequests.listAcross',
@@ -538,6 +546,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   };
 
   model: ModelApi;
+
+  workingMode: WorkingModeApi;
 
   window: {
     popupMenu(menuId: AppMenuId, x: number, y: number): Promise<Result<void>>;

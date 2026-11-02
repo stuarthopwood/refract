@@ -149,6 +149,9 @@ fn extract_file_attachments(text: &str, message_id: &str) -> (String, Vec<FileAt
     (display, refs)
 }
 
+/// Opens a hidden instruction appended to a prompt (Grill mode, #433); it is cut from the displayed message.
+pub const HIDDEN_INSTRUCTION_OPEN: &str = "\n\n[[refract-hidden]]";
+
 /// Builds a `TranscriptItem::User`, extracting any `[[refract-attachments]]` section from `text` first.
 pub(super) fn build_user_item(
     id: String,
@@ -156,7 +159,8 @@ pub(super) fn build_user_item(
     at: i64,
     parts: &[serde_json::Value],
 ) -> TranscriptItem {
-    let (text, file_attachments) = extract_file_attachments(&text, &id);
+    let visible = text.split(HIDDEN_INSTRUCTION_OPEN).next().unwrap_or("");
+    let (text, file_attachments) = extract_file_attachments(visible, &id);
     TranscriptItem::User {
         id,
         text,

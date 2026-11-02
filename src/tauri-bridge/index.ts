@@ -49,6 +49,7 @@ import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-atta
 import type { SpellSuggestion } from '../shared/ipc-spellcheck'
 import type { StopResult } from '../shared/stop-result'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
+import type { WorkingMode } from '../shared/workingMode'
 import type { MessageImageData } from '../shared/ipc-images'
 import type { CustomTheme, ThemeList } from '../shared/ipc-themes'
 import type { DependencyInstallProgress, UpdateState } from '../shared/updates'
@@ -335,6 +336,11 @@ const refract: RefractApi = {
       ),
     setThinkingLevel: (sessionId: string, level: ThinkingLevel) =>
       request<{ thinkingLevel: string | null }>(IPC_REQUESTS.MODEL_SET_THINKING_LEVEL, sessionId, level)
+  },
+
+  workingMode: {
+    set: (sessionId: string, mode: WorkingMode) =>
+      request<{ mode: WorkingMode; pending?: boolean }>(IPC_REQUESTS.WORKING_MODE_SET, sessionId, mode)
   },
 
   window: {

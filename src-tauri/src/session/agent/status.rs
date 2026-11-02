@@ -48,6 +48,7 @@ impl SessionAgent {
         if let Some(pause) = super::pause::wire_value(state) {
             obj.insert("pause".to_string(), pause.into());
         }
+        state.working_mode.insert_wire(obj);
     }
 }
 
