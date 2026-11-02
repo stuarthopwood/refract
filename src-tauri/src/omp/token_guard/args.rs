@@ -11,10 +11,19 @@ fn warn(warnings: &mut Vec<String>, reason: String) {
 
 /// Regenerates the overlay and rules files in `dir` and returns the arguments for the files that
 /// were written, plus a warning for each one that was not.
-pub async fn launch_args(dir: &Path) -> (Vec<String>, Vec<String>) {
+pub async fn launch_args(dir: &Path, plan_mode: Option<bool>) -> (Vec<String>, Vec<String>) {
     let mut args = Vec::new();
     let mut warnings = Vec::new();
-    match overlay::write(dir, &values::load(dir).await).await {
+    let mut loaded = values::load(dir).await;
+    let written = match plan_mode {
+        // A per-Session working mode overrides the global setting through its own overlay file.
+        Some(plan) => {
+            loaded.insert("plan.defaultOnStartup".to_string(), plan.into());
+            overlay::write_plan_variant(dir, &loaded, plan).await
+        }
+        None => overlay::write(dir, &loaded).await,
+    };
+    match written {
         Ok(path) => {
             args.push("--config".to_string());
             args.push(path.to_string_lossy().into_owned());

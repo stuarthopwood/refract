@@ -64,6 +64,8 @@ pub struct OmpProcessOptions {
     pub omp_path: Option<PathBuf>,
     /// Appends `--no-session`, so omp does not persist the session (#362).
     pub no_session: bool,
+    /// Forces `plan.defaultOnStartup` for this process; `None` keeps the shared overlay (#433).
+    pub plan_mode: Option<bool>,
     pub ready_prompt_after_ms: u64,
     pub ready_ceiling_ms: u64,
 }
@@ -75,6 +77,7 @@ impl OmpProcessOptions {
             approval_mode,
             omp_path: None,
             no_session: false,
+            plan_mode: None,
             ready_prompt_after_ms: READY_PROMPT_AFTER_MS,
             ready_ceiling_ms: READY_CEILING_MS,
         }

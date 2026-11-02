@@ -20,7 +20,7 @@ use subagent_items::{
 };
 mod notice_prefixes;
 use notice_prefixes::{COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX};
-mod file_attachment_markers;
+pub mod file_attachment_markers;
 use file_attachment_markers::FileAttachmentRef;
 mod user_images;
 use user_images::ImageRef;
