@@ -83,23 +83,18 @@ pub(in crate::session) async fn ensure_loaded(agent: &SessionAgent) {
         return;
     }
     let stored = store::load(agent.session_id()).await;
-    let (mode, fresh) = match stored {
-        Some(mode) => (mode.persistable(), false),
-        None => (default_mode().await, true),
+    let mode = match stored {
+        Some(mode) => mode.persistable(),
+        None => default_mode().await,
     };
-    let applied = agent
+    agent
         .with_working_mode_state(|s| {
-            if s.loaded {
-                return false;
+            if !s.loaded {
+                s.loaded = true;
+                s.mode = mode;
             }
-            s.loaded = true;
-            s.mode = mode;
-            true
         })
         .await;
-    if applied && fresh {
-        store::save(agent.session_id(), mode).await;
-    }
 }
 
 pub(in crate::session) async fn is_away(agent: &SessionAgent) -> bool {
@@ -126,14 +121,17 @@ pub(in crate::session) async fn plan_for_launch(agent: &SessionAgent) -> bool {
 /// Appends the hidden Grill instruction; the transcript cuts it back off.
 pub(in crate::session) async fn decorate_prompt(agent: &SessionAgent, text: String) -> String {
     ensure_loaded(agent).await;
-    if agent.with_working_mode_state(|s| s.mode).await == WorkingMode::Grill {
+    let grill = agent.with_working_mode_state(|s| s.mode).await == WorkingMode::Grill;
+    if grill && !text.trim_start().starts_with('/') {
+        // A user-typed marker would hide the rest of their own message in the transcript.
+        let text = text.replace(HIDDEN_INSTRUCTION_OPEN, "\n\n");
         format!("{text}{HIDDEN_INSTRUCTION_OPEN}{GRILL_INSTRUCTION}")
     } else {
         text
     }
 }
 
-/// `session.setWorkingMode`: applies the mode, or queues a plan switch until the turn ends.
+/// `workingMode.set`: applies the mode, or queues a plan switch until the turn ends.
 pub async fn set_mode(agent: &SessionAgent, raw: &str) -> Result<Value, AgentError> {
     let target = WorkingMode::parse(raw).ok_or_else(|| {
         AgentError::new("invalid-argument", format!("unknown working mode: {raw}"))

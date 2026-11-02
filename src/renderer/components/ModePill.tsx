@@ -61,6 +61,7 @@ export function ModePill<T extends string>({ scope, noun, items, value, pendingL
           ))}
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
+      <span role="status" className="sr-only">{pendingLabel ?? ''}</span>
     </DropdownMenu>
   )
 }
