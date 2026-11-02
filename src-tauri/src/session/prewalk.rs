@@ -26,7 +26,9 @@ fn state_from_frame(frame_type: &str, frame: &Value) -> Option<&'static str> {
             let message = frame.get("message").and_then(Value::as_str)?;
             if message.contains("disarmed") {
                 Some("off")
-            } else if message.starts_with("Prewalk: armed") || message.starts_with("Prewalk: already armed") {
+            } else if message.starts_with("Prewalk: armed")
+                || message.starts_with("Prewalk: already armed")
+            {
                 Some("armed")
             } else {
                 // A handoff or any wording we have not verified: stop claiming "armed".
@@ -39,11 +41,15 @@ fn state_from_frame(frame_type: &str, frame: &Value) -> Option<&'static str> {
 
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
     if let Some(state) = state_from_frame(frame_type, frame) {
-        agent.events().emit_prewalk_update(agent.session_id(), state);
+        agent
+            .events()
+            .emit_prewalk_update(agent.session_id(), state);
     }
 }
 
 /// A fresh omp process has reported nothing yet.
 pub(super) async fn on_launch(agent: &SessionAgent) {
-    agent.events().emit_prewalk_update(agent.session_id(), "unknown");
+    agent
+        .events()
+        .emit_prewalk_update(agent.session_id(), "unknown");
 }

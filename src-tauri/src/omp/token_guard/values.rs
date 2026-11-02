@@ -41,7 +41,7 @@ const KEYS: &[(&str, Kind)] = &[
     ("todo.eager", Kind::Text),
     ("prewalk.enabled", Kind::Bool),
     ("plan.defaultOnStartup", Kind::Bool),
-    ("tools.artifactSpillThreshold", Kind::Int),, Kind::Int),
+    ("tools.artifactSpillThreshold", Kind::Int),
     ("tools.xdev", Kind::Bool),
 ];
 
