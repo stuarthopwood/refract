@@ -3,7 +3,7 @@ import type { KeyboardEvent } from 'react'
 import { XIcon } from 'lucide-react'
 import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
 import { IconButton } from '@/components/IconButton'
-import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
+import { TAB_LOOK_CLASS } from '@/components/ui/tabs'
 import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
@@ -222,11 +222,9 @@ function TabButton({ id, selected, sessionId, tabRef, onSelect, onKeyDown }: Tab
       aria-controls={selected ? `panel-content-${id}` : undefined}
       tabIndex={selected ? 0 : -1}
       className={cn(
-        'inline-flex h-6 min-w-15 shrink items-center gap-1 rounded-md px-2 pr-8 text-sm',
+        'inline-flex h-6 min-w-15 shrink items-center gap-1 px-2 pr-8 text-sm font-medium',
         INSET_FOCUS_OUTLINE_CLASS,
-        selected
-          ? cn('font-semibold', TAB_ACTIVE_UNDERLINE_CLASS)
-          : 'font-medium text-muted-foreground hover:bg-row-hover-bg hover:text-foreground'
+        TAB_LOOK_CLASS
       )}
       aria-label={countText ? accessibleLabel : undefined}
       onClick={onSelect}
