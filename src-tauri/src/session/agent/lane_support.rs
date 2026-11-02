@@ -163,6 +163,11 @@ impl SessionAgent {
         f(&mut state.working_mode, status, has_process)
     }
 
+    /// Whether an OMP process is currently recorded for the Session.
+    pub(in crate::session) async fn has_process(&self) -> bool {
+        self.state.lock().await.process.is_some()
+    }
+
     /// The Conversation file path, or `None` for a Session that has never sent a message.
     pub(in crate::session) async fn current_conversation_path(&self) -> Option<String> {
         self.registry

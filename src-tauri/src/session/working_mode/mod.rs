@@ -198,6 +198,14 @@ fn restart(agent: &SessionAgent) {
     let agent = agent.arc();
     tokio::spawn(async move {
         agent.shutdown().await;
+        // start() is a no-op while the old process is still recorded; its exit handler clears it asynchronously.
+        for _ in 0..100 {
+            if !agent.has_process().await {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         if let Err(err) = agent.start().await {
             log::warn!("working_mode: restart after plan switch failed: {err}");
         }

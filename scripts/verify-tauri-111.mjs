@@ -57,7 +57,11 @@ const ompLines = (file) => (existsSync(file) ? readFileSync(file, 'utf8').split(
 const responses = (file) => ompLines(file).filter((l) => l.includes('RECV') && l.includes('extension_ui_response'));
 
 async function waitMode(cdp, label, extra = '') {
-  await cdp.waitFor(`(${TRIGGER}?.getAttribute('aria-label') ?? '').startsWith(${JSON.stringify(label + ', working mode')})${extra}`, { timeoutMs: 20_000, label: `trigger shows ${label}` });
+  try {
+    await cdp.waitFor(`(${TRIGGER}?.getAttribute('aria-label') ?? '').startsWith(${JSON.stringify(label + ', working mode')})${extra}`, { timeoutMs: 20_000, label: `trigger shows ${label}` });
+  } catch (err) {
+    throw new Error(`${err.message}; trigger is "${await triggerName(cdp)}"`);
+  }
 }
 
 async function pickByClick(cdp, itemLabel) {
@@ -84,11 +88,13 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   const items = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="menuitemradio"]')).map((el) => ({ t: el.textContent.trim().slice(0, 14), svg: !!el.querySelector('svg') }))`);
   assert(items.length === 4 && items.every((i) => i.svg), `menu has four items, each with an icon: ${JSON.stringify(items)}`);
   await cdp.screenshot(path.join(SHOTS_DIR, '02-menu-open.png'));
+  await sleep(400);
   await pressKey(cdp, 40, 'ArrowDown', 'ArrowDown');
+  await sleep(300);
   await pressKey(cdp, 13, 'Enter', 'Enter');
   await waitMode(cdp, 'Plan mode');
   assert(true, 'keyboard ArrowDown + Enter selects Plan mode at idle');
-  await sleep(2500);
+  for (let i = 0; i < 40 && !ompLines(ompLog).some((l) => l.includes('argv=') && l.includes('plan-on')); i++) await sleep(500);
   const planLaunch = ompLines(ompLog).filter((l) => l.includes('argv=') && l.includes('plan-on'));
   assert(planLaunch.length > 0, 'the Session restarted with the plan-on overlay in its --config argv');
   await waitMode(cdp, 'Plan mode');
