@@ -5,7 +5,7 @@ import { SettingRow } from '@/components/settings/SettingRow'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
-import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { BrandWatermark } from '@/features/chat/BrandWatermark'
 import { useSettingsStore } from '@/state'
 import { ThemePicker } from './ThemePicker'
@@ -115,14 +115,12 @@ export function AppearanceSection() {
                 // Radix emits '' when the selected segment is clicked again; keep one selected.
                 if (value === 'plain' || value === 'playful') void setActivityText(value)
               }}
-              variant="outline"
               size="sm"
-              spacing={0}
               aria-labelledby="activity-text-label"
               aria-describedby="activity-text-description"
             >
-              <ToggleGroupItem value="plain" className={SELECTED_SEGMENT_CLASS}>Plain</ToggleGroupItem>
-              <ToggleGroupItem value="playful" className={SELECTED_SEGMENT_CLASS}>Playful</ToggleGroupItem>
+              <ToggleGroupItem value="plain">Plain</ToggleGroupItem>
+              <ToggleGroupItem value="playful">Playful</ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
           {/* Issue #1242 (FR-042): also lets the user stop the looping shimmer (WCAG 2.2.2). */}

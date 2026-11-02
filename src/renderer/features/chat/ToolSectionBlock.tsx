@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
-import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { CodeBlock, Markdown } from './Markdown'
 import { isLargeValue, type SectionView } from './toolViewRules'
 
@@ -92,21 +92,18 @@ function RenderableSection({ section }: { section: Section }) {
           onValueChange={(value) => {
             if (isSectionView(value) && !blocked) setView(value)
           }}
-          variant="outline"
           size="sm"
-          spacing={0}
           aria-label={`${section.label} view`}
         >
           <ToggleGroupItem
             ref={renderedRef}
             value="rendered"
-            className={SELECTED_SEGMENT_CLASS}
             aria-disabled={blocked || undefined}
             aria-describedby={blocked ? noteId : undefined}
           >
             Rendered
           </ToggleGroupItem>
-          <ToggleGroupItem value="source" className={SELECTED_SEGMENT_CLASS}>
+          <ToggleGroupItem value="source">
             Source
           </ToggleGroupItem>
         </ToggleGroup>

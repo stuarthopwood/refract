@@ -1,14 +1,9 @@
 import { useLayoutEffect, useRef } from 'react'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
-import { cn } from '@/lib/utils'
 
 const TABS_FADE_PX = 24
 
-const FILTER_TAB_TRIGGER_CLASS = cn(
-  'flex-none rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-row-hover-bg hover:text-foreground focus-visible:outline-offset-[-2px] focus-visible:ring-inset',
-  TAB_ACTIVE_UNDERLINE_CLASS
-)
+const FILTER_TAB_TRIGGER_CLASS = 'focus-visible:outline-offset-[-2px] focus-visible:ring-inset'
 
 export interface FilterTabsProps<T extends string> {
   value: T
@@ -65,7 +60,7 @@ export function FilterTabs<T extends string>({ value, onValueChange, tabs, revea
         ref={tabsWrapRef}
         className="relative min-w-0 scroll-px-6 overflow-x-auto pr-tabs-fade [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
-        <TabsList aria-label={ariaLabel} className="h-8 w-max shrink-0 justify-start gap-1 rounded-none bg-transparent p-0">
+        <TabsList aria-label={ariaLabel} className="w-max shrink-0">
           {tabs.map((tab) => (
             // No TabsContent is rendered, so Radix's aria-controls would point at nothing.
             <TabsTrigger key={tab.value} value={tab.value} aria-controls={undefined} className={FILTER_TAB_TRIGGER_CLASS}>

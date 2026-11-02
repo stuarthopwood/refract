@@ -1,6 +1,6 @@
 // Issue #1300: Settings > Appearance > Chat row spacing. The gap between consecutive activity rows
 // in the transcript; applies live, no Save step. The shared segmented `ToggleGroup`, as Activity text.
-import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { useSettingsStore } from '@/state'
@@ -31,14 +31,12 @@ export function ChatRowSpacingGroup() {
             const next = OPTIONS.find((option) => option.value === value)
             if (next) void setChatRowDensity(next.value)
           }}
-          variant="outline"
           size="sm"
-          spacing={0}
           aria-labelledby="chat-row-density-label"
           aria-describedby="chat-row-density-description"
         >
           {OPTIONS.map((option) => (
-            <ToggleGroupItem key={option.value} value={option.value} className={SELECTED_SEGMENT_CLASS}>
+            <ToggleGroupItem key={option.value} value={option.value}>
               {option.label}
             </ToggleGroupItem>
           ))}

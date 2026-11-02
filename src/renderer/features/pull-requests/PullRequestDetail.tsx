@@ -5,7 +5,6 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
@@ -27,12 +26,6 @@ import { MergeDialog } from './MergeDialog'
 import { StatePill } from './StatePill'
 import { RefreshButton } from './RefreshButton'
 import { ReviewConsensus } from './ReviewConsensus'
-
-// The Overview and Changes triggers share the one selected-tab treatment (ui/tab-classes.ts).
-const PR_DETAIL_TAB_TRIGGER_CLASS = cn(
-  'rounded-md px-2 py-1 text-muted-foreground shadow-none hover:bg-row-hover-bg hover:text-foreground',
-  TAB_ACTIVE_UNDERLINE_CLASS
-)
 
 // Re-calls `detail()` every 15s while `checkState === 'pending'`; `list()` is never polled (4.8% of the rate-limit budget, docs/spike/FINDINGS.md).
 const POLL_INTERVAL_MS = 15_000
@@ -276,11 +269,9 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
         )}
       </div>
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <TabsList className="mx-2 mt-2 h-auto w-fit shrink-0 gap-4 rounded-none bg-transparent p-0">
-          <TabsTrigger value="overview" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
-            Overview
-          </TabsTrigger>
-          <TabsTrigger value="changes" className={PR_DETAIL_TAB_TRIGGER_CLASS}>
+        <TabsList className="mx-2 mt-2 h-auto shrink-0 gap-4">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="changes">
             Changes ({detail.changedFilesCount} file{detail.changedFilesCount === 1 ? '' : 's'})
           </TabsTrigger>
         </TabsList>
