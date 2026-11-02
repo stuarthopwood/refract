@@ -20,7 +20,8 @@ const MENU_ITEM = (text) => `Array.from(document.querySelectorAll('[role="menuit
 
 async function openKebab(cdp, repoName) {
   await cdp.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
-  await cdp.click(`Array.from(document.querySelectorAll('[aria-label^="More actions for"]')).find((el) => !el.getAttribute('aria-label').includes(${JSON.stringify(repoName)}))`);
+  // The row kebab is hover-revealed; the context menu shares its action list.
+  await cdp.evaluate(`(() => { const k = Array.from(document.querySelectorAll('[aria-label^="More actions for"]')).find((el) => !el.getAttribute('aria-label').includes(${JSON.stringify(repoName)})); const r = k.getBoundingClientRect(); k.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.x - 40, clientY: r.y + 5, button: 2 })); })()`);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Session menu open' });
 }
 
