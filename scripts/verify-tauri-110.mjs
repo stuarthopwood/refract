@@ -19,7 +19,8 @@ const SHOTS_DIR = process.env.REFRACT_110_SHOTS_DIR || path.join(tmpdir(), `refr
 const MENU_ITEM = (text) => `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.includes(${JSON.stringify(text)}))`;
 
 async function openKebab(cdp, repoName) {
-  await cdp.click(`document.querySelector('[aria-label^="More actions for"]')`);
+  await cdp.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`);
+  await cdp.click(`Array.from(document.querySelectorAll('[aria-label^="More actions for"]')).find((el) => !el.getAttribute('aria-label').includes(${JSON.stringify(repoName)}))`);
   await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'Session menu open' });
 }
 
