@@ -24,6 +24,15 @@ A per-Session single-choice working-mode menu beside the Approval mode pill: Int
    - Away never starts a turn.
 5. Defaults: new Session starts Interactive, or Plan when the `plan.defaultOnStartup` setting (`useStartInPlanMode`) is on. The mode persists per Session in `working-modes.json`; Away is never persisted, so it reads back as Interactive after a restart or crash.
 
+## Known gaps
+
+- Plan proposal/approval over RPC is unverified (needs a billed run); no review pane is built.
+- The denial reason is sent as a best-effort steer prompt; OMP may ignore it.
+- Grill is not applied to queued follow-ups, only prompts sent while idle.
+- Question dialogs (non-ask, non-approval) stay pending in Away.
+- `REFRACT_AWAY_APPROVAL_TIMEOUT_MS` shortens the 5-minute denial timer in debug builds only (live check).
+- The restart for a Plan switch may briefly flash a stopped state.
+
 ## Out of scope
 
 Goals (#479), prewalk (#695), Approval mode values, a plan review pane.
