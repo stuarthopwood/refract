@@ -3,7 +3,7 @@
 // typography store writes the CSS variables) and are saved after a short pause; no Save step.
 import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
-import { SELECTED_SEGMENT_CLASS, ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
@@ -84,13 +84,11 @@ export function TextSizeGroup() {
               const scale = percent / 100
               setAll({ appScale: scale, chatScale: scale, codeScale: scale })
             }}
-            variant="outline"
             size="sm"
-            spacing={0}
             aria-labelledby="text-size-presets-label"
           >
             {PRESETS.map((preset) => (
-              <ToggleGroupItem key={preset.value} value={preset.value} className={SELECTED_SEGMENT_CLASS}>
+              <ToggleGroupItem key={preset.value} value={preset.value}>
                 {preset.label} · {preset.value}%
               </ToggleGroupItem>
             ))}

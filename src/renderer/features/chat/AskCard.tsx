@@ -9,7 +9,6 @@ import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS,
 import { Input } from '@/components/ui/input'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { TAB_ACTIVE_UNDERLINE_CLASS } from '@/components/ui/tab-classes'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
@@ -234,7 +233,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
         {questions.length > 1 ? (
           <Tabs value={activeId} onValueChange={handleTabChange} activationMode="automatic">
             <CardHeader>
-              <TabsList key={tabEpoch} aria-label="Questions" className="h-auto w-full flex-wrap justify-start bg-transparent p-0">
+              <TabsList key={tabEpoch} aria-label="Questions" className="h-auto w-full flex-wrap">
                 {questions.map((question, index) => {
                   const answered = isQuestionComplete(question, byQuestionId[question.id] ?? EMPTY_ASK_QUESTION_DRAFT)
                   const label = question.header ?? `Question ${index + 1}`
@@ -244,10 +243,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
                         <TabsTrigger
                           value={question.id}
                           aria-describedby={undefined}
-                          className={cn(
-                            'max-w-40 flex-none gap-1 rounded-none text-muted-foreground shadow-none',
-                            TAB_ACTIVE_UNDERLINE_CLASS
-                          )}
+                          className="max-w-40 gap-1"
                         >
                           <span className="min-w-0 truncate">{label}</span>
                           {answered && (

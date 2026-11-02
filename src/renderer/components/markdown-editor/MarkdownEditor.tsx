@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { Markdown } from '@/features/chat/Markdown'
 import { ComposerBox, ComposerField, ComposerFooter, ComposerTextarea } from '@/components/ComposerBox'
-import { ToggleGroup, ToggleGroupItem, SELECTED_SEGMENT_CLASS } from '@/components/ui/toggle-group'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import { MARKDOWN_ACTIONS, MarkdownToolbar, type MarkdownAction } from './MarkdownToolbar'
 import type { EditState } from './markdownFormat'
@@ -124,10 +124,10 @@ export function MarkdownEditor({
             if (next === 'write' || next === 'preview') setMode(next)
           }}
         >
-          <ToggleGroupItem value="write" className={SELECTED_SEGMENT_CLASS}>
+          <ToggleGroupItem value="write">
             Write
           </ToggleGroupItem>
-          <ToggleGroupItem value="preview" className={SELECTED_SEGMENT_CLASS}>
+          <ToggleGroupItem value="preview">
             Preview
           </ToggleGroupItem>
         </ToggleGroup>
