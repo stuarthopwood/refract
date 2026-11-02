@@ -8,6 +8,7 @@ pub mod last_user_message;
 pub mod manager;
 pub mod model;
 pub mod pending_selection;
+pub mod prewalk;
 pub mod readout;
 mod readout_head_watch;
 pub mod saved_history;

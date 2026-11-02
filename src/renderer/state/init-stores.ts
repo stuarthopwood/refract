@@ -20,6 +20,7 @@ import { useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useAdvisorStore } from './advisor-store'
+import { usePrewalkStore } from './prewalk-store'
 import { useSessionHealthStore } from './session-health-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
@@ -125,6 +126,9 @@ export function initStores(): void {
   })
   window.refract.onAdvisorUpdate(({ sessionId, advisorOn }) => {
     useAdvisorStore.getState().applyAdvisorOn(sessionId, advisorOn)
+  })
+  window.refract.onPrewalkUpdate(({ sessionId, state }) => {
+    usePrewalkStore.getState().apply(sessionId, state)
   })
   window.refract.onSessionHealth((health) => {
     useSessionHealthStore.getState().apply(health)

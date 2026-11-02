@@ -21,7 +21,7 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
         "extended-context" => Some(&["on", "off", "status"]),
         // Listed without a probe, verified by a live check instead (#917).
         "advisor" => Some(&["on", "off", "status"]),
-        "prewalk" => Some(&["restart"]),
+        "prewalk" => Some(&["restart", "off"]),
         "effort" => Some(&[
             "off", "minimal", "low", "medium", "high", "xhigh", "max", "auto",
         ]),

@@ -37,6 +37,10 @@ const KEYS: &[(&str, Kind)] = &[
     ("grep.contextBefore", Kind::Int),
     ("grep.contextAfter", Kind::Int),
     ("read.defaultLimit", Kind::Int),
+    ("read.summarize.enabled", Kind::Bool),
+    ("todo.eager", Kind::Text),
+    ("prewalk.enabled", Kind::Bool),
+    ("plan.defaultOnStartup", Kind::Bool),
     ("tools.artifactSpillThreshold", Kind::Int),
     ("tools.xdev", Kind::Bool),
 ];
@@ -49,6 +53,9 @@ struct Stored {
     version: u32,
     #[serde(default)]
     overrides: BTreeMap<String, Value>,
+    /// Set once the old 200-line `read.defaultLimit` default has been migrated to 1000 (#1545).
+    #[serde(default)]
+    read_limit_migrated: bool,
 }
 
 /// Serialises read-modify-write on the store file (Settings edits and launch reads).
@@ -82,7 +89,11 @@ pub fn default_for(key: &str) -> Option<Value> {
         "modelRoles.advisor" => json!("github-copilot/gemini-4-argon:auto"),
         "grep.contextBefore" => json!(0),
         "grep.contextAfter" => json!(1),
-        "read.defaultLimit" => json!(200),
+        "read.defaultLimit" => json!(1000),
+        "read.summarize.enabled" => json!(false),
+        "todo.eager" => json!("default"),
+        "prewalk.enabled" => json!(false),
+        "plan.defaultOnStartup" => json!(false),
         "tools.artifactSpillThreshold" => json!(30),
         "tools.xdev" => json!(true),
         _ => return None,
@@ -99,6 +110,7 @@ const MAX_TEXT_CHARS: usize = 200;
 const MAX_ENTRIES: usize = 64;
 const METHODS: &[&str] = &["remote", "snapcompact", "shake", "handoff", "soft"];
 const REVIEW_MODES: &[&str] = &["agent-end", "turn"];
+const TODO_EAGER_MODES: &[&str] = &["default", "preferred", "always"];
 
 /// Upper bound for a count key (thresholds and line/size counts share the token ceiling).
 fn max_count(key: &str) -> u64 {
@@ -132,6 +144,7 @@ pub fn validate(key: &str, value: &Value) -> Result<(), String> {
         (Kind::Int, _) => is_count(value, max),
         (Kind::Bool, _) => value.is_boolean(),
         (Kind::Text, "advisor.reviewMode") => is_member(value, REVIEW_MODES),
+        (Kind::Text, "todo.eager") => is_member(value, TODO_EAGER_MODES),
         (Kind::Text, _) => is_text(value),
         (Kind::TextList, _) => value.as_array().is_some_and(|items| {
             !items.is_empty()
@@ -157,9 +170,17 @@ fn store_path(dir: &Path) -> PathBuf {
 }
 
 async fn read_stored(dir: &Path) -> Stored {
-    read_json_file(&store_path(dir), Stored::default)
+    let mut stored: Stored = read_json_file(&store_path(dir), Stored::default)
         .await
-        .unwrap_or_default()
+        .unwrap_or_default();
+    // Persisted with the next write; until then this runs again with the same outcome.
+    if !stored.read_limit_migrated {
+        if stored.overrides.get("read.defaultLimit") == Some(&json!(200)) {
+            stored.overrides.remove("read.defaultLimit");
+        }
+        stored.read_limit_migrated = true;
+    }
+    stored
 }
 
 fn effective(stored: &Stored) -> ValueMap {

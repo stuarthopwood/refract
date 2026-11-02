@@ -23,6 +23,7 @@ pub const TOKEN_GUARD_CALLS: &str = "token-guard:calls";
 pub const ADVISOR_ROSTER_DETECTED: &str = "advisor-roster:detected";
 pub const READOUT_UPDATE: &str = "readout:update";
 pub const ADVISOR_UPDATE: &str = "advisor:update";
+pub const PREWALK_UPDATE: &str = "prewalk:update";
 pub const SESSION_HEALTH: &str = "session:health";
 pub const SUBAGENTS_UPDATE: &str = "subagents:update";
 pub const SUBAGENT_PATCH: &str = "subagent:patch";
@@ -211,6 +212,14 @@ impl EventSink {
         self.send(
             ADVISOR_UPDATE,
             serde_json::json!({ "sessionId": session_id, "advisorOn": advisor_on }),
+        );
+    }
+
+    /// `prewalk:update`: `armed`, `off` or `unknown`, only ever from OMP's own prewalk replies.
+    pub fn emit_prewalk_update(&self, session_id: &str, state: &str) {
+        self.send(
+            PREWALK_UPDATE,
+            serde_json::json!({ "sessionId": session_id, "state": state }),
         );
     }
 
