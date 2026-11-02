@@ -218,6 +218,9 @@ pub(in crate::session) async fn on_turn_settled(agent: &SessionAgent) {
         .with_working_mode_state(|s| {
             let target = s.pending.take()?;
             s.mode = target;
+            if target == WorkingMode::Away {
+                s.away_epoch += 1;
+            }
             Some((target, (target == WorkingMode::Plan) != s.launched_plan))
         })
         .await;
@@ -228,6 +231,9 @@ pub(in crate::session) async fn on_turn_settled(agent: &SessionAgent) {
     agent.emit_status().await;
     if needs_restart {
         restart(agent);
+    }
+    if target == WorkingMode::Away {
+        away::sweep(agent).await;
     }
 }
 

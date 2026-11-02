@@ -14,7 +14,7 @@ A per-Session single-choice working-mode menu beside the Approval mode pill: Int
 ## Requirements
 
 1. Menu: keyboard-operable trigger whose accessible name states the current mode; icon plus text label per mode.
-2. Plan: switching restarts the Session at idle with `plan.defaultOnStartup` forced via a variant overlay file. Mid-turn the change is pending and shows "Switches when the turn ends". Leaving Plan works the same way.
+2. Plan: switching restarts the Session at idle with `plan.defaultOnStartup` forced via a variant overlay file. Mid-turn the change is pending and the pill shows "{Mode} after this turn" (same wording as the Approval pill, naming the target). Leaving Plan works the same way.
 3. Grill: while on, each prompt gets a hidden instruction (interview one question at a time with a recommended answer, against CONTEXT.md and docs/adr, no code edits until told). No restart. The instruction is not shown in the transcript.
 4. Away (policy lives in `session/working_mode/away.rs`, reusable by #479):
    - `ask` requests are answered at once with the recommended option; with none, the reply is "The user is away. Choose the best option yourself, state your choice, and continue."

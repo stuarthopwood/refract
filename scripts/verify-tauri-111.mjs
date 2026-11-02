@@ -93,7 +93,7 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   await sleep(300);
   await pressKey(cdp, 13, 'Enter', 'Enter');
   await waitMode(cdp, 'Plan mode');
-  assert(true, 'keyboard ArrowDown + Enter selects Plan mode at idle');
+  assert((await triggerName(cdp)).startsWith('Plan mode'), 'keyboard ArrowDown + Enter selects Plan mode at idle');
   for (let i = 0; i < 40 && !ompLines(ompLog).some((l) => l.includes('argv=') && l.includes('plan-on')); i++) await sleep(500);
   const planLaunch = ompLines(ompLog).filter((l) => l.includes('argv=') && l.includes('plan-on'));
   assert(planLaunch.length > 0, 'the Session restarted with the plan-on overlay in its --config argv');
@@ -119,8 +119,8 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   assert(!!askResp && askResp.includes('SQLite'), `Away answered the ask with the recommended option: ${askResp}`);
   await cdp.screenshot(path.join(SHOTS_DIR, '06-away-answered.png'));
   await cdp.waitFor(`document.body.innerText.includes('Not approved: the user is away')`, { timeoutMs: AWAY_TIMEOUT_MS + 25_000, label: 'approval denied after the shortened timeout' });
-  const denial = responses(ompLog).find((l) => l.includes('"approved":false') || l.includes('Deny') || l.includes('"cancelled"'));
-  assert(!!denial && !responses(ompLog).some((l) => l.includes('Approve"')), `approval was denied, never approved: ${denial}`);
+  const denial = responses(ompLog).find((l) => l.includes('"id":"appr-1"') && l.includes('"value":"Deny"'));
+  assert(!!denial && !responses(ompLog).some((l) => l.includes('Approve"')), `approval appr-1 was denied, never approved: ${denial}`);
   await cdp.waitFor(`document.body.innerText.includes('away111done')`, { timeoutMs: 20_000, label: 'turn finished' });
   await cdp.screenshot(path.join(SHOTS_DIR, '07-away-denied.png'));
 
@@ -128,7 +128,8 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   await waitMode(cdp, 'Interactive');
   await cdp.waitFor(`document.body.innerText.includes('While you were away')`, { timeoutMs: 15_000, label: 'summary card on leaving Away' });
   const text = await transcriptText(cdp);
-  assert(text.includes('Which database?') && text.includes('automatic'), 'summary lists the automatic actions with the original question');
+  const afterSummary = text.slice(text.indexOf('While you were away'));
+  assert(afterSummary.includes('Which database?'), 'summary card lists the automatic actions with the original question');
   await cdp.screenshot(path.join(SHOTS_DIR, '08-summary.png'));
   await pressEscape(cdp);
 }
