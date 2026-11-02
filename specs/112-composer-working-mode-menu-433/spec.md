@@ -1,4 +1,4 @@
-# Spec 111: Composer working-mode menu (#433)
+# Spec 112: Composer working-mode menu (#433)
 
 ## Summary
 

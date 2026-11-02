@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live CDP check for the composer working-mode menu (#433): menu keyboard use, per-mode state, Away auto-answer and
 // approval denial (shortened via the debug-only REFRACT_AWAY_APPROVAL_TIMEOUT_MS), the summary card and the plan switch.
-// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_111_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-111.mjs
+// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_112_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-112.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -16,7 +16,7 @@ import { addRepository, createSessionViaQuickCreate, pressKey, pressEscape } fro
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.REFRACT_111_SHOTS_DIR || path.join(tmpdir(), 'refract-111-shots');
+const SHOTS_DIR = process.env.REFRACT_112_SHOTS_DIR || path.join(tmpdir(), 'refract-112-shots');
 mkdirSync(SHOTS_DIR, { recursive: true });
 const AWAY_TIMEOUT_MS = 3000;
 
@@ -40,7 +40,7 @@ function buildShims(dir) {
     path.join(dir, 'gh-logic.cjs'),
     `const a = process.argv.slice(2);
 if (a[0] === 'auth' && a[1] === 'status') { process.stdout.write(JSON.stringify({ hosts: { 'github.com': [{ host: 'github.com', login: 'octocat', active: true, state: 'success' }] } })); process.exit(0); }
-if (a[0] === 'auth' && a[1] === 'token') { process.stdout.write('fake-token-111\\n'); process.exit(0); }
+if (a[0] === 'auth' && a[1] === 'token') { process.stdout.write('fake-token-112\\n'); process.exit(0); }
 process.exit(1);
 `
   );
@@ -142,14 +142,14 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
 
 async function main() {
   const head = gitHead(REPO_ROOT);
-  log(`verify-tauri-111: head ${head}, shots ${SHOTS_DIR}`);
+  log(`verify-tauri-112: head ${head}, shots ${SHOTS_DIR}`);
   let shimDir, dataDir, importDir, repo, exeDir, child, cdp;
   try {
-    shimDir = mkdtempSync(path.join(tmpdir(), 'refract-111-shim-'));
-    dataDir = mkdtempSync(path.join(tmpdir(), 'refract-111-data-'));
-    importDir = mkdtempSync(path.join(tmpdir(), 'refract-111-import-'));
-    exeDir = mkdtempSync(path.join(tmpdir(), 'refract-111-exe-'));
-    repo = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-111-repo-')), 'A');
+    shimDir = mkdtempSync(path.join(tmpdir(), 'refract-112-shim-'));
+    dataDir = mkdtempSync(path.join(tmpdir(), 'refract-112-data-'));
+    importDir = mkdtempSync(path.join(tmpdir(), 'refract-112-import-'));
+    exeDir = mkdtempSync(path.join(tmpdir(), 'refract-112-exe-'));
+    repo = makeScratchRepo(mkdtempSync(path.join(tmpdir(), 'refract-112-repo-')), 'A');
     buildShims(shimDir);
     const launcherExe = buildLauncher(shimDir);
     const src = path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
@@ -169,7 +169,7 @@ async function main() {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_DEBUG_LOG: ompLog,
-        REFRACT_FAKE_OMP_SCENARIO: 'away-111',
+        REFRACT_FAKE_OMP_SCENARIO: 'away-112',
         REFRACT_AWAY_APPROVAL_TIMEOUT_MS: String(AWAY_TIMEOUT_MS)
       }
     });
@@ -178,7 +178,7 @@ async function main() {
     if (!isTargetOwningPort(port, launched.targetPid)) throw new Error('CDP target is not owned by the launched process');
     log(`app pid ${launched.targetPid}, port ${port}, data dir ${dataDir}`);
     await runChecks(cdp, { repo, repoName: path.basename(repo), ompLog });
-    log(`verify-tauri-111: ALL PASS (${passed} checks) at head ${head}`);
+    log(`verify-tauri-112: ALL PASS (${passed} checks) at head ${head}`);
   } finally {
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, dirty: computeDirty(REPO_ROOT), passed, lines: REPORT }, null, 2));
     cdp?.close();
@@ -188,7 +188,7 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('verify-tauri-111: FAIL');
+  console.error('verify-tauri-112: FAIL');
   console.error(err);
   process.exitCode = 1;
 });
