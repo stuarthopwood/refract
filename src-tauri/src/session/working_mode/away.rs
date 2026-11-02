@@ -112,20 +112,25 @@ pub(in crate::session) async fn on_request(agent: &SessionAgent, request: Pendin
             target,
             ..
         } => watch_approval(agent, request_id, format!("{tool} {target}")).await,
-        PendingRequest::Question { request_id, title, .. } => {
-            decline_question(agent, request_id, title).await
-        }
+        PendingRequest::Question {
+            request_id,
+            title,
+            input_kind,
+            ..
+        } => answer_question(agent, request_id, title, input_kind == "text").await,
     }
 }
 
-// select/input/confirm dialogs carry no recommendation and may grant something, so Away cancels them.
-async fn decline_question(agent: &SessionAgent, request_id: String, title: String) {
-    match agent
-        .answer_request(request_id, json!({ "cancelled": true }))
-        .await
-    {
-        Ok(()) => record(agent, Kind::Declined, title, QUESTION_DECLINED.to_string()).await,
-        Err(err) => log::warn!("away: could not cancel question: {err}"),
+// Free-text dialogs get the away reply; select/confirm may grant something, so they are cancelled, never picked.
+async fn answer_question(agent: &SessionAgent, request_id: String, title: String, text: bool) {
+    let (answer, kind, outcome) = if text {
+        (json!({ "value": ASK_FALLBACK }), Kind::Answered, "the away reply")
+    } else {
+        (json!({ "cancelled": true }), Kind::Declined, QUESTION_DECLINED)
+    };
+    match agent.answer_request(request_id, answer).await {
+        Ok(()) => record(agent, kind, title, outcome.to_string()).await,
+        Err(err) => log::warn!("away: could not answer question: {err}"),
     }
 }
 
