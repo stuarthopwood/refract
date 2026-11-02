@@ -103,7 +103,7 @@ async function main() {
     else {
       const overlay = readFileSync(cfg, 'utf8');
       findings.push(`overlay passed to omp (${cfg}):\n${overlay}`);
-      for (const needle of [/defaultOnStartup:\s*false/, /prewalk:[\s\S]*enabled:\s*false/, /auto:\s*"?off"?/, /defaultLimit:\s*1000/, /todo:[\s\S]*eager:\s*"?default"?/, /summarize:[\s\S]*enabled:\s*false/]) {
+      for (const needle of [/defaultOnStartup:\s*false/, /\nprewalk:\n(?:  .*\n)*?  enabled: false/, /\nprewalk:\n(?:  .*\n)*?  auto: "off"/, /\nread:\n(?:  .*\n)*?  defaultLimit: 1000/, /\ntodo:\n  eager: "default"/, /\nread:\n(?:  .*\n)*?  summarize:\n    enabled: false/]) {
         if (!needle.test(overlay)) failures.push(`overlay missing ${needle}`);
       }
     }

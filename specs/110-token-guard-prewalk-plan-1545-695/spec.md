@@ -1,6 +1,6 @@
 # Spec 110: Token guard defaults, prewalk and plan mode off (issues #1545, #695)
 
-Status: in progress. Grill outcomes: the decision blocks at the top of #1545 and #695 (Stuart, 2026-11-02). Closes #1545 and #695. Specify route hand-authored (no slash prompts in this lane); clarify, plan and analyze are folded into the decisions below.
+Status: gate passed, awaiting merge. Grill outcomes: the decision blocks at the top of #1545 and #695 (Stuart, 2026-11-02). Closes #1545 and #695. Specify route hand-authored (no slash prompts in this lane); clarify, plan and analyze are folded into the decisions below.
 
 ## Requirements
 
