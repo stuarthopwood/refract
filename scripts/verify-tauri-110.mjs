@@ -75,7 +75,7 @@ async function main() {
     await cdp.evaluate(`Array.from(document.querySelectorAll('*')).find((el) => el.children.length === 0 && el.textContent.trim() === 'Start in plan mode')?.scrollIntoView()`);
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, '110-advanced-session-start.png'));
-    await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
+    await cdp.evaluate(`document.querySelector('[aria-label="Back to chat"]').click()`);
     await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings closed' });
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, '110-after-back.png'));
