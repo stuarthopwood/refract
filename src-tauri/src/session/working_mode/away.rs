@@ -124,9 +124,17 @@ pub(in crate::session) async fn on_request(agent: &SessionAgent, request: Pendin
 // Free-text dialogs get the away reply; select/confirm may grant something, so they are cancelled, never picked.
 async fn answer_question(agent: &SessionAgent, request_id: String, title: String, text: bool) {
     let (answer, kind, outcome) = if text {
-        (json!({ "value": ASK_FALLBACK }), Kind::Answered, "the away reply")
+        (
+            json!({ "value": ASK_FALLBACK }),
+            Kind::Answered,
+            "the away reply",
+        )
     } else {
-        (json!({ "cancelled": true }), Kind::Declined, QUESTION_DECLINED)
+        (
+            json!({ "cancelled": true }),
+            Kind::Declined,
+            QUESTION_DECLINED,
+        )
     };
     match agent.answer_request(request_id, answer).await {
         Ok(()) => record(agent, kind, title, outcome.to_string()).await,
