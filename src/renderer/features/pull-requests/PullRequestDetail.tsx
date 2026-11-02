@@ -270,9 +270,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
       </div>
       <Tabs defaultValue="overview" className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <TabsList className="mx-2 mt-2 h-auto shrink-0 gap-4">
-                  <TabsTrigger value="overview">
-            Overview
-          </TabsTrigger>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="changes">
             Changes ({detail.changedFilesCount} file{detail.changedFilesCount === 1 ? '' : 's'})
           </TabsTrigger>

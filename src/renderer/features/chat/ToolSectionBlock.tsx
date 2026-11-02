@@ -98,7 +98,6 @@ function RenderableSection({ section }: { section: Section }) {
           <ToggleGroupItem
             ref={renderedRef}
             value="rendered"
-           
             aria-disabled={blocked || undefined}
             aria-describedby={blocked ? noteId : undefined}
           >
