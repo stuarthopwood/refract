@@ -57,6 +57,8 @@ async function main() {
     if (!isTargetOwningPort(port, launched.targetPid)) throw new Error('CDP target is not owned by the launched process');
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 90_000, label: 'Readiness green' });
 
+    const repoName = path.basename(dirs.repo);
+    await addRepository(cdp, dirs.repo);
     await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
     await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
     await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Advanced')`);
@@ -73,8 +75,6 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '110-advanced-session-start.png'));
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
 
-    const repoName = path.basename(dirs.repo);
-    await addRepository(cdp, dirs.repo);
     await createSessionViaQuickCreate(cdp, repoName);
     await latestSessionIdAndName(cdp, repoName, []);
 
