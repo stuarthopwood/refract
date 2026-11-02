@@ -8,7 +8,7 @@ export const SUPPORTED_OMP_COMMANDS: Readonly<Record<string, readonly string[]>>
   slow: ['on', 'off', 'status'],
   'extended-context': ['on', 'off', 'status'],
   advisor: ['on', 'off', 'status'],
-  prewalk: ['restart'],
+  prewalk: ['restart', 'off'],
   effort: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'auto'],
   dump: ['all'],
   todo: ['expand', 'collapse', 'append', 'start', 'done', 'rm'],

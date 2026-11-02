@@ -41,7 +41,8 @@ export type TokenGuardGroup =
   | 'Subagents'
   | 'Advisor'
   | 'Tool output'
-  | 'Learning';
+  | 'Session start'
+  | 'Learning'
 
 export interface TokenGuardOption {
   value: string;
@@ -69,8 +70,9 @@ export const TOKEN_GUARD_GROUPS: readonly TokenGuardGroup[] = [
   'Subagents',
   'Advisor',
   'Tool output',
+  'Session start',
   'Learning'
-];
+]
 
 /** The compaction methods OMP knows, in display order for methods not yet in the saved order. */
 export const COMPACTION_METHODS: readonly TokenGuardOption[] = [
@@ -205,6 +207,27 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     description: 'Lines returned when the agent reads a file without asking for a range.'
   },
   {
+    key: 'read.summarize.enabled',
+    label: 'Summarise files on read',
+    kind: 'toggle',
+    group: 'Tool output',
+    description:
+      'Return a structural outline instead of the file body when the agent reads a file without a range. Off means the agent sees the code in one read, which saves follow-up model calls.'
+  },
+  {
+    key: 'todo.eager',
+    label: 'Automatic todo lists',
+    kind: 'enum',
+    group: 'Tool output',
+    options: [
+      { value: 'default', label: 'Default' },
+      { value: 'preferred', label: 'Preferred' },
+      { value: 'always', label: 'Always' }
+    ],
+    description:
+      'How hard the agent is pushed to write a todo list after your first message. Stronger settings add model calls for creating and ticking off the list.'
+  },
+  {
     key: 'tools.artifactSpillThreshold',
     label: 'Tool output spill threshold',
     kind: 'count',
@@ -219,6 +242,21 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     group: 'Tool output',
     description:
       'Load rarely used tools on demand instead of sending their definitions with every request. Saves tokens.'
+  },
+  {
+    key: 'prewalk.enabled',
+    label: 'Start Sessions with prewalk',
+    kind: 'toggle',
+    group: 'Session start',
+    description:
+      'Switch to a cheaper model at the first file edit. When off, prewalk also stops judging each new task. You can still arm it for one Session from its menu.'
+  },
+  {
+    key: 'plan.defaultOnStartup',
+    label: 'Start in plan mode',
+    kind: 'toggle',
+    group: 'Session start',
+    description: 'New Sessions begin in plan mode: the agent plans and asks before it changes files.'
   },
   {
     key: 'autolearn.autoContinue',

@@ -465,6 +465,7 @@ const refract: RefractApi = {
   onSubagentsUpdate: (handler) =>
     on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),
   onAdvisorUpdate: (handler) => on<{ sessionId: string; advisorOn: boolean }>(IPC_EVENTS.ADVISOR_UPDATE, handler),
+  onPrewalkUpdate: (handler) => on<{ sessionId: string; state: 'armed' | 'off' | 'unknown' }>(IPC_EVENTS.PREWALK_UPDATE, handler),
   onSessionHealth: (handler) => on<{ sessionId: string; rpcSlowMs: number | null; agentMemoryBytes: number | null }>(IPC_EVENTS.SESSION_HEALTH, handler),
   onSubagentPatch: (handler) =>
     on<{ sessionId: string; subagentId: string; ops: TranscriptOp[] }>(IPC_EVENTS.SUBAGENT_PATCH, handler),

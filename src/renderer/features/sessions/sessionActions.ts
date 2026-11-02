@@ -5,6 +5,7 @@ import {
   CopyIcon,
   EyeIcon,
   EyeOffIcon,
+  FootprintsIcon,
   PauseIcon,
   PencilIcon,
   PlayIcon,
@@ -36,6 +37,8 @@ export interface SessionRowActionHandlers {
   onTogglePause(): void
   onDelete(): void
   onNewSession?(): void
+  /** Present only where the menu can drive OMP; `state` is OMP's last report. */
+  prewalk?: { state: 'armed' | 'off' | 'unknown'; onToggle(): void }
 }
 
 /** Builds the ordered action list for a session row. */
@@ -78,6 +81,17 @@ export function buildSessionRowActions(
             icon: session.pause ? PlayIcon : PauseIcon,
             label: session.pause === 'pausing' ? 'Cancel pause' : session.pause ? 'Resume' : 'Pause',
             onSelect: handlers.onTogglePause
+          }
+        ] as const)
+      : []),
+    ...(session.status === 'idle' && handlers.prewalk
+      ? ([
+          {
+            kind: 'item',
+            key: 'prewalk',
+            icon: FootprintsIcon,
+            label: handlers.prewalk.state === 'armed' ? 'Cancel prewalk (armed)' : 'Arm prewalk',
+            onSelect: handlers.prewalk.onToggle
           }
         ] as const)
       : []),

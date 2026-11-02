@@ -16,6 +16,8 @@ import { useHideSession } from './useHideSession'
 import { useSurfaceArchiveActions } from './sessionRowSurface'
 import type { SessionRowSurface } from './sessionRowSurface'
 import { setSessionPaused } from '@/features/chat/pauseActions'
+import { setPrewalk } from './prewalkActions'
+import { usePrewalkStore } from '@/state/prewalk-store'
 
 export function useSessionRowActions(session: SessionSummary, repository: Repository | undefined, surface?: SessionRowSurface) {
   const isVisible = useSplitStore((state) => state.paneSessionIds.includes(session.id))
@@ -35,6 +37,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
   const stopAgent = useSessionsStore((state) => state.stopAgent)
+  const prewalkState = usePrewalkStore((s) => s.bySession[session.id] ?? 'unknown')
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -318,6 +321,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       onUnhide: hideSession.unhide,
       onStopAgent: () => void stopAgent(session.id),
       onTogglePause: () => void setSessionPaused(session.id, !session.pause),
+      prewalk: { state: prewalkState, onToggle: () => void setPrewalk(session.id, prewalkState !== 'armed') },
       onDelete: () => {
         captureFocusFallback()
         setDeleteOpen(true)

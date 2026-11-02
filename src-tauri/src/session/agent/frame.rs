@@ -89,6 +89,7 @@ impl SessionAgent {
 
         // Extension point for lanes not yet landed. Each on_frame is a cheap no-op today.
         crate::session::model::on_frame(self, frame_type, &frame).await;
+        crate::session::prewalk::on_frame(self, frame_type, &frame).await;
         crate::session::readout::on_frame(self, frame_type, &frame).await;
         crate::session::side_chat::on_frame(self, frame_type, &frame).await;
         crate::session::start_queue::on_frame(self, frame_type, &frame).await;

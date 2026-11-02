@@ -36,6 +36,11 @@ export const useTokenGuardStore = create<TokenGuardState>((set) => {
   }
 })
 
+/** The "Start in plan mode" setting (`plan.defaultOnStartup`), for the composer working-mode menu (#433). */
+export function useStartInPlanMode(): boolean {
+  return useTokenGuardStore((s) => s.values['plan.defaultOnStartup'] === true)
+}
+
 export function showTokenGuardWarning(warning: TokenGuardLaunchWarning): void {
   toast.warning('Refract could not apply its token-saving settings to this Session.', {
     id: `token-guard-${warning.sessionId ?? 'launch'}`,

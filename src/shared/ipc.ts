@@ -400,6 +400,7 @@ export const IPC_EVENTS = {
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
   ADVISOR_UPDATE: 'advisor:update',
+  PREWALK_UPDATE: 'prewalk:update',
   SESSION_HEALTH: 'session:health',
   SUBAGENT_PATCH: 'subagent:patch',
   SIDE_CHAT_PATCH: 'side-chat:patch',
@@ -611,6 +612,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
   onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;
+  /** `unknown` until OMP's own prewalk reply says otherwise (#695). */
+  onPrewalkUpdate(handler: (payload: { sessionId: string; state: 'armed' | 'off' | 'unknown' }) => void): Unsubscribe;
   onSessionHealth(handler: (payload: { sessionId: string; rpcSlowMs: number | null; agentMemoryBytes: number | null }) => void): Unsubscribe;
   onSubagentPatch(handler: (payload: { sessionId: string; subagentId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
   onSideChatPatch(handler: (payload: { sessionId: string; delta?: string; recordId?: string; record?: SideChatRecord; notice?: string }) => void): Unsubscribe;
