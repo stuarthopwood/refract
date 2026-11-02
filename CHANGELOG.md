@@ -1,5 +1,32 @@
 # Changelog
 
+## v0.22.0 (2026-11-02)
+
+### Features
+
+- feat(design): design sweep leftovers (https://github.com/stuarthopwood/refract/pull/1535)
+- feat(at): token guard read and todo defaults, prewalk and plan mode settings (https://github.com/stuarthopwood/refract/pull/1563)
+
+### Fixes
+
+- fix(holiday): holiday touches follow-ups (https://github.com/stuarthopwood/refract/pull/1537)
+- fix(watermark): brand watermark follow-ups (https://github.com/stuarthopwood/refract/pull/1539)
+- fix(composer): context menu follow-ups (https://github.com/stuarthopwood/refract/pull/1540)
+
+### Other
+
+- docs(plan): place #1541 and #1542 scrollbar polish (https://github.com/stuarthopwood/refract/pull/1543)
+- chore(skills): add compare-token-usage skill for Refract sessions (https://github.com/stuarthopwood/refract/pull/1544)
+- docs(plan): add P0 rows for #1545 and #695 (https://github.com/stuarthopwood/refract/pull/1546)
+- docs(plan): add P1 row for #433 working-mode menu (https://github.com/stuarthopwood/refract/pull/1547)
+- docs(plan): amend #1302 option buttons and tabs to one look (p1) (https://github.com/stuarthopwood/refract/pull/1548)
+- docs(plan): file #1549, #1550, #1551 role picker and OMP wording (p1) (https://github.com/stuarthopwood/refract/pull/1552)
+- docs(plan): file #1553 compaction thresholds as a percentage (p1) (https://github.com/stuarthopwood/refract/pull/1554)
+- docs(plan): file #1555 Settings Advanced descriptions (p1) (https://github.com/stuarthopwood/refract/pull/1556)
+- docs(plan): file #1557 rail icon colour and #1558 small switch (p1) (https://github.com/stuarthopwood/refract/pull/1559)
+- docs(plan): file #1560 Home borderless list cards (p1) (https://github.com/stuarthopwood/refract/pull/1561)
+- docs(plan): file #1564 ghost buttons app-wide (p1) (https://github.com/stuarthopwood/refract/pull/1565)
+
 ## v0.21.0 (2026-10-31)
 
 ### Features
