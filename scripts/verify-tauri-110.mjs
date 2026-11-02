@@ -65,7 +65,7 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
     await cdp.click(`Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === 'Advanced')`);
     for (const label of ['File read line limit', 'Summarise files on read', 'Automatic todo lists', 'Start Sessions with prewalk', 'Start in plan mode']) {
-      const found = await cdp.evaluate(`document.body.innerText.includes(${JSON.stringify(label)})`);
+      const found = await cdp.evaluate(`document.body.textContent.includes(${JSON.stringify(label)})`);
       findings.push(`Advanced row "${label}": ${found}`);
       if (!found) failures.push(`Advanced row missing: ${label}`);
     }
@@ -76,6 +76,9 @@ async function main() {
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, '110-advanced-session-start.png'));
     await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
+    await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings closed' });
+    await settleForScreenshot(cdp);
+    await cdp.screenshot(path.join(SHOTS_DIR, '110-after-back.png'));
 
     await openKebab(cdp, repoName);
     const before = await cdp.evaluate(`(${MENU_ITEM('prewalk')})?.textContent ?? null`);
