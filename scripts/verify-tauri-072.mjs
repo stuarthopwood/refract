@@ -41,7 +41,7 @@ const clockButton = `Array.from(document.querySelectorAll('button')).find((el) =
 
 async function setTime(cdp, value) {
   await cdp.evaluate(`(() => {
-    const i = ${DIALOG}.querySelector('input[type="time"]');
+    const i = ${DIALOG}.querySelector('[data-slot="time-field"] input');
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, ${JSON.stringify(value)});
     i.dispatchEvent(new Event('input', { bubbles: true }));
   })()`);
@@ -50,9 +50,9 @@ async function setTime(cdp, value) {
 async function addAlarm(cdp, value, label) {
   if (!(await cdp.evaluate(`!!${DIALOG}`))) await cdp.click(clockButton);
   await cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add alarm')`);
-  await cdp.waitFor(`!!${DIALOG}.querySelector('input[type="time"]')`, { timeoutMs: 10_000, label: 'alarm form open' });
+  await cdp.waitFor(`!!${DIALOG}.querySelector('[data-slot="time-field"] input')`, { timeoutMs: 10_000, label: 'alarm form open' });
   await setTime(cdp, value);
-  await cdp.click(`${DIALOG}.querySelector('input:not([type="time"])')`);
+  await cdp.click(`${DIALOG}.querySelector('input:not([data-slot="time-field"] input)')`);
   if (label) await cdp.send('Input.insertText', { text: label });
 }
 const saveAlarm = (cdp) => cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save')`);
@@ -142,8 +142,8 @@ async function runChecks(cdp, { repoDir }) {
 
   // Edit the label.
   await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')`);
-  await cdp.waitFor(`!!${DIALOG}.querySelector('input[type="time"]')`, { timeoutMs: 10_000, label: 'edit form open' });
-  await cdp.click(`${DIALOG}.querySelector('input:not([type="time"])')`);
+  await cdp.waitFor(`!!${DIALOG}.querySelector('[data-slot="time-field"] input')`, { timeoutMs: 10_000, label: 'edit form open' });
+  await cdp.click(`${DIALOG}.querySelector('input:not([data-slot="time-field"] input)')`);
   await cdp.send('Input.insertText', { text: ' edited' });
   await saveAlarm(cdp);
   await cdp.waitFor(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')?.getAttribute('aria-label').includes('edited')`, { timeoutMs: 10_000, label: 'edit saved' });
@@ -152,7 +152,7 @@ async function runChecks(cdp, { repoDir }) {
   const dueAt = Math.ceil((Date.now() + 5_000) / 60_000) * 60_000;
   await addAlarm(cdp, hhmm(dueAt), 'Fires soon');
   await saveAlarm(cdp);
-  await cdp.waitFor(`!${DIALOG} || !${DIALOG}.querySelector('input[type="time"]')`, { timeoutMs: 20_000, label: 'second alarm form closed' });
+  await cdp.waitFor(`!${DIALOG} || !${DIALOG}.querySelector('[data-slot="time-field"] input')`, { timeoutMs: 20_000, label: 'second alarm form closed' });
   await sleep(1200);
   log(`pre-second-listed: ${await cdp.evaluate(`JSON.stringify({ dialog: !!document.querySelector('[role="dialog"]'), text: document.querySelector('[role="dialog"]')?.textContent?.slice(0, 160), focus: document.hasFocus(), rows: document.querySelectorAll('button[aria-label^="Edit alarm"]').length })`)}`);
   // Focus loss from other desktop activity can close the popover; reopen it so the listing check is not environmental.

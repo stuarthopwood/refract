@@ -93,10 +93,10 @@ export const useSplitStore = create<SplitState>((set, get) => {
 
   // Shared by `openInSplit` and `replaceFocused`: `mode` decides whether a new session opens a
   // second pane or replaces the lone one. Every path that focuses a session funnels through here,
-  // so the view returns to chat unconditionally, even on the no-op branches below; otherwise a
-  // session opened while Pull Requests shows would stay hidden.
+  // so the view returns to chat from every other view, even on the no-op branches below; otherwise
+  // a session opened while Issues, Usage, Settings or Pull Requests shows would stay hidden.
   function targetSession(sessionId: string, replaceIndex: 0 | 1, mode: 'split' | 'replace'): void {
-    if (['pull-requests', 'home'].includes(useViewStore.getState().view)) useViewStore.getState().openChat()
+    if (useViewStore.getState().view !== 'chat') useViewStore.getState().openChat()
     const { paneSessionIds, focusedIndex } = get()
     const pristineIds = withoutPristine(sessionId)
 
