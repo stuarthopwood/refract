@@ -49,6 +49,8 @@ export type TokenGuardGroup =
 export interface TokenGuardOption {
   value: string;
   label: string;
+  /** Plain-language hint shown under the option name where the control has room for one. */
+  description?: string;
 }
 
 export interface TokenGuardKeyInfo {
@@ -80,11 +82,25 @@ export const TOKEN_GUARD_GROUPS: readonly TokenGuardGroup[] = [
 
 /** The compaction methods OMP knows, in display order for methods not yet in the saved order. */
 export const COMPACTION_METHODS: readonly TokenGuardOption[] = [
-  { value: 'remote', label: 'Remote' },
-  { value: 'snapcompact', label: 'Snapcompact' },
-  { value: 'handoff', label: 'Handoff' },
-  { value: 'soft', label: 'Soft' },
-  { value: 'shake', label: 'Shake' }
+  {
+    value: 'remote',
+    label: 'Remote',
+    description: 'The model provider shortens the conversation on its own servers, when the provider supports it.'
+  },
+  {
+    value: 'snapcompact',
+    label: 'Snapcompact',
+    description:
+      'Saves old history as compact images the model reads back. Works only with models that can read images. No model call.'
+  },
+  { value: 'handoff', label: 'Handoff', description: 'Writes a handoff note and carries on from it as the summary.' },
+  { value: 'soft', label: 'Soft', description: 'A model summarises the conversation in place.' },
+  {
+    value: 'shake',
+    label: 'Shake',
+    description:
+      'Removes bulky content the agent can fetch again, such as old tool output and images. No model call.'
+  }
 ];
 
 /** Display order, group and plain-language text for the Settings > Advanced rows. The advisor model
@@ -112,14 +128,14 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'order',
     group: 'Context compaction',
     description:
-      'The ways OMP tries to shrink a long conversation, in order. If one is unavailable or fails, the next is used.'
+      "How the agent shortens a long conversation. It tries the ticked methods from top to bottom and moves to the next one if a method can't run."
   },
   {
     key: 'compaction.idleEnabled',
     label: 'Compact when idle',
     kind: 'toggle',
     group: 'Idle compaction',
-    description: 'Shrink the conversation while the Session is waiting for you, so the next turn starts smaller.'
+    description: 'Shorten the conversation while the Session waits for you, so your next message costs less.'
   },
   {
     key: 'compaction.idleThresholdTokens',
@@ -129,8 +145,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     percentOfWindow: true,
     group: 'Idle compaction',
     dependsOn: 'compaction.idleEnabled',
-    description:
-      "Only compact when idle if the conversation is at least this big. Shown as a share of the Default model's context window when that is known."
+    description: 'Only do this when the conversation is at least this long.'
   },
   {
     key: 'compaction.idleTimeoutSeconds',
@@ -139,14 +154,15 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     unit: 'seconds',
     group: 'Idle compaction',
     dependsOn: 'compaction.idleEnabled',
-    description: 'How long the Session must be idle before it compacts.'
+    description: 'How long the Session waits with no activity before it shortens the conversation.'
   },
   {
     key: 'snapcompact.toolResults',
     label: 'Compress tool results to images',
     kind: 'toggle',
     group: 'Image compression',
-    description: 'Store long tool output as a dense image instead of text (vision models only). Saves tokens.'
+    description:
+      'Turn long tool output into a compact image to use fewer tokens. Works only with models that can read images.'
   },
   {
     key: 'snapcompact.systemPrompt',
@@ -159,7 +175,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
       { value: 'all', label: 'All' }
     ],
     description:
-      'Send instructions as dense images instead of text (vision models only). Saves tokens but loses prompt caching for that text.'
+      "Send the agent's instructions as a compact image to use fewer tokens. Works only with models that can read images. Text sent as an image can't be cached, so repeat requests may cost more."
   },
   {
     key: 'task.softRequestBudget',
@@ -168,7 +184,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     unit: 'requests',
     group: 'Subagents',
     description:
-      'Model calls a subagent may make before it is told to wrap up; at 1.5 times this it is stopped. 0 means no limit.'
+      'Limits how much each subagent can do. When it reaches this many model calls, it is asked to finish. At one and a half times this number, it is stopped. 0 means no limit.'
   },
   {
     key: 'task.maxConcurrency',
@@ -176,7 +192,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'subagents',
     group: 'Subagents',
-    description: 'How many subagents may run at the same time.'
+    description: 'How many subagents can run at once.'
   },
   {
     key: 'advisor.reviewMode',
@@ -184,10 +200,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'enum',
     group: 'Advisor',
     options: [
-      { value: 'turn', label: 'Every turn' },
+      { value: 'turn', label: 'Every step' },
       { value: 'agent-end', label: 'Agent end' }
     ],
-    description: "When the Advisor reviews the agent's work: after every turn, or only when the agent finishes."
+    description: "How often the Advisor checks the agent's work: after every step, or once when the agent finishes."
   },
   {
     key: 'grep.contextBefore',
@@ -195,7 +211,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
-    description: 'Lines shown before each search match.'
+    description: 'Lines of surrounding text shown above each search match.'
   },
   {
     key: 'grep.contextAfter',
@@ -203,7 +219,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
-    description: 'Lines shown after each search match.'
+    description: 'Lines of surrounding text shown below each search match.'
   },
   {
     key: 'read.defaultLimit',
@@ -211,7 +227,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
-    description: 'Lines returned when the agent reads a file without asking for a range.'
+    description: 'How many lines the agent sees when it opens a file without asking for a specific part.'
   },
   {
     key: 'read.summarize.enabled',
@@ -240,15 +256,15 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'KB',
     group: 'Tool output',
-    description: 'Tool output larger than this is saved to a file and only its end is kept in the conversation.'
+    description:
+      "When a tool's output is bigger than this, the full output is saved to a file and the conversation keeps only the end of it."
   },
   {
     key: 'tools.xdev',
-    label: 'Cross-device tools',
+    label: 'Load rare tools on demand',
     kind: 'toggle',
     group: 'Tool output',
-    description:
-      'Load rarely used tools on demand instead of sending their definitions with every request. Saves tokens.'
+    description: "Send rarely used tools only when they're needed, not with every request. Saves tokens."
   },
   {
     key: 'prewalk.enabled',
@@ -267,10 +283,11 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   },
   {
     key: 'autolearn.autoContinue',
-    label: 'Auto-continue after learning',
+    label: 'Extra turn to record lessons',
     kind: 'toggle',
     group: 'Learning',
-    description: 'After a turn ends, run one extra private turn to record what was learned. Uses extra tokens.'
+    description:
+      'When a turn ends, the agent takes one extra hidden turn to save what it learned. This uses extra tokens.'
   }
 ];
 

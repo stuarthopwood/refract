@@ -73,10 +73,10 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 
 ### #1555 plain-language descriptions, labels, method hints
 
-- [ ] T032 Rewrite every row `description` in `src/shared/tokenGuard.ts` (`TOKEN_GUARD_ROWS`, lines 84-229) with the approved #1555 table wording, leaving `compaction.thresholdTokens`/`compaction.modelThresholds` rows to #1553, with no "OMP" in user-visible text per FR-028 (missing)
-- [ ] T033 Rename "Cross-device tools" to "Load rare tools on demand" (`tools.xdev`) and "Auto-continue after learning" to "Extra turn to record lessons" (`autolearn.autoContinue`); change the Advisor option label "Every turn" to "Every step" at `tokenGuard.ts:177-180` keeping stored value `turn` per FR-028 (missing)
-- [ ] T034 Add an optional `description` to the compaction method options in `tokenGuard.ts:76-82` and render it as a muted line under each method name in the shared row/checkbox components with `aria-describedby` for Shake, Handoff, Soft, Remote, Snapcompact per FR-028 (missing)
-- [ ] T035 Update existing tests pinning old wording; run gates; commit `#1555` per FR-028 (partial)
+- [x] T032 Rewrite every row `description` in `src/shared/tokenGuard.ts` (`TOKEN_GUARD_ROWS`, lines 84-229) with the approved #1555 table wording, leaving `compaction.thresholdTokens`/`compaction.modelThresholds` rows to #1553, with no "OMP" in user-visible text per FR-028 (missing)
+- [x] T033 Rename "Cross-device tools" to "Load rare tools on demand" (`tools.xdev`) and "Auto-continue after learning" to "Extra turn to record lessons" (`autolearn.autoContinue`); change the Advisor option label "Every turn" to "Every step" at `tokenGuard.ts:177-180` keeping stored value `turn` per FR-028 (missing)
+- [x] T034 Add an optional `description` to the compaction method options in `tokenGuard.ts:76-82` and render it as a muted line under each method name in the shared row/checkbox components with `aria-describedby` for Shake, Handoff, Soft, Remote, Snapcompact per FR-028 (missing)
+- [x] T035 Update existing tests pinning old wording; run gates; commit `#1555` per FR-028 (partial)
 
 ### #1580 token-impact warning lines (after #1555 and #1553)
 
