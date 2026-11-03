@@ -1,6 +1,5 @@
 // Percent-of-context-window maths for the compaction thresholds (#1553).
 import type { ModelCatalogEntry } from '../../../../shared/model'
-import { parsePercent } from '../../../../shared/tokenGuard'
 import { splitThinkingSuffix } from '../modelRoleSuffix'
 
 export const MIN_PERCENT = 1
@@ -22,6 +21,3 @@ export const tokensToPercent = (tokens: number, window: number): number =>
   Math.min(MAX_PERCENT, Math.max(MIN_PERCENT, Math.round((tokens * 100) / window)))
 
 export const percentToTokens = (percent: number, window: number): number => Math.round((percent * window) / 100)
-
-/** Reads a stored `"N%"` entry (0 when malformed). */
-export const parsePercentEntry = parsePercent

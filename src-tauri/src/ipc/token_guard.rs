@@ -1,4 +1,4 @@
-// `tokenGuard.get/set/reset`. No path or file content comes from the renderer.
+// `tokenGuard.get/set/reset/dismissThresholdsReset`. No path or file content comes from the renderer.
 // A change applies to the next launched Session.
 
 use serde_json::{json, Value};
@@ -11,6 +11,10 @@ pub fn register(d: &mut Dispatcher) {
     d.register("tokenGuard.get", token_guard_get);
     d.register("tokenGuard.set", token_guard_set);
     d.register("tokenGuard.reset", token_guard_reset);
+    d.register(
+        "tokenGuard.dismissThresholdsReset",
+        token_guard_dismiss_thresholds_reset,
+    );
     d.register("tokenGuard.handoff", token_guard_handoff);
 }
 
@@ -51,12 +55,22 @@ fn key_arg(args: &[Value], channel: &str) -> Result<String, IpcError> {
         .ok_or_else(|| invalid_argument(format!("{channel} expects {{ key }}")))
 }
 
+/// Only reports the migration notice: screens other than Settings > Advanced also load, and must
+/// not spend it.
 fn token_guard_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let mut result = snapshot(&values::load(&state.data_dir).await);
-        result["thresholdsReset"] =
-            json!(values::take_thresholds_reset_notice(&state.data_dir).await);
+        result["thresholdsReset"] = json!(values::thresholds_reset_pending(&state.data_dir).await);
         Ok(result)
+    })
+}
+
+fn token_guard_dismiss_thresholds_reset(state: AppState, _args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        values::dismiss_thresholds_reset(&state.data_dir)
+            .await
+            .map_err(invalid_argument)?;
+        Ok(Value::Null)
     })
 }
 

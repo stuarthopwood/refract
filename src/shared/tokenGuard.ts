@@ -8,7 +8,7 @@ export type TokenGuardValues = Record<string, TokenGuardValue>;
 export interface TokenGuardSnapshot {
   values: TokenGuardValues;
   defaults: TokenGuardValues;
-  /** Set on the one load after an upgrade dropped stored token thresholds (#1553). */
+  /** Set after an upgrade dropped stored token thresholds, until `tokenGuard.dismissThresholdsReset` (#1553). */
   thresholdsReset?: boolean;
 }
 
@@ -74,7 +74,7 @@ const setTo =
 
 const COMPACTS_LATER_IMPACT = 'The conversation grows longer before it is shortened, so every call resends more tokens.'
 
-/** Reads a stored `"N%"` entry; 0 when it is missing or malformed. */
+/** Reads the leading whole number of a stored `"N%"` entry (a bare number works too); 0 when it is missing or not numeric. */
 export const parsePercent = (entry: unknown): number => Number.parseInt(String(entry ?? ''), 10) || 0
 
 export interface TokenGuardKeyInfo {
@@ -175,7 +175,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     percentOfWindow: true,
     group: 'Idle compaction',
     dependsOn: 'compaction.idleEnabled',
-    description: "Only do this when the conversation is at least this long. The % is of the Default model's context window."
+    description: 'Only do this when the conversation is at least this long.'
   },
   {
     key: 'compaction.idleTimeoutSeconds',

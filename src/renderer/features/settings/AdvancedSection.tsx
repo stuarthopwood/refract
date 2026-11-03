@@ -29,17 +29,23 @@ export function AdvancedSection() {
     void load()
   }, [load])
 
-  // Once shown, the notice is spent: drop it on leaving so reopening Settings does not repeat it.
+  // Once shown, the notice is spent: dismiss it on leaving so reopening Settings does not repeat it.
+  // StrictMode re-mounts synchronously, so the dismissal waits a microtask and the refs reset on mount.
   const noticeShown = useRef(false)
+  const mounted = useRef(false)
+  useEffect(() => {
+    noticeShown.current = false
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      queueMicrotask(() => {
+        if (!mounted.current && noticeShown.current) dismissThresholdsReset()
+      })
+    }
+  }, [dismissThresholdsReset])
   useEffect(() => {
     noticeShown.current ||= thresholdsReset
   }, [thresholdsReset])
-  useEffect(
-    () => () => {
-      if (noticeShown.current) dismissThresholdsReset()
-    },
-    [dismissThresholdsReset]
-  )
 
   useEffect(() => {
     if (!rolesLoaded) void loadRoles()

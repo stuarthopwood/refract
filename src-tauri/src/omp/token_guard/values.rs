@@ -235,17 +235,23 @@ pub async fn load(dir: &Path) -> ValueMap {
     effective(&read_stored(dir).await)
 }
 
-/// True once, the first time Settings loads after the store dropped token thresholds.
-pub async fn take_thresholds_reset_notice(dir: &Path) -> bool {
+/// True while the store has dropped token thresholds and Settings has not yet told the user.
+pub async fn thresholds_reset_pending(dir: &Path) -> bool {
+    let _guard = STORE_LOCK.lock().await;
+    read_stored(dir).await.thresholds_reset_pending
+}
+
+/// Clears the pending notice once Settings has shown it.
+pub async fn dismiss_thresholds_reset(dir: &Path) -> Result<(), String> {
     let _guard = STORE_LOCK.lock().await;
     let mut stored = read_stored(dir).await;
     if !stored.thresholds_reset_pending {
-        return false;
+        return Ok(());
     }
     stored.thresholds_reset_pending = false;
-    // A failed write only repeats the notice on the next load.
-    let _ = write_json_file(&store_path(dir), &stored).await;
-    true
+    write_json_file(&store_path(dir), &stored)
+        .await
+        .map_err(|err| format!("Could not save token guard values: {err}"))
 }
 
 /// Stores a deliberate change for one key and returns the new effective values.
