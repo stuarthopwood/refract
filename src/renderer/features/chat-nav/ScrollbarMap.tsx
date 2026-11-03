@@ -4,11 +4,10 @@ import { useSettingsStore } from '@/state'
 import { EMPTY_CHAT_NAV, useChatNavStore } from '@/state/chat-nav-store'
 import { jumpToMessage } from './jumpToMessage'
 import { hitTestMark, pointerToScrollTop, STUB_PX } from './scrollbarMapMath'
-import { MAP_WIDTH_PX, useScrollbarMap } from './useScrollbarMap'
+import { useScrollbarMap } from './useScrollbarMap'
 
 const HOVER_DELAY_MS = 300
 const DRAG_THRESHOLD_PX = 3
-const GUTTER_GAP_PX = 2
 
 interface TooltipState {
   y: number
@@ -26,11 +25,11 @@ function timeLabel(at: number): string {
   return new Date(at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
 }
 
-/** A VS Code style overview strip in the scrollbar gutter, beside the native scrollbar: one mark per
- * rendered user message (left half) and agent message (right half), the visible range as a faint
- * window, click to jump, drag to scroll. A pointer convenience only: `aria-hidden` and not
- * focusable, because Previous/Next message, the Outline and Find cover every keyboard route.
- * Render inside the transcript's `MessageScroller` root. */
+/** A VS Code style overview strip that replaces the transcript's scrollbar while it is shown, flush at
+ * the pane's right edge: one mark per rendered user message (left half) and agent message (right
+ * half), the visible range as a window, click to jump, drag to scroll. A pointer convenience only:
+ * `aria-hidden` and not focusable, because Previous/Next message, the Outline and Find cover every
+ * keyboard route. Render inside the transcript's `MessageScroller` root. */
 export function ScrollbarMap({ sessionId }: { sessionId: string }) {
   const enabled = useSettingsStore((state) => state.settings.showScrollbarMap !== false)
   const anchorRef = React.useRef<HTMLSpanElement>(null)
@@ -53,16 +52,12 @@ function MapStrip({ sessionId, viewport }: { sessionId: string; viewport: HTMLEl
   const gesture = React.useRef<{ startY: number; dragging: boolean } | null>(null)
   const hoverTimer = React.useRef(0)
   const hoverKey = React.useRef('')
-  const [gutter, setGutter] = React.useState(0)
-
-  // The native scrollbar's width (0 for an overlay scrollbar): the strip sits just inside it.
+  // Keyed off `visible`, the map's own show rule, so the bar hides exactly when the map stands in for it.
   React.useEffect(() => {
-    const update = () => setGutter(viewport.offsetWidth - viewport.clientWidth)
-    update()
-    const observer = new ResizeObserver(update)
-    observer.observe(viewport)
-    return () => observer.disconnect()
-  }, [viewport])
+    if (!visible) return
+    viewport.setAttribute('data-scrollbar-map', '')
+    return () => viewport.removeAttribute('data-scrollbar-map')
+  }, [viewport, visible])
 
   React.useEffect(() => () => window.clearTimeout(hoverTimer.current), [])
 
@@ -149,8 +144,7 @@ function MapStrip({ sessionId, viewport }: { sessionId: string; viewport: HTMLEl
       aria-hidden="true"
       data-slot="scrollbar-map"
       hidden={!visible}
-      className="absolute inset-y-0 z-[5] touch-none select-none"
-      style={{ width: MAP_WIDTH_PX, insetInlineEnd: gutter + GUTTER_GAP_PX }}
+      className="absolute inset-y-0 inset-e-0 z-[5] w-(--scrollbar-size) touch-none select-none"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
