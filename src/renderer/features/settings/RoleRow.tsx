@@ -1,4 +1,4 @@
-// One role row in Settings > Models: name, icon and (for four roles) colour swatch, a description,
+// One role row in Settings > Models: name as a role badge, icon, a description,
 // the current model as text, and the "Change" dropdown. Used for every role, including Advisor,
 // whose value lives in Refract's token guard store rather than OMP's config (`AdvisorModelRow`).
 import { useState } from 'react'
@@ -14,7 +14,7 @@ import type { RoleValues } from './modelRoleCurrent'
 import { RoleCurrentModel } from './RoleCurrentModel'
 import { RoleModelPicker } from './RoleModelPicker'
 import { RoleReasoningRadios } from './RoleReasoningRadios'
-import { RoleSwatch } from './RoleSwatch'
+import { RoleTitleBadge } from './RoleTitleBadge'
 
 export interface RoleRowProps {
   role: ModelRoleId
@@ -102,7 +102,7 @@ export function RoleRow({
 
   return (
     <div>
-      <SettingRow id={selectId} label={label} description={description} note={note} icon={ROLE_ICONS[role]} labelAddon={<RoleSwatch role={role} />} controlId={changing ? selectId : changeId}>
+      <SettingRow id={selectId} label={label} description={description} note={note} icon={ROLE_ICONS[role]} renderLabel={(text) => <RoleTitleBadge role={role}>{text}</RoleTitleBadge>} controlId={changing ? selectId : changeId}>
         <div className="flex items-center gap-2">
           <Button
             id={changeId}
