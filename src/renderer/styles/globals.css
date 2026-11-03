@@ -315,6 +315,8 @@ samp {
   --field-ring-width: 0px;
   --ghost-edge: transparent;
   --text-scale: var(--scale-app);
+  /* The one scrollbar width for the whole app: the native bars below, the Radix `ScrollArea` bar and the chat navigation map all read it. */
+  --scrollbar-size: 6px;
   --motion-shimmer-duration: 1.6s;
   /* Switching motion (#678, spec 058): the shared durations and easing for every enter animation
      and every shadcn dialog, menu, popover and tooltip. */
@@ -2404,14 +2406,20 @@ samp {
   }
 }
 
-*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar { width: var(--scrollbar-size); height: var(--scrollbar-size); }
 *::-webkit-scrollbar-track { background: var(--scrollbar-track); }
-*::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 4px; }
+*::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: calc(var(--scrollbar-size) / 2); }
 *::-webkit-scrollbar-thumb:hover, *::-webkit-scrollbar-thumb:active { background: var(--scrollbar-thumb-hover); }
 *::-webkit-scrollbar-corner { background: transparent; }
 *::-webkit-scrollbar-button { display: none; }
-[data-slot='message-scroller-viewport'] { scrollbar-width: auto; scrollbar-color: auto; }
 [data-slot='message-scroller-viewport'][data-autoscrolling]::-webkit-scrollbar-thumb { background: transparent; }
+/* Only the bar goes; wheel, touch and keyboard scrolling stay. Any `scrollbar-width` other than auto makes Chromium ignore the sized `::-webkit-scrollbar` rules above, so only hidden bars set it. */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
 /* WebView2 draws its own reveal button on password inputs; SecretInput ships one toggle. */
 [data-secret-input]::-ms-reveal { display: none; }
 [data-secret-input]::-ms-clear { display: none; }

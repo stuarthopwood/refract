@@ -552,7 +552,8 @@ export function Transcript({
             data-start-overlay
             className={cn(
               'pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2 transition-opacity duration-150',
-              dimTranscript && 'peer-focus-within:opacity-0'
+              // Over visible history the transcript's own bar owns this edge; a second one here would sit beside it.
+              dimTranscript && 'no-scrollbar peer-focus-within:opacity-0'
             )}
           >
             <div
