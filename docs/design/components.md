@@ -256,6 +256,8 @@ Tab pattern details are deferred to #394.
 
 **Settings pages (wave 2):** every Settings section is a `SettingsPage` (`components/settings/`; `max-w-2xl`, `wide` = `max-w-3xl` for Models) holding `SettingsGroup` blocks (`role=group` labelled by its h3) of `SettingRow` rows (label, description, optional 16px `icon`, control; stacks under about 480px). `SettingFieldRow` and `SettingSwitchRow` wrap `SettingRow`. Do not hand-copy row markup.
 
+**Switch sizes:** the shared `Switch` (`components/ui/switch.tsx`) takes `size="default"` (20 by 36 px track, 16 px thumb) or `size="sm"` (16 by 28 px track, 12 px thumb). Use `sm` in compact pane toolbars next to `text-xs` text (File Explorer "Show ignored files"); use the default for the main control of a Settings row. Do not hand-style a switch's size.
+
 ## Floating layer
 
 A small floating panel over content (the previous and next message buttons) is the shared `FloatingLayer` (`src/renderer/components/floating-layer.tsx`): elevated `bg-popover` surface, border, shadow, a 120 ms fade (instant under reduced motion). When `visible` is false it fades out but stays reachable by keyboard focus (`focus-within` reveals it). Position it with `className`; do not hand-style a second floating box.
