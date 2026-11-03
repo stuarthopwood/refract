@@ -24,7 +24,7 @@ const badgeVariants = cva(
         focused:
           "h-auto border-active-indicator bg-focused-badge-bg py-1 font-medium text-active-indicator-foreground",
         warning: "h-auto border-severity-warning bg-severity-warning-bg py-1 text-severity-warning",
-        role: "text-neutral-950"
+        role: "text-background"
       },
       tone: {
         default: "bg-role-default",
