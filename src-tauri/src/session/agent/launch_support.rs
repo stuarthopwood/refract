@@ -199,7 +199,7 @@ pub(super) async fn append_ask_dialog_unavailable_notice(agent: &SessionAgent, e
     }
     agent
         .append_notice(
-            "This version of OMP can't show an agent's questions together, so they arrive one at a time."
+            "This version of the agent can't show its questions together, so they arrive one at a time."
                 .to_string(),
             "info",
         )

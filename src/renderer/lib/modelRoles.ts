@@ -24,7 +24,7 @@ export const CUSTOM_ROLE = 'custom' as const
 export type RoleChipRoleId = ModelRoleId | typeof FALLBACK_ROLE | typeof CUSTOM_ROLE
 
 /** Tooltip for a Session OMP switched off its configured role after repeated failures (#741). */
-export const FALLBACK_TOOLTIP = 'OMP switched models after repeated failures. This is not your saved choice.'
+export const FALLBACK_TOOLTIP = 'The agent switched models after repeated failures. This is not your saved choice.'
 export const CUSTOM_TOOLTIP = 'A model chosen directly for this session, not through a role.'
 
 /** Chat-role labels, matching Settings' `CHAT_ROLE_DESCRIPTORS`. `Partial` so an unrecognised role renders no chip (#741). */

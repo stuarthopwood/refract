@@ -40,7 +40,7 @@ export function ProfileAlertRows() {
     const memoryJustShown = memoryShown && !memoryWasShown
     const ompVersionJustShown = ompVersionShown && !ompVersionWasShown
     const memoryText = 'Low memory'
-    const ompVersionText = ompVersionWarning ? `omp ${ompVersionWarning.found} is an unverified version` : ''
+    const ompVersionText = ompVersionWarning ? `Agent ${ompVersionWarning.found} is an unverified version` : ''
     if (memoryJustShown && ompVersionJustShown) {
       useChatAreaAnnouncer.getState().announce(`${memoryText}. ${ompVersionText}`)
     } else if (memoryJustShown) {
@@ -123,7 +123,7 @@ export function ProfileAlertRows() {
       {ompVersionShown && ompVersionWarning && (
         <AlertRow
           containerRef={ompVersionRowRef}
-          label={`omp ${ompVersionWarning.found}: unverified version`}
+          label={`Agent ${ompVersionWarning.found}: unverified version`}
           wrapLabel
           actionRef={checkButtonRef}
           actionLabel="Check"

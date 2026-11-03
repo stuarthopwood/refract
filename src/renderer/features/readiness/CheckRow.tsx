@@ -6,8 +6,8 @@ export const CHECK_ORDER = ['git', 'omp', 'ompSignedIn'] as const
 
 export const CHECK_LABELS: Record<(typeof CHECK_ORDER)[number], string> = {
   git: 'Git found',
-  omp: 'OMP found, on the supported version',
-  ompSignedIn: 'OMP signed in'
+  omp: 'Agent found, on the supported version',
+  ompSignedIn: 'Agent signed in'
 }
 
 /** The word `CheckStatusIcon`'s `sr-only` text uses for each state, shared so a visible consumer cannot drift from what a screen reader hears. */
