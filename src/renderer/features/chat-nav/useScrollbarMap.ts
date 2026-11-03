@@ -102,8 +102,8 @@ export function useScrollbarMap(sessionId: string, viewport: HTMLElement | null,
       const marks = progress < 1 && sameMarkSet(from, model.marks) ? lerpMarks(from, model.marks, progress) : model.marks
       const metrics = { scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight }
       model.metrics = metrics
-      // The strip's CSS width is the shared token; the canvas buffer is sized from the same value.
-      const cssWidth = Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--scrollbar-size')) || 6
+      // The strip is `w-(--scrollbar-size)`, so its laid-out width is the token without a per-frame style read.
+      const cssWidth = canvas.clientWidth
       paintMap({
         canvas,
         cssWidth,
