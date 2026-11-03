@@ -67,7 +67,7 @@ export type RoleTone = 'default' | 'smol' | 'slow' | 'plan'
 const ROLE_TONES: Record<string, true> = { default: true, smol: true, slow: true, plan: true }
 
 /** A role's colour tone, or `undefined` when it has no colour token. */
-export const roleTone = (role: string): RoleTone | undefined => (ROLE_TONES[role] ? (role as RoleTone) : undefined)
+export const roleTone = (role: string): RoleTone | undefined => (Object.hasOwn(ROLE_TONES, role) ? (role as RoleTone) : undefined)
 
 export interface RoleChipDisplay {
   role: RoleChipRoleId

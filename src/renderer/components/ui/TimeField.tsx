@@ -2,6 +2,7 @@ import * as React from "react"
 import { ClockIcon } from "lucide-react"
 import { IconButton } from "@/components/IconButton"
 import { Input } from "@/components/ui/input"
+import { InlineStatus } from "@/components/InlineStatus"
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
 const pad = (n: number): string => String(n).padStart(2, "0")
@@ -140,6 +141,10 @@ function TimeField({ value, onChange, disabled, className, onBlur, ...props }: T
   const hour = value ? value.slice(0, 2) : undefined
   const minute = value ? value.slice(3, 5) : undefined
 
+  const errorId = React.useId()
+  const invalid = blurred && draft !== "" && !parseTime(draft)
+  const describedBy = [props["aria-describedby"], invalid ? errorId : undefined].filter(Boolean).join(" ") || undefined
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverAnchor asChild>
@@ -152,9 +157,10 @@ function TimeField({ value, onChange, disabled, className, onBlur, ...props }: T
             maxLength={5}
             placeholder="HH:MM"
             disabled={disabled}
-            aria-invalid={blurred && draft !== "" && !parseTime(draft) ? true : undefined}
+            aria-invalid={invalid ? true : undefined}
             className={`pr-10 tabular-nums${className ? ` ${className}` : ""}`}
             {...props}
+            aria-describedby={describedBy}
             value={draft}
             onChange={(event) => {
               setDraft(event.target.value)
@@ -168,6 +174,11 @@ function TimeField({ value, onChange, disabled, className, onBlur, ...props }: T
               onBlur?.(event)
             }}
           />
+          {invalid && (
+            <InlineStatus id={errorId} tone="error" density="compact" className="px-0">
+              Enter a time as HH:MM
+            </InlineStatus>
+          )}
           <PopoverTrigger asChild>
             <IconButton label="Choose time" size="icon-xs" disabled={disabled} className="absolute top-1 right-1">
               <ClockIcon aria-hidden />
