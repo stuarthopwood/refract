@@ -6,9 +6,10 @@ const MENU_ICON_CLASS =
 
 export const MENU_ITEM_CLASS = `relative flex w-full cursor-default items-center gap-2 px-2 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] forced-colors:focus:outline-2 forced-colors:focus:outline-solid forced-colors:focus:outline-offset-[-2px] forced-colors:focus:outline-[color:Highlight] data-disabled:pointer-events-none data-disabled:opacity-50 aria-disabled:forced-colors:text-[GrayText] data-[inset=true]:pl-8 ${MENU_ICON_CLASS}`
 
-// Checked radio/checkbox/select items: accent label and mark, no fill. `focus:` variants win over the focus text colour so a checked focused row keeps the accent text beside its fill and bar.
+// Checked items: accent label and mark, no fill. On the focus fill the label reverts to accent-foreground,
+// because accent text there is under 4.5:1 in Dark and Obsidian; the accent mark (3:1 non-text) keeps the cue.
 export const CHECKED_ITEM_CLASS =
-  "data-[state=checked]:text-accent-text data-[state=checked]:focus:text-accent-text data-[state=checked]:not-data-[variant=destructive]:focus:**:text-accent-text data-[state=checked]:[&_svg:not([class*='text-'])]:text-accent-text data-[state=checked]:focus:[&_svg:not([class*='text-'])]:text-accent-text"
+  "data-[state=checked]:text-accent-text data-[state=checked]:focus:text-accent-foreground data-[state=checked]:[&_svg:not([class*='text-'])]:text-accent-text data-[state=checked]:focus:[&_svg:not([class*='text-'])]:text-accent-text"
 
 export const MENU_ITEM_DESTRUCTIVE_CLASS =
   "data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:focus:shadow-[inset_2px_0_0_0_var(--color-destructive)]"
