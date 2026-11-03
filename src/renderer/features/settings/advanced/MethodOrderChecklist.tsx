@@ -91,7 +91,7 @@ export function MethodOrderChecklist({ id, value, disabled, describedBy, onChang
             const description = COMPACTION_METHODS.find((m) => m.value === method)?.description
             const descriptionId = `${id}-${method}-description`
             return (
-              <li key={method} className="flex flex-col gap-0.5">
+              <li key={method} className="flex flex-col">
                 <div className="flex items-center gap-2">
                   <CheckboxItem
                     id={`${id}-${method}`}

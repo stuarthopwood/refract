@@ -80,11 +80,11 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 
 ### #1580 token-impact warning lines (after #1555 and #1553)
 
-- [ ] T036 Add optional `impact?: { costlierWhen: (value, default) => boolean; text: string }` to `TokenGuardKeyInfo` in `src/shared/tokenGuard.ts` and fill it for the draft rows (`read.defaultLimit`, `grep.contextBefore`/`grep.contextAfter`, `tools.artifactSpillThreshold`, `task.softRequestBudget`, `advisor.reviewMode`, `todo.eager`, `autolearn.autoContinue`, `tools.xdev`, `snapcompact.toolResults`); exclude `task.maxConcurrency` per FR-029 (missing)
-- [ ] T037 Render the impact line in the shared `src/renderer/features/settings/advanced/AdvancedRow.tsx` with the warning severity token and a `TriangleAlert` icon under the description, linked by `aria-describedby`, no per-row styling per FR-029 (missing)
-- [ ] T038 Compaction rows (Cross-issue 1): global `compaction.thresholdPercent` warns above 70; each per-model row in `PerModelThresholdTable.tsx` warns above the current global percent; at or below shows none per FR-029 (missing)
-- [ ] T039 Check each row whose costlier direction is not established (`compaction.methodOrder`, `compaction.idleEnabled`, `compaction.idleThresholdTokens`, `compaction.idleTimeoutSeconds`, `snapcompact.systemPrompt`, `read.summarize.enabled`, `prewalk.enabled`, `plan.defaultOnStartup`) against the OMP settings docs and the #1212 notes; add a line only for a clear direction; record each decision in the PR body per FR-029 (missing)
-- [ ] T040 Verify the warning colour meets 4.5:1 in every theme (`pnpm check:theme-contrast`); run gates; commit `#1580` per FR-029, SC-007 (partial)
+- [x] T036 Add optional `impact?: { costlierWhen: (value, default) => boolean; text: string }` to `TokenGuardKeyInfo` in `src/shared/tokenGuard.ts` and fill it for the draft rows (`read.defaultLimit`, `grep.contextBefore`/`grep.contextAfter`, `tools.artifactSpillThreshold`, `task.softRequestBudget`, `advisor.reviewMode`, `todo.eager`, `autolearn.autoContinue`, `tools.xdev`, `snapcompact.toolResults`); exclude `task.maxConcurrency` per FR-029 (missing)
+- [x] T037 Render the impact line in the shared `src/renderer/features/settings/advanced/AdvancedRow.tsx` with the warning severity token and a `TriangleAlert` icon under the description, linked by `aria-describedby`, no per-row styling per FR-029 (missing)
+- [x] T038 Compaction rows (Cross-issue 1): global `compaction.thresholdPercent` warns above 70; each per-model row in `PerModelThresholdTable.tsx` warns above the current global percent; at or below shows none per FR-029 (missing)
+- [x] T039 Check each row whose costlier direction is not established (`compaction.methodOrder`, `compaction.idleEnabled`, `compaction.idleThresholdTokens`, `compaction.idleTimeoutSeconds`, `snapcompact.systemPrompt`, `read.summarize.enabled`, `prewalk.enabled`, `plan.defaultOnStartup`) against the OMP settings docs and the #1212 notes; add a line only for a clear direction; record each decision in the PR body per FR-029 (missing)
+- [x] T040 Verify the warning colour meets 4.5:1 in every theme (`pnpm check:theme-contrast`); run gates; commit `#1580` per FR-029, SC-007 (partial)
 
 ### Final
 

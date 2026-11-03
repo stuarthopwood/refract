@@ -4,6 +4,7 @@
 // (`info.dependsOn` off) stays visible, indented, with every control disabled, and says why.
 import { useRef } from 'react'
 import type { ReactNode } from 'react'
+import { ImpactWarning } from '@/components/settings/ImpactWarning'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
@@ -56,7 +57,15 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
   const isDefault = same(value, defaultValue)
   const disabled = disabledReason !== undefined
   const rowRef = useRef<HTMLDivElement>(null)
-  const describedBy = [`${id}-description`, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')
+  const impactId = `${id}-impact`
+  const models: Record<string, string> = info.kind === 'record' && value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const { impact } = info
+  const costlier =
+    impact !== undefined &&
+    (info.kind === 'record'
+      ? Object.values(models).some((percent) => impact.costlierWhen(percent, `${seedPercent}%`))
+      : impact.costlierWhen(value, defaultValue))
+  const describedBy = [`${id}-description`, costlier ? impactId : undefined, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')
   const stacked = info.kind === 'order' || info.kind === 'record'
 
   const description: ReactNode = (
@@ -79,11 +88,17 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
       Reset
     </Button>
   )
-  const note = disabled ? (
-    <span id={`${id}-reason`} className="text-xs text-muted-foreground">
-      {disabledReason}
-    </span>
-  ) : undefined
+  const note =
+    costlier || disabled ? (
+      <>
+        {costlier && info.impact && <ImpactWarning id={impactId} text={info.impact.text} />}
+        {disabled && (
+          <span id={`${id}-reason`} className="text-xs text-muted-foreground">
+            {disabledReason}
+          </span>
+        )}
+      </>
+    ) : undefined
 
   let row: ReactNode
   if (info.kind === 'enum') {
@@ -145,7 +160,8 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
       control = (
         <PerModelThresholdTable
           id={id}
-          value={value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}}
+          value={models}
+          impact={info.impact}
           seedPercent={seedPercent}
           disabled={disabled}
           describedBy={describedBy}

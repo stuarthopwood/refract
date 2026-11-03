@@ -53,6 +53,27 @@ export interface TokenGuardOption {
   description?: string;
 }
 
+/** Shown under a row when its value costs more than the default. `costlierWhen` gets the row's value
+ * and default; a `record` row evaluates it per entry, with the entry's `"N%"` and the global
+ * threshold as `"N%"`. */
+export interface TokenGuardImpact {
+  costlierWhen: (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined) => boolean;
+  text: string;
+}
+
+const above = (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined): boolean =>
+  typeof value === 'number' && typeof defaultValue === 'number' && value > defaultValue
+
+const below = (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined): boolean =>
+  typeof value === 'number' && typeof defaultValue === 'number' && value < defaultValue
+
+const setTo =
+  (...targets: TokenGuardValue[]) =>
+  (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined): boolean =>
+    value !== defaultValue && targets.includes(value as TokenGuardValue)
+
+const COMPACTS_LATER_IMPACT = 'The conversation grows longer before it is compacted, so every call resends more tokens.'
+
 export interface TokenGuardKeyInfo {
   key: string;
   label: string;
@@ -67,6 +88,7 @@ export interface TokenGuardKeyInfo {
   options?: readonly TokenGuardOption[];
   /** Key of the toggle that must be on for this row to apply. */
   dependsOn?: string;
+  impact?: TokenGuardImpact;
 }
 
 export const TOKEN_GUARD_GROUPS: readonly TokenGuardGroup[] = [
@@ -112,6 +134,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: '%',
     group: 'Context compaction',
+    impact: { costlierWhen: above, text: COMPACTS_LATER_IMPACT },
     description:
       "Summarise the conversation when it fills this much of the model's context window, for models with no entry below."
   },
@@ -120,6 +143,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     label: 'Compaction threshold per model',
     kind: 'record',
     group: 'Context compaction',
+    impact: {
+      costlierWhen: (value, globalPercent) => Number.parseInt(String(value), 10) > Number.parseInt(String(globalPercent), 10),
+      text: COMPACTS_LATER_IMPACT
+    },
     description: "Per-model override of the threshold above, as a percent of that model's own context window."
   },
   {
@@ -161,6 +188,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     label: 'Compress tool results to images',
     kind: 'toggle',
     group: 'Image compression',
+    impact: {
+      costlierWhen: setTo(false),
+      text: 'Old tool results stay as text, which uses more tokens than the compressed images.'
+    },
     description:
       'Turn long tool output into a compact image to use fewer tokens. Works only with models that can read images.'
   },
@@ -183,6 +214,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'requests',
     group: 'Subagents',
+    impact: {
+      costlierWhen: (value, defaultValue) => above(value, defaultValue) || value === 0,
+      text: 'Subagents may make more model calls before they are told to wrap up. With 0 there is no limit.'
+    },
     description:
       'Limits how much each subagent can do. When it reaches this many model calls, it is asked to finish. At one and a half times this number, it is stopped. 0 means no limit.'
   },
@@ -203,6 +238,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
       { value: 'turn', label: 'Every step' },
       { value: 'agent-end', label: 'Agent end' }
     ],
+    impact: {
+      costlierWhen: setTo('turn'),
+      text: 'The advisor makes a model call on every step instead of once at the end.'
+    },
     description: "How often the Advisor checks the agent's work: after every step, or once when the agent finishes."
   },
   {
@@ -211,6 +250,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
+    impact: {
+      costlierWhen: above,
+      text: 'Every search result gets longer, so each search adds more tokens to the conversation.'
+    },
     description: 'Lines of surrounding text shown above each search match.'
   },
   {
@@ -219,6 +262,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
+    impact: {
+      costlierWhen: above,
+      text: 'Every search result gets longer, so each search adds more tokens to the conversation.'
+    },
     description: 'Lines of surrounding text shown below each search match.'
   },
   {
@@ -227,6 +274,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
+    impact: {
+      costlierWhen: below,
+      text: 'Reading a large file takes more calls at a lower limit, and each call costs a premium request.'
+    },
     description: 'How many lines the agent sees when it opens a file without asking for a specific part.'
   },
   {
@@ -247,6 +298,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
       { value: 'preferred', label: 'Preferred' },
       { value: 'always', label: 'Always' }
     ],
+    impact: {
+      costlierWhen: setTo('preferred', 'always'),
+      text: 'The agent makes extra tool calls to keep a todo list.'
+    },
     description:
       'How hard the agent is pushed to write a todo list after your first message. Stronger settings add model calls for creating and ticking off the list.'
   },
@@ -256,6 +311,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'KB',
     group: 'Tool output',
+    impact: {
+      costlierWhen: above,
+      text: 'More tool output stays in the conversation and is resent on every later call.'
+    },
     description:
       "When a tool's output is bigger than this, the full output is saved to a file and the conversation keeps only the end of it."
   },
@@ -264,6 +323,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     label: 'Load rare tools on demand',
     kind: 'toggle',
     group: 'Tool output',
+    impact: {
+      costlierWhen: setTo(false),
+      text: 'Every rare tool is loaded into the prompt, so each call sends more tokens.'
+    },
     description: "Send rarely used tools only when they're needed, not with every request. Saves tokens."
   },
   {
@@ -286,6 +349,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     label: 'Extra turn to record lessons',
     kind: 'toggle',
     group: 'Learning',
+    impact: { costlierWhen: setTo(true), text: 'Adds a model call after the agent records a lesson.' },
     description:
       'When a turn ends, the agent takes one extra hidden turn to save what it learned. This uses extra tokens.'
   }

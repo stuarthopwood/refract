@@ -3,11 +3,13 @@
 // a model is picked, because a threshold without a model is not a valid value.
 import { useEffect, useState } from 'react'
 import { ChevronRightIcon, PlusIcon, Trash2Icon } from 'lucide-react'
+import { ImpactWarning } from '@/components/settings/ImpactWarning'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useModelRolesStore } from '@/state'
+import type { TokenGuardImpact } from '../../../../shared/tokenGuard'
 import { MAX_PERCENT, MIN_PERCENT, parsePercentEntry, percentToTokens, windowFor } from './contextWindow'
 import { formatCount, NumberUnitField } from './NumberUnitField'
 
@@ -15,6 +17,8 @@ interface PerModelThresholdTableProps {
   id: string
   /** Model selector to `"N%"`. */
   value: Record<string, string>
+  /** Warns on a row whose percent is above the global threshold (`seedPercent`). */
+  impact?: TokenGuardImpact
   /** Percent a newly added model starts with: the global threshold. */
   seedPercent: number
   disabled?: boolean
@@ -22,7 +26,7 @@ interface PerModelThresholdTableProps {
   onChange: (value: Record<string, string>) => Promise<boolean>
 }
 
-export function PerModelThresholdTable({ id, value, seedPercent, disabled, describedBy, onChange }: PerModelThresholdTableProps) {
+export function PerModelThresholdTable({ id, value, impact, seedPercent, disabled, describedBy, onChange }: PerModelThresholdTableProps) {
   const catalog = useModelRolesStore((state) => state.catalogs.chat)
   const loadCatalog = useModelRolesStore((state) => state.loadCatalog)
   const [drafts, setDrafts] = useState<number[]>([])
@@ -87,6 +91,8 @@ export function PerModelThresholdTable({ id, value, seedPercent, disabled, descr
   const summary = models.length === 1 ? '1 model' : `${models.length} models`
   const showTable = models.length > 0 || drafts.length > 0
 
+  const costlier = (model: string): boolean => impact?.costlierWhen(value[model], `${seedPercent}%`) === true
+
   const thresholdHint = (model: string, percent: number): string | undefined => {
     const size = windowFor(catalog, model)
     return size === null ? undefined : `≈ ${formatCount(percentToTokens(percent, size))} of ${formatCount(size)} tokens`
@@ -137,10 +143,11 @@ export function PerModelThresholdTable({ id, value, seedPercent, disabled, descr
                     max={MAX_PERCENT}
                     hint={thresholdHint(model, parsePercentEntry(value[model]))}
                     ariaLabel={`Threshold for ${model}`}
-                    describedBy={describedBy}
+                    describedBy={costlier(model) ? `${describedBy ?? ''} ${id}-impact-${index}`.trim() : describedBy}
                     disabled={disabled}
                     onCommit={(percent) => save({ ...value, [model]: `${percent}%` })}
                   />
+                  {impact && costlier(model) && <ImpactWarning id={`${id}-impact-${index}`} text={impact.text} />}
                 </td>
                 <td className="py-1">
                   {removeButton(`Remove ${model}`, () => {
