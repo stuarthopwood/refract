@@ -15,7 +15,6 @@ import {
   type ScrollMetrics
 } from './scrollbarMapMath'
 
-export const MAP_WIDTH_PX = 8
 const THROTTLE_MS = 100
 const TWEEN_MS = 160
 
@@ -93,7 +92,7 @@ export function useScrollbarMap(sessionId: string, viewport: HTMLElement | null,
       const canvas = canvasRef.current
       const probe = probeRef.current
       const model = modelRef.current
-      if (!canvas || !probe || !model) return
+      if (!canvas || !probe || !model || canvas.clientWidth === 0) return
       const key = document.documentElement.className
       if (!colors || key !== colorsKey) {
         colors = resolveMapColors(probe)
@@ -103,9 +102,11 @@ export function useScrollbarMap(sessionId: string, viewport: HTMLElement | null,
       const marks = progress < 1 && sameMarkSet(from, model.marks) ? lerpMarks(from, model.marks, progress) : model.marks
       const metrics = { scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight }
       model.metrics = metrics
+      // The strip is `w-(--scrollbar-size)`, so its laid-out width is the token without a per-frame style read.
+      const cssWidth = canvas.clientWidth
       paintMap({
         canvas,
-        cssWidth: MAP_WIDTH_PX,
+        cssWidth,
         cssHeight: model.trackHeight,
         dpr: window.devicePixelRatio || 1,
         colors,
