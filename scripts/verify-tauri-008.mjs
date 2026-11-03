@@ -117,13 +117,13 @@ async function runChecks(cdp, { repoDir }) {
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'back to chat' });
 
-  // Manage accounts: GitHub and OMP sections stay separate; OMP is read-only (FR-016, FR-017 deferred).
+  // Manage accounts: GitHub and agent sections stay separate; the agent one is read-only (FR-016, FR-017 deferred).
   await openMenu(cdp);
   await clickMenuItem(cdp, 'Manage accounts');
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"]') && Array.from(document.querySelectorAll('[role="dialog"] h2, [role="dialog"] h3')).some((h) => /OMP/i.test(h.textContent))`, { timeoutMs: 20_000, label: 'Manage accounts with OMP section' });
+  await cdp.waitFor(`!!document.querySelector('[role="dialog"]') && Array.from(document.querySelectorAll('[role="dialog"] h2, [role="dialog"] h3')).some((h) => /Agent provider/i.test(h.textContent))`, { timeoutMs: 20_000, label: 'Manage accounts with agent section' });
   assert(await cdp.evaluate(`Array.from(document.querySelectorAll('[role="dialog"] section[aria-labelledby]')).some((s) => /GitHub/i.test(s.textContent))`), 'Manage accounts has a labelled GitHub section (FR-008)');
   const dialogText = await cdp.evaluate(`document.querySelector('[role="dialog"]').innerText`);
-  assert(/omp/i.test(dialogText) && /terminal|\/login/i.test(dialogText), 'OMP section is read-only and points at the terminal sign-in (FR-016, FR-017 deferred)');
+  assert(/agent/i.test(dialogText) && /terminal|\/login/i.test(dialogText), 'Agent section is read-only and points at the terminal sign-in (FR-016, FR-017 deferred)');
   assert((await cdp.evaluate(SCOPE_UNNAMED(`document.querySelector('[role="dialog"]')`))).length === 0, 'every Manage accounts control has an accessible name (FR-027)');
   await shot(cdp, 'theme-dark-manage-accounts.png');
   await pressEscape(cdp);

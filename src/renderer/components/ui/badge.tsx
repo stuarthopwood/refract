@@ -61,7 +61,7 @@ function Badge({
     <Comp
       data-slot="badge"
       data-variant={variant}
-      className={cn(badgeVariants({ variant, tone: variant === "role" ? tone : undefined }), onDismiss && "max-w-full overflow-visible", className)}
+      className={cn(badgeVariants({ variant, tone: variant === "role" ? (tone ?? "default") : undefined }), onDismiss && "max-w-full overflow-visible", className)}
       {...props}
     >
       {onDismiss && !asChild ? (
