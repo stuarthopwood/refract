@@ -101,6 +101,8 @@ interface MessageInputProps {
 
 export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMount, queued }: MessageInputProps) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped')
+  // A Session being deleted must not take a send: its worktree is going away and the backend refuses it too.
+  const deleting = useSessionsStore((s) => s.deletingIds.has(sessionId))
   // Turns off path-based image-attach detection; a pasted clipboard image is unaffected (#514).
   const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
   // Absent means enabled (#772).
@@ -220,7 +222,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   /** `overrideText` sends that text at once; `text` is this render's stale closure value (#938). */
   async function handleSend(overrideText?: string) {
     // Refuse mid-read, or Enter sends the message without the pending image.
-    if (disabled || starting || pendingAttachmentReads > 0) return
+    if (disabled || deleting || starting || pendingAttachmentReads > 0) return
     const draftText = overrideText ?? text
     if (!hasSendableContent(draftText, attachments)) return
     // OMP's queue cannot tell two image-only follow-ups apart (#744).
@@ -838,7 +840,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               />
             )}
             <ComposerSendButton
-              blocked={disabled || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
+              blocked={disabled || deleting || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
               dimWhenBlocked={!disabled}
               keyShortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
               onSend={() => void handleSend()}

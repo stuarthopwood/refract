@@ -322,6 +322,17 @@ async fn sessions_recreate_worktree_returns_branch_missing_for_a_deleted_branch(
     );
 }
 
+/// `sessions_delete` returns once its checks pass and the removal runs on in the background.
+async fn wait_until_settled(id: &str) {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        while delete_in_flight::is_deleting(id) {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("the background removal must settle");
+}
+
 /// Proves the no-op-shutdown path (`shutdown()` before `remove_session_worktree`): a never-started
 /// agent is `Stopped` before and after, and delete still succeeds. No fake omp process exists to
 /// test a RUNNING agent.
@@ -364,6 +375,7 @@ async fn sessions_delete_on_a_never_started_session_succeeds_with_a_harmless_no_
     sessions_delete(state.clone(), args)
         .await
         .expect("delete must succeed");
+    wait_until_settled(&session.id).await;
 
     assert_eq!(agent.status().await, SessionStatus::Stopped);
     assert!(tokio::fs::metadata(&added.worktree_path).await.is_err());
@@ -474,6 +486,7 @@ async fn sessions_delete_fires_the_worktree_released_hook_on_success() {
     sessions_delete(state, args)
         .await
         .expect("delete must succeed");
+    wait_until_settled(&session.id).await;
     let after = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
     assert_eq!(
         after,
@@ -492,6 +505,7 @@ async fn sessions_delete_on_an_unknown_id_never_fires_the_hook() {
         serde_json::json!({ "confirmed": true }),
     ];
     let _ = sessions_delete(state, args).await;
+    wait_until_settled("missing-id").await;
     let after = WORKTREE_RELEASED_HOOK_CALLS.with(|c| c.get());
     assert_eq!(
         after, before,

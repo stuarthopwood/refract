@@ -144,6 +144,7 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "chat.send expects (sessionId, text) strings",
             ));
         };
+        super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(session_id)?;
         let parsed_images = parse_images_argument(args.get(2)).await?;
         if state
             .registry

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FileIcon, FolderIcon, Loader2Icon } from 'lucide-react'
 import type { LeftoverSummary } from '../../../shared/ipc'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
+import { useSessionsStore } from '@/state/sessions-store'
 import { InlineStatus } from '@/components/InlineStatus'
 
 interface DeleteCheck {
@@ -72,6 +73,8 @@ export interface DeleteDialogProps {
   leftoverSummary?: LeftoverSummary
   onDeleted?(): void
   onCancelled?(): void
+  /** Seeds the dialog as a failed attempt (the toast's Details): message shown, confirm reads Retry. */
+  initialError?: string
 }
 export function DeleteDialog({
   session,
@@ -80,7 +83,8 @@ export function DeleteDialog({
   check,
   leftoverSummary: leftoverSummaryOverride,
   onDeleted,
-  onCancelled
+  onCancelled,
+  initialError
 }: DeleteDialogProps) {
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -102,8 +106,8 @@ export function DeleteDialog({
     if (!open) return
     deletedRef.current = false
     setDeleting(false)
-    setError(null)
-    setRefused(false)
+    setError(initialError ?? null)
+    setRefused(!!initialError)
     setRefreshing(false)
     setRecheckFailed(false)
     let cancelled = false
@@ -145,7 +149,7 @@ export function DeleteDialog({
     return () => {
       cancelled = true
     }
-  }, [open, session.id, check, leftoverSummaryOverride])
+  }, [open, session.id, check, leftoverSummaryOverride, initialError])
 
   async function handleDelete(): Promise<void> {
     const deletingId = session.id
@@ -154,7 +158,11 @@ export function DeleteDialog({
     setError(null)
     // cleared here too, not just on dialog open -- a NEW attempt starting must never leave a PREVIOUS attempt's "Retry" label state lying around.
     setRefused(false)
+    // Marked before the IPC so a fast result event can't be re-added after it clears the row; cleared on refusal.
+    useSessionsStore.getState().markDeleting(deletingId)
     const response = await window.refract.sessions.delete(deletingId, { confirmed: true })
+    if (response.ok) useSessionsStore.getState().confirmDeleting(deletingId)
+    else useSessionsStore.getState().clearDeleting(deletingId)
     // If so, this stale resolution must not touch `deleting`, `deletedRef`, or close whatever is currently open.
     if (sessionIdRef.current !== deletingId || deleteGenerationRef.current !== myGeneration) return
     setDeleting(false)
@@ -188,6 +196,7 @@ export function DeleteDialog({
       }
       return
     }
+    // The backend returns once its checks pass; the row stays Deleting… until the result events arrive.
     deletedRef.current = true
     onOpenChange(false)
   }

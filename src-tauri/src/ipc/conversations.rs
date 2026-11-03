@@ -330,6 +330,7 @@ pub fn conversations_start_new(state: AppState, args: Vec<Value>) -> HandlerFutu
                 "conversations.startNew expects a string sessionId",
             ));
         };
+        super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(&session_id)?;
         if state
             .registry
             .lock()
@@ -370,6 +371,7 @@ pub fn conversations_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "conversations.open expects (sessionId, file) strings",
             ));
         };
+        super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(&session_id)?;
         let session = state
             .registry
             .lock()

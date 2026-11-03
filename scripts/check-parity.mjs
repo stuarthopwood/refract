@@ -237,6 +237,7 @@ const REQUEST_LANES = {
   SESSIONS_RESTORE: 'R2',
   SESSIONS_DELETE_CHECK: 'R2',
   SESSIONS_DELETE: 'R2',
+  SESSIONS_DELETING: 'R2',
   SESSIONS_RECREATE_WORKTREE: 'R2',
   SESSIONS_RECOVER: 'R3',
   SESSIONS_RESUME: 'R3',
@@ -364,6 +365,8 @@ const REQUEST_LANES = {
 const EVENT_LANES = {
   SESSION_STATUS: 'R3', // #786, agent start/stop state machine
   SESSION_LIST_CHANGED: 'R2', // #785, session lifecycle
+  SESSION_DELETED: 'R2', // #1591, background delete finished
+  SESSION_DELETE_FAILED: 'R2', // #1591, background delete failed
   TRANSCRIPT_PATCH: 'R4', // #787, chat send path streaming
   QUEUE_UPDATE: 'R4', // "queue identity #540" in R4's own work description
   REQUEST_PENDING: 'R4',

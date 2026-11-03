@@ -3,7 +3,7 @@
 // Project, flags, last active) and an always-visible Archive/Restore quick action. The primary open
 // button covers only the info area; the quick action and "..." menu are its siblings, never nested
 // inside it (a button must never contain another button).
-import { ArchiveIcon, ArchiveRestoreIcon, EllipsisVerticalIcon, FolderGit2Icon, GitBranchIcon, TriangleAlertIcon } from 'lucide-react'
+import { ArchiveIcon, ArchiveRestoreIcon, EllipsisVerticalIcon, FolderGit2Icon, GitBranchIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Badge } from '@/components/ui/badge'
 import { IconButton } from '@/components/IconButton'
@@ -30,14 +30,19 @@ export function SessionRowTable({
   row: ReturnType<typeof useSessionRowActions>
 }) {
   const isArchived = !!session.archivedAt
+  const deleting = row.deleting
   return (
     <li
       ref={row.rowRef}
-      className={cn('relative w-full', row.isVisible ? 'bg-accent text-accent-foreground' : 'hover:bg-row-hover-bg')}
+      className={cn(
+        'relative w-full',
+        deleting && 'opacity-60',
+        row.isVisible ? 'bg-accent text-accent-foreground' : !deleting && 'hover:bg-row-hover-bg'
+      )}
     >
       {row.isVisible && <ActiveIndicatorBar />}
       <ContextMenu onOpenChange={(open) => onContextMenuOpenChange(row, open)}>
-        <ContextMenuTrigger asChild>
+        <ContextMenuTrigger asChild disabled={deleting}>
           <div className="flex min-w-0 items-center gap-2 pr-2">
             {row.renaming ? (
               <SessionRenameInput row={row} />
@@ -45,7 +50,10 @@ export function SessionRowTable({
               <button
                 ref={row.openButtonRef}
                 type="button"
-                onClick={(event) => surface.open(event)}
+                aria-disabled={deleting || undefined}
+                onClick={(event) => {
+                  if (!deleting) surface.open(event)
+                }}
                 onKeyDown={row.handleOpenButtonKeyDown}
                 data-choice-item
                 // A fixed grid, not a natural-width flex row, so the columns line up across every row.
@@ -56,13 +64,13 @@ export function SessionRowTable({
                     status, branch, Archived, Worktree missing and last activity from screen readers.
                     The accessible name comes from this content, in reading order. */}
                 <span className="flex min-w-0 items-center gap-2">
-                  <StateIcon status={displayStatus(session)} />
-                  <span className="truncate text-xs text-muted-foreground">{displayLabel(session)}</span>
+                  {deleting ? <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" /> : <StateIcon status={displayStatus(session)} />}
+                  <span className="truncate text-xs text-muted-foreground">{deleting ? 'Deleting…' : displayLabel(session)}</span>
                 </span>
                 {row.isVisible && <span className="sr-only">Shown in chat</span>}
                 <span className="flex min-w-0 flex-col">
                   <span className="truncate">
-                    <span className="sr-only">Open </span>
+                    {!deleting && <span className="sr-only">Open </span>}
                     {session.name}
                   </span>
                   <span className="flex min-w-0 items-center gap-1 font-code text-xs text-muted-foreground">
@@ -92,34 +100,36 @@ export function SessionRowTable({
                 <span className="text-right text-xs text-muted-foreground">{formatRelativeTime(session.lastActivityAt)}</span>
               </button>
             )}
-            <div className="flex shrink-0 items-center gap-1">
-              <IconButton
-                size="icon-xs"
-                label={isArchived ? `Restore session ${session.name}` : `Archive session ${session.name}`}
-                side="bottom"
-                aria-disabled={row.quickActionPending || undefined}
-                onClick={row.runQuickAction}
-                className="text-muted-foreground aria-disabled:opacity-50"
-              >
-                {isArchived ? <ArchiveRestoreIcon aria-hidden /> : <ArchiveIcon aria-hidden />}
-              </IconButton>
-              <DropdownMenu onOpenChange={(open) => onDropdownOpenChange(row, open)}>
-                <DropdownMenuTrigger asChild>
-                  <IconButton
-                    ref={row.menuTriggerRef}
-                    size="icon-xs"
-                    label={`More actions for ${session.name}`}
-                    side="bottom"
-                    className="text-muted-foreground"
-                  >
-                    <EllipsisVerticalIcon aria-hidden />
-                  </IconButton>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent className="max-w-80" onCloseAutoFocus={row.handleMenuCloseAutoFocus}>
-                  <DropdownActionItems actions={row.actions} />
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
+            {!deleting && (
+              <div className="flex shrink-0 items-center gap-1">
+                <IconButton
+                  size="icon-xs"
+                  label={isArchived ? `Restore session ${session.name}` : `Archive session ${session.name}`}
+                  side="bottom"
+                  aria-disabled={row.quickActionPending || undefined}
+                  onClick={row.runQuickAction}
+                  className="text-muted-foreground aria-disabled:opacity-50"
+                >
+                  {isArchived ? <ArchiveRestoreIcon aria-hidden /> : <ArchiveIcon aria-hidden />}
+                </IconButton>
+                <DropdownMenu onOpenChange={(open) => onDropdownOpenChange(row, open)}>
+                  <DropdownMenuTrigger asChild>
+                    <IconButton
+                      ref={row.menuTriggerRef}
+                      size="icon-xs"
+                      label={`More actions for ${session.name}`}
+                      side="bottom"
+                      className="text-muted-foreground"
+                    >
+                      <EllipsisVerticalIcon aria-hidden />
+                    </IconButton>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent className="max-w-80" onCloseAutoFocus={row.handleMenuCloseAutoFocus}>
+                    <DropdownActionItems actions={row.actions} />
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            )}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="max-w-80" onCloseAutoFocus={(event) => row.handleMenuCloseAutoFocus(event, true)}>
@@ -130,7 +140,7 @@ export function SessionRowTable({
         session={session}
         open={row.deleteOpen}
         onOpenChange={row.setDeleteOpen}
-        onDeleted={() => surface.announce(`Deleted ${session.name}`)}
+        onDeleted={() => surface.announce(`Deleting ${session.name}`)}
         onCancelled={() => {
           if (row.menuTriggerRef.current?.isConnected) row.menuTriggerRef.current.focus()
           else if (row.openButtonRef.current?.isConnected) row.openButtonRef.current.focus()

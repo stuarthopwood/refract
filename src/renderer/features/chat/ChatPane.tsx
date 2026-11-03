@@ -81,6 +81,7 @@ interface ChatPaneProps {
 
 export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark, showAmbientLoop }: ChatPaneProps) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
+  const deleting = useSessionsStore((s) => s.deletingIds.has(sessionId))
   const startSeq = useSessionsStore((s) => s.startSeq[sessionId] ?? 0)
   const queued = useQueuedMessages(sessionId)
   const isPristine = useSplitStore((s) => s.pristineIds.has(sessionId))
@@ -665,8 +666,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           onRecreateWorktree={() => void handleRecreateWorktree()}
           onArchive={() => void handleArchive()}
           onDelete={() => setDeleteForId(sessionId)}
-          startNewButtonRef={startNewButtonRef}
-          deleteButtonRef={deleteBannerButtonRef}
+          startNewButtonRef={startNewButtonRef} deleteButtonRef={deleteBannerButtonRef} deleting={deleting}
         />
       )}
       <DeleteDialog

@@ -240,6 +240,7 @@ export const IPC_REQUESTS = {
   SESSIONS_DELETE_CHECK: 'sessions.deleteCheck',
   SESSIONS_DELETE_LEFTOVER_SUMMARY: 'sessions.deleteLeftoverSummary',
   SESSIONS_DELETE: 'sessions.delete',
+  SESSIONS_DELETING: 'sessions.deleting',
   SESSIONS_RECREATE_WORKTREE: 'sessions.recreateWorktree',
   SESSIONS_RECOVER: 'sessions.recover',
   SESSIONS_RESUME: 'sessions.resume',
@@ -394,6 +395,8 @@ export const IPC_EVENTS = {
   SESSION_STATUS: 'session:status',
   SESSION_ACTIVITY: 'session:activity',
   SESSION_LIST_CHANGED: 'session:list-changed',
+  SESSION_DELETED: 'sessions:deleted',
+  SESSION_DELETE_FAILED: 'sessions:delete-failed',
   TRANSCRIPT_PATCH: 'transcript:patch',
   QUEUE_UPDATE: 'queue:update',
   REQUEST_PENDING: 'request:pending',
@@ -456,7 +459,10 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setHidden(id: string, hidden: boolean): Promise<Result<void>>; // #748: view flag only, never stops the agent
     deleteCheck(id: string): Promise<Result<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>>;
     deleteLeftoverSummary(id: string): Promise<Result<LeftoverSummary>>;
+    /** Returns once the checks pass; removal continues in the background (`onSessionDeleted` / `onSessionDeleteFailed`). */
     delete(id: string, options: { confirmed: true }): Promise<Result<void>>;
+    /** Ids whose removal is still in flight; restores Deleting… rows after a reload. */
+    deleting(): Promise<Result<string[]>>;
     recreateWorktree(id: string): Promise<Result<void>>;
     recover(id: string): Promise<Result<SessionSnapshot>>;
     resume(id: string): Promise<Result<SessionSnapshot>>;
@@ -609,6 +615,10 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onSessionStatus(handler: (payload: SessionStatusEvent) => void): Unsubscribe;
   onSessionActivity(handler: (payload: { sessionId: string; activity: SessionActivity | null }) => void): Unsubscribe; // #526 (FR-109)
   onSessionListChanged(handler: () => void): Unsubscribe;
+  onSessionDeleted(handler: (payload: { sessionId: string }) => void): Unsubscribe;
+  onSessionDeleteFailed(
+    handler: (payload: { sessionId: string; error: { code: IpcErrorCode; message: string } }) => void
+  ): Unsubscribe;
   onTranscriptPatch(handler: (payload: { sessionId: string; ops: TranscriptOp[] }) => void): Unsubscribe;
   onQueueUpdate(handler: (payload: { sessionId: string; followUp: string[]; steering: string[] }) => void): Unsubscribe;
   onRequestPending(handler: (payload: { sessionId: string; request: PendingRequest }) => void): Unsubscribe;

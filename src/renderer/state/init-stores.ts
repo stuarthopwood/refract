@@ -33,6 +33,8 @@ import { useSessionListStore } from './session-list-store'
 import { useThemeStore } from './theme-store'
 import { useChatWidthStore } from './chat-width-store'
 import { useUpdateStore } from './update-store'
+import { useChatAreaAnnouncer } from '../features/chat/chatAreaAnnouncer'
+import { showDeleteFailureToast } from '../features/sessions/deleteFailureToast'
 
 // An error or rejected invoke falls back to the default instead of a cold-start toast; `ok` tells callers whether the value is real.
 async function loadInitial<T>(request: Promise<Result<T>>, fallback: T, label: string): Promise<{ value: T; ok: boolean }> {
@@ -78,6 +80,22 @@ export function initStores(): void {
   })
   window.refract.onSessionListChanged(() => {
     void useSessionsStore.getState().refresh()
+  })
+  window.refract.onSessionDeleted(({ sessionId }) => {
+    const store = useSessionsStore.getState()
+    // Read the name before the refresh drops the Session from the list.
+    const name = store.sessions.find((s) => s.id === sessionId)?.name ?? 'Session'
+    store.clearDeleting(sessionId)
+    void store.refresh()
+    useChatAreaAnnouncer.getState().announce(`Deleted ${name}`)
+  })
+  window.refract.onSessionDeleteFailed(({ sessionId, error }) => {
+    const store = useSessionsStore.getState()
+    const name = store.sessions.find((s) => s.id === sessionId)?.name ?? 'Session'
+    store.clearDeleting(sessionId)
+    void store.refresh()
+    useChatAreaAnnouncer.getState().announce(`Could not delete ${name}. ${error.message}`)
+    showDeleteFailureToast({ id: sessionId, name }, error)
   })
   window.refract.onSessionActivity(({ sessionId, activity }) => {
     useSessionsStore.getState().applyActivity(sessionId, activity)

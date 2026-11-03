@@ -19,6 +19,7 @@ import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
+  IpcErrorCode,
   BranchEntry,
   ChatAnswer,
   DiffStat,
@@ -168,6 +169,7 @@ const refract: RefractApi = {
     deleteLeftoverSummary: (id) =>
       request<LeftoverSummary>(IPC_REQUESTS.SESSIONS_DELETE_LEFTOVER_SUMMARY, id),
     delete: (id, options) => request<void>(IPC_REQUESTS.SESSIONS_DELETE, id, options),
+    deleting: () => request<string[]>(IPC_REQUESTS.SESSIONS_DELETING),
     recreateWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_RECREATE_WORKTREE, id),
     recover: (id) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_RECOVER, id),
     resume: (id) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_RESUME, id),
@@ -452,6 +454,9 @@ const refract: RefractApi = {
   onSessionActivity: (handler) =>
     on<{ sessionId: string; activity: SessionActivity | null }>(IPC_EVENTS.SESSION_ACTIVITY, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
+  onSessionDeleted: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SESSION_DELETED, handler),
+  onSessionDeleteFailed: (handler) =>
+    on<{ sessionId: string; error: { code: IpcErrorCode; message: string } }>(IPC_EVENTS.SESSION_DELETE_FAILED, handler),
   onTranscriptPatch: (handler) => on<{ sessionId: string; ops: TranscriptOp[] }>(IPC_EVENTS.TRANSCRIPT_PATCH, handler),
   onQueueUpdate: (handler) =>
     on<{ sessionId: string; followUp: string[]; steering: string[] }>(IPC_EVENTS.QUEUE_UPDATE, handler),

@@ -12,11 +12,12 @@ import { useSessionsStore, useSettingsStore, useSplitStore } from '@/state'
 export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; allowed: boolean }) {
   const stopped = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'stopped')
   const enabled = useSettingsStore((s) => s.settings.showAgentStoppedBar !== false)
+  const deleting = useSessionsStore((s) => s.deletingIds.has(sessionId))
   const setShowAgentStoppedBar = useSettingsStore((s) => s.setShowAgentStoppedBar)
 
   const sessionName = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.name ?? 'Session')
 
-  if (!allowed || !stopped || !enabled) return null
+  if (!allowed || !stopped || !enabled || deleting) return null
 
   async function handleDontShowAgain() {
     if (!(await setShowAgentStoppedBar(false))) return

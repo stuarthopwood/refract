@@ -9,6 +9,10 @@ use crate::store::registry::RegistryStore;
 pub const SESSION_STATUS: &str = "session:status";
 pub const SESSION_ACTIVITY: &str = "session:activity";
 pub const SESSION_LIST_CHANGED: &str = "session:list-changed";
+/// Background `sessions.delete` finished: `{ sessionId }`.
+pub const SESSION_DELETED: &str = "sessions:deleted";
+/// Background `sessions.delete` failed: `{ sessionId, error: { code, message } }`.
+pub const SESSION_DELETE_FAILED: &str = "sessions:delete-failed";
 pub const TRANSCRIPT_PATCH: &str = "transcript:patch";
 pub const QUEUE_UPDATE: &str = "queue:update";
 pub const REQUEST_PENDING: &str = "request:pending";
@@ -107,6 +111,25 @@ impl EventSink {
     pub fn emit_session_list_changed(&self) {
         self.send(SESSION_LIST_CHANGED, ());
         crate::shell::notifications::prune_deleted_sessions(self.registry.clone());
+    }
+
+    /// `sessions:deleted`: the background removal finished and the registry entry is gone.
+    pub fn emit_session_deleted(&self, session_id: &str) {
+        self.send(
+            SESSION_DELETED,
+            serde_json::json!({ "sessionId": session_id }),
+        );
+    }
+
+    /// `sessions:delete-failed`: the background removal failed; the registry entry is kept.
+    pub fn emit_session_delete_failed(&self, session_id: &str, code: &str, message: &str) {
+        self.send(
+            SESSION_DELETE_FAILED,
+            serde_json::json!({
+                "sessionId": session_id,
+                "error": { "code": code, "message": message },
+            }),
+        );
     }
 
     /// Serialises `ops` from a borrowed payload, avoiding a `serde_json::Value` copy.

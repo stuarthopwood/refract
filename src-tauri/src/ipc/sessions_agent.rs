@@ -256,6 +256,7 @@ pub fn sessions_resume(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let Some(id) = args.first().and_then(Value::as_str).map(str::to_string) else {
             return Err(invalid_argument("sessions.resume expects a string id"));
         };
+        super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(&id)?;
         let Some(session) = state.registry.lock().await.get_session(&id).cloned() else {
             return Err(not_found(format!("Session not found: {id}")));
         };
@@ -348,6 +349,7 @@ async fn attach_snapshot_core(
     id: &str,
     force_start: bool,
 ) -> Result<Value, super::IpcError> {
+    super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(id)?;
     let Some(session) = state.registry.lock().await.get_session(id).cloned() else {
         return Err(not_found(format!("Session not found: {id}")));
     };
