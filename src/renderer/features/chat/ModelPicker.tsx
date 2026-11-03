@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { notify, useModelRolesStore, useSessionsStore } from '@/state'
-import { ROLE_ICON, ROLE_LABEL, type RoleChipRoleId } from '@/lib/modelRoles'
+import { ROLE_ICON, ROLE_LABEL, roleTone, type RoleChipRoleId } from '@/lib/modelRoles'
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { ModelCatalogGroup } from './ModelCatalogGroup'
 import { RoleOption } from './RoleOption'
@@ -77,7 +77,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
       roles.map((entry) => {
         const friendly = friendlyRoleModel(entry.role, entry.model, catalog)
         const resolved = resolveRoleModelName(entry.role, roles, catalog)
-        return { role: entry.role, text: resolved ?? friendly.text, raw: !resolved && friendly.raw, disabled: !friendly.hasFallback }
+        return { role: entry.role, text: resolved ?? friendly.text, disabled: !friendly.hasFallback }
       }),
     [roles, catalog]
   )
@@ -268,7 +268,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
               label={roleLabelOf(item.role)}
               Icon={ROLE_ICON[item.role as RoleChipRoleId] ?? CpuIcon}
               modelText={shortModelName(item.text)}
-              modelRaw={item.raw}
+              tone={roleTone(item.role)}
               current={!session?.pinned && item.role === session?.currentRole}
               next={item.role === pendingRole}
               active={index === roleActive}

@@ -182,6 +182,11 @@
   --color-role-smol: var(--role-smol);
   --color-role-slow: var(--role-slow);
   --color-role-plan: var(--role-plan);
+  /* A 15% wash of the role colour over the popover surface: the role-card fill. */
+  --color-role-default-tint: color-mix(in oklab, var(--role-default) 15%, var(--popover));
+  --color-role-smol-tint: color-mix(in oklab, var(--role-smol) 15%, var(--popover));
+  --color-role-slow-tint: color-mix(in oklab, var(--role-slow) 15%, var(--popover));
+  --color-role-plan-tint: color-mix(in oklab, var(--role-plan) 15%, var(--popover));
   --radius-sm: calc(var(--radius) * 0.5);
   --radius-md: var(--radius);
   --radius-lg: var(--radius);
