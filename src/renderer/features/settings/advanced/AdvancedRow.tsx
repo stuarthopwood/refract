@@ -2,7 +2,7 @@
 // "Default: X" only when the value differs, and a Reset button that is always there but disabled at
 // the default (so the control never jumps). A dependent row
 // (`info.dependsOn` off) stays visible, indented, with every control disabled, and says why.
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ImpactWarning } from '@/components/settings/ImpactWarning'
 import { SettingRow } from '@/components/settings/SettingRow'
@@ -57,6 +57,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
   const isDefault = same(value, defaultValue)
   const disabled = disabledReason !== undefined
   const rowRef = useRef<HTMLDivElement>(null)
+  const [tableOpen, setTableOpen] = useState(false)
   const impactId = `${id}-impact`
   const models: Record<string, string> = info.kind === 'record' && value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
   const { impact } = info
@@ -65,7 +66,9 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
     (info.kind === 'record'
       ? Object.values(models).some((percent) => impact.costlierWhen(percent, `${seedPercent}%`))
       : impact.costlierWhen(value, defaultValue))
-  const describedBy = [`${id}-description`, costlier ? impactId : undefined, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')
+  // The expanded per-model table warns on its own rows, so the summary warning shows only while collapsed.
+  const summaryWarning = costlier && !(info.kind === 'record' && tableOpen)
+  const describedBy = [`${id}-description`, summaryWarning ? impactId : undefined, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')
   const stacked = info.kind === 'order' || info.kind === 'record'
 
   const description: ReactNode = (
@@ -89,9 +92,9 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
     </Button>
   )
   const note =
-    costlier || disabled ? (
+    summaryWarning || disabled ? (
       <>
-        {costlier && info.impact && <ImpactWarning id={impactId} text={info.impact.text} />}
+        {summaryWarning && info.impact && <ImpactWarning id={impactId} text={info.impact.text} />}
         {disabled && (
           <span id={`${id}-reason`} className="text-xs text-muted-foreground">
             {disabledReason}
@@ -165,6 +168,8 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
           seedPercent={seedPercent}
           disabled={disabled}
           describedBy={describedBy}
+          open={tableOpen}
+          onOpenChange={setTableOpen}
           onChange={onChange}
         />
       )

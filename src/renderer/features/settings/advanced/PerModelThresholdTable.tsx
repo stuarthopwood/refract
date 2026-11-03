@@ -23,16 +23,18 @@ interface PerModelThresholdTableProps {
   seedPercent: number
   disabled?: boolean
   describedBy?: string
+  /** Whether the table is expanded; owned by the row so it can drop its summary warning then. */
+  open: boolean
+  onOpenChange: (open: boolean) => void
   onChange: (value: Record<string, string>) => Promise<boolean>
 }
 
-export function PerModelThresholdTable({ id, value, impact, seedPercent, disabled, describedBy, onChange }: PerModelThresholdTableProps) {
+export function PerModelThresholdTable({ id, value, impact, seedPercent, disabled, describedBy, open, onOpenChange, onChange }: PerModelThresholdTableProps) {
   const catalog = useModelRolesStore((state) => state.catalogs.chat)
   const loadCatalog = useModelRolesStore((state) => state.loadCatalog)
   const [drafts, setDrafts] = useState<number[]>([])
   const [nextDraft, setNextDraft] = useState(0)
   const [saveFailed, setSaveFailed] = useState(false)
-  const [open, setOpen] = useState(false)
   const models = Object.keys(value)
   const addId = `${id}-add`
 
@@ -85,7 +87,7 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
   const addDraft = (): void => {
     setDrafts((current) => [...current, nextDraft])
     setNextDraft((n) => n + 1)
-    setOpen(true)
+    onOpenChange(true)
   }
 
   const summary = models.length === 1 ? '1 model' : `${models.length} models`
@@ -99,7 +101,7 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
   }
 
   return (
-    <Collapsible open={open || drafts.length > 0} onOpenChange={setOpen} className="flex w-full flex-col gap-2">
+    <Collapsible open={open || drafts.length > 0} onOpenChange={onOpenChange} className="flex w-full flex-col gap-2">
       {showTable && (
         <CollapsibleTrigger asChild>
           <Button variant="ghost" size="sm" className="group/trigger self-start" aria-describedby={describedBy} disabled={disabled || drafts.length > 0}>

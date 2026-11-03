@@ -2,7 +2,7 @@
 // at launch (the token guard overlay), grouped by area. The values live in Refract's own store,
 // never in OMP's config files; a change applies to the next Session that launches. The Advisor
 // model is edited under Models > Advisor.
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingsPage } from '@/components/settings/SettingsPage'
 import { useModelRolesStore } from '@/state'
@@ -16,7 +16,7 @@ const ADVISOR_GROUP_HINT = 'Applies in review mode only.'
 const THRESHOLDS_RESET_NOTICE = 'Compaction thresholds are now a percent of the context window. Your old token thresholds were reset to the defaults.'
 
 export function AdvancedSection() {
-  const { values, defaults, loaded, thresholdsReset, error, load, set, reset } = useTokenGuardStore()
+  const { values, defaults, loaded, thresholdsReset, error, load, set, reset, dismissThresholdsReset } = useTokenGuardStore()
   const roles = useModelRolesStore((state) => state.roles)
   const rolesLoaded = useModelRolesStore((state) => state.loaded)
   const loadRoles = useModelRolesStore((state) => state.load)
@@ -26,6 +26,16 @@ export function AdvancedSection() {
   useEffect(() => {
     void load()
   }, [load])
+
+  // Once shown, the notice is spent: drop it on leaving so reopening Settings does not repeat it.
+  const noticeShown = useRef(false)
+  noticeShown.current ||= thresholdsReset
+  useEffect(
+    () => () => {
+      if (noticeShown.current) dismissThresholdsReset()
+    },
+    [dismissThresholdsReset]
+  )
 
   useEffect(() => {
     if (!rolesLoaded) void loadRoles()
@@ -48,7 +58,7 @@ export function AdvancedSection() {
       intro="Refract sets these values every time it starts a Session, to keep token use down. Changes apply to new Sessions only; running Sessions keep the values they launched with."
     >
       {thresholdsReset && (
-        <p role="status" className="mb-2 text-sm text-muted-foreground">
+        <p role="status" className="mb-4 text-sm text-muted-foreground">
           {THRESHOLDS_RESET_NOTICE}
         </p>
       )}
