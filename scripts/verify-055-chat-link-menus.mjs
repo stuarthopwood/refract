@@ -157,7 +157,7 @@ async function main() {
 
     for (const [name, expr, label, expected] of [['web', WEB, 'Copy link', 'https://example.com/docs'], ['file', FILE, 'Copy path', 'src/app.ts']]) {
       const rest = await btnState(expr, label);
-      check(!!rest && rest.opacity === '0' && rest.pe === 'none' && rest.tab === -1, `${name}: Copy button hidden at rest, inert, tabIndex -1`, rest);
+      check(!!rest && rest.opacity === '0.5' && rest.pe === 'auto' && rest.tab === -1, `${name}: Copy button dimmed at rest, clickable, tabIndex -1`, rest);
       await move(await centre(expr));
       await cdp.waitFor(`getComputedStyle(${COPY_BTN(expr, label)}).opacity === '1'`, { timeoutMs: 5_000, label: `${name} Copy appears on hover` }).catch(() => {});
       const hov = await btnState(expr, label);

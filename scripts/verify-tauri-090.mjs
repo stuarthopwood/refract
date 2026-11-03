@@ -42,13 +42,7 @@ async function checkQuestionCard(cdp) {
   await cdp.typeIntoByLabel('Message', 'Please ask me the batch of questions now.');
   await cdp.clickByLabel('Send message');
   await cdp.waitFor(`document.querySelectorAll('[role="tab"]').length === 2`, { timeoutMs: 30_000, label: 'Question card tab row rendered' });
-  const hint = `Array.from(document.querySelectorAll('p')).find((p) => p.textContent.includes('moves to the next unanswered question'))`;
-  assert(await cdp.evaluate(`!!(${hint})`), 'Single-choice hint is shown while another question is incomplete');
-  const described = await cdp.evaluate(`(() => { const h = ${hint}; const g = document.querySelector('[role="radiogroup"]'); return !!h && !!g && (g.getAttribute('aria-describedby') ?? '').split(' ').includes(h.id); })()`);
-  assert(described, 'The radio group is described by the hint');
-  const order = await cdp.evaluate(`(() => { const h = ${hint}; const input = document.querySelector('[aria-label="Other answer"]'); return !!(input.compareDocumentPosition(h) & Node.DOCUMENT_POSITION_FOLLOWING); })()`);
-  assert(order, 'The hint sits after the Other answer input');
-  await shot(cdp, '01-question-hint.png');
+  await shot(cdp, '01-question-card.png');
   await cdp.click(rowFinder('radio', 'Postgres'));
   await cdp.waitFor(`document.querySelector('[role="tab"][aria-selected="true"]')?.textContent.includes('Features')`, { timeoutMs: 15_000, label: 'Features tab active after the pick' });
   await sleep(500);

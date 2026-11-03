@@ -171,7 +171,7 @@ export function StateIcon({ status, style, tone }: { status: SessionDisplayStatu
   // Issue #482: the Status style setting, applied live; the single change point for every surface.
   // style overrides it for the Appearance preview only.
   const settingDots = useSettingsStore((s) => s.settings.statusStyle === 'dots')
-  if (style ? style === 'dots' : settingDots) return <StatusDot status={status} />
+  if (style ? style === 'dots' : settingDots) return <StatusDot status={status} accent={tone === 'accent'} />
   const className = 'size-4 shrink-0 forced-colors:text-[CanvasText]'
   // tone="accent" tints with the accent text colour instead of the per-state colour.
   const accent = tone === 'accent'

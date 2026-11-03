@@ -15,13 +15,14 @@ const TONE: Record<SessionDisplayStatus, string> = {
  *  Needs you a filled dot inside a ring, Stopped a small squarish dot, Unread response an open
   * ring with a badge dot at the top right. Drawn in `currentColor` from the state token; forced colours fall back to
  * CanvasText. Decorative: the caller's `sr-only` status word carries the meaning. */
-export function StatusDot({ status, className }: { status: SessionDisplayStatus; className?: string }) {
+export function StatusDot({ status, className, accent = false }: { status: SessionDisplayStatus; className?: string; accent?: boolean }) {
   return (
     <svg
       aria-hidden
       focusable={false}
       viewBox="0 0 16 16"
-      className={cn('size-4 shrink-0 forced-colors:text-[CanvasText]', TONE[status], className)}
+      // accent drops the state colour class rather than relying on class-merge order.
+      className={cn('size-4 shrink-0 forced-colors:text-[CanvasText]', accent ? 'text-accent-text' : TONE[status], accent && status === 'working' && 'motion-safe:animate-pulse', className)}
     >
       <DotShape status={status} />
     </svg>
