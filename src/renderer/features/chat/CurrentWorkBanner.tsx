@@ -36,7 +36,7 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
         data-slot="current-work-banner"
         data-testid="current-work-banner"
         aria-live="off"
-        className="flex h-6 shrink-0 items-center gap-1.5 px-4 text-sm"
+        className="flex h-6 shrink-0 items-center gap-2 px-4 text-sm"
       >
         <StateIcon status={status} tone="accent" />
         <Tooltip>
