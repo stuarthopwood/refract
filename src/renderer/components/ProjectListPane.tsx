@@ -4,7 +4,8 @@
 // default "N projects skipped" disclosure, the error alert, the one empty state with "Clear
 // filters", optional "Show more", and the rows as `children`.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { ChevronRightIcon, FunnelIcon, SearchXIcon } from 'lucide-react'
+import { ChevronRightIcon, SearchXIcon } from 'lucide-react'
+import { FilterToggleButton } from '@/components/FilterToggleButton'
 import { FilterTabs } from '@/components/FilterTabs'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
 import { LoadingOverlay } from '@/components/ui/loading-overlay'
@@ -12,8 +13,6 @@ import { SearchField } from '@/components/SearchField'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { FILTER_PICKER_CLASS, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { RefreshButton } from '@/features/pull-requests/RefreshButton'
 import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
 import { cn } from '@/lib/utils'
@@ -150,25 +149,14 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
       <div className="flex items-center gap-1">
         <FilterTabs value={props.tab} onValueChange={props.onTabChange} tabs={props.tabs} />
         <div className="flex shrink-0 items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild aria-describedby={undefined}>
-              <Button
-                ref={filtersButtonRef}
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={filtersLabel}
-                aria-expanded={filtersOpen}
-                aria-controls={filtersOpen ? panelId : undefined}
-                onClick={() => setFiltersOpen((open) => !open)}
-                className={cn('relative aria-expanded:bg-muted aria-expanded:text-foreground', COMPOSER_BUTTON_FOCUS_CLASS)}
-              >
-                <FunnelIcon aria-hidden className="size-4" />
-                {activeFilterCount > 0 && <span aria-hidden className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{filtersLabel}</TooltipContent>
-          </Tooltip>
+          <FilterToggleButton
+            ref={filtersButtonRef}
+            label={filtersLabel}
+            open={filtersOpen}
+            active={activeFilterCount > 0}
+            panelId={panelId}
+            onToggle={() => setFiltersOpen((open) => !open)}
+          />
           <RefreshButton loading={loading} onClick={refresh} label={`Refresh ${noun.plural}`} />
         </div>
       </div>

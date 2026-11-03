@@ -1,9 +1,12 @@
 import * as React from "react"
+import { Slot } from "radix-ui"
 import { cn } from "@/lib/utils"
 
-function Input({ className, type, ...props }: React.ComponentProps<"input">) {
+/** `asChild` styles and feeds props to the one child element instead of rendering an `<input>` (a cmdk input, say). */
+function Input({ className, type, asChild, ...props }: React.ComponentProps<"input"> & { asChild?: boolean }) {
+  const Comp = asChild ? Slot.Root : "input"
   return (
-    <input
+    <Comp
       type={type}
       data-slot="input"
       className={cn(

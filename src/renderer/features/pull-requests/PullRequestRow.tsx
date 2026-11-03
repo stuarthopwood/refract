@@ -23,15 +23,16 @@ interface PullRequestRowProps {
 }
 
 export { CHECK_STATE_DISPLAY, type CheckDisplay, type CheckStateDisplay } from './check-display'
+import type { CheckStateDisplay } from './check-display'
 
 /** High remediation (accessibility-auditor, FR-007/FR-030): open/draft/closed/merged was never
  * visibly conveyed anywhere -- neither the list row nor the detail header. Icon + text, same
  * "never colour alone" rule `CHECK_STATE_DISPLAY` already follows. */
-export const PULL_REQUEST_STATE_DISPLAY: Record<PullRequestState, CheckDisplay> = {
-  open: { icon: GitPullRequestIcon, label: 'Open' },
-  draft: { icon: GitPullRequestDraftIcon, label: 'Draft' },
-  closed: { icon: GitPullRequestClosedIcon, label: 'Closed' },
-  merged: { icon: GitMergeIcon, label: 'Merged' }
+export const PULL_REQUEST_STATE_DISPLAY: Record<PullRequestState, CheckStateDisplay> = {
+  open: { icon: GitPullRequestIcon, label: 'Open', colorClass: 'text-pr-open' },
+  draft: { icon: GitPullRequestDraftIcon, label: 'Draft', colorClass: 'text-pr-draft' },
+  closed: { icon: GitPullRequestClosedIcon, label: 'Closed', colorClass: 'text-pr-closed' },
+  merged: { icon: GitMergeIcon, label: 'Merged', colorClass: 'text-pr-merged' }
 }
 
 export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestRowProps) {

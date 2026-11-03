@@ -9,13 +9,17 @@ type InputWithActionProps = React.ComponentProps<typeof Input> & {
   wrapperClassName?: string
   /** Overlays inside the wrapper: leading icons and one `InputActionButton`. */
   children?: React.ReactNode
+  /** Replaces the `<input>` with this element, which takes the field's styling and props. */
+  input?: React.ReactElement
 }
 
 /** An Input with room on the right for one `InputActionButton` (clear, reveal): one padding for every such field. */
-export function InputWithAction({ wrapperClassName, className, children, ...props }: InputWithActionProps) {
+export function InputWithAction({ wrapperClassName, className, children, input, ...props }: InputWithActionProps) {
   return (
     <div className={cn('relative min-w-0', wrapperClassName)}>
-      <Input {...props} className={cn('pr-8', className)} />
+      <Input {...props} asChild={input !== undefined} className={cn('pr-8', className)}>
+        {input}
+      </Input>
       {children}
     </div>
   )

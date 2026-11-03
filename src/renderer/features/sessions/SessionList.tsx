@@ -1,10 +1,11 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, SearchXIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
+import { FilterToggleButton } from '@/components/FilterToggleButton'
 import { SearchField } from '@/components/SearchField'
 import { AddProjectMenu } from '@/features/sessions/AddProjectMenu'
 import { ViewsNavGroup } from './ViewsNavGroup'
@@ -17,7 +18,7 @@ import { ShowHiddenToggle } from './ShowHiddenToggle'
 import type { SessionSummary } from '../../../shared/ipc'
 import { searchSessions, showingCountLabel } from './sessionDisplay'
 import { createdSessionAnnouncement, wasHiddenByFilter } from './createdSessionAnnouncement'
-import { SESSION_SEARCH_INPUT_ATTR } from './sessionSearchSelector'
+import { SESSION_FILTER_TOGGLE_ATTR, SESSION_SEARCH_INPUT_ATTR, focusSessionSearch } from './sessionSearchSelector'
 
 /** The session list: a collapsible group per Repository, plus one cross-repository Archived group; its header is part of the merged top row. */
 export function SessionList() {
@@ -99,7 +100,18 @@ export function SessionList() {
   }, [trimmedQuery])
   function handleClearSearch(): void {
     setQuery('')
-    searchInputRef.current?.focus()
+    focusSessionSearch()
+  }
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchPanelId = useId()
+  const filterToggleRef = useRef<HTMLButtonElement>(null)
+  // Opening the panel puts focus in the field; it is skipped on mount, when the panel starts closed.
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus()
+  }, [searchOpen])
+  function closeSearch(): void {
+    setSearchOpen(false)
+    filterToggleRef.current?.focus()
   }
   // A Session created while a query is active may land outside the filter; announce it rather than reveal the row (#559).
   // Detected from the Session list changing, so every creation path is covered.
@@ -125,24 +137,20 @@ export function SessionList() {
       <ViewsNavGroup />
       {restored && (
         <>
-          {/* `role="search"` lives here, not in `SearchField`, so a shared toolbar can embed the field without nesting a landmark (#559). */}
-          <div role="search" aria-label="Sessions" data-session-search-region className="mx-2 mt-4 shrink-0">
-            <SearchField
-              inputRef={searchInputRef}
-              value={query}
-              onValueChange={setQuery}
-              label="Filter sessions by name, branch or project"
-              placeholder="Filter sessions…"
-              tooltipSide="right"
-              // A stable hook on the input, not a descendant lookup a `ListToolbar` embedding could break.
-              inputProps={{ [SESSION_SEARCH_INPUT_ATTR]: '' }}
-            />
-            <div aria-live="polite" aria-atomic="true" className="sr-only">
-              {searchAnnouncement}
-            </div>
-          </div>
           {/* Pinned above the ScrollArea; no border, fill or `role="toolbar"` (#567 rules out arrow-key roving). */}
-          <div className="mt-2 flex shrink-0 items-center justify-end gap-1 px-4">
+          <div className="mt-4 flex shrink-0 items-center justify-end gap-1 px-4">
+            <FilterToggleButton
+              ref={filterToggleRef}
+              size="icon-xs"
+              tooltipSide="right"
+              label={hasQuery ? 'Filter sessions, filter active' : 'Filter sessions'}
+              open={searchOpen}
+              active={hasQuery}
+              panelId={searchPanelId}
+              onToggle={() => setSearchOpen((open) => !open)}
+              className={TOOLBAR_BUTTON_CLASS}
+              {...{ [SESSION_FILTER_TOGGLE_ATTR]: '' }}
+            />
             <ShowHiddenToggle />
             <Tooltip>
               <TooltipTrigger asChild>
@@ -199,6 +207,27 @@ export function SessionList() {
               </TooltipContent>
             </Tooltip>
           </div>
+          {/* Always mounted, so the result count is announced whether or not the filter panel is open. */}
+          <div aria-live="polite" aria-atomic="true" data-session-search-announcer="" className="sr-only">
+            {searchAnnouncement}
+          </div>
+          {searchOpen && (
+            // `role="search"` lives here, not in `SearchField`, so a shared toolbar can embed the field without nesting a landmark (#559).
+            <div id={searchPanelId} role="search" aria-label="Sessions" className="mx-2 mt-2 shrink-0">
+              <SearchField
+                inputRef={searchInputRef}
+                value={query}
+                onValueChange={setQuery}
+                label="Filter sessions by name, branch or project"
+                placeholder="Filter sessions…"
+                tooltipSide="right"
+                // Escape in an empty field closes the panel; with text it keeps `SearchField`'s clear.
+                onEscape={query === '' ? closeSearch : undefined}
+                // A stable hook on the input, not a descendant lookup a `ListToolbar` embedding could break.
+                inputProps={{ [SESSION_SEARCH_INPUT_ATTR]: '' }}
+              />
+            </div>
+          )}
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-2 p-2">
               {noMatches ? (
