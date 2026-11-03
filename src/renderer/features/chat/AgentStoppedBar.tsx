@@ -46,7 +46,7 @@ export function AgentStoppedBar({ sessionId, allowed }: { sessionId: string; all
     >
       <Button
         type="button"
-        variant="outline"
+        variant="ghost"
         size="xs"
         aria-label={`Start agent for ${sessionName}`}
         onClick={handleStart}

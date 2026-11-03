@@ -111,7 +111,7 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
         </InlineStatus>
       )}
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="outline" onClick={onDone}>
+        <Button type="button" variant="ghost" onClick={onDone}>
           Cancel
         </Button>
         <Button type="submit" loading={saving} disabled={fireAtMs === null}>
@@ -170,7 +170,7 @@ function AlarmRow({ alarm, now, highlighted, onEdit, onDismiss, onRearm, onDelet
         <div className="mt-2 flex justify-start gap-2">
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             loading={rearming}
             aria-label={`Re-arm alarm ${name}`}
@@ -312,7 +312,7 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
           empty={alarms.length === 0 && !form ? 'No alarms set' : null}
           actions={
             !form && (
-              <Button type="button" size="sm" variant="outline" data-alarm-add="" disabled={full} onClick={() => openForm(null)}>
+              <Button type="button" size="sm" variant="ghost" data-alarm-add="" disabled={full} onClick={() => openForm(null)}>
                 Add alarm
               </Button>
             )

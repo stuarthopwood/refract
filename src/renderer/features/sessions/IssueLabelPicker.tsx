@@ -57,7 +57,7 @@ export function IssueLabelPicker({ labels, selected, onChange, disabled, unavail
         ))}
         <Popover onOpenChange={(open) => open && setFilter('')}>
           <PopoverTrigger asChild>
-            <Button type="button" variant="outline" size="xs" disabled={disabled || unavailable || labels.length === 0}>
+            <Button type="button" variant="ghost" size="xs" disabled={disabled || unavailable || labels.length === 0}>
               <TagIcon aria-hidden />
               {selected.length === 0 ? 'Add labels' : 'Edit labels'}
             </Button>

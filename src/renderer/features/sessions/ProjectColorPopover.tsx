@@ -132,7 +132,7 @@ export function ProjectColorPopover({
           presetValue={draft?.kind === 'preset' ? draft.id : null}
           onPresetChange={pickPreset}
           presetsAction={
-            <Button variant="outline" size="sm" aria-disabled={!draft || undefined} className="aria-disabled:opacity-50" onClick={() => draft && resetDraft()}>
+            <Button variant="ghost" size="sm" aria-disabled={!draft || undefined} className="aria-disabled:opacity-50" onClick={() => draft && resetDraft()}>
               Reset to default
             </Button>
           }
@@ -175,7 +175,7 @@ export function ProjectColorPopover({
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" onClick={() => onOpenChange(false)}>
+          <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button

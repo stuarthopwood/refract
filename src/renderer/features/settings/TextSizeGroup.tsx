@@ -94,7 +94,7 @@ export function TextSizeGroup() {
             ))}
           </ToggleGroup>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-disabled={allAtDefault || undefined}
             className={allAtDefault ? 'opacity-50' : undefined}

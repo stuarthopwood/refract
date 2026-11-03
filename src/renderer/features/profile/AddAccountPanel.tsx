@@ -51,7 +51,7 @@ export function AddAccountPanel({ flow, starting, cancelling = false, reauthLogi
         <CardAction>
           {status === 'failed' ? (
             <div className="flex items-center gap-1">
-              <Button ref={retryRef} variant="outline" size="sm" onClick={onRetry}>
+              <Button ref={retryRef} variant="ghost" size="sm" onClick={onRetry}>
                 Retry
               </Button>
               <Button variant="ghost" size="sm" onClick={onDismiss}>

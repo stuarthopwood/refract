@@ -32,11 +32,11 @@ export function IssueCreatedPanel({ issue, onClose, onReportAnother, inApp = fal
         <Button type="button" variant="text" onClick={onReportAnother}>
           {inApp ? 'Create another' : 'Report another'}
         </Button>
-        <Button type="button" variant={inApp ? 'default' : 'outline'} onClick={onClose}>
+        <Button type="button" variant={inApp ? 'default' : 'ghost'} onClick={onClose}>
           Close
         </Button>
         {href && (
-          <Button asChild variant={inApp ? 'outline' : 'default'}>
+          <Button asChild variant={inApp ? 'ghost' : 'default'}>
             <a href={href} target="_blank" rel="noreferrer noopener">
               <ExternalLinkIcon aria-hidden />
               Open on GitHub

@@ -11,7 +11,7 @@ interface HeaderActionButtonProps extends Omit<ComponentProps<'button'>, 'aria-l
   label: string
 }
 
-/** Compact outline button for the chat header; the text hides below the `chat-narrow` container width. */
+/** Compact ghost button for the chat header; the text hides below the `chat-narrow` container width. */
 export const HeaderActionButton = forwardRef<HTMLButtonElement, HeaderActionButtonProps>(function HeaderActionButton(
   { icon: Icon, text, label, className, ...rest },
   ref
@@ -20,7 +20,7 @@ export const HeaderActionButton = forwardRef<HTMLButtonElement, HeaderActionButt
     <Tooltip>
       <TooltipTrigger asChild>
         {/* `rest` carries the trigger props a Radix `asChild` parent injects. */}
-        <Button ref={ref} type="button" variant="outline" size="sm" className={cn('h-6 gap-1 px-2 text-xs', className)} {...rest} aria-label={label}>
+        <Button ref={ref} type="button" variant="ghost" size="sm" className={cn('h-6 gap-1 px-2 text-xs', className)} {...rest} aria-label={label}>
           <Icon aria-hidden className="size-4" />
           <span className="@max-chat-narrow/chat:hidden">{text}</span>
         </Button>

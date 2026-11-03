@@ -135,7 +135,7 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
         <DialogFooter>
           <Button
             ref={checkAgainRef}
-            variant="outline"
+            variant="ghost"
             aria-disabled={loading || undefined}
             className="min-w-28 aria-disabled:opacity-50"
             onClick={() => {

@@ -11,16 +11,16 @@ import { AddProjectDialog } from './AddProjectDialog'
 import { CloneProjectDialog } from './CloneProjectDialog'
 
 export interface AddProjectMenuProps {
-  /** `footer`: ghost, full width, menu opens upward. `first-run`: the screen's primary button. `toolbar`: an outline button in a section's action row (Home). */
+  /** `footer`: ghost, full width, menu opens upward. `first-run`: the screen's primary button. `toolbar`: a ghost button in a section's action row (Home). */
   variant: 'footer' | 'first-run' | 'toolbar'
   side?: 'top' | 'bottom'
   disabled?: boolean
   className?: string
 }
 
-const TRIGGER_STYLE: Record<AddProjectMenuProps['variant'], { variant: 'ghost' | 'outline' | 'default'; size?: 'sm'; className: string }> = {
+const TRIGGER_STYLE: Record<AddProjectMenuProps['variant'], { variant: 'ghost' | 'default'; size?: 'sm'; className: string }> = {
   footer: { variant: 'ghost', className: cn(SIDEBAR_NAV_BUTTON_CLASS, 'w-full text-muted-foreground hover:text-foreground') },
-  toolbar: { variant: 'outline', size: 'sm', className: '' },
+  toolbar: { variant: 'ghost', size: 'sm', className: '' },
   'first-run': { variant: 'default', className: 'flex-1' }
 }
 

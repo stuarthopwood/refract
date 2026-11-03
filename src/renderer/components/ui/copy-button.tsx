@@ -21,7 +21,7 @@ export interface CopyButtonProps {
   tabIndex?: number
   disabled?: boolean
   icon?: LucideIcon
-  /** Shows `label` as visible text on an outline button; the accessible name is then the visible text. */
+  /** Shows `label` as visible text on a ghost button; the accessible name is then the visible text. */
   showLabel?: boolean
 }
 
@@ -103,7 +103,7 @@ export function CopyButton({ getText, onCopy, label, announcement, className, ta
       {showLabel ? (
         <Button
           type="button"
-          variant="outline"
+          variant="ghost"
           size="sm"
           tabIndex={tabIndex}
           disabled={disabled}

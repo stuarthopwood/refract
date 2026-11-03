@@ -524,7 +524,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
             <EmptyDescription role="alert">{error}</EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button variant="outline" onClick={handleRetry}>
+            <Button variant="ghost" onClick={handleRetry}>
               Retry
             </Button>
           </EmptyContent>

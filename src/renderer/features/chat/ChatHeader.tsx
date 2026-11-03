@@ -51,7 +51,7 @@ export function ChatHeader({
               <TooltipTrigger asChild>
                 <Button
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   className="h-6 min-w-8 max-w-40 shrink gap-2 px-2 text-xs"
                   onClick={onSwapToOther}

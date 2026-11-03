@@ -419,7 +419,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
       <CardContent className="space-y-2">
         {request.inputKind === 'confirm' && (
           <div className="flex justify-end gap-2">
-            <Button size="sm" variant="outline" disabled={busy} onClick={() => void answer({ confirmed: false }, 'answered', 'No')}>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => void answer({ confirmed: false }, 'answered', 'No')}>
               No
             </Button>
             <Button size="sm" disabled={busy} onClick={() => void answer({ confirmed: true }, 'answered', 'Yes')}>
@@ -435,7 +435,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                 <Button
                   key={option}
                   size="sm"
-                  variant="outline"
+                  variant="ghost"
                   disabled={busy}
                   data-choice-item
                   className={cn("h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal py-1 text-left", OPTION_FILL_CLASS)}

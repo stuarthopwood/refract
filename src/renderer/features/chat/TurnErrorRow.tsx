@@ -90,7 +90,7 @@ export function TurnErrorRow({ item, sessionId }: { item: TurnErrorItem; session
         <Button
           type="button"
           size="xs"
-          variant="outline"
+          variant="ghost"
           aria-disabled={sending || undefined}
           className="aria-disabled:opacity-50"
           onFocus={() => { retryHadFocus.current = true }}

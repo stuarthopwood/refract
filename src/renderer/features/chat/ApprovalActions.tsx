@@ -52,7 +52,7 @@ export function ApprovalActions({
     <>
       <Button
         size="sm"
-        variant="outline"
+        variant="ghost"
         disabled={busy}
         onClick={() => onAnswer(exact ? { approve: false, option: parsed.deny } : { approve: false }, 'denied')}
       >

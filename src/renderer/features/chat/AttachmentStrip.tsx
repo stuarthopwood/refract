@@ -50,7 +50,7 @@ export function AttachmentStrip({ images, files, textChips, onRemoveImage, onRem
           />
           <IconButton
             label={images.length > 1 ? `Remove image ${index + 1} of ${images.length}` : 'Remove image'}
-            variant="outline"
+            variant="ghost"
             onClick={() => onRemoveImage(image.id)}
             // pointer-events-none while invisible so the 24px hit area can't be mis-clicked over the thumbnail.
             className="pointer-events-none absolute -top-2 -right-2 rounded-full bg-surface-1 text-muted-foreground opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-surface-1 hover:text-foreground focus-visible:pointer-events-auto focus-visible:opacity-100"

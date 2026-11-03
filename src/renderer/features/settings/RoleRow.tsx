@@ -106,7 +106,7 @@ export function RoleRow({
         <div className="flex items-center gap-2">
           <Button
             id={changeId}
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-expanded={changing}
             aria-controls={panelId}

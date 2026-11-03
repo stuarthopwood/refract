@@ -24,7 +24,7 @@ Added by spec 038 (Pull requests wave 2):
 
 - **MarkdownEditor** (`src/renderer/components/markdown-editor/`): Write/Preview editor built on `ComposerBox` (box, `ComposerField`, `ComposerTextarea` with `actionCount={0}`, `ComposerFooter`) with a formatting toolbar, `full` and `compact` sizes, Ctrl+Enter to submit and Esc to cancel. The Pull requests comment box and thread replies use it.
 - **FilterableGroupedListbox** (`src/renderer/components/FilterableGroupedListbox.tsx`): a filter field (`SearchField` in `combobox` mode) over a grouped `role="listbox"` with sticky group headers, `aria-activedescendant` keyboard handling, a per-group Retry row and a polite live region. The Clone from GitHub dialog uses it; `ModelPicker` still has its own copy of the pattern.
-- **AddProjectMenu** (`src/renderer/features/sessions/AddProjectMenu.tsx`): the "Add project" trigger with two text-only items, Local folder... and Clone from GitHub.... `variant="footer"` is the session list's ghost footer entry (menu opens upward); `variant="first-run"` is the first-run screen's filled primary button. `variant="toolbar"` is a small outline button in an action row (Home's Quick actions). Trigger styles live in one variant lookup map.
+- **AddProjectMenu** (`src/renderer/features/sessions/AddProjectMenu.tsx`): the "Add project" trigger with two text-only items, Local folder... and Clone from GitHub.... `variant="footer"` is the session list's ghost footer entry (menu opens upward); `variant="first-run"` is the first-run screen's filled primary button. `variant="toolbar"` is a small ghost button in an action row (Home's Quick actions). Trigger styles live in one variant lookup map.
 - **RelativeTime** (`src/renderer/components/relative-time.tsx`): a relative time as a focusable `<time>` with the full local date and time in a Tooltip. Use it for every relative time in the Pull requests view.
 - **Pull requests pieces** (`src/renderer/features/pull-requests/`): `TimelineCards.tsx` (history-line entries: unboxed commit rows, soft `border-divider` cards, Avatar, "Bot" and "You" Badges), `ThreadReply.tsx` (ghost Reply toggle opening the compact editor), `CommentBox.tsx` (full editor with Post comment and a confirmed Close pull request), `ChecksSection.tsx` (checks grouped by outcome in Collapsibles, row kebab DropdownMenu), and `prImages.ts` (the image-proxy cache behind avatars and Markdown images, ADR 0004).
 
@@ -41,16 +41,16 @@ Button hierarchy settles which `Button` variant (`src/renderer/components/ui/but
 
 | Variant | Use |
 |---|---|
-| `outline` | The normal button everywhere. Cards and pane headers (Approve, Merge, Refresh) use `outline`, with emphasis coming from position and order, not weight. A banner's one primary action is `outline` too (see "Banners" below). Settles #531 (Merge no longer outweighs the title). |
+| `ghost` | Buttons are ghost unless they are the primary action: Cancel, Deny, No, Keep waiting, Open file, Retry, Reload, Check again, Previous and Next, pane and card actions, and icon-only toolbar and row actions. No border and no fill at rest; the hover fills with `bg-muted` (`dark:bg-muted/50`). Shared wrappers (`CopyButton`, `HeaderActionButton`, `AddProjectMenu`'s `toolbar` style, `AlertDialogCancel`, `MessageScrollerButton`) default to it at the source, so a screen never overrides them. Emphasis comes from position and order, not weight (#531). Settles #1564. |
 | `default` (filled) | The single commit action in a form, and in first run (Add project, Create, Save). A `ConfirmAlertDialog` confirm is `default` (or `destructive`), as the only filled button in the dialog. One filled button per surface. |
-| `ghost` | Icon-only toolbar and row actions. |
+| `outline` | Only two uses: a dialog's only button, so the one way out still looks like a button (the shared `Close` in `dialog.tsx`, Done in `KeyboardShortcutsDialog`, Close in `ReportIssueDialog`), and Merge in the pull request detail header, whose look is left to the merge flow. Anywhere else use `ghost`. |
 | `ghost-destructive` | A destructive row or toolbar action that must not look filled (for example Sign out of a GitHub account, or deleting a comment). |
 | `destructive` | The final confirm button inside a dialog only. Never at rest in a list or card. |
 | `invert` | A solid, neutral fill (foreground-on-background inverted), never red/destructive. The composer Stop button (2026-10-15 grill, issue #564, decision 5): stopping a turn keeps the work done so far, the opposite of a destructive action, so it never takes the destructive colour. |
 | `text` | A non-primary action in a banner (#746): foreground text, no border or fill, underlined on hover and keyboard focus, 2px focus ring, 24px minimum target. `text-destructive` is the same shape with a red label, for a destructive action that opens a confirm dialog. |
 | `secondary`, `link` | Not part of the design system, except the one decided `link` use below and the floating transcript icon buttons (see "Floating icon buttons"). |
 
-**Quiet dismiss text button (Stuart, 2026-10-26, #1205):** the "Agent stopped" bar's **Don't show again** is a `text` variant button underlined at rest (`underline underline-offset-2`) and muted with `text-muted-foreground`, beside the bar's `outline` **Start agent**. A dismiss-forever action on a quiet bar reads as a text action, not a second button; the muted colour keeps **Start agent** the stronger action. The `link` variant stays unused.
+**Quiet dismiss text button (Stuart, 2026-10-26, #1205):** the "Agent stopped" bar's **Don't show again** is a `text` variant button underlined at rest (`underline underline-offset-2`) and muted with `text-muted-foreground`, beside the bar's `ghost` **Start agent**. A dismiss-forever action on a quiet bar reads as a text action, not a second button; the muted colour keeps **Start agent** the stronger action. The `link` variant stays unused.
 
 **Composer exception (2026-10-15, issue #564, gate round 1 fix):** the message box's Stop and Send sit side by side and are BOTH filled at once while a turn runs -- the one documented exception to "one filled button per surface" above, since the two fills are visually distinct colours conveying different intents (stop vs. send), not a duplicated weight. Stop uses `invert`; Send uses `default`, but overridden with its OWN dedicated `--send`/`--send-foreground` token pair (chromatic/indigo in every built-in theme) rather than `--primary`, since `--primary` resolves to a near-white neutral in Dark and Dark (high contrast) -- almost identical to `invert`'s own fill there, failing "visibly distinct in weight". No other `default`-variant button anywhere else in the app is affected.
 
@@ -211,7 +211,7 @@ A list row (session row, project row, subagent row) is an unboxed row under the 
 `DialogContent` and `AlertDialogContent` (`src/renderer/components/ui/dialog.tsx:64`, `alert-dialog.tsx:59`) are a boxed floating layer under the zero-box rule, on the elevated `--popover` surface with a 1px `ring-foreground/10` edge; neither has a shadow today, unlike `TooltipContent`, menus, popovers, selects, and `SheetContent` (`shadow-md`/`shadow-lg`) — dialogs gain the shared floating-layer shadow token described in [foundations-tokens-theming.md](foundations-tokens-theming.md) once #550 lands.
 
 - A dialog's confirm action (`AlertDialogAction`) is the one filled (`default`) button on the surface, unless the action is destructive, in which case it is `destructive` — the one place that variant is allowed (see "Button," above).
-- `AlertDialogCancel` defaults to `outline`.
+- `AlertDialogCancel` defaults to `ghost`.
 - Confirm buttons repeat the verb ("Delete session"), never "OK" or "Yes" — see [patterns.md](patterns.md).
 - A destructive confirmation is never icon-only; it always carries a label (see "Destructive actions" in [patterns.md](patterns.md)).
 
@@ -262,7 +262,7 @@ A small floating panel over content (the previous and next message buttons) is t
 
 ### Floating icon buttons
 
-The icon buttons that float over the transcript (Previous message, Next message, Scroll to end) are a `secondary` `Button` with `size="icon-sm"` and the shared `FLOATING_ICON_BUTTON_CLASS` (`components/ui/message-scroller.tsx`): bordered `bg-surface-1`, `text-foreground`, `hover:bg-muted`. That secondary-surface floating button is the sanctioned style; do not copy the class string into a new button. Previous and Next sit in a `FloatingLayer` in `bare` mode (no panel chrome of its own, only the fade and focus-reveal), so each button is its own surface.
+The icon buttons that float over the transcript (Previous message, Next message, Scroll to end) are a `ghost` `Button` with `size="icon-sm"` and the shared `FLOATING_ICON_BUTTON_CLASS` (`components/ui/message-scroller.tsx`): bordered `bg-surface-1`, `text-foreground`, `hover:bg-muted`. That floating-surface button is the sanctioned style, because it sits over content and needs its own edge and fill; do not copy the class string into a new button. Previous and Next sit in a `FloatingLayer` in `bare` mode (no panel chrome of its own, only the fade and focus-reveal), so each button is its own surface.
 
 ## Chat navigation (spec 041)
 
@@ -280,7 +280,7 @@ A pane banner (Worktree missing, Terminated unexpectedly, The agent stopped, sta
 - **Unboxed.** A flat row at the pane's left edge: no border, no fill. A banner is not on the zero-box list.
 - **Icon and title.** The severity icon (octagon for an error, triangle only for a warning) is the only red; the title is normal foreground, a short sentence with no trailing full stop.
 - **Detail line.** The path, id or reason goes on a second muted line in the Code font, wrapping anywhere and selectable. Pass `detailMono={false}` for a prose sentence.
-- **Actions.** One `outline` primary first (the action that fixes it; it takes the pane focus through `data-pane-banner`), the other actions as `text` buttons, a destructive action last as `text-destructive` with no fill. `destructive` stays the dialog confirm button only.
+- **Actions.** One `ghost` primary first (the action that fixes it; it takes the pane focus through `data-pane-banner`), the other actions as `text` buttons, a destructive action last as `text-destructive` with no fill. `destructive` stays the dialog confirm button only.
 - **Live region.** `role="alert"` applies at appearance only. An expanding disclosure (Details) sits outside the banner element so toggling it never re-announces the banner.
 - **Placement exception (recorded):** `StopBanner` stays under the pane header, while `AgentStoppedBar` and `RetryLine` sit above the composer in `ComposerAboveStack`; the stop banner replaces the composer path, the other two accompany it.
 - Other rows in the family (for example the Turn error row, #1284) reuse `PaneBanner` rather than a hand-styled copy.

@@ -81,7 +81,7 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
               <EmptyTitle>No usage matches these filters.</EmptyTitle>
             </EmptyHeader>
             <EmptyContent>
-              <Button variant="outline" onClick={clearUsageFilters}>
+              <Button variant="ghost" onClick={clearUsageFilters}>
                 Clear filters
               </Button>
             </EmptyContent>

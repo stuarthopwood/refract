@@ -95,7 +95,7 @@ export function AddProjectDialog({ trigger, open: controlledOpen, onOpenChange }
             </p>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+            <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={!path.trim() || submitting}>

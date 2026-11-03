@@ -20,7 +20,7 @@ function NewSessionMenu() {
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button ref={triggerRef} type="button" variant="outline" size="sm" disabled={repositories.length === 0}>
+          <Button ref={triggerRef} type="button" variant="ghost" size="sm" disabled={repositories.length === 0}>
             <PlusIcon aria-hidden className="size-4" />
             New session
             <ChevronDownIcon aria-hidden className="size-4" />

@@ -573,7 +573,7 @@ export function Transcript({
         <ChatNavOverlays sessionId={sessionId} />
         <IconButton
           ref={buttonRef}
-          variant="secondary"
+          variant="ghost"
           label="Scroll to end"
           inert={isAtEnd}
           onClick={handleScrollToEnd}

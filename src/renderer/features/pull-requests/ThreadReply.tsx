@@ -83,7 +83,7 @@ export function ThreadActions({ repositoryId, number, thread, draft, onDraftChan
         </Button>
         <Button
           size="sm"
-          variant="outline"
+          variant="ghost"
           aria-label={`${thread.resolved ? 'Unresolve' : 'Resolve'} thread on ${location}`}
           onClick={() => void handleToggleResolve()}
           disabled={busy}
@@ -106,7 +106,7 @@ export function ThreadActions({ repositoryId, number, thread, draft, onDraftChan
           previewProps={PREVIEW_PROPS}
           footer={
             <>
-              <Button size="sm" variant="outline" onClick={closeReply} disabled={busy}>
+              <Button size="sm" variant="ghost" onClick={closeReply} disabled={busy}>
                 Cancel
               </Button>
               <Button

@@ -211,7 +211,7 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
         </span>
       )}
       <div>
-        <Button id={addId} variant="outline" size="sm" disabled={disabled} aria-describedby={describedBy} onClick={addDraft}>
+        <Button id={addId} variant="ghost" size="sm" disabled={disabled} aria-describedby={describedBy} onClick={addDraft}>
           <PlusIcon aria-hidden />
           Add model
         </Button>

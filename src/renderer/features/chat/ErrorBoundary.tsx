@@ -38,7 +38,7 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
             <AlertTriangleIcon />
             <AlertTitle>Something went wrong rendering this view</AlertTitle>
             <AlertAction>
-              <Button size="sm" variant="outline" onClick={this.reload}>
+              <Button size="sm" variant="ghost" onClick={this.reload}>
                 Reload view
               </Button>
             </AlertAction>

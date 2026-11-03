@@ -184,7 +184,7 @@ export function ReportIssueDialog({ repository, open, onOpenChange, onCloseFocus
                 {error ? `Error: ${error}` : ''}
               </p>
               <DialogFooter>
-                <Button type="button" variant="outline" onClick={() => requestClose(false)}>
+                <Button type="button" variant="ghost" onClick={() => requestClose(false)}>
                   Cancel
                 </Button>
                 <Button ref={submitRef} type="submit" disabled={busy}>

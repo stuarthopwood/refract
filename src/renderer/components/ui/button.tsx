@@ -26,7 +26,7 @@ const buttonVariants = cva(
         "ghost-destructive":
           "text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:hover:bg-(--ghost-hover-bg,var(--row-hover-bg)) aria-disabled:hover:bg-transparent dark:aria-disabled:hover:bg-transparent font-normal",
         link: "text-primary underline underline-offset-4 font-normal",
-        // Non-primary action beside an `outline` primary (#746); underlines on hover and focus, with a ring since it has no border.
+        // Non-primary action beside a `ghost` primary (#746); underlines on hover and focus, with a ring since it has no border.
         text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2 aria-disabled:hover:no-underline",
         // Same shape as `text`, red label, for actions that open a confirm dialog.
         "text-destructive":

@@ -77,7 +77,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
           </ul>
           <div className="mt-4 flex items-center gap-2">
             <AddProjectMenu variant="first-run" disabled={!allPass} />
-            <Button variant="outline" onClick={() => void runCheck()} disabled={checking}>
+            <Button variant="ghost" onClick={() => void runCheck()} disabled={checking}>
               {checking && <LoaderCircleIcon aria-hidden className="animate-spin" />}
               Re-check
             </Button>

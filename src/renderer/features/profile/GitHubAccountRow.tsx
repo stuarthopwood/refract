@@ -95,7 +95,7 @@ export function GitHubAccountRow({
         {authProblem && unreachable && (
           <Button
             ref={mapRef(refs.checkAgain, key)}
-            variant="outline"
+            variant="ghost"
             size="sm"
             className="aria-disabled:opacity-50"
             aria-disabled={githubRefreshing || undefined}
@@ -110,7 +110,7 @@ export function GitHubAccountRow({
         {authProblem && !unreachable && account.host === 'github.com' && (
           <Button
             ref={mapRef(refs.signInAgain, key)}
-            variant="outline"
+            variant="ghost"
             size="sm"
             className="aria-disabled:opacity-50"
             aria-disabled={flowActive || undefined}
@@ -125,7 +125,7 @@ export function GitHubAccountRow({
         {!account.active && (
           <Button
             ref={mapRef(refs.switchTo, key)}
-            variant="outline"
+            variant="ghost"
             size="sm"
             disabled={switchDisabled}
             loading={busy}
