@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.24.0 (2026-11-03)
+
+### Features
+
+- feat(settings): Settings > Advanced percent thresholds, number fields, plain copy and impact warnings (https://github.com/stuarthopwood/refract/pull/1601)
+- feat(sessions): delete Session in the background (https://github.com/stuarthopwood/refract/pull/1609)
+
+### Fixes
+
+- fix(ui): polish batch (#1597, #1596, #1598, #1585) (https://github.com/stuarthopwood/refract/pull/1608)
+
+### Other
+
+- docs(plan): file #1579-#1581 advanced settings token items (p1) (https://github.com/stuarthopwood/refract/pull/1582)
+- docs(plan): file #1583 tool row target chips (p1) (https://github.com/stuarthopwood/refract/pull/1584)
+- docs(plan): file #1585 todo mute after current (p1) (https://github.com/stuarthopwood/refract/pull/1586)
+- docs(plan): file #1587 session-touched PR and issue badge (p1) (https://github.com/stuarthopwood/refract/pull/1588)
+- docs(plan): file #1589-#1591 list refresh, themes, background delete (https://github.com/stuarthopwood/refract/pull/1592)
+- docs(plan): amend #1583 with chat tool row indentation fixes (https://github.com/stuarthopwood/refract/pull/1593)
+- docs(plan): file #1594 command palette search field and icons (p1) (https://github.com/stuarthopwood/refract/pull/1595)
+- docs(plan): file #1596-#1598 and amend #137 (select accent, stopped icon, status bar, settings logo) (https://github.com/stuarthopwood/refract/pull/1599)
+- docs(plan): amend #1564 ghost buttons to cover shared outline defaults (https://github.com/stuarthopwood/refract/pull/1600)
+- docs(plan): Settings > Advanced batch done (#1553, #1555, #1579, #1580) (https://github.com/stuarthopwood/refract/pull/1602)
+- docs(plan): file #1603 and amend #1304 (session click switch, agent session control) (https://github.com/stuarthopwood/refract/pull/1604)
+- docs(plan): file #1605 and #1606 (chat copy link button, ask card footer and hints) (https://github.com/stuarthopwood/refract/pull/1607)
+- docs(plan): file #1610 (session list filter behind a funnel icon) (https://github.com/stuarthopwood/refract/pull/1611)
+- docs(plan): file #1612 (align transcript row chevrons) (https://github.com/stuarthopwood/refract/pull/1613)
+- docs(plan): file #1614 and amend #1612 (row menus inside the hover surface) (https://github.com/stuarthopwood/refract/pull/1615)
+- docs(plan): file #1616 (themed alarm TimeField) (https://github.com/stuarthopwood/refract/pull/1617)
+- docs(plan): amend #1560 list cards with a resting surface-subtle fill (https://github.com/stuarthopwood/refract/pull/1618)
+- docs(plan): file #1619 (status line state icon) (https://github.com/stuarthopwood/refract/pull/1620)
+
 ## v0.23.0 (2026-11-02)
 
 ### Features
