@@ -2,9 +2,9 @@ import { useLayoutEffect } from 'react'
 import type { RefObject } from 'react'
 import { useSessionListStore } from '@/state'
 import { isFocusStranded } from '@/lib/focus'
-import { focusSessionSearchInput } from './sessionSearchSelector'
+import { focusSessionSearch } from './sessionSearchSelector'
 
-/** Refocuses the search input when an active query's rename unmounts the focused element inside `rootRef`. */
+/** Refocuses the search input (or the funnel while the panel is closed) when an active query's rename unmounts the focused element inside `rootRef`. */
 export function useFocusSearchOnStrandedUnmount(
   rootRef: RefObject<HTMLElement | null>,
   restoreInFlightRef?: RefObject<boolean>,
@@ -18,7 +18,7 @@ export function useFocusSearchOnStrandedUnmount(
       if (!rootRef.current?.contains(document.activeElement)) return
       requestAnimationFrame(() => {
         if (!isFocusStranded(document.activeElement, null)) return
-        focusSessionSearchInput()
+        focusSessionSearch()
       })
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
