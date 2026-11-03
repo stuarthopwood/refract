@@ -1,5 +1,5 @@
 
-import { BellRingIcon, CircleCheckIcon, CirclePauseIcon, MessageSquareTextIcon, PauseIcon } from 'lucide-react'
+import { BellRingIcon, CircleCheckIcon, CircleStopIcon, MessageSquareTextIcon, PauseIcon } from 'lucide-react'
 import type { Repository } from '../../../shared/model'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
@@ -182,7 +182,7 @@ export function StateIcon({ status, style }: { status: SessionDisplayStatus; sty
     case 'needs-you':
       return <BellRingIcon aria-hidden className={cn(className, 'text-state-needs-you')} />
     case 'stopped':
-      return <CirclePauseIcon aria-hidden className={cn(className, 'text-state-stopped')} />
+      return <CircleStopIcon aria-hidden className={cn(className, 'text-state-stopped')} />
     case 'unread-response':
       return <MessageSquareTextIcon aria-hidden className={cn(className, 'text-state-unread-response')} />
     case 'paused':
