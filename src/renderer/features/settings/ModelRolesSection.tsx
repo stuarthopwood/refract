@@ -71,9 +71,8 @@ export const ROLE_FALLBACK_LABEL: Partial<Record<ModelRoleId, string>> = {
 
 // Display order; Advisor's row reads Refract's launch value.
 const ROLE_GROUPS: ReadonlyArray<{ title: string; roles: readonly ModelRoleId[] }> = [
-  { title: 'Conversation', roles: ['default', 'plan', 'slow'] },
+  { title: 'Main', roles: ['default', 'task', 'advisor', 'plan', 'slow'] },
   { title: 'Background', roles: ['smol', 'tiny', 'widget', 'memory', 'commit'] },
-  { title: 'Delegated', roles: ['task', 'advisor'] },
   { title: 'Media', roles: ['vision'] },
   { title: 'Model kinds', roles: ['image', 'web', 'speech', 'dictation', 'judge'] }
 ]
