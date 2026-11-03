@@ -12,7 +12,7 @@ import { COMPACTION_METHODS } from '../../../../shared/tokenGuard'
 import type { TokenGuardKeyInfo, TokenGuardValue } from '../../../../shared/tokenGuard'
 import { MAX_PERCENT, MIN_PERCENT, percentToTokens, tokensToPercent } from './contextWindow'
 import { MethodOrderChecklist } from './MethodOrderChecklist'
-import { formatCount, NumberUnitField } from './NumberUnitField'
+import { formatCount, NumberUnitField, WINDOW_UNKNOWN_HINT } from './NumberUnitField'
 import { PerModelThresholdTable } from './PerModelThresholdTable'
 import { RadioSettingRow } from './RadioSettingRow'
 
@@ -66,10 +66,10 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
     (info.kind === 'record'
       ? Object.values(models).some((percent) => impact.costlierWhen(percent, `${seedPercent}%`))
       : impact.costlierWhen(value, defaultValue))
-  // The expanded per-model table warns on its own rows; the summary warning keeps its height but is
-  // concealed meanwhile so the "N models" trigger does not move under the pointer.
-  const summaryConcealed = costlier && info.kind === 'record' && tableOpen
-  const describedBy = [`${id}-description`, costlier && !summaryConcealed ? impactId : undefined, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')
+  // The expanded per-model table warns on its own rows; the summary warning (rendered under the
+  // trigger) is only referenced while the table is closed.
+  const summaryShown = costlier && !(info.kind === 'record' && tableOpen)
+  const describedBy = [`${id}-description`, summaryShown ? impactId : undefined, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')
   const stacked = info.kind === 'order' || info.kind === 'record'
 
   const description: ReactNode = (
@@ -94,9 +94,9 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
     </Button>
   )
   const note =
-    info.impact || disabled ? (
+    (info.impact && info.kind !== 'record') || disabled ? (
       <>
-        {info.impact && <ImpactWarning id={impactId} text={info.impact.text} active={costlier} concealed={summaryConcealed} />}
+        {info.impact && info.kind !== 'record' && <ImpactWarning id={impactId} text={info.impact.text} active={costlier} />}
         {disabled && (
           <span id={`${id}-reason`} className="text-xs text-muted-foreground">
             {disabledReason}
@@ -144,7 +144,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
           unit={percentWindow !== null ? '%' : (info.unit ?? '')}
           min={bounded ? MIN_PERCENT : undefined}
           max={bounded ? MAX_PERCENT : undefined}
-          hint={percentWindow !== null ? `≈ ${formatCount(tokens)} tokens` : info.percentOfWindow ? "Set in tokens: the Default model's context window is unknown." : undefined}
+          hint={percentWindow !== null ? `≈ ${formatCount(tokens)} tokens` : info.percentOfWindow ? WINDOW_UNKNOWN_HINT : undefined}
           labelId={`${id}-label`}
           describedBy={describedBy}
           disabled={disabled}

@@ -12,7 +12,7 @@ import { useModelRolesStore } from '@/state'
 import { parsePercent } from '../../../../shared/tokenGuard'
 import type { TokenGuardImpact } from '../../../../shared/tokenGuard'
 import { MAX_PERCENT, MIN_PERCENT, percentToTokens, windowFor } from './contextWindow'
-import { formatCount, NumberUnitField } from './NumberUnitField'
+import { formatCount, NumberUnitField, WINDOW_UNKNOWN_HINT } from './NumberUnitField'
 
 interface PerModelThresholdTableProps {
   id: string
@@ -24,7 +24,7 @@ interface PerModelThresholdTableProps {
   seedPercent: number
   disabled?: boolean
   describedBy?: string
-  /** Whether the table is expanded; owned by the row so it can drop its summary warning then. */
+  /** Whether the table is expanded; owned by the row so its summary warning is only described while closed. */
   open: boolean
   onOpenChange: (open: boolean) => void
   onChange: (value: Record<string, string>) => Promise<boolean>
@@ -97,11 +97,12 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
   const showTable = models.length > 0 || drafts.length > 0
 
   const costlier = (model: string): boolean => impact?.costlierWhen(value[model], `${seedPercent}%`) === true
+  const summaryCostlier = models.some(costlier)
 
   const thresholdHint = (model: string, percent: number): string | undefined => {
     const size = windowFor(catalog, model)
     return size === null
-      ? "Context window unknown; applied as a percent of the model's window"
+      ? WINDOW_UNKNOWN_HINT
       : `≈ ${formatCount(percentToTokens(percent, size))} of ${formatCount(size)} tokens`
   }
 
@@ -115,6 +116,7 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
           </Button>
         </CollapsibleTrigger>
       )}
+      {impact && <ImpactWarning id={`${id}-impact`} text={impact.text} active={summaryCostlier && !open} />}
       <CollapsibleContent>
         <div className="overflow-x-auto">
           <table className="w-full table-fixed text-sm">

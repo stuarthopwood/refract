@@ -10,6 +10,9 @@ export function formatCount(n: number): string {
   return n.toLocaleString('en-GB')
 }
 
+/** Hint shown wherever a context window is needed but unknown (idle field and per-model rows). */
+export const WINDOW_UNKNOWN_HINT = 'Context window unknown; the percent cannot be converted to tokens.'
+
 function parseCount(text: string, min: number, max: number): number | undefined {
   if (!/^\d+$/.test(text)) return undefined
   const n = Number(text)
