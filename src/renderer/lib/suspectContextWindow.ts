@@ -47,5 +47,5 @@ export function findSuspectWindow(
 /** The shared note for the readout tooltip and the Settings list. */
 export function suspectWindowNote(s: SuspectWindow): string {
   const size = compactNumber(s.windowTokens)
-  return `OMP reports the same ${size} window for ${s.name} (${s.id}) and ${s.siblingName} (${s.siblingId}). The percentage and auto-compaction may be wrong. Use the ${LONG_SUFFIX} model variant, or set a window in modelOverrides.`
+  return `The agent reports the same ${size} window for ${s.name} (${s.id}) and ${s.siblingName} (${s.siblingId}). The percentage and auto-compaction may be wrong. Use the ${LONG_SUFFIX} model variant, or set a window in modelOverrides.`
 }

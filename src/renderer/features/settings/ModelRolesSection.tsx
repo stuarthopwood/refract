@@ -80,7 +80,7 @@ const ROLE_GROUPS: ReadonlyArray<{ title: string; roles: readonly ModelRoleId[] 
 // Only the two links the probe confirmed (omp-probe.md) name a fallback; every other unset role
 // is described by OMP picking one automatically.
 function unsetLabelFor(role: ModelRoleId): string {
-  return role === 'smol' || role === 'slow' ? 'Inherit Default' : 'OMP picks one automatically'
+  return role === 'smol' || role === 'slow' ? 'Inherit Default' : 'The agent picks one automatically'
 }
 
 export function ModelRolesSection() {
@@ -269,7 +269,7 @@ export function ModelRolesSection() {
       title="Models"
       width="wide"
       headingRef={headingRef}
-      intro="Choose which model OMP uses for each role. Changes save immediately to OMP's global configuration and apply to new sessions, unless a project's own .omp config overrides a role."
+      intro="Choose which model the agent uses for each role. Changes save immediately to the agent's global configuration and apply to new sessions, unless a project's own .omp config overrides a role."
     >      <div aria-live="polite" className="sr-only">
         {polite}
       </div>
