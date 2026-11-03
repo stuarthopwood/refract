@@ -97,7 +97,9 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
 
   const thresholdHint = (model: string, percent: number): string | undefined => {
     const size = windowFor(catalog, model)
-    return size === null ? undefined : `≈ ${formatCount(percentToTokens(percent, size))} of ${formatCount(size)} tokens`
+    return size === null
+      ? "Context window unknown; applied as a percent of the model's window"
+      : `≈ ${formatCount(percentToTokens(percent, size))} of ${formatCount(size)} tokens`
   }
 
   return (
@@ -111,8 +113,13 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
         </CollapsibleTrigger>
       )}
       <CollapsibleContent>
-        <table className="w-full text-sm">
+        <table className="w-full table-fixed text-sm">
           <caption className="sr-only">Compaction threshold per model</caption>
+          <colgroup>
+            <col className="w-64" />
+            <col />
+            <col className="w-10" />
+          </colgroup>
           <thead>
             <tr className="text-left text-xs text-muted-foreground">
               <th scope="col" className="py-1 pr-2 font-normal">
@@ -129,14 +136,14 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
           <tbody>
             {models.map((model, index) => (
               <tr key={model}>
-                <td className="py-1 pr-2">
+                <td className="py-1 pr-2 align-top">
                   {picker(`${id}-model-${index}`, `Model ${index + 1}`, model, (selector) => {
                     const next: Record<string, string> = {}
                     for (const [key, percent] of Object.entries(value)) next[key === model ? selector : key] = percent
                     void save(next)
                   })}
                 </td>
-                <td className="py-1 pr-2">
+                <td className="py-1 pr-2 align-top">
                   <NumberUnitField
                     id={`${id}-percent-${index}`}
                     value={parsePercentEntry(value[model])}
@@ -149,9 +156,9 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
                     disabled={disabled}
                     onCommit={(percent) => save({ ...value, [model]: `${percent}%` })}
                   />
-                  {impact && costlier(model) && <ImpactWarning id={`${id}-impact-${index}`} text={impact.text} />}
+                  {impact && <ImpactWarning id={`${id}-impact-${index}`} text={impact.text} active={costlier(model)} />}
                 </td>
-                <td className="py-1">
+                <td className="py-1 align-top">
                   {removeButton(`Remove ${model}`, () => {
                     const { [model]: _removed, ...rest } = value
                     void save(rest).then((ok) => {
@@ -165,15 +172,15 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
             ))}
             {drafts.map((draft, index) => (
               <tr key={`draft-${draft}`}>
-                <td className="py-1 pr-2">
+                <td className="py-1 pr-2 align-top">
                   {picker(`${id}-draft-${draft}`, `New model ${models.length + index + 1}`, undefined, (selector) => {
                     void save({ ...value, [selector]: `${seedPercent}%` }).then((ok) => {
                       if (ok) setDrafts((current) => current.filter((d) => d !== draft))
                     })
                   })}
                 </td>
-                <td className="py-1 pr-2 text-xs text-muted-foreground">Choose a model first</td>
-                <td className="py-1">
+                <td className="py-1 pr-2 align-top text-xs text-muted-foreground">Choose a model first</td>
+                <td className="py-1 align-top">
                   {removeButton('Remove new model row', () => {
                     setDrafts((current) => current.filter((d) => d !== draft))
                     const nextDraftId = drafts[index + 1]

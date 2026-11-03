@@ -72,7 +72,10 @@ const setTo =
   (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined): boolean =>
     value !== defaultValue && targets.includes(value as TokenGuardValue)
 
-const COMPACTS_LATER_IMPACT = 'The conversation grows longer before it is compacted, so every call resends more tokens.'
+const COMPACTS_LATER_IMPACT = 'The conversation grows longer before it is shortened, so every call resends more tokens.'
+
+/** Reads a stored `"N%"` entry; 0 when it is missing or malformed. */
+export const parsePercent = (entry: unknown): number => Number.parseInt(String(entry ?? ''), 10) || 0
 
 export interface TokenGuardKeyInfo {
   key: string;
@@ -136,7 +139,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     group: 'Context compaction',
     impact: { costlierWhen: above, text: COMPACTS_LATER_IMPACT },
     description:
-      "Summarise the conversation when it fills this much of the model's context window, for models with no entry below."
+      "Shorten the conversation when it fills this much of the model's context window, for models with no entry below."
   },
   {
     key: 'compaction.modelThresholds',
@@ -144,7 +147,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'record',
     group: 'Context compaction',
     impact: {
-      costlierWhen: (value, globalPercent) => Number.parseInt(String(value), 10) > Number.parseInt(String(globalPercent), 10),
+      costlierWhen: (value, globalPercent) => parsePercent(value) > parsePercent(globalPercent),
       text: COMPACTS_LATER_IMPACT
     },
     description: "Per-model override of the threshold above, as a percent of that model's own context window."
@@ -172,7 +175,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     percentOfWindow: true,
     group: 'Idle compaction',
     dependsOn: 'compaction.idleEnabled',
-    description: 'Only do this when the conversation is at least this long.'
+    description: "Only do this when the conversation is at least this long. The % is of the Default model's context window."
   },
   {
     key: 'compaction.idleTimeoutSeconds',

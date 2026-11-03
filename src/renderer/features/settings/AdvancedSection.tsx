@@ -3,6 +3,8 @@
 // never in OMP's config files; a change applies to the next Session that launches. The Advisor
 // model is edited under Models > Advisor.
 import { useEffect, useRef } from 'react'
+import { InfoIcon } from 'lucide-react'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingsPage } from '@/components/settings/SettingsPage'
 import { useModelRolesStore } from '@/state'
@@ -29,7 +31,9 @@ export function AdvancedSection() {
 
   // Once shown, the notice is spent: drop it on leaving so reopening Settings does not repeat it.
   const noticeShown = useRef(false)
-  noticeShown.current ||= thresholdsReset
+  useEffect(() => {
+    noticeShown.current ||= thresholdsReset
+  }, [thresholdsReset])
   useEffect(
     () => () => {
       if (noticeShown.current) dismissThresholdsReset()
@@ -43,8 +47,7 @@ export function AdvancedSection() {
   }, [rolesLoaded, loadRoles, loadCatalog])
 
   const defaultWindow = defaultRoleWindow(roles, catalog)
-  const seedPercent = typeof values['compaction.thresholdPercent'] === 'number' ? values['compaction.thresholdPercent'] : 70
-
+  const seedPercent = typeof values['compaction.thresholdPercent'] === 'number' ? values['compaction.thresholdPercent'] : Number(defaults['compaction.thresholdPercent'])
 
   const reasonFor = (info: TokenGuardKeyInfo): string | undefined => {
     if (!info.dependsOn || values[info.dependsOn] === true) return undefined
@@ -58,9 +61,10 @@ export function AdvancedSection() {
       intro="Refract sets these values every time it starts a Session, to keep token use down. Changes apply to new Sessions only; running Sessions keep the values they launched with."
     >
       {thresholdsReset && (
-        <p role="status" className="mb-4 text-sm text-muted-foreground">
-          {THRESHOLDS_RESET_NOTICE}
-        </p>
+        <Alert role="status" className="mb-6">
+          <InfoIcon aria-hidden />
+          <AlertDescription>{THRESHOLDS_RESET_NOTICE}</AlertDescription>
+        </Alert>
       )}
       {error && (
         <p role="alert" className="mb-2 text-sm text-destructive">

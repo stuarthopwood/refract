@@ -92,9 +92,9 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
     </Button>
   )
   const note =
-    summaryWarning || disabled ? (
+    info.impact || disabled ? (
       <>
-        {summaryWarning && info.impact && <ImpactWarning id={impactId} text={info.impact.text} />}
+        {info.impact && <ImpactWarning id={impactId} text={info.impact.text} active={summaryWarning} />}
         {disabled && (
           <span id={`${id}-reason`} className="text-xs text-muted-foreground">
             {disabledReason}

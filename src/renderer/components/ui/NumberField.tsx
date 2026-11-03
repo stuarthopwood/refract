@@ -14,7 +14,7 @@ function NumberField({ className, onKeyDown, onWheel, ...props }: Omit<React.Com
       data-slot="number-field"
       className={cn("[&::-webkit-inner-spin-button]:opacity-100", className)}
       onKeyDown={(event) => {
-        if (BLOCKED_KEYS[event.key]) event.preventDefault()
+        if (!(event.ctrlKey || event.metaKey || event.altKey) && BLOCKED_KEYS[event.key]) event.preventDefault()
         onKeyDown?.(event)
       }}
       onWheel={(event) => {

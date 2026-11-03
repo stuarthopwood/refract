@@ -9,6 +9,8 @@ use serde_json::{json, Map, Value};
 use crate::store::atomic_json::{read_json_file, write_json_file};
 
 pub const STORE_VERSION: u32 = 2;
+/// Version at which thresholds became percents; older stores drop their token thresholds.
+const PERCENT_STORE_VERSION: u32 = 2;
 const FILE_NAME: &str = "token-guard.json";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -141,6 +143,7 @@ fn is_percent_string(value: &Value) -> bool {
         .and_then(|s| s.strip_suffix('%'))
         .is_some_and(|digits| {
             (1..=2).contains(&digits.len())
+                && !digits.starts_with('0')
                 && digits.bytes().all(|b| b.is_ascii_digit())
                 && digits
                     .parse::<u64>()
@@ -205,13 +208,13 @@ async fn read_stored(dir: &Path) -> Stored {
         }
         stored.read_limit_migrated = true;
     }
-    if stored.version < 2 {
+    if stored.version < PERCENT_STORE_VERSION {
         let dropped = LEGACY_THRESHOLD_KEYS
             .iter()
             .filter(|key| stored.overrides.remove(**key).is_some())
             .count();
         stored.thresholds_reset_pending |= dropped > 0;
-        stored.version = STORE_VERSION;
+        stored.version = PERCENT_STORE_VERSION;
     }
     stored
 }
@@ -325,7 +328,9 @@ mod tests {
         assert!(validate("compaction.modelThresholds", &json!({ "a/b": "100%" })).is_err());
         assert!(validate("compaction.modelThresholds", &json!({ "a/b": "0%" })).is_err());
         assert!(validate("compaction.modelThresholds", &json!({ "a/b": 70 })).is_err());
+        // Unknown key: rejected as unknown, not by a range check.
         assert!(validate("compaction.thresholdTokens", &json!(200_000)).is_err());
+        assert!(validate("compaction.modelThresholds", &json!({ "a/b": "05%" })).is_err());
         assert!(validate("compaction.methodOrder", &json!(["shake", "rm"])).is_err());
         assert!(validate("advisor.reviewMode", &json!("whatever")).is_err());
         assert!(validate("advisor.reviewMode", &json!("turn")).is_ok());
