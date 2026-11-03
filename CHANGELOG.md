@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.25.0 (2026-11-03)
+
+### Features
+
+- feat(chat): chat navigation map and one 6px scrollbar token (#1541, #1542) (https://github.com/stuarthopwood/refract/pull/1628)
+- feat(settings): role picker Main group, role badges, agent wording (#1549, #1550, #1551) (https://github.com/stuarthopwood/refract/pull/1627)
+
+### Other
+
+- docs(plan): file #1621 (restart during delete race) (https://github.com/stuarthopwood/refract/pull/1625)
+- style(ui): rail icons, small Switch, Budget border (#1557, #1558, #1566) (https://github.com/stuarthopwood/refract/pull/1626)
+- style(ui): list cards use a surface-subtle fill, no border (#1560) (https://github.com/stuarthopwood/refract/pull/1629)
+- style(ui): ghost buttons app-wide (#1564) (https://github.com/stuarthopwood/refract/pull/1630)
+
 ## v0.24.0 (2026-11-03)
 
 ### Features
