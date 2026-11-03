@@ -27,7 +27,7 @@ export function RoleCurrentModel({ id, current, catalogLoaded }: RoleCurrentMode
   if (current.status === 'unset') {
     return (
       <span id={id} className="text-sm text-muted-foreground">
-        OMP picks one automatically
+        The agent picks one automatically
       </span>
     )
   }
@@ -41,7 +41,7 @@ export function RoleCurrentModel({ id, current, catalogLoaded }: RoleCurrentMode
         {current.provider && <span className="text-muted-foreground"> · {friendlyProviderLabel(current.provider)}</span>}
       </span>
       {current.status === 'unknown' && catalogLoaded && (
-        <span className="text-xs text-muted-foreground">Not in the model list; shown as OMP stores it.</span>
+        <span className="text-xs text-muted-foreground">Not in the model list; shown as the agent stores it.</span>
       )}
       {current.via && !inheritedFromDefault && <span className="text-xs text-muted-foreground">Via {current.via}</span>}
       {thinking && <span className="text-xs text-muted-foreground">Thinking: {thinking}</span>}

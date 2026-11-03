@@ -70,13 +70,13 @@ const DISMISS_OMPVERSION_BUTTON = `document.querySelector('[aria-label="Dismiss 
 // The row states no Session count: `warning.liveAgents` counts every non-stopped agent, not just
 // the idle ones Triage lists, so a number would imply a match that isn't guaranteed.
 const LOW_MEMORY_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === 'Low memory')`;
-const OMPVERSION_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === 'omp 18.10.1: unverified version')`;
+const OMPVERSION_ROW_SPAN = `Array.from(document.querySelectorAll('span')).find((el) => el.textContent.trim() === 'Agent 18.10.1: unverified version')`;
 const DIALOG = `document.querySelector('[role="dialog"]')`;
 const ALERT_DIALOG = `document.querySelector('[role="alertdialog"]')`;
 const DIALOG_TITLE = `document.querySelector('[data-slot="dialog-title"]')`;
 const ALERT_DIALOG_TITLE = `document.querySelector('[data-slot="alert-dialog-title"]')`;
 const HEALTH_LIST = `document.querySelector('[aria-label="Health checks"]')`;
-const OMP_CHECK_ROW = `Array.from((${HEALTH_LIST})?.querySelectorAll('li') ?? []).find((li) => li.textContent.includes('OMP found'))`;
+const OMP_CHECK_ROW = `Array.from((${HEALTH_LIST})?.querySelectorAll('li') ?? []).find((li) => li.textContent.includes('Agent found'))`;
 // App-level `useChatAreaAnnouncer` region (App.tsx's single global aria-live), distinct from dialog-local live regions.
 const CHAT_AREA_ANNOUNCE_REGION = `document.querySelector('[aria-live="polite"]')`;
 
@@ -111,7 +111,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
 
   await cdp.waitFor(OMPVERSION_ROW_SPAN + ' !== undefined', { timeoutMs: 30_000, label: 'Unverified omp version alert row appears' });
   const ompRowName = await axText(cdp, OMPVERSION_ROW_SPAN);
-  assert(ompRowName === 'omp 18.10.1: unverified version', `omp-version row's own accessible name must be exactly "omp 18.10.1: unverified version" (got ${JSON.stringify(ompRowName)})`);
+  assert(ompRowName === 'Agent 18.10.1: unverified version', `omp-version row's own accessible name must be exactly "Agent 18.10.1: unverified version" (got ${JSON.stringify(ompRowName)})`);
   log('STEP PASS: unverified-omp-version alert row present with the exact expected text, with zero extra setup beyond the normal fake-omp harness launch.');
   await cdp.screenshot(path.join(evidenceDir, '01-both-alert-rows.png'));
 

@@ -237,11 +237,11 @@ async function main() {
         const chip = ${ROLE_CHIP_FINDER};
         chip.focus();
         await new Promise((r) => setTimeout(r, 300));
-        return document.body.textContent.includes('OMP switched models after repeated failures');
+        return document.body.textContent.includes('The agent switched models after repeated failures');
       })()
     `).catch(() => false);
     if (tooltipShown) {
-      findings.push('Fallback chip\'s tooltip reads the issue\'s own wording ("OMP switched models after repeated failures...") on keyboard focus.');
+      findings.push('Fallback chip\'s tooltip reads the issue\'s own wording ("The agent switched models after repeated failures...") on keyboard focus.');
     } else {
       failures.push('Fallback chip\'s tooltip did not show the expected wording on keyboard focus.');
     }

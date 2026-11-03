@@ -58,7 +58,7 @@ export function FilterTabs<T extends string>({ value, onValueChange, tabs, revea
     <Tabs className="min-w-0 flex-1" value={value} onValueChange={(next) => onValueChange(next as T)} activationMode="manual">
       <div
         ref={tabsWrapRef}
-        className="relative min-w-0 scroll-px-6 overflow-x-auto pr-tabs-fade [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        className="relative min-w-0 scroll-px-6 overflow-x-auto pr-tabs-fade no-scrollbar"
       >
         <TabsList aria-label={ariaLabel} className="w-max shrink-0">
           {tabs.map((tab) => (

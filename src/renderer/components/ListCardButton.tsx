@@ -1,8 +1,10 @@
-// Shared list card (#869, docs/design/components.md "Reusable components first"): a bordered,
-// full-width card whose body is one focusable button that opens its item, with one accessible name
-// so a screen reader hears one stop per item. The optional `actions` slot sits beside the body, not
-// inside it (a button cannot nest in a button), for a secondary control such as Archive.
+// Shared list card (#869, docs/design/components.md "Reusable components first"): a borderless,
+// full-width row on a resting `bg-surface-subtle` fill (visible on a popover) whose body is one
+// focusable button that opens its item, with one accessible name so a screen reader hears one stop per item.
+// The optional `actions` slot sits beside the body, not inside it (a button cannot nest in a button),
+// for a secondary control such as Archive.
 import type { ReactNode } from 'react'
+import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { cn } from '@/lib/utils'
 
 export interface ListCardButtonProps {
@@ -12,7 +14,7 @@ export interface ListCardButtonProps {
   children: ReactNode
   /** Secondary controls rendered beside the card body, vertically centred. */
   actions?: ReactNode
-  /** Draws the card's edge in the focus colour, for an item that just changed and needs noticing. */
+  /** Marks an item that just changed and needs noticing: a `bg-muted` fill plus the shared accent bar. */
   highlighted?: boolean
   className?: string
 }
@@ -22,10 +24,11 @@ export function ListCardButton({ ariaLabel, onClick, children, actions, highligh
     <div
       data-highlighted={highlighted ? '' : undefined}
       className={cn(
-        'flex w-full min-w-0 items-center gap-2 rounded-lg border border-border bg-card text-sm text-card-foreground transition-colors hover:bg-row-hover-bg',
-        highlighted && 'border-active-indicator bg-muted hover:bg-muted'
+        'relative flex w-full min-w-0 items-center gap-2 rounded-lg border border-transparent bg-surface-subtle text-sm text-card-foreground transition-colors forced-colors:border-[ButtonBorder] [--ghost-hover-bg:var(--row-action-hover-bg)] hover:bg-surface-hover',
+        highlighted && 'bg-muted hover:bg-muted'
       )}
     >
+      {highlighted && <ActiveIndicatorBar />}
       <button
         type="button"
         aria-label={ariaLabel}

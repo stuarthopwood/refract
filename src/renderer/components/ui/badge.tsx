@@ -24,6 +24,13 @@ const badgeVariants = cva(
         focused:
           "h-auto border-active-indicator bg-focused-badge-bg py-1 font-medium text-active-indicator-foreground",
         warning: "h-auto border-severity-warning bg-severity-warning-bg py-1 text-severity-warning",
+        role: "text-background"
+      },
+      tone: {
+        default: "bg-role-default",
+        smol: "bg-role-smol",
+        slow: "bg-role-slow",
+        plan: "bg-role-plan"
       },
     },
     defaultVariants: {
@@ -35,6 +42,7 @@ const badgeVariants = cva(
 function Badge({
   className,
   variant = "default",
+  tone,
   asChild = false,
   onDismiss,
   dismissLabel,
@@ -53,7 +61,7 @@ function Badge({
     <Comp
       data-slot="badge"
       data-variant={variant}
-      className={cn(badgeVariants({ variant }), onDismiss && "max-w-full overflow-visible", className)}
+      className={cn(badgeVariants({ variant, tone: variant === "role" ? (tone ?? "default") : undefined }), onDismiss && "max-w-full overflow-visible", className)}
       {...props}
     >
       {onDismiss && !asChild ? (

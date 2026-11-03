@@ -19,8 +19,8 @@ interface SettingRowProps {
   controlId?: string
   /** Render the label as a plain `span` (for a control group that is labelled through `aria-labelledby`). */
   labelAsText?: boolean
-  /** Rendered inline after the label (for example a decorative colour swatch). */
-  labelAddon?: ReactNode
+  /** Wraps the label text (for example in a badge); the text stays the label's accessible name. */
+  renderLabel?: (text: string) => ReactNode
   /** `stacked` puts the control below the label at every width (for wide controls such as lists and tables). */
   layout?: 'inline' | 'stacked'
   /** Dims the label and description (the control is disabled by its own prop); the note stays at full strength. */
@@ -28,7 +28,7 @@ interface SettingRowProps {
   children?: ReactNode
 }
 
-export function SettingRow({ id, label, description, note, icon: Icon, controlId, labelAsText = false, labelAddon, layout = 'inline', disabled = false, children }: SettingRowProps) {
+export function SettingRow({ id, label, description, note, icon: Icon, controlId, labelAsText = false, renderLabel, layout = 'inline', disabled = false, children }: SettingRowProps) {
   const groupHasIconSlot = useSettingsGroupIconSlot()
   const layoutClass =
     layout === 'stacked'
@@ -47,14 +47,13 @@ export function SettingRow({ id, label, description, note, icon: Icon, controlId
             <div className={`flex items-center gap-2 ${disabled ? 'opacity-50' : ''}`}>
               {labelAsText ? (
                 <span id={`${id}-label`} className="text-sm">
-                  {label}
+                  {renderLabel ? renderLabel(label) : label}
                 </span>
               ) : (
                 <label id={`${id}-label`} htmlFor={controlId ?? id} className="text-sm">
-                  {label}
+                  {renderLabel ? renderLabel(label) : label}
                 </label>
               )}
-              {labelAddon}
             </div>
             {description && (
               <span id={`${id}-description`} className={`text-xs text-muted-foreground ${disabled ? 'opacity-50' : ''}`}>

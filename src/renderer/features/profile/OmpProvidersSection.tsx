@@ -45,20 +45,20 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
     if (result.ok) {
       const fresh = useAccountsStore.getState().ompProviders
       const freshSignedIn = fresh.filter((provider) => provider.authenticated).length
-      announcePolite(`OMP providers: ${freshSignedIn} of ${fresh.length} signed in`)
+      announcePolite(`Agent providers: ${freshSignedIn} of ${fresh.length} signed in`)
       checkAgainRef.current?.focus()
     } else {
-      announceAssertive('Could not read OMP providers')
+      announceAssertive('Could not read the agent providers')
       checkAgainRef.current?.focus()
     }
   }
 
   return (
     <ScreenSection
-      title="OMP provider sign-in"
+      title="Agent provider sign-in"
       headingLevel={3}
       busy={initialLoading}
-      note="Refract uses the model providers your local OMP agent is signed in to. These are separate from your GitHub accounts."
+      note="Refract uses the model providers your local agent is signed in to. These are separate from your GitHub accounts."
       actions={
         <>
           {refreshing && total > 0 && (
@@ -84,7 +84,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
       {initialLoading ? (
         <div className="flex flex-col gap-2">
           <InlineStatus tone="loading" density="compact" className="p-0">
-            Checking OMP providers…
+            Checking agent providers…
           </InlineStatus>
           <Skeleton className="h-8" />
           <Skeleton className="h-8" />
@@ -101,7 +101,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
               No provider is signed in.
             </InlineStatus>
           ) : (
-            <ul role="list" aria-label="Signed in OMP providers" className="flex flex-col gap-1">
+            <ul role="list" aria-label="Signed-in agent providers" className="flex flex-col gap-1">
               {signedIn.map((provider) => (
                 <li key={provider.id} className="flex min-w-0 items-center justify-between gap-2">
                   <span className="truncate font-code text-xs" title={provider.id}>
@@ -125,7 +125,7 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
                 </Button>
               </CollapsibleTrigger>
               <CollapsibleContent>
-                <ul role="list" aria-label="Other OMP providers" className="mt-2 flex flex-col gap-1">
+                <ul role="list" aria-label="Other agent providers" className="mt-2 flex flex-col gap-1">
                   {other.map((provider) => (
                     <li key={provider.id} className="flex min-w-0 items-center justify-between gap-2">
                       <span className="truncate font-code text-xs" title={provider.id}>
@@ -144,13 +144,13 @@ export function OmpProvidersSection({ announcePolite, announceAssertive }: OmpPr
         </>
       ) : status === 'ready' ? (
         <InlineStatus density="compact" className="p-0">
-          OMP returned an empty provider list.
+          The agent returned an empty provider list.
         </InlineStatus>
       ) : null}
 
       {status === 'error' && (
         <InlineStatus tone={total > 0 ? 'notice' : 'error'} density="compact" className="p-0">
-          {total > 0 ? 'Could not refresh OMP providers. Showing the last result.' : 'Could not read OMP providers. OMP did not respond or returned an error.'}
+          {total > 0 ? 'Could not refresh the agent providers. Showing the last result.' : 'Could not read the agent providers. The agent did not respond or returned an error.'}
         </InlineStatus>
       )}
 

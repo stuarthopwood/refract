@@ -59,7 +59,7 @@ function SessionCard({ session, lastMessage }: { session: SessionSummary; lastMe
 export function NeedsYouSection({ sessions }: { sessions: SessionSummary[] }) {
   return (
     <ScreenSection title="Needs you" count={sessions.length} empty={sessions.length === 0 ? 'Nothing is waiting on you.' : null}>
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1">
         {sessions.map((session) => (
           <SessionCard key={session.id} session={session} />
         ))}
@@ -87,7 +87,7 @@ export function RecentSessionsSection({ sessions }: { sessions: SessionSummary[]
         </Button>
       }
     >
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1">
         {sessions.map((session) => (
           <SessionCard key={session.id} session={session} lastMessage={lastMessages[session.id]} />
         ))}

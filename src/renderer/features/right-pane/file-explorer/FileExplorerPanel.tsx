@@ -546,6 +546,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
             </label>
             <Switch
               id="file-explorer-show-ignored"
+              size="sm"
               checked={showIgnored}
               onCheckedChange={(checked) => sessionId && setShowIgnored(sessionId, checked)}
             />

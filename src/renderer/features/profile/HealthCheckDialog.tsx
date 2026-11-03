@@ -105,7 +105,7 @@ export function HealthCheckDialog({ open, onOpenChange, onCloseFocus }: HealthCh
       >
         <DialogHeader>
           <DialogTitle>Health check</DialogTitle>
-          <DialogDescription>Checks that Git and OMP are ready.</DialogDescription>
+          <DialogDescription>Checks that Git and the agent are ready.</DialogDescription>
         </DialogHeader>
         <ul
           role="list"

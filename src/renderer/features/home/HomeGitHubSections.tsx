@@ -49,7 +49,7 @@ export function MyPullRequestsSection({ hasGithubProjects }: { hasGithubProjects
         </>
       }
     >
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1">
         {section.items.map((item) => (
           <li key={`${item.repositoryId}-${item.number}`}>
             <ListCardButton
@@ -97,7 +97,7 @@ export function MyIssuesSection({ hasGithubProjects }: { hasGithubProjects: bool
         </>
       }
     >
-      <ul className="flex flex-col gap-2">
+      <ul className="flex flex-col gap-1">
         {section.items.map((item) => (
           <li key={`${item.repositoryId}-${item.number}`}>
             <ListCardButton

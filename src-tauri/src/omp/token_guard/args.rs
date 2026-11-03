@@ -30,7 +30,7 @@ pub async fn launch_args(dir: &Path, plan_mode: Option<bool>) -> (Vec<String>, V
         }
         Err(err) => warn(
             &mut warnings,
-            format!("could not write the OMP overlay ({err})"),
+            format!("could not write the agent overlay ({err})"),
         ),
     }
     match rules::write(dir).await {

@@ -335,7 +335,7 @@ export function AlarmClock({ formatted, now, className }: { formatted: string; n
             </InlineStatus>
           )}
           {!form && (
-            <div className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+            <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
               {sorted.map((alarm) => (
                 <AlarmRow
                   key={alarm.id}
