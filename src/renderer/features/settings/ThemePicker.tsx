@@ -4,7 +4,7 @@ import { AlertTriangleIcon, ChevronDownIcon, DownloadIcon, Trash2Icon, UploadIco
 import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
-import { RowKebabMenu } from '@/components/RowKebabMenu'
+import { ROW_KEBAB_INSET_CLASS, RowKebabMenu } from '@/components/RowKebabMenu'
 import type { RowMenuEntry } from '@/components/RowKebabMenu'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,7 @@ import { useThemeFileActions } from './useThemeFileActions'
 
 // Hand-rolled radiogroup (roving tabindex): arrows and Home/End both move focus and save the choice.
 // Not migrated to ui/radio-group.tsx, whose Home/End only move focus (#498).
-const ROW_CLASS = 'group/radio-item flex min-w-0 flex-1 items-center gap-2 rounded-md border border-transparent px-2 py-2 text-left text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow'
+const ROW_CLASS = 'group/radio-item flex w-full min-w-0 items-center gap-2 rounded-md border border-transparent py-2 pl-2 text-left text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow'
 
 interface ThemePickerProps {
   /** Ids of the heading and hint rendered in AppearanceSection. */
@@ -104,7 +104,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
             tabIndex={active ? 0 : -1}
             onClick={() => choose(e)}
             onKeyDown={(event) => handleKeyDown(event, index)}
-            className={cn(ROW_CLASS, active ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-row-hover-bg hover:text-foreground')}
+            className={cn(ROW_CLASS, ROW_KEBAB_INSET_CLASS, active ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground group-hover/row:bg-row-hover-bg group-hover/row:text-foreground')}
           >
             <span aria-hidden className={RADIO_RING_CLASS}>
               {active && <span className={RADIO_DOT_CLASS} />}

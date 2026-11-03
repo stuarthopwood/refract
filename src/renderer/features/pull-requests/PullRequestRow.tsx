@@ -13,6 +13,7 @@ import type { PullRequestAcrossItem } from '../../../shared/ipc-pull-requests'
 import type { CheckDisplay } from './check-display'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
+import { ROW_KEBAB_INSET_CLASS } from '@/components/RowKebabMenu'
 import { cn } from '@/lib/utils'
 
 interface PullRequestRowProps {
@@ -56,8 +57,9 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
       // Issue #1122: the PR list row gains the same accent fill every other persistent selected
       // row already has (it previously had the bar below but no fill at all).
       className={cn(
-        'relative flex w-full flex-col gap-1 px-4 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
-        selected ? 'bg-accent text-accent-foreground' : 'hover:bg-surface-hover'
+        'relative flex w-full flex-col gap-1 py-2 pl-4 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+        ROW_KEBAB_INSET_CLASS,
+        selected ? 'bg-accent text-accent-foreground' : 'group-hover/row:bg-surface-hover'
       )}
     >
       {/* Issue #1122: the shared `ActiveIndicatorBar` (square, flush full-height, 2px) replaces
