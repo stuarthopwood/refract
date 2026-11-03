@@ -1,18 +1,18 @@
-// A short whole-number field with a unit suffix and thousands separators (Settings > Advanced).
-// Commits on Enter or blur; an invalid draft shows the format hint as its validation error and is
-// not saved. The unit is part of the accessible name, spoken as "percent" for `%`; `hint` is an
-// optional secondary line tied to the input with `aria-describedby`.
+// A short whole-number field with a unit suffix (Settings > Advanced), built on the shared
+// NumberField. Commits on Enter or blur; an invalid draft shows the format hint as its validation
+// error and is not saved. The unit is part of the accessible name, spoken as "percent" for `%`;
+// `hint` is an optional secondary line tied to the input with `aria-describedby`.
+// The spinners and arrow keys step by 1000 for tokens (large counts) and by 1 for everything else.
 import { useEffect, useRef, useState } from 'react'
-import { Input } from '@/components/ui/input'
+import { NumberField } from '@/components/ui/NumberField'
 
 export function formatCount(n: number): string {
   return n.toLocaleString('en-GB')
 }
 
 function parseCount(text: string, min: number, max: number): number | undefined {
-  const cleaned = text.replace(/[,\s]/g, '')
-  if (!/^\d+$/.test(cleaned)) return undefined
-  const n = Number(cleaned)
+  if (!/^\d+$/.test(text)) return undefined
+  const n = Number(text)
   return n >= min && n <= max ? n : undefined
 }
 
@@ -34,7 +34,7 @@ interface NumberUnitFieldProps {
 }
 
 export function NumberUnitField({ id, value, unit, min = 0, max = Number.MAX_SAFE_INTEGER, hint, labelId, ariaLabel, describedBy, disabled, onCommit }: NumberUnitFieldProps) {
-  const text = formatCount(value)
+  const text = String(value)
   const [draft, setDraft] = useState(text)
   const [saveFailed, setSaveFailed] = useState(false)
   const saving = useRef(false)
@@ -65,10 +65,12 @@ export function NumberUnitField({ id, value, unit, min = 0, max = Number.MAX_SAF
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <Input
+        <NumberField
           id={id}
-          inputMode="numeric"
           className="w-28 text-right"
+          min={min}
+          max={max < Number.MAX_SAFE_INTEGER ? max : undefined}
+          step={unit === 'tokens' ? 1000 : 1}
           disabled={disabled}
           aria-label={labelId || !ariaLabel ? undefined : `${ariaLabel} (${spokenUnit})`}
           aria-labelledby={labelId ? `${labelId} ${unitId}` : undefined}
@@ -102,7 +104,7 @@ export function NumberUnitField({ id, value, unit, min = 0, max = Number.MAX_SAF
       )}
       {showError && (
         <span id={errorId} role="alert" className="text-xs text-destructive">
-          {invalid ? (max < Number.MAX_SAFE_INTEGER ? `Enter a whole number from ${min} to ${max}.` : 'Enter a whole number, 0 or more, for example 1,000.') : 'Could not save this value. Try again.'}
+          {invalid ? (max < Number.MAX_SAFE_INTEGER ? `Enter a whole number from ${min} to ${max}.` : 'Enter a whole number, 0 or more, for example 1000.') : 'Could not save this value. Try again.'}
         </span>
       )}
     </div>

@@ -66,10 +66,10 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 
 ### #1579 shared NumberField (after #1553)
 
-- [ ] T028 Add the shared `src/renderer/components/ui/NumberField.tsx`: `type="number"` with `min`, `step`, `max`, visible native spinners, ArrowUp/ArrowDown stepping, `onKeyDown` blocking `e`, `+`, `-`, blur or ignore on wheel so a focused value never changes, keep commit-on-Enter and commit-on-blur, `parseCount` validation and `aria-invalid` per FR-027 (missing)
-- [ ] T029 Replace the text `Input` (`inputMode="numeric"`) in `src/renderer/features/settings/advanced/NumberUnitField.tsx` (lines 58-76) and the per-model inputs in `PerModelThresholdTable.tsx` with `NumberField`; all nine `count` rows in `src/shared/tokenGuard.ts` use it per FR-027 (missing)
-- [ ] T030 Set `step` by unit: 1 for lines, requests, subagents, seconds, KB and percent fields (Cross-issue 2); 1000 for tokens including the idle threshold's token fallback; keep accessible names including the unit; leave `ScaleControl.tsx` unchanged per FR-027 (missing)
-- [ ] T031 Update existing tests broken by the primitive change; run gates; commit `#1579` per FR-027 (partial)
+- [x] T028 Add the shared `src/renderer/components/ui/NumberField.tsx`: `type="number"` with `min`, `step`, `max`, visible native spinners, ArrowUp/ArrowDown stepping, `onKeyDown` blocking `e`, `+`, `-`, blur or ignore on wheel so a focused value never changes, keep commit-on-Enter and commit-on-blur, `parseCount` validation and `aria-invalid` per FR-027 (missing)
+- [x] T029 Replace the text `Input` (`inputMode="numeric"`) in `src/renderer/features/settings/advanced/NumberUnitField.tsx` (lines 58-76) and the per-model inputs in `PerModelThresholdTable.tsx` with `NumberField`; all nine `count` rows in `src/shared/tokenGuard.ts` use it per FR-027 (missing)
+- [x] T030 Set `step` by unit: 1 for lines, requests, subagents, seconds, KB and percent fields (Cross-issue 2); 1000 for tokens including the idle threshold's token fallback; keep accessible names including the unit; leave `ScaleControl.tsx` unchanged per FR-027 (missing)
+- [x] T031 Update existing tests broken by the primitive change; run gates; commit `#1579` per FR-027 (partial)
 
 ### #1555 plain-language descriptions, labels, method hints
 
