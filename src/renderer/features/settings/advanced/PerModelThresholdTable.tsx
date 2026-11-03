@@ -32,6 +32,7 @@ interface PerModelThresholdTableProps {
 
 export function PerModelThresholdTable({ id, value, impact, seedPercent, disabled, describedBy, open, onOpenChange, onChange }: PerModelThresholdTableProps) {
   const catalog = useModelRolesStore((state) => state.catalogs.chat)
+  const catalogFailed = useModelRolesStore((state) => state.catalogErrors.chat !== undefined)
   const loadCatalog = useModelRolesStore((state) => state.loadCatalog)
   const [drafts, setDrafts] = useState<number[]>([])
   const [nextDraft, setNextDraft] = useState(0)
@@ -100,7 +101,7 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
   const summaryCostlier = models.some(costlier)
 
   const thresholdHint = (model: string, percent: number): string | undefined => {
-    if (catalog === undefined) return undefined
+    if (catalog === undefined && !catalogFailed) return undefined
     const size = windowFor(catalog, model)
     return size === null
       ? WINDOW_UNKNOWN_HINT

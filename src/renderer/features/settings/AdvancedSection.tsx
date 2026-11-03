@@ -23,6 +23,7 @@ export function AdvancedSection() {
   const rolesLoaded = useModelRolesStore((state) => state.loaded)
   const loadRoles = useModelRolesStore((state) => state.load)
   const catalog = useModelRolesStore((state) => state.catalogs.chat)
+  const catalogFailed = useModelRolesStore((state) => state.catalogErrors.chat !== undefined)
   const loadCatalog = useModelRolesStore((state) => state.loadCatalog)
 
   useEffect(() => {
@@ -89,7 +90,7 @@ export function AdvancedSection() {
                 disabledReason={reasonFor(info)}
                 seedPercent={seedPercent}
                 defaultWindow={defaultWindow}
-                catalogLoading={catalog === undefined}
+                catalogLoading={catalog === undefined && !catalogFailed}
                 onChange={(next) => set(info.key, next)}
                 onReset={() => reset(info.key)}
               />
