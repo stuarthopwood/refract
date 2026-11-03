@@ -24,7 +24,7 @@ export function ListCardButton({ ariaLabel, onClick, children, actions, highligh
     <div
       data-highlighted={highlighted ? '' : undefined}
       className={cn(
-        'relative flex w-full min-w-0 items-center gap-2 rounded-lg bg-surface-subtle text-sm text-card-foreground transition-colors [--ghost-hover-bg:var(--muted)] hover:bg-surface-hover',
+        'relative flex w-full min-w-0 items-center gap-2 rounded-lg border border-transparent bg-surface-subtle text-sm text-card-foreground transition-colors forced-colors:border-[ButtonBorder] [--ghost-hover-bg:color-mix(in_oklch,var(--muted),var(--foreground)_10%)] hover:bg-surface-hover',
         highlighted && 'bg-muted hover:bg-muted'
       )}
     >
