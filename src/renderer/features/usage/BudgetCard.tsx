@@ -41,7 +41,7 @@ export function BudgetCard({ budget, jokes }: { budget: UsageBudget | null; joke
       empty={budget && empty ? `Budget unavailable${budget.unavailable ? `: ${budget.unavailable}` : ''}.` : null}
     >
       {budget && !empty && (
-        <div className="flex flex-col gap-4 border p-4">
+        <div className="flex flex-col gap-4">
             {budget.copilot && <CopilotRow copilot={budget.copilot} jokes={jokes} />}
             {budget.unavailable && <p className="text-xs text-muted-foreground">Budget unavailable for some providers: {budget.unavailable}.</p>}
             {budget.providers.map((provider) => (
