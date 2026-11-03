@@ -6,19 +6,9 @@ import { ISSUE_STATE_DISPLAY } from '@/features/issues/IssueRow'
 import { PULL_REQUEST_STATE_DISPLAY } from '@/features/pull-requests/PullRequestRow'
 import { StateIcon, displayStatus } from '@/features/sessions/sessionDisplay'
 import { useIssuesStore, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
-import type { PullRequestState } from '../../../shared/github'
 import type { ConversationInfo } from '../../../shared/model'
 import { chordText, getActions, isActionEnabled } from './actionRegistry'
 import { openConversation } from './openConversation'
-
-// PR and issue state keep their state colour in the palette; the state is also written in the row's hint.
-const PULL_REQUEST_STATE_TEXT: Record<PullRequestState, string> = {
-  open: 'text-pr-open',
-  draft: 'text-pr-draft',
-  closed: 'text-pr-closed',
-  merged: 'text-pr-merged'
-}
-const ISSUE_STATE_TEXT = { OPEN: 'text-pr-open', CLOSED: 'text-pr-merged' } as const
 
 /** Palette sections in the order an empty query lists them. */
 export const PALETTE_SECTIONS = ['Actions', 'Sessions', 'Conversations', 'Settings', 'Pull requests and Issues'] as const
@@ -107,7 +97,7 @@ export function buildPaletteItems(loaded: PaletteConversations | null): PaletteI
       id: `pr:${pullRequest.repositoryId}:${pullRequest.number}`,
       section: 'Pull requests and Issues',
       label: `#${pullRequest.number} ${pullRequest.title}`,
-      icon: createElement(state.icon, { className: PULL_REQUEST_STATE_TEXT[pullRequest.state] }),
+      icon: createElement(state.icon, { className: state.colorClass }),
       hint: `Pull request, ${state.label}, ${pullRequest.repositoryName}`,
       run: () => {
         usePullRequestsStore.getState().select({ repositoryId: pullRequest.repositoryId, number: pullRequest.number })
@@ -121,7 +111,7 @@ export function buildPaletteItems(loaded: PaletteConversations | null): PaletteI
       id: `issue:${issue.repositoryId}:${issue.number}`,
       section: 'Pull requests and Issues',
       label: `#${issue.number} ${issue.title}`,
-      icon: createElement(state.icon, { className: ISSUE_STATE_TEXT[issue.state] }),
+      icon: createElement(state.icon, { className: state.colorClass }),
       hint: `Issue, ${state.label}, ${issue.repositoryName}`,
       run: () => {
         useIssuesStore.getState().select({ repositoryId: issue.repositoryId, number: issue.number })

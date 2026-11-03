@@ -35,7 +35,7 @@ export function FilterToggleButton({ label, open, active, panelId, onToggle, too
           className={cn('relative aria-expanded:bg-muted aria-expanded:text-foreground', COMPOSER_BUTTON_FOCUS_CLASS, className)}
         >
           <FunnelIcon aria-hidden className="size-4" />
-          {active && <span aria-hidden className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary" />}
+          {active && !open && <span aria-hidden className="absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary" />}
         </Button>
       </TooltipTrigger>
       <TooltipContent side={tooltipSide}>{label}</TooltipContent>

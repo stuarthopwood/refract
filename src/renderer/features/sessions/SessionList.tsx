@@ -208,7 +208,7 @@ export function SessionList() {
             </Tooltip>
           </div>
           {/* Always mounted, so the result count is announced whether or not the filter panel is open. */}
-          <div aria-live="polite" aria-atomic="true" className="sr-only">
+          <div aria-live="polite" aria-atomic="true" data-session-search-announcer="" className="sr-only">
             {searchAnnouncement}
           </div>
           {searchOpen && (

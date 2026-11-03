@@ -24,6 +24,7 @@ import {
   getAccessibleName,
   getActiveElementAccessibleName,
   pressTab,
+  pressTabSkippingShowHidden,
   pressEscape,
   groupTriggerFinder,
   ARCHIVED_TRIGGER_FINDER,
@@ -259,7 +260,10 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   await cdp.evaluate(`document.querySelector('[aria-label="Pull requests"]').focus()`);
   await pressTab(cdp);
   let active = await getActiveElementAccessibleName(cdp);
-  assert(active.name === 'Collapse all groups', `Tab after Pull requests must land on Collapse all groups (got: ${JSON.stringify(active)})`);
+  assert(/^Filter sessions/.test(active.name ?? ''), `Tab after Pull requests must land on the filter funnel (got: ${JSON.stringify(active)})`);
+  // Show hidden renders only while a Session is hidden, so the helper steps over it when present.
+  active = await pressTabSkippingShowHidden(cdp);
+  assert(active.name === 'Collapse all groups', `Tab after the funnel (and Show hidden, when shown) must land on Collapse all groups (got: ${JSON.stringify(active)})`);
 
   // Wait for the outline to settle: `outline-2` animates down from the initial 3px over ~150ms, so an immediate read sees 3px.
   await new Promise((resolve) => setTimeout(resolve, 250));
@@ -275,7 +279,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   await pressTab(cdp);
   active = await getActiveElementAccessibleName(cdp);
   assert(active.name === 'Expand all groups', `Tab after Collapse all groups must land on Expand all groups (got: ${JSON.stringify(active)})`);
-  log('STEP PASS: toolbar keyboard reach confirmed (Pull requests -> Collapse all groups -> Expand all groups), via real accessible names.');
+  log('STEP PASS: toolbar keyboard reach confirmed (Pull requests -> funnel -> Show hidden -> Collapse all groups -> Expand all groups), via real accessible names.');
 
   await pressEscape(cdp);
   await cdp.evaluate(`document.activeElement?.blur()`);

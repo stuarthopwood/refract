@@ -354,16 +354,36 @@ export async function proveCenteringAndNarrowWidth(cdp, log, { repoName, rowFind
   await cdp.waitFor(`${rowFinder}.querySelector(':scope > div').getBoundingClientRect().width > 250`, { timeoutMs: 10_000, label: 'session list restored to normal width' });
 }
 
-// Matches the app's own `data-session-search-input` attribute (`SESSION_SEARCH_INPUT_SELECTOR`) so the selector cannot drift unnoticed.
+// Match the app's own `data-session-search-input` / `data-session-filter-toggle` attributes (`sessionSearchSelector.ts`) so the selectors cannot drift unnoticed.
 export const SEARCH_INPUT_FINDER = `document.querySelector('[data-session-search-input]')`;
+export const FILTER_TOGGLE_FINDER = `document.querySelector('[data-session-filter-toggle]')`;
 
-/** Types into the search field via a real click plus `Input.insertText`; clears first because `insertText` only inserts at the caret. */
+/** The filter panel starts closed and the field mounts only while it is open; clicks the funnel only when the field is absent, so a second call never closes it. */
+export async function openSessionSearch(cdp) {
+  if (await cdp.evaluate(`${SEARCH_INPUT_FINDER} !== null`)) return;
+  await cdp.click(FILTER_TOGGLE_FINDER);
+  await cdp.waitFor(`${SEARCH_INPUT_FINDER} !== null`, { timeoutMs: 5_000, label: 'session filter panel opened by the funnel' });
+}
+
+/** Types into the search field (opening the panel if needed) via a real click plus `Input.insertText`; clears first because `insertText` only inserts at the caret. */
 export async function typeIntoSessionSearch(cdp, text) {
+  await openSessionSearch(cdp);
   await cdp.click(SEARCH_INPUT_FINDER);
   await pressKey(cdp, 65, 'a', 'KeyA', 2); // Ctrl+A: select all existing text
   await pressKey(cdp, 8, 'Backspace', 'Backspace'); // delete the selection
   await cdp.waitFor(SEARCH_INPUT_FINDER + `.value === ''`, { timeoutMs: 5_000, label: 'search field cleared before typing' });
   await cdp.send('Input.insertText', { text });
+}
+
+/** Presses Tab, then once more if focus landed on the Show hidden toggle (it renders only while a Session is hidden); returns the focused element's accessible name. */
+export async function pressTabSkippingShowHidden(cdp) {
+  await pressTab(cdp);
+  let active = await getActiveElementAccessibleName(cdp);
+  if (/^Show hidden/.test(active.name ?? '')) {
+    await pressTab(cdp);
+    active = await getActiveElementAccessibleName(cdp);
+  }
+  return active;
 }
 
 /** Finds a Session row's open button by the start of its accessible name (the display name before the first comma). */

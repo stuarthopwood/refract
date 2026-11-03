@@ -7,6 +7,9 @@ import { PALETTE_SECTIONS, buildPaletteItems, rankPaletteItems, type PaletteItem
 import { usePaletteStore } from './paletteStore'
 import { usePaletteConversations } from './usePaletteConversations'
 
+// cmdk's Command label overrides the input's own aria-label, so both must read the same.
+const SEARCH_LABEL = 'Search the palette'
+
 /** The Ctrl+K palette: one fuzzy list over Sessions, Conversations, Actions, Settings, pull requests and issues. */
 export function CommandPalette() {
   const open = usePaletteStore((state) => state.open)
@@ -72,11 +75,11 @@ function PaletteBody({ onRun }: { onRun(item: PaletteItem): void }) {
   )
 
   return (
-    <Command shouldFilter={false} vimBindings={false} label="Command palette results">
+    <Command shouldFilter={false} vimBindings={false} label={SEARCH_LABEL}>
       <CommandInput
         value={query}
         onValueChange={setQuery}
-        label="Search the palette"
+        label={SEARCH_LABEL}
         placeholder="Search, or type > for actions"
         onEscape={() => usePaletteStore.getState().setOpen(false)}
       />

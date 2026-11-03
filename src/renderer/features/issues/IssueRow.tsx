@@ -8,14 +8,14 @@ import { ColourDot } from '@/components/ColourDot'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
 import { cn } from '@/lib/utils'
 import type { IssueListItem } from '../../../shared/ipc-issues'
-import type { CheckDisplay } from '../pull-requests/check-display'
+import type { CheckStateDisplay } from '../pull-requests/check-display'
 
 const MAX_ROW_LABELS = 2
 
 /** Icon and word for an issue's state; shared with the command palette so both name it the same way. */
-export const ISSUE_STATE_DISPLAY: Record<IssueListItem['state'], CheckDisplay> = {
-  OPEN: { icon: CircleDotIcon, label: 'Open' },
-  CLOSED: { icon: CircleCheckIcon, label: 'Closed' }
+export const ISSUE_STATE_DISPLAY: Record<IssueListItem['state'], CheckStateDisplay> = {
+  OPEN: { icon: CircleDotIcon, label: 'Open', colorClass: 'text-pr-open' },
+  CLOSED: { icon: CircleCheckIcon, label: 'Closed', colorClass: 'text-pr-merged' }
 }
 
 interface IssueRowProps {

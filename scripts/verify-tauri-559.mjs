@@ -33,6 +33,9 @@ import {
   proveProjectRenameFocusRedirect,
   proveCreatedSessionHiddenAnnouncement,
   SEARCH_INPUT_FINDER,
+  FILTER_TOGGLE_FINDER,
+  openSessionSearch,
+  pressTabSkippingShowHidden,
   readJson,
   firstRowActionsFinder,
   openRowActionsMenu,
@@ -47,8 +50,8 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOT_DIR = process.env.REFRACT_559_SHOT_DIR || path.join(tmpdir(), 'refract-559-shots');
 
 const SEARCH_INPUT = SEARCH_INPUT_FINDER;
-const CLEAR_BUTTON = `document.querySelector('[data-session-search-region] button[aria-label="Clear filter"]')`;
-const ANNOUNCE_REGION = `document.querySelector('[data-session-search-region] [aria-live="polite"]')`;
+const CLEAR_BUTTON = `document.querySelector('[role="search"][aria-label="Sessions"] button[aria-label="Clear filter"]')`;
+const ANNOUNCE_REGION = `document.querySelector('[data-session-search-announcer]')`;
 const EMPTY_TITLE = `Array.from(document.querySelectorAll('[data-slot="empty-title"]')).find((el) => el.textContent.trim() === 'No sessions match')`;
 const CLEAR_FILTER_BUTTON = `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Clear filter')`;
 
@@ -119,8 +122,8 @@ async function waitForAnnouncementMatch(cdp, regionExpr, regexSource, { timeoutM
   );
 }
 
-/** Finds the app-level `aria-live="polite"` region (Ctrl+N fallback text), i.e. the one outside `data-session-search-region`. */
-const CHAT_AREA_ANNOUNCE_REGION = `Array.from(document.querySelectorAll('[aria-live="polite"]')).find((el) => !el.closest('[data-session-search-region]'))`;
+/** Finds the app-level `aria-live="polite"` region (Ctrl+N fallback text), i.e. any region other than the session list's own always-mounted result announcer. */
+const CHAT_AREA_ANNOUNCE_REGION = `Array.from(document.querySelectorAll('[aria-live="polite"]')).find((el) => !el.hasAttribute('data-session-search-announcer'))`;
 
 async function connectCdp(port, targetPid) {
   const wsUrl = await waitForCdpTarget(port, { timeoutMs: 60_000 });
@@ -156,6 +159,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await addRepositoryDiag(cdp, repoB, evidenceDir, log, 'B');
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 15_000, label: 'Repository B group rendered' });
   log('STEP PASS: both scratch Projects added.');
+  await openSessionSearch(cdp);
   assert((await cdp.evaluate(`!!document.querySelector('[role="search"][aria-label="Sessions"]')`)) === true, 'the session search field must sit inside a role="search" landmark');
   log('STEP PASS: the search field sits inside a role="search" landmark.');
 
@@ -221,6 +225,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   log('STEP PASS: Collapse all / Expand all stay live and actually toggle the visible group while a search is active (not a dead no-op).');
 
   // Compare settings.json byte-for-byte: the toggle above only touched the search's ephemeral override.
+  await openSessionSearch(cdp);
   await cdp.click(SEARCH_INPUT);
   await pressEscape(cdp);
   await cdp.waitFor(SEARCH_INPUT + `.value === ''`, { timeoutMs: 5_000, label: 'Esc clears the field' });
@@ -240,6 +245,12 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   );
   log(`STEP PASS: Esc clears the field, announces "Filter cleared", restores Project A's saved closed state, and settings.json is byte-identical to before the search (sha256 ${settingsAfterSearchHash} both times, the override never persisted).`);
 
+  // Escape on the now-empty field closes the panel and hands focus back to the funnel.
+  await pressEscape(cdp);
+  await cdp.waitFor(SEARCH_INPUT + ' === null', { timeoutMs: 5_000, label: 'Esc on an empty field closes the filter panel' });
+  await cdp.waitFor(`document.activeElement === (${FILTER_TOGGLE_FINDER})`, { timeoutMs: 5_000, label: 'focus returns to the funnel after the panel closes' });
+  log('STEP PASS: Esc on an empty field closes the filter panel and focuses the funnel.');
+
   await typeSearch(cdp, repoBName);
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' === undefined', { timeoutMs: 10_000, label: 'Project A hidden (its name does not match Project B\'s name)' });
   assert((await groupState(cdp, groupTriggerFinder(repoBName))) === 'open', 'Project B must show, forced open, for its own Project-name query');
@@ -248,26 +259,32 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the in-field Clear button' });
   log('STEP PASS: the in-field Clear (x) button restores the full list.');
 
+  // The panel is open here (typeSearch opened it), so the field and its Clear button sit after the toolbar in Tab order.
   await cdp.evaluate(`document.querySelector('[aria-label="Pull requests"]').focus()`);
   await pressTab(cdp);
   let active = await getActiveElementAccessibleName(cdp);
-  assert(active.role === 'searchbox' || /Filter sessions/.test(active.name ?? ''), `Tab after Pull requests must land on the search field (got ${JSON.stringify(active)})`);
+  assert(/^Filter sessions/.test(active.name ?? ''), `Tab after Pull requests must land on the filter funnel (got ${JSON.stringify(active)})`);
+  active = await pressTabSkippingShowHidden(cdp);
+  assert(active.name === 'Collapse all groups', `Tab after the funnel must land on Collapse all groups (got ${JSON.stringify(active)})`);
+  await pressTab(cdp);
+  active = await getActiveElementAccessibleName(cdp);
+  assert(active.name === 'Expand all groups', `Tab from Collapse all groups must land on Expand all groups (got ${JSON.stringify(active)})`);
+  await pressTab(cdp);
+  active = await getActiveElementAccessibleName(cdp);
+  assert(active.role === 'searchbox' || /Filter sessions by/.test(active.name ?? ''), `Tab from Expand all groups must land on the search field (got ${JSON.stringify(active)})`);
   await cdp.send('Input.insertText', { text: sessionA1Name });
   await cdp.waitFor(CLEAR_BUTTON + ' !== null', { timeoutMs: 5_000, label: 'Clear button appears once the field has text' });
   await pressTab(cdp);
   active = await getActiveElementAccessibleName(cdp);
   assert(active.name === 'Clear filter', `Tab from the search field (non-empty) must land on Clear filter (got ${JSON.stringify(active)})`);
-  await pressTab(cdp);
-  active = await getActiveElementAccessibleName(cdp);
-  assert(active.name === 'Collapse all groups', `Tab from Clear filter must land on Collapse all groups (got ${JSON.stringify(active)})`);
-  log('STEP PASS: Tab order confirmed via real accessible names -- Pull requests -> search field -> Clear filter -> Collapse all groups.');
+  log('STEP PASS: Tab order confirmed via real accessible names -- Pull requests -> funnel -> Collapse all groups -> Expand all groups -> search field -> Clear filter.');
   await pressKey(cdp, 9, 'Tab', 'Tab', 8); // Shift+Tab (modifiers bitmask: Shift = 8)
   active = await getActiveElementAccessibleName(cdp);
-  assert(active.name === 'Clear filter', `Shift+Tab from Collapse all groups must land back on Clear filter (got ${JSON.stringify(active)})`);
+  assert(active.role === 'searchbox' || /Filter sessions by/.test(active.name ?? ''), `Shift+Tab from Clear filter must land back on the search field (got ${JSON.stringify(active)})`);
   await pressKey(cdp, 9, 'Tab', 'Tab', 8);
   active = await getActiveElementAccessibleName(cdp);
-  assert(active.role === 'searchbox' || /Filter sessions/.test(active.name ?? ''), `Shift+Tab from Clear filter must land back on the search field (got ${JSON.stringify(active)})`);
-  log('STEP PASS: Shift+Tab reverses the same path from the list back to the search field.');
+  assert(active.name === 'Expand all groups', `Shift+Tab from the search field must land back on Expand all groups (got ${JSON.stringify(active)})`);
+  log('STEP PASS: Shift+Tab reverses the same path from Clear filter back to the toolbar.');
   await cdp.click(CLEAR_BUTTON);
   await cdp.waitFor(groupTriggerFinder(repoBName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project B back after Clear (Tab-order check cleanup)' });
   await cdp.evaluate(`document.activeElement?.blur()`);
@@ -289,7 +306,8 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings screen opened' });
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
   await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Returned from Settings to chat' });
-  await cdp.waitFor(SEARCH_INPUT + ' !== null', { timeoutMs: 15_000, label: 'Search field re-rendered after the Settings round trip' });
+  // The panel starts closed after the remount, so the field only exists once the funnel reopens it.
+  await openSessionSearch(cdp);
   assert((await cdp.evaluate(SEARCH_INPUT + '.value')) === sessionA1Name, 'the query text must survive the Settings round trip');
   assert((await cdp.evaluate(groupTriggerFinder(repoBName) + ' === undefined')) === true, 'Project B must still be hidden after the Settings round trip (filtering survives too)');
   log('STEP PASS: the search query and its filtering survive a Settings round trip (App.tsx remounts the whole session list on this view swap).');
