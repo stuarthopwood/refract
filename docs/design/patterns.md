@@ -42,7 +42,7 @@ The five rules for a Session- or pane-scoped problem row (#746; the component is
 
 1. A banner is unboxed: no border, no fill.
 2. Red is for the severity icon and for a destructive action's label only; the title stays foreground.
-3. Actions: one `outline` primary, every other action a `text` button.
+3. Actions: one `ghost` primary first, every other action a `text` button.
 4. A destructive action is red text, last in the row, and always confirms in a dialog.
 5. Message and detail are two lines: a short title, then the path or reason in the Code font.
 

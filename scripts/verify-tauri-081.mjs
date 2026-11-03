@@ -106,10 +106,10 @@ async function runChecks(cdp, repoDir) {
   await shot(cdp, 'theme-custom-per-element.png');
 
   assert(await cdp.evaluate(`!!(${IMPORT_BTN})`), 'the Import theme button exists');
-  const outlineFg = await cdp.evaluate(`getComputedStyle(${IMPORT_BTN}).color`);
-  assert(outlineFg === toRgb(CUSTOM_TOKENS['button-outline-fg']), 'the real Import button (outline) paints --button-outline-fg');
-  const outlineBg = await cdp.evaluate(`getComputedStyle(${IMPORT_BTN}).backgroundColor`);
-  assert(outlineBg === toRgb(CUSTOM_TOKENS['button-outline-bg']), 'the real Import button (outline) paints --button-outline-bg');
+  const ghostFg = await cdp.evaluate(`(() => { const b = ${IMPORT_BTN}; return getComputedStyle(b).color === getComputedStyle(b.parentElement).color; })()`);
+  assert(ghostFg === true, 'the real Import button (ghost) inherits its parent text colour, with no button token');
+  const ghostBg = await cdp.evaluate(`getComputedStyle(${IMPORT_BTN}).backgroundColor`);
+  assert(ghostBg === 'rgba(0, 0, 0, 0)', 'the real Import button (ghost) has a transparent background at rest');
 
   const pe = await cdp.evaluate(`(() => { const b = ${IMPORT_BTN}; b.setAttribute('aria-disabled', 'true'); const v = getComputedStyle(b).pointerEvents; b.removeAttribute('aria-disabled'); return v; })()`);
   assert(pe !== 'none', 'an aria-disabled Button keeps pointer events so its reason tooltip can open');
