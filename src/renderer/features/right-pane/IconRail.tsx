@@ -68,6 +68,7 @@ export function IconRail({ sessionId }: IconRailProps) {
             variant="ghost"
             size="icon-xl"
             data-rail-toggle
+            className="text-muted-foreground"
             aria-label="Right pane"
             aria-expanded={rightPaneOpen}
             aria-keyshortcuts="Control+Shift+B"
@@ -141,7 +142,7 @@ function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonR
           aria-label={label}
           tabIndex={tabIndex}
           className={cn(
-            'relative aria-pressed:bg-muted aria-pressed:text-accent-text forced-colors:aria-pressed:border-2 forced-colors:aria-pressed:border-[Highlight] data-[reorder-dragging]:opacity-50',
+            'relative text-muted-foreground aria-pressed:bg-muted aria-pressed:text-accent-text forced-colors:aria-pressed:border-2 forced-colors:aria-pressed:border-[Highlight] data-[reorder-dragging]:opacity-50',
             REORDER_MARKER_CLASS
           )}
           onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
