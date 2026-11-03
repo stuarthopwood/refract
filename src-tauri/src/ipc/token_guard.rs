@@ -52,7 +52,12 @@ fn key_arg(args: &[Value], channel: &str) -> Result<String, IpcError> {
 }
 
 fn token_guard_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move { Ok(snapshot(&values::load(&state.data_dir).await)) })
+    Box::pin(async move {
+        let mut result = snapshot(&values::load(&state.data_dir).await);
+        result["thresholdsReset"] =
+            json!(values::take_thresholds_reset_notice(&state.data_dir).await);
+        Ok(result)
+    })
 }
 
 fn token_guard_set(state: AppState, args: Vec<Value>) -> HandlerFuture {

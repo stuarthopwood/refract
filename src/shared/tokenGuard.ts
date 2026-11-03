@@ -1,13 +1,15 @@
 /** Token guard (#1212, spec 021): the keys Refract sets in the `omp` launch overlay, their
  * grilled defaults (mirrored by `src-tauri/src/omp/token_guard/values.rs`), and the IPC payloads. */
 
-export type TokenGuardValue = number | boolean | string | string[] | Record<string, number>;
+export type TokenGuardValue = number | boolean | string | string[] | Record<string, string>;
 
 export type TokenGuardValues = Record<string, TokenGuardValue>;
 
 export interface TokenGuardSnapshot {
   values: TokenGuardValues;
   defaults: TokenGuardValues;
+  /** Set on the one load after an upgrade dropped stored token thresholds (#1553). */
+  thresholdsReset?: boolean;
 }
 
 export interface TokenGuardLaunchWarning {
@@ -31,7 +33,7 @@ export const LONG_CONVERSATION_BANNER_CALLS = 500;
 export const LONG_CONVERSATION_BANNER_REPEAT = 100;
 
 /** `count`: whole number with a unit; `enum`: one of `options`; `order`: the compaction methods in
- * trial order; `record`: per-model token thresholds. */
+ * trial order; `record`: per-model thresholds as `"N%"` strings. */
 export type TokenGuardKind = 'count' | 'toggle' | 'enum' | 'order' | 'record';
 
 export type TokenGuardGroup =
@@ -58,6 +60,8 @@ export interface TokenGuardKeyInfo {
   description: string;
   /** Count unit: shown after the field and in its accessible name. */
   unit?: string;
+  /** Edited as a percent of the Default role model's window, stored as tokens (#1553). */
+  percentOfWindow?: boolean;
   options?: readonly TokenGuardOption[];
   /** Key of the toggle that must be on for this row to apply. */
   dependsOn?: string;
@@ -87,19 +91,20 @@ export const COMPACTION_METHODS: readonly TokenGuardOption[] = [
  * (`modelRoles.advisor`) is edited under Models > Advisor, not here. */
 export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
-    key: 'compaction.thresholdTokens',
+    key: 'compaction.thresholdPercent',
     label: 'Compaction threshold',
     kind: 'count',
-    unit: 'tokens',
+    unit: '%',
     group: 'Context compaction',
-    description: 'Summarise the conversation when it reaches this many tokens, for models with no entry below.'
+    description:
+      "Summarise the conversation when it fills this much of the model's context window, for models with no entry below."
   },
   {
     key: 'compaction.modelThresholds',
     label: 'Compaction threshold per model',
     kind: 'record',
     group: 'Context compaction',
-    description: 'Per-model override of the threshold above.'
+    description: "Per-model override of the threshold above, as a percent of that model's own context window."
   },
   {
     key: 'compaction.methodOrder',
@@ -121,9 +126,11 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     label: 'Idle compaction threshold',
     kind: 'count',
     unit: 'tokens',
+    percentOfWindow: true,
     group: 'Idle compaction',
     dependsOn: 'compaction.idleEnabled',
-    description: 'Only compact when idle if the conversation is at least this big.'
+    description:
+      "Only compact when idle if the conversation is at least this big. Shown as a share of the Default model's context window when that is known."
   },
   {
     key: 'compaction.idleTimeoutSeconds',

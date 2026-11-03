@@ -5,21 +5,37 @@
 import { useEffect } from 'react'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingsPage } from '@/components/settings/SettingsPage'
+import { useModelRolesStore } from '@/state'
 import { useTokenGuardStore } from '@/state/token-guard-store'
 import { TOKEN_GUARD_GROUPS, TOKEN_GUARD_KEYS } from '../../../shared/tokenGuard'
 import type { TokenGuardKeyInfo } from '../../../shared/tokenGuard'
 import { AdvancedRow } from './advanced/AdvancedRow'
+import { defaultRoleWindow } from './advanced/contextWindow'
 
 const ADVISOR_GROUP_HINT = 'Applies in review mode only.'
+const THRESHOLDS_RESET_NOTICE = 'Compaction thresholds are now a percent of the context window. Your old token thresholds were reset to the defaults.'
 
 export function AdvancedSection() {
-  const { values, defaults, loaded, error, load, set, reset } = useTokenGuardStore()
+  const { values, defaults, loaded, thresholdsReset, error, load, set, reset } = useTokenGuardStore()
+  const roles = useModelRolesStore((state) => state.roles)
+  const rolesLoaded = useModelRolesStore((state) => state.loaded)
+  const loadRoles = useModelRolesStore((state) => state.load)
+  const catalog = useModelRolesStore((state) => state.catalogs.chat)
+  const loadCatalog = useModelRolesStore((state) => state.loadCatalog)
 
   useEffect(() => {
     void load()
   }, [load])
 
-  const fallbackTokens = typeof values['compaction.thresholdTokens'] === 'number' ? values['compaction.thresholdTokens'] : 100_000
+  useEffect(() => {
+    if (!rolesLoaded) void loadRoles()
+    void loadCatalog('chat')
+  }, [rolesLoaded, loadRoles, loadCatalog])
+
+  const defaultWindow = defaultRoleWindow(roles, catalog)
+  const seedPercent = typeof values['compaction.thresholdPercent'] === 'number' ? values['compaction.thresholdPercent'] : 70
+
+
   const reasonFor = (info: TokenGuardKeyInfo): string | undefined => {
     if (!info.dependsOn || values[info.dependsOn] === true) return undefined
     const parent = TOKEN_GUARD_KEYS.find((k) => k.key === info.dependsOn)
@@ -31,6 +47,11 @@ export function AdvancedSection() {
       title="Advanced"
       intro="Refract sets these values every time it starts a Session, to keep token use down. Changes apply to new Sessions only; running Sessions keep the values they launched with."
     >
+      {thresholdsReset && (
+        <p role="status" className="mb-2 text-sm text-muted-foreground">
+          {THRESHOLDS_RESET_NOTICE}
+        </p>
+      )}
       {error && (
         <p role="alert" className="mb-2 text-sm text-destructive">
           {error}
@@ -46,7 +67,8 @@ export function AdvancedSection() {
                 value={values[info.key]}
                 defaultValue={defaults[info.key]}
                 disabledReason={reasonFor(info)}
-                fallbackTokens={fallbackTokens}
+                seedPercent={seedPercent}
+                defaultWindow={defaultWindow}
                 onChange={(next) => set(info.key, next)}
                 onReset={() => reset(info.key)}
               />

@@ -1,6 +1,6 @@
-// Per-model compaction thresholds as a small table (Settings > Advanced): model picker, token
-// count, remove, and an "Add model" button. A new row is a local draft until a model is picked,
-// because a threshold without a model is not a valid value.
+// Per-model compaction thresholds as a small table (Settings > Advanced): model picker, percent of
+// that model's context window, remove, and an "Add model" button. A new row is a local draft until
+// a model is picked, because a threshold without a model is not a valid value.
 import { useEffect, useState } from 'react'
 import { ChevronRightIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,19 +8,21 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useModelRolesStore } from '@/state'
-import { NumberUnitField } from './NumberUnitField'
+import { MAX_PERCENT, MIN_PERCENT, parsePercentEntry, percentToTokens, windowFor } from './contextWindow'
+import { formatCount, NumberUnitField } from './NumberUnitField'
 
 interface PerModelThresholdTableProps {
   id: string
-  value: Record<string, number>
-  /** Token count a newly added model starts with. */
-  fallbackTokens: number
+  /** Model selector to `"N%"`. */
+  value: Record<string, string>
+  /** Percent a newly added model starts with: the global threshold. */
+  seedPercent: number
   disabled?: boolean
   describedBy?: string
-  onChange: (value: Record<string, number>) => Promise<boolean>
+  onChange: (value: Record<string, string>) => Promise<boolean>
 }
 
-export function PerModelThresholdTable({ id, value, fallbackTokens, disabled, describedBy, onChange }: PerModelThresholdTableProps) {
+export function PerModelThresholdTable({ id, value, seedPercent, disabled, describedBy, onChange }: PerModelThresholdTableProps) {
   const catalog = useModelRolesStore((state) => state.catalogs.chat)
   const loadCatalog = useModelRolesStore((state) => state.loadCatalog)
   const [drafts, setDrafts] = useState<number[]>([])
@@ -34,7 +36,7 @@ export function PerModelThresholdTable({ id, value, fallbackTokens, disabled, de
     void loadCatalog('chat')
   }, [loadCatalog])
 
-  const save = (next: Record<string, number>): Promise<boolean> =>
+  const save = (next: Record<string, string>): Promise<boolean> =>
     onChange(next).then((ok) => {
       setSaveFailed(!ok)
       return ok
@@ -85,6 +87,11 @@ export function PerModelThresholdTable({ id, value, fallbackTokens, disabled, de
   const summary = models.length === 1 ? '1 model' : `${models.length} models`
   const showTable = models.length > 0 || drafts.length > 0
 
+  const thresholdHint = (model: string, percent: number): string | undefined => {
+    const size = windowFor(catalog, model)
+    return size === null ? undefined : `≈ ${formatCount(percentToTokens(percent, size))} of ${formatCount(size)} tokens`
+  }
+
   return (
     <Collapsible open={open || drafts.length > 0} onOpenChange={setOpen} className="flex w-full flex-col gap-2">
       {showTable && (
@@ -116,20 +123,23 @@ export function PerModelThresholdTable({ id, value, fallbackTokens, disabled, de
               <tr key={model}>
                 <td className="py-1 pr-2">
                   {picker(`${id}-model-${index}`, `Model ${index + 1}`, model, (selector) => {
-                    const next: Record<string, number> = {}
-                    for (const [key, tokens] of Object.entries(value)) next[key === model ? selector : key] = tokens
+                    const next: Record<string, string> = {}
+                    for (const [key, percent] of Object.entries(value)) next[key === model ? selector : key] = percent
                     void save(next)
                   })}
                 </td>
                 <td className="py-1 pr-2">
                   <NumberUnitField
-                    id={`${id}-tokens-${index}`}
-                    value={value[model] ?? 0}
-                    unit="tokens"
+                    id={`${id}-percent-${index}`}
+                    value={parsePercentEntry(value[model])}
+                    unit="%"
+                    min={MIN_PERCENT}
+                    max={MAX_PERCENT}
+                    hint={thresholdHint(model, parsePercentEntry(value[model]))}
                     ariaLabel={`Threshold for ${model}`}
                     describedBy={describedBy}
                     disabled={disabled}
-                    onCommit={(tokens) => save({ ...value, [model]: tokens })}
+                    onCommit={(percent) => save({ ...value, [model]: `${percent}%` })}
                   />
                 </td>
                 <td className="py-1">
@@ -148,7 +158,7 @@ export function PerModelThresholdTable({ id, value, fallbackTokens, disabled, de
               <tr key={`draft-${draft}`}>
                 <td className="py-1 pr-2">
                   {picker(`${id}-draft-${draft}`, `New model ${models.length + index + 1}`, undefined, (selector) => {
-                    void save({ ...value, [selector]: fallbackTokens }).then((ok) => {
+                    void save({ ...value, [selector]: `${seedPercent}%` }).then((ok) => {
                       if (ok) setDrafts((current) => current.filter((d) => d !== draft))
                     })
                   })}

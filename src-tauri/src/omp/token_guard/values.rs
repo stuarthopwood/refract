@@ -8,7 +8,7 @@ use serde_json::{json, Map, Value};
 
 use crate::store::atomic_json::{read_json_file, write_json_file};
 
-pub const STORE_VERSION: u32 = 1;
+pub const STORE_VERSION: u32 = 2;
 const FILE_NAME: &str = "token-guard.json";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -17,12 +17,12 @@ enum Kind {
     Bool,
     Text,
     TextList,
-    IntRecord,
+    PercentRecord,
 }
 
 const KEYS: &[(&str, Kind)] = &[
-    ("compaction.modelThresholds", Kind::IntRecord),
-    ("compaction.thresholdTokens", Kind::Int),
+    ("compaction.modelThresholds", Kind::PercentRecord),
+    ("compaction.thresholdPercent", Kind::Int),
     ("compaction.idleEnabled", Kind::Bool),
     ("compaction.idleThresholdTokens", Kind::Int),
     ("compaction.idleTimeoutSeconds", Kind::Int),
@@ -56,6 +56,9 @@ struct Stored {
     /// Set once the old 200-line `read.defaultLimit` default has been migrated to 1000 (#1545).
     #[serde(default)]
     read_limit_migrated: bool,
+    /// Set when the version 2 migration dropped stored token thresholds; cleared once Settings has told the user.
+    #[serde(default)]
+    thresholds_reset_pending: bool,
 }
 
 /// Serialises read-modify-write on the store file (Settings edits and launch reads).
@@ -67,15 +70,8 @@ fn kind_of(key: &str) -> Option<Kind> {
 
 pub fn default_for(key: &str) -> Option<Value> {
     Some(match key {
-        "compaction.modelThresholds" => json!({
-            "github-copilot/claude-opus-5.5": 200000,
-            "github-copilot/claude-sonnet-5.5": 120000,
-            "github-copilot/claude-sonnet-5": 120000,
-            "github-copilot/claude-haiku-5.5": 120000,
-            "github-copilot/gemini-4-argon": 150000,
-            "github-copilot/gpt-5.6-terra": 150000,
-        }),
-        "compaction.thresholdTokens" => json!(200000),
+        "compaction.modelThresholds" => json!({}),
+        "compaction.thresholdPercent" => json!(70),
         "compaction.idleEnabled" => json!(true),
         "compaction.idleThresholdTokens" => json!(80000),
         "compaction.idleTimeoutSeconds" => json!(240),
@@ -111,18 +107,45 @@ const MAX_ENTRIES: usize = 64;
 const METHODS: &[&str] = &["remote", "snapcompact", "shake", "handoff", "soft"];
 const REVIEW_MODES: &[&str] = &["agent-end", "turn"];
 const TODO_EAGER_MODES: &[&str] = &["default", "preferred", "always"];
+/// The agent clamps a percent threshold to this range.
+const PERCENT_RANGE: std::ops::RangeInclusive<u64> = 1..=99;
+/// Token thresholds the version 1 store held; the percent keys replace them.
+const LEGACY_THRESHOLD_KEYS: &[&str] =
+    &["compaction.thresholdTokens", "compaction.modelThresholds"];
 
 /// Upper bound for a count key (thresholds and line/size counts share the token ceiling).
 fn max_count(key: &str) -> u64 {
     match key {
+        "compaction.thresholdPercent" => *PERCENT_RANGE.end(),
         "task.maxConcurrency" => 64,
         "task.softRequestBudget" => 10_000,
         _ => 2_000_000,
     }
 }
 
-fn is_count(value: &Value, max: u64) -> bool {
-    value.as_u64().is_some_and(|n| n <= max)
+fn min_count(key: &str) -> u64 {
+    match key {
+        "compaction.thresholdPercent" => *PERCENT_RANGE.start(),
+        _ => 0,
+    }
+}
+
+fn is_count(value: &Value, min: u64, max: u64) -> bool {
+    value.as_u64().is_some_and(|n| (min..=max).contains(&n))
+}
+
+/// `"N%"` with N a whole percent 1-99 (`^(\d{1,2})%$`).
+fn is_percent_string(value: &Value) -> bool {
+    value
+        .as_str()
+        .and_then(|s| s.strip_suffix('%'))
+        .is_some_and(|digits| {
+            (1..=2).contains(&digits.len())
+                && digits.bytes().all(|b| b.is_ascii_digit())
+                && digits
+                    .parse::<u64>()
+                    .is_ok_and(|n| PERCENT_RANGE.contains(&n))
+        })
 }
 
 fn is_text(value: &Value) -> bool {
@@ -139,9 +162,9 @@ fn is_member(value: &Value, allowed: &[&str]) -> bool {
 /// non-empty and short, lists and maps are size-capped, enum-like keys take known values only.
 pub fn validate(key: &str, value: &Value) -> Result<(), String> {
     let kind = kind_of(key).ok_or_else(|| format!("Unknown token guard key: {key}"))?;
-    let max = max_count(key);
+    let (min, max) = (min_count(key), max_count(key));
     let ok = match (kind, key) {
-        (Kind::Int, _) => is_count(value, max),
+        (Kind::Int, _) => is_count(value, min, max),
         (Kind::Bool, _) => value.is_boolean(),
         (Kind::Text, "advisor.reviewMode") => is_member(value, REVIEW_MODES),
         (Kind::Text, "todo.eager") => is_member(value, TODO_EAGER_MODES),
@@ -151,10 +174,12 @@ pub fn validate(key: &str, value: &Value) -> Result<(), String> {
                 && items.len() <= MAX_ENTRIES
                 && items.iter().all(|i| is_member(i, METHODS))
         }),
-        (Kind::IntRecord, _) => value.as_object().is_some_and(|map| {
+        (Kind::PercentRecord, _) => value.as_object().is_some_and(|map| {
             map.len() <= MAX_ENTRIES
                 && map.iter().all(|(k, v)| {
-                    !k.trim().is_empty() && k.chars().count() <= MAX_TEXT_CHARS && is_count(v, max)
+                    !k.trim().is_empty()
+                        && k.chars().count() <= MAX_TEXT_CHARS
+                        && is_percent_string(v)
                 })
         }),
     };
@@ -180,6 +205,14 @@ async fn read_stored(dir: &Path) -> Stored {
         }
         stored.read_limit_migrated = true;
     }
+    if stored.version < 2 {
+        let dropped = LEGACY_THRESHOLD_KEYS
+            .iter()
+            .filter(|key| stored.overrides.remove(**key).is_some())
+            .count();
+        stored.thresholds_reset_pending |= dropped > 0;
+        stored.version = STORE_VERSION;
+    }
     stored
 }
 
@@ -197,6 +230,19 @@ fn effective(stored: &Stored) -> ValueMap {
 pub async fn load(dir: &Path) -> ValueMap {
     let _guard = STORE_LOCK.lock().await;
     effective(&read_stored(dir).await)
+}
+
+/// True once, the first time Settings loads after the store dropped token thresholds.
+pub async fn take_thresholds_reset_notice(dir: &Path) -> bool {
+    let _guard = STORE_LOCK.lock().await;
+    let mut stored = read_stored(dir).await;
+    if !stored.thresholds_reset_pending {
+        return false;
+    }
+    stored.thresholds_reset_pending = false;
+    // A failed write only repeats the notice on the next load.
+    let _ = write_json_file(&store_path(dir), &stored).await;
+    true
 }
 
 /// Stores a deliberate change for one key and returns the new effective values.
@@ -272,7 +318,14 @@ mod tests {
     fn rejects_out_of_bounds_values() {
         assert!(validate("task.maxConcurrency", &json!(65)).is_err());
         assert!(validate("task.softRequestBudget", &json!(10_001)).is_err());
-        assert!(validate("compaction.thresholdTokens", &json!(2_000_001)).is_err());
+        assert!(validate("compaction.thresholdPercent", &json!(0)).is_err());
+        assert!(validate("compaction.thresholdPercent", &json!(100)).is_err());
+        assert!(validate("compaction.thresholdPercent", &json!(99)).is_ok());
+        assert!(validate("compaction.modelThresholds", &json!({ "a/b": "70%" })).is_ok());
+        assert!(validate("compaction.modelThresholds", &json!({ "a/b": "100%" })).is_err());
+        assert!(validate("compaction.modelThresholds", &json!({ "a/b": "0%" })).is_err());
+        assert!(validate("compaction.modelThresholds", &json!({ "a/b": 70 })).is_err());
+        assert!(validate("compaction.thresholdTokens", &json!(200_000)).is_err());
         assert!(validate("compaction.methodOrder", &json!(["shake", "rm"])).is_err());
         assert!(validate("advisor.reviewMode", &json!("whatever")).is_err());
         assert!(validate("advisor.reviewMode", &json!("turn")).is_ok());

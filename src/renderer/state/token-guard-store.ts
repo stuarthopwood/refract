@@ -10,6 +10,8 @@ interface TokenGuardState {
   values: TokenGuardValues
   defaults: TokenGuardValues
   loaded: boolean
+  /** True once an upgrade dropped stored token thresholds; the backend reports it on one load only, so it stays set. */
+  thresholdsReset: boolean
   error: string | null
   load(): Promise<void>
   set(key: string, value: unknown): Promise<boolean>
@@ -19,7 +21,13 @@ interface TokenGuardState {
 export const useTokenGuardStore = create<TokenGuardState>((set) => {
   const apply = (result: Result<TokenGuardSnapshot>): boolean => {
     if (result.ok) {
-      set({ values: result.value.values, defaults: result.value.defaults, loaded: true, error: null })
+      set((state) => ({
+        values: result.value.values,
+        defaults: result.value.defaults,
+        thresholdsReset: state.thresholdsReset || result.value.thresholdsReset === true,
+        loaded: true,
+        error: null
+      }))
     } else {
       set({ error: result.error.message })
     }
@@ -29,6 +37,7 @@ export const useTokenGuardStore = create<TokenGuardState>((set) => {
     values: {},
     defaults: {},
     loaded: false,
+    thresholdsReset: false,
     error: null,
     load: async () => void apply(await window.refract.tokenGuard.get()),
     set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value)),
