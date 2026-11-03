@@ -72,7 +72,6 @@ export function SessionRowTable({
                   <span className="truncate">
                     {!deleting && <span className="sr-only">Open </span>}
                     {session.name}
-                    {deleting && <span className="sr-only">, deleting</span>}
                   </span>
                   <span className="flex min-w-0 items-center gap-1 font-code text-xs text-muted-foreground">
                     <GitBranchIcon aria-hidden className="size-4 shrink-0" />

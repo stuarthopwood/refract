@@ -666,7 +666,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           onRecreateWorktree={() => void handleRecreateWorktree()}
           onArchive={() => void handleArchive()}
           onDelete={() => setDeleteForId(sessionId)}
-          startNewButtonRef={startNewButtonRef} deleteButtonRef={deleteBannerButtonRef} deleteDisabled={deleting}
+          startNewButtonRef={startNewButtonRef} deleteButtonRef={deleteBannerButtonRef} deleting={deleting}
         />
       )}
       <DeleteDialog

@@ -215,6 +215,7 @@ pub fn sessions_restore(state: AppState, args: Vec<Value>) -> HandlerFuture {
             Some(id) => id.to_string(),
             None => return Err(invalid_argument("sessions.restore expects a string id")),
         };
+        delete_in_flight::refuse_if_deleting(&id)?;
         if state.registry.lock().await.get_session(&id).is_none() {
             return Err(not_found(format!("Session not found: {id}")));
         }
@@ -366,6 +367,9 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         .await
         .map_err(map_git_error)?;
 
+        // Claimed once the refusals that leave the Session untouched pass, so other handlers refuse
+        // for the whole destructive phase; dropping the claim on any error path unmarks it.
+        let claim = delete_in_flight::claim(&id)?;
         // Resets the Explorer on failure too (see `sessions_archive`).
         let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
             state.app_handle.clone(),
@@ -406,7 +410,14 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
 
         crate::process::pid_records::remove_process_records_for_session(&id).await;
 
-        delete_in_flight::start(state, session, repository, write_guard, worktree_guard)?;
+        delete_in_flight::start(
+            state,
+            session,
+            repository,
+            write_guard,
+            worktree_guard,
+            claim,
+        );
         Ok(Value::Null)
     })
 }
@@ -422,6 +433,7 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
                 ))
             }
         };
+        delete_in_flight::refuse_if_deleting(&id)?;
         let (session, repository) = {
             let registry = state.registry.lock().await;
             let session = registry

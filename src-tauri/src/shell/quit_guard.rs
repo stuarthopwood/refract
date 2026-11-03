@@ -8,7 +8,8 @@ use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 
 use crate::ipc::sessions_lifecycle::delete_in_flight;
 
-/// Set once the user chose "Quit anyway", so the close that follows is not asked about again.
+/// Set once the user chose "Quit anyway" on a window close; the close it triggers consumes it, so
+/// it never outlives that one close.
 static QUIT_CONFIRMED: AtomicBool = AtomicBool::new(false);
 
 /// True while a dialog is open, so a second close click or "Update now" does not stack another.
@@ -19,21 +20,23 @@ pub fn on_close_requested(window: &WebviewWindow, event: &WindowEvent) {
     let WindowEvent::CloseRequested { api, .. } = event else {
         return;
     };
-    if QUIT_CONFIRMED.load(Ordering::SeqCst) || !delete_in_flight::any_in_flight() {
+    if QUIT_CONFIRMED.swap(false, Ordering::SeqCst) || !delete_in_flight::any_in_flight() {
         return;
     }
     api.prevent_close();
     let window = window.clone();
     tauri::async_runtime::spawn(async move {
         if confirm_quit(window.app_handle()).await {
+            QUIT_CONFIRMED.store(true, Ordering::SeqCst);
             let _ = window.close();
         }
     });
 }
 
 /// True when the app may quit: nothing is being deleted, or the user chose to quit anyway.
+/// Holds no state, so a caller that then fails to quit leaves the guard intact.
 pub async fn confirm_quit(app: &AppHandle) -> bool {
-    if QUIT_CONFIRMED.load(Ordering::SeqCst) || !delete_in_flight::any_in_flight() {
+    if !delete_in_flight::any_in_flight() {
         return true;
     }
     if PROMPTING.swap(true, Ordering::SeqCst) {
@@ -53,8 +56,5 @@ pub async fn confirm_quit(app: &AppHandle) -> bool {
     .await
     .unwrap_or(false);
     PROMPTING.store(false, Ordering::SeqCst);
-    if accepted {
-        QUIT_CONFIRMED.store(true, Ordering::SeqCst);
-    }
     accepted
 }

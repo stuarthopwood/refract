@@ -39,13 +39,23 @@ pub fn any_in_flight() -> bool {
     !in_flight().is_empty()
 }
 
-/// Claims `id`; false when a removal for it is already running.
-fn mark(id: &str) -> bool {
-    in_flight().insert(id.to_string())
+/// Holds `id` in the in-flight set until dropped, so every early return unmarks it.
+pub struct Claim {
+    id: String,
 }
 
-fn unmark(id: &str) {
-    in_flight().remove(id);
+impl Drop for Claim {
+    fn drop(&mut self) {
+        in_flight().remove(&self.id);
+    }
+}
+
+/// Claims `id`; refuses when a removal for it is already running.
+pub fn claim(id: &str) -> Result<Claim, IpcError> {
+    if !in_flight().insert(id.to_string()) {
+        return Err(already_deleting());
+    }
+    Ok(Claim { id: id.to_string() })
 }
 
 fn already_deleting() -> IpcError {
@@ -60,20 +70,17 @@ pub fn refuse_if_deleting(id: &str) -> Result<(), IpcError> {
     Ok(())
 }
 
-/// Starts the removal and returns at once. The spawned task owns both guards until it ends, so no
-/// reader or lifecycle operation can touch the worktree meanwhile. Refuses if another removal for
-/// this Session claimed it between the handler's first check and now.
+/// Starts the removal and returns at once. The spawned task owns the guards and the claim until it
+/// ends, so no reader or lifecycle operation can touch the worktree meanwhile.
 pub fn start(
     state: AppState,
     session: Session,
     repository: Repository,
     write_guard: OwnedRwLockWriteGuard<()>,
     worktree_guard: WorktreeOperationGuard,
-) -> Result<(), IpcError> {
+    claim: Claim,
+) {
     let id = session.id.clone();
-    if !mark(&id) {
-        return Err(already_deleting());
-    }
     state.session_manager.notify_list_changed();
 
     tokio::spawn(async move {
@@ -94,7 +101,7 @@ pub fn start(
                 "Deleting this Session stopped unexpectedly.",
             ))
         });
-        unmark(&id);
+        drop(claim);
         match outcome {
             Ok(()) => state.session_manager.emit_session_deleted(&id),
             Err(err) => {
@@ -105,7 +112,6 @@ pub fn start(
         }
         state.session_manager.notify_list_changed();
     });
-    Ok(())
 }
 
 /// Removes the worktree, its Conversation files, then the registry entry. On failure the worktree

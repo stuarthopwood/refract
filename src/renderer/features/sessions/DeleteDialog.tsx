@@ -158,7 +158,11 @@ export function DeleteDialog({
     setError(null)
     // cleared here too, not just on dialog open -- a NEW attempt starting must never leave a PREVIOUS attempt's "Retry" label state lying around.
     setRefused(false)
+    // Marked before the IPC so a fast result event can't be re-added after it clears the row; cleared on refusal.
+    useSessionsStore.getState().markDeleting(deletingId)
     const response = await window.refract.sessions.delete(deletingId, { confirmed: true })
+    if (response.ok) useSessionsStore.getState().confirmDeleting(deletingId)
+    else useSessionsStore.getState().clearDeleting(deletingId)
     // If so, this stale resolution must not touch `deleting`, `deletedRef`, or close whatever is currently open.
     if (sessionIdRef.current !== deletingId || deleteGenerationRef.current !== myGeneration) return
     setDeleting(false)
@@ -192,8 +196,7 @@ export function DeleteDialog({
       }
       return
     }
-    // The backend returns once its checks pass; the row takes over as Deleting… until the result events arrive.
-    useSessionsStore.getState().markDeleting(deletingId)
+    // The backend returns once its checks pass; the row stays Deleting… until the result events arrive.
     deletedRef.current = true
     onOpenChange(false)
   }

@@ -22,7 +22,10 @@ async function retryDelete(id: string, previousMessage: string): Promise<void> {
   const store = useSessionsStore.getState()
   store.markDeleting(id)
   const response = await window.refract.sessions.delete(id, { confirmed: true })
-  if (response.ok) return
+  if (response.ok) {
+    useSessionsStore.getState().confirmDeleting(id)
+    return
+  }
   useSessionsStore.getState().clearDeleting(id)
   useSessionsStore.getState().openDeleteDetails(id, response.error.message || previousMessage)
 }

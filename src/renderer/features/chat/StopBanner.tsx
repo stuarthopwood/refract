@@ -29,8 +29,8 @@ interface StopBannerProps {
   onDelete: () => void
   startNewButtonRef: Ref<HTMLButtonElement>
   deleteButtonRef: Ref<HTMLButtonElement>
-  /** True while the Session is being deleted in the background, so a second delete is not offered. */
-  deleteDisabled: boolean
+  /** True while the Session is being deleted in the background: no second delete, and no recover/resume/restart against its worktree. */
+  deleting: boolean
 }
 
 function bannerText(
@@ -63,8 +63,8 @@ const guard = (busy: boolean, fn: () => void) => () => {
 
 export function StopBanner(p: StopBannerProps) {
   const { recovering, startingNew, resuming } = p.busy
-  const busyAny = recovering || startingNew || resuming
-  const busyStart = recovering || startingNew
+  const busyAny = recovering || startingNew || resuming || p.deleting
+  const busyStart = recovering || startingNew || p.deleting
   const text = bannerText(p.stopReason, p.stopDetail, p.showTerminatedTitle, p.pendingToolNames)
   const titleId = useId()
   return (
@@ -110,13 +110,13 @@ export function StopBanner(p: StopBannerProps) {
         )}
         {p.stopReason === 'worktree-missing' && (
           <>
-            <Button size="xs" variant="outline" onClick={p.onRecreateWorktree}>
+            <Button size="xs" variant="outline" aria-disabled={p.deleting || undefined} className={BUSY_CLASS} onClick={guard(p.deleting, p.onRecreateWorktree)}>
               Recreate worktree
             </Button>
             <Button size="xs" variant="text" onClick={p.onArchive}>
               Archive
             </Button>
-            <Button ref={p.deleteButtonRef} size="xs" variant="text-destructive" disabled={p.deleteDisabled} onClick={p.onDelete}>
+            <Button ref={p.deleteButtonRef} size="xs" variant="text-destructive" disabled={p.deleting} onClick={p.onDelete}>
               Delete
             </Button>
           </>

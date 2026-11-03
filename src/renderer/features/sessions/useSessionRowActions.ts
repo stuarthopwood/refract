@@ -127,15 +127,24 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   }
 
   function handleOpenButtonKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
-    if (deleting) {
-      event.preventDefault()
-      return
-    }
-    if (event.key === 'F2') {
-      event.preventDefault()
-      startRenaming()
-    }
+    // Only F2 is claimed; every other key (Tab, arrows) must keep navigating while the row is deleting.
+    if (event.key !== 'F2') return
+    event.preventDefault()
+    if (!deleting) startRenaming()
   }
+
+  // The row's actions unmount when it starts deleting. Subscribing (not an effect on `deleting`) lets
+  // this run before that commit, while the focused control is still in the DOM.
+  useEffect(
+    () =>
+      useSessionsStore.subscribe((state, prev) => {
+        if (state.deletingIds === prev.deletingIds) return
+        if (!state.deletingIds.has(session.id) || prev.deletingIds.has(session.id)) return
+        const active = document.activeElement
+        if (active && active !== openButtonRef.current && rowRef.current?.contains(active)) openButtonRef.current?.focus()
+      }),
+    [session.id]
+  )
 
   // `autoFocus` alone loses to Radix's post-paint dropdown-close focus restore (lands on <body>);
   // deferring one frame makes this the last mover (WCAG 2.1 AA).
