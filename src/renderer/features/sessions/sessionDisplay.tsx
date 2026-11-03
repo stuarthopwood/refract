@@ -167,20 +167,22 @@ export function hiddenSummary(sessions: SessionSummary[]): { hidden: number; att
 
 // A distinct icon per Session state, never colour alone (docs/design/product-look-and-feel.md "Look
 // and feel").
-export function StateIcon({ status, style }: { status: SessionDisplayStatus; style?: StatusStyle }) {
+export function StateIcon({ status, style, tone }: { status: SessionDisplayStatus; style?: StatusStyle; tone?: 'accent' }) {
   // Issue #482: the Status style setting, applied live; the single change point for every surface.
   // style overrides it for the Appearance preview only.
   const settingDots = useSettingsStore((s) => s.settings.statusStyle === 'dots')
-  if (style ? style === 'dots' : settingDots) return <StatusDot status={status} />
+  if (style ? style === 'dots' : settingDots) return <StatusDot status={status} accent={tone === 'accent'} />
   const className = 'size-4 shrink-0 forced-colors:text-[CanvasText]'
+  // tone="accent" tints with the accent text colour instead of the per-state colour.
+  const accent = tone === 'accent'
   switch (status) {
     case 'working':
       // Issue #482: tinted with the Working state colour so every state is colour-coded.
-      return <AgentSpinner size={16} className={cn(className, '[--agent-spinner-core:var(--state-working)]')} />
+      return <AgentSpinner size={16} className={cn(className, accent ? '[--agent-spinner-core:var(--accent-text)]' : '[--agent-spinner-core:var(--state-working)]')} />
     case 'idle':
       return <CircleCheckIcon aria-hidden className={cn(className, 'text-state-idle')} />
     case 'needs-you':
-      return <BellRingIcon aria-hidden className={cn(className, 'text-state-needs-you')} />
+      return <BellRingIcon aria-hidden className={cn(className, accent ? 'text-accent-text' : 'text-state-needs-you')} />
     case 'stopped':
       return <CircleStopIcon aria-hidden className={cn(className, 'text-state-stopped')} />
     case 'unread-response':

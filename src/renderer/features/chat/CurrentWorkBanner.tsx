@@ -1,3 +1,4 @@
+import { StateIcon } from '../sessions/sessionDisplay'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSessionsStore, useSettingsStore, useTodoPinStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { FadeCollapse } from '@/components/FadeCollapse'
@@ -31,31 +32,32 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
   if (!visible || text === null) return <FadeCollapse show={false}>{null}</FadeCollapse>
   return (
     <FadeCollapse show>
-    <div
-      data-slot="current-work-banner"
-      data-testid="current-work-banner"
-      aria-live="off"
-      className="flex h-6 shrink-0 items-center px-4 text-sm"
-    >
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span
-            aria-describedby={undefined}
-            data-testid="current-work-banner-text"
-            className="block min-w-0 flex-1 truncate text-accent-text"
-          >
-            <ShimmerText
-              key={status === 'working' ? 'working' : text}
-              active={status === 'working'}
-              className="animate-in fade-in-0 duration-150 motion-reduce:animate-none"
+      <div
+        data-slot="current-work-banner"
+        data-testid="current-work-banner"
+        aria-live="off"
+        className="flex h-6 shrink-0 items-center gap-2 px-4 text-sm"
+      >
+        <StateIcon status={status} tone="accent" />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span
+              aria-describedby={undefined}
+              data-testid="current-work-banner-text"
+              className="block min-w-0 flex-1 truncate text-accent-text"
             >
-              {text}
-            </ShimmerText>
-          </span>
-        </TooltipTrigger>
-        <TooltipContent className="max-w-md break-words">{text}</TooltipContent>
-      </Tooltip>
-    </div>
+              <ShimmerText
+                key={status === 'working' ? 'working' : text}
+                active={status === 'working'}
+                className="animate-in fade-in-0 duration-150 motion-reduce:animate-none"
+              >
+                {text}
+              </ShimmerText>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent className="max-w-md break-words">{text}</TooltipContent>
+        </Tooltip>
+      </div>
     </FadeCollapse>
   )
 }

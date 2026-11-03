@@ -52,7 +52,7 @@ export function LinkActions({ copyText, copyLabel, copiedMessage, actions, wrapp
             label={copyLabel}
             announcement={copiedMessage}
             tabIndex={-1}
-            className="pointer-events-none ml-1 size-5 align-middle text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-has-[:focus-visible]/link:pointer-events-auto group-has-[:focus-visible]/link:opacity-100 group-hover/link:pointer-events-auto group-hover/link:opacity-100 group-data-[state=open]/link:pointer-events-auto group-data-[state=open]/link:opacity-100 [&_svg:not([class*='size-'])]:size-3"
+            className="ml-1 size-5 align-middle text-muted-foreground opacity-50 transition-opacity hover:text-foreground hover:opacity-100 group-has-[:focus-visible]/link:text-foreground group-has-[:focus-visible]/link:opacity-100 group-hover/link:text-foreground group-hover/link:opacity-100 group-data-[state=open]/link:text-foreground group-data-[state=open]/link:opacity-100 [&_svg:not([class*='size-'])]:size-3"
           />
         </span>
       </ContextMenuTrigger>

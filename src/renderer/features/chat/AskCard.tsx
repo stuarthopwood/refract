@@ -216,7 +216,6 @@ export function AskCard({ sessionId, request }: AskCardProps) {
       busy={busy}
       showIncompleteNote={incompleteNoteId === activeQuestion.id && activeIncomplete}
       groupIdPrefix={groupAriaId}
-      advancesOnPick={questions.length > 1 && questions.some((question) => question.id !== activeQuestion.id && !isQuestionComplete(question, byQuestionId[question.id] ?? EMPTY_ASK_QUESTION_DRAFT))}
       onSelectSingle={(label) => selectSingleOption(sessionId, request.requestId, activeQuestion.id, label)}
       onPickSingle={handlePickSingle}
       onSelectOther={() => selectOther(sessionId, request.requestId, activeQuestion.id)}
@@ -317,7 +316,6 @@ interface AskQuestionBodyProps {
   busy: boolean
   showIncompleteNote: boolean
   groupIdPrefix: string
-  advancesOnPick: boolean
   onSelectSingle: (label: string) => void
   onPickSingle: (label: string) => void
   onSelectOther: () => void
@@ -328,7 +326,7 @@ interface AskQuestionBodyProps {
 }
 
 const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(function AskQuestionBody(
-  { question, draft, busy, showIncompleteNote, groupIdPrefix, advancesOnPick, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther },
+  { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther },
   ref
 ) {
   const arrowKeyRef = React.useRef(false)
@@ -336,9 +334,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
   const safeId = `${groupIdPrefix}-${question.id}`.replace(/[^a-zA-Z0-9_-]/g, '-')
   const headingId = `${safeId}-heading`
   const noteId = `${safeId}-incomplete-note`
-  const hintId = `${safeId}-hint`
-  const describedBy = [advancesOnPick ? hintId : null, showIncompleteNote ? noteId : null].filter(Boolean).join(' ') || undefined
-  const multiDescribedBy = showIncompleteNote ? `${hintId} ${noteId}` : hintId
+  const describedBy = showIncompleteNote ? noteId : undefined
   const otherValue = otherSentinelFor(question.options)
 
   function handleOtherKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -369,7 +365,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
       )}
       <CardContent className="space-y-2">
         {question.multi ? (
-          <div role="group" aria-labelledby={heading ? headingId : undefined} aria-label={heading ? undefined : question.question} aria-describedby={multiDescribedBy} className="flex flex-col gap-2">
+          <div role="group" aria-labelledby={heading ? headingId : undefined} aria-label={heading ? undefined : question.question} aria-describedby={describedBy} className="flex flex-col gap-2">
             {question.options.map((option, index) => {
               const checked = draft.selectedOptions.includes(option.label)
               const labelId = `${safeId}-opt-${index}-label`
@@ -422,9 +418,6 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               onChange={(event) => onCustomInput(event.target.value)}
               onKeyDown={handleOtherKeyDown}
             />
-            <p id={hintId} className="text-sm text-muted-foreground">
-              Tick any that apply, or none.
-            </p>
           </div>
         ) : (
           <>
@@ -486,11 +479,6 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
               onChange={(event) => onCustomInput(event.target.value)}
               onKeyDown={handleOtherKeyDown}
             />
-            {advancesOnPick && (
-              <p id={hintId} className="text-sm text-muted-foreground">
-                Choosing a listed option moves to the next unanswered question.
-              </p>
-            )}
           </>
         )}
         {showIncompleteNote && (
