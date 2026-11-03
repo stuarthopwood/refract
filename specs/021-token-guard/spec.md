@@ -31,6 +31,23 @@ All answers come from the issue's grilled block (Stuart, 2026-10-23) and the cod
 - Q: What if the overlay or rules file cannot be written? -> A: The Session launches without the failed argument and the developer sees one toast saying the token guard is off for that launch and why.
 - Q: Which launch paths need the arguments? -> A: Every place that builds the `omp` argument list for a Refract Session (the Session process builder). Side-chat and other helper processes that reuse that builder inherit them.
 
+### Session 2026-11-03 (Settings > Advanced batch: #1553, #1579, #1555, #1580)
+
+All answers come from the four issues' grilled blocks (Stuart, 2026-11-02) and the cross-issue grill (Stuart, 2026-11-03); none were left open. Where they differ from the 2026-10-23 entries above, these win.
+
+- #1553 Q: How is the global compaction threshold shown and stored? -> A: As a whole percent 1-99 of the context window in the agent's native `compaction.thresholdPercent`, default 70. Refract writes `compaction.thresholdTokens: -1` because a positive token value wins over the percentage.
+- #1553 Q: Per-model thresholds? -> A: Stored in `compaction.modelThresholds` as `"N%"` strings so the agent resolves each against the model's own window. When the chat catalogue knows the model's `contextWindow` the row also shows "≈ N of W tokens"; an unknown window still works.
+- #1553 Q: Built-in per-model defaults? -> A: None. The six shipped token entries are removed; every model uses the global percent unless the developer adds a row. "Add model" seeds the new row with the global percent.
+- #1553 Q: Idle compaction threshold? -> A: Shown as a percent 1-99 of the Default role model's window with "≈ N tokens" beneath; still stored in tokens (`compaction.idleThresholdTokens`, round(% x window)) because the agent has no idle percent key. If the Default role's window is unknown the row falls back to a token field.
+- #1553 Q: Input and migration? -> A: Whole percentages 1-99 (the agent clamps to 99); Reset restores the default. Stored token overrides for the global and per-model thresholds reset to the new defaults; Settings shows a one-line note on the first load after the upgrade. An idle-threshold token override stays (still tokens). Supersedes "still tokens underneath" for the global and per-model thresholds; stored `version` bumps to 2 and the migration runs where the store loads.
+- #1579 Q: Number inputs? -> A: One shared `NumberField` primitive in `src/renderer/components/ui/` (ADR 0003): `type="number"` with `min`, `step`, `max` where one exists; native spinner arrows stay visible; ArrowUp/ArrowDown step. Every number-only input in Settings > Advanced uses it (`NumberUnitField`, all nine `count` rows, the per-model threshold inputs). Commit-on-Enter and commit-on-blur stay; `parseCount` validation and `aria-invalid` stay; `e`, `+`, `-` are blocked in `onKeyDown`; wheel scrolling must not change a focused value. `step` follows the unit: 1 for lines, requests, subagents, seconds and KB; 1000 for tokens. `ScaleControl.tsx` is out of scope.
+- #1555 Q: Descriptions and labels? -> A: Every Settings > Advanced row description is rewritten in plain words using the issue's approved table; "Cross-device tools" becomes "Load rare tools on demand"; "Auto-continue after learning" becomes "Extra turn to record lessons"; the Advisor review mode option "Every turn" becomes "Every step" (stored value `turn` unchanged). Each compaction method (Shake, Handoff, Soft, Remote, Snapcompact) gets a one-line muted hint under its name, tied to its checkbox with `aria-describedby`. The two compaction threshold rows are not touched (#1553 owns them). No "OMP" in user-visible text (#1551). Accessible names stay the labels.
+- #1580 Q: Impact warnings? -> A: A row shows a warning line only when its value is set in the costlier direction from its token guard default; at defaults the page shows no warnings. Optional `impact?: { costlierWhen: (value, default) => boolean; text: string }` on `TokenGuardKeyInfo` in `src/shared/tokenGuard.ts`, rendered by the shared `AdvancedRow` with the warning severity token and a `TriangleAlert` icon, under the description, linked by `aria-describedby`, 4.5:1 in every theme. `task.maxConcurrency` is excluded. Rows whose costlier direction is not established (`compaction.methodOrder`, `compaction.idleEnabled`, `compaction.idleThresholdTokens`, `compaction.idleTimeoutSeconds`, `snapcompact.systemPrompt`, `read.summarize.enabled`, `prewalk.enabled`, `plan.defaultOnStartup`) are checked against the OMP settings docs; any with a clear direction gets a line, others none, each recorded in the PR. Stuart approves the exact wording on the PR screenshot.
+- Cross-issue 1: #1580 after #1553: the global Compaction threshold warns when above 70%; a per-model row warns when its percent is above the current global percent.
+- Cross-issue 2: #1579 after #1553: percent fields step 1; the idle threshold's token fallback (Default role window unknown) steps 1000.
+- Cross-issue 3: one PR with four commits, in the order #1553, #1579, #1555, #1580.
+- Cross-issue 4: converge on this spec (021).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Token-cost settings cannot drift for Refract Sessions (Priority: P1)
@@ -65,6 +82,13 @@ Settings > OMP lists every overlay setting as "Set by Refract" with its current 
 2. **Given** the developer changes a value, **When** the next Session launches, **Then** the overlay carries the new value; a running Session is unchanged.
 3. **Given** a changed value, **When** the developer activates "Reset to default", **Then** the grilled default is restored.
 4. **Given** keyboard-only use, **When** the developer moves through the rows, **Then** every control is reachable and labelled.
+
+**Settings > Advanced batch scenarios** (amend Story 2; one per issue):
+
+7. (#1553) **Given** Settings > Advanced, **When** it opens, **Then** the global compaction threshold shows 70 % with its description, per-model rows show a percent (plus "≈ N of W tokens" when the window is known), the idle row shows a percent with "≈ N tokens", and the overlay carries `compaction.thresholdPercent: 70` and `compaction.thresholdTokens: -1`.
+8. (#1579) **Given** a number-only row, **When** the developer presses ArrowUp or uses the spinner, **Then** the value steps by the unit's step; letters, `e`, `+`, `-` cannot be typed and wheel scrolling over the focused field leaves the value unchanged.
+9. (#1555) **Given** Settings > Advanced, **When** read, **Then** every row shows the approved plain description, the labels read "Load rare tools on demand" and "Extra turn to record lessons", the Advisor option reads "Every step", and each compaction method has a hint.
+10. (#1580) **Given** a row set costlier than its default, **When** the page renders, **Then** a warning line with an icon appears under its description; **Given** all defaults, **Then** none appears.
 
 ---
 
@@ -120,6 +144,10 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 
 ### Edge Cases
 
+- The Default role's (or a model's) context window is unknown: the idle row falls back to a token field (step 1000); a per-model row shows only the percent and no "≈" hint.
+- A version 1 store holds token overrides for `compaction.thresholdTokens` or `compaction.modelThresholds`: they reset to defaults on load and a one-line note is shown once; `compaction.idleThresholdTokens` is kept.
+- A per-model row at or below the global percent shows no warning; the global row at 70 or below shows none.
+- A focused number field scrolled with the wheel keeps its value.
 - The overlay or rules file cannot be written: the Session still launches without them, with one toast naming the reason.
 - Two Sessions launch at once: each launch sees a complete overlay (atomic write, never a half-written file).
 - The overlay's version is older than the app's: regenerated on the next launch, keeping any value the developer deliberately changed.
@@ -155,6 +183,13 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **FR-020**: Hand off MUST be offered only while the Session is idle; while busy the button is disabled with the reason in text.
 - **FR-021**: The pane banner MUST be dismissible for the current Conversation and reappear after 100 further calls.
 - **FR-022**: The OMP section MUST be added to Settings without removing or reordering the existing sections, so #691 can add rows to it later.
+- **FR-023** (#1553): The global compaction threshold MUST be a whole percent 1-99 stored as `compaction.thresholdPercent` (default 70), with `compaction.thresholdTokens` written as -1 in the overlay. Supersedes the token values for it in FR-004.
+- **FR-024** (#1553): `compaction.modelThresholds` MUST hold `"N%"` strings (1-99) with no built-in entries (supersedes the per-model token entries in FR-004); each row shows "≈ N of W tokens" when the window is known; "Add model" seeds the global percent.
+- **FR-025** (#1553): The idle compaction threshold MUST be edited as a percent of the Default role model's window and stored as tokens, falling back to a token field when that window is unknown.
+- **FR-026** (#1553): Loading a version 1 store MUST reset stored global and per-model token thresholds to the new defaults, bump `version` to 2, and show a one-line note once.
+- **FR-027** (#1579): A shared `NumberField` primitive MUST back every number-only input in Settings > Advanced: visible spinners, ArrowUp/ArrowDown stepping, per-unit `step`, `min`/`max`, blocked `e`/`+`/`-`, wheel-safe focus, unchanged commit and validation behaviour.
+- **FR-028** (#1555): Settings > Advanced row descriptions, the two renamed labels, the "Every step" option and per-method compaction hints MUST use the approved plain wording, with hints linked by `aria-describedby`.
+- **FR-029** (#1580): `TokenGuardKeyInfo` MUST carry an optional `impact` and `AdvancedRow` MUST render a warning line only when the value is costlier than its default; the global compaction threshold warns above 70% and a per-model row warns above the current global percent.
 
 ### Key Entities
 
@@ -164,6 +199,8 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **Conversation call count**: Completed model calls in one Conversation; drives the readout and banner and resets on a new Conversation.
 - **Shake**: A between-turn removal of recoverable heavy content from context, with no model call.
 - **Handoff summary**: The agent's summary of a Conversation, used as the first message of the next one.
+- **Impact rule**: Optional `{ costlierWhen, text }` on a token guard key; drives the warning line under the row description.
+- **Percent threshold**: A whole percent 1-99 of a model's context window; the stored form of the global (`compaction.thresholdPercent`) and per-model (`"N%"`) thresholds.
 
 ## Success Criteria *(mandatory)*
 
@@ -175,6 +212,7 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **SC-004**: A developer reaches Hand off from the Status line at 300 calls with one keyboard action and ends in a new Conversation holding the summary.
 - **SC-005**: The threshold announcement is spoken once per Conversation per threshold, not once per call.
 - **SC-006**: Every overlay row in Settings > OMP is reachable and operable by keyboard alone and states "Set by Refract" in text.
+- **SC-007**: With all values at default, Settings > Advanced shows no impact warnings; raising a costlier value shows its warning, and the compaction rows show percentages with the "≈ N tokens" hint where the window is known.
 
 ## Assumptions
 

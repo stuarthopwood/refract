@@ -20,6 +20,8 @@ All channels go through the single `refract_request(channel, args)` command (con
 | `token-guard:launch-warning` | `{ sessionId?: string, reason: string }` (overlay or rules write failed, guard off for that launch) | A |
 | `token-guard:calls` | `{ sessionId: string, conversationId: string, calls: number }` emitted on each count change (batched per frame burst) | B |
 
+`tokenGuard.get` returns `values.version` 2; `tokenGuard.set` for `compaction.thresholdPercent` takes an integer 1-99 and for `compaction.modelThresholds` a record of `"N%"` strings. The channels themselves are unchanged.
+
 `pnpm check:parity` entries are added in the same change as each channel; the removed `omp-guard:reset` entry goes with Lane A.
 
 ## Internal (not IPC)

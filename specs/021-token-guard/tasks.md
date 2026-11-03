@@ -49,3 +49,43 @@ T001 -> T002, T004, T006. T003 -> T004. T004 -> T005. T006 -> T007, T008. T009 a
 ## Coverage
 
 FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003; FR-011, FR-012, FR-019 T011, T012; FR-013 T013; FR-014 T015, T016; FR-015, FR-020 T014; FR-016 T017; FR-017 T004, T007; FR-018 all UI tasks; FR-021 T016. SC-001..002 T021 part 1; SC-003..006 T021 part 2 and T017.
+
+
+## Phase 2: Convergence
+
+**Scope**: Settings > Advanced batch, spec 2026-11-03 Clarifications. One PR, four commits in order #1553, #1579, #1555, #1580. No new tests (prototyping rule); update existing tests only where a change breaks them.
+
+### #1553 compaction thresholds as a percent of the context window
+
+- [ ] T022 Change `src-tauri/src/omp/token_guard/values.rs` (KEYS, `default_for`, `Kind`) and `src/shared/tokenGuard.ts`: add `compaction.thresholdPercent` (Int 1-99, default 70), remove `compaction.thresholdTokens` as an edited key, make `compaction.modelThresholds` a record of `"N%"` strings validated by `^(\d{1,2})%$` with no built-in entries per FR-023, FR-024 (partial)
+- [ ] T023 Write `compaction.thresholdTokens: -1` in the overlay from `src-tauri/src/omp/token_guard/overlay.rs` so the percent wins per FR-023 (partial)
+- [ ] T024 Bump the stored `version` to 2 in `values.rs` and reset stored `compaction.thresholdTokens` and `compaction.modelThresholds` token overrides on load (keep `compaction.idleThresholdTokens`); surface a one-time one-line note through the existing Advanced notice slot per FR-026 (missing)
+- [ ] T025 Rework `src/renderer/features/settings/advanced/AdvancedSection.tsx` (remove the `fallbackTokens` feed for these rows) and `PerModelThresholdTable.tsx`: global row in percent, per-model rows in percent with "≈ N of W tokens" from `ModelCatalogEntry.contextWindow` (`useModelRoleStore`/`useModelRolesStore`), "Add model" seeds the global percent, hint tied by `aria-describedby`, accessible names include "percent" per FR-024 (partial)
+- [ ] T026 Idle threshold row: percent of the Default role model's window (read from `useModelRolesStore`) with "≈ N tokens" beneath, stored as round(% x window) tokens, token field fallback when the window is unknown; extend `NumberUnitField.tsx` with a `%` unit and optional secondary hint line (ADR 0003, no one-off) per FR-025 (missing)
+- [ ] T027 Update existing tests that pin the old token wording or defaults (`src/shared`, `src/renderer/features/settings/advanced`, `values.rs` unit tests); keep `PerModelThresholdTable.tsx` under 600 lines; run `pnpm check:file-size`, `pnpm check:comment-density`; commit `#1553` per FR-023..026 (partial)
+
+### #1579 shared NumberField (after #1553)
+
+- [ ] T028 Add the shared `src/renderer/components/ui/NumberField.tsx`: `type="number"` with `min`, `step`, `max`, visible native spinners, ArrowUp/ArrowDown stepping, `onKeyDown` blocking `e`, `+`, `-`, blur or ignore on wheel so a focused value never changes, keep commit-on-Enter and commit-on-blur, `parseCount` validation and `aria-invalid` per FR-027 (missing)
+- [ ] T029 Replace the text `Input` (`inputMode="numeric"`) in `src/renderer/features/settings/advanced/NumberUnitField.tsx` (lines 58-76) and the per-model inputs in `PerModelThresholdTable.tsx` with `NumberField`; all nine `count` rows in `src/shared/tokenGuard.ts` use it per FR-027 (missing)
+- [ ] T030 Set `step` by unit: 1 for lines, requests, subagents, seconds, KB and percent fields (Cross-issue 2); 1000 for tokens including the idle threshold's token fallback; keep accessible names including the unit; leave `ScaleControl.tsx` unchanged per FR-027 (missing)
+- [ ] T031 Update existing tests broken by the primitive change; run gates; commit `#1579` per FR-027 (partial)
+
+### #1555 plain-language descriptions, labels, method hints
+
+- [ ] T032 Rewrite every row `description` in `src/shared/tokenGuard.ts` (`TOKEN_GUARD_ROWS`, lines 84-229) with the approved #1555 table wording, leaving `compaction.thresholdTokens`/`compaction.modelThresholds` rows to #1553, with no "OMP" in user-visible text per FR-028 (missing)
+- [ ] T033 Rename "Cross-device tools" to "Load rare tools on demand" (`tools.xdev`) and "Auto-continue after learning" to "Extra turn to record lessons" (`autolearn.autoContinue`); change the Advisor option label "Every turn" to "Every step" at `tokenGuard.ts:177-180` keeping stored value `turn` per FR-028 (missing)
+- [ ] T034 Add an optional `description` to the compaction method options in `tokenGuard.ts:76-82` and render it as a muted line under each method name in the shared row/checkbox components with `aria-describedby` for Shake, Handoff, Soft, Remote, Snapcompact per FR-028 (missing)
+- [ ] T035 Update existing tests pinning old wording; run gates; commit `#1555` per FR-028 (partial)
+
+### #1580 token-impact warning lines (after #1555 and #1553)
+
+- [ ] T036 Add optional `impact?: { costlierWhen: (value, default) => boolean; text: string }` to `TokenGuardKeyInfo` in `src/shared/tokenGuard.ts` and fill it for the draft rows (`read.defaultLimit`, `grep.contextBefore`/`grep.contextAfter`, `tools.artifactSpillThreshold`, `task.softRequestBudget`, `advisor.reviewMode`, `todo.eager`, `autolearn.autoContinue`, `tools.xdev`, `snapcompact.toolResults`); exclude `task.maxConcurrency` per FR-029 (missing)
+- [ ] T037 Render the impact line in the shared `src/renderer/features/settings/advanced/AdvancedRow.tsx` with the warning severity token and a `TriangleAlert` icon under the description, linked by `aria-describedby`, no per-row styling per FR-029 (missing)
+- [ ] T038 Compaction rows (Cross-issue 1): global `compaction.thresholdPercent` warns above 70; each per-model row in `PerModelThresholdTable.tsx` warns above the current global percent; at or below shows none per FR-029 (missing)
+- [ ] T039 Check each row whose costlier direction is not established (`compaction.methodOrder`, `compaction.idleEnabled`, `compaction.idleThresholdTokens`, `compaction.idleTimeoutSeconds`, `snapcompact.systemPrompt`, `read.summarize.enabled`, `prewalk.enabled`, `plan.defaultOnStartup`) against the OMP settings docs and the #1212 notes; add a line only for a clear direction; record each decision in the PR body per FR-029 (missing)
+- [ ] T040 Verify the warning colour meets 4.5:1 in every theme (`pnpm check:theme-contrast`); run gates; commit `#1580` per FR-029, SC-007 (partial)
+
+### Final
+
+- [ ] T041 Live verification per `quickstart.md` step 8 with `scripts/verify-tauri.mjs`, a scratch `REFRACT_DATA_DIR` and a seeded version 1 store: percent rows and "≈" hints, overlay `thresholdPercent: 70`/`thresholdTokens: -1`, one-time migration note, NumberField stepping/blocked keys/wheel, new wording and hints, no warnings at defaults and a warning when costlier (including per-model above global); capture screenshots for Stuart's wording approval per US2/AC7-10, SC-007 (missing)

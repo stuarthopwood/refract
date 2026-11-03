@@ -7,6 +7,8 @@
 
 Every `omp` Refract launches gets `--config <overlay>` and `--append-system-prompt <rules file>`. A new Rust module `src-tauri/src/omp/token_guard/` writes the overlay (atomic, versioned, from a Refract-owned values store) and the rules file, builds the extra launch arguments, sends `/shake` after a turn settles when context is above 60k, and counts model calls per Conversation. The renderer adds a Settings > OMP section ("Set by Refract" rows), a "Long conversation" Status line readout with a Hand off button at 300 calls, and a pane banner at 500. The #1184 global-config reset is removed. Probe results are in [research.md](./research.md).
 
+**Settings > Advanced batch (2026-11-03)**: `token_guard/values.rs` and `src/shared/tokenGuard.ts` move thresholds to `compaction.thresholdPercent` and `"N%"` strings (store version 2, load-time migration); `src/renderer/components/ui/NumberField` backs `NumberUnitField`/`PerModelThresholdTable`; `TokenGuardKeyInfo.impact` renders in `AdvancedRow.tsx`; row copy and method hints change in `tokenGuard.ts`. Commits in order #1553, #1579, #1555, #1580 on one PR.
+
 ## Technical Context
 
 **Language/Version**: Rust 2021 (Tauri v2); TypeScript 5 / React 19
