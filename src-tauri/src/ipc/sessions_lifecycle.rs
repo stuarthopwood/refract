@@ -7,7 +7,6 @@ use serde_json::Value;
 
 use crate::fs::leftover_summary::compute_leftover_summary;
 use crate::git::git::GitError;
-use crate::git::worktree_delete::remove_session_worktree;
 use crate::git::worktree_delete_check::delete_check_for_session;
 use crate::git::worktree_holders;
 use crate::git::worktrees::{
@@ -35,6 +34,7 @@ pub fn register(d: &mut Dispatcher) {
         sessions_delete_leftover_summary,
     );
     d.register("sessions.delete", sessions_delete);
+    d.register("sessions.deleting", sessions_deleting);
     d.register("sessions.recreateWorktree", sessions_recreate_worktree);
     d.register("sessions.diffStat", sessions_diff_stat);
     d.register("sessions.revealWorktree", sessions_reveal_worktree);
@@ -141,6 +141,7 @@ pub fn sessions_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 ))
             }
         };
+        delete_in_flight::refuse_if_deleting(&id)?;
         let name = match args.get(1).and_then(Value::as_str) {
             Some(name) => name.to_string(),
             None => {
@@ -167,6 +168,7 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
             Some(id) => id.to_string(),
             None => return Err(invalid_argument("sessions.archive expects a string id")),
         };
+        delete_in_flight::refuse_if_deleting(&id)?;
         if state.registry.lock().await.get_session(&id).is_none() {
             return Err(not_found(format!("Session not found: {id}")));
         }
@@ -293,7 +295,13 @@ pub fn sessions_delete_leftover_summary(state: AppState, args: Vec<Value>) -> Ha
     })
 }
 
-/// `sessions.delete`: removes the worktree, its Conversation files, then the registry entry.
+/// `sessions.deleting`: ids whose removal is still running, so a reloaded renderer can re-mark them.
+pub fn sessions_deleting(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move { Ok(Value::from(delete_in_flight::deleting_ids())) })
+}
+
+/// `sessions.delete`: runs every refusal check, then removes the worktree, its Conversation files
+/// and the registry entry in the background; the outcome arrives as an event.
 pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -317,6 +325,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "sessions.delete requires { confirmed: true }",
             ));
         }
+        delete_in_flight::refuse_if_deleting(&id)?;
         let (session, repository) = {
             let registry = state.registry.lock().await;
             let session = registry
@@ -335,8 +344,8 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .await
             .map_err(map_git_error)?;
 
-        // Held through removal so no new reader starts (#1055).
-        let _write_guard = crate::fs::worktree_access::write_guard_bounded(&id)
+        // Held through removal so no new reader starts (#1055); the background task takes it over.
+        let write_guard = crate::fs::worktree_access::write_guard_bounded(&id)
             .await
             .map_err(map_git_error)?;
 
@@ -397,39 +406,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
 
         crate::process::pid_records::remove_process_records_for_session(&id).await;
 
-        remove_session_worktree(
-            Path::new(&repository.path),
-            Path::new(&session.worktree_path),
-            &session.branch,
-            true,
-        )
-        .await
-        .map_err(map_git_error)?;
-
-        if let Some(session_dir) = &session.session_dir {
-            if is_strict_descendant_of_omp_sessions(session_dir) {
-                delete_session_conversations(session_dir).await;
-            } else {
-                log::warn!(
-                    "sessions.delete: refusing to delete sessionDir outside ~/.omp/agent/sessions: {session_dir}"
-                );
-            }
-        }
-
-        state
-            .registry
-            .lock()
-            .await
-            .remove_session(&id)
-            .await
-            .map_err(map_registry_error)?;
-        state.session_manager.remove_agent(&id);
-        // Drop this Session's absolute-path allow-list entry, so the map does not grow.
-        super::file_attachments::forget_session(&id);
-        // Disk-reclaim hook, as for archive (#657, #658). Success only.
-        on_worktree_released(&id);
-        worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Forgotten);
-        state.session_manager.notify_list_changed();
+        delete_in_flight::start(state, session, repository, write_guard, worktree_guard)?;
         Ok(Value::Null)
     })
 }
@@ -490,11 +467,15 @@ use diag::{sessions_diff_stat, sessions_reveal_worktree};
 
 // Delete helpers (reclaim hook, Conversation cleanup, path check) live in `sessions_delete_support.rs`.
 mod sessions_delete_support;
+use sessions_delete_support::on_worktree_released;
 #[cfg(test)]
-use sessions_delete_support::WORKTREE_RELEASED_HOOK_CALLS;
 use sessions_delete_support::{
-    delete_session_conversations, is_strict_descendant_of_omp_sessions, on_worktree_released,
+    delete_session_conversations, is_strict_descendant_of_omp_sessions,
+    WORKTREE_RELEASED_HOOK_CALLS,
 };
+
+// The background half of `sessions.delete`: in-flight set and the spawned removal.
+pub(crate) mod delete_in_flight;
 
 #[cfg(test)]
 #[path = "sessions_lifecycle_tests.rs"]

@@ -17,6 +17,10 @@ interface SessionsState {
   startingIds: Set<string>
   startSeq: Record<string, number>
   creatingRepositoryIds: Set<string>
+  /** Sessions whose removal runs in the background; their rows show Deleting… and take no actions. */
+  deletingIds: ReadonlySet<string>
+  /** Failure Details dialog target (the toast's Details button); null when closed. */
+  deleteDetails: { id: string; message: string } | null
   setSessions(sessions: SessionSummary[]): void
   applyStatus(event: SessionStatusEvent): void
   /** #526: patches only this row's `activity` from `session:activity`; never refetches the list. */
@@ -33,9 +37,15 @@ interface SessionsState {
   restore(id: string): Promise<boolean>
   stopAgent(id: string): Promise<boolean>
   setHidden(id: string, hidden: boolean): Promise<boolean>
+  markDeleting(id: string): void
+  clearDeleting(id: string): void
+  openDeleteDetails(id: string, message: string): void
+  closeDeleteDetails(): void
 }
 
 const openPromises = new Map<string, Promise<SessionSnapshot | null>>()
+// Bumped on every local mark/clear so a `refresh()` whose `deleting()` snapshot predates one cannot undo it.
+let deletingEpoch = 0
 
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
@@ -43,6 +53,8 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
   startingIds: new Set(),
   startSeq: {},
   creatingRepositoryIds: new Set(),
+  deletingIds: new Set(),
+  deleteDetails: null,
   setSessions: (sessions) => set({ sessions }),
   applyActivity: (sessionId, activity) => {
     if (!get().sessions.some((session) => session.id === sessionId)) return
@@ -74,9 +86,13 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       )
     }),
   refresh: async () => {
-    const result = await window.refract.sessions.list()
+    const epoch = deletingEpoch
+    const [result, deleting] = await Promise.all([window.refract.sessions.list(), window.refract.sessions.deleting()])
     if (result.ok) {
       set({ sessions: result.value })
+      // The in-flight ids come from the backend so a reload restores the Deleting… rows; a local mark/clear
+      // made while this was in flight wins, and the backend's list-changed refresh settles the rest.
+      if (deleting.ok && epoch === deletingEpoch) set({ deletingIds: new Set(deleting.value) })
       // a session only ever leaves this list via `sessions.delete` (archiving keeps it listed);
       // prune any pane still pointing at an id that is now gone.
       useSplitStore.getState().pruneDeleted(new Set(result.value.map((session) => session.id)))
@@ -85,6 +101,18 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       notify(result.error)
     }
   },
+  markDeleting: (id) => {
+    deletingEpoch += 1
+    set({ deletingIds: new Set(get().deletingIds).add(id) })
+  },
+  clearDeleting: (id) => {
+    deletingEpoch += 1
+    const deletingIds = new Set(get().deletingIds)
+    deletingIds.delete(id)
+    set({ deletingIds })
+  },
+  openDeleteDetails: (id, message) => set({ deleteDetails: { id, message } }),
+  closeDeleteDetails: () => set({ deleteDetails: null }),
   open: (id, userAction) => {
     const key = `${id}:${userAction === true}`
     const forcedKey = `${id}:true`

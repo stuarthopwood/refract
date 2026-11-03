@@ -218,6 +218,15 @@ impl SessionManager {
         self.events.emit_session_list_changed();
     }
 
+    pub fn emit_session_deleted(&self, session_id: &str) {
+        self.events.emit_session_deleted(session_id);
+    }
+
+    pub fn emit_session_delete_failed(&self, session_id: &str, code: &str, message: &str) {
+        self.events
+            .emit_session_delete_failed(session_id, code, message);
+    }
+
     pub fn emit_settings_changed(&self, settings: &Value) {
         self.events.emit_settings_changed(settings);
     }

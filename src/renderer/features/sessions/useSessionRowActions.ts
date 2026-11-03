@@ -37,6 +37,8 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
   const stopAgent = useSessionsStore((state) => state.stopAgent)
+  // A derived boolean, not the whole Set, so one deleting Session doesn't re-render every row.
+  const deleting = useSessionsStore((state) => state.deletingIds.has(session.id))
   const prewalkState = usePrewalkStore((s) => s.bySession[session.id] ?? 'unknown')
   const [renaming, setRenaming] = useState(false)
   const [draftName, setDraftName] = useState(session.name)
@@ -125,6 +127,10 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   }
 
   function handleOpenButtonKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (deleting) {
+      event.preventDefault()
+      return
+    }
     if (event.key === 'F2') {
       event.preventDefault()
       startRenaming()
@@ -328,7 +334,8 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       }
     },
     // A repository whose git read failed has no default branch: omit the item rather than create on "".
-    repository?.defaultBranch ? { branch: repository.defaultBranch, disabled: creatingThisRepository } : null
+    repository?.defaultBranch ? { branch: repository.defaultBranch, disabled: creatingThisRepository } : null,
+    deleting
   )
 
   // `isContextMenu`: the context menu opens from the row's open button, so close-autofocus returns there, not to "...".
@@ -391,7 +398,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   }
 
   return {
-    isVisible, isFocusedPane, isSplitOpen, replaceFocused, openInSplit, open,
+    isVisible, isFocusedPane, isSplitOpen, replaceFocused, openInSplit, open, deleting,
     renaming, draftName, setDraftName, deleteOpen, setDeleteOpen, resuming,
     resumeButtonRef, worktreeMissing, rowRef, openButtonRef, menuTriggerRef, renameInputRef,
     createRequestedRef, createOriginRef, contextMenuOpenerRef,

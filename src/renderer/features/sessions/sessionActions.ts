@@ -41,12 +41,14 @@ export interface SessionRowActionHandlers {
   prewalk?: { state: 'armed' | 'off' | 'unknown'; onToggle(): void }
 }
 
-/** Builds the ordered action list for a session row. */
+/** Builds the ordered action list for a session row; a Session being deleted in the background has none. */
 export function buildSessionRowActions(
   session: SessionSummary,
   handlers: SessionRowActionHandlers,
-  newSession: { branch: string; disabled: boolean } | null
+  newSession: { branch: string; disabled: boolean } | null,
+  deleting = false
 ): SessionRowAction[] {
+  if (deleting) return []
   const isArchived = !!session.archivedAt
   return [
     ...(newSession

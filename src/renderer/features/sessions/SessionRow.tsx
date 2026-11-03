@@ -69,8 +69,10 @@ const TRAILING_TIME_CLASS = cn(
 /** The row's line 2 is one slot; the first match wins (#567). */
 function lineTwoKind(
   session: SessionSummary,
-  activityText: string | null
-): 'start-progress' | 'terminated' | 'archived' | 'activity' | 'branch' {
+  activityText: string | null,
+  deleting: boolean
+): 'deleting' | 'start-progress' | 'terminated' | 'archived' | 'activity' | 'branch' {
+  if (deleting) return 'deleting'
   if (session.startProgress) return 'start-progress'
   const terminated =
     session.status === 'stopped' &&
@@ -93,7 +95,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
   const { session } = props
   const row = useSessionRowActions(session, props.repository, props.layout === 'table' ? props.surface : undefined)
   const {
-    isVisible, isFocusedPane, isSplitOpen, replaceFocused, openInSplit, open,
+    isVisible, isFocusedPane, isSplitOpen, replaceFocused, openInSplit, open, deleting,
     renaming, deleteOpen, setDeleteOpen, resuming,
     resumeButtonRef, worktreeMissing, rowRef, openButtonRef, menuTriggerRef,
     focusListContainer, startRenaming, canResume, handleResume,
@@ -113,14 +115,15 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
   const { repository } = props
   const fg = isVisible ? 'text-session-row-selected-fg' : 'text-session-row-fg'
   const metaFg = isVisible ? 'text-session-row-selected-fg' : 'text-session-row-meta-fg'
-  const lineTwo = lineTwoKind(session, activityText)
+  const lineTwo = lineTwoKind(session, activityText, deleting)
   // "focused pane" is announced only while a Split is open; in a single pane it repeats `aria-current`.
   const accessibleName = [
     session.name,
     session.startProgress ? describeStartProgressLabel(session.startProgress.kind) : displayLabel(session),
     session.archivedAt ? 'Archived' : null,
     session.hiddenAt ? 'Hidden' : null,
-    isSplitOpen && isFocusedPane ? 'focused pane' : null
+    isSplitOpen && isFocusedPane ? 'focused pane' : null,
+    deleting ? 'deleting' : null
   ]
     .filter((part): part is string => Boolean(part))
     .join(', ')
@@ -141,11 +144,12 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
     <li ref={rowRef} data-choice-item className="group relative w-full">
       {isVisible && <ActiveIndicatorBar />}
       <ContextMenu onOpenChange={(open) => onContextMenuOpenChange(row, open)}>
-        <ContextMenuTrigger asChild>
+        <ContextMenuTrigger asChild disabled={deleting}>
           <div
             className={cn(
               'relative flex w-full min-h-11 items-start gap-1 pl-6 pr-2 py-1',
-              isVisible ? 'bg-session-row-selected-bg text-session-row-selected-fg' : 'hover:bg-session-row-hover-bg'
+              deleting && 'opacity-60',
+              isVisible ? 'bg-session-row-selected-bg text-session-row-selected-fg' : !deleting && 'hover:bg-session-row-hover-bg'
             )}
           >
             {renaming ? (
@@ -163,7 +167,9 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                   type="button"
                   aria-current={isVisible ? 'true' : undefined}
                   aria-label={accessibleName}
+                  aria-disabled={deleting || undefined}
                   onClick={(event) => {
+                    if (deleting) return
                     if (event.ctrlKey) {
                       openInSplit(session.id)
                       return
@@ -171,7 +177,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                     replaceFocused(session.id)
                     if (isFocusedPane) void open(session.id)
                   }}
-                  onDoubleClick={startRenaming}
+                  onDoubleClick={deleting ? undefined : startRenaming}
                   onKeyDown={handleOpenButtonKeyDown}
                   data-choice-item
                   // Query target for `focusSessionRow` so closing the only open pane returns focus here (#621).
@@ -190,7 +196,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                           : 'pr-10 [@media(hover:none)]:pr-18'
                     )}
                   >
-                    {session.startProgress ? (
+                    {deleting || session.startProgress ? (
                       <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
                     ) : (
                       <StateIcon status={displayStatus(session)} />
@@ -198,7 +204,9 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                     <span className={cn('truncate text-sm font-normal', session.hiddenAt ? metaFg : fg)}>{session.name}</span>
                     {session.hiddenAt && <HiddenMarker compact />}
                   </span>
-                  {lineTwo === 'start-progress' && session.startProgress ? (
+                  {lineTwo === 'deleting' ? (
+                    <span className={cn('truncate pl-6 text-xs', metaFg)}>Deleting…</span>
+                  ) : lineTwo === 'start-progress' && session.startProgress ? (
                     <span className={cn('truncate pl-6 text-xs', metaFg)} aria-hidden>
                       {describeStartProgress(session.startProgress)}
                     </span>
@@ -226,9 +234,9 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
               </SessionDetailsCard>
             )}
             <span role="status" className="sr-only">
-              {resuming ? `Resuming ${session.name}…` : ''}
+              {deleting ? `Deleting ${session.name}…` : resuming ? `Resuming ${session.name}…` : ''}
             </span>
-            <span className="absolute right-2 top-0.5 flex h-6 items-center gap-1">
+            {!deleting && <span className="absolute right-2 top-0.5 flex h-6 items-center gap-1">
               {canResume && (
                 <IconButton
                   ref={resumeButtonRef}
@@ -275,7 +283,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </span>
-            </span>
+            </span>}
           </div>
         </ContextMenuTrigger>
         <ContextMenuContent className="max-w-80" onCloseAutoFocus={(event) => handleMenuCloseAutoFocus(event, true)}>

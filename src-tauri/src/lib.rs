@@ -287,6 +287,7 @@ pub fn run() {
                 let tracker = window_state_tracker.clone();
                 let window_for_events = window.clone();
                 window.on_window_event(move |event| {
+                    shell::quit_guard::on_close_requested(&window_for_events, event);
                     tracker.on_window_event(&window_for_events, event)
                 });
             }

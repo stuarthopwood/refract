@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { FileIcon, FolderIcon, Loader2Icon } from 'lucide-react'
 import type { LeftoverSummary } from '../../../shared/ipc'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
+import { useSessionsStore } from '@/state/sessions-store'
 import { InlineStatus } from '@/components/InlineStatus'
 
 interface DeleteCheck {
@@ -72,6 +73,8 @@ export interface DeleteDialogProps {
   leftoverSummary?: LeftoverSummary
   onDeleted?(): void
   onCancelled?(): void
+  /** Seeds the dialog as a failed attempt (the toast's Details): message shown, confirm reads Retry. */
+  initialError?: string
 }
 export function DeleteDialog({
   session,
@@ -80,7 +83,8 @@ export function DeleteDialog({
   check,
   leftoverSummary: leftoverSummaryOverride,
   onDeleted,
-  onCancelled
+  onCancelled,
+  initialError
 }: DeleteDialogProps) {
   const [loading, setLoading] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -102,8 +106,8 @@ export function DeleteDialog({
     if (!open) return
     deletedRef.current = false
     setDeleting(false)
-    setError(null)
-    setRefused(false)
+    setError(initialError ?? null)
+    setRefused(!!initialError)
     setRefreshing(false)
     setRecheckFailed(false)
     let cancelled = false
@@ -145,7 +149,7 @@ export function DeleteDialog({
     return () => {
       cancelled = true
     }
-  }, [open, session.id, check, leftoverSummaryOverride])
+  }, [open, session.id, check, leftoverSummaryOverride, initialError])
 
   async function handleDelete(): Promise<void> {
     const deletingId = session.id
@@ -188,6 +192,8 @@ export function DeleteDialog({
       }
       return
     }
+    // The backend returns once its checks pass; the row takes over as Deleting… until the result events arrive.
+    useSessionsStore.getState().markDeleting(deletingId)
     deletedRef.current = true
     onOpenChange(false)
   }

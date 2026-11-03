@@ -153,6 +153,10 @@ fn updates_install_now(state: AppState, _args: Vec<Value>) -> HandlerFuture {
             };
             return Err(IpcError::new(code, reason));
         }
+        // Declining leaves the downloaded update in place, so the user can choose "Update now" again.
+        if !crate::shell::quit_guard::confirm_quit(&app_handle).await {
+            return Ok(Value::Null);
+        }
         crate::updates::request_restart_after_install();
         app_handle.exit(0);
         Ok(Value::Null)

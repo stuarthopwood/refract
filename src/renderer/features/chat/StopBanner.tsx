@@ -29,6 +29,8 @@ interface StopBannerProps {
   onDelete: () => void
   startNewButtonRef: Ref<HTMLButtonElement>
   deleteButtonRef: Ref<HTMLButtonElement>
+  /** True while the Session is being deleted in the background, so a second delete is not offered. */
+  deleteDisabled: boolean
 }
 
 function bannerText(
@@ -114,7 +116,7 @@ export function StopBanner(p: StopBannerProps) {
             <Button size="xs" variant="text" onClick={p.onArchive}>
               Archive
             </Button>
-            <Button ref={p.deleteButtonRef} size="xs" variant="text-destructive" onClick={p.onDelete}>
+            <Button ref={p.deleteButtonRef} size="xs" variant="text-destructive" disabled={p.deleteDisabled} onClick={p.onDelete}>
               Delete
             </Button>
           </>
