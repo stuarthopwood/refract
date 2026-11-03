@@ -10,6 +10,7 @@ import { InlineStatus } from '@/components/InlineStatus'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 import type { ReviewVerdict } from '../../../shared/github'
 
@@ -158,26 +159,25 @@ export function ReviewDialog({
             <DialogTitle>Review {title}</DialogTitle>
             <DialogDescription>Choose a verdict and a body ({bodyHint}).</DialogDescription>
           </DialogHeader>
-          <div className="flex gap-2" role="group" aria-label="Review verdict">
+          <ToggleGroup
+            type="single"
+            value={verdict}
+            onValueChange={(value) => {
+              // Radix emits '' when the selected verdict is clicked again; a verdict always stays selected.
+              const next = VERDICTS.find((option) => option.value === value)
+              if (!next || submitting) return
+              setVerdict(next.value)
+              setError(null)
+            }}
+            size="sm"
+            aria-label="Review verdict"
+          >
             {VERDICTS.map((option) => (
-              <Button
-                key={option.value}
-                type="button"
-                variant={verdict === option.value ? 'secondary' : 'outline'}
-                aria-pressed={verdict === option.value}
-                aria-disabled={submitting}
-                size="sm"
-                className="aria-disabled:opacity-50"
-                onClick={() => {
-                  if (submitting) return
-                  setVerdict(option.value)
-                  setError(null)
-                }}
-              >
+              <ToggleGroupItem key={option.value} value={option.value} aria-disabled={submitting} className="aria-disabled:opacity-50">
                 {option.label}
-              </Button>
+              </ToggleGroupItem>
             ))}
-          </div>
+          </ToggleGroup>
           <Textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
