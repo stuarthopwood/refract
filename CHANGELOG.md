@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.26.0 (2026-11-03)
+
+### Features
+
+- feat(ui): palette search field and icons, collapsible session filter (https://github.com/stuarthopwood/refract/pull/1634)
+
+### Fixes
+
+- fix(ui): list-row kebab inside the card and ToggleGroup review verdicts (https://github.com/stuarthopwood/refract/pull/1632)
+- fix(chat): themed alarm time field, role card tints, Session click opens chat (https://github.com/stuarthopwood/refract/pull/1633)
+- fix(chat): polish status icon, link copy button and ask card footer (https://github.com/stuarthopwood/refract/pull/1631)
+
+### Other
+
+- docs(plan): mark batch 2 polish rows done (https://github.com/stuarthopwood/refract/pull/1635)
+
 ## v0.25.0 (2026-11-03)
 
 ### Features
