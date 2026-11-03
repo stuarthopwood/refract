@@ -143,7 +143,7 @@ async function runChecks(cdp, { repoDir }) {
     nameButton: NAME_BUTTON, assert, itemText: 'Health check', readyExpr: HEALTH_SETTLED,
     inside: async () => {
       await healthShot(cdp, SHOTS_DIR);
-      assert(/Git|OMP/.test(await cdp.evaluate(`document.querySelector('[role="dialog"]').innerText`)), 'Health check dialog lists the Git and OMP checks');
+      assert(/Git|[Aa]gent/.test(await cdp.evaluate(`document.querySelector('[role="dialog"]').innerText`)), 'Health check dialog lists the Git and agent checks');
     }
   });
 
