@@ -88,26 +88,35 @@ export function MethodOrderChecklist({ id, value, disabled, describedBy, onChang
           {all.map((method) => {
             const index = value.indexOf(method)
             const ticked = index >= 0
+            const description = COMPACTION_METHODS.find((m) => m.value === method)?.description
+            const descriptionId = `${id}-${method}-description`
             return (
-              <li key={method} className="flex items-center gap-2">
-                <CheckboxItem
-                  id={`${id}-${method}`}
-                  checked={ticked}
-                  disabled={disabled}
-                  aria-describedby={describedBy}
-                  onCheckedChange={(state) => toggle(method, state === true)}
-                  className={`w-32 ${CHECKBOX_LIST_ITEM_CLASS}`}
-                >
-                  <span aria-hidden className={CHECKBOX_BOX_CLASS}>
-                    <CheckboxIndicator />
+              <li key={method} className="flex flex-col">
+                <div className="flex items-center gap-2">
+                  <CheckboxItem
+                    id={`${id}-${method}`}
+                    checked={ticked}
+                    disabled={disabled}
+                    aria-describedby={[describedBy, description ? descriptionId : undefined].filter(Boolean).join(' ') || undefined}
+                    onCheckedChange={(state) => toggle(method, state === true)}
+                    className={`w-32 ${CHECKBOX_LIST_ITEM_CLASS}`}
+                  >
+                    <span aria-hidden className={CHECKBOX_BOX_CLASS}>
+                      <CheckboxIndicator />
+                    </span>
+                    {labelOf(method)}
+                  </CheckboxItem>
+                  <span aria-hidden className="w-4 text-xs text-muted-foreground">
+                    {ticked ? index + 1 : ''}
                   </span>
-                  {labelOf(method)}
-                </CheckboxItem>
-                <span aria-hidden className="w-4 text-xs text-muted-foreground">
-                  {ticked ? index + 1 : ''}
-                </span>
-                {moveButton(method, 'up', !ticked || index === 0)}
-                {moveButton(method, 'down', !ticked || index === value.length - 1)}
+                  {moveButton(method, 'up', !ticked || index === 0)}
+                  {moveButton(method, 'down', !ticked || index === value.length - 1)}
+                </div>
+                {description && (
+                  <span id={descriptionId} className="pl-6 text-xs text-muted-foreground">
+                    {description}
+                  </span>
+                )}
               </li>
             )
           })}

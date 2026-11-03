@@ -367,6 +367,7 @@ export const IPC_REQUESTS = {
   TOKEN_GUARD_GET: 'tokenGuard.get',
   TOKEN_GUARD_SET: 'tokenGuard.set',
   TOKEN_GUARD_RESET: 'tokenGuard.reset',
+  TOKEN_GUARD_DISMISS_THRESHOLDS_RESET: 'tokenGuard.dismissThresholdsReset',
   TOKEN_GUARD_HANDOFF: 'tokenGuard.handoff',
   ADVISOR_ROSTER_DETECT: 'advisorRoster.detect',
   ADVISOR_ROSTER_OPEN: 'advisorRoster.open',
@@ -576,6 +577,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     get(): Promise<Result<TokenGuardSnapshot>>;
     set(key: string, value: unknown): Promise<Result<TokenGuardSnapshot>>;
     reset(key: string): Promise<Result<TokenGuardSnapshot>>;
+    dismissThresholdsReset(): Promise<Result<null>>;
     handoff(sessionId: string): Promise<Result<TokenGuardHandoffResult>>;
   };
 

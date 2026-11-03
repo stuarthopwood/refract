@@ -71,9 +71,11 @@ fn emit_node(out: &mut String, indent: usize, node: &Node) {
 }
 
 /// Renders the overlay file text for `values`. With prewalk off the judge is silenced too, since
-/// `prewalk.auto` adds a model call per task independent of `prewalk.enabled` (#695).
+/// `prewalk.auto` adds a model call per task independent of `prewalk.enabled` (#695). A positive
+/// `compaction.thresholdTokens` would beat the percent, so the overlay always sends -1.
 pub fn render(values: &ValueMap) -> String {
     let mut values = values.clone();
+    values.insert("compaction.thresholdTokens".to_string(), Value::from(-1));
     if values.get("prewalk.enabled") == Some(&Value::Bool(false)) {
         values.insert("prewalk.auto".to_string(), Value::String("off".to_string()));
     }
@@ -114,9 +116,11 @@ mod tests {
     #[test]
     fn renders_nested_yaml_with_version_header() {
         let text = render(&defaults());
-        assert!(text.starts_with("# refract-overlay-version: 1\n"));
+        assert!(text.starts_with("# refract-overlay-version: 2\n"));
         assert!(text.contains("task:\n  maxConcurrency: 6\n  softRequestBudget: 80\n"));
-        assert!(text.contains("    \"github-copilot/claude-opus-5.5\": 200000\n"));
+        assert!(text.contains("  thresholdPercent: 70\n"));
+        assert!(text.contains("  thresholdTokens: -1\n"));
+        assert!(text.contains("  modelThresholds: {}\n"));
         assert!(text.contains("  methodOrder:\n    - \"snapcompact\"\n    - \"shake\"\n"));
         assert!(text.contains("  systemPrompt: \"none\"\n"));
         assert!(text.contains("modelRoles:\n  advisor: \"github-copilot/gemini-4-argon:auto\"\n"));

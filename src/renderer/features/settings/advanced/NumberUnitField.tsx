@@ -1,22 +1,33 @@
-// A short whole-number field with a unit suffix and thousands separators (Settings > Advanced).
-// Commits on Enter or blur; an invalid draft shows the format hint as its validation error and is
-// not saved. The unit is part of the accessible name.
+// A short whole-number field with a unit suffix (Settings > Advanced), built on the shared
+// NumberField. Commits on Enter or blur; an invalid draft shows the format hint as its validation
+// error and is not saved. The unit is part of the accessible name, spoken as "percent" for `%`;
+// `hint` is an optional secondary line tied to the input with `aria-describedby`.
+// The spinners and arrow keys step by 1000 for tokens (large counts) and by 1 for everything else.
 import { useEffect, useRef, useState } from 'react'
-import { Input } from '@/components/ui/input'
+import { NumberField } from '@/components/ui/NumberField'
 
 export function formatCount(n: number): string {
   return n.toLocaleString('en-GB')
 }
 
-function parseCount(text: string): number | undefined {
-  const cleaned = text.replace(/[,\s]/g, '')
-  return /^\d+$/.test(cleaned) ? Number(cleaned) : undefined
+/** Hint shown wherever a context window is needed but unknown (idle field and per-model rows). */
+export const WINDOW_UNKNOWN_HINT = "Context window unknown, so percent and tokens can't be converted."
+
+function parseCount(text: string, min: number, max: number): number | undefined {
+  if (!/^\d+$/.test(text)) return undefined
+  const n = Number(text)
+  return n >= min && n <= max ? n : undefined
 }
 
 interface NumberUnitFieldProps {
   id: string
   value: number
   unit: string
+  /** Inclusive bounds; the error names them when `max` is set. */
+  min?: number
+  max?: number
+  /** Secondary line under the field, such as "≈ 140,000 tokens". */
+  hint?: string
   /** Id of the element naming the field; omit with `ariaLabel` inside a table row. */
   labelId?: string
   ariaLabel?: string
@@ -25,14 +36,16 @@ interface NumberUnitFieldProps {
   onCommit: (value: number) => Promise<boolean>
 }
 
-export function NumberUnitField({ id, value, unit, labelId, ariaLabel, describedBy, disabled, onCommit }: NumberUnitFieldProps) {
-  const text = formatCount(value)
+export function NumberUnitField({ id, value, unit, min = 0, max = Number.MAX_SAFE_INTEGER, hint, labelId, ariaLabel, describedBy, disabled, onCommit }: NumberUnitFieldProps) {
+  const text = String(value)
   const [draft, setDraft] = useState(text)
   const [saveFailed, setSaveFailed] = useState(false)
   const saving = useRef(false)
   const errorId = `${id}-error`
   const unitId = `${id}-unit`
-  const invalid = parseCount(draft) === undefined
+  const hintId = `${id}-hint`
+  const spokenUnit = unit === '%' ? 'percent' : unit
+  const invalid = parseCount(draft, min, max) === undefined
 
   useEffect(() => {
     setDraft(text)
@@ -40,7 +53,7 @@ export function NumberUnitField({ id, value, unit, labelId, ariaLabel, described
   }, [text])
 
   const commit = (): void => {
-    const parsed = parseCount(draft)
+    const parsed = parseCount(draft, min, max)
     if (parsed === undefined || parsed === value || saving.current) return
     saving.current = true
     void onCommit(parsed)
@@ -55,14 +68,16 @@ export function NumberUnitField({ id, value, unit, labelId, ariaLabel, described
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <Input
+        <NumberField
           id={id}
-          inputMode="numeric"
           className="w-28 text-right"
+          min={min}
+          max={max < Number.MAX_SAFE_INTEGER ? max : undefined}
+          step={unit === 'tokens' ? 1000 : 1}
           disabled={disabled}
-          aria-label={labelId || !ariaLabel ? undefined : `${ariaLabel} (${unit})`}
+          aria-label={labelId || !ariaLabel ? undefined : `${ariaLabel} (${spokenUnit})`}
           aria-labelledby={labelId ? `${labelId} ${unitId}` : undefined}
-          aria-describedby={[describedBy, showError ? errorId : undefined].filter(Boolean).join(' ') || undefined}
+          aria-describedby={[describedBy, hint ? hintId : undefined, showError ? errorId : undefined].filter(Boolean).join(' ') || undefined}
           aria-invalid={invalid}
           value={draft}
           onChange={(event) => {
@@ -75,12 +90,24 @@ export function NumberUnitField({ id, value, unit, labelId, ariaLabel, described
           onBlur={commit}
         />
         <span id={unitId} className="text-xs text-muted-foreground">
-          {unit}
+          {unit === '%' ? (
+            <>
+              <span aria-hidden>%</span>
+              <span className="sr-only">percent</span>
+            </>
+          ) : (
+            unit
+          )}
         </span>
       </div>
+      {hint && (
+        <span id={hintId} className="text-xs text-muted-foreground">
+          {hint}
+        </span>
+      )}
       {showError && (
         <span id={errorId} role="alert" className="text-xs text-destructive">
-          {invalid ? 'Enter a whole number, 0 or more, for example 1,000.' : 'Could not save this value. Try again.'}
+          {invalid ? (max < Number.MAX_SAFE_INTEGER ? `Enter a whole number from ${min} to ${max}.` : 'Enter a whole number, 0 or more, for example 1000.') : 'Could not save this value. Try again.'}
         </span>
       )}
     </div>

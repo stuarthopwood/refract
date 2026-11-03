@@ -3,9 +3,9 @@
 ## TokenGuardValues (persisted, `token-guard.json`)
 | Field | Type | Default |
 |---|---|---|
-| `version` | number | 1 |
-| `compaction.modelThresholds` | record model -> number | Opus 5.5 200000; Sonnet 5.5, Sonnet 5, Haiku 5.5 120000; Gemini 4 Argon, GPT-5.6 Terra 150000 |
-| `compaction.thresholdTokens` | number | 200000 |
+| `version` | number | 2 (was 1; the bump resets stored token thresholds) |
+| `compaction.modelThresholds` | record model -> `"N%"` string (1-99) | empty (no built-ins) |
+| `compaction.thresholdPercent` | number 1-99 | 70 (overlay also writes `compaction.thresholdTokens: -1`) |
 | `compaction.idleEnabled` | boolean | true |
 | `compaction.idleThresholdTokens` | number | 80000 |
 | `compaction.idleTimeoutSeconds` | number | 240 |
@@ -22,10 +22,10 @@
 | `tools.artifactSpillThreshold` | number | 30 |
 | `tools.xdev` | boolean | true |
 
-Validation: numbers are non-negative integers; strings non-empty; the model threshold record keys are non-empty. Invalid stored values fall back to the default for that key. Reset to default restores one key.
+Validation: numbers are non-negative integers; strings non-empty; the model threshold record keys are non-empty. Per-model threshold values match `^(\d{1,2})%$` and 1-99. `TokenGuardKeyInfo` gains optional `impact?: { costlierWhen(value, default): boolean; text: string }` (not persisted). Invalid stored values fall back to the default for that key. Reset to default restores one key.
 
 ## Overlay file (`token-guard-overlay.yml`)
-Generated, never edited by hand. Nested YAML of the values above with a leading comment `# refract-overlay-version: 1`. Written atomically (temp + rename) on every launch.
+Generated, never edited by hand. Nested YAML of the values above with a leading comment `# refract-overlay-version: 2`. Written atomically (temp + rename) on every launch.
 
 ## ConversationCallCount (in memory, per Session and Conversation)
 `{ sessionId, conversationId, calls, bannerDismissedAtCalls | null, announced300, announced500 }`. Reset on a new Conversation; re-derived from history on open or resume. Thresholds: 300 (readout), 500 (banner), re-show after dismissal at +100; shake above 60000 context tokens.

@@ -1,13 +1,15 @@
 /** Token guard (#1212, spec 021): the keys Refract sets in the `omp` launch overlay, their
  * grilled defaults (mirrored by `src-tauri/src/omp/token_guard/values.rs`), and the IPC payloads. */
 
-export type TokenGuardValue = number | boolean | string | string[] | Record<string, number>;
+export type TokenGuardValue = number | boolean | string | string[] | Record<string, string>;
 
 export type TokenGuardValues = Record<string, TokenGuardValue>;
 
 export interface TokenGuardSnapshot {
   values: TokenGuardValues;
   defaults: TokenGuardValues;
+  /** Set after an upgrade dropped stored token thresholds, until `tokenGuard.dismissThresholdsReset` (#1553). */
+  thresholdsReset?: boolean;
 }
 
 export interface TokenGuardLaunchWarning {
@@ -31,7 +33,7 @@ export const LONG_CONVERSATION_BANNER_CALLS = 500;
 export const LONG_CONVERSATION_BANNER_REPEAT = 100;
 
 /** `count`: whole number with a unit; `enum`: one of `options`; `order`: the compaction methods in
- * trial order; `record`: per-model token thresholds. */
+ * trial order; `record`: per-model thresholds as `"N%"` strings. */
 export type TokenGuardKind = 'count' | 'toggle' | 'enum' | 'order' | 'record';
 
 export type TokenGuardGroup =
@@ -47,7 +49,33 @@ export type TokenGuardGroup =
 export interface TokenGuardOption {
   value: string;
   label: string;
+  /** Plain-language hint shown under the option name where the control has room for one. */
+  description?: string;
 }
+
+/** Shown under a row when its value costs more than the default. `costlierWhen` gets the row's value
+ * and default; a `record` row evaluates it per entry, with the entry's `"N%"` and the global
+ * threshold as `"N%"`. */
+export interface TokenGuardImpact {
+  costlierWhen: (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined) => boolean;
+  text: string;
+}
+
+const above = (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined): boolean =>
+  typeof value === 'number' && typeof defaultValue === 'number' && value > defaultValue
+
+const below = (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined): boolean =>
+  typeof value === 'number' && typeof defaultValue === 'number' && value < defaultValue
+
+const setTo =
+  (...targets: TokenGuardValue[]) =>
+  (value: TokenGuardValue | undefined, defaultValue: TokenGuardValue | undefined): boolean =>
+    value !== defaultValue && targets.includes(value as TokenGuardValue)
+
+const COMPACTS_LATER_IMPACT = 'The conversation grows longer before it is shortened, so every call resends more tokens.'
+
+/** Reads the leading whole number of a stored `"N%"` entry (a bare number works too); 0 when it is missing or not numeric. */
+export const parsePercent = (entry: unknown): number => Number.parseInt(String(entry ?? ''), 10) || 0
 
 export interface TokenGuardKeyInfo {
   key: string;
@@ -58,9 +86,12 @@ export interface TokenGuardKeyInfo {
   description: string;
   /** Count unit: shown after the field and in its accessible name. */
   unit?: string;
+  /** Edited as a percent of the Default role model's window, stored as tokens (#1553). */
+  percentOfWindow?: boolean;
   options?: readonly TokenGuardOption[];
   /** Key of the toggle that must be on for this row to apply. */
   dependsOn?: string;
+  impact?: TokenGuardImpact;
 }
 
 export const TOKEN_GUARD_GROUPS: readonly TokenGuardGroup[] = [
@@ -76,30 +107,50 @@ export const TOKEN_GUARD_GROUPS: readonly TokenGuardGroup[] = [
 
 /** The compaction methods OMP knows, in display order for methods not yet in the saved order. */
 export const COMPACTION_METHODS: readonly TokenGuardOption[] = [
-  { value: 'remote', label: 'Remote' },
-  { value: 'snapcompact', label: 'Snapcompact' },
-  { value: 'handoff', label: 'Handoff' },
-  { value: 'soft', label: 'Soft' },
-  { value: 'shake', label: 'Shake' }
+  {
+    value: 'remote',
+    label: 'Remote',
+    description: 'The model provider shortens the conversation on its own servers, when the provider supports it.'
+  },
+  {
+    value: 'snapcompact',
+    label: 'Snapcompact',
+    description:
+      'Saves old history as compact images the model reads back. Works only with models that can read images. No model call.'
+  },
+  { value: 'handoff', label: 'Handoff', description: 'Writes a handoff note and carries on from it as the summary.' },
+  { value: 'soft', label: 'Soft', description: 'A model summarises the conversation in place.' },
+  {
+    value: 'shake',
+    label: 'Shake',
+    description:
+      'Removes bulky content the agent can fetch again, such as old tool output and images. No model call.'
+  }
 ];
 
 /** Display order, group and plain-language text for the Settings > Advanced rows. The advisor model
  * (`modelRoles.advisor`) is edited under Models > Advisor, not here. */
 export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
-    key: 'compaction.thresholdTokens',
+    key: 'compaction.thresholdPercent',
     label: 'Compaction threshold',
     kind: 'count',
-    unit: 'tokens',
+    unit: '%',
     group: 'Context compaction',
-    description: 'Summarise the conversation when it reaches this many tokens, for models with no entry below.'
+    impact: { costlierWhen: above, text: COMPACTS_LATER_IMPACT },
+    description:
+      "Shorten the conversation when it fills this much of the model's context window, for models with no entry below."
   },
   {
     key: 'compaction.modelThresholds',
     label: 'Compaction threshold per model',
     kind: 'record',
     group: 'Context compaction',
-    description: 'Per-model override of the threshold above.'
+    impact: {
+      costlierWhen: (value, globalPercent) => parsePercent(value) > parsePercent(globalPercent),
+      text: COMPACTS_LATER_IMPACT
+    },
+    description: "Per-model override of the threshold above, as a percent of that model's own context window."
   },
   {
     key: 'compaction.methodOrder',
@@ -107,23 +158,24 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'order',
     group: 'Context compaction',
     description:
-      'The ways OMP tries to shrink a long conversation, in order. If one is unavailable or fails, the next is used.'
+      "How the agent shortens a long conversation. It tries the ticked methods from top to bottom and moves to the next one if a method can't run."
   },
   {
     key: 'compaction.idleEnabled',
     label: 'Compact when idle',
     kind: 'toggle',
     group: 'Idle compaction',
-    description: 'Shrink the conversation while the Session is waiting for you, so the next turn starts smaller.'
+    description: 'Shorten the conversation while the Session waits for you, so your next message costs less.'
   },
   {
     key: 'compaction.idleThresholdTokens',
     label: 'Idle compaction threshold',
     kind: 'count',
     unit: 'tokens',
+    percentOfWindow: true,
     group: 'Idle compaction',
     dependsOn: 'compaction.idleEnabled',
-    description: 'Only compact when idle if the conversation is at least this big.'
+    description: 'Only do this when the conversation is at least this long.'
   },
   {
     key: 'compaction.idleTimeoutSeconds',
@@ -132,14 +184,19 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     unit: 'seconds',
     group: 'Idle compaction',
     dependsOn: 'compaction.idleEnabled',
-    description: 'How long the Session must be idle before it compacts.'
+    description: 'How long the Session waits with no activity before it shortens the conversation.'
   },
   {
     key: 'snapcompact.toolResults',
     label: 'Compress tool results to images',
     kind: 'toggle',
     group: 'Image compression',
-    description: 'Store long tool output as a dense image instead of text (vision models only). Saves tokens.'
+    impact: {
+      costlierWhen: setTo(false),
+      text: 'Old tool results stay as text, which uses more tokens than the compressed images.'
+    },
+    description:
+      'Turn long tool output into a compact image to use fewer tokens. Works only with models that can read images.'
   },
   {
     key: 'snapcompact.systemPrompt',
@@ -152,7 +209,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
       { value: 'all', label: 'All' }
     ],
     description:
-      'Send instructions as dense images instead of text (vision models only). Saves tokens but loses prompt caching for that text.'
+      "Send the agent's instructions as a compact image to use fewer tokens. Works only with models that can read images. Text sent as an image can't be cached, so repeat requests may cost more."
   },
   {
     key: 'task.softRequestBudget',
@@ -160,8 +217,12 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'requests',
     group: 'Subagents',
+    impact: {
+      costlierWhen: (value, defaultValue) => above(value, defaultValue) || value === 0,
+      text: 'Subagents may make more model calls before they are told to wrap up. With 0 there is no limit.'
+    },
     description:
-      'Model calls a subagent may make before it is told to wrap up; at 1.5 times this it is stopped. 0 means no limit.'
+      'Limits how much each subagent can do. When it reaches this many model calls, it is asked to finish. At one and a half times this number, it is stopped. 0 means no limit.'
   },
   {
     key: 'task.maxConcurrency',
@@ -169,7 +230,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'subagents',
     group: 'Subagents',
-    description: 'How many subagents may run at the same time.'
+    description: 'How many subagents can run at once.'
   },
   {
     key: 'advisor.reviewMode',
@@ -177,10 +238,14 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'enum',
     group: 'Advisor',
     options: [
-      { value: 'turn', label: 'Every turn' },
+      { value: 'turn', label: 'Every step' },
       { value: 'agent-end', label: 'Agent end' }
     ],
-    description: "When the Advisor reviews the agent's work: after every turn, or only when the agent finishes."
+    impact: {
+      costlierWhen: setTo('turn'),
+      text: 'The advisor makes a model call on every step instead of once at the end.'
+    },
+    description: "How often the Advisor checks the agent's work: after every step, or once when the agent finishes."
   },
   {
     key: 'grep.contextBefore',
@@ -188,7 +253,11 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
-    description: 'Lines shown before each search match.'
+    impact: {
+      costlierWhen: above,
+      text: 'Every search result gets longer, so each search adds more tokens to the conversation.'
+    },
+    description: 'Lines of surrounding text shown above each search match.'
   },
   {
     key: 'grep.contextAfter',
@@ -196,7 +265,11 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
-    description: 'Lines shown after each search match.'
+    impact: {
+      costlierWhen: above,
+      text: 'Every search result gets longer, so each search adds more tokens to the conversation.'
+    },
+    description: 'Lines of surrounding text shown below each search match.'
   },
   {
     key: 'read.defaultLimit',
@@ -204,7 +277,11 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
-    description: 'Lines returned when the agent reads a file without asking for a range.'
+    impact: {
+      costlierWhen: below,
+      text: 'Reading a large file takes more calls at a lower limit, and each call costs a premium request.'
+    },
+    description: 'How many lines the agent sees when it opens a file without asking for a specific part.'
   },
   {
     key: 'read.summarize.enabled',
@@ -224,6 +301,10 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
       { value: 'preferred', label: 'Preferred' },
       { value: 'always', label: 'Always' }
     ],
+    impact: {
+      costlierWhen: setTo('preferred', 'always'),
+      text: 'The agent makes extra tool calls to keep a todo list.'
+    },
     description:
       'How hard the agent is pushed to write a todo list after your first message. Stronger settings add model calls for creating and ticking off the list.'
   },
@@ -233,15 +314,23 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     kind: 'count',
     unit: 'KB',
     group: 'Tool output',
-    description: 'Tool output larger than this is saved to a file and only its end is kept in the conversation.'
+    impact: {
+      costlierWhen: above,
+      text: 'More tool output stays in the conversation and is resent on every later call.'
+    },
+    description:
+      "When a tool's output is bigger than this, the full output is saved to a file and the conversation keeps only the end of it."
   },
   {
     key: 'tools.xdev',
-    label: 'Cross-device tools',
+    label: 'Load rare tools on demand',
     kind: 'toggle',
     group: 'Tool output',
-    description:
-      'Load rarely used tools on demand instead of sending their definitions with every request. Saves tokens.'
+    impact: {
+      costlierWhen: setTo(false),
+      text: 'Every rare tool is loaded into the prompt, so each call sends more tokens.'
+    },
+    description: "Send rarely used tools only when they're needed, not with every request. Saves tokens."
   },
   {
     key: 'prewalk.enabled',
@@ -260,10 +349,12 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   },
   {
     key: 'autolearn.autoContinue',
-    label: 'Auto-continue after learning',
+    label: 'Extra turn to record lessons',
     kind: 'toggle',
     group: 'Learning',
-    description: 'After a turn ends, run one extra private turn to record what was learned. Uses extra tokens.'
+    impact: { costlierWhen: setTo(true), text: 'Adds a model call after the agent records a lesson.' },
+    description:
+      'When a turn ends, the agent takes one extra hidden turn to save what it learned. This uses extra tokens.'
   }
 ];
 
