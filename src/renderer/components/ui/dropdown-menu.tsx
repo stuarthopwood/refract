@@ -14,6 +14,7 @@ import {
   MENU_SEPARATOR_CLASS,
   MENU_SUB_CONTENT_CLASS,
   MENU_SUB_TRIGGER_CLASS,
+  CHECKED_ITEM_CLASS,
 } from "@/components/ui/menu-item-classes"
 import { DropdownMenu as DropdownMenuPrimitive } from "radix-ui"
 
@@ -113,7 +114,7 @@ function DropdownMenuRadioItem({
   return (
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
-      className={cn("group/radio-item", MENU_ITEM_CLASS, className)}
+      className={cn("group/radio-item", MENU_ITEM_CLASS, CHECKED_ITEM_CLASS, className)}
       {...props}
     >
       <span
@@ -136,7 +137,7 @@ function DropdownMenuRadioItem({
             family), which IS the blockified grid item. Fix: put `RADIO_DOT_CLASS` directly on
             `ItemIndicator` itself -- it becomes the direct, blockified grid item, same as
             `RadioGroupIndicator`, and `size-2` finally applies. */}
-        <DropdownMenuPrimitive.ItemIndicator className={RADIO_DOT_CLASS} />
+        <DropdownMenuPrimitive.ItemIndicator className={cn(RADIO_DOT_CLASS, "bg-accent-text")} />
       </span>
       <MenuItemIcon icon={icon} />
       {children}
@@ -153,7 +154,7 @@ function DropdownMenuCheckboxItem({
   return (
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
-      className={cn(MENU_ITEM_CLASS, className)}
+      className={cn(MENU_ITEM_CLASS, CHECKED_ITEM_CLASS, className)}
       {...props}
     >
       <span aria-hidden className="flex size-4 items-center justify-center">

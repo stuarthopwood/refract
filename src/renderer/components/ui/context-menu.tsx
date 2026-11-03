@@ -14,6 +14,7 @@ import {
   MENU_SEPARATOR_CLASS,
   MENU_SUB_CONTENT_CLASS,
   MENU_SUB_TRIGGER_CLASS,
+  CHECKED_ITEM_CLASS,
 } from "@/components/ui/menu-item-classes"
 
 function ContextMenu({
@@ -196,7 +197,7 @@ function ContextMenuCheckboxItem({
     <ContextMenuPrimitive.CheckboxItem
       data-slot="context-menu-checkbox-item"
       data-inset={inset}
-      className={cn(MENU_ITEM_CLASS, "pr-8", className)}
+      className={cn(MENU_ITEM_CLASS, CHECKED_ITEM_CLASS, "pr-8", className)}
       checked={checked}
       {...props}
     >
@@ -225,14 +226,14 @@ function ContextMenuRadioItem({
     <ContextMenuPrimitive.RadioItem
       data-slot="context-menu-radio-item"
       data-inset={inset}
-      className={cn("group/radio-item", MENU_ITEM_CLASS, className)}
+      className={cn("group/radio-item", MENU_ITEM_CLASS, CHECKED_ITEM_CLASS, className)}
       {...props}
     >
       <span
         aria-hidden
         className={cn(RADIO_RING_CLASS, "forced-colors:group-data-[state=checked]/radio-item:border-[Highlight]")}
       >
-        <ContextMenuPrimitive.ItemIndicator className={RADIO_DOT_CLASS} />
+        <ContextMenuPrimitive.ItemIndicator className={cn(RADIO_DOT_CLASS, "bg-accent-text")} />
       </span>
       <MenuItemIcon icon={icon} />
       {children}

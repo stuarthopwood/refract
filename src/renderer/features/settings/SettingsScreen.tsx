@@ -14,7 +14,6 @@ import { AdvancedSection } from './AdvancedSection'
 import { RightPaneSection } from './RightPaneSection'
 import { SessionsSection } from './SessionsSection'
 import { ProjectsSection } from './ProjectsSection'
-import { SettingsBrand } from './SettingsBrand'
 import { SettingsNav } from './SettingsNav'
 import { StatusLineSection } from './StatusLineSection'
 import { IconButton } from '@/components/IconButton'
@@ -41,8 +40,6 @@ export function SettingsScreen() {
         <IconButton label="Back to chat" side="bottom" className="no-drag-region" onClick={handleBackToChat}>
           <ArrowLeftIcon aria-hidden />
         </IconButton>
-        <SettingsBrand />
-        <span aria-hidden className="text-sm text-muted-foreground">/</span>
         <h1 className="text-sm font-semibold">Settings</h1>
       </PanelHeader>
       <div className="flex min-h-0 flex-1">

@@ -25,6 +25,13 @@ export function currentTaskKeyOf(phaseIndex: number, taskIndex: number): string 
   return `${phaseIndex}\u0000${taskIndex}`
 }
 
+// With no in-progress task nothing is "after" it, so no pending row is muted.
+function isAfterCurrent(phaseIndex: number, taskIndex: number, currentTaskKey: string | null): boolean {
+  if (currentTaskKey === null) return false
+  const [curPhase = 0, curTask = 0] = currentTaskKey.split('\u0000').map(Number)
+  return phaseIndex > curPhase || (phaseIndex === curPhase && taskIndex > curTask)
+}
+
 export function TodoPhaseGroup({
   phase,
   phaseIndex,
@@ -56,7 +63,12 @@ export function TodoPhaseGroup({
         <ul className="space-y-1">
           {phase.tasks.map((task, taskIndex) => (
             // Key by index, not agent-controlled `task.content`, which can repeat across or within phases.
-            <TodoTaskRow key={`${phaseIndex}-${taskIndex}`} task={task} isCurrent={currentTaskKeyOf(phaseIndex, taskIndex) === currentTaskKey} />
+            <TodoTaskRow
+              key={`${phaseIndex}-${taskIndex}`}
+              task={task}
+              isCurrent={currentTaskKeyOf(phaseIndex, taskIndex) === currentTaskKey}
+              isAfterCurrent={isAfterCurrent(phaseIndex, taskIndex, currentTaskKey)}
+            />
           ))}
         </ul>
       )}
@@ -64,7 +76,7 @@ export function TodoPhaseGroup({
   )
 }
 
-export function TodoTaskRow({ task, isCurrent }: { task: TodoTask; isCurrent: boolean }) {
+export function TodoTaskRow({ task, isCurrent, isAfterCurrent = false }: { task: TodoTask; isCurrent: boolean; isAfterCurrent?: boolean }) {
   const { Icon, className, word, srOnly, muteText } = statusGlyph(task.status)
   return (
     <li data-current-task={isCurrent || undefined} className="flex items-start gap-2 px-1 py-1 text-xs">
@@ -76,7 +88,7 @@ export function TodoTaskRow({ task, isCurrent }: { task: TodoTask; isCurrent: bo
             task.status === 'in_progress' && 'font-medium',
             task.status === 'abandoned' && 'text-muted-foreground line-through',
             task.status === 'completed' && 'text-severity-success',
-            muteText && 'text-muted-foreground'
+            (muteText || (isAfterCurrent && task.status === 'pending')) && 'text-muted-foreground'
           )}
         >
           <span className={srOnly ? 'sr-only' : 'mr-1'}>{word}</span>
