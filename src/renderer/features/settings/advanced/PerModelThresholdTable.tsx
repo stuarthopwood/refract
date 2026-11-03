@@ -100,6 +100,7 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
   const summaryCostlier = models.some(costlier)
 
   const thresholdHint = (model: string, percent: number): string | undefined => {
+    if (catalog === undefined) return undefined
     const size = windowFor(catalog, model)
     return size === null
       ? WINDOW_UNKNOWN_HINT

@@ -26,6 +26,8 @@ interface AdvancedRowProps {
   seedPercent: number
   /** Context window of the Default role's model; null when unknown. */
   defaultWindow: number | null
+  /** True until the model catalogue has loaded, so an unknown window is not reported early. */
+  catalogLoading: boolean
   onChange: (value: unknown) => Promise<boolean>
   onReset: () => Promise<void>
 }
@@ -52,7 +54,7 @@ function describeDefault(info: TokenGuardKeyInfo, def: TokenGuardValue | undefin
 // The first control to focus after Reset (the Reset button itself is skipped).
 const FIRST_CONTROL = 'input:not(:disabled), [role="switch"], [role="radio"][aria-checked="true"], [role="checkbox"], button:not([data-reset]):not(:disabled)'
 
-export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPercent, defaultWindow, onChange, onReset }: AdvancedRowProps) {
+export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPercent, defaultWindow, catalogLoading, onChange, onReset }: AdvancedRowProps) {
   const id = `advanced-${info.key}`
   const isDefault = same(value, defaultValue)
   const disabled = disabledReason !== undefined
@@ -144,7 +146,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
           unit={percentWindow !== null ? '%' : (info.unit ?? '')}
           min={bounded ? MIN_PERCENT : undefined}
           max={bounded ? MAX_PERCENT : undefined}
-          hint={percentWindow !== null ? `≈ ${formatCount(tokens)} tokens` : info.percentOfWindow ? WINDOW_UNKNOWN_HINT : undefined}
+          hint={percentWindow !== null ? `≈ ${formatCount(tokens)} tokens` : info.percentOfWindow && !catalogLoading ? WINDOW_UNKNOWN_HINT : undefined}
           labelId={`${id}-label`}
           describedBy={describedBy}
           disabled={disabled}

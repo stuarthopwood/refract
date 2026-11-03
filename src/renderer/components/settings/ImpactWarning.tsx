@@ -12,8 +12,8 @@ interface ImpactWarningProps {
 
 export function ImpactWarning({ id, text, active }: ImpactWarningProps) {
   return (
-    // `empty:-mt-1` cancels the parent's flex gap while there is nothing to show.
-    <div role="status" className="empty:-mt-1">
+    // `empty:absolute` takes the idle live region out of flow (so no flex gap) yet keeps it in the a11y tree.
+    <div role="status" className="empty:absolute">
       {active && (
         <span id={id} className="flex items-start gap-1 text-xs text-severity-warning">
           <TriangleAlertIcon aria-hidden className="size-3.5 shrink-0" />

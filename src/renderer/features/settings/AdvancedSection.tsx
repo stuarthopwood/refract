@@ -89,6 +89,7 @@ export function AdvancedSection() {
                 disabledReason={reasonFor(info)}
                 seedPercent={seedPercent}
                 defaultWindow={defaultWindow}
+                catalogLoading={catalog === undefined}
                 onChange={(next) => set(info.key, next)}
                 onReset={() => reset(info.key)}
               />

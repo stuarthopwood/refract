@@ -45,7 +45,7 @@ export const useTokenGuardStore = create<TokenGuardState>((set) => {
     reset: async (key) => void apply(await window.refract.tokenGuard.reset(key)),
     dismissThresholdsReset: () => {
       set({ thresholdsReset: false })
-      // A failed write just repeats the notice next launch.
+      // A failed write means the notice shows again the next time Settings loads.
       void window.refract.tokenGuard.dismissThresholdsReset().catch(() => {})
     }
   }
