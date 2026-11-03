@@ -1,3 +1,4 @@
+import { StateIcon } from '../sessions/sessionDisplay'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSessionsStore, useSettingsStore, useTodoPinStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { FadeCollapse } from '@/components/FadeCollapse'
@@ -35,8 +36,9 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
       data-slot="current-work-banner"
       data-testid="current-work-banner"
       aria-live="off"
-      className="flex h-6 shrink-0 items-center px-4 text-sm"
+      className="flex h-6 shrink-0 items-center gap-2 px-4 text-sm"
     >
+      <StateIcon status={status} tone="accent" />
       <Tooltip>
         <TooltipTrigger asChild>
           <span
