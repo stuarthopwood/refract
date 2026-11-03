@@ -339,6 +339,8 @@ samp {
   --row-hover-bg: color-mix(in oklab, var(--muted) 50%, transparent);
   /* Resting (non-interactive) fills: same value as the hover fill today, but a theme can now split them. */
   --surface-subtle: var(--row-hover-bg);
+  /* Hover for a ghost control inside a hovered row; must differ from --surface-hover (= --muted). */
+  --row-action-hover-bg: color-mix(in oklch, var(--muted), var(--foreground) 10%);
   --invalid-edge: color-mix(in oklab, var(--destructive) 50%, transparent);
   --secondary-hover-bg: color-mix(in oklab, var(--secondary) 80%, transparent);
   --destructive-tint-bg: color-mix(in oklab, var(--destructive) 10%, transparent);

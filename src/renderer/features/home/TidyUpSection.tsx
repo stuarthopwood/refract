@@ -119,7 +119,7 @@ export function TidyUpSection({ onAnnounce }: { onAnnounce(message: string): voi
         )
       }
     >
-      <ul ref={listRef} className="flex flex-col gap-2">
+      <ul ref={listRef} className="flex flex-col gap-1">
         {rows.map((row) => {
           const repositoryName = repositories.find((r) => r.id === row.session.repositoryId)?.name ?? 'Unknown project'
           const detail = `${repositoryName} · #${row.number} ${row.state.toLowerCase()} · ${cleanlinessText(cleanliness[row.session.id])}`
