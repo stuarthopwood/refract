@@ -73,7 +73,13 @@ function PaletteBody({ onRun }: { onRun(item: PaletteItem): void }) {
 
   return (
     <Command shouldFilter={false} vimBindings={false} label="Command palette results">
-      <CommandInput value={query} onValueChange={setQuery} placeholder="Search, or type > for actions" />
+      <CommandInput
+        value={query}
+        onValueChange={setQuery}
+        label="Search the palette"
+        placeholder="Search, or type > for actions"
+        onEscape={() => usePaletteStore.getState().setOpen(false)}
+      />
       <CommandStatus count={ranked.length} />
       <CommandList>
         {PALETTE_SECTIONS.map((section) => {
@@ -82,7 +88,7 @@ function PaletteBody({ onRun }: { onRun(item: PaletteItem): void }) {
           return (
             <CommandGroup key={section} heading={section}>
               {rows.map((item) => (
-                <CommandItem key={item.id} value={item.id} onSelect={() => onRun(item)}>
+                <CommandItem key={item.id} value={item.id} icon={item.icon} onSelect={() => onRun(item)}>
                   <span className="min-w-0 truncate">{item.label}</span>
                   {item.hint && (
                     <span className="shrink-0 text-xs text-muted-foreground">

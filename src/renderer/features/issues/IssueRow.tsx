@@ -8,8 +8,15 @@ import { ColourDot } from '@/components/ColourDot'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
 import { cn } from '@/lib/utils'
 import type { IssueListItem } from '../../../shared/ipc-issues'
+import type { CheckDisplay } from '../pull-requests/check-display'
 
 const MAX_ROW_LABELS = 2
+
+/** Icon and word for an issue's state; shared with the command palette so both name it the same way. */
+export const ISSUE_STATE_DISPLAY: Record<IssueListItem['state'], CheckDisplay> = {
+  OPEN: { icon: CircleDotIcon, label: 'Open' },
+  CLOSED: { icon: CircleCheckIcon, label: 'Closed' }
+}
 
 interface IssueRowProps {
   issue: IssueListItem
@@ -19,8 +26,7 @@ interface IssueRowProps {
 
 export function IssueRow({ issue, selected, onSelect }: IssueRowProps) {
   const updatedId = useId()
-  const open = issue.state === 'OPEN'
-  const StateIcon = open ? CircleDotIcon : CircleCheckIcon
+  const { icon: StateIcon } = ISSUE_STATE_DISPLAY[issue.state]
   const shownLabels = issue.labels.slice(0, MAX_ROW_LABELS)
   const hiddenLabels = issue.labels.length - shownLabels.length
 
@@ -47,7 +53,7 @@ export function IssueRow({ issue, selected, onSelect }: IssueRowProps) {
       <span className="flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
         <span className="flex items-center gap-1">
           <StateIcon aria-hidden className="size-4" />
-          {open ? 'Open' : 'Closed'}
+          {ISSUE_STATE_DISPLAY[issue.state].label}
         </span>
         <span aria-hidden="true">{'\u00b7'}</span>
         <span className="truncate">{issue.repositoryName}</span>

@@ -1,6 +1,6 @@
 import * as React from "react"
 import { Command as CommandPrimitive } from "cmdk"
-import { SearchIcon } from "lucide-react"
+import { SearchField } from "@/components/SearchField"
 import { cn } from "@/lib/utils"
 import {
   Dialog,
@@ -54,23 +54,32 @@ function CommandDialog({
   )
 }
 
+/** The palette's search box: the shared `SearchField`, inset from the surface edge so its focus ring is never clipped by the dialog. */
 function CommandInput({
-  className,
-  ...props
-}: React.ComponentProps<typeof CommandPrimitive.Input>) {
+  value,
+  onValueChange,
+  label,
+  placeholder,
+  onEscape,
+}: {
+  value: string
+  onValueChange(value: string): void
+  label: string
+  placeholder: string
+  onEscape(): void
+}) {
   return (
-    <div
-      data-slot="command-input-wrapper"
-      className="flex items-center gap-2 border-b border-border px-2 focus-within:ring-2 focus-within:ring-inset focus-within:ring-ring"
-    >
-      <SearchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-      <CommandPrimitive.Input
-        data-slot="command-input"
-        className={cn(
-          "h-10 w-full min-w-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50",
-          className
-        )}
-        {...props}
+    <div data-slot="command-input-wrapper" className="p-2">
+      <SearchField
+        value={value}
+        onValueChange={onValueChange}
+        label={label}
+        placeholder={placeholder}
+        clearLabel="Clear search"
+        tooltipSide="bottom"
+        onEscape={onEscape}
+        // cmdk's own input keeps its search state and active-row wiring; it reads changes through `onValueChange`.
+        input={<CommandPrimitive.Input data-slot="command-input" onValueChange={onValueChange} />}
       />
     </div>
   )
@@ -136,8 +145,13 @@ function CommandGroup({
 
 function CommandItem({
   className,
+  icon,
+  children,
   ...props
-}: React.ComponentProps<typeof CommandPrimitive.Item>) {
+}: React.ComponentProps<typeof CommandPrimitive.Item> & {
+  /** Leading icon in a fixed 16px column, so labels line up across rows. */
+  icon?: React.ReactNode
+}) {
   return (
     <CommandPrimitive.Item
       data-slot="command-item"
@@ -146,7 +160,14 @@ function CommandItem({
         className
       )}
       {...props}
-    />
+    >
+      {icon !== undefined && (
+        <span aria-hidden className="flex size-4 shrink-0 items-center justify-center [&_svg]:size-4">
+          {icon}
+        </span>
+      )}
+      {children}
+    </CommandPrimitive.Item>
   )
 }
 

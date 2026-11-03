@@ -1,5 +1,5 @@
 import { useId, useRef } from 'react'
-import type { InputHTMLAttributes, KeyboardEvent, RefObject } from 'react'
+import type { InputHTMLAttributes, KeyboardEvent, ReactElement, RefObject } from 'react'
 import { SearchIcon, XIcon } from 'lucide-react'
 import { InputActionButton, InputWithAction } from '@/components/ui/input-with-action'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
@@ -22,6 +22,8 @@ export interface SearchFieldProps {
   inputRef?: RefObject<HTMLInputElement | null>
   combobox?: { listboxId: string; activeDescendantId?: string }
   onInputKeyDown?(event: KeyboardEvent<HTMLInputElement>): void
+  /** Replaces the `<input>`, which still gets the field's styling, `value` and label but keeps its own role and aria wiring. Give it its own change callback (a cmdk input's `onValueChange`), since it may ignore `onChange`. */
+  input?: ReactElement
   inputProps?: Omit<
     InputHTMLAttributes<HTMLInputElement>,
     'value' | 'onChange' | 'onKeyDown' | 'aria-label' | 'aria-labelledby' | 'aria-describedby' | 'role' | 'className' | 'type'
@@ -43,7 +45,8 @@ export function SearchField({
   inputRef,
   combobox,
   onInputKeyDown,
-  inputProps
+  inputProps,
+  input
 }: SearchFieldProps) {
   const localRef = useRef<HTMLInputElement>(null)
   const resolvedRef = inputRef ?? localRef
@@ -83,14 +86,20 @@ export function SearchField({
     <div className={cn('relative', className)} onKeyDown={handleKeyDown}>
       <InputWithAction
         ref={resolvedRef}
-        type="text"
-        role={combobox ? 'combobox' : 'searchbox'}
-        aria-autocomplete={combobox ? 'list' : undefined}
-        aria-expanded={combobox ? true : undefined}
-        aria-controls={combobox?.listboxId}
-        aria-activedescendant={combobox?.activeDescendantId}
-        autoComplete="off"
-        spellCheck={false}
+        input={input}
+        // A supplied `input` owns its own role and aria wiring (cmdk's combobox ids), which these would overwrite.
+        {...(input
+          ? {}
+          : {
+              type: 'text',
+              role: combobox ? 'combobox' : 'searchbox',
+              'aria-autocomplete': combobox ? 'list' : undefined,
+              'aria-expanded': combobox ? true : undefined,
+              'aria-controls': combobox?.listboxId,
+              'aria-activedescendant': combobox?.activeDescendantId,
+              autoComplete: 'off',
+              spellCheck: false
+            })}
         value={value}
         onChange={(event) => onValueChange(event.target.value)}
         placeholder={placeholder}

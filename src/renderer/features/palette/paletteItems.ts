@@ -1,9 +1,24 @@
+import { createElement, type ReactNode } from 'react'
+import { MessageSquareIcon } from 'lucide-react'
 import { SETTINGS_SECTIONS } from '@/features/settings/SettingsNav'
 import { openSession } from '@/features/home/HomeSessionSections'
+import { ISSUE_STATE_DISPLAY } from '@/features/issues/IssueRow'
+import { PULL_REQUEST_STATE_DISPLAY } from '@/features/pull-requests/PullRequestRow'
+import { StateIcon, displayStatus } from '@/features/sessions/sessionDisplay'
 import { useIssuesStore, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
+import type { PullRequestState } from '../../../shared/github'
 import type { ConversationInfo } from '../../../shared/model'
 import { chordText, getActions, isActionEnabled } from './actionRegistry'
 import { openConversation } from './openConversation'
+
+// PR and issue state keep their state colour in the palette; the state is also written in the row's hint.
+const PULL_REQUEST_STATE_TEXT: Record<PullRequestState, string> = {
+  open: 'text-pr-open',
+  draft: 'text-pr-draft',
+  closed: 'text-pr-closed',
+  merged: 'text-pr-merged'
+}
+const ISSUE_STATE_TEXT = { OPEN: 'text-pr-open', CLOSED: 'text-pr-merged' } as const
 
 /** Palette sections in the order an empty query lists them. */
 export const PALETTE_SECTIONS = ['Actions', 'Sessions', 'Conversations', 'Settings', 'Pull requests and Issues'] as const
@@ -14,6 +29,8 @@ export interface PaletteItem {
   id: string
   section: PaletteSection
   label: string
+  /** Leading icon, taken from where the same thing is shown elsewhere (registry, sidebar, Settings nav, PR and issue lists). */
+  icon?: ReactNode
   hint?: string
   chord?: string
   run(): void
@@ -33,14 +50,28 @@ export function buildPaletteItems(loaded: PaletteConversations | null): PaletteI
   const items: PaletteItem[] = []
   for (const action of getActions()) {
     if (action.id === 'open-palette' || !isActionEnabled(action)) continue
-    items.push({ id: `action:${action.id}`, section: 'Actions', label: action.label, chord: action.chord ? chordText(action.chord) : undefined, run: action.run })
+    items.push({
+      id: `action:${action.id}`,
+      section: 'Actions',
+      label: action.label,
+      icon: action.icon && createElement(action.icon),
+      chord: action.chord ? chordText(action.chord) : undefined,
+      run: action.run
+    })
   }
 
   const repositoryNames = new Map(useRepositoriesStore.getState().repositories.map((repository) => [repository.id, repository.name]))
   const sessions = useSessionsStore.getState().sessions
   for (const session of sessions) {
     if (session.archivedAt || session.hiddenAt) continue
-    items.push({ id: `session:${session.id}`, section: 'Sessions', label: session.name, hint: repositoryNames.get(session.repositoryId), run: () => openSession(session) })
+    items.push({
+      id: `session:${session.id}`,
+      section: 'Sessions',
+      label: session.name,
+      icon: createElement(StateIcon, { status: displayStatus(session) }),
+      hint: repositoryNames.get(session.repositoryId),
+      run: () => openSession(session)
+    })
   }
 
   if (loaded) {
@@ -50,6 +81,7 @@ export function buildPaletteItems(loaded: PaletteConversations | null): PaletteI
         id: `conversation:${conversation.id}`,
         section: 'Conversations',
         label: conversation.title || conversation.preview || 'Untitled conversation',
+        icon: createElement(MessageSquareIcon),
         hint: conversation.isCurrent ? 'Current' : undefined,
         run: () => {
           if (conversation.isCurrent) return
@@ -60,15 +92,23 @@ export function buildPaletteItems(loaded: PaletteConversations | null): PaletteI
   }
 
   for (const section of SETTINGS_SECTIONS) {
-    items.push({ id: `settings:${section.id}`, section: 'Settings', label: `Settings: ${section.label}`, run: () => useViewStore.getState().openSettings(section.id) })
+    items.push({
+      id: `settings:${section.id}`,
+      section: 'Settings',
+      label: `Settings: ${section.label}`,
+      icon: createElement(section.icon),
+      run: () => useViewStore.getState().openSettings(section.id)
+    })
   }
 
   for (const pullRequest of usePullRequestsStore.getState().items) {
+    const state = PULL_REQUEST_STATE_DISPLAY[pullRequest.state]
     items.push({
       id: `pr:${pullRequest.repositoryId}:${pullRequest.number}`,
       section: 'Pull requests and Issues',
       label: `#${pullRequest.number} ${pullRequest.title}`,
-      hint: `Pull request, ${pullRequest.repositoryName}`,
+      icon: createElement(state.icon, { className: PULL_REQUEST_STATE_TEXT[pullRequest.state] }),
+      hint: `Pull request, ${state.label}, ${pullRequest.repositoryName}`,
       run: () => {
         usePullRequestsStore.getState().select({ repositoryId: pullRequest.repositoryId, number: pullRequest.number })
         useViewStore.getState().openPullRequests()
@@ -76,11 +116,13 @@ export function buildPaletteItems(loaded: PaletteConversations | null): PaletteI
     })
   }
   for (const issue of useIssuesStore.getState().items) {
+    const state = ISSUE_STATE_DISPLAY[issue.state]
     items.push({
       id: `issue:${issue.repositoryId}:${issue.number}`,
       section: 'Pull requests and Issues',
       label: `#${issue.number} ${issue.title}`,
-      hint: `Issue, ${issue.repositoryName}`,
+      icon: createElement(state.icon, { className: ISSUE_STATE_TEXT[issue.state] }),
+      hint: `Issue, ${state.label}, ${issue.repositoryName}`,
       run: () => {
         useIssuesStore.getState().select({ repositoryId: issue.repositoryId, number: issue.number })
         useViewStore.getState().openIssues()
