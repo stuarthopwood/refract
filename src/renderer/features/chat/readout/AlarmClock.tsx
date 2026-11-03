@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
+import { TimeField } from '@/components/ui/TimeField'
 import { useSettingsStore } from '@/state'
 import { useAlarmFiredStore } from '@/state/alarm-fired-store'
 import { notifyAlarmDeleted, setAlarmListOpen } from '@/state/notify'
@@ -74,15 +75,14 @@ function AlarmForm({ editing, now, onDone }: AlarmFormProps) {
     <form onSubmit={onSubmit} className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
         <FieldLabel htmlFor={timeId}>Time</FieldLabel>
-        <Input
+        <TimeField
           id={timeId}
-          type="time"
           required
           autoFocus
           value={time}
           aria-describedby={describedBy(showTomorrow ? hintId : undefined, failed ? errorId : undefined)}
-          onChange={(e) => {
-            setTime(e.target.value)
+          onChange={(value) => {
+            setTime(value)
             setFailed(false)
           }}
         />
