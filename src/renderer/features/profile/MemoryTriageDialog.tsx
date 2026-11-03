@@ -217,7 +217,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
                         else stopButtonRefs.current.delete(session.id)
                       }}
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                       size="xs"
                       aria-label={`Stop ${session.name}'s agent`}
                       aria-disabled={stoppingId === session.id || undefined}
@@ -239,7 +239,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
               <Button
                 ref={bulkButtonRef}
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="sm"
                 onClick={() => {
                   setBulkTargetIds(idleSessions.map((session) => session.id))

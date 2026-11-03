@@ -113,7 +113,7 @@ export function TidyUpSection({ onAnnounce }: { onAnnounce(message: string): voi
       headingRef={headingRef}
       actions={
         cleanRows.length > 0 && (
-          <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void archiveRows(cleanRows)}>
+          <Button type="button" variant="ghost" size="sm" disabled={busy} onClick={() => void archiveRows(cleanRows)}>
             Archive all clean ({cleanRows.length})
           </Button>
         )
@@ -131,7 +131,7 @@ export function TidyUpSection({ onAnnounce }: { onAnnounce(message: string): voi
                 actions={
                   <Button
                     type="button"
-                    variant="outline"
+                    variant="ghost"
                     size="sm"
                     data-tidy-archive={row.session.id}
                     disabled={busy}

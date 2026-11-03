@@ -93,7 +93,7 @@ export function StatusBar() {
                   {updateState.phase === 'downloaded' && (
                     <Button
                       size="xs"
-                      variant="outline"
+                      variant="ghost"
                       onClick={() => {
                         setUpdateOpen(false)
                         requestUpdateNow()
@@ -105,7 +105,7 @@ export function StatusBar() {
                   {updateState.phase === 'available' && (
                     <Button
                       size="xs"
-                      variant="outline"
+                      variant="ghost"
                       disabled={actionBusy}
                       onClick={() => {
                         setActionBusy(true)
@@ -123,7 +123,7 @@ export function StatusBar() {
                   {(updateState.phase === 'failed' || updateUnavailable) && (
                     <Button
                       size="xs"
-                      variant="outline"
+                      variant="ghost"
                       disabled={actionBusy}
                       onClick={() => {
                         setActionBusy(true)

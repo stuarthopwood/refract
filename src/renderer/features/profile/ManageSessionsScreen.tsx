@@ -145,7 +145,7 @@ export function ManageSessionsScreen() {
                 <HolidayEmptyStateLine className="mt-1 block text-xs text-muted-foreground" />
               </EmptyHeader>
               <EmptyContent>
-                <Button variant="outline" onClick={handleBackToChat}>
+                <Button variant="ghost" onClick={handleBackToChat}>
                   Back to chat
                 </Button>
               </EmptyContent>
@@ -160,7 +160,7 @@ export function ManageSessionsScreen() {
                 <EmptyDescription>No session's name or branch matches your search, or none fit the selected tab and project.</EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button variant="outline" onClick={handleClearFilters}>
+                <Button variant="ghost" onClick={handleClearFilters}>
                   Clear filters
                 </Button>
               </EmptyContent>

@@ -43,7 +43,7 @@ export function MyPullRequestsSection({ hasGithubProjects }: { hasGithubProjects
       actions={
         <>
           <FilterTabs<HomePrTab> value={tab} onValueChange={setTab} tabs={PR_TABS} ariaLabel="Pull request filter" />
-          <Button type="button" variant="outline" size="sm" onClick={openPullRequests} aria-label="Show all pull requests">
+          <Button type="button" variant="ghost" size="sm" onClick={openPullRequests} aria-label="Show all pull requests">
             Show all
           </Button>
         </>
@@ -91,7 +91,7 @@ export function MyIssuesSection({ hasGithubProjects }: { hasGithubProjects: bool
       actions={
         <>
           <FilterTabs<HomeIssueTab> value={tab} onValueChange={setTab} tabs={ISSUE_TABS} ariaLabel="Issue filter" />
-          <Button type="button" variant="outline" size="sm" onClick={openIssues} aria-label="Show all issues">
+          <Button type="button" variant="ghost" size="sm" onClick={openIssues} aria-label="Show all issues">
             Show all
           </Button>
         </>

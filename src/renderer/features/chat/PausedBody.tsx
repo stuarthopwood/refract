@@ -73,7 +73,7 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
     <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col">
       {pause === 'pausing' && (
         <PaneBanner role="region" aria-label="Pausing" severity="warning" title="Pausing after this turn" className="shrink-0 px-4 py-2">
-          <Button type="button" variant="outline" size="xs" onClick={() => void setSessionPaused(sessionId, false)}>
+          <Button type="button" variant="ghost" size="xs" onClick={() => void setSessionPaused(sessionId, false)}>
             Cancel pause
           </Button>
         </PaneBanner>
@@ -96,7 +96,7 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button ref={resumeRef} type="button" variant={stopped ? 'outline' : 'default'} onClick={() => void setSessionPaused(sessionId, false)}>
+                <Button ref={resumeRef} type="button" variant={stopped ? 'ghost' : 'default'} onClick={() => void setSessionPaused(sessionId, false)}>
                   <PlayIcon aria-hidden />
                   Resume
                 </Button>

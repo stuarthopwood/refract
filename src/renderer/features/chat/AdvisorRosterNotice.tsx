@@ -47,7 +47,7 @@ export function AdvisorRosterNotice({ sessionId }: { sessionId: string }) {
       data-slot="advisor-roster-notice"
       className="shrink-0 px-4 py-2"
     >
-      <Button type="button" variant="outline" size="xs" onClick={() => void open()}>
+      <Button type="button" variant="ghost" size="xs" onClick={() => void open()}>
         Open file
       </Button>
       <Button type="button" variant="text" size="xs" onClick={() => void copyPath()}>

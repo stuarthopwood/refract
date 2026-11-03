@@ -188,7 +188,7 @@ export function NewSessionDialog({ repository, trigger, open: controlledOpen, on
             {error ?? ''}
           </p>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
+            <Button type="button" variant="ghost" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={submitting || (itemMode ? !itemRef : loadingBranches) || creatingRepository}>

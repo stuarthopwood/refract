@@ -85,7 +85,7 @@ export function MessageStepButtons({ sessionId }: { sessionId: string }) {
                   buttonRefs.current[direction] = node
                 }}
                 type="button"
-                variant="secondary"
+                variant="ghost"
                 size="icon-sm"
                 aria-label={label}
                 aria-keyshortcuts={shortcut}

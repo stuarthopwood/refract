@@ -110,7 +110,7 @@ export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortC
         <div className="flex items-center gap-2 text-xs">
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-disabled={paging.index <= 0}
             className={PAGER_DISABLED_CLASS}
@@ -123,7 +123,7 @@ export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortC
           </span>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-disabled={paging.index + 1 >= pageCount}
             className={PAGER_DISABLED_CLASS}

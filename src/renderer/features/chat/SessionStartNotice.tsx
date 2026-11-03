@@ -81,11 +81,11 @@ export function SessionStartNotice({
           </p>
           <div className="flex gap-2">
             {startProgress.kind === 'prompt' && (
-              <Button type="button" size="sm" variant="outline" onClick={onKeepWaiting}>
+              <Button type="button" size="sm" variant="ghost" onClick={onKeepWaiting}>
                 Keep waiting
               </Button>
             )}
-            <Button type="button" ref={cancelButtonRef} size="sm" variant="outline" onClick={onCancel}>
+            <Button type="button" ref={cancelButtonRef} size="sm" variant="ghost" onClick={onCancel}>
               Cancel
             </Button>
           </div>

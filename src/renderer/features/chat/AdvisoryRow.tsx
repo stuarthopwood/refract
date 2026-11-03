@@ -215,7 +215,7 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
           <Button
             ref={askButtonRef}
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-disabled={askDisabled || undefined}
             aria-busy={asking || undefined}

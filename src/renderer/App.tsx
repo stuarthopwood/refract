@@ -240,7 +240,7 @@ export function App() {
                       ref={focusMoveButtonRef}
                       label="Move focus to the other pane"
                       shortcut={['Ctrl', 'Shift', '\\']}
-                      variant="outline"
+                      variant="ghost"
                       className="absolute top-1/2 z-20 -translate-x-1/2 -translate-y-10 bg-background text-muted-foreground hover:bg-muted"
                       style={{ left: `${liveDividerPercent}%` }}
                       onClick={() => useSplitStore.getState().focusOther()}

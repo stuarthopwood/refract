@@ -253,7 +253,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
                 <Button
                   ref={signInRef}
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   onClick={() => void useAccountsStore.getState().addAccountStart()}
                 >
                   Sign in
@@ -269,7 +269,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button type="button" variant="outline" onClick={() => void load()}>
+                <Button type="button" variant="ghost" onClick={() => void load()}>
                   Try again
                 </Button>
               </EmptyContent>
@@ -314,7 +314,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
                 ) : loadError ? (
                   <div role="alert" className="flex items-center justify-between gap-2">
                     <span className="min-w-0">{loadError.message}</span>
-                    <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void load()}>
                       Retry
                     </Button>
                   </div>
@@ -400,7 +400,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
             </CheckboxItem>
           )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={(source === '' && !alreadyAdded) || (!alreadyAdded && destination.trim() === '') || starting}>

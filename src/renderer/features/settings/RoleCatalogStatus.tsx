@@ -43,7 +43,7 @@ export function RoleCatalogStatus({ kind, catalog, error, isRetrying, onRetry }:
       </span>
       <Button
         id={`model-role-catalog-retry-${kind}`}
-        variant="outline"
+        variant="ghost"
         size="xs"
         className="aria-disabled:opacity-50"
         aria-disabled={isRetrying || undefined}

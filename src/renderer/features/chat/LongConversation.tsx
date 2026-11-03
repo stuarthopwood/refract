@@ -90,7 +90,7 @@ export function LongConversationChip({ sessionId }: { sessionId: string }) {
           <span>{`Long conversation, ${calls} calls`}</span>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="xs"
             aria-disabled={handOff.disabled}
             aria-describedby={handOff.reason ? reasonId : undefined}
@@ -125,7 +125,7 @@ export function LongConversationBanner({ sessionId }: { sessionId: string }) {
           <AlertActions>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="xs"
               onClick={() => {
                 useTokenGuardCallsStore.getState().dismissHandoffError(sessionId)
@@ -147,7 +147,7 @@ export function LongConversationBanner({ sessionId }: { sessionId: string }) {
           <AlertActions>
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="xs"
               onClick={() => {
                 useTokenGuardCallsStore.getState().dismissBanner(sessionId)

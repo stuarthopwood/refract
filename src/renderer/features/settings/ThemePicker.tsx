@@ -130,10 +130,10 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
       ))}
       {actions.importError && <InlineStatus tone="error" density="compact" className="mt-2">{actions.importError}</InlineStatus>}
       <div className="mt-4 flex gap-2">
-        <Button type="button" variant="outline" size="sm" className="aria-disabled:opacity-50" aria-disabled={actions.importing} onClick={() => { if (!actions.importing) void actions.importTheme() }}>
+        <Button type="button" variant="ghost" size="sm" className="aria-disabled:opacity-50" aria-disabled={actions.importing} onClick={() => { if (!actions.importing) void actions.importTheme() }}>
           <UploadIcon aria-hidden /> {actions.importing ? 'Importing…' : 'Import theme…'}
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => void actions.showInFolder()}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => void actions.showInFolder()}>
           <RevealActionIcon aria-hidden /> Show themes folder
         </Button>
       </div>

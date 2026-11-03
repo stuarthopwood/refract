@@ -15,7 +15,7 @@ export function PinnedPullRequestPanel({ sessionId }: { sessionId: string | null
         target && (
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             onClick={() => {
               usePullRequestsStore.getState().openPullRequest(target.repositoryId, target.number)
               useViewStore.getState().openPullRequests()

@@ -211,7 +211,7 @@ export function SessionList() {
                   </EmptyHeader>
                   <EmptyContent>
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
                       onClick={handleClearSearch}
                       // Same offset as the field's Input and clear button; `Button` already sets the forced-colours outline.

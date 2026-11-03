@@ -256,7 +256,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
               </EmptyHeader>
               <EmptyContent>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   onClick={() => {
                     // The view's fetch effect refetches once the filters reset.
                     props.onClearFilters()
@@ -291,7 +291,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
                 <Button
                   ref={moreRef}
                   type="button"
-                  variant="outline"
+                  variant="ghost"
                   size="sm"
                   aria-disabled={loading}
                   className="aria-disabled:opacity-50"

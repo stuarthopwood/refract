@@ -54,7 +54,7 @@ export function IssuesView({ reservesWindowControls = true }: { reservesWindowCo
         reservesWindowControls={reservesWindowControls}
       >
         {target && (
-          <Button ref={newIssueRef} type="button" variant="outline" size="sm" onClick={() => setNewIssueOpen(true)}>
+          <Button ref={newIssueRef} type="button" variant="ghost" size="sm" onClick={() => setNewIssueOpen(true)}>
             <PlusIcon aria-hidden className="size-4" />
             New issue
           </Button>

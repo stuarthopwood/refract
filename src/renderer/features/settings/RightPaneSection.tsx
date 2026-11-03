@@ -36,7 +36,7 @@ export function RightPaneSection() {
         >
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="sm"
             aria-describedby="panel-order-description"
             onClick={() => {

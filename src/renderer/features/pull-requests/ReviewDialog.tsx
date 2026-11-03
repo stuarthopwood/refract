@@ -194,7 +194,7 @@ export function ReviewDialog({
           </InlineStatus>
           <DialogFooter>
             <Button
-              variant="outline"
+              variant="ghost"
               aria-disabled={submitting}
               className="aria-disabled:opacity-50"
               onClick={(event) => {

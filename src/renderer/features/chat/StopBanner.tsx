@@ -83,13 +83,13 @@ export function StopBanner(p: StopBannerProps) {
         {p.canResume && (
           <>
             {p.stopReason === 'agent-exited' && (
-              <Button size="xs" variant="outline" aria-disabled={busyAny || undefined} className={BUSY_CLASS} onClick={guard(busyAny, p.onRecover)}>
+              <Button size="xs" variant="ghost" aria-disabled={busyAny || undefined} className={BUSY_CLASS} onClick={guard(busyAny, p.onRecover)}>
                 {recovering ? 'Retrying…' : 'Recover'}
               </Button>
             )}
             <Button
               size="xs"
-              variant={p.stopReason === 'agent-exited' ? 'text' : 'outline'}
+              variant={p.stopReason === 'agent-exited' ? 'text' : 'ghost'}
               aria-disabled={busyAny || undefined}
               className={BUSY_CLASS}
               onClick={guard(busyAny, p.onResume)}
@@ -100,7 +100,7 @@ export function StopBanner(p: StopBannerProps) {
         )}
         {p.stopReason === 'start-failed' && (
           <>
-            <Button size="xs" variant="outline" aria-disabled={busyStart || undefined} className={BUSY_CLASS} onClick={guard(busyStart, p.onRecover)}>
+            <Button size="xs" variant="ghost" aria-disabled={busyStart || undefined} className={BUSY_CLASS} onClick={guard(busyStart, p.onRecover)}>
               {recovering ? 'Retrying…' : 'Retry'}
             </Button>
             <Button ref={p.startNewButtonRef} size="xs" variant="text" aria-disabled={busyStart || undefined} className={BUSY_CLASS} onClick={guard(busyStart, p.onStartNew)}>
@@ -110,7 +110,7 @@ export function StopBanner(p: StopBannerProps) {
         )}
         {p.stopReason === 'worktree-missing' && (
           <>
-            <Button size="xs" variant="outline" aria-disabled={p.deleting || undefined} className={BUSY_CLASS} onClick={guard(p.deleting, p.onRecreateWorktree)}>
+            <Button size="xs" variant="ghost" aria-disabled={p.deleting || undefined} className={BUSY_CLASS} onClick={guard(p.deleting, p.onRecreateWorktree)}>
               Recreate worktree
             </Button>
             <Button size="xs" variant="text" onClick={p.onArchive}>

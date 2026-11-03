@@ -43,7 +43,7 @@ export function GitHubAccountsSection(props: GitHubAccountsSectionProps) {
   const headerCheckAgain = (
     <Button
       ref={props.checkAgainHeaderRef}
-      variant="outline"
+      variant="ghost"
       size="sm"
       className="shrink-0 aria-disabled:opacity-50"
       aria-disabled={githubRefreshing || undefined}
@@ -59,7 +59,7 @@ export function GitHubAccountsSection(props: GitHubAccountsSectionProps) {
     return (
       <ScreenSection title="GitHub CLI not found" headingLevel={3} actions={headerCheckAgain} className="min-w-0">
         <p className="text-sm text-muted-foreground">Refract signs in through the GitHub CLI so it never stores your token.</p>
-        <Button asChild variant="outline" size="sm" className="w-fit">
+        <Button asChild variant="ghost" size="sm" className="w-fit">
           <ExternalLink ref={props.installLinkRef} href="https://cli.github.com">
             Install GitHub CLI
           </ExternalLink>
@@ -101,7 +101,7 @@ export function GitHubAccountsSection(props: GitHubAccountsSectionProps) {
       actions={
         <Button
           ref={props.addAccountRef}
-          variant={accounts.length === 0 ? 'default' : 'outline'}
+          variant={accounts.length === 0 ? 'default' : 'ghost'}
           size="sm"
           className="aria-disabled:opacity-50"
           aria-disabled={flowActive || undefined}
