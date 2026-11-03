@@ -6,6 +6,7 @@ import { useId } from 'react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { ColourDot } from '@/components/ColourDot'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
+import { ROW_KEBAB_INSET_CLASS } from '@/components/RowKebabMenu'
 import { cn } from '@/lib/utils'
 import type { IssueListItem } from '../../../shared/ipc-issues'
 
@@ -35,8 +36,9 @@ export function IssueRow({ issue, selected, onSelect }: IssueRowProps) {
       data-issue-repo={issue.ownerRepo}
       data-issue-state={issue.state}
       className={cn(
-        'relative flex w-full flex-col gap-1 px-4 py-2 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
-        selected ? 'bg-accent text-accent-foreground' : 'hover:bg-surface-hover'
+        'relative flex w-full flex-col gap-1 py-2 pl-4 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+        ROW_KEBAB_INSET_CLASS,
+        selected ? 'bg-accent text-accent-foreground' : 'group-hover/row:bg-surface-hover'
       )}
     >
       {selected && <ActiveIndicatorBar />}

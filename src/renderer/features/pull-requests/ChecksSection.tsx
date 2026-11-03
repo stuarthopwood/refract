@@ -5,7 +5,7 @@
 import { ChevronRightIcon, CircleAlertIcon, MinusCircleIcon, SkipForwardIcon } from 'lucide-react'
 import type { ComponentType } from 'react'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { RowKebabMenu } from '@/components/RowKebabMenu'
+import { ROW_KEBAB_INSET_CLASS, RowKebabMenu } from '@/components/RowKebabMenu'
 import type { RowMenuEntry } from '@/components/RowKebabMenu'
 import { cn } from '@/lib/utils'
 import type { CheckOutcome, PullRequestCheck, PullRequestDetail } from '../../../shared/github'
@@ -56,7 +56,7 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
   const Icon = display.icon
   const duration = formatCheckDuration(check.startedAt, check.completedAt)
   const summary = (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
+    <div className={cn('flex min-w-0 flex-1 items-center gap-2', ROW_KEBAB_INSET_CLASS)}>
       <span className={cn('flex shrink-0 items-center gap-1 text-xs', display.colorClass)}>
         <Icon aria-hidden className={cn('size-4', check.outcome === 'pending' && 'animate-spin')} />
         {display.label}
@@ -69,9 +69,8 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
   // A menu with nothing to choose is a dead end, so a check without a link shows the reason inline instead.
   if (!isHttpsUrl(check.detailsUrl)) {
     return (
-      <li className="flex items-center gap-1 py-1 pl-6 text-sm">
+      <li className="py-1 pl-6 text-sm">
         {summary}
-        <span aria-hidden className="size-6 shrink-0" />
       </li>
     )
   }

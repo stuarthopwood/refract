@@ -49,7 +49,10 @@ function RowMenuItems({ entries, parts: { Item, Separator } }: { entries: readon
 const KEBAB_PARTS: MenuParts = { Item: DropdownMenuItem, Separator: DropdownMenuSeparator }
 const CONTEXT_PARTS: MenuParts = { Item: ContextMenuItem, Separator: ContextMenuSeparator }
 
-/** A row's actions as one list behind a visible kebab; right-click on the row (not its `below` content, so that text stays selectable) opens the same items at the pointer. */
+/** Right padding a row surface reserves for the kebab, so its text never runs under it. */
+export const ROW_KEBAB_INSET_CLASS = 'pr-10'
+
+/** A row's actions behind a visible kebab laid inside the row's right edge (rows reserve `ROW_KEBAB_INSET_CLASS` and key hover on `group-hover/row:`); right-click on the row (not its `below` content, so that text stays selectable) opens the same items at the pointer. */
 export function RowKebabMenu({ entries, label, children, below }: { entries: readonly RowMenuEntry[]; label: string; children: React.ReactNode; below?: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const lastInputWasKey = useRef(false)
@@ -59,7 +62,7 @@ export function RowKebabMenu({ entries, label, children, below }: { entries: rea
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <div
-              className="flex items-center gap-1"
+              className="group/row relative [--ghost-hover-bg:var(--row-action-hover-bg)]"
               onKeyDownCapture={() => (lastInputWasKey.current = true)}
               onPointerDownCapture={() => (lastInputWasKey.current = false)}
               onContextMenu={(event) => {
@@ -72,7 +75,7 @@ export function RowKebabMenu({ entries, label, children, below }: { entries: rea
             >
               {children}
               <DropdownMenuTrigger asChild>
-                <IconButton label={label} size="icon-xs" className="shrink-0 text-muted-foreground">
+                <IconButton label={label} size="icon-xs" className="absolute inset-y-0 right-2 my-auto text-muted-foreground">
                   <EllipsisVerticalIcon aria-hidden />
                 </IconButton>
               </DropdownMenuTrigger>
