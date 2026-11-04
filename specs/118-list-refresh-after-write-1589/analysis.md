@@ -1,4 +1,4 @@
-# Analysis: spec 117 (#1589)
+# Analysis: spec 118 (#1589)
 
 Consistency pass over spec.md, plan.md, tasks.md.
 
