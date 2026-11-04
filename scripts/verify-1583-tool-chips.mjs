@@ -36,7 +36,7 @@ const shot = async (cdp, name) => {
 
 const CHIPS = `(() => {
   const probe = (cls, prop) => { const el = document.createElement('span'); el.className = cls; document.body.appendChild(el); const v = getComputedStyle(el)[prop]; el.remove(); return v; };
-  const style = (el) => { const s = getComputedStyle(el); return { bg: s.backgroundColor, color: s.color, font: s.fontFamily, size: s.fontSize, radius: s.borderTopLeftRadius, padL: s.paddingLeft, padR: s.paddingRight }; };
+  const style = (el) => { const s = getComputedStyle(el); return { bg: s.backgroundColor, color: s.color, font: s.fontFamily, size: s.fontSize, ratio: (parseFloat(s.fontSize) / parseFloat(getComputedStyle(el.parentElement).fontSize)).toFixed(2), radius: s.borderTopLeftRadius, padL: s.paddingLeft, padR: s.paddingRight }; };
   const chips = Array.from(document.querySelectorAll('[data-slot="tool-target"]')).filter((el) => el.offsetParent !== null);
   const prose = Array.from(document.querySelectorAll('[data-slot="message"] [data-slot="inline-code"]')).pop();
   return {
@@ -47,7 +47,7 @@ const CHIPS = `(() => {
   };
 })()`;
 const ICON_VS_PROSE = `(() => {
-  const icon = Array.from(document.querySelectorAll('button[aria-expanded] svg')).find((el) => el.getBoundingClientRect().width > 0);
+  const icon = Array.from(document.querySelectorAll('[data-slot="message-scroller-item"] button[aria-expanded] svg')).find((el) => el.getBoundingClientRect().width > 0);
   const para = Array.from(document.querySelectorAll('[data-slot="message"] p')).pop();
   return { iconLeft: icon ? icon.getBoundingClientRect().left : null, proseLeft: para ? para.getBoundingClientRect().left : null };
 })()`;
@@ -102,10 +102,11 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness' });
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
     await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repo dialog' });
+    await cdp.clickByText('Local folder…', { tag: '[role="menuitem"]' });
+    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`, { timeoutMs: 30_000, label: 'Repo added' });
     await cdp.clickByLabel('New session from a branch in ', { prefix: true });
     await cdp.waitFor(`(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`, { timeoutMs: 15_000, label: 'New session dialog' });
@@ -123,7 +124,9 @@ async function main() {
     check(c.chips.length >= 4, 'Tool targets render as chips (read, bash, grep, group failing command)', c.chips.map((x) => x.text));
     check(c.chips.every((x) => x.bg === c.fill), 'Every chip uses the Markdown inline-code fill (--md-code-bg)', { fill: c.fill, bgs: [...new Set(c.chips.map((x) => x.bg))] });
     check(c.chips.every((x) => x.color === c.muted), 'Every chip text is the muted tool-row colour', { muted: c.muted, colours: [...new Set(c.chips.map((x) => x.color))] });
-    check(c.prose !== null && c.chips.every((x) => x.font === c.prose.font && x.size === c.prose.size && x.radius === c.prose.radius && x.padL === c.prose.padL && x.padR === c.prose.padR), 'Chip font, size, radius and padding match the prose inline-code chip', { prose: c.prose, first: c.chips[0] });
+    const shapeOf = (x) => ({ font: x.font, ratio: x.ratio, radius: x.radius, padL: x.padL, padR: x.padR });
+    const shapeMismatch = c.chips.filter((x) => JSON.stringify(shapeOf(x)) !== JSON.stringify(shapeOf(c.prose)));
+    check(c.prose !== null && shapeMismatch.length === 0, 'Chip font, size, radius and padding match the prose inline-code chip', { prose: shapeOf(c.prose ?? {}), mismatched: shapeMismatch });
     const align = await cdp.evaluate(ICON_VS_PROSE);
     check(align.iconLeft !== null && align.proseLeft !== null && Math.abs(align.iconLeft - align.proseLeft) <= 1, 'Tool row icon lines up with the prose left edge', align);
 
