@@ -5,25 +5,25 @@
 
 ## Phase 1: Shared contract (blocks everything)
 
-- [ ] T001 Add `TouchedRef` and optional `SessionReadout.touched?` to `src/shared/model.ts` per plan "Data and contract notes".
-- [ ] T002 [P] Create `src-tauri/src/session/github_writes/shell_words.rs`: quote-aware tokenizer returning simple commands split at unquoted `&&`, `||`, `;`, `|`, `&`, newline; heredoc and `$(...)` bodies stay opaque.
-- [ ] T003 [P] Create `src-tauri/src/session/github_writes/touched.rs`: `TouchedList` (dedupe by repo, kind, number; newest first; cap 50; move-to-front on repeat) and its `TouchedRef` JSON writer.
+- [x] T001 Add `TouchedRef` and optional `SessionReadout.touched?` to `src/shared/model.ts` per plan "Data and contract notes".
+- [x] T002 [P] Create `src-tauri/src/session/github_writes/shell_words.rs`: quote-aware tokenizer returning simple commands split at unquoted `&&`, `||`, `;`, `|`, `&`, newline; heredoc and `$(...)` bodies stay opaque.
+- [x] T003 [P] Create `src-tauri/src/session/github_writes/touched.rs`: `TouchedList` (dedupe by repo, kind, number; newest first; cap 50; move-to-front on repeat) and its `TouchedRef` JSON writer.
 
 ## Phase 2: Detector (US1, US2, US5)
 
-- [ ] T004 Create `github_writes/gh_commands.rs`: map a simple command to `GithubWrite` for `gh pr create|merge|close|comment`, `gh issue create|edit|close|comment`, and `gh api` with POST, PATCH, PUT, DELETE or `--input` on `repos/{o}/{r}/(pulls|issues)/{n}`; per-verb value-flag skip table; `-R/--repo`; URL and number arguments (depends on T002).
-- [ ] T005 Create `github_writes/mod.rs`: `ToolCallRecord`, `GithubWrite`, `WriteKind`, `WriteAction`, `detect` (bash command; eval string literals starting `gh `; errors ignored; number from arguments else first GitHub URL in output; unresolved dropped) (depends on T004).
-- [ ] T006 [US4] Create `github_writes/history.rs`: `detect_in_history` pairing `toolCall` blocks with `toolResult` messages by id, taking timestamps from the messages (depends on T005).
-- [ ] T007 Declare the new modules in `src-tauri/src/session/mod.rs` (depends on T005, T006).
+- [x] T004 Create `github_writes/gh_commands.rs`: map a simple command to `GithubWrite` for `gh pr create|merge|close|comment`, `gh issue create|edit|close|comment`, and `gh api` with POST, PATCH, PUT, DELETE or `--input` on `repos/{o}/{r}/(pulls|issues)/{n}`; per-verb value-flag skip table; `-R/--repo`; URL and number arguments (depends on T002).
+- [x] T005 Create `github_writes/mod.rs`: `ToolCallRecord`, `GithubWrite`, `WriteKind`, `WriteAction`, `detect` (bash command; eval string literals starting `gh `; errors ignored; number from arguments else first GitHub URL in output; unresolved dropped) (depends on T004).
+- [x] T006 [US4] Create `github_writes/history.rs`: `detect_in_history` pairing `toolCall` blocks with `toolResult` messages by id, taking timestamps from the messages (depends on T005).
+- [x] T007 Declare the new modules in `src-tauri/src/session/mod.rs` (depends on T005, T006).
 
 ## Phase 3: Readout integration (US1, US2, US3, US4)
 
-- [ ] T008 [P] In `readout_pr.rs` add `item_by_number(repo_path, owner, name, kind, number)` using GraphQL `issueOrPullRequest(number:)`, sharing `UNAVAILABLE_UNTIL` back-off and the title and URL bounds; returns title, url, state (open, closed, merged, draft).
-- [ ] T009 Create `readout_touched.rs`: stash bash and eval arguments by `toolCallId` at `tool_execution_start` (cap 64), build `ToolCallRecord` at `tool_execution_end`, call `record_writes`; `rebuild_from_history`; `reset` (depends on T005, T006, T003).
-- [ ] T010 In `readout_touched.rs` implement `record_writes` as the single fan-out point (updates the list, schedules a readout update) and the lazy state refresh: at most one `item_by_number` per item per recompute, spawned, previous state kept on failure (depends on T008, T009).
-- [ ] T011 In `readout_touched.rs` resolve each item's `repositoryId` by comparing `owner/repo` with registered repositories through `owner_repo_for` (cached) (depends on T009).
-- [ ] T012 In `readout.rs`: add the touched state to `State`, call `readout_touched` from `on_frame` (start and end frames) and `on_conversation_reset`, write the `touched` key in `assemble` only when non-empty; keep the file under 600 lines (depends on T010, T011).
-- [ ] T013 [US4] In `agent/launch.rs` and `agent/conversations.rs` pass the loaded history to the readout so the touched list is rebuilt on attach and on opening a Conversation, and cleared for New conversation (depends on T012).
+- [x] T008 [P] In `readout_pr.rs` add `item_by_number(repo_path, owner, name, kind, number)` using GraphQL `issueOrPullRequest(number:)`, sharing `UNAVAILABLE_UNTIL` back-off and the title and URL bounds; returns title, url, state (open, closed, merged, draft).
+- [x] T009 Create `readout_touched.rs`: stash bash and eval arguments by `toolCallId` at `tool_execution_start` (cap 64), build `ToolCallRecord` at `tool_execution_end`, call `record_writes`; `rebuild_from_history`; `reset` (depends on T005, T006, T003).
+- [x] T010 In `readout_touched.rs` implement `record_writes` as the single fan-out point (updates the list, schedules a readout update) and the lazy state refresh: at most one `item_by_number` per item per recompute, spawned, previous state kept on failure (depends on T008, T009).
+- [x] T011 In `readout_touched.rs` resolve each item's `repositoryId` by comparing `owner/repo` with registered repositories through `owner_repo_for` (cached) (depends on T009).
+- [x] T012 In `readout.rs`: add the touched state to `State`, call `readout_touched` from `on_frame` (start and end frames) and `on_conversation_reset`, write the `touched` key in `assemble` only when non-empty; keep the file under 600 lines (depends on T010, T011).
+- [x] T013 [US4] In `agent/launch.rs` and `agent/conversations.rs` pass the loaded history to the readout so the touched list is rebuilt on attach and on opening a Conversation, and cleared for New conversation (depends on T012).
 
 ## Phase 4: Header UI (US1, US2, US3, US5)
 

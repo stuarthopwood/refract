@@ -255,6 +255,18 @@ export interface SessionPullRequest {
   linkedIssues: LinkedIssue[];
 }
 
+/** A PR or issue a Session wrote to through `gh`; `repositoryId` is the registered Project that owns it, else null. */
+export interface TouchedRef {
+  ownerRepo: string;
+  repositoryId: string | null;
+  kind: 'pr' | 'issue';
+  number: number;
+  title: string;
+  url: string;
+  state: 'open' | 'closed' | 'merged' | 'draft' | 'unknown';
+  lastTouchedAt: number;
+}
+
 export interface SessionReadout extends ActivityReadoutFields {
   changes: DiffStat | 'not-available' | null; // DiffStat is spec 001 sessions.diffStat's return shape; null = not yet read
   contextUsage: ContextUsage | 'not-available' | null; aiCredits?: number | null;
@@ -263,6 +275,8 @@ export interface SessionReadout extends ActivityReadoutFields {
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null;
   todoTree: TodoPhase[] | null; branch?: { name: string; detached: boolean } | null;
   todoPhases: Array<{ name: string; pendingCount: number }> | null;
+  /** Newest first; omitted when the Session has touched nothing. */
+  touched?: TouchedRef[];
 }
 
 export interface ContextUsage {
