@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { HeaderActionButton } from '@/components/HeaderActionButton'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { usePinnedPanelsStore } from '@/state'
+import { usePinFromMenu } from './usePinFromMenu'
 import type { LinkedIssue } from '../../../../shared/model'
 
 interface LinkedIssueControlsProps {
@@ -21,7 +22,7 @@ function IssueIcon({ issue }: { issue: LinkedIssue }) {
 /** The header's linked-issue badge, "+N" count and View issue button (a menu when there are several). */
 export function LinkedIssueControls({ sessionId, repositoryId, issues }: LinkedIssueControlsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const pinnedRef = useRef(false)
+  const { markPinned, onCloseAutoFocus } = usePinFromMenu()
   const first = issues[0]
   if (!first) return null
   const extra = issues.length - 1
@@ -42,18 +43,12 @@ export function LinkedIssueControls({ sessionId, repositoryId, issues }: LinkedI
             <HeaderActionButton ref={triggerRef} icon={CircleDotIcon} text="View issue" label="View issue" />
           </DropdownMenuTrigger>
           {/* Radix would hand focus back to the trigger and undo the move into the panel. */}
-          <DropdownMenuContent
-            align="end"
-            onCloseAutoFocus={(event) => {
-              if (pinnedRef.current) event.preventDefault()
-              pinnedRef.current = false
-            }}
-          >
+          <DropdownMenuContent align="end" onCloseAutoFocus={onCloseAutoFocus}>
             {issues.map((issue) => (
               <DropdownMenuItem
                 key={issue.number}
                 onSelect={() => {
-                  pinnedRef.current = true
+                  markPinned()
                   pin(issue)
                 }}
               >

@@ -27,10 +27,10 @@
 
 ## Phase 4: Header UI (US1, US2, US3, US5)
 
-- [ ] T014 [P] Create `src/renderer/features/chat/header/usePinFromMenu.ts` extracting the pin-then-keep-focus handling from `LinkedIssueControls.tsx` and make `LinkedIssueControls.tsx` use it (no behaviour change).
-- [ ] T015 [P] Create `header/openTouched.ts`: pin to the right pane when `repositoryId` is set, `shell.openExternal(url)` otherwise.
-- [ ] T016 Create `header/TouchedRefControls.tsx` with `badge` and `overflow` modes from `Badge`, `HeaderActionButton`, `DropdownMenu` (PR state through the shared `StatePill`): kind icon, `owner/repo#N` for a foreign repo, state as text or labelled icon, +N label "N more pull requests and issues", arrow-key menu, rows newest first (depends on T001, T014, T015).
-- [ ] T017 Update `HeaderPrControls.tsx`: build the #1315 items, drop touched items that duplicate them, render `TouchedRefControls` in `badge` mode only when neither a branch PR nor linked issues exist, else `overflow` mode after the #1315 controls; return null when nothing exists (depends on T016).
+- [x] T014 [P] Create `src/renderer/features/chat/header/usePinFromMenu.ts` extracting the pin-then-keep-focus handling from `LinkedIssueControls.tsx` and make `LinkedIssueControls.tsx` use it (no behaviour change).
+- [x] T015 [P] Create `header/openTouched.ts`: pin to the right pane when `repositoryId` is set, `shell.openExternal(url)` otherwise.
+- [x] T016 Create `header/TouchedRefControls.tsx` with `badge` and `overflow` modes from `Badge`, `HeaderActionButton`, `DropdownMenu` (PR state through the shared `StatePill`): kind icon, `owner/repo#N` for a foreign repo, state as text or labelled icon, +N label "N more pull requests and issues", arrow-key menu, rows newest first (depends on T001, T014, T015).
+- [x] T017 Update `HeaderPrControls.tsx`: build the #1315 items, drop touched items that duplicate them, render `TouchedRefControls` in `badge` mode only when neither a branch PR nor linked issues exist, else `overflow` mode after the #1315 controls; return null when nothing exists (depends on T016).
 
 ## Phase 5: Verification and docs
 
