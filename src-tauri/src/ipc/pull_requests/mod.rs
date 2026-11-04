@@ -310,6 +310,18 @@ pub(super) fn forget_cache(repository_id: &str, number: u64) {
         .remove(&cache_key(repository_id, number));
 }
 
+/// Tells the renderer a PR was merged or closed so its lists refresh in the background.
+pub(super) fn notify_changed(state: &crate::ipc::AppState, repository_id: &str, number: u64) {
+    let handle = state
+        .app_handle
+        .lock()
+        .expect("app_handle mutex poisoned")
+        .clone();
+    if let Some(app) = handle {
+        crate::events::emit_github_changed(&app, Some(repository_id), "pr", number);
+    }
+}
+
 pub(super) async fn build_detail(
     repo_path: &Path,
     number: u64,

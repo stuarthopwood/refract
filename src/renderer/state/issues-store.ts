@@ -1,9 +1,11 @@
 // Issues view state (issue #504, spec 051): one cross-Project list, so a single store rather than
 // the Pull requests store's per-repository slices. Fetches on open and on explicit Refresh or a
-// filter change only, never on a timer.
+// filter change only, never on a timer; a `github:changed` write adds one quiet refetch (#1589).
 import { create } from 'zustand'
-import type { IpcError } from '../../shared/ipc'
-import type { IssueListItem, IssueSkippedProject, IssueStateFilter, IssueTab } from '../../shared/ipc-issues'
+import { selectionAfterRefresh } from './selection-handoff'
+import type { QuietRefreshOutcome } from './pull-requests-store'
+import type { IpcError, Result } from '../../shared/ipc'
+import type { IssueListItem, IssueListResult, IssueSkippedProject, IssueStateFilter, IssueTab } from '../../shared/ipc-issues'
 
 interface IssuesState {
   tab: IssueTab
@@ -31,6 +33,8 @@ interface IssuesState {
   select(selected: { repositoryId: string; number: number } | null): void
   /** `allRepositoryIds` is every added Project, used when no Project is chosen. `submittedOnly` refetches with the applied search, leaving half-typed text unapplied. */
   refresh(allRepositoryIds: string[], submittedOnly?: boolean): Promise<void>
+  /** Background refetch with the applied filters after a `github:changed` write: no loading or error state, old rows kept on failure, selection moves on if its row is gone. */
+  refreshQuiet(allRepositoryIds: string[]): Promise<QuietRefreshOutcome>
 }
 
 let refreshSequence = 0
@@ -75,5 +79,30 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
       return
     }
     set({ loading: false, items: result.value.issues, skipped: result.value.skipped, fetchedAt: result.value.fetchedAt })
+  },
+  async refreshQuiet(allRepositoryIds) {
+    // A user fetch in flight owns the list; the caller reruns once it lands.
+    if (get().loading) return 'deferred'
+    const { tab, state, repositoryIds, labels, appliedQuery } = get()
+    const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
+    refreshSequence += 1
+    const sequence = refreshSequence
+    let result: Result<IssueListResult>
+    try {
+      result = await window.refract.issues.list(tab, state, ids, labels, appliedQuery.trim())
+    } catch {
+      return 'failed'
+    }
+    // A later fetch (user or quiet) started meanwhile; whichever started last wins.
+    if (sequence !== refreshSequence) return 'superseded'
+    if (!result.ok) return 'failed'
+    const { items: previous, selected } = get()
+    set({
+      items: result.value.issues,
+      skipped: result.value.skipped,
+      fetchedAt: result.value.fetchedAt,
+      selected: selectionAfterRefresh(previous, result.value.issues, selected)
+    })
+    return 'done'
   }
 }))

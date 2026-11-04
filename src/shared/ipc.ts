@@ -1,5 +1,6 @@
 // Renderer-to-main typed IPC contract; the only file allowed to cross that boundary (constitution V).
 
+import type { GithubChangedPayload } from './ipc-github-changed';
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
 import type { LowMemoryWarning } from './lowMemoryWarning';
 import type { TokenGuardCalls, TokenGuardHandoffResult, TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';
@@ -423,6 +424,7 @@ export const IPC_EVENTS = {
   FILE_EXPLORER_RESET: 'file-explorer:reset',
   GIT_CHANGES_REFRESH: 'git-changes:refresh',
   ACCOUNTS_GITHUB_CHANGED: 'accounts:github-changed',
+  GITHUB_CHANGED: 'github:changed',
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'accounts:github-add-progress',
   READINESS_INSTALL_PROGRESS: 'readiness:install-progress',
   READINESS_CHANGED: 'readiness:changed',
@@ -649,6 +651,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onFileExplorerReset(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onGitChangesRefresh(handler: (payload: { sessionId: string }) => void): Unsubscribe;
   onAccountsGithubChanged(handler: (payload: GitHubAccount[]) => void): Unsubscribe;
+  onGithubChanged(handler: (payload: GithubChangedPayload) => void): Unsubscribe;
   onAccountsGithubAddProgress(handler: (payload: GitHubAddFlowProgress) => void): Unsubscribe;
 }
 

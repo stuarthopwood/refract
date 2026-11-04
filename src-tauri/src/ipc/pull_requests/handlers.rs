@@ -16,7 +16,7 @@ use super::mapping::{
     map_pull_request_state, PullRequestListResult,
 };
 use super::{
-    build_detail, check_not_stale, forget_cache, list_pull_requests, map_gh_error,
+    build_detail, check_not_stale, forget_cache, list_pull_requests, map_gh_error, notify_changed,
     parse_filter_tab, remember_fresh, repo_path_for, stale_error, valid_pull_request_number,
     STALE_ERROR, STALE_ERROR_DIALOG, STALE_ERROR_DIALOG_MOVED,
 };
@@ -417,6 +417,7 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
             .await
             .map_err(map_gh_error)?;
         forget_cache(repository_id, number);
+        notify_changed(&state, repository_id, number);
         Ok(Value::Null)
     })
 }

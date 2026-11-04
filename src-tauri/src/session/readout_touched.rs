@@ -12,7 +12,7 @@ use super::{now_ms, readout_pr, schedule_readout_update};
 use crate::session::agent::SessionAgent;
 use crate::session::github_writes::touched::TouchedList;
 use crate::session::github_writes::{
-    detect, detect_in_history, join_text, GithubWrite, ToolCallRecord, WriteKind,
+    detect, detect_in_history, join_text, GithubWrite, ToolCallRecord, WriteAction, WriteKind,
 };
 
 /// Start-frame arguments kept until the matching end frame; the oldest drop first.
@@ -109,12 +109,34 @@ async fn record_writes(agent: &SessionAgent, writes: Vec<GithubWrite>) {
     let resolved = resolve_repos(agent, writes).await;
     agent
         .with_readout_state(|s| {
-            for (owner, name, kind, number, at) in &resolved {
+            for (owner, name, kind, number, at, _) in &resolved {
                 s.touched.list.touch(owner, name, *kind, *number, *at);
             }
         })
         .await;
+    emit_changed(agent, &resolved).await;
     schedule_readout_update(agent).await;
+}
+
+/// Tells the renderer to refresh its PR and issue lists; a comment changes neither, so it is skipped.
+async fn emit_changed(agent: &SessionAgent, resolved: &[Resolved]) {
+    if resolved.iter().all(|r| matches!(r.5, WriteAction::Comment)) {
+        return;
+    }
+    let project_ids = project_ids_by_repo(agent).await;
+    for (owner, name, kind, number, _, action) in resolved {
+        if matches!(action, WriteAction::Comment) {
+            continue;
+        }
+        let repository_id = project_ids.get(&format!("{owner}/{name}").to_ascii_lowercase());
+        let kind = match kind {
+            WriteKind::Pr => "pr",
+            WriteKind::Issue => "issue",
+        };
+        agent
+            .events()
+            .emit_github_changed(repository_id.map(String::as_str), kind, *number);
+    }
 }
 
 /// Replaces the list from a saved history, so it survives restart and reopening a Conversation.
@@ -124,7 +146,7 @@ pub(super) async fn rebuild_from_history(agent: &SessionAgent, history: &[Value]
     agent
         .with_readout_state(|s| {
             s.touched.list.clear();
-            for (owner, name, kind, number, at) in &resolved {
+            for (owner, name, kind, number, at, _) in &resolved {
                 s.touched.list.touch(owner, name, *kind, *number, *at);
             }
         })
@@ -132,7 +154,7 @@ pub(super) async fn rebuild_from_history(agent: &SessionAgent, history: &[Value]
     schedule_readout_update(agent).await;
 }
 
-type Resolved = (String, String, WriteKind, u64, i64);
+type Resolved = (String, String, WriteKind, u64, i64, WriteAction);
 
 /// Fills a missing repo from the Session worktree's origin; writes with no resolvable repo drop.
 async fn resolve_repos(agent: &SessionAgent, writes: Vec<GithubWrite>) -> Vec<Resolved> {
@@ -153,7 +175,7 @@ async fn resolve_repos(agent: &SessionAgent, writes: Vec<GithubWrite>) -> Vec<Re
             }
         };
         if let Some((owner, name)) = repo {
-            out.push((owner, name, w.kind, w.number, w.at_ms));
+            out.push((owner, name, w.kind, w.number, w.at_ms, w.action));
         }
     }
     out

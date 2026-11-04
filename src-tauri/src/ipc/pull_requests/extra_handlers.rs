@@ -9,7 +9,7 @@ use crate::github::images::fetch_pr_image;
 use crate::ipc::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
 use super::{
-    check_not_stale, forget_cache, map_gh_error, repo_path_for, stale_error,
+    check_not_stale, forget_cache, map_gh_error, notify_changed, repo_path_for, stale_error,
     valid_pull_request_number, STALE_ERROR,
 };
 
@@ -42,6 +42,7 @@ pub(super) fn pull_requests_close(state: AppState, args: Vec<Value>) -> HandlerF
             .await
             .map_err(map_gh_error)?;
         forget_cache(repository_id, number);
+        notify_changed(&state, repository_id, number);
         Ok(serde_json::json!({}))
     })
 }

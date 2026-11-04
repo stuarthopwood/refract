@@ -1,6 +1,7 @@
 // Home view data (#869, spec 059). Caches the GitHub sections and the Tidy-up list for the app's
-// life; one Refresh refetches all of them and nothing polls. Every call is scoped to the added
-// Projects that have a GitHub remote, so no unscoped `gh` search ever runs.
+// life; one Refresh refetches all of them and nothing polls (a `github:changed` write triggers a
+// quiet refetch, #1589). Every call is scoped to the added Projects that have a GitHub remote, so
+// no unscoped `gh` search ever runs.
 import { create } from 'zustand'
 import type { IssueListItem, IssueSkippedProject, IssueTab } from '../../shared/ipc-issues'
 import type { PullRequestAcrossItem } from '../../shared/ipc-pull-requests'
@@ -33,8 +34,8 @@ interface HomeState {
   /** The Project ids the last fetch was scoped to; Home refetches when the set changes. */
   fetchedProjectKey: string | null
   loading: boolean
-  /** Resolves false when a refresh was already running and this call did nothing. */
-  refresh(repositories: Repository[]): Promise<boolean>
+  /** Resolves false when a refresh was already running and this call did nothing (the caller reruns once `loading` clears). `quiet` leaves `loading` and section errors alone, keeping the old rows on failure. */
+  refresh(repositories: Repository[], quiet?: boolean): Promise<boolean>
   loadLastMessages(sessionIds: string[]): Promise<void>
 }
 
@@ -73,6 +74,15 @@ function unwrap<T>(entry: PromiseSettledResult<Result<T> | null> | undefined): S
   return entry.status === 'fulfilled' && entry.value === null ? null : (entry as PromiseSettledResult<Result<T>>)
 }
 
+// One quiet refetch at a time, without touching `loading`, which drives the visible Refresh button.
+let quietInFlight = false
+let refreshSequence = 0
+
+/** A quiet refresh keeps the previous section when the new one failed, so no error appears unprompted. */
+function quietKeep<U>(quiet: boolean, next: HomeSection<U>, previous: HomeSection<U>): HomeSection<U> {
+  return quiet && next.error !== null ? previous : next
+}
+
 export const useHomeStore = create<HomeState>((set, get) => ({
   prs: { authored: EMPTY(), 'review-requested': EMPTY() },
   issues: { assigned: EMPTY(), authored: EMPTY() },
@@ -91,9 +101,12 @@ export const useHomeStore = create<HomeState>((set, get) => ({
       // A missing one-line preview is not worth a visible error.
     }
   },
-  async refresh(repositories) {
-    if (get().loading) return false
-    set({ loading: true })
+  async refresh(repositories, quiet = false) {
+    if (get().loading || (quiet && quietInFlight)) return false
+    refreshSequence += 1
+    const sequence = refreshSequence
+    if (quiet) quietInFlight = true
+    else set({ loading: true })
     try {
       const ids = githubRepositoryIds(repositories)
       const api = window.refract
@@ -103,20 +116,23 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         Promise.allSettled(ISSUE_TABS.map((tab) => (noProjects ? null : api.issues.list(tab, 'open', ids, [], '')))),
         Promise.allSettled([noProjects ? null : api.home.closedBranches(ids)])
       ])
+      // A later fetch started meanwhile (a user Refresh during a quiet one); whichever started last wins.
+      if (sequence !== refreshSequence) return true
       const { prs: previousPrs, issues: previousIssues, closed: previousClosed } = get()
       const prs = { ...previousPrs }
       PR_TABS.forEach((tab, index) => {
-        prs[tab] = toSection(unwrap(prSettled[index]), previousPrs[tab], (value) => ({ items: value.items.slice(0, HOME_SECTION_LIMIT), skipped: value.skipped }))
+        prs[tab] = quietKeep(quiet, toSection(unwrap(prSettled[index]), previousPrs[tab], (value) => ({ items: value.items.slice(0, HOME_SECTION_LIMIT), skipped: value.skipped })), previousPrs[tab])
       })
       const issues = { ...previousIssues }
       ISSUE_TABS.forEach((tab, index) => {
-        issues[tab] = toSection(unwrap(issueSettled[index]), previousIssues[tab], (value) => ({ items: value.issues.slice(0, HOME_SECTION_LIMIT), skipped: value.skipped }))
+        issues[tab] = quietKeep(quiet, toSection(unwrap(issueSettled[index]), previousIssues[tab], (value) => ({ items: value.issues.slice(0, HOME_SECTION_LIMIT), skipped: value.skipped })), previousIssues[tab])
       })
-      const closed = toSection(unwrap(closedSettled[0]), previousClosed, (value) => ({ items: value.items, skipped: value.skipped }))
+      const closed = quietKeep(quiet, toSection(unwrap(closedSettled[0]), previousClosed, (value) => ({ items: value.items, skipped: value.skipped })), previousClosed)
       set({ prs, issues, closed, fetchedAt: new Date().toISOString(), fetchedProjectKey: ids.join(',') })
       return true
     } finally {
-      set({ loading: false })
+      if (quiet) quietInFlight = false
+      else set({ loading: false })
     }
   }
 }))

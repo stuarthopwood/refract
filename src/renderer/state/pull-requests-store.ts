@@ -1,8 +1,10 @@
 // Pull requests view state (issue #874, spec 057): one cross-Project list, so a flat store like
 // `issues-store.ts` rather than per-repository slices. Fetches on open, on a filter change, on
-// explicit Refresh and on "Show more" only, never on a timer. A separate cross-Project "active
+// explicit Refresh and on "Show more" only, never on a timer; a `github:changed` write adds one
+// quiet refetch (#1589). A separate cross-Project "active
 // count" slice (issue #569) feeds the sidebar badge and is independent of the list.
 import { create } from 'zustand'
+import { selectionAfterRefresh } from './selection-handoff'
 import type { IpcError, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
@@ -77,14 +79,19 @@ interface PullRequestsState {
   openPullRequest(repositoryId: string, number: number): void
   /** `allRepositoryIds` is every added Project, used when no Project is chosen. */
   refresh(allRepositoryIds: string[], more?: boolean): Promise<void>
+  /** Background refetch with the applied filters after a `github:changed` write: no loading or error state, old rows kept on failure, selection moves on if its row is gone. */
+  refreshQuiet(allRepositoryIds: string[]): Promise<QuietRefreshOutcome>
   loadMore(allRepositoryIds: string[]): Promise<void>
   /** The sidebar badge: open pull requests across every added Project, the set the view lists by default. */
   activeCount: PullRequestsActiveCount
-  /** Never polled; callers are the sidebar mount effect, the window focus refresh, the account-change refetch and the list's Refresh. */
-  refreshActiveCount(allRepositoryIds: string[]): Promise<void>
+  /** Never polled; callers are the sidebar mount effect, the window focus refresh, the account-change refetch, the list's Refresh and `github:changed`. */
+  refreshActiveCount(allRepositoryIds: string[], quiet?: boolean): Promise<void>
   /** The active GitHub account changed: the cached count is stale. */
   clearActiveCounts(): void
 }
+
+/** `deferred`: a user fetch was in flight, nothing started. `superseded`: a later fetch took over the list. */
+export type QuietRefreshOutcome = 'done' | 'failed' | 'deferred' | 'superseded'
 
 let refreshSequence = 0
 // So a stale count fetch never overwrites a newer one.
@@ -193,14 +200,46 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       set({ activeCount: activeCountFrom(result.value, allRepositoryIds.length) })
     }
   },
+  async refreshQuiet(allRepositoryIds) {
+    // A user fetch in flight owns the list; the caller reruns once it lands.
+    if (get().loading) return 'deferred'
+    const { tab, state, repositoryIds, appliedQuery, limit } = get()
+    const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
+    refreshSequence += 1
+    const sequence = refreshSequence
+    let result: Result<{ items: PullRequestAcrossItem[]; hasMore: boolean; skipped: IssueSkippedProject[]; fetchedAt: string }>
+    try {
+      result = await window.refract.pullRequests.listAcross(tab, state, ids, appliedQuery.trim(), limit)
+    } catch {
+      return 'failed'
+    }
+    // A later fetch (user or quiet) started meanwhile; whichever started last wins.
+    if (sequence !== refreshSequence) return 'superseded'
+    if (!result.ok) return 'failed'
+    const { items: previous, selected } = get()
+    set({
+      items: result.value.items,
+      skipped: result.value.skipped,
+      hasMore: result.value.hasMore,
+      fetchedAt: result.value.fetchedAt,
+      selected: selectionAfterRefresh(previous, result.value.items, selected)
+    })
+    if (sharesActiveCountSearch({ tab, state, repositoryIds, query: appliedQuery, limit }, allRepositoryIds)) {
+      activeCountSequence += 1
+      activeCountInFlight = null
+      set({ activeCount: activeCountFrom(result.value, allRepositoryIds.length) })
+    }
+    return 'done'
+  },
   loadMore: (allRepositoryIds) => get().refresh(allRepositoryIds, true),
   activeCount: EMPTY_PULL_REQUESTS_ACTIVE_COUNT,
-  refreshActiveCount: (allRepositoryIds) => {
+  refreshActiveCount: (allRepositoryIds, quiet = false) => {
     const key = allRepositoryIds.join('|')
     if (activeCountInFlight?.key === key) return activeCountInFlight.promise
     activeCountSequence += 1
     const sequence = activeCountSequence
-    set({ activeCount: { ...get().activeCount, loading: true } })
+    // A quiet refetch keeps the badge steady instead of flickering it to loading.
+    if (!quiet) set({ activeCount: { ...get().activeCount, loading: true } })
     const promise = (async () => {
       // A rejected IPC call must not leave `loading: true` stuck, which would silently disable the
       // window-focus refresh and the mount effect (both skip while loading).
