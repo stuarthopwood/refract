@@ -74,7 +74,14 @@ const LIST_REFRESH_BUTTON = `document.querySelector('button[aria-label^="Refresh
 const INSTALL_PROBES = `(() => {
   const api = window.refract;
   window.__v1589 = { issues: 0, prs: 0, busySeen: false };
-  const wrap = (obj, key, counter) => { const original = obj[key].bind(obj); obj[key] = (...args) => { window.__v1589[counter] += 1; return original(...args); }; };
+  const wrap = (obj, key, counter) => {
+    const original = obj[key].bind(obj);
+    obj[key] = async (...args) => {
+      window.__v1589[counter] += 1;
+      if (window.__v1589.delayMs) await new Promise((resolve) => setTimeout(resolve, window.__v1589.delayMs));
+      return original(...args);
+    };
+  };
   wrap(api.issues, 'list', 'issues');
   wrap(api.pullRequests, 'listAcross', 'prs');
   new MutationObserver(() => { if (document.querySelector(${JSON.stringify(BUSY_SELECTOR)})) window.__v1589.busySeen = true; })
@@ -97,13 +104,18 @@ function notExercised(label, evidence) {
   console.log(`${LOG}: NOT EXERCISED ${label} ${JSON.stringify(evidence)}`);
 }
 
-// A non-quiet refresh must trip the busy probe, or "no loading state" below proves nothing.
+// A non-quiet refresh must trip the busy probe, or "no loading state" below proves nothing. A held fetch keeps the
+// loading state up long enough to observe.
 async function positiveControl(cdp) {
-  await cdp.evaluate(`window.__v1589.busySeen = false`);
-  await cdp.click(LIST_REFRESH_BUTTON);
+  // The first load can still be in flight (a user Refresh is ignored while loading), so let it settle first.
+  await cdp.waitFor(`!document.querySelector(${JSON.stringify(BUSY_SELECTOR)})`, { timeoutMs: 90_000, label: 'initial list load settled' });
+  await cdp.evaluate(`window.__v1589.busySeen = false; window.__v1589.delayMs = 800`);
+  await cdp.evaluate(`${LIST_REFRESH_BUTTON}.click()`);
   let tripped = true;
   await cdp.waitFor(`window.__v1589.busySeen === true`, { timeoutMs: 10_000, label: 'busy probe trips on a user Refresh' }).catch(() => { tripped = false; });
-  check(tripped, 'Positive control: a user Refresh (non-quiet refresh()) trips the busy probe', { busySeen: await cdp.evaluate(`window.__v1589.busySeen`) });
+  const evidence = await cdp.evaluate(`({ ...window.__v1589, matches: document.querySelectorAll('button[aria-label^="Refresh "]').length, button: ${LIST_REFRESH_BUTTON}?.outerHTML.slice(0, 300), url: location.href, h1: document.title })`);
+  check(tripped, 'Positive control: a user Refresh (non-quiet refresh()) trips the busy probe', evidence);
+  await cdp.evaluate(`window.__v1589.delayMs = 0`);
   await cdp.waitFor(`!document.querySelector(${JSON.stringify(BUSY_SELECTOR)})`, { timeoutMs: 60_000, label: 'user Refresh settled' });
 }
 
