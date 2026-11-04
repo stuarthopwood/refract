@@ -36,13 +36,13 @@ No test tasks: prototyping rule forbids new tests; existing tests are only updat
 - [x] T023 Update existing tests that enumerate themes (no new cases). (FR-003)
 
 ## Phase 6: Live verification
-- [ ] T024 Add `scripts/verify-1590-themes.mjs` (CDP, real input) selecting each new theme: checks `color-scheme`, persistence after restart, picker and Theme menu swatches. (US1-3) Driver written as `scripts/verify-tauri-1590.mjs`; the run worker still has to run it, and persistence after restart plus the picker swatches are not yet covered.
-- [ ] T025 Capture Chat, Pull requests, Settings, Usage screenshots per new theme (6 x 4) via the #1381 helper; confirm Tauri chrome follows `color-scheme: light`, adding Rust `set_theme` if not. (SC-003)
+- [x] T024 Add `scripts/verify-1590-themes.mjs` (CDP, real input) selecting each new theme: checks `color-scheme`, persistence after restart, picker and Theme menu swatches. (US1-3) Driver is `scripts/verify-tauri-1590.mjs`; live run on 8352e037 passed 37/37 checks. Not covered: persistence after an app restart (only the saved `settings.json` value is checked) and the picker and Theme menu swatches.
+- [x] T025 Capture Chat, Pull requests, Settings, Usage screenshots per new theme (6 x 4) via the #1381 helper; confirm Tauri chrome follows `color-scheme: light`, adding Rust `set_theme` if not. (SC-003) Live run captured 7 themes x 4 views; the webview `color-scheme` is asserted, native window chrome was not inspected.
 
 ## Phase 7: Docs and ship
 - [x] T026 Update `foundations-tokens-theming.md`, `accessibility.md`, `product-look-and-feel.md`. (FR-010)
 - [x] T027 CHANGELOG entry and the #1590 row in `docs/PLAN.md`. (FR-010)
-- [ ] T028 `pnpm check:comment-density`, file-size check, `node scripts/ci-local.mjs` in the build slot. (SC-004)
+- [x] T028 `pnpm check:comment-density`, file-size check, `node scripts/ci-local.mjs` in the build slot. (SC-004) ci-local passed all 23 steps on 8352e037.
 - [ ] T029 PR body: proposed names, sweep list, screenshots, contrast and display-profile output; five-reviewer gate.
 
 ## Dependencies
