@@ -1018,6 +1018,8 @@ Also filed 2026-11-02 (Stuart, grilled, none deferred): **#1571** (`p1`, `bug`),
 
 Amended 2026-11-02 (Stuart, grilled, none deferred): **#1571** also covers the Usage Project filter, which reads the same stored label. Encoded OMP session folder names (`--C--Repos-...--`) are decoded and matched to a Project. Any unmatched cwd with a `pinion-worktrees` path segment becomes **Other**. Unmatched cwds are grouped case-insensitively.
 
+Status 2026-11-04: **#1571** in review (branch `feat/1571-lane`, spec `119-usage-project-labels-1571`): labelling moved to `usage/project_label.rs` and `usage/relabel.rs`; the Usage queries, IPC and renderer are unchanged.
+
 Also filed 2026-11-02 (Stuart, grilled, none deferred): **#1575** (`p1`, `design`), PR View: the Review pull request dialog's hand-built verdict buttons (`ReviewDialog.tsx:161-178`) become the shared `ToggleGroup` with the #1302 underline look. #1302 shipped in #1570 without this dialog. Cancel goes ghost under #1564. Done (PR #1632, merged 2026-11-03). Placed as an index line after #1571's line.
 
 Also filed 2026-11-02 (Stuart, grilled, none deferred): **#1577** (`p1`, `design`), Role Picker (composer): `RoleOption` cards drop the radio mark and the visible model name (moved to the tooltip and accessible description). Each card gets a 15% role-colour tint and a role-colour border. The current role's border is `active-indicator`. Roles without a token stay neutral. Settings > Model roles stays with #1549 and #1550. Done (PR #1633, merged 2026-11-03). Placed as an index line after #1575's line.
