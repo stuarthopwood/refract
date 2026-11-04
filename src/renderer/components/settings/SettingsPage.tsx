@@ -13,10 +13,12 @@ interface SettingsPageProps {
   /** Lets a section that moves focus back to the heading (Appearance) share this one. */
   headingRef?: RefObject<HTMLHeadingElement | null>
   className?: string
+  /** A page-level action (one primary button) shown at the right of the heading. */
+  actions?: ReactNode
   children: ReactNode
 }
 
-export function SettingsPage({ title, intro, width = 'default', headingRef, className, children }: SettingsPageProps) {
+export function SettingsPage({ title, intro, width = 'default', headingRef, className, actions, children }: SettingsPageProps) {
   const ownRef = useRef<HTMLHeadingElement>(null)
   const ref = headingRef ?? ownRef
   useEffect(() => {
@@ -25,9 +27,12 @@ export function SettingsPage({ title, intro, width = 'default', headingRef, clas
   return (
     <div className={cn('flex w-full flex-col', width === 'wide' ? 'max-w-3xl' : 'max-w-2xl', className)}>
       {title && (
-        <h2 ref={ref} tabIndex={-1} className="mb-1 text-base font-semibold outline-none">
-          {title}
-        </h2>
+        <div className="mb-1 flex items-start justify-between gap-4">
+          <h2 ref={ref} tabIndex={-1} className="text-base font-semibold outline-none">
+            {title}
+          </h2>
+          {actions}
+        </div>
       )}
       {intro && <p className="mb-4 text-sm text-muted-foreground">{intro}</p>}
       {children}

@@ -1,4 +1,4 @@
-// `tokenGuard.get/set/reset/dismissThresholdsReset`. No path or file content comes from the renderer.
+// `tokenGuard.get/set/reset/resetAll/dismissThresholdsReset`. No path or file content comes from the renderer.
 // A change applies to the next launched Session.
 
 use serde_json::{json, Value};
@@ -11,6 +11,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("tokenGuard.get", token_guard_get);
     d.register("tokenGuard.set", token_guard_set);
     d.register("tokenGuard.reset", token_guard_reset);
+    d.register("tokenGuard.resetAll", token_guard_reset_all);
     d.register(
         "tokenGuard.dismissThresholdsReset",
         token_guard_dismiss_thresholds_reset,
@@ -93,6 +94,15 @@ fn token_guard_reset(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let key = key_arg(&args, "tokenGuard.reset")?;
         let updated = values::reset(&state.data_dir, &key)
+            .await
+            .map_err(invalid_argument)?;
+        Ok(snapshot(&updated))
+    })
+}
+
+fn token_guard_reset_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let updated = values::reset_all(&state.data_dir)
             .await
             .map_err(invalid_argument)?;
         Ok(snapshot(&updated))

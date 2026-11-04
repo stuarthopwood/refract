@@ -8,6 +8,7 @@ All channels go through the single `refract_request(channel, args)` command (con
 | `tokenGuard.get` | none | `{ values: TokenGuardValues, defaults: TokenGuardValues }` |
 | `tokenGuard.set` | `{ key: string, value: unknown }` (key must be a known overlay key; value validated per type) | `{ values }` or error text |
 | `tokenGuard.reset` | `{ key: string }` | `{ values }` |
+| `tokenGuard.resetAll` | none | `{ values }`; drops every override in one write (the "Optimise token usage" button) |
 | `tokenGuard.dismissThresholdsReset` | none | `null`; clears the one-time "thresholds were reset" notice that `tokenGuard.get` reports as `thresholdsReset: true` until then |
 
 ## Requests (Lane B)

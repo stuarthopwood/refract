@@ -13,6 +13,8 @@ import { TOKEN_GUARD_GROUPS, TOKEN_GUARD_KEYS } from '../../../shared/tokenGuard
 import type { TokenGuardKeyInfo } from '../../../shared/tokenGuard'
 import { AdvancedRow } from './advanced/AdvancedRow'
 import { defaultRoleWindow } from './advanced/contextWindow'
+import { changedRows } from './advanced/changedRows'
+import { OptimiseTokenUsage } from './advanced/OptimiseTokenUsage'
 
 const ADVISOR_GROUP_HINT = 'Applies in review mode only.'
 const THRESHOLDS_RESET_NOTICE = 'Compaction thresholds are now a percent of the context window. Your old token thresholds were reset to the defaults.'
@@ -65,6 +67,7 @@ export function AdvancedSection() {
   return (
     <SettingsPage
       title="Advanced"
+      actions={loaded ? <OptimiseTokenUsage rows={changedRows(values, defaults, defaultWindow)} /> : undefined}
       intro="Refract sets these values every time it starts a Session, to keep token use down. Changes apply to new Sessions only; running Sessions keep the values they launched with."
     >
       {thresholdsReset && (

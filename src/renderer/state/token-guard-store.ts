@@ -16,6 +16,7 @@ interface TokenGuardState {
   load(): Promise<void>
   set(key: string, value: unknown): Promise<boolean>
   reset(key: string): Promise<void>
+  resetAll(): Promise<void>
   dismissThresholdsReset(): void
 }
 
@@ -43,6 +44,7 @@ export const useTokenGuardStore = create<TokenGuardState>((set) => {
     load: async () => void apply(await window.refract.tokenGuard.get()),
     set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value)),
     reset: async (key) => void apply(await window.refract.tokenGuard.reset(key)),
+    resetAll: async () => void apply(await window.refract.tokenGuard.resetAll()),
     dismissThresholdsReset: () => {
       set({ thresholdsReset: false })
       // A failed write means the notice shows again the next time Settings loads.

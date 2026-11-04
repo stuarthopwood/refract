@@ -282,6 +282,18 @@ pub async fn reset(dir: &Path, key: &str) -> Result<ValueMap, String> {
     Ok(effective(&stored))
 }
 
+/// Drops every override in one write (the "Optimise token usage" button) and returns the new effective values.
+pub async fn reset_all(dir: &Path) -> Result<ValueMap, String> {
+    let _guard = STORE_LOCK.lock().await;
+    let mut stored = read_stored(dir).await;
+    stored.version = STORE_VERSION;
+    stored.overrides.clear();
+    write_json_file(&store_path(dir), &stored)
+        .await
+        .map_err(|err| format!("Could not save token guard values: {err}"))?;
+    Ok(effective(&stored))
+}
+
 pub fn to_object(values: &ValueMap) -> Value {
     Value::Object(
         values
