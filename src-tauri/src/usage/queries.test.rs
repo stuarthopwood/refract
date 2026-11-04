@@ -164,7 +164,10 @@ fn summary_and_calls_read_what_was_recorded() {
         &ctx(),
     )
     .unwrap();
-    assert_eq!((wide.active_days, wide.sessions, wide.month_active_days), (2, 2, 2));
+    assert_eq!(
+        (wide.active_days, wide.sessions, wide.month_active_days),
+        (2, 2, 2)
+    );
     assert_eq!(
         (wide.month_to_date_usd, wide.month_active_days),
         (p.month_to_date_usd, p.month_active_days)
