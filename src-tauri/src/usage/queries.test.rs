@@ -114,10 +114,15 @@ fn today_starts_at_local_midnight_and_rollup_filters_on_the_hour() {
 #[test]
 fn summary_and_calls_read_what_was_recorded() {
     let conn = scratch_db();
-    for (id, model, cost) in [("a", "m1", 1.0), ("b", "m2", 2.0)] {
+    // `c` sits three days back (same month at NOW) so active_days and month_active_days differ.
+    for (id, model, cost, file, ago) in [
+        ("a", "m1", 1.0, "file", 60_000),
+        ("b", "m2", 2.0, "file2", 60_000),
+        ("c", "m1", 4.0, "file", 3 * DAY_MS),
+    ] {
         let row = MessageRow {
             entry_id: id.into(),
-            ts: NOW - 60_000,
+            ts: NOW - ago,
             session_id: "s".into(),
             provider: "github-copilot".into(),
             model: model.into(),
@@ -130,7 +135,7 @@ fn summary_and_calls_read_what_was_recorded() {
             credits: Some(cost * 100.0),
             ..MessageRow::default()
         };
-        assert!(record_message(&conn, "file", &row).unwrap());
+        assert!(record_message(&conn, file, &row).unwrap());
     }
     let f = Filters {
         model: Some("m2".into()),
@@ -139,13 +144,30 @@ fn summary_and_calls_read_what_was_recorded() {
     let s = summary(&conn, &f, &ctx()).unwrap();
     assert_eq!((s.calls, s.total_tokens), (1, 100));
     assert!((s.spend_usd - 2.0).abs() < 1e-9 && (s.cache_hit_rate - 0.9).abs() < 1e-9);
+    assert!((s.credits - 200.0).abs() < 1e-9);
+    assert_eq!((s.active_days, s.sessions, s.month_active_days), (1, 1, 1));
+    assert!((s.month_to_date_usd - 2.0).abs() < 1e-9);
     let by_project = Filters {
         project: Some("proj".into()),
         ..filters("today")
     };
     let p = summary(&conn, &by_project, &ctx()).unwrap();
-    assert_eq!((p.active_days, p.sessions, p.month_active_days), (1, 1, 1));
-    assert!((p.month_to_date_usd - 3.0).abs() < 1e-9);
+    assert_eq!((p.active_days, p.sessions, p.month_active_days), (1, 2, 2));
+    assert!((p.month_to_date_usd - 7.0).abs() < 1e-9);
+    let wide = summary(
+        &conn,
+        &Filters {
+            project: Some("proj".into()),
+            ..filters("30d")
+        },
+        &ctx(),
+    )
+    .unwrap();
+    assert_eq!((wide.active_days, wide.sessions, wide.month_active_days), (2, 2, 2));
+    assert_eq!(
+        (wide.month_to_date_usd, wide.month_active_days),
+        (p.month_to_date_usd, p.month_active_days)
+    );
     let other = Filters {
         project: Some("elsewhere".into()),
         ..filters("30d")
@@ -191,4 +213,6 @@ fn half_hour_zone_day_buckets_read_exact_rows() {
     };
     let buckets = timeseries(&conn, &filters("7d"), false, &ist).unwrap();
     assert_eq!(buckets.len(), 1);
+    let s = summary(&conn, &filters("7d"), &ist).unwrap();
+    assert_eq!((s.active_days, s.month_active_days), (1, 1));
 }

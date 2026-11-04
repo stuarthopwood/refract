@@ -8,10 +8,14 @@ const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFra
 
 export const formatUsd = (value: number): string => (value > 0 && value < 0.01 ? usdSmall.format(value) : usd.format(value))
 /** Spend per call: three decimals under $1 so `$0.042` stays readable, else `formatUsd`. */
-export const formatUsdPerCall = (value: number): string => (value > 0 && value < 1 ? usdPerCall.format(value) : formatUsd(value))
+export const formatUsdPerCall = (value: number): string =>
+  value > 0 && value < 0.001 ? usdSmall.format(value) : value > 0 && value < 1 ? usdPerCall.format(value) : formatUsd(value)
 export const formatInt = (value: number): string => int.format(Math.round(value))
 export const formatCompact = (value: number): string => compact.format(value)
 export const formatPercent = (rate: number): string => `${(rate * 100).toFixed(rate > 0 && rate < 0.1 ? 1 : 0)}%`
+
+/** Shown where a denominator is zero. */
+export const dash = '-'
 
 export function formatDuration(ms: number | null): string {
   if (ms === null) return 'n/a'

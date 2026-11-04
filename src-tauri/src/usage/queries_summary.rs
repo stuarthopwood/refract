@@ -29,13 +29,27 @@ pub struct Summary {
     pub month_active_days: i64,
 }
 
-/// `(spend, active local days)` over the filtered rollup, using the chart's day buckets.
+/// Day-bucket count plus spend over the filtered rollup, using the chart's day buckets.
 fn spend_and_days(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<(f64, i64)> {
+    rollup_days(conn, f, ctx, "coalesce(sum(cost_total),0)")
+}
+
+/// Active local days only; skips the spend column the headline query already has.
+fn active_days(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<i64> {
+    Ok(rollup_days(conn, f, ctx, "0.0")?.1)
+}
+
+fn rollup_days(
+    conn: &Connection,
+    f: &Filters,
+    ctx: &QueryCtx,
+    spend_expr: &str,
+) -> QueryResult<(f64, i64)> {
     let mut w = f.build_dims(&MESSAGE_ROLLUP, ctx)?;
     let src = f.rollup_source(&mut w, Rollup::Messages, ctx, exact_day_rows(ctx))?;
     let bucket = day_bucket(&mut w, ctx);
     let sql = format!(
-        "SELECT coalesce(sum(cost_total),0), count(DISTINCT CASE WHEN calls > 0 THEN {bucket} END) \
+        "SELECT {spend_expr}, count(DISTINCT CASE WHEN calls > 0 THEN {bucket} END) \
          FROM {src}{}",
         w.sql()
     );
@@ -74,7 +88,7 @@ pub fn summary(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<Su
     let [calls, input, cache_read, cache_write, tokens, usd, credits] = v;
     let (tool_calls, tool_errors) = tool_totals(conn, f, ctx)?;
     let context = input + cache_read + cache_write;
-    let (_, active_days) = spend_and_days(conn, f, ctx)?;
+    let active_days = active_days(conn, f, ctx)?;
     // Only the date range is dropped; Project, model, reasoning, agent type and Session stay.
     let month = Filters {
         range: "custom".into(),

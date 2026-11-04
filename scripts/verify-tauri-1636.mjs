@@ -2,7 +2,9 @@
 // Live CDP check for #1636 (Usage Averages): recent-dated fixtures, real debug exe, fake omp/gh,
 // scratch REFRACT_DATA_DIR and own port; never touches %APPDATA%. Averages are hand-computed here
 // from the fixture and compared with the IPC summary and the rendered cards, with and without a
-// Project filter, for 7d and All.
+// Project filter, for 7d and All. Also checks the Session usage panel line, a Project whose only
+// call is last month (Projected month spend is "-" with an accessible name), and the filtered-empty
+// state (a Project matching nothing hides the Averages section; the six cards cannot all show "-").
 // Usage: CARGO_TARGET_DIR=<shared target dir> SHOTS_DIR=<evidence dir> node scripts/verify-tauri-1636.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -14,6 +16,7 @@ import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLaun
 import { gitHead, buildLauncher, buildAndCopyExeFresh, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 import { buildFakeClis } from './verify-1331-fixtures.mjs';
+import { createSessionViaQuickCreate } from './verify-tauri-session-list-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -38,6 +41,42 @@ const call = (id, ts, cost) =>
     }
   });
 
+/** Session-panel fixture: two calls, each input 10 + cacheRead 30 (75% hit rate), one of two tool calls errors. */
+const SESSION_CALLS = [0.1, 0.3];
+const SESSION_INPUT = 10;
+const SESSION_CACHE_READ = 30;
+
+function sessionCall(id, ts, cost, toolId) {
+  return line({
+    type: 'message',
+    id,
+    timestamp: new Date(ts).toISOString(),
+    message: {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'ok' }, { type: 'toolCall', id: toolId, name: 'bash', arguments: {} }],
+      timestamp: ts,
+      model: 'claude-sonnet',
+      provider: 'github-copilot',
+      usage: { input: SESSION_INPUT, output: 5, cacheRead: SESSION_CACHE_READ, cacheWrite: 0, totalTokens: SESSION_INPUT + 5 + SESSION_CACHE_READ, cost: { input: cost / 2, output: cost / 2, cacheRead: 0, cacheWrite: 0, total: cost } }
+    }
+  });
+}
+
+/** The focused Session's directory (the fake omp's conversation file lives in it). */
+function writeSessionFixture(root, calls) {
+  const dir = path.join(root, 'x-s1636');
+  mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, 's1.jsonl');
+  const t0 = new Date(calls[0][0]).toISOString();
+  const result = (id, ts, toolId, isError) => line({ type: 'message', id, timestamp: new Date(ts).toISOString(), message: { role: 'toolResult', toolCallId: toolId, isError, content: [{ type: 'text', text: 'out' }] } });
+  writeFileSync(
+    file,
+    line({ type: 'session', id: 's1636', timestamp: t0, cwd: 'C:\\Work\\verify1636sess' }) +
+      calls.map(([ts, cost], i) => sessionCall(`sc${i}`, ts, cost, `tc${i}`) + result(`sr${i}`, ts + 1, `tc${i}`, i === calls.length - 1)).join('')
+  );
+  return file;
+}
+
 /** One file per entry; `at` is milliseconds before now, `cost` USD. Times are pinned to local noon. */
 function fixture(now) {
   const noon = (daysAgo) => {
@@ -47,12 +86,15 @@ function fixture(now) {
   return [
     { project: 'verify1636alpha', id: 'a1', calls: [[now - 60_000, 0.1], [now - 120_000, 0.1], [noon(3), 0.3]] },
     { project: 'verify1636alpha', id: 'a2', calls: [[noon(20), 0.5]] },
-    { project: 'verify1636beta', id: 'b1', calls: [[noon(1), 0.2]] }
+    { project: 'verify1636beta', id: 'b1', calls: [[noon(1), 0.2]] },
+    // 45 days back is always a previous month, so this Project has no month-to-date data.
+    { project: 'verify1636old', id: 'o1', calls: [[noon(45), 0.4]] },
+    { project: 'verify1636sess', id: 's1636', session: true, calls: SESSION_CALLS.map((cost, i) => [now - 30_000 - i * 10_000, cost]) }
   ];
 }
 
 function writeFixture(sessionsDir, files) {
-  for (const f of files) {
+  for (const f of files.filter((x) => !x.session)) {
     const cwd = `C:\\Work\\${f.project}`;
     const folder = path.join(sessionsDir, `--C--Work-${f.project}--`);
     mkdirSync(folder, { recursive: true });
@@ -70,12 +112,14 @@ const dayKey = (ts) => {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 };
 
+/** Independent of the renderer: walk back from the month's last day, tracking the weekday by hand. */
 function weekdaysLeft(today) {
-  const last = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate();
+  const last = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  let dow = last.getDay();
   let n = 0;
-  for (let day = today.getDate() + 1; day <= last; day += 1) {
-    const dow = new Date(today.getFullYear(), today.getMonth(), day).getDay();
-    if (dow !== 0 && dow !== 6) n += 1;
+  for (let day = last.getDate(); day > today.getDate(); day -= 1) {
+    if (dow >= 1 && dow <= 5) n += 1;
+    dow = (dow + 6) % 7;
   }
   return n;
 }
@@ -94,6 +138,7 @@ function expected(files, now, range, project) {
     calls: inRange.length,
     spend: sum(inRange),
     activeDays: days(inRange),
+    credits: sum(inRange) * 100,
     sessions: new Set(inRange.map((c) => c.file)).size,
     mtd: sum(month),
     mtdDays,
@@ -103,6 +148,9 @@ function expected(files, now, range, project) {
 
 const usd = (v) => `$${v.toFixed(2)}`;
 const perCall = (v) => (v < 1 ? `$${v.toFixed(3)}` : usd(v));
+const int = (v) => Math.round(v).toLocaleString('en-US');
+const pct = (rate) => `${(rate * 100).toFixed(rate > 0 && rate < 0.1 ? 1 : 0)}%`;
+const plural = (n, noun) => `${int(n)} ${noun}${n === 1 ? '' : 's'}`;
 
 async function main() {
   const head = gitHead(REPO_ROOT);
@@ -130,6 +178,7 @@ async function main() {
     const now = Date.now();
     const files = fixture(now);
     writeFixture(sessionsDir, files);
+    const sessionFile = writeSessionFixture(sessionsDir, files.find((f) => f.session).calls);
     buildFakeClis(shimDir);
     const launcherExe = buildLauncher(launcherDir);
     const exeInfo = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: LOG });
@@ -139,7 +188,13 @@ async function main() {
       dataDir,
       pathPrepend: shimDir,
       logFile: path.join(exeDir, 'app.log'),
-      extraEnv: { REFRACT_IMPORT_SOURCE_DIR: importSourceDir, REFRACT_OMP_SESSIONS_DIR: sessionsDir, OMP_PROFILE: 'verify1636' }
+      extraEnv: {
+        REFRACT_IMPORT_SOURCE_DIR: importSourceDir,
+        REFRACT_OMP_SESSIONS_DIR: sessionsDir,
+        OMP_PROFILE: 'verify1636',
+        REFRACT_FAKE_OMP_SCENARIO: 'activity-line-526',
+        REFRACT_FAKE_OMP_CONVERSATION_FILE: sessionFile
+      }
     });
     child = launched.child;
     cdp = await CdpSession.connect(await waitForCdpTarget(port, { timeoutMs: 60_000 }));
@@ -152,7 +207,8 @@ async function main() {
       await sleep(300);
     }
     const labels = (await ipc('breakdown', { range: 'all' }, 'project')).map((r) => r.label);
-    const alpha = labels.find((l) => l.includes('alpha'));
+    const labelOf = (project) => labels.find((l) => l.includes(project.replace('verify1636', '')));
+    const alpha = labelOf('verify1636alpha');
     check(!!alpha, 'project labels include the alpha fixture project', labels);
 
     // IPC summary against hand-computed values.
@@ -160,11 +216,14 @@ async function main() {
       ['7d', null],
       ['all', null],
       ['7d', 'verify1636alpha'],
-      ['all', 'verify1636alpha']
+      ['all', 'verify1636alpha'],
+      // Only call is 45 days back: every figure is real except Projected month spend, which is "-".
+      ['all', 'verify1636old']
     ];
+    check(!!labelOf('verify1636old'), 'project labels include the old fixture project', labels);
     for (const [range, project] of scenarios) {
       const e = expected(files, now, range, project);
-      const s = await ipc('summary', { range, project: project ? alpha : null }, -new Date().getTimezoneOffset());
+      const s = await ipc('summary', { range, project: project ? labelOf(project) : null }, -new Date().getTimezoneOffset());
       const ok = s.calls === e.calls && near(s.spendUsd, e.spend) && s.activeDays === e.activeDays && s.sessions === e.sessions && near(s.monthToDateUsd, e.mtd) && s.monthActiveDays === e.mtdDays;
       check(ok, `summary ${range}${project ? ' + Project' : ''} matches hand computation`, { s, e });
     }
@@ -185,32 +244,77 @@ async function main() {
     await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'repository added' });
 
-    const cards = () => cdp.evaluate(`[...document.querySelectorAll('section[aria-label="Usage"] [role="group"]')].map((g) => g.innerText.replace(/\\s+/g, ' '))`);
-    const card = (all, label) => all.find((t) => t.startsWith(label)) ?? '';
-    const shots = ['1-averages-7d', '2-averages-all', '3-averages-7d-project', '4-averages-all-project'];
-    let first = true;
+    // Session usage panel (stacked layout): the focused Session's line under the four cards.
+    await createSessionViaQuickCreate(cdp, path.basename(repoDir));
+    const rail = `document.querySelector('[data-rail-button="session-usage"]')`;
+    if (!(await cdp.evaluate(`!!${rail}`))) await cdp.click(`document.querySelector('[data-rail-toggle]') ?? document.querySelector('[aria-label="Right pane"]')`);
+    await cdp.waitFor(`!!${rail}`, { timeoutMs: 15_000, label: 'Session usage rail button' });
+    await cdp.click(rail);
+    await sleep(1200);
+    // A persisted active panel makes the rail click close it, leaving the picker.
+    if (await cdp.evaluate(`document.body.innerText.includes('Agent Builder')`)) await cdp.clickByText('Session usage');
+    await cdp.waitFor(`document.body.innerText.includes('By model')`, { timeoutMs: 40_000, label: 'Session usage panel populated' });
+    await sleep(1500);
+    const sessionLine = await cdp.evaluate(`(() => { const p = [...document.querySelectorAll('p')].find((el) => el.innerText.startsWith('Cache hit rate')); return p ? p.innerText.replace(/\\s+/g, ' ').trim() : ''; })()`);
+    const sCost = SESSION_CALLS.reduce((a, c) => a + c, 0);
+    const wantLine = `Cache hit rate ${pct(SESSION_CACHE_READ / (SESSION_INPUT + SESSION_CACHE_READ))} · Tool error rate ${pct(1 / SESSION_CALLS.length)} · Avg spend per call ${perCall(sCost / SESSION_CALLS.length)}`;
+    check(sessionLine === wantLine, 'Session usage panel line matches hand computation', { sessionLine, wantLine });
+    await cdp.screenshot(path.join(SHOTS_DIR, '0-session-panel.png'));
+
+    // Each group's innerText split into its label / value / caption paragraphs, plus any "No data" images.
+    const cards = () =>
+      cdp.evaluate(
+        `[...document.querySelectorAll('section[aria-label="Usage"] [role="group"]')].map((g) => ({ segs: g.innerText.split('\\n').map((s) => s.trim()).filter(Boolean), imgs: [...g.querySelectorAll('[role="img"]')].map((i) => i.getAttribute('aria-label')) }))`
+      );
+    const card = (all, label) => all.find((c) => c.segs[0] === label) ?? { segs: [], imgs: [] };
+    const groupsReady = `[...document.querySelectorAll('section[aria-label="Usage"] [role="group"]')].some((g) => g.innerText.startsWith('Projected month spend'))`;
+    const shots = ['1-averages-7d', '2-averages-all', '3-averages-7d-project', '4-averages-all-project', '5-averages-all-old-project'];
+    let rendered = 0;
     for (const [i, [range, project]] of scenarios.entries()) {
-      await ipc('setPrefs', { filters: { range, project: project ? alpha : null } });
+      await ipc('setPrefs', { filters: { range, project: project ? labelOf(project) : null } });
       await cdp.evaluate(`location.reload()`).catch(() => {});
       await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'reloaded' });
       await cdp.clickByText('Usage');
-      await cdp.waitFor(`[...document.querySelectorAll('section[aria-label="Usage"] [role="group"]')].some((g) => g.innerText.startsWith('Projected month spend'))`, { label: 'Averages render' });
+      await cdp.waitFor(groupsReady, { label: 'Averages render' });
       await sleep(600);
       const e = expected(files, now, range, project);
       const all = await cards();
       const name = `${range}${project ? ' + Project' : ''}`;
-      const want = (label, value) => check(card(all, label).includes(value), `${name}: ${label} shows ${value}`, card(all, label));
-      want('Avg spend per day', e.activeDays ? usd(e.spend / e.activeDays) : '-');
-      want('Avg calls per day', e.activeDays ? String(Math.round(e.calls / e.activeDays)) : '-');
-      want('Avg spend per call', e.calls ? perCall(e.spend / e.calls) : '-');
-      want('Avg spend per Session', e.sessions ? usd(e.spend / e.sessions) : '-');
-      want('Projected month spend', e.projected === null ? '-' : usd(e.projected));
-      check(card(all, 'Avg spend per day').includes(`Over ${e.activeDays} active day`), `${name}: per-day caption names the active days`);
-      await cdp.evaluate(`document.querySelector('section[aria-label="Usage"] [role="group"]').scrollIntoView()`);
+      const days = e.activeDays ? `Over ${plural(e.activeDays, 'active day')}` : undefined;
+      const none = project === 'verify1636old';
+      // `value` null means the card must show the dash with the accessible name "No data".
+      const want = (label, value, caption) => {
+        const c = card(all, label);
+        const shown = value === null ? '-' : value;
+        const ok = c.segs[1] === shown && (value === null ? c.imgs.includes('No data') : c.imgs.length === 0) && (caption === undefined || c.segs[2] === caption);
+        check(ok, `${name}: ${label} shows ${shown}${caption ? ` / ${caption}` : ''}`, c);
+      };
+      want('Avg spend per day', usd(e.spend / e.activeDays), days);
+      want('Avg credits per day', int(e.credits / e.activeDays), `${days} · credits are Copilot only`);
+      want('Avg calls per day', int(e.calls / e.activeDays), days);
+      want('Avg spend per call', perCall(e.spend / e.calls), `Over ${plural(e.calls, 'call')}`);
+      want('Avg spend per Session', usd(e.spend / e.sessions), `Over ${plural(e.sessions, 'Session')}`);
+      want('Projected month spend', e.projected === null ? null : usd(e.projected), 'This month, ignores the date range');
+      if (none) check(e.projected === null, `${name}: fixture really has no month-to-date data`, e);
+      await cdp.evaluate(`[...document.querySelectorAll('section[aria-label="Usage"] [role="group"]')].find((g) => g.innerText.startsWith('Projected month spend')).scrollIntoView({ block: 'center' })`);
       await cdp.screenshot(path.join(SHOTS_DIR, `${shots[i]}.png`));
-      first = false;
+      rendered += 1;
     }
-    check(!first, 'all four scenarios rendered');
+    check(rendered === scenarios.length, `all ${scenarios.length} scenarios rendered`, { rendered });
+
+    // A Project matching nothing: calls are 0, so the view shows the filtered-empty state instead of
+    // six dashes; the Averages section must not render at all.
+    const nothing = 'verify1636nothing';
+    const sNone = await ipc('summary', { range: 'all', project: nothing }, -new Date().getTimezoneOffset());
+    check(sNone.calls === 0 && sNone.activeDays === 0 && sNone.sessions === 0 && sNone.monthActiveDays === 0, 'summary for a Project matching nothing is all zero', sNone);
+    await ipc('setPrefs', { filters: { range: 'all', project: nothing } });
+    await cdp.evaluate(`location.reload()`).catch(() => {});
+    await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'reloaded' });
+    await cdp.clickByText('Usage');
+    await cdp.waitFor(`document.body.innerText.includes('No usage matches these filters.')`, { timeoutMs: 20_000, label: 'filtered-empty state' });
+    const emptyGroups = await cards();
+    check(!emptyGroups.some((c) => ['Projected month spend', 'Avg spend per day'].includes(c.segs[0] ?? '')), 'filtered-empty state renders no Averages cards', emptyGroups);
+    await cdp.screenshot(path.join(SHOTS_DIR, '6-filtered-empty.png'));
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     failures.push('run crashed');

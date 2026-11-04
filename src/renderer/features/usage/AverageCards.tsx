@@ -1,21 +1,16 @@
 // Issue #1636: per-day, per-call and per-Session averages plus a month projection, under the
-// headline cards. Figures come from `computeAverages`; no jokes here.
+// headline cards. Figures come from `computeAverages`.
 import { ScreenSection } from '@/components/ScreenSection'
 import { StatCard } from '@/components/StatCard'
 import type { UsageSummary } from '../../../shared/ipc-usage'
 import { computeAverages } from './averages'
 import { formatInt, formatUsd, formatUsdPerCall } from './format'
+import { NoData } from './NoData'
 
 const plural = (n: number, noun: string): string => `${formatInt(n)} ${noun}${n === 1 ? '' : 's'}`
 
 function value(n: number | null, format: (v: number) => string) {
-  return n === null ? (
-    <span role="img" aria-label="No data">
-      -
-    </span>
-  ) : (
-    format(n)
-  )
+  return n === null ? <NoData /> : format(n)
 }
 
 export function AverageCards({ summary, loading }: { summary: UsageSummary | null; loading: boolean }) {
@@ -29,7 +24,7 @@ export function AverageCards({ summary, loading }: { summary: UsageSummary | nul
           <StatCard
             label="Avg credits per day"
             value={value(a.creditsPerDay, formatInt)}
-            caption={`${days} · Copilot models only`}
+            caption={`${days} · credits are Copilot only`}
           />
           <StatCard label="Avg calls per day" value={value(a.callsPerDay, formatInt)} caption={days} />
           <StatCard label="Avg spend per call" value={value(a.spendPerCall, formatUsdPerCall)} caption={`Over ${plural(summary.calls, 'call')}`} />

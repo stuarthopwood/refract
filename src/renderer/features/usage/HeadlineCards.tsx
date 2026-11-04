@@ -1,12 +1,13 @@
 // Spec 060 S2-10: the eight headline cards. Spend is USD (the only unit every provider shares);
 // AI credits are Copilot-only, so the credits card says so rather than showing a misleading zero.
 // `stacked` is the narrow-column layout (Session usage panel): four cards in a tight grid and the
-// cache and tool-error rates on one muted line.
+// cache hit rate, tool-error rate and Avg spend per call on one muted line.
 import { StatCard } from '@/components/StatCard'
 import type { UsageSummary } from '../../../shared/ipc-usage'
 import { summaryCaptions } from './captions'
 import { formatCompact, formatInt, formatPercent, formatUsd, formatUsdPerCall } from './format'
-import { dash } from './averages'
+import { spendPerCall } from './averages'
+import { NoData } from './NoData'
 
 export function HeadlineCards({ summary, jokes, layout = 'grid' }: { summary: UsageSummary; jokes: boolean; layout?: 'grid' | 'stacked' }) {
   const captions = summaryCaptions(summary, jokes)
@@ -22,6 +23,7 @@ export function HeadlineCards({ summary, jokes, layout = 'grid' }: { summary: Us
     { label: 'Tool error rate', value: formatPercent(summary.toolErrorRate), caption: captions.toolErrors }
   ]
   if (stacked) {
+    const perCall = spendPerCall(summary)
     return (
       <div className="flex min-w-0 flex-col gap-2">
         <div className="grid grid-cols-[repeat(auto-fit,minmax(6.5rem,1fr))] gap-2">
@@ -30,8 +32,9 @@ export function HeadlineCards({ summary, jokes, layout = 'grid' }: { summary: Us
           ))}
         </div>
         <p className="text-xs text-muted-foreground">
-          Cache hit rate {formatPercent(summary.cacheHitRate)} · Tool error rate {formatPercent(summary.toolErrorRate)} · Avg spend per
-          call {summary.calls > 0 ? formatUsdPerCall(summary.spendUsd / summary.calls) : dash}
+          <span className="whitespace-nowrap">Cache hit rate {formatPercent(summary.cacheHitRate)}</span> ·{' '}
+          <span className="whitespace-nowrap">Tool error rate {formatPercent(summary.toolErrorRate)}</span> ·{' '}
+          <span className="whitespace-nowrap">Avg spend per call {perCall === null ? <NoData /> : formatUsdPerCall(perCall)}</span>
         </p>
       </div>
     )
