@@ -89,3 +89,24 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 ### Final
 
 - [ ] T041 Live verification per `quickstart.md` step 8 with `scripts/verify-tauri.mjs`, a scratch `REFRACT_DATA_DIR` and a seeded version 1 store: percent rows and "≈" hints, overlay `thresholdPercent: 70`/`thresholdTokens: -1`, one-time migration note, NumberField stepping/blocked keys/wheel, new wording and hints, no warnings at defaults and a warning when costlier (including per-model above global); capture screenshots for Stuart's wording approval per US2/AC7-10, SC-007 (missing)
+
+## Phase 3: Convergence
+
+**Scope**: #1581 Optimise token usage, spec 2026-11-04 Clarifications (FR-030..032, US2/AC11, SC-008). One PR; commits in order: defaults spike, backend, UI. No new tests (prototyping rule); update existing tests only where a change breaks them. T041 stays open and also covers #1581 (see T049).
+
+### Defaults spike (first, per FR-031)
+
+- [ ] T042 Review each key in `TOKEN_GUARD_KEYS` (`src/shared/tokenGuard.ts`) against the Usage database (calls per session, read calls per file, tokens per call before and after compaction, subagent calls against `task.softRequestBudget`, advisor calls by review mode) and the OMP settings docs; write one row per key (current, proposed or unchanged, evidence, expected effect) into the PR body per FR-031 (missing)
+- [ ] T043 Apply each proposed default to `default_for` in `src-tauri/src/omp/token_guard/values.rs` and to the mirrored default and description in `TOKEN_GUARD_ROWS` in `src/shared/tokenGuard.ts`; add a one-time migration in `values.rs` for each moved default (modelled on the #1545 `read_limit_migrated` flag in `Stored`, bumping nothing a user-set value would lose) so users on the old default move and user-set values stay; update `values.rs` unit tests only where they pin a moved default; commit per FR-031 (missing)
+
+### Backend: reset every key (after T043)
+
+- [ ] T044 Add `reset_all` in `src-tauri/src/omp/token_guard/values.rs` clearing every override in one locked store write, and register `tokenGuard.resetAll` in `src-tauri/src/ipc/token_guard.rs` returning the same snapshot as `tokenGuard.reset` per FR-030 (missing)
+- [ ] T045 Add `TOKEN_GUARD_RESET_ALL: 'tokenGuard.resetAll'` and the `tokenGuard.resetAll()` signature to `src/shared/ipc.ts`, the request in `src/tauri-bridge/index.ts`, the channel in `scripts/check-parity.mjs` and `specs/021-token-guard/contracts/ipc.md`, and `resetAll(): Promise<void>` in `src/renderer/state/token-guard-store.ts` using the same `apply` path as `reset` per FR-030 (missing)
+
+### UI: Optimise token usage button and dialog (after T045)
+
+- [ ] T046 Add a pure helper in `src/shared/tokenGuard.ts` (or beside `AdvancedSection.tsx`) returning the rows whose value differs from its default (label, current value text, default text, including `modelRoles.advisor` and `compaction.modelThresholds`) so the button state and the dialog list share one source per FR-030, SC-008 (missing)
+- [ ] T047 Add the button to the page header in `src/renderer/features/settings/AdvancedSection.tsx`: shared `Button` (`src/renderer/components/ui/button.tsx`, `variant="default"`), label "Optimise token usage", disabled with the tooltip "Already optimised" when T046 returns no rows; do not add a second primary action to the page per FR-030, US2/AC11 (missing)
+- [ ] T048 Add the confirm dialog on `src/renderer/components/ConfirmAlertDialog.tsx`: title "Optimise token usage?", description "These settings go back to their defaults. New Sessions use them; running Sessions are unchanged.", a real list of "label: from → to" rows, confirm "Optimise", cancel "Cancel", `busy` while `resetAll` runs, error shown in its live region and dialog kept open on failure, focus returned to the button on close; call `useTokenGuardStore.resetAll` only on confirm per FR-032, US2/AC11 (missing)
+- [ ] T049 Update existing tests broken by the change; run `pnpm check:file-size` (keep `AdvancedSection.tsx` and `values.rs` under 600 lines or extract, never raise baselines), `pnpm check:comment-density`, `pnpm check:theme-contrast`; extend T041's live verification with: button enabled after changing a row, dialog lists exactly the changed rows, cancel writes nothing, confirm resets all rows and clears warnings, disabled with "Already optimised" at defaults; screenshots for Stuart per US2/AC11, SC-008 (missing)
