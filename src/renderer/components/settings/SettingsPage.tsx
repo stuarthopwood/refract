@@ -27,7 +27,7 @@ export function SettingsPage({ title, intro, width = 'default', headingRef, clas
   return (
     <div className={cn('flex w-full flex-col', width === 'wide' ? 'max-w-3xl' : 'max-w-2xl', className)}>
       {title && (
-        <div className="mb-1 flex items-start justify-between gap-4">
+        <div className="mb-1 flex items-center justify-between gap-4">
           <h2 ref={ref} tabIndex={-1} className="text-base font-semibold outline-none">
             {title}
           </h2>

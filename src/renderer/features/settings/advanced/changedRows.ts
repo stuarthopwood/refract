@@ -36,7 +36,7 @@ export function describeValue(info: Pick<TokenGuardKeyInfo, 'unit' | 'percentOfW
   return 'none'
 }
 
-/** Every row (and the advisor model) whose value differs from its default, in page order. */
+/** Every row whose value differs from its default; the advisor model row is appended last. */
 export function changedRows(values: TokenGuardValues, defaults: TokenGuardValues, window: number | null): ChangedRow[] {
   const rows: ChangedRow[] = []
   for (const info of TOKEN_GUARD_KEYS) {

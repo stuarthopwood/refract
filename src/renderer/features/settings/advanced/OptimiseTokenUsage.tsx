@@ -19,11 +19,18 @@ export function OptimiseTokenUsage({ rows }: { rows: ChangedRow[] }) {
     setBusy(true)
     setError(null)
     useTokenGuardStore.setState({ error: null })
-    await resetAll()
-    setBusy(false)
-    const failure = useTokenGuardStore.getState().error
-    if (failure) setError(failure)
-    else setOpen(false)
+    try {
+      await resetAll()
+      const failure = useTokenGuardStore.getState().error
+      if (failure) {
+        setError('Could not reset the settings. Try again.')
+        useTokenGuardStore.setState({ error: null })
+      } else setOpen(false)
+    } catch {
+      setError('Could not reset the settings. Try again.')
+    } finally {
+      setBusy(false)
+    }
   }
 
   return (
@@ -33,6 +40,7 @@ export function OptimiseTokenUsage({ rows }: { rows: ChangedRow[] }) {
           <Button
             ref={buttonRef}
             aria-disabled={alreadyOptimised || undefined}
+            aria-describedby={alreadyOptimised ? 'optimise-disabled-reason' : undefined}
             className="aria-disabled:opacity-50"
             onClick={() => {
               if (!alreadyOptimised) setOpen(true)
@@ -41,14 +49,21 @@ export function OptimiseTokenUsage({ rows }: { rows: ChangedRow[] }) {
             Optimise token usage
           </Button>
         </TooltipTrigger>
-        {alreadyOptimised && <TooltipContent>Already optimised</TooltipContent>}
+        {alreadyOptimised && <TooltipContent>Already optimised: every setting is at its default.</TooltipContent>}
       </Tooltip>
+      {alreadyOptimised && (
+        <span id="optimise-disabled-reason" className="sr-only">
+          Already optimised: every token setting is at its default.
+        </span>
+      )}
       <ConfirmAlertDialog
         open={open}
         busy={busy}
         title="Optimise token usage?"
-        description="These settings go back to their defaults. New Sessions use them; running Sessions are unchanged."
-        confirmLabel="Optimise"
+        description="Replaces your values for the settings below with the defaults. New Sessions use them; running Sessions and all other settings are unchanged."
+        confirmLabel={`Reset ${rows.length} ${rows.length === 1 ? 'setting' : 'settings'}`}
+        busyLabel="Resetting…"
+        size="md"
         cancelLabel="Cancel"
         error={error}
         bodyLabel="Settings that will change"
@@ -59,10 +74,19 @@ export function OptimiseTokenUsage({ rows }: { rows: ChangedRow[] }) {
         onConfirm={() => void confirm()}
         onCloseAutoFocus={() => buttonRef.current?.focus()}
       >
-        <ul className="grid gap-1 text-sm">
+        <ul className="grid gap-2 text-sm">
           {rows.map((row) => (
-            <li key={row.key}>
-              {row.label}: {row.from} → {row.to}
+            <li key={row.key} className="grid gap-0.5">
+              <span className="text-muted-foreground">{row.label}</span>
+              <span className="[overflow-wrap:anywhere]">
+                {row.from}
+                <span className="whitespace-nowrap">
+                  {' '}
+                  <span aria-hidden="true">→</span>
+                  <span className="sr-only"> to </span>{' '}
+                </span>
+                {row.to}
+              </span>
             </li>
           ))}
         </ul>
