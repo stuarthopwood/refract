@@ -10,6 +10,7 @@ import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from '@/components/ui/em
 import { useUsageStore } from '@/state/usage-store'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useViewStore } from '@/state'
+import { AverageCards } from './AverageCards'
 import { BudgetCard } from './BudgetCard'
 import { CallLogTable } from './CallLogTable'
 import { FrustrationCard } from './FrustrationCard'
@@ -92,6 +93,7 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
             <ScreenSection title="Overview" loading={!s.loaded || s.summary === null}>
               {s.summary && <HeadlineCards summary={s.summary} jokes={s.jokes} />}
             </ScreenSection>
+            <AverageCards summary={s.summary} loading={!s.loaded || s.summary === null} />
             <div className="grid gap-8 lg:grid-cols-[3fr_2fr]">
               <SpendChart buckets={s.timeseries} bucket={s.bucket} onBucketChange={s.setBucket} loading={pending(s.timeseries.length === 0)} />
               <TokenMixChart rows={s.tokenMix} loading={pending(s.tokenMix.length === 0)} />

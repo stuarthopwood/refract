@@ -8,6 +8,7 @@ pub mod paths;
 pub mod project_label;
 pub mod queries;
 mod queries_session;
+pub mod queries_summary;
 pub mod queries_tables;
 pub mod rollup;
 pub mod scan;

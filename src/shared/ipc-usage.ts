@@ -52,6 +52,13 @@ export interface UsageSummary {
   avgContextPerCall: number
   toolCalls: number
   toolErrorRate: number
+  /** Local days with a call in the filtered window. */
+  activeDays: number
+  /** Distinct session files with a call in the filtered window. */
+  sessions: number
+  /** Spend since the start of the local month; ignores the date range, honours the other filters. */
+  monthToDateUsd: number
+  monthActiveDays: number
 }
 
 export interface UsageTimeBucket {

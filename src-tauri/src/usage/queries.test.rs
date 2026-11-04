@@ -1,6 +1,7 @@
 // Filter SQL must stay parameterised; hostile values are bound, never spliced.
 
 use super::*;
+use crate::usage::queries_summary::summary;
 use crate::usage::queries_tables::{calls, Page, Sort};
 use crate::usage::rollup::{record_message, MessageRow};
 use crate::usage::schema;
@@ -138,6 +139,19 @@ fn summary_and_calls_read_what_was_recorded() {
     let s = summary(&conn, &f, &ctx()).unwrap();
     assert_eq!((s.calls, s.total_tokens), (1, 100));
     assert!((s.spend_usd - 2.0).abs() < 1e-9 && (s.cache_hit_rate - 0.9).abs() < 1e-9);
+    let by_project = Filters {
+        project: Some("proj".into()),
+        ..filters("today")
+    };
+    let p = summary(&conn, &by_project, &ctx()).unwrap();
+    assert_eq!((p.active_days, p.sessions, p.month_active_days), (1, 1, 1));
+    assert!((p.month_to_date_usd - 3.0).abs() < 1e-9);
+    let other = Filters {
+        project: Some("elsewhere".into()),
+        ..filters("30d")
+    };
+    let o = summary(&conn, &other, &ctx()).unwrap();
+    assert_eq!((o.active_days, o.sessions, o.month_active_days), (0, 0, 0));
 
     let page = calls(
         &conn,

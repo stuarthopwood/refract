@@ -5,7 +5,8 @@
 import { StatCard } from '@/components/StatCard'
 import type { UsageSummary } from '../../../shared/ipc-usage'
 import { summaryCaptions } from './captions'
-import { formatCompact, formatInt, formatPercent, formatUsd } from './format'
+import { formatCompact, formatInt, formatPercent, formatUsd, formatUsdPerCall } from './format'
+import { dash } from './averages'
 
 export function HeadlineCards({ summary, jokes, layout = 'grid' }: { summary: UsageSummary; jokes: boolean; layout?: 'grid' | 'stacked' }) {
   const captions = summaryCaptions(summary, jokes)
@@ -29,7 +30,8 @@ export function HeadlineCards({ summary, jokes, layout = 'grid' }: { summary: Us
           ))}
         </div>
         <p className="text-xs text-muted-foreground">
-          Cache hit rate {formatPercent(summary.cacheHitRate)} · Tool error rate {formatPercent(summary.toolErrorRate)}
+          Cache hit rate {formatPercent(summary.cacheHitRate)} · Tool error rate {formatPercent(summary.toolErrorRate)} · Avg spend per
+          call {summary.calls > 0 ? formatUsdPerCall(summary.spendUsd / summary.calls) : dash}
         </p>
       </div>
     )

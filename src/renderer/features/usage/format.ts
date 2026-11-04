@@ -2,10 +2,13 @@
 // time zone for day labels is the machine's, matching the `tzOffsetMinutes` sent with each query.
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
 const usdSmall = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 4 })
+const usdPerCall = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 3, maximumFractionDigits: 3 })
 const int = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 })
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
 export const formatUsd = (value: number): string => (value > 0 && value < 0.01 ? usdSmall.format(value) : usd.format(value))
+/** Spend per call: three decimals under $1 so `$0.042` stays readable, else `formatUsd`. */
+export const formatUsdPerCall = (value: number): string => (value > 0 && value < 1 ? usdPerCall.format(value) : formatUsd(value))
 export const formatInt = (value: number): string => int.format(Math.round(value))
 export const formatCompact = (value: number): string => compact.format(value)
 export const formatPercent = (rate: number): string => `${(rate * 100).toFixed(rate > 0 && rate < 0.1 ? 1 : 0)}%`

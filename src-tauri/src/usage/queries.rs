@@ -351,85 +351,23 @@ impl Filters {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Summary {
-    pub spend_usd: f64,
-    pub credits: f64,
-    pub calls: i64,
-    pub total_tokens: i64,
-    pub cache_hit_rate: f64,
-    pub avg_context_per_call: f64,
-    pub tool_calls: i64,
-    pub tool_error_rate: f64,
+/// Day buckets in a half-hour zone need exact timestamps, not hour rollups.
+pub(super) fn exact_day_rows(ctx: &QueryCtx) -> bool {
+    ctx.offset_ms() % HOUR_MS != 0
 }
 
-fn ratio(n: f64, d: f64) -> f64 {
+/// SQL expression for the local-day bucket start of `hour`; shared so chart and averages agree.
+pub(super) fn day_bucket(w: &mut Where, ctx: &QueryCtx) -> String {
+    let off = w.bind(Value::Integer(ctx.offset_ms()));
+    format!("((hour + {off}) / 86400000) * 86400000 - {off}")
+}
+
+pub(super) fn ratio(n: f64, d: f64) -> f64 {
     if d > 0.0 {
         n / d
     } else {
         0.0
     }
-}
-
-pub fn summary(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<Summary> {
-    let mut w = f.build_dims(&MESSAGE_ROLLUP, ctx)?;
-    let src = f.rollup_source(&mut w, Rollup::Messages, ctx, false)?;
-    let sql = format!(
-        "SELECT coalesce(sum(calls),0), coalesce(sum(input),0), coalesce(sum(cache_read),0), \
-         coalesce(sum(cache_write),0), coalesce(sum(total_tokens),0), coalesce(sum(cost_total),0), \
-         coalesce(sum(credits),0) FROM {src}{}",
-        w.sql()
-    );
-    let v: [f64; 7] = conn.query_row(&sql, rusqlite::params_from_iter(w.params()), |r| {
-        let mut out = [0.0; 7];
-        for (i, slot) in out.iter_mut().enumerate() {
-            *slot = r.get(i)?;
-        }
-        Ok(out)
-    })?;
-    let [calls, input, cache_read, cache_write, tokens, usd, credits] = v;
-    let (tool_calls, tool_errors) = tool_totals(conn, f, ctx)?;
-    let context = input + cache_read + cache_write;
-    Ok(Summary {
-        spend_usd: usd,
-        credits,
-        calls: calls as i64,
-        total_tokens: tokens as i64,
-        cache_hit_rate: ratio(cache_read, context),
-        avg_context_per_call: ratio(context, calls),
-        tool_calls,
-        tool_error_rate: ratio(tool_errors as f64, tool_calls as f64),
-    })
-}
-
-/// `(calls, errors)` over the filtered tool calls. Errors count only calls whose result arrived.
-fn tool_totals(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<(i64, i64)> {
-    let (sql, w) = if f.needs_tool_calls() {
-        let w = f.build(&TOOL_CALLS, ctx)?;
-        (
-            format!(
-                "SELECT count(*), coalesce(sum(coalesce(is_error,0)),0) FROM tool_calls{}",
-                w.sql()
-            ),
-            w,
-        )
-    } else {
-        let mut w = f.build_dims(&TOOL_ROLLUP, ctx)?;
-        let src = f.rollup_source(&mut w, Rollup::Tools, ctx, false)?;
-        (
-            format!(
-                "SELECT coalesce(sum(calls),0), coalesce(sum(errors),0) FROM {src}{}",
-                w.sql()
-            ),
-            w,
-        )
-    };
-    Ok(
-        conn.query_row(&sql, rusqlite::params_from_iter(w.params()), |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        })?,
-    )
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -455,14 +393,12 @@ pub fn timeseries(
     ctx: &QueryCtx,
 ) -> QueryResult<Vec<TimeBucket>> {
     let mut w = f.build_dims(&MESSAGE_ROLLUP, ctx)?;
-    // Day buckets in a half-hour zone need exact timestamps.
-    let exact = !hour_buckets && ctx.offset_ms() % HOUR_MS != 0;
+    let exact = !hour_buckets && exact_day_rows(ctx);
     let src = f.rollup_source(&mut w, Rollup::Messages, ctx, exact)?;
     let bucket = if hour_buckets {
         "hour".to_string()
     } else {
-        let off = w.bind(Value::Integer(ctx.offset_ms()));
-        format!("((hour + {off}) / 86400000) * 86400000 - {off}")
+        day_bucket(&mut w, ctx)
     };
     let sql = format!(
         "SELECT {bucket} AS b, model, sum(cost_total), sum(credits) FROM {src}{} \

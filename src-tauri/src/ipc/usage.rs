@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, HandlerResult, IpcError};
 use crate::usage::project_label::{normalise_path, ProjectIndex};
 use crate::usage::queries::{self, Filters, QueryCtx, QueryError, MAX_TZ_MINUTES};
+use crate::usage::queries_summary;
 use crate::usage::queries_tables::{self, BreakdownBy, Page, Sort, MAX_PAGE_SIZE};
 use crate::usage::{budget, UsageService, UsageStatus};
 
@@ -156,7 +157,7 @@ fn usage_summary(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let filters = parse_filters(args.first())?;
         let ctx = query_ctx(args.get(1))?;
-        to_json(&read(move |c| queries::summary(c, &filters, &ctx)).await?)
+        to_json(&read(move |c| queries_summary::summary(c, &filters, &ctx)).await?)
     })
 }
 

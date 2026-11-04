@@ -21,7 +21,7 @@ export interface UsageStatus { running: boolean; sessionsSeen: number; sessionsD
 | `usage.start` | none | `UsageStatus`; starts backfill and the five-minute rescan; idempotent |
 | `usage.stop` | none | `null`; ends the rescan (the view closed); a running pass finishes |
 | `usage.status` | none | `UsageStatus` |
-| `usage.summary` | `filters` | spend USD, credits, calls, total tokens, cache hit rate, avg context per call, tool calls, tool error rate |
+| `usage.summary` | `filters` | spend USD, credits, calls, total tokens, cache hit rate, avg context per call, tool calls, tool error rate, active days, sessions (distinct session files), month-to-date USD and month active days (month fields ignore the date range) |
 | `usage.timeseries` | `filters, bucket: 'day'\|'hour', tzOffsetMinutes` | `{ bucketStart, byModel: {model, usd, credits}[] }[]` |
 | `usage.tokenMix` | `filters` | `{ type: 'input'\|'cacheWrite'\|'cacheRead'\|'output', tokens, usd, costShare }[]` |
 | `usage.breakdown` | `filters, by: 'project'\|'model'\|'tool'` | rows: label (and reasoning for model), calls, tokens, usd, credits; tools add errors, result chars, cost share |
