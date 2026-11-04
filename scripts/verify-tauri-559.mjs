@@ -140,7 +140,7 @@ async function addRepositoryDiag(cdp, dir, evidenceDir, log, label) {
     await addRepository(cdp, dir);
   } catch (err) {
     const diag = await cdp.evaluate(
-      `(() => ({ dialogPresent: !!document.querySelector('[role="dialog"]'), dialogInputValue: document.querySelector('[role="dialog"] input')?.value ?? null, dialogButtons: Array.from(document.querySelectorAll('[role="dialog"] button')).map((b) => b.textContent.trim()), footerAddButtons: Array.from(document.querySelectorAll('button')).filter((b) => b.textContent.trim() === 'Add repository').length, activeElement: document.activeElement?.tagName }))()`
+      `(() => ({ dialogPresent: !!document.querySelector('[role="dialog"]'), dialogInputValue: document.querySelector('[role="dialog"] input')?.value ?? null, dialogButtons: Array.from(document.querySelectorAll('[role="dialog"] button')).map((b) => b.textContent.trim()), footerAddButtons: Array.from(document.querySelectorAll('button')).filter((b) => b.textContent.trim() === 'Add project').length, activeElement: document.activeElement?.tagName }))()`
     );
     log(`verify-tauri-559: addRepository("${label}") FAILED -- diagnostics: ${JSON.stringify(diag, null, 2)}`);
     await cdp.screenshot(path.join(evidenceDir, `99-diag-add-repository-${label}-failure.png`));
@@ -259,11 +259,11 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await cdp.waitFor(groupTriggerFinder(repoAName) + ' !== undefined', { timeoutMs: 10_000, label: 'Project A back after the in-field Clear button' });
   log('STEP PASS: the in-field Clear (x) button restores the full list.');
 
-  // The panel is open here (typeSearch opened it), so the field and its Clear button sit after the toolbar in Tab order.
-  await cdp.evaluate(`document.querySelector('[aria-label="Pull requests"]').focus()`);
+  // The panel is open here (typeSearch opened it), so the field and its Clear button sit after the toolbar in Tab order; the funnel follows the last nav item (Home, Pull requests, Issues, Usage).
+  await cdp.evaluate(`document.querySelector('button[aria-label="Usage"]').focus()`);
   await pressTab(cdp);
   let active = await getActiveElementAccessibleName(cdp);
-  assert(/^Filter sessions/.test(active.name ?? ''), `Tab after Pull requests must land on the filter funnel (got ${JSON.stringify(active)})`);
+  assert(/^Filter sessions/.test(active.name ?? ''), `Tab after Usage must land on the filter funnel (got ${JSON.stringify(active)})`);
   active = await pressTabSkippingShowHidden(cdp);
   assert(active.name === 'Collapse all groups', `Tab after the funnel must land on Collapse all groups (got ${JSON.stringify(active)})`);
   await pressTab(cdp);
@@ -277,7 +277,7 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoAName, repoB
   await pressTab(cdp);
   active = await getActiveElementAccessibleName(cdp);
   assert(active.name === 'Clear filter', `Tab from the search field (non-empty) must land on Clear filter (got ${JSON.stringify(active)})`);
-  log('STEP PASS: Tab order confirmed via real accessible names -- Pull requests -> funnel -> Collapse all groups -> Expand all groups -> search field -> Clear filter.');
+  log('STEP PASS: Tab order confirmed via real accessible names -- Usage -> funnel -> Collapse all groups -> Expand all groups -> search field -> Clear filter.');
   await pressKey(cdp, 9, 'Tab', 'Tab', 8); // Shift+Tab (modifiers bitmask: Shift = 8)
   active = await getActiveElementAccessibleName(cdp);
   assert(active.role === 'searchbox' || /Filter sessions by/.test(active.name ?? ''), `Shift+Tab from Clear filter must land back on the search field (got ${JSON.stringify(active)})`);

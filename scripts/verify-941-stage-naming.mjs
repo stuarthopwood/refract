@@ -131,11 +131,10 @@ async function main() {
     );
     findings.push('Readiness screen green (fake omp, stages-941 scenario).');
 
-    await clickScrolled(cdp, `document.querySelector('[data-readiness-primary]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+    await cdp.openLocalFolderDialog();
     await clickScrolled(cdp, `document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await clickByTextScrolled(cdp, 'Add repository', { inDialog: true });
+    await clickByTextScrolled(cdp, 'Add project', { inDialog: true });
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
       { timeoutMs: 30_000, label: 'Scratch repository added' }

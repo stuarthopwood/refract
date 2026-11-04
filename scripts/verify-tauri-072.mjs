@@ -47,13 +47,22 @@ async function setTime(cdp, value) {
   })()`);
 }
 
+/** Clicks the label field and waits until it actually holds focus; the form's own focus handling can land after the click, and text typed before that is dropped. */
+async function focusLabelInput(cdp) {
+  const input = `${DIALOG}.querySelector('input:not([data-slot="time-field"] input)')`;
+  await cdp.click(input);
+  await cdp.waitFor(`document.activeElement === (${input})`, { timeoutMs: 5_000, label: 'alarm label input focused' });
+}
+
 async function addAlarm(cdp, value, label) {
   if (!(await cdp.evaluate(`!!${DIALOG}`))) await cdp.click(clockButton);
   await cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add alarm')`);
   await cdp.waitFor(`!!${DIALOG}.querySelector('[data-slot="time-field"] input')`, { timeoutMs: 10_000, label: 'alarm form open' });
   await setTime(cdp, value);
-  await cdp.click(`${DIALOG}.querySelector('input:not([data-slot="time-field"] input)')`);
-  if (label) await cdp.send('Input.insertText', { text: label });
+  if (label) {
+    await focusLabelInput(cdp);
+    await cdp.send('Input.insertText', { text: label });
+  }
 }
 const saveAlarm = (cdp) => cdp.click(`Array.from(${DIALOG}.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Save')`);
 const rowLabels = (cdp) => cdp.evaluate(`Array.from(${DIALOG}.querySelectorAll('button[aria-label^="Edit alarm"]')).map((el) => el.getAttribute('aria-label'))`);
@@ -143,7 +152,7 @@ async function runChecks(cdp, { repoDir }) {
   // Edit the label.
   await cdp.click(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')`);
   await cdp.waitFor(`!!${DIALOG}.querySelector('[data-slot="time-field"] input')`, { timeoutMs: 10_000, label: 'edit form open' });
-  await cdp.click(`${DIALOG}.querySelector('input:not([data-slot="time-field"] input)')`);
+  await focusLabelInput(cdp);
   await cdp.send('Input.insertText', { text: ' edited' });
   await saveAlarm(cdp);
   await cdp.waitFor(`${DIALOG}.querySelector('button[aria-label^="Edit alarm"]')?.getAttribute('aria-label').includes('edited')`, { timeoutMs: 10_000, label: 'edit saved' });

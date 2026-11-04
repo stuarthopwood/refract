@@ -98,9 +98,7 @@ async function main() {
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 60_000, label: 'Readiness green (fake omp)' }
     );
-    await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-    await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((i) => i.textContent.trim() === 'Local folder…')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog open' });
+    await cdp.openLocalFolderDialog();
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });

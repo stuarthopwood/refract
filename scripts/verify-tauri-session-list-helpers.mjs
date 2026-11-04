@@ -180,11 +180,23 @@ export async function clickMenuItem(cdp, text) {
   await cdp.click(finder);
 }
 
+/** Hovers the row owning `triggerFinder`, waits for its hover-revealed "..." to show, then clicks it. */
+async function hoverAndClickRowTrigger(cdp, triggerFinder) {
+  const rowRect = await cdp.waitFor(
+    `(() => { const el = ${triggerFinder}?.closest('li'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`,
+    { timeoutMs: 15_000, label: `row to hover: ${triggerFinder}` }
+  );
+  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rowRect.x, y: rowRect.y });
+  await cdp.waitFor(
+    `(() => { const el = ${triggerFinder}; return !!el && parseFloat(getComputedStyle(el).opacity) > 0.5 && el.getAttribute('aria-expanded') === 'false'; })()`,
+    { timeoutMs: 10_000, label: `row actions trigger revealed and closed: ${triggerFinder}` }
+  );
+  await cdp.click(triggerFinder);
+}
+
 /** Archives the first (most recent) Session row in the Repository group's list via its row menu. */
 export async function archiveFirstRowIn(cdp, repoName) {
-  await cdp.click(
-    `Array.from(document.querySelectorAll('[data-repository-id]')).find((el) => el.textContent.includes(${JSON.stringify(repoName)}))?.querySelector('li button[aria-label^="More actions for "]')`
-  );
+  await hoverAndClickRowTrigger(cdp, firstRowActionsFinder(repoName));
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`, { timeoutMs: 10_000, label: 'Row menu open with Archive item' });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`);
 }
@@ -195,23 +207,18 @@ export async function restoreOnlyArchivedRow(cdp) {
     await cdp.click(ARCHIVED_TRIGGER_FINDER);
     await cdp.waitFor(ARCHIVED_TRIGGER_FINDER + `.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'Archived opened to reach the restore action' });
   }
-  await cdp.click(`document.querySelector('[data-archived-group]')?.querySelector('li button[aria-label^="More actions for "]')`);
+  await hoverAndClickRowTrigger(cdp, `document.querySelector('[data-archived-group]')?.querySelector('li button[aria-label^="More actions for "]')`);
   await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Restore')`, { timeoutMs: 10_000, label: 'Archived row menu open with Restore item' });
   await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Restore')`);
 }
 
 /** Adds a scratch repository via the Readiness screen's primary button (empty profile) or the list footer's "Add project" menu (Local folder…). */
 export async function addRepository(cdp, dir) {
-  await cdp.click(
-    `document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project')`
-  );
-  await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Local folder…')`, { timeoutMs: 10_000, label: 'Add project menu open' });
-  await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Local folder…')`);
-  await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+  await cdp.openLocalFolderDialog();
   await cdp.click(`document.querySelector('[role="dialog"] input')`);
   await cdp.send('Input.insertText', { text: dir });
   await cdp.clickByText('Add project', { inDialog: true });
-  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'Add repository dialog closed' });
+  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'Add project dialog closed' });
 }
 
 /** Removes an empty Repository via its header menu and the confirmation dialog; the prune check proves its id leaves `settings.json`, not just the renderer. */

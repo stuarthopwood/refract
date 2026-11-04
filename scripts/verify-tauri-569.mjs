@@ -163,7 +163,7 @@ async function main() {
         const cdp = await connectCdp(port, launched.targetPid, `verify-tauri-569 (${label})`);
         assertExeMatchesProcess(launched.targetPid, launchExePath, exeHash);
         await cdp.waitFor(
-          `!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository' && !el.disabled)`,
+          `!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project' && !el.disabled)`,
           { timeoutMs: 45_000, label: `app ready (${label})` }
         );
         let tornDown = false;

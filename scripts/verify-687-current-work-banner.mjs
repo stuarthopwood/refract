@@ -99,11 +99,10 @@ async function main() {
 
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green (fake omp)' });
-    await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+    await cdp.openLocalFolderDialog();
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(`!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`, { timeoutMs: 30_000, label: 'Scratch repository added' });
     await cdp.clickByLabel('New session from a branch in ', { prefix: true });
     await cdp.waitFor(`(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`, { timeoutMs: 15_000, label: 'New session dialog open' });
@@ -128,7 +127,10 @@ async function main() {
     await expectBanner(cdp, /Running a command/, 'A call with no intent falls back to a plain verb, never the raw tool name');
     assertTrue(!/bash/i.test(await cdp.evaluate(BANNER_TEXT)), 'The raw tool name "bash" is never shown');
 
-    await expectBanner(cdp, /Retrying · attempt 2 of 3/, 'Banner shows the retry variant');
+    // RetryLine owns the retry text; the banner deliberately never shows it.
+    await cdp.waitFor(`/Retrying\\s*Attempt 2 of 3/.test(document.querySelector('[data-testid="retry-line"]')?.textContent ?? '')`, { timeoutMs: 20_000, label: 'Retry line shows attempt 2 of 3' });
+    assertTrue(!/Retrying/.test((await cdp.evaluate(BANNER_TEXT)) ?? ''), 'The banner leaves the retry text to the Retry line');
+    console.log(`${LOG}: PASS Retry line shows attempt 2 of 3`);
     await shot(cdp, 'retrying.png');
     await expectBanner(cdp, /Compacting context…/, 'Banner shows the compaction variant');
     await shot(cdp, 'compacting.png');
