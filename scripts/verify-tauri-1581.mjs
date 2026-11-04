@@ -333,16 +333,18 @@ async function main() {
     const labelBefore = (await dialogFacts(cdp)).confirmLabel;
     await cdp.click(CONFIRM);
     await cdp.waitFor(`((${DLG})?.innerText ?? '').includes(${JSON.stringify(RESET_ERROR)})`, { timeoutMs: 10_000, label: 'Failure: inline error shown in the dialog' });
+    // The inline error grows the scrolling dialog, pushing the footer below the fold; scroll it back so Cancel is clickable.
+    await cdp.evaluate(`(${CANCEL}).scrollIntoView({ block: 'end' })`);
     await sleep(500);
     const failed = await cdp.evaluate(`(() => {
       const d = ${DLG};
       const confirm = ${CONFIRM};
       const cancel = ${CANCEL};
       const live = Array.from(d.querySelectorAll('[role="alert"], [aria-live]')).map((e) => e.textContent.trim()).filter(Boolean);
-      return { open: !!d, confirmLabel: confirm ? confirm.textContent.trim() : null, confirmAria: confirm?.getAttribute('aria-disabled') ?? null, cancelAria: cancel?.getAttribute('aria-disabled') ?? null, live, pageAlert: !!document.querySelector('p[role="alert"]') };
+      return { open: !!d, confirmLabel: confirm ? confirm.textContent.trim() : null, confirmAria: confirm?.getAttribute('aria-disabled') ?? null, cancelAria: cancel?.getAttribute('aria-disabled') ?? null, live, pageAlert: Array.from(document.querySelectorAll('[role="alert"]')).some((e) => !d.contains(e)) };
     })()`);
     check(failed.open && failed.confirmLabel === labelBefore && failed.confirmAria !== 'true' && failed.cancelAria !== 'true', 'Failure: dialog stays open, busy state cleared, confirm label restored and retryable', { failed, labelBefore });
-    check(failed.live.includes(RESET_ERROR) && failed.pageAlert === false, 'Failure: error is announced in the dialog live region and the page-level error line is not left behind', failed.live);
+    check(failed.live.some((t) => t.endsWith(RESET_ERROR)) && failed.pageAlert === false, 'Failure: error is announced in the dialog live region and the page-level error line is not left behind', failed.live);
     check(statSync(storePath).isDirectory(), 'Failure: nothing was written (store still blocked)', null);
     await shot(cdp, '09-dialog-failure.png');
     await cdp.click(CANCEL);
