@@ -1085,3 +1085,5 @@ Also filed 2026-11-04 (Stuart, scope decided: all three parts): **#1672** (`p0`,
 Also filed 2026-11-04 (Stuart, grilled: start in place): **#1678** (`p1`, `design`), Session row menu: a **Start agent** item for stopped, unarchived Sessions in the slot **Stop agent** uses, starting the agent without changing the shown Session.
 
 Also filed 2026-11-04 (Stuart, Usage bug): **#1680** (`p1`, `bug`), the Usage view shows the no-data state before the first ingest scan has run; show a loading state until a scan finishes.
+
+Also filed 2026-11-04 (Stuart, chat polish): **#1682** (`p0`, `design`), mute inline code chips (tool target pills) in chat messages only: lower background opacity and a more muted text colour, in every theme preset.
