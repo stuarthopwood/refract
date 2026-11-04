@@ -1,9 +1,10 @@
 import { useRef } from 'react'
-import { CircleCheckIcon, CircleDotIcon, CircleHelpIcon } from 'lucide-react'
+import { CircleDotIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { HeaderActionButton } from '@/components/HeaderActionButton'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { usePinnedPanelsStore } from '@/state'
+import { IssueIcon } from './IssueIcon'
 import { usePinFromMenu } from './usePinFromMenu'
 import type { LinkedIssue } from '../../../../shared/model'
 
@@ -12,11 +13,6 @@ interface LinkedIssueControlsProps {
   repositoryId: string
   /** Ordered: the first entry is the badge; `HeaderPrControls` puts the Session's origin issue first. */
   issues: LinkedIssue[]
-}
-
-function IssueIcon({ issue }: { issue: LinkedIssue }) {
-  const Icon = issue.state === 'closed' ? CircleCheckIcon : issue.state === 'unknown' ? CircleHelpIcon : CircleDotIcon
-  return <Icon aria-hidden className="size-4" />
 }
 
 /** The header's linked-issue badge, "+N" count and View issue button (a menu when there are several). */
@@ -33,7 +29,7 @@ export function LinkedIssueControls({ sessionId, repositoryId, issues }: LinkedI
   return (
     <div className="flex shrink-0 items-center gap-1">
       <Badge variant="outline" role="img" title={first.title} aria-label={badgeText}>
-        <IssueIcon issue={first} />
+        <IssueIcon state={first.state} />
         <span aria-hidden>#{first.number}</span>
         {extra > 0 && <span aria-hidden>+{extra}</span>}
       </Badge>
@@ -52,7 +48,7 @@ export function LinkedIssueControls({ sessionId, repositoryId, issues }: LinkedI
                   pin(issue)
                 }}
               >
-                <IssueIcon issue={issue} />
+                <IssueIcon state={issue.state} />
                 <span className="sr-only">{issue.state}</span>
                 <span className="max-w-64 truncate">#{issue.number} {issue.title}</span>
               </DropdownMenuItem>

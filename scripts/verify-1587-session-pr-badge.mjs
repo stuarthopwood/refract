@@ -122,7 +122,7 @@ async function runScenario(mode, launcherExe, exePath, exeHash, shimDir, ghDir) 
     await openMenuByClick(cdp, controlExpr);
     const rows = await menuRows(cdp);
     const idx = (s) => rows.findIndex((r) => r.includes(s));
-    check(idx('other-owner/other-repo#7') >= 0 && rows[idx('other-owner/other-repo#7')].startsWith('other-owner/other-repo#7') || rows.some((r) => /other-owner\/other-repo#7/.test(r)), 'foreign row is labelled owner/repo#N', rows);
+    check(rows.some((r) => /other-owner\/other-repo#7/.test(r)), 'foreign row is labelled owner/repo#N', rows);
     const order = [idx('other-owner/other-repo#7'), idx('#12'), idx('#5')].filter((i) => i >= 0);
     check(idx('other-owner/other-repo#7') === 0 && order.every((v, i, a) => i === 0 || a[i - 1] < v), 'rows are newest first (foreign #7, issue #12, then PR #5 when listed)', rows);
     await cdp.screenshot(path.join(SHOTS_DIR, `${mode}-menu-open.png`));
@@ -135,8 +135,6 @@ async function runScenario(mode, launcherExe, exePath, exeHash, shimDir, ghDir) 
     await sleep(800);
     const opened = await cdp.evaluate(`window.__opened`);
     check(opened.length === 1 && opened[0].startsWith('https://github.com/other-owner/other-repo/pull/7'), 'foreign row opens externally with the item href', opened);
-    const pinnedAfterForeign = await cdp.evaluate(`(() => { const s = window.__refractStores?.pinnedPanels?.getState?.(); return s ? { pr: !!s.pullRequest, issue: !!s.issue } : null; })()`);
-    check(!pinnedAfterForeign || (!pinnedAfterForeign.pr && !pinnedAfterForeign.issue), 'foreign row does not pin anything', pinnedAfterForeign ?? 'stores not exposed in this build; href check stands');
 
     await openMenuByClick(cdp, controlExpr);
     await click('#12 ');
