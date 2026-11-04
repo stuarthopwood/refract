@@ -141,10 +141,23 @@ async function main() {
     await cdp.evaluate(`location.reload()`).catch(() => {});
     await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'reloaded' });
     await cdp.clickByText('Usage');
-    await cdp.waitFor(`document.body.innerText.includes('${PROJECT}')`, { timeoutMs: 30_000, label: 'Usage view shows the Project' });
+    // The sidebar also shows the Project name, so wait for a seeded row that only the loaded view renders.
+    await cdp.waitFor(`document.body.innerText.includes('Dup') && !/Loading/.test(document.body.innerText)`, { timeoutMs: 30_000, label: 'Usage view loaded' });
     const text = await cdp.evaluate(`document.body.innerText`);
     check(text.includes('Other') && text.includes('Dup') && !text.includes('brave-swan'), 'rendered Usage view shows Other and the merged folder, not the worktree path');
-    await cdp.screenshot(path.join(SHOTS_DIR, '1-usage-by-project.png'));
+    // One screenshot per Usage section heading, scrolled into view.
+    const headings = await cdp.evaluate(`[...document.querySelectorAll('h2,h3')].map((h) => h.textContent.trim())`);
+    console.log(`${LOG}: sections ${JSON.stringify(headings)}`);
+    for (let i = 0; i < headings.length; i++) {
+      await cdp.evaluate(`[...document.querySelectorAll('h2,h3')][${i}].scrollIntoView({ block: 'start' })`);
+      await sleep(300);
+      await cdp.screenshot(path.join(SHOTS_DIR, `${i + 1}-${headings[i].toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`));
+    }
+    check(headings.length >= 5, 'Usage sections captured', headings);
+    for (const name of ['By project', 'Top ten sessions', 'Call log']) {
+      const sectionText = await cdp.evaluate(`(() => { const h = [...document.querySelectorAll('h2,h3')].find((x) => x.textContent.startsWith(${JSON.stringify(name)})); return h ? h.parentElement.parentElement.innerText : ''; })()`);
+      check(sectionText.includes(PROJECT) && !sectionText.includes('brave-swan'), `${name} shows the worktree rows under the Project`, sectionText.slice(0, 300));
+    }
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     failures.push('run crashed');
