@@ -11,4 +11,11 @@ pub enum ThemeId {
     // Additive (#551).
     NordicFrost,
     CyberAmber,
+    // Additive (#1590).
+    Light,
+    LightWarmPaper,
+    LightHighContrast,
+    Lagoon,
+    Amethyst,
+    Hearth,
 }

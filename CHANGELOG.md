@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- feat(themes): six new themes, the first light ones: Light, Light (warm paper), Light (high contrast), Lagoon, Amethyst and Hearth (#1590, https://github.com/stuarthopwood/refract/pull/1653)
+
 ## v0.26.0 (2026-11-03)
 
 ### Features

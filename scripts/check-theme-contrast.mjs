@@ -244,7 +244,7 @@ for (const [themeId, props] of Object.entries(themes)) {
     const lum = relativeLuminance(linear)
     if (prevName !== undefined) {
       checkedCount++
-      const pass = lum >= prevLum - 1e-9
+      const pass = /^light/.test(themeId) ? lum <= prevLum + 1e-9 : lum >= prevLum - 1e-9
       if (!pass) failCount++
       rows.push({
         themeId,
@@ -255,7 +255,7 @@ for (const [themeId, props] of Object.entries(themes)) {
         pass,
         fgHex: linearToHex(linear),
         bgHex: linearToHex(resolvedLinear(props[prevName], props[prevName])),
-        note: pass ? undefined : `'--${name}' is darker than '--${prevName}' -- the surface ladder must not get darker`,
+        note: pass ? undefined : `'--${name}' is darker than '--${prevName}' -- the surface ladder must keep its direction (lighter for dark presets, darker for light)`,
       })
     }
     prevName = name

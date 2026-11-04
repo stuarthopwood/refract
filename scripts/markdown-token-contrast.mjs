@@ -1,8 +1,8 @@
 import { contrastRatio, linearToHex, relativeLuminance, srgbGammaEncode } from './contrast-math.mjs'
+import { HIGH_CONTRAST_THEMES, STANDARD_THEMES } from './theme-groups.mjs'
 // #456: contrast pairs for the Markdown, syntax and code-block tokens (globals.css), plus a drift
 // check that each preset's `--mermaid-accent` matches its --accent-text.
 // Same shape as PAIRS in theme-contrast-pairs.mjs: { fg, bg, min, onlyThemes? }.
-const NON_HC = ['dark', 'obsidian', 'nordic-frost', 'cyber-amber']
 const SYNTAX = ['syntax-keyword', 'syntax-function', 'syntax-string', 'syntax-constant', 'syntax-parameter', 'syntax-punctuation', 'syntax-comment', 'code-block-fg']
 
 export const MARKDOWN_PAIRS = [
@@ -20,12 +20,12 @@ export const MARKDOWN_PAIRS = [
   { fg: 'md-table-header-fg', bg: 'muted', min: 4.5 },
   { fg: 'md-table-header-fg', bg: 'card', min: 4.5 },
   { fg: 'md-table-header-fg', bg: 'background', min: 4.5 },
-  // Dark (high contrast): Markdown elements at 7:1.
-  ...['md-heading', 'md-marker', 'md-code-label', 'md-code-fg', 'md-table-header-fg'].map((fg) => ({ fg, bg: 'card', min: 7, onlyThemes: ['dark-high-contrast'] })),
-  ...SYNTAX.map((fg) => ({ fg, bg: 'code-block-bg', min: 4.5, onlyThemes: NON_HC })),
-  ...SYNTAX.map((fg) => ({ fg, bg: 'card', min: 4.5, onlyThemes: NON_HC })),
-  ...SYNTAX.map((fg) => ({ fg, bg: 'code-block-bg', min: 7, onlyThemes: ['dark-high-contrast'] })),
-  ...SYNTAX.map((fg) => ({ fg, bg: 'card', min: 7, onlyThemes: ['dark-high-contrast'] })),
+  // High-contrast presets: Markdown elements at 7:1.
+  ...['md-heading', 'md-marker', 'md-code-label', 'md-code-fg', 'md-table-header-fg'].map((fg) => ({ fg, bg: 'card', min: 7, onlyThemes: HIGH_CONTRAST_THEMES })),
+  ...SYNTAX.map((fg) => ({ fg, bg: 'code-block-bg', min: 4.5, onlyThemes: STANDARD_THEMES })),
+  ...SYNTAX.map((fg) => ({ fg, bg: 'card', min: 4.5, onlyThemes: STANDARD_THEMES })),
+  ...SYNTAX.map((fg) => ({ fg, bg: 'code-block-bg', min: 7, onlyThemes: HIGH_CONTRAST_THEMES })),
+  ...SYNTAX.map((fg) => ({ fg, bg: 'card', min: 7, onlyThemes: HIGH_CONTRAST_THEMES })),
 ]
 
 // Mermaid accent drift and contrast: accent == --accent-text (within rounding), accent stroke 3:1 on

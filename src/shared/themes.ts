@@ -4,8 +4,19 @@
 /** The one Shiki theme whose colours are CSS custom properties (#456). */
 export const CSS_VARIABLES_SYNTAX_THEME = 'css-variables'
 
-/** Additive: a further dark preset adds a key; every built-in theme is dark-toned, so there is no `mode`. */
-export type ThemeId = 'dark' | 'dark-high-contrast' | 'obsidian' | 'nordic-frost' | 'cyber-amber'
+/** Additive: a further preset adds a key. `light*` ids are light-toned, every other id is dark-toned (see `isLightTheme`). */
+export type ThemeId =
+  | 'dark'
+  | 'dark-high-contrast'
+  | 'obsidian'
+  | 'nordic-frost'
+  | 'cyber-amber'
+  | 'light'
+  | 'light-warm-paper'
+  | 'light-high-contrast'
+  | 'lagoon'
+  | 'amethyst'
+  | 'hearth'
 
 export interface ThemeDefinition {
   id: ThemeId
@@ -70,10 +81,63 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatchPrimary: '#c2410c',
     syntaxTheme: 'css-variables',
     titleBarOverlay: { color: '#171717', symbolColor: '#e8e8e8' }
+  },
+  light: {
+    id: 'light',
+    name: 'Light',
+    swatch: '#ffffff',
+    swatchPrimary: '#262626',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#e9e9e9', symbolColor: '#171717' }
+  },
+  'light-warm-paper': {
+    id: 'light-warm-paper',
+    name: 'Light (warm paper)',
+    swatch: '#faf3e5',
+    swatchPrimary: '#7d460b',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#e9e0d0', symbolColor: '#171615' }
+  },
+  'light-high-contrast': {
+    id: 'light-high-contrast',
+    name: 'Light (high contrast)',
+    swatch: '#ffffff',
+    swatchPrimary: '#000000',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#e9e9e9', symbolColor: '#000000' }
+  },
+  lagoon: {
+    id: 'lagoon',
+    name: 'Lagoon',
+    swatch: '#021113',
+    swatchPrimary: '#007475',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#06272b', symbolColor: '#e6e9ea' }
+  },
+  amethyst: {
+    id: 'amethyst',
+    name: 'Amethyst',
+    swatch: '#100b19',
+    swatchPrimary: '#773ac1',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#271f35', symbolColor: '#e9e9eb' }
+  },
+  hearth: {
+    id: 'hearth',
+    name: 'Hearth',
+    swatch: '#160b07',
+    swatchPrimary: '#9f4500',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#311f16', symbolColor: '#eae9e8' }
   }
 }
 
 /** Strict own-property check for untrusted theme ids; `in` would match inherited names like `toString`. */
 export function isThemeId(value: unknown): value is ThemeId {
   return typeof value === 'string' && Object.prototype.hasOwnProperty.call(THEMES, value)
+}
+
+/** True for the light-toned presets; they get the `light` class and light Mermaid/toast branches. */
+export function isLightTheme(id: ThemeId): boolean {
+  return id === 'light' || id === 'light-warm-paper' || id === 'light-high-contrast'
 }

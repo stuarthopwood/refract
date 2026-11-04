@@ -1,13 +1,15 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon } from "lucide-react"
+import { useActiveThemeId } from "../../state/theme-store"
+import { isLightTheme } from "../../../shared/themes"
 
-// Every built-in theme is dark-toned, so `"dark"` is correct for all presets.
 const TOAST_BOTTOM_OFFSET = 'calc(var(--refract-composer-clearance, 8rem) + 1.5rem)'
 
 const Toaster = ({ ...props }: ToasterProps) => {
+  const light = isLightTheme(useActiveThemeId())
   return (
     <Sonner
-      theme="dark"
+      theme={light ? "light" : "dark"}
       position="bottom-center"
       offset={{ bottom: TOAST_BOTTOM_OFFSET }}
       mobileOffset={{ bottom: TOAST_BOTTOM_OFFSET, left: '3.5rem', right: '3.5rem' }}

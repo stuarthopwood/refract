@@ -1,7 +1,7 @@
 // Contrast for Chat Find and scrollbar-map tokens. They live in `:root` with an override that
 // check-theme-contrast.mjs's per-theme parse never sees, so this reads globals.css itself.
 // forced-colors overrides are system colours paired by the user agent, so they are skipped.
-import { readFileSync } from 'node:fs'
+import { readThemeCssSource } from './theme-css-source.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
@@ -13,13 +13,14 @@ const VAR_RE = /^var\(\s*--([a-z0-9-]+)\s*\)$/i
 
 /** Raw declarations per scope: `:root` for the default, `.theme-<id>` for an override. */
 function readDeclarations() {
-  const source = readFileSync(cssPath, 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '')
+  const source = readThemeCssSource().replace(/\/\*[\s\S]*?\*\//g, '')
   const withoutForcedColors = source.replace(/@media[^{]*forced-colors[^{]*\{(?:[^{}]*\{[^}]*\})*[^}]*\}/g, '')
   const scopes = { ':root': {} }
   for (const [, selector, body] of withoutForcedColors.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     const name = selector.trim()
-    if (name !== ':root' && !/^\.theme-[a-z0-9-]+$/.test(name)) continue
-    for (const [, token, value] of body.matchAll(TOKEN_RE)) (scopes[name] ??= {})[token] = value.trim()
+    const themeName = name.replace(/^:root(?=\.theme-)/, '')
+    if (name !== ':root' && !/^\.theme-[a-z0-9-]+$/.test(themeName)) continue
+    for (const [, token, value] of body.matchAll(TOKEN_RE)) (scopes[themeName] ??= {})[token] = value.trim()
   }
   return scopes
 }

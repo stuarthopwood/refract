@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { create } from 'zustand'
 import { toast } from 'sonner'
-import { CSS_VARIABLES_SYNTAX_THEME, THEMES, isThemeId } from '../../shared/themes'
+import { CSS_VARIABLES_SYNTAX_THEME, THEMES, isLightTheme, isThemeId } from '../../shared/themes'
 import type { ThemeId } from '../../shared/themes'
 import type { CustomTheme, RejectedTheme } from '../../shared/ipc-themes'
 import { applyTokens, clearTokens } from '../lib/themeTokens'
@@ -167,12 +167,15 @@ export function themeClassName(id: ThemeId): string {
 let appliedProps: string[] = []
 
 function applyTheme(state: Pick<ThemeState, 'theme' | 'customId' | 'customThemes'>): void {
- const next = themeClassName(activeThemeId(state))
+ const id = activeThemeId(state)
+ const next = themeClassName(id)
  const root = document.documentElement
  for (const cls of Array.from(root.classList)) {
   if (cls.startsWith('theme-') && cls !== next) root.classList.remove(cls)
  }
- root.classList.add('dark', next)
+ // Light presets drop `dark` so the Tailwind `dark:` twins stay off; `color-scheme` follows in globals.css.
+ root.classList.toggle('dark', !isLightTheme(id))
+ root.classList.add(next)
  clearTokens(root, appliedProps)
  const custom = activeCustomTheme(state)
  appliedProps = custom ? applyTokens(root, custom.tokens) : []
