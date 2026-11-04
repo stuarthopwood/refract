@@ -8,11 +8,11 @@ import { ImpactWarning } from '@/components/settings/ImpactWarning'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
-import { COMPACTION_METHODS } from '../../../../shared/tokenGuard'
 import type { TokenGuardKeyInfo, TokenGuardValue } from '../../../../shared/tokenGuard'
 import { MAX_PERCENT, MIN_PERCENT, percentToTokens, tokensToPercent } from './contextWindow'
 import { MethodOrderChecklist } from './MethodOrderChecklist'
 import { formatCount, NumberUnitField, WINDOW_UNKNOWN_HINT } from './NumberUnitField'
+import { describeValue, sameValue } from './changedRows'
 import { PerModelThresholdTable } from './PerModelThresholdTable'
 import { RadioSettingRow } from './RadioSettingRow'
 
@@ -32,31 +32,12 @@ interface AdvancedRowProps {
   onReset: () => Promise<void>
 }
 
-const same = (a: unknown, b: unknown): boolean => {
-  const norm = (v: unknown): string =>
-    v !== null && typeof v === 'object' && !Array.isArray(v) ? JSON.stringify(Object.entries(v).sort()) : JSON.stringify(v)
-  return norm(a) === norm(b)
-}
-
-function describeDefault(info: TokenGuardKeyInfo, def: TokenGuardValue | undefined, window: number | null): string {
-  if (typeof def === 'number') {
-    if (info.unit === '%') return `${def}%`
-    if (info.percentOfWindow && window !== null) return `${tokensToPercent(def, window)}%`
-    return `${formatCount(def)} ${info.unit ?? ''}`.trim()
-  }
-  if (typeof def === 'boolean') return def ? 'on' : 'off'
-  if (typeof def === 'string') return info.options?.find((o) => o.value === def)?.label ?? def
-  if (Array.isArray(def)) return def.map((m) => COMPACTION_METHODS.find((c) => c.value === m)?.label ?? m).join(', ')
-  if (def && Object.keys(def).length > 0) return `${Object.keys(def).length} models`
-  return 'none'
-}
-
 // The first control to focus after Reset (the Reset button itself is skipped).
 const FIRST_CONTROL = 'input:not(:disabled), [role="switch"], [role="radio"][aria-checked="true"], [role="checkbox"], button:not([data-reset]):not(:disabled)'
 
 export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPercent, defaultWindow, catalogLoading, onChange, onReset }: AdvancedRowProps) {
   const id = `advanced-${info.key}`
-  const isDefault = same(value, defaultValue)
+  const isDefault = sameValue(value, defaultValue)
   const disabled = disabledReason !== undefined
   const rowRef = useRef<HTMLDivElement>(null)
   const [tableOpen, setTableOpen] = useState(false)
@@ -78,7 +59,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
     <>
       {info.description}
       {info.percentOfWindow && defaultWindow !== null && " The % is of the Default model's context window."}
-      {!isDefault && <> Default: {describeDefault(info, defaultValue, defaultWindow)}.</>}
+      {!isDefault && <> Default: {describeValue(info, defaultValue, defaultWindow)}.</>}
     </>
   )
   const reset = (

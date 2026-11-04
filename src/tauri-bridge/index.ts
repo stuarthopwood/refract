@@ -404,6 +404,7 @@ const refract: RefractApi = {
     get: () => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_GET),
     set: (key, value) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_SET, { key, value }),
     reset: (key) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET, { key }),
+    resetAll: () => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET_ALL),
     dismissThresholdsReset: () => request<null>(IPC_REQUESTS.TOKEN_GUARD_DISMISS_THRESHOLDS_RESET),
     handoff: (sessionId) =>
       request<TokenGuardHandoffResult>(IPC_REQUESTS.TOKEN_GUARD_HANDOFF, sessionId)

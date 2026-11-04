@@ -85,6 +85,11 @@ export function ConfirmAlertDialog({
             {error ?? ''}
           </InlineStatus>
         )}
+        {busyLabel && (
+          <span role="status" className="sr-only">
+            {busy ? busyLabel : ''}
+          </span>
+        )}
         <AlertDialogFooter className={cn(!confirmLabel && 'max-sm:items-end group-data-[size=sm]/alert-dialog-content:grid-cols-1 group-data-[size=sm]/alert-dialog-content:justify-items-end')}>
           <AlertDialogCancel
             aria-disabled={busy}

@@ -48,6 +48,17 @@ All answers come from the four issues' grilled blocks (Stuart, 2026-11-02) and t
 - Cross-issue 3: one PR with four commits, in the order #1553, #1579, #1555, #1580.
 - Cross-issue 4: converge on this spec (021).
 
+### Session 2026-11-04 (#1581 Optimise token usage)
+
+All answers come from #1581's grilled block (Stuart, 2026-11-02, "Grilled ... all resolved, none deferred"); none were left open.
+
+- #1581 Q: What does the button do? -> A: "**Optimise token usage** sets every token guard row back to its default. The defaults are the single known-good set, and there is no separate preset."
+- #1581 Q: Are the defaults reviewed first? -> A: "**Spike first, in this issue:** review each default against the Usage database and the OMP settings docs, then **apply the findings to the defaults themselves** (`values.rs` and `tokenGuard.ts`) before the button ships. The PR reports, for each changed default, the old and new value and the evidence (Stuart decided: 'do the spike and apply to defaults')." Any default that moves needs a one-time migration like #1545's: users still on the old default move with it, a value the user set stays.
+- #1581 Q: Confirmation? -> A: "A confirm dialog lists each row that will change (from and to) before anything is written." The dialog lists each row whose value differs from its default (label, current value, default); the list is a real list; focus returns to the button when it closes.
+- #1581 Q: Placement and weight? -> A: In the Advanced page header, a shared `Button` with `variant="default"` (the page's one primary action).
+- #1581 Q: Nothing to change? -> A: "When every row already equals its default, the button is disabled with the tooltip 'Already optimised'."
+- #1581 Q: Write path? -> A: "It uses the same write path as each row's **Reset**, so new Sessions pick up the change in the same way." Implemented as one `tokenGuard.resetAll` channel that applies `values::reset` semantics to every key in a single store write.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Token-cost settings cannot drift for Refract Sessions (Priority: P1)
@@ -89,6 +100,7 @@ Settings > OMP lists every overlay setting as "Set by Refract" with its current 
 8. (#1579) **Given** a number-only row, **When** the developer presses ArrowUp or uses the spinner, **Then** the value steps by the unit's step; letters, `e`, `+`, `-` cannot be typed and wheel scrolling over the focused field leaves the value unchanged.
 9. (#1555) **Given** Settings > Advanced, **When** read, **Then** every row shows the approved plain description, the labels read "Load rare tools on demand" and "Extra turn to record lessons", the Advisor option reads "Every step", and each compaction method has a hint.
 10. (#1580) **Given** a row set costlier than its default, **When** the page renders, **Then** a warning line with an icon appears under its description; **Given** all defaults, **Then** none appears.
+11. (#1581) **Given** at least one row differs from its default, **When** the developer activates "Optimise token usage", **Then** a dialog lists each such row (label, current value, default) and nothing is written; **When** they confirm, **Then** every row equals its default and the dialog closes with focus on the button; **When** they cancel, **Then** nothing changes; **Given** all rows at default, **Then** the button is disabled with the tooltip "Already optimised".
 
 ---
 
@@ -145,6 +157,9 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 ### Edge Cases
 
 - The Default role's (or a model's) context window is unknown: the idle row falls back to a token field (step 1000); a per-model row shows only the percent and no "≈" hint.
+- Optimise token usage while a row's write is in flight, or the write fails: the dialog stays open showing the error; no partial state is shown as done.
+- A running Session is unaffected by Optimise token usage; the next Session launches with the defaults.
+- A user-set value equal to a moved default's old value is indistinguishable from an untouched one and moves with it (accepted, as in #1545's migration).
 - A version 1 store holds token overrides for `compaction.thresholdTokens` or `compaction.modelThresholds`: they reset to defaults on load and a one-line note is shown once; `compaction.idleThresholdTokens` is kept.
 - A per-model row at or below the global percent shows no warning; the global row at 70 or below shows none.
 - A focused number field scrolled with the wheel keeps its value.
@@ -190,6 +205,9 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **FR-027** (#1579): A shared `NumberField` primitive MUST back every number-only input in Settings > Advanced: visible spinners, ArrowUp/ArrowDown stepping, per-unit `step`, `min`/`max`, blocked `e`/`+`/`-`, wheel-safe focus, unchanged commit and validation behaviour.
 - **FR-028** (#1555): Settings > Advanced row descriptions, the two renamed labels, the "Every step" option and per-method compaction hints MUST use the approved plain wording, with hints linked by `aria-describedby`.
 - **FR-029** (#1580): `TokenGuardKeyInfo` MUST carry an optional `impact` and `AdvancedRow` MUST render a warning line only when the value is costlier than its default; the global compaction threshold warns above 70% and a per-model row warns above the current global percent.
+- **FR-030** (#1581): Settings > Advanced MUST offer an "Optimise token usage" primary button in the page header that, after a confirm dialog listing each row whose value differs from its default (label, current value, default), resets every token guard row (including `modelRoles.advisor`) to its default through one `tokenGuard.resetAll` channel using the same semantics as the per-row Reset; nothing is written before confirmation; it is disabled with the tooltip "Already optimised" when every row already equals its default.
+- **FR-031** (#1581): Before the button ships, each token guard default MUST be reviewed against the Usage database and the OMP settings docs; findings MUST be applied to `default_for` (`values.rs`) and `TOKEN_GUARD_ROWS` (`tokenGuard.ts`) in the same PR, each changed default with a one-time migration that moves users still on the old default and keeps a value the user set; the PR reports old value, new value and evidence per changed default.
+- **FR-032** (#1581): The confirm dialog MUST use the shared `ConfirmAlertDialog` with a real list, a busy state and an error live region on failure, and focus MUST return to the button when it closes; a failed write leaves the dialog open with the reason in text.
 
 ### Key Entities
 
@@ -213,6 +231,7 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **SC-005**: The threshold announcement is spoken once per Conversation per threshold, not once per call.
 - **SC-006**: Every overlay row in Settings > OMP is reachable and operable by keyboard alone and states "Set by Refract" in text.
 - **SC-007**: With all values at default, Settings > Advanced shows no impact warnings; raising a costlier value shows its warning, and the compaction rows show percentages with the "≈ N tokens" hint where the window is known.
+- **SC-008**: With any row changed, Optimise token usage lists exactly the changed rows (from and to) and writes nothing until confirmed; after confirming, every row equals its default, no warning shows, and the next Session's overlay carries the defaults; with all rows at default the button is disabled with "Already optimised".
 
 ## Assumptions
 
