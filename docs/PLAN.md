@@ -1073,3 +1073,5 @@ Also filed 2026-11-04 (Stuart, grilled, none deferred): **#1663** (`p1`, `bug`, 
 Also filed 2026-11-04 (Stuart, grilled, none deferred): **#1666** (`p1`, `feature`, `notifications`, `settings`), Notifications: Session notifications play a sound once (needs-you plays `Reminder`, finished plays `Default`); alarms use the Windows alarm scenario and loop `Looping.Alarm` until dismissed, through `tauri-winrt-notification` directly; two Settings toggles, Session notification sounds and Alarm sounds, both on by default; in-app toasts stay silent. Placed as an index line after the #1663 and #1664 line.
 
 Promoted 2026-11-04 (Stuart): **#1304** (raised from p1 to `p0`), Agents create and control Sessions and Conversations. Placed as queue row `1c` after #695; #433 moves to `1d`. It still needs #1193.
+
+Also filed 2026-11-04 (Stuart, chat bug): **#1669** (`p1`, `bug`, `chat`), collapse repeated snapcompact and compaction headroom warnings into one chat row, and stop Refract from re-firing automatic maintenance after OMP pauses it.
