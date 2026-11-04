@@ -26,6 +26,7 @@ const BADGE = `document.querySelector('[role="img"][aria-label*="Pull request"],
 const VIEW_BTN = `document.querySelector('button[aria-label^="View "], button[aria-label^="Open pull request"], button[aria-label^="Open issue"]')`;
 
 const report = { gitHead: gitHead(REPO_ROOT), dirty: computeDirty(REPO_ROOT), exeSha256: null, checks: [], screenshots: [] };
+mkdirSync(SHOTS_DIR, { recursive: true });
 const log = createReportLogger(path.join(SHOTS_DIR, 'report.txt'));
 const check = (ok, name, extra) => {
   report.checks.push({ name, ok, extra: extra ?? null });
@@ -81,6 +82,7 @@ async function runScenario(mode, launcherExe, exePath, exeHash, shimDir, ghDir) 
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_SCENARIO: 'session-pr-badge-1587',
         REFRACT_1587_MODE: mode,
+        OMP_PROFILE: `scratch-1587-${mode}`,
         GH_CONFIG_DIR: ghConfigDir
       }
     });
@@ -98,7 +100,8 @@ async function runScenario(mode, launcherExe, exePath, exeHash, shimDir, ghDir) 
     await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Dialog closed' });
     await cdp.waitFor(`(() => { const el = ${FIELD}; return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Composer enabled' });
 
-    await cdp.evaluate(`(() => { window.__opened = []; document.addEventListener('click', (e) => { const a = e.target instanceof Element ? e.target.closest('a[target="_blank"]') : null; if (a) { e.preventDefault(); e.stopPropagation(); window.__opened.push(a.href); } }, true); return true; })()`);
+    // Tauri defines the invoke bridge non-writable, so hook window.fetch (the custom-protocol IPC path) to record opener calls and never open a real browser.
+    await cdp.evaluate(`(() => { window.__opened = []; const openerUrl = window.__TAURI_INTERNALS__.convertFileSrc('plugin:opener|open_url', 'ipc'); const original = window.fetch; window.fetch = function (input, init) { const url = typeof input === 'string' ? input : input && input.url; if (url === openerUrl) { try { window.__opened.push(JSON.parse(init.body).url); } catch { window.__opened.push(String(init && init.body)); } return Promise.resolve(new Response('null', { headers: { 'Tauri-Response': 'ok', 'Content-Type': 'application/json' } })); } return original.apply(this, arguments); }; return true; })()`);
     await cdp.click(FIELD);
     await cdp.send('Input.insertText', { text: 'touch some pull requests' });
     await key(cdp, 'Enter', 'Enter', 13);
@@ -139,28 +142,23 @@ async function runScenario(mode, launcherExe, exePath, exeHash, shimDir, ghDir) 
     await click('#12 ');
     await sleep(1000);
     const openedAfterOwn = await cdp.evaluate(`window.__opened.length`);
-    const pane = await cdp.evaluate(`(() => { const s = window.__refractStores?.pinnedPanels?.getState?.(); const tab = Array.from(document.querySelectorAll('[role="tab"][aria-selected="true"]')).map((t) => t.textContent.trim()); return { issue: s ? !!s.issue : null, tabs: tab }; })()`);
-    check(openedAfterOwn === 1 && (pane.issue === true || pane.tabs.some((t) => /issue/i.test(t))), 'own-repo row pins the Issue in the right pane without opening a browser', pane);
+    const pane = await cdp.evaluate(`document.body.innerText.includes('Badge fixture issue body.')`);
+    check(openedAfterOwn === 1 && pane === true, 'own-repo row pins the Issue in the right pane without opening a browser', { openedAfterOwn, pane });
     await cdp.screenshot(path.join(SHOTS_DIR, `${mode}-own-row-pinned.png`));
     report.screenshots.push(...citeScreenshots(SHOTS_DIR, [`${mode}-own-row-pinned.png`]));
 
-    // Keyboard: Tab from the composer to the control, Enter opens the menu, Escape returns focus to it.
+    // Keyboard: start from the session title (sequential focus follows a click), Tab to the control, Enter opens the menu, Escape returns focus to it.
     const isControl = `(() => { const a = document.activeElement; const c = ${controlExpr}; return !!a && a === c; })()`;
-    await cdp.click(FIELD);
+    await cdp.click(`Array.from(document.querySelectorAll('span, div, h1, h2')).find((e) => { const r = e.getBoundingClientRect(); return e.children.length === 0 && e.textContent.trim() && r.top < 40 && r.left > 290 && r.width > 0; })`);
     let reached = false;
-    for (let i = 0; i < 80 && !reached; i += 1) {
+    const visited = [];
+    for (let i = 0; i < 25 && !reached; i += 1) {
       await key(cdp, 'Tab', 'Tab', 9);
+      await sleep(60);
       reached = await cdp.evaluate(isControl);
+      visited.push(await cdp.evaluate(`document.activeElement ? (document.activeElement.getAttribute('aria-label') || document.activeElement.textContent.trim().slice(0, 30) || document.activeElement.tagName) : null`));
     }
-    if (!reached) {
-      // Header precedes the composer in DOM order, so also try backwards.
-      for (let i = 0; i < 80 && !reached; i += 1) {
-        await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
-        await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9, modifiers: 8 });
-        reached = await cdp.evaluate(isControl);
-      }
-    }
-    check(reached, 'keyboard Tab reaches the touched-items control', triggerLabel);
+    check(reached, 'keyboard Tab reaches the touched-items control', { triggerLabel, visited });
     if (reached) {
       await key(cdp, 'Enter', 'Enter', 13);
       await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'Enter opens menu' }).then(() => check(true, 'Enter opens the menu'), () => check(false, 'Enter opens the menu'));

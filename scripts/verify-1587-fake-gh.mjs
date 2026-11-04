@@ -30,6 +30,9 @@ if (args[0] === 'api' && args[1] === 'graphql' && joined.includes('issueOrPullRe
   if (!hit) out({ data: { repository: { issueOrPullRequest: null } } });
   out({ data: { repository: { issueOrPullRequest: { __typename: hit[0], title: hit[1], url: 'https://github.com/' + kv.owner + '/' + kv.name + '/' + hit[2], state: 'OPEN', isDraft: false } } } });
 }
+if (args[0] === 'issue' && args[1] === 'view') {
+  out({ number: Number(args[2]), title: 'Badge fixture issue', state: 'OPEN', url: 'https://github.com/fake-owner/fake-repo-1121/issues/' + args[2], labels: [], assignees: [], author: { login: 'octotest' }, comments: [], updatedAt: '2026-10-21T10:00:00Z', body: 'Badge fixture issue body.', createdAt: '2026-10-01T09:00:00Z' });
+}
 process.stderr.write('fake gh 1587: unhandled: gh ' + joined + '\\n');
 process.exit(1);
 `;

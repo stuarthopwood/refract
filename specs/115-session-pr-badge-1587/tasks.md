@@ -34,11 +34,11 @@
 
 ## Phase 5: Verification and docs
 
-- [ ] T018 Acquire the build slot and run `node scripts/ci-local.mjs`; fix only what this story broke, release the slot (depends on T013, T017).
-- [ ] T019 Check `pnpm check:comment-density`, the 600-line cap (`readout.rs`, `model.ts`) and `git diff --stat` for whole-file churn (depends on T018).
-- [ ] T020 Live check with `pnpm exec tauri build --debug --no-bundle` on a scratch copy and a fake omp: emit bash `gh pr create` start and end frames, assert the badge, then five issue creates for "+4", a branch-PR session for overflow-only mode; add a committed `scripts/verify-header-touched.mjs` CDP driver; screenshots of each state (depends on T018).
-- [ ] T021 Keyboard and accessibility pass on the live build: +N accessible name, arrow keys and Enter in the menu, Escape returns focus to the button, state readable without colour (depends on T020).
-- [ ] T022 Update this story's `docs/PLAN.md` row (status and PR link) and, if user-facing wording was introduced, `CONTEXT.md`.
+- [x] T018 Acquire the build slot and run `node scripts/ci-local.mjs`; fix only what this story broke, release the slot (depends on T013, T017).
+- [x] T019 Check `pnpm check:comment-density`, the 600-line cap (`readout.rs`, `model.ts`) and `git diff --stat` for whole-file churn (depends on T018).
+- [x] T020 Live check with `pnpm exec tauri build --debug --no-bundle` on a scratch copy and a fake omp: emit bash `gh pr create` start and end frames, assert the badge, then five issue creates for "+4", a branch-PR session for overflow-only mode; add a committed `scripts/verify-header-touched.mjs` CDP driver; screenshots of each state (depends on T018).
+- [x] T021 Keyboard and accessibility pass on the live build: +N accessible name, arrow keys and Enter in the menu, Escape returns focus to the button, state readable without colour (depends on T020).
+- [x] T022 Update this story's `docs/PLAN.md` row (status and PR link) and, if user-facing wording was introduced, `CONTEXT.md`.
 
 ## Dependencies and order
 

@@ -10,10 +10,12 @@ export function openTouched(ref: TouchedRef, sessionId: string, opener: HTMLElem
     return
   }
   if (!/^https?:\/\//i.test(ref.url)) return
-  // A transient anchor goes through the app's one external-link handler instead of a second opener path.
+  // The anchor must be in the document: the one external-link handler listens on `document`, which a detached click never reaches.
   const anchor = document.createElement('a')
   anchor.href = ref.url
   anchor.target = '_blank'
   anchor.rel = 'noreferrer noopener'
+  document.body.append(anchor)
   anchor.click()
+  anchor.remove()
 }
