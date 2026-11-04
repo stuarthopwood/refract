@@ -1,0 +1,45 @@
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\session\\conversation.json","sessionId":"sess-1612","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"type":"available_commands_update","commands":[{"name":"new","description":"Start a new Conversation in this Session"}]}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"thinking","thinking":"Weighing which rows to open first."},{"type":"text","text":"NOTE-1612 Looking at the rows first."}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"c1","toolName":"read","args":{"path":"src/renderer/features/chat/CollapsedLine.tsx"},"intent":"Reading CollapsedLine"}
+{"type":"tool_execution_end","toolCallId":"c1","toolName":"read","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"c2","toolName":"grep","args":{"pattern":"ToolRowKebab","path":"src"},"intent":"Searching for the kebab"}
+{"type":"tool_execution_end","toolCallId":"c2","toolName":"grep","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"c3","toolName":"bash","args":{"command":"echo group-one"},"intent":"Echoing one"}
+{"type":"tool_execution_end","toolCallId":"c3","toolName":"bash","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"c4","toolName":"bash","args":{"command":"cat /definitely/not/a/real/path.txt"},"intent":"Reading missing"}
+{"type":"tool_execution_end","toolCallId":"c4","toolName":"bash","result":{"content":[{"type":"text","text":"boom"}]},"isError":true}
+{"type":"tool_execution_start","toolCallId":"c5","toolName":"read","args":{"path":"does/not/exist.txt"},"intent":"Reading a missing file"}
+{"type":"tool_execution_end","toolCallId":"c5","toolName":"read","result":{"content":[{"type":"text","text":"ENOENT"}]},"isError":true}
+{"type":"tool_execution_start","toolCallId":"call-ask-1","toolName":"ask","intent":"Asking a clarifying question","args":{"questions":[{"id":"db","question":"Which database?","header":"Database","options":[{"label":"Postgres"},{"label":"SQLite"}],"multi":false}]}}
+{"type":"tool_execution_end","toolCallId":"call-ask-1","toolName":"ask","result":{"content":[{"type":"text","text":"Asked user 1 question"}],"details":{"results":[{"id":"db","selectedOptions":["Postgres"],"timedOut":false}]}},"isError":false}
+{"type":"tool_execution_start","toolCallId":"chain-a","toolName":"task","args":{"tasks":[{"name":"AlphaOne","task":"Check the first Stage."}]},"intent":"First Stage"}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"chain-a","name":"task","arguments":{"tasks":[{"name":"AlphaOne","task":"Check the first Stage."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"chain-a","name":"task","arguments":{"tasks":[{"name":"AlphaOne","task":"Check the first Stage."}]}}],"timestamp":0}}
+{"type":"tool_execution_end","toolCallId":"chain-a","toolName":"task","result":{"content":[{"type":"text","text":"1 of 1 subagents finished"}],"details":{"progress":[{"index":0,"id":"AlphaOne","status":"finished","task":"Check the first Stage.","durationMs":900}]}},"isError":false}
+{"type":"tool_execution_start","toolCallId":"chain-b","toolName":"task","args":{"tasks":[{"name":"BetaOne","task":"Check the second Stage."}]},"intent":"Second Stage"}
+{"type":"message_start","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"toolCall","id":"chain-b","name":"task","arguments":{"tasks":[{"name":"BetaOne","task":"Check the second Stage."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"toolCall","id":"chain-b","name":"task","arguments":{"tasks":[{"name":"BetaOne","task":"Check the second Stage."}]}}],"timestamp":0}}
+{"type":"tool_execution_end","toolCallId":"chain-b","toolName":"task","result":{"content":[{"type":"text","text":"1 of 1 subagents finished"}],"details":{"progress":[{"index":0,"id":"BetaOne","status":"finished","task":"Check the second Stage.","durationMs":700}]}},"isError":false}
+{"type":"message_start","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a4","message":{"role":"assistant","content":[{"type":"text","text":"FINAL-REPLY-1612 all rows rendered."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\session\\conversation.json","sessionId":"sess-1612","messageCount":6,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
