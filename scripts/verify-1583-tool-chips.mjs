@@ -17,10 +17,27 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const LOG = 'verify-1583';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.REFRACT_1583_SHOTS_DIR || 'C:/Users/shopwood/AppData/Local/Temp/verify1583b/shots';
+// Default evidence dir lives under the OS temp dir, never a repo or user-profile path.
+const SHOTS_DIR = process.env.REFRACT_1583_SHOTS_DIR || path.join(tmpdir(), 'verify-1583-shots');
+const FRAMES = readFileSync(path.join(__dirname, 'fixtures/omp-frames/tool-chips-1583.jsonl'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+const callArgs = (id) => FRAMES.find((f) => f.type === 'tool_execution_start' && f.toolCallId === id).args;
 // Exact command of fixture tool call c2; chips must reproduce it byte for byte (spaces before flags included).
-const C2_COMMAND = readFileSync(path.join(__dirname, 'fixtures/omp-frames/tool-chips-1583.jsonl'), 'utf8')
-  .split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((f) => f.type === 'tool_execution_start' && f.toolCallId === 'c2').args.command;
+const C2_COMMAND = callArgs('c2').command;
+// Mirrors middleTruncate(text, ATTRIBUTION_PREFIX_MAX_CHARS = 40) in ToolRow.tsx: the group row's failing-command chip.
+const middleTruncate = (text, max) => {
+  if (text.length <= max) return text;
+  const tail = Math.ceil((max - 1) * 0.6);
+  return `${text.slice(0, max - 1 - tail)}\u2026${text.slice(-tail)}`;
+};
+// Chip texts the tape must produce, in transcript order: solo read, solo bash c2, solo grep, and the c4+c5 group's failing command (c5).
+const EXPECTED_CHIPS = [
+  ['read c1 path', (t) => t.endsWith(path.basename(callArgs('c1').path))],
+  ['bash c2 command', (t) => t === C2_COMMAND],
+  ['grep c3 "pattern" path', (t) => t === `"${callArgs('c3').pattern}" ${callArgs('c3').path}`],
+  ['group failing command c5 (middle-truncated to 40)', (t) => t === middleTruncate(callArgs('c5').command, 40)]
+];
+// Computed colours that paint nothing: 'transparent', rgba(..., 0), or any `/ 0` alpha form.
+const isClear = (v) => !v || v === 'transparent' || /,\s*0(\.0+)?\s*\)$/.test(v) || /\/\s*0(\.0+)?%?\s*\)$/.test(v);
 const THEMES = [
   ['dark', 'Dark'],
   ['obsidian', 'Obsidian'],
@@ -36,16 +53,32 @@ const shot = async (cdp, name) => {
   await sleep(400);
   await cdp.screenshot(path.join(SHOTS_DIR, name));
 };
+// Fill: the --md-code-bg probe and the prose chip must really paint, and every tool chip must match both.
+function chipFill(c) {
+  const proseBg = c.prose ? c.prose.bg : null;
+  const ok = c.chips.length >= EXPECTED_CHIPS.length && !isClear(c.fill) && !!proseBg && !isClear(proseBg) && proseBg === c.fill && c.chips.every((x) => !isClear(x.bg) && x.bg === proseBg);
+  return [ok, { fill: c.fill, proseBg, chips: c.chips.length, bgs: [...new Set(c.chips.map((x) => x.bg))] }];
+}
+// Muted: the --tool-row-fg probe must differ from inherited body text (else the probe resolved nothing), every chip
+// must use it, and it must differ from the colour of the label text beside the chip.
+function chipMuted(c) {
+  const ok = c.chips.length >= EXPECTED_CHIPS.length && !isClear(c.muted) && c.muted !== c.body && c.chips.every((x) => x.color === c.muted && x.labelColor !== null && x.color !== x.labelColor);
+  return [ok, { muted: c.muted, body: c.body, chips: c.chips.map((x) => ({ color: x.color, labelColor: x.labelColor })) }];
+}
 
+// `fill`/`muted` resolve the theme variables through inline styles (a Tailwind class absent from the bundle would
+// silently compute transparent/inherited); the checks below still assert they are non-transparent and differ from body text.
 const CHIPS = `(() => {
-  const probe = (cls, prop) => { const el = document.createElement('span'); el.className = cls; document.body.appendChild(el); const v = getComputedStyle(el)[prop]; el.remove(); return v; };
+  const probe = (css, prop) => { const el = document.createElement('span'); el.style.cssText = css; document.body.appendChild(el); const v = getComputedStyle(el)[prop]; el.remove(); return v; };
   const style = (el) => { const s = getComputedStyle(el); return { bg: s.backgroundColor, color: s.color, font: s.fontFamily, size: s.fontSize, ratio: (parseFloat(s.fontSize) / parseFloat(getComputedStyle(el.parentElement).fontSize)).toFixed(2), radius: s.borderTopLeftRadius, padL: s.paddingLeft, padR: s.paddingRight }; };
+  const labelColor = (el) => { for (let p = el.parentElement; p; p = p.parentElement) { const l = p.querySelector('[data-slot="collapsed-line-label"]'); if (l) return getComputedStyle(l).color; } return null; };
   const chips = Array.from(document.querySelectorAll('[data-slot="tool-target"]')).filter((el) => el.offsetParent !== null);
   const prose = Array.from(document.querySelectorAll('[data-slot="message"] [data-slot="inline-code"]')).pop();
   return {
-    fill: probe('bg-md-code-bg', 'backgroundColor'),
-    muted: probe('text-tool-row-fg', 'color'),
-    chips: chips.map((el) => ({ text: el.textContent.slice(0, 40), ...style(el), display: getComputedStyle(el).display })),
+    fill: probe('background-color: var(--md-code-bg)', 'backgroundColor'),
+    muted: probe('color: var(--tool-row-fg)', 'color'),
+    body: getComputedStyle(document.body).color,
+    chips: chips.map((el) => ({ text: el.textContent, ...style(el), display: getComputedStyle(el).display, labelColor: labelColor(el) })),
     prose: prose ? { text: prose.textContent, ...style(prose) } : null
   };
 })()`;
@@ -83,15 +116,16 @@ const ROW_GEOM = `(() => {
     return { expanded: btn.getAttribute('aria-expanded'), isVitest: btn.textContent.includes('vitest'), text: chip.textContent, pieces: pieces.length, overlaps, chipVsLabel, iconX: svg ? svg.getBoundingClientRect().left : null };
   });
 })()`;
-// Ring extent (outline or box-shadow blur/spread) of the vitest row button, and whether any clipping ancestor cuts it.
+// Focus-ring computed style of the vitest row button plus the extent it paints OUTSIDE its border box
+// (an inset outline, offset -2px on a 2px width, paints none) and whether a clipping ancestor cuts that extent.
 const RING_CLIP = `(() => {
   const btn = Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.includes('vitest'));
   if (!btn) return null;
   const s = getComputedStyle(btn);
-  const outline = s.outlineStyle !== 'none' ? parseFloat(s.outlineWidth) + Math.max(0, parseFloat(s.outlineOffset) || 0) : 0;
+  const outside = s.outlineStyle !== 'none' ? Math.max(0, (parseFloat(s.outlineWidth) || 0) + (parseFloat(s.outlineOffset) || 0)) : 0;
   const px = (s.boxShadow.match(/(-?[\\d.]+)px/g) || []).map(parseFloat);
-  const shadow = s.boxShadow === 'none' ? 0 : Math.max(0, ...px.slice(2, 4));
-  const ring = Math.max(outline, shadow);
+  const shadow = s.boxShadow === 'none' || s.boxShadow.includes('inset') ? 0 : Math.max(0, ...px.slice(2, 4));
+  const ring = Math.max(outside, shadow);
   const r = btn.getBoundingClientRect();
   const want = { l: r.left - ring, t: r.top - ring, r: r.right + ring, b: r.bottom + ring };
   const clippers = [];
@@ -102,7 +136,15 @@ const RING_CLIP = `(() => {
     const cut = { x: cs.overflowX !== 'visible' && (want.l < c.left - 0.5 || want.r > c.right + 0.5), y: cs.overflowY !== 'visible' && (want.t < c.top - 0.5 || want.b > c.bottom + 0.5) };
     if (cut.x || cut.y) clippers.push({ tag: el.tagName, slot: el.getAttribute('data-slot'), cut });
   }
-  return { ring, outline: s.outlineStyle + ' ' + s.outlineWidth + ' offset ' + s.outlineOffset, boxShadow: s.boxShadow, clippers, focusVisible: btn.matches(':focus-visible') };
+  return { ring, outlineStyle: s.outlineStyle, outlineWidth: s.outlineWidth, outlineOffset: s.outlineOffset, outlineColor: s.outlineColor, boxShadow: s.boxShadow, clippers, focusVisible: btn.matches(':focus-visible') };
+})()`;
+// Computed paint of the vitest row (button, three ancestors, chip) and whether the pointer really hovers it.
+const HOVER_STATE = `(() => {
+  const btn = Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.includes('vitest'));
+  if (!btn) return null;
+  const paint = (el) => { const s = getComputedStyle(el); return [s.backgroundColor, s.color, s.boxShadow, s.outlineStyle, s.opacity].join('|'); };
+  const els = [btn, btn.parentElement, btn.parentElement && btn.parentElement.parentElement, btn.parentElement && btn.parentElement.parentElement && btn.parentElement.parentElement.parentElement, btn.querySelector('[data-slot="tool-target"]')].filter(Boolean);
+  return { hovered: btn.matches(':hover'), paint: els.map(paint), chipBg: getComputedStyle(btn.querySelector('[data-slot="tool-target"]')).backgroundColor };
 })()`;
 const mouseTo = (cdp, x, y) => cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
 const tab = async (cdp) => {
@@ -170,9 +212,13 @@ async function main() {
     await sleep(1000);
 
     const c = await cdp.evaluate(CHIPS);
-    check(c.chips.length >= 4, 'Tool targets render as chips (read, bash, grep, group failing command)', c.chips.map((x) => x.text));
-    check(c.chips.every((x) => x.bg === c.fill), 'Every chip uses the Markdown inline-code fill (--md-code-bg)', { fill: c.fill, bgs: [...new Set(c.chips.map((x) => x.bg))] });
-    check(c.chips.every((x) => x.color === c.muted), 'Every chip text is the muted tool-row colour', { muted: c.muted, colours: [...new Set(c.chips.map((x) => x.color))] });
+    const chipTexts = c.chips.map((x) => x.text);
+    const missingChips = EXPECTED_CHIPS.filter(([, matches]) => !chipTexts.some(matches)).map(([name]) => name);
+    check(missingChips.length === 0, 'Tool targets render the expected chip texts (read, bash c2, grep, group failing command)', { missing: missingChips, chipTexts });
+    const fill = chipFill(c);
+    check(fill[0], 'Every chip has a non-transparent fill equal to the prose inline-code chip fill (--md-code-bg)', fill[1]);
+    const muted = chipMuted(c);
+    check(muted[0], 'Every chip text is the muted tool-row colour, distinct from the row label text colour', muted[1]);
     const shapeOf = (x) => ({ font: x.font, ratio: x.ratio, radius: x.radius, padL: x.padL, padR: x.padR });
     if (c.prose) {
       const shapeMismatch = c.chips.filter((x) => JSON.stringify(shapeOf(x)) !== JSON.stringify(shapeOf(c.prose)));
@@ -193,12 +239,17 @@ async function main() {
     await sleep(600);
     await shot(cdp, '10-collapsed-dark.png');
 
-    // Hover ring: pointer over the row, then Tab focus from the previous tabbable.
+    // Hover: baseline with the pointer away, then really hover the row and require :hover plus a computed paint change.
+    await mouseTo(cdp, 1, 1);
+    await sleep(400);
     const rowRect = await cdp.evaluate(`(() => { const r = Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.includes('vitest')).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    const idle = await cdp.evaluate(HOVER_STATE);
     await mouseTo(cdp, rowRect.x, rowRect.y);
-    await sleep(300);
-    const hoverRing = await cdp.evaluate(RING_CLIP);
-    check(!!hoverRing && hoverRing.clippers.length === 0, 'Hover state: ring/shadow not clipped by an ancestor overflow box', hoverRing);
+    await cdp.waitFor(`(() => { const b = Array.from(document.querySelectorAll('button[aria-expanded]')).find((x) => x.textContent.includes('vitest')); return !!b && b.matches(':hover'); })()`, { timeoutMs: 5_000, label: 'row :hover' });
+    await sleep(500);
+    const hovered = await cdp.evaluate(HOVER_STATE);
+    const paintChanged = !!idle && !!hovered && idle.paint.some((p, i) => p !== hovered.paint[i]);
+    check(!!idle && !!hovered && idle.hovered === false && hovered.hovered === true && paintChanged && !isClear(hovered.chipBg), 'Hover: pointer over the row sets :hover, changes computed row paint, and the chip keeps a non-transparent fill', { idle, hovered });
     await mouseTo(cdp, 1, 1);
     await cdp.evaluate(`(() => {
       const sel = 'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
@@ -212,7 +263,9 @@ async function main() {
     const focusRing = await cdp.evaluate(RING_CLIP);
     const tabFocused = await cdp.evaluate(`!!document.activeElement && document.activeElement.textContent.includes('vitest')`);
     check(tabFocused === true && !!focusRing && focusRing.focusVisible, 'Tab moves keyboard focus onto the vitest tool row', { tabFocused, focusRing });
-    check(!!focusRing && focusRing.clippers.length === 0, 'Focus ring not clipped by an ancestor overflow box', focusRing);
+    const f = focusRing;
+    check(!!f && f.outlineStyle === 'solid' && f.outlineWidth === '2px' && f.outlineOffset === '-2px' && !isClear(f.outlineColor) && f.boxShadow === 'none', 'Focus ring is a 2px solid inset outline (offset -2px, visible colour, no box-shadow)', f);
+    check(!!f && f.ring === 0 && f.clippers.length === 0, 'Focus ring paints nothing outside the row box and no ancestor clips the row', f);
     await shot(cdp, '12-tab-focus-dark.png');
     await cdp.evaluate(`document.activeElement && document.activeElement.blur()`);
 
@@ -237,7 +290,9 @@ async function main() {
       await switchTheme(cdp, id, name);
       await sleep(600);
       const t = await cdp.evaluate(CHIPS);
-      check(t.chips.length >= 4 && t.chips.every((x) => x.bg === t.fill && x.color === t.muted), `${name}: chips keep the inline-code fill and muted colour`, { fill: t.fill, muted: t.muted });
+      const tf = chipFill(t);
+      const tm = chipMuted(t);
+      check(tf[0] && tm[0], `${name}: chips keep a non-transparent inline-code fill and a muted colour distinct from the label`, { fill: tf[1], muted: tm[1] });
       await shot(cdp, `20-theme-${id}.png`);
     }
   } catch (err) {
