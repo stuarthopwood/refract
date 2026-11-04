@@ -18,6 +18,9 @@ use super::agent::SessionAgent;
 mod readout_pr;
 use readout_pr::{pull_request_for_branch, PullRequestLookup, PullRequestState};
 
+#[path = "readout_touched.rs"]
+mod readout_touched;
+
 #[path = "readout_todo.rs"]
 mod readout_todo;
 use readout_todo::{build_todo_tree, compute_up_next, parse_todo_phases, TodoPhaseState};
@@ -60,6 +63,8 @@ pub(super) struct State {
     pr_poll_generation: u64,
     /// Latest intent, tool, retry and compaction state for the current-work banner.
     activity: ActivityState,
+    /// PRs and issues this Conversation wrote to through `gh`.
+    touched: readout_touched::TouchedState,
 }
 
 fn now_ms() -> i64 {
@@ -81,6 +86,7 @@ fn jitter_ms(cap_ms: u64) -> u64 {
 }
 
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
+    readout_touched::on_frame(agent, frame_type, frame).await;
     readout_activity::on_frame(agent, frame_type, frame).await;
     match frame_type {
         "agent_start" => {
@@ -225,8 +231,15 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
             s.ai_credits = None;
             s.todo_phases = None;
             s.activity.reset();
+            s.touched.reset();
         })
         .await;
+    schedule_readout_update(agent).await;
+}
+
+/// Rebuilds the touched list from the loaded Conversation history.
+pub(super) async fn on_history_loaded(agent: &SessionAgent, history: &[Value]) {
+    readout_touched::rebuild_from_history(agent, history).await;
     schedule_readout_update(agent).await;
 }
 
@@ -355,6 +368,7 @@ async fn compute_readout(agent: &Arc<SessionAgent>) {
         });
     }
 
+    readout_touched::refresh(agent, &session.worktree_path).await;
     // Independent reads, so run them concurrently.
     let (diff_result, branch) = tokio::join!(
         diff_stat(Path::new(&session.worktree_path), &session.base_branch),
@@ -468,6 +482,9 @@ fn build_readout_value(
         "todoPhases": todo_phases_up_next,
         "branch": branch,
     });
+    if let Some(touched) = s.touched.json() {
+        readout["touched"] = touched;
+    }
     s.activity.write_into(&mut readout);
     readout
 }

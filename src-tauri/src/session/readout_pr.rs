@@ -273,3 +273,89 @@ async fn lookup_uncached(repo_path: &Path, branch: &str) -> PullRequestLookup {
         None => PullRequestLookup::None,
     }
 }
+
+const ITEM_QUERY: &str = "query($owner: String!, $name: String!, $number: Int!) { \
+repository(owner: $owner, name: $name) { issueOrPullRequest(number: $number) { \
+__typename ... on PullRequest { title url state isDraft } ... on Issue { title url state } } } }";
+
+/// Title, URL and state of one PR or issue, with its real kind.
+pub(super) struct ItemInfo {
+    pub is_pr: bool,
+    pub title: String,
+    pub url: Option<String>,
+    pub state: &'static str,
+}
+
+#[derive(Deserialize)]
+struct ItemData {
+    repository: Option<ItemRepository>,
+}
+
+#[derive(Deserialize)]
+struct ItemRepository {
+    #[serde(rename = "issueOrPullRequest")]
+    item: Option<ItemNode>,
+}
+
+#[derive(Deserialize)]
+struct ItemNode {
+    #[serde(rename = "__typename")]
+    typename: String,
+    title: String,
+    url: String,
+    state: String,
+    #[serde(rename = "isDraft", default)]
+    is_draft: bool,
+}
+
+/// Looks up one PR or issue by number; `None` on any failure, sharing the PR lookup's back-off.
+pub(super) async fn item_by_number(
+    repo_path: &Path,
+    owner: &str,
+    name: &str,
+    number: u64,
+) -> Option<ItemInfo> {
+    let key = (
+        repo_path.to_string_lossy().into_owned(),
+        format!("{owner}/{name}"),
+    );
+    if backed_off(&key) {
+        return None;
+    }
+    let data: ItemData = match gh_graphql(
+        repo_path,
+        ITEM_QUERY,
+        &[
+            ("owner", GraphqlValue::Str(owner)),
+            ("name", GraphqlValue::Str(name)),
+            ("number", GraphqlValue::Int(number as i64)),
+        ],
+    )
+    .await
+    {
+        Ok(data) => data,
+        Err(err) => {
+            log::warn!(
+                "readout item lookup: {}: {}",
+                err.code.as_str(),
+                log_detail(&err.message)
+            );
+            back_off(key);
+            return None;
+        }
+    };
+    let node = data.repository?.item?;
+    let is_pr = node.typename == "PullRequest";
+    let state = match node.state.as_str() {
+        "MERGED" => "merged",
+        "CLOSED" => "closed",
+        _ if is_pr && node.is_draft => "draft",
+        _ => "open",
+    };
+    Some(ItemInfo {
+        is_pr,
+        title: node.title.chars().take(TITLE_MAX_CHARS).collect(),
+        url: valid_url(&node.url).then_some(node.url),
+        state,
+    })
+}

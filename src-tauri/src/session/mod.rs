@@ -3,6 +3,7 @@
 pub mod advisor;
 pub mod agent;
 mod ai_credits;
+pub(crate) mod github_writes;
 pub mod health;
 pub mod last_user_message;
 pub mod manager;

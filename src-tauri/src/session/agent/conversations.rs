@@ -176,6 +176,9 @@ impl SessionAgent {
         }
         // A different Conversation, so the old readout and subagent state must not carry over (#577).
         crate::session::readout::on_conversation_reset(self).await;
+        if complete {
+            crate::session::readout::on_history_loaded(self, &messages).await;
+        }
         crate::session::subagents::on_conversation_reset(self).await;
         // Side-chat topics belong to the file switched away from, so drop them unless reopening it (#789).
         if previous_conversation.as_deref() != Some(file.as_str()) {
