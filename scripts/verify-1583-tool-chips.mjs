@@ -4,12 +4,12 @@
 // alignment, and icon/prose left-edge alignment; screenshots in several themes.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-1583-tool-chips.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
-import { buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget, switchTheme } from './verify-tauri-scratch-helpers.mjs';
+import { buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget, switchTheme, gitHead, computeDirty, sha256OfFile } from './verify-tauri-scratch-helpers.mjs';
 import { buildOmpShim } from './verify-tauri-560-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 
@@ -17,7 +17,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const LOG = 'verify-1583';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.REFRACT_1583_SHOTS_DIR || path.join(tmpdir(), 'refract-1583-shots');
+const SHOTS_DIR = process.env.REFRACT_1583_SHOTS_DIR || 'C:/Users/shopwood/AppData/Local/Temp/verify1583b/shots';
+// Exact command of fixture tool call c2; chips must reproduce it byte for byte (spaces before flags included).
+const C2_COMMAND = readFileSync(path.join(__dirname, 'fixtures/omp-frames/tool-chips-1583.jsonl'), 'utf8')
+  .split('\n').filter(Boolean).map((l) => JSON.parse(l)).find((f) => f.type === 'tool_execution_start' && f.toolCallId === 'c2').args.command;
 const THEMES = [
   ['dark', 'Dark'],
   ['obsidian', 'Obsidian'],
@@ -59,6 +62,52 @@ const WRAPPED_ROW = () => `(() => {
   const rects = Array.from(chip.getClientRects());
   return { expanded: btn.getAttribute('aria-expanded'), lines: rects.length, labelLeft: label ? label.getBoundingClientRect().left : null, chipLefts: rects.map((r) => Math.round(r.left)), rowRight: Math.round(btn.getBoundingClientRect().right), chipRights: rects.map((r) => Math.round(r.right)) };
 })()`;
+// Geometry of every visible tool row: icon wrapper, label, each chip line box and meta, for overlap checks.
+const ROW_GEOM = `(() => {
+  const box = (el) => { const r = el.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom }; };
+  const hit = (a, b) => Math.min(a.r, b.r) - Math.max(a.l, b.l) > 0.5 && Math.min(a.b, b.b) - Math.max(a.t, b.t) > 0.5;
+  return Array.from(document.querySelectorAll('button[aria-expanded]')).filter((b) => b.querySelector('[data-slot="tool-target"]') && b.offsetParent !== null).map((btn) => {
+    const chip = btn.querySelector('[data-slot="tool-target"]');
+    const label = btn.querySelector('[data-slot="collapsed-line-label"]');
+    const iconWrap = btn.querySelector('svg') && btn.querySelector('svg').parentElement;
+    const meta = btn.lastElementChild && /tabular-nums/.test(btn.lastElementChild.className) ? btn.lastElementChild : null;
+    const pieces = [];
+    if (iconWrap) pieces.push(['icon', box(iconWrap)]);
+    if (label) pieces.push(['label', box(label)]);
+    Array.from(chip.getClientRects()).forEach((r, i) => pieces.push(['chip' + i, { l: r.left, t: r.top, r: r.right, b: r.bottom }]));
+    if (meta) pieces.push(['meta', box(meta)]);
+    const overlaps = [];
+    for (let i = 0; i < pieces.length; i++) for (let j = i + 1; j < pieces.length; j++) if (hit(pieces[i][1], pieces[j][1])) overlaps.push(pieces[i][0] + '/' + pieces[j][0]);
+    const chipVsLabel = label ? pieces.filter((p) => p[0].startsWith('chip')).some((p) => hit(p[1], box(label))) : false;
+    const svg = btn.querySelector('svg');
+    return { expanded: btn.getAttribute('aria-expanded'), isVitest: btn.textContent.includes('vitest'), text: chip.textContent, pieces: pieces.length, overlaps, chipVsLabel, iconX: svg ? svg.getBoundingClientRect().left : null };
+  });
+})()`;
+// Ring extent (outline or box-shadow blur/spread) of the vitest row button, and whether any clipping ancestor cuts it.
+const RING_CLIP = `(() => {
+  const btn = Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.includes('vitest'));
+  if (!btn) return null;
+  const s = getComputedStyle(btn);
+  const outline = s.outlineStyle !== 'none' ? parseFloat(s.outlineWidth) + Math.max(0, parseFloat(s.outlineOffset) || 0) : 0;
+  const px = (s.boxShadow.match(/(-?[\\d.]+)px/g) || []).map(parseFloat);
+  const shadow = s.boxShadow === 'none' ? 0 : Math.max(0, ...px.slice(2, 4));
+  const ring = Math.max(outline, shadow);
+  const r = btn.getBoundingClientRect();
+  const want = { l: r.left - ring, t: r.top - ring, r: r.right + ring, b: r.bottom + ring };
+  const clippers = [];
+  for (let el = btn.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+    const cs = getComputedStyle(el);
+    if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+    const c = el.getBoundingClientRect();
+    const cut = { x: cs.overflowX !== 'visible' && (want.l < c.left - 0.5 || want.r > c.right + 0.5), y: cs.overflowY !== 'visible' && (want.t < c.top - 0.5 || want.b > c.bottom + 0.5) };
+    if (cut.x || cut.y) clippers.push({ tag: el.tagName, slot: el.getAttribute('data-slot'), cut });
+  }
+  return { ring, outline: s.outlineStyle + ' ' + s.outlineWidth + ' offset ' + s.outlineOffset, boxShadow: s.boxShadow, clippers, focusVisible: btn.matches(':focus-visible') };
+})()`;
+const mouseTo = (cdp, x, y) => cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+const tab = async (cdp) => {
+  for (const type of ['keyDown', 'keyUp']) await cdp.send('Input.dispatchKeyEvent', { type, key: 'Tab', code: 'Tab', windowsVirtualKeyCode: 9 });
+};
 
 async function launch(env) {
   const port = await getFreePort();
@@ -125,17 +174,61 @@ async function main() {
     check(c.chips.every((x) => x.bg === c.fill), 'Every chip uses the Markdown inline-code fill (--md-code-bg)', { fill: c.fill, bgs: [...new Set(c.chips.map((x) => x.bg))] });
     check(c.chips.every((x) => x.color === c.muted), 'Every chip text is the muted tool-row colour', { muted: c.muted, colours: [...new Set(c.chips.map((x) => x.color))] });
     const shapeOf = (x) => ({ font: x.font, ratio: x.ratio, radius: x.radius, padL: x.padL, padR: x.padR });
-    const shapeMismatch = c.chips.filter((x) => JSON.stringify(shapeOf(x)) !== JSON.stringify(shapeOf(c.prose)));
-    check(c.prose !== null && shapeMismatch.length === 0, 'Chip font, size, radius and padding match the prose inline-code chip', { prose: shapeOf(c.prose ?? {}), mismatched: shapeMismatch });
+    if (c.prose) {
+      const shapeMismatch = c.chips.filter((x) => JSON.stringify(shapeOf(x)) !== JSON.stringify(shapeOf(c.prose)));
+      check(shapeMismatch.length === 0, 'Chip font, size, radius and padding match the prose inline-code chip', { prose: shapeOf(c.prose), mismatched: shapeMismatch });
+    } else {
+      check(false, 'Chip font, size, radius and padding match the prose inline-code chip', 'no prose inline-code element found');
+    }
     const align = await cdp.evaluate(ICON_VS_PROSE);
     check(align.iconLeft !== null && align.proseLeft !== null && Math.abs(align.iconLeft - align.proseLeft) <= 1, 'Tool row icon lines up with the prose left edge', align);
 
+    const collapsedGeom = await cdp.evaluate(ROW_GEOM);
+    check(collapsedGeom.length >= 4 && collapsedGeom.every((g) => g.overlaps.length === 0), 'Collapsed: no fragment overlap between icon, label, chip and meta', collapsedGeom.map((g) => ({ text: g.text.slice(0, 20), overlaps: g.overlaps })));
+    check(collapsedGeom.every((g) => !g.chipVsLabel), 'Collapsed: chip box does not intersect label box', collapsedGeom.map((g) => g.chipVsLabel));
+    const c2Row = collapsedGeom.find((g) => g.isVitest);
+    check(!!c2Row && c2Row.text === C2_COMMAND, 'Chip textContent equals fixture c2 command exactly (spaces before flags kept)', { want: C2_COMMAND, got: c2Row && c2Row.text });
+
+    await switchTheme(cdp, 'dark', 'Dark');
+    await sleep(600);
     await shot(cdp, '10-collapsed-dark.png');
+
+    // Hover ring: pointer over the row, then Tab focus from the previous tabbable.
+    const rowRect = await cdp.evaluate(`(() => { const r = Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.includes('vitest')).getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+    await mouseTo(cdp, rowRect.x, rowRect.y);
+    await sleep(300);
+    const hoverRing = await cdp.evaluate(RING_CLIP);
+    check(!!hoverRing && hoverRing.clippers.length === 0, 'Hover state: ring/shadow not clipped by an ancestor overflow box', hoverRing);
+    await mouseTo(cdp, 1, 1);
+    await cdp.evaluate(`(() => {
+      const sel = 'a[href],button:not([disabled]),input:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+      const all = Array.from(document.querySelectorAll(sel)).filter((el) => el.offsetParent !== null);
+      const i = all.findIndex((b) => b.matches('button[aria-expanded]') && b.textContent.includes('vitest'));
+      if (i > 0) all[i - 1].focus();
+      return i;
+    })()`);
+    await tab(cdp);
+    await sleep(300);
+    const focusRing = await cdp.evaluate(RING_CLIP);
+    const tabFocused = await cdp.evaluate(`!!document.activeElement && document.activeElement.textContent.includes('vitest')`);
+    check(tabFocused === true && !!focusRing && focusRing.focusVisible, 'Tab moves keyboard focus onto the vitest tool row', { tabFocused, focusRing });
+    check(!!focusRing && focusRing.clippers.length === 0, 'Focus ring not clipped by an ancestor overflow box', focusRing);
+    await shot(cdp, '12-tab-focus-dark.png');
+    await cdp.evaluate(`document.activeElement && document.activeElement.blur()`);
+
     await cdp.click(`Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.includes('vitest'))`);
     await sleep(500);
     const wrapped = await cdp.evaluate(WRAPPED_ROW());
     check(wrapped && wrapped.expanded === 'true' && wrapped.lines > 1, 'Expanded long command wraps across several chip lines', wrapped);
     check(wrapped && wrapped.chipLefts.slice(1).every((l) => Math.abs(l - wrapped.labelLeft) <= 2), 'Wrapped lines restart under the label, not in a narrow column', wrapped);
+    const expandedGeom = await cdp.evaluate(ROW_GEOM);
+    check(expandedGeom.every((g) => g.overlaps.length === 0), 'Expanded/wrap: no fragment overlap between icon, label, chip and meta', expandedGeom.map((g) => ({ text: g.text.slice(0, 20), overlaps: g.overlaps })));
+    check(expandedGeom.every((g) => !g.chipVsLabel), 'Expanded/wrap: chip box does not intersect label box', expandedGeom.map((g) => g.chipVsLabel));
+    const expRow = expandedGeom.find((g) => g.isVitest);
+    const iconShift = c2Row && expRow ? Math.abs(expRow.iconX - c2Row.iconX) : null;
+    check(iconShift !== null && iconShift < 1, 'Icon x shift between collapsed and expanded is under 1px', { collapsedX: c2Row && c2Row.iconX, expandedX: expRow && expRow.iconX, shiftPx: iconShift });
+    await switchTheme(cdp, 'dark', 'Dark');
+    await sleep(600);
     await shot(cdp, '11-expanded-wrap-dark.png');
     await cdp.click(`Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.includes('vitest'))`);
     await sleep(300);
@@ -153,7 +246,8 @@ async function main() {
     try { if (session) await session.cdp.screenshot(path.join(SHOTS_DIR, 'crash.png')); } catch {}
     process.exitCode = 1;
   } finally {
-    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
+    const meta = { gitHead: gitHead(REPO_ROOT), dirty: computeDirty(REPO_ROOT), exeSha256: (() => { try { return sha256OfFile(path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe')); } catch (e) { return `unavailable: ${e}`; } })() };
+    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ ...meta, steps: report }, null, 2));
     if (session) {
       session.cdp.close();
       await stopLauncher(session.child).catch(() => {});
