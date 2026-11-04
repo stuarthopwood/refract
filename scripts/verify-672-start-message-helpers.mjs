@@ -399,11 +399,10 @@ export async function setupLaunch(exePath, launcherExe, launchLabel, extraEnv, p
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 30_000, label: `${launchLabel}: Readiness green (fake omp)` }
     );
-    await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: `${launchLabel}: Add repository dialog open` });
+    await cdp.openLocalFolderDialog();
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(`!!document.querySelector('[data-quick-create-session]')`, { timeoutMs: 30_000, label: `${launchLabel}: Scratch repository added, quick-create button visible` });
 
     // Confirm the fake-omp shim ran, not a real omp.exe from the system PATH (#985): its debug log's

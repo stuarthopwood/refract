@@ -388,7 +388,7 @@ async function runChecks(cdp, evidenceDir, log, { repoDir, repoName }) {
   await cdp.screenshot(path.join(evidenceDir, '08-group-collapsed-waiting-marker.png'));
 
   const footerCheck = await cdp.evaluate(
-    `(() => { const footer = Array.from(document.querySelectorAll('nav div')).find((el) => el.className.includes('border-t') && el.querySelector('button')?.textContent?.includes('Add repository')); const profile = document.querySelector('[data-profile-name-button]')?.closest('div'); const fcs = footer ? getComputedStyle(footer) : null; const pcs = profile ? getComputedStyle(profile) : null; return { footerBorderWidth: fcs?.borderTopWidth, profileBorderWidth: pcs?.borderTopWidth, addRepoColor: getComputedStyle(footer.querySelector('button')).color }; })()`
+    `(() => { const footer = Array.from(document.querySelectorAll('nav div')).find((el) => el.className.includes('border-t') && el.querySelector('button')?.textContent?.includes('Add project')); const profile = document.querySelector('[data-profile-name-button]')?.closest('div'); const fcs = footer ? getComputedStyle(footer) : null; const pcs = profile ? getComputedStyle(profile) : null; return { footerBorderWidth: fcs?.borderTopWidth, profileBorderWidth: pcs?.borderTopWidth, addRepoColor: getComputedStyle(footer.querySelector('button')).color }; })()`
   );
   writeFileSync(path.join(evidenceDir, 'footer-check.json'), JSON.stringify(footerCheck, null, 2));
   log(`verify-tauri-567: footer divider check: ${JSON.stringify(footerCheck)}`);

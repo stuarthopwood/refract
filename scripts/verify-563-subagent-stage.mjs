@@ -166,11 +166,10 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '01-readiness-green.png'));
     findings.push('Readiness screen green, Add repository enabled.');
 
-    await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+    await cdp.openLocalFolderDialog();
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
       { timeoutMs: 30_000, label: 'Repository added, session-list row rendered' },

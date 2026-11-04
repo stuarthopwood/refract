@@ -256,11 +256,11 @@ async function runChecks(cdp, evidenceDir, log, { repoA, repoB, repoC, repoAName
   log('STEP PASS: the archived-Session active bar and marker show on Archived\'s own header, never leaked back onto Repository B\'s former header.');
   await cdp.screenshot(path.join(evidenceDir, '03-dark-collapsed-with-marker.png'));
 
-  // Focused programmatically, not clicked: a click opens Pull Requests, whose combobox steals focus on mount.
-  await cdp.evaluate(`document.querySelector('[aria-label="Pull requests"]').focus()`);
+  // Focused programmatically, not clicked: a click opens Usage, whose view steals focus on mount. The funnel follows the last nav item (Home, Pull requests, Issues, Usage).
+  await cdp.evaluate(`document.querySelector('button[aria-label="Usage"]').focus()`);
   await pressTab(cdp);
   let active = await getActiveElementAccessibleName(cdp);
-  assert(/^Filter sessions/.test(active.name ?? ''), `Tab after Pull requests must land on the filter funnel (got: ${JSON.stringify(active)})`);
+  assert(/^Filter sessions/.test(active.name ?? ''), `Tab after Usage must land on the filter funnel (got: ${JSON.stringify(active)})`);
   // Show hidden renders only while a Session is hidden, so the helper steps over it when present.
   active = await pressTabSkippingShowHidden(cdp);
   assert(active.name === 'Collapse all groups', `Tab after the funnel (and Show hidden, when shown) must land on Collapse all groups (got: ${JSON.stringify(active)})`);
