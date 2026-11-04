@@ -203,11 +203,11 @@ async function main() {
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 60_000, label: 'Readiness checklist green' }
     );
-    await cdp1.click(`document.querySelector('[data-readiness-primary]')`);
+    await cdp1.openLocalFolderDialog();
     await cdp1.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
     await cdp1.click(`document.querySelector('[role="dialog"] input')`);
     await cdp1.send('Input.insertText', { text: repoDir });
-    await cdp1.clickByText('Add repository', { inDialog: true });
+    await cdp1.clickByText('Add project', { inDialog: true });
     await cdp1.waitFor(
       `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
       { timeoutMs: 30_000, label: 'Repository added, session-list row rendered' }

@@ -67,7 +67,7 @@ async function checkSettingsNotice(cdp) {
   })()`);
   log(`notice layout: ${JSON.stringify(layout)}`);
   await shot(cdp, '04-settings-suspect-notice.png');
-  assert(layout.title === 'Some context windows may be wrong', 'Notice title reads "Some context windows may be wrong"');
+  assert(layout.title === 'A context window may be wrong', 'Notice title reads "A context window may be wrong"');
   assert(layout.actionsLeft === layout.titleLeft, 'The link row aligns with the title column, not under the icon');
   assert(layout.actionsInside, 'The link row stays inside the alert');
   assert(layout.link.includes('Why this window may be wrong (oh-my-pi#17481)') && layout.sr && layout.target === '_blank', 'The link uses the shake-menu label, opens in a new tab and announces it');

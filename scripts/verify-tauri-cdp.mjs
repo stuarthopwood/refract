@@ -162,6 +162,15 @@ export class CdpSession {
     return this.click(finder);
   }
 
+  /** Opens the "Add project" dropdown (the first-run primary button, else the list footer's) and picks "Local folder…"; resolves once the dialog's path input is mounted. */
+  async openLocalFolderDialog() {
+    const item = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Local folder…')`;
+    await this.click(`document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project')`);
+    await this.waitFor(`!!(${item})`, { timeoutMs: 10_000, label: 'Add project menu open' });
+    await this.click(item);
+    await this.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog open' });
+  }
+
   async typeIntoByLabel(label, text, { inDialog = false } = {}) {
     const scope = inDialog ? `document.querySelector('[role="dialog"]')` : 'document.body';
     const finder = `(() => { const root = ${scope}; if (!root) return null; return root.querySelector('[aria-label=${JSON.stringify(label)}]'); })()`;

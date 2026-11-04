@@ -63,7 +63,7 @@ async function main() {
     assertExeMatchesProcess(launched.targetPid, exePath, hash);
     log(`verify-tauri-503: launched pid ${launched.targetPid}, exe sha256 ${hash}; fake gh log ${ghLog}`);
 
-    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add repository' && !el.disabled)`, { timeoutMs: 45_000, label: 'app ready' });
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project' && !el.disabled)`, { timeoutMs: 45_000, label: 'app ready' });
     await addRepository(cdp, repoDir);
     const triggerSel = `document.querySelector('[aria-label="More actions for hello-world"]')`;
     await cdp.waitFor(`!!${triggerSel}`, { timeoutMs: 20_000, label: 'repository actions trigger' });

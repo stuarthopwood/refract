@@ -139,11 +139,11 @@ async function main() {
     cdp1 = await CdpSession.connect(await waitForCdpTarget(port1, { timeoutMs: 60_000 }));
     if (!isTargetOwningPort(port1, launched1.targetPid)) throw new Error('CDP target on launch 1 is not owned by the process this run launched');
     await cdp1.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
-    await cdp1.click(`document.querySelector('[data-readiness-primary]')`);
+    await cdp1.openLocalFolderDialog();
     await cdp1.waitFor(`!!document.querySelector('[role="dialog"] input')`, { label: 'Add repository dialog' });
     await cdp1.click(`document.querySelector('[role="dialog"] input')`);
     await cdp1.send('Input.insertText', { text: repoDir });
-    await cdp1.clickByText('Add repository', { inDialog: true });
+    await cdp1.clickByText('Add project', { inDialog: true });
     await cdp1.waitFor(`!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`, { timeoutMs: 30_000, label: 'Repository added' });
     await cdp1.clickByLabel('New session from a branch in ', { prefix: true });
     await cdp1.waitFor(`(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`, { label: 'New session dialog' });
