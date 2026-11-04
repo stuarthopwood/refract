@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 // Live CDP check for #1636 (Usage Averages): recent-dated fixtures, real debug exe, fake omp/gh,
-// scratch REFRACT_DATA_DIR and own port; never touches %APPDATA%. Averages are hand-computed here
-// from the fixture and compared with the IPC summary and the rendered cards, with and without a
-// Project filter, for 7d and All. Also checks the Session usage panel line, a Project whose only
-// call is last month (Projected month spend is "-" with an accessible name), and the filtered-empty
-// state (a Project matching nothing hides the Averages section; the six cards cannot all show "-").
+// scratch REFRACT_DATA_DIR and own port. Hand-computed averages are compared with the IPC summary
+// and rendered cards (7d/All, with/without Project filter), plus the Session usage line, a Project
+// whose only call is last month ("-" with an accessible name) and the filtered-empty state.
+
 // Usage: CARGO_TARGET_DIR=<shared target dir> SHOTS_DIR=<evidence dir> node scripts/verify-tauri-1636.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
