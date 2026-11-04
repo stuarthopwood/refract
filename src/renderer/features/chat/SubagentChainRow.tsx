@@ -315,7 +315,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       metaClassName="min-w-0 shrink"
       open={open}
       onOpenChange={onOpenChange}
-      className="-mx-1 mt-6 rounded-lg p-1 ring-1 ring-divider"
+      className="mt-6 rounded-lg ring-1 ring-divider"
       triggerClassName="group-hover/line:bg-row-hover-bg"
       contentClassName={SPINE_HOST_CONTENT_CLASS}
       // The ticking duration is omitted from the accessible name while running so it does not change every second.
