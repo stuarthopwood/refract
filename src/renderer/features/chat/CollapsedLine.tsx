@@ -207,7 +207,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
 
   return (
     <Collapsible open={actualOpen} onOpenChange={setOpen} className={cn('-mx-2', className)}>
-      <div className="flex items-start gap-1">
+      {/* The header wrapper owns the hover fill so it also holds over `action`, which cannot nest in the trigger button. */}
+      <div className="group/line relative flex items-start [--ghost-hover-bg:var(--row-action-hover-bg)]">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
           id={id}
@@ -215,7 +216,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           aria-describedby={showDetail ? detailId : undefined}
           {...focusHandlers}
           className={cn(
-            'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+            'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm group-hover/line:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
             triggerClassName
           )}
         >
@@ -223,8 +224,10 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           <span className="flex h-5 shrink-0 items-center">
             <ChevronRightIcon className={cn('size-4 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
           </span>
+          {/* Reserves the action's column in every expandable row so all chevrons share one x; the action is laid over it below. */}
+          <span aria-hidden="true" className="h-5 w-6 shrink-0" />
         </CollapsibleTrigger>
-        {action}
+        {action !== undefined && <span className="absolute right-2 top-0 flex translate-y-0.5">{action}</span>}
       </div>
       {detailMounted && (
         <p
