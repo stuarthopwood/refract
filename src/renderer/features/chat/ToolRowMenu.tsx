@@ -41,7 +41,7 @@ export function ToolRowKebab({ item, open, onOpenChange }: Omit<ToolRowMenuProps
       lazy
       items={toolRowItems(item, open, onOpenChange)}
       label={command === '' ? 'More actions' : `More actions for ${command.slice(0, 60)}`}
-      className="translate-y-0.5 opacity-0 transition-opacity motion-reduce:transition-none focus-visible:opacity-100 group-focus-within/tool-row:opacity-100 group-hover/tool-row:opacity-100 data-[state=open]:opacity-100"
+      className="opacity-0 transition-opacity motion-reduce:transition-none focus-visible:opacity-100 group-focus-within/tool-row:opacity-100 group-hover/tool-row:opacity-100 data-[state=open]:opacity-100"
     />
   )
 }
