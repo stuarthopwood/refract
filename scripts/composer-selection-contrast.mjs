@@ -2,13 +2,17 @@
 // composer-background); the generic PAIRS loop would composite it over itself. Text is enforced; distinctness vs background is informational.
 // Lives in its own file to keep theme-contrast-pairs.mjs under the 600-line cap.
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
+import { DARK_STANDARD_THEMES, HIGH_CONTRAST_THEMES, LIGHT_STANDARD_THEMES } from './theme-groups.mjs'
 
 // Plain `{ fg, bg, min }` rows merged into PAIRS by `check-theme-contrast.mjs`; see globals.css for the measured numbers.
 export const COMMAND_PILL_PAIRS = [
   { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 4.5 },
-  { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 7, onlyThemes: ['dark-high-contrast'] },
-  { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: ['dark', 'obsidian', 'nordic-frost', 'cyber-amber'] },
+  { fg: 'command-pill-fg', bg: 'command-pill-bg', min: 7, onlyThemes: HIGH_CONTRAST_THEMES },
+  { fg: 'command-pill-bg', bg: 'background', min: 1.4, onlyThemes: DARK_STANDARD_THEMES },
+  // Pale surfaces cap how far a chip can step from the page while keeping 4.5:1 label text, so light presets use 1.2 (as the find-match pair).
+  { fg: 'command-pill-bg', bg: 'background', min: 1.2, onlyThemes: LIGHT_STANDARD_THEMES },
   { fg: 'command-pill-bg', bg: 'composer-background', min: 1.4, onlyThemes: ['dark-high-contrast'] },
+  { fg: 'command-pill-bg', bg: 'composer-background', min: 1.2, onlyThemes: ['light-high-contrast'] },
 ]
 
 export function composerSelectionContrastRows(themes) {
@@ -31,7 +35,7 @@ export function composerSelectionContrastRows(themes) {
       })
       continue
     }
-    const min = themeId === 'dark-high-contrast' ? 7 : 4.5
+    const min = HIGH_CONTRAST_THEMES.includes(themeId) ? 7 : 4.5
 
     const overPill = resolvedLinear(selectionBg, pillBg)
     const pillDistinctRatio = contrastRatio(relativeLuminance(overPill), relativeLuminance(pillBg.linear))

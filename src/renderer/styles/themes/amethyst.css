@@ -32,12 +32,12 @@
   --popover-foreground: var(--foreground);
   --primary: #773ac1;
   --primary-foreground: #ffffff;
-  --send: #773ac1;
+  --send: #8a4fd6;
   --send-foreground: #ffffff;
   --secondary: var(--surface-hover);
   --secondary-foreground: var(--foreground);
   --muted: var(--surface-hover);
-  --muted-foreground: oklch(1 0 0 / 60%);
+  --muted-foreground: oklch(1 0 0 / 68%);
   --holiday-artwork-opacity: 0.28;
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
@@ -45,7 +45,7 @@
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --border: #8b7fa3;
-  --input: oklch(1 0 0 / 36%);
+  --input: oklch(1 0 0 / 40%);
   --ring: oklch(0.62 0 0);
   --active-indicator: var(--accent-text);
   --active-indicator-foreground: oklch(1 0 0);
@@ -54,7 +54,7 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #191125;
+  --sidebar: #20162e;
   --project-1: oklch(0.78 0.11 125);
   --project-2: oklch(0.78 0.11 195);
   --project-3: oklch(0.78 0.11 225);
@@ -89,11 +89,11 @@
   --pr-closed-foreground: oklch(0.145 0 0);
   --pr-merged: oklch(0.65 0.18 300);
   --pr-merged-foreground: oklch(0.145 0 0);
-  --surface-1: #211a2e;
-  --surface-2: #282136;
-  --surface-3: #30283e;
+  --surface-1: #271f35;
+  --surface-2: #2f273e;
+  --surface-3: #382f47;
   --surface-hover: var(--surface-3);
-  --divider: #3b334a;
+  --divider: #504663;
   --titlebar: var(--card);
   --pane-focused: #170f23;
   --pane-focused-edge: transparent;
@@ -126,7 +126,7 @@
   --context-usage-70: oklch(0.769 0.163 70.08);
   --context-usage-100: oklch(0.74 0.155 22.216);
   --severity-warning: oklch(0.769 0.188 70.08);
-  --severity-error: oklch(0.74 0.191 22.216);
+  --severity-error: oklch(0.79 0.191 22.216);
   --severity-info: #38BDF8;
   --agent-message: oklch(0.78 0.12 295);
   --diff-added: var(--state-working);

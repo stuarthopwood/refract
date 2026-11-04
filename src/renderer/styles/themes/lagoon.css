@@ -37,7 +37,7 @@
   --secondary: var(--surface-hover);
   --secondary-foreground: var(--foreground);
   --muted: var(--surface-hover);
-  --muted-foreground: oklch(1 0 0 / 60%);
+  --muted-foreground: oklch(1 0 0 / 68%);
   --holiday-artwork-opacity: 0.28;
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
@@ -45,7 +45,7 @@
   --destructive: var(--severity-error);
   --destructive-foreground: oklch(0.145 0 0);
   --border: #638f94;
-  --input: oklch(1 0 0 / 36%);
+  --input: oklch(1 0 0 / 40%);
   --ring: oklch(0.62 0 0);
   --active-indicator: var(--accent-text);
   --active-indicator-foreground: oklch(1 0 0);
@@ -54,7 +54,7 @@
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: #001a1e;
+  --sidebar: #001f23;
   --project-1: oklch(0.78 0.11 125);
   --project-2: oklch(0.78 0.11 195);
   --project-3: oklch(0.78 0.11 225);
@@ -89,11 +89,11 @@
   --pr-closed-foreground: oklch(0.145 0 0);
   --pr-merged: oklch(0.65 0.18 300);
   --pr-merged-foreground: oklch(0.145 0 0);
-  --surface-1: #052326;
-  --surface-2: #0d2a2d;
-  --surface-3: #153235;
+  --surface-1: #06272b;
+  --surface-2: #0f2f32;
+  --surface-3: #18383b;
   --surface-hover: var(--surface-3);
-  --divider: #213d41;
+  --divider: #2d5056;
   --titlebar: var(--card);
   --pane-focused: #00181b;
   --pane-focused-edge: transparent;

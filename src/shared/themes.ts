@@ -88,7 +88,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#ffffff',
     swatchPrimary: '#262626',
     syntaxTheme: 'css-variables',
-    titleBarOverlay: { color: '#f7f7f7', symbolColor: '#191919' }
+    titleBarOverlay: { color: '#e9e9e9', symbolColor: '#171717' }
   },
   'light-warm-paper': {
     id: 'light-warm-paper',
@@ -96,7 +96,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#faf3e5',
     swatchPrimary: '#7d460b',
     syntaxTheme: 'css-variables',
-    titleBarOverlay: { color: '#f3ead9', symbolColor: '#181716' }
+    titleBarOverlay: { color: '#e9e0d0', symbolColor: '#171615' }
   },
   'light-high-contrast': {
     id: 'light-high-contrast',
@@ -104,7 +104,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#ffffff',
     swatchPrimary: '#000000',
     syntaxTheme: 'css-variables',
-    titleBarOverlay: { color: '#f2f2f2', symbolColor: '#000000' }
+    titleBarOverlay: { color: '#e9e9e9', symbolColor: '#000000' }
   },
   lagoon: {
     id: 'lagoon',
@@ -112,7 +112,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#021113',
     swatchPrimary: '#007475',
     syntaxTheme: 'css-variables',
-    titleBarOverlay: { color: '#052326', symbolColor: '#e6e9e9' }
+    titleBarOverlay: { color: '#06272b', symbolColor: '#e6e9ea' }
   },
   amethyst: {
     id: 'amethyst',
@@ -120,7 +120,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#100b19',
     swatchPrimary: '#773ac1',
     syntaxTheme: 'css-variables',
-    titleBarOverlay: { color: '#211a2e', symbolColor: '#e9e8ea' }
+    titleBarOverlay: { color: '#271f35', symbolColor: '#e9e9eb' }
   },
   hearth: {
     id: 'hearth',
@@ -128,7 +128,7 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatch: '#160b07',
     swatchPrimary: '#9f4500',
     syntaxTheme: 'css-variables',
-    titleBarOverlay: { color: '#2a1a12', symbolColor: '#eae8e7' }
+    titleBarOverlay: { color: '#311f16', symbolColor: '#eae9e8' }
   }
 }
 
