@@ -1,12 +1,13 @@
 // The shared stat card (spec 060 S2-02, ADR 0003): a label, a big value and an optional caption,
 // read by a screen reader as one unit (a labelled group, label then value then caption).
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { cn } from '@/lib/utils'
 
 export interface StatCardProps {
   label: string
-  value: string
+  /** A node lets a caller give a placeholder such as `-` an accessible name. */
+  value: ReactNode
   /** One short muted line under the value. */
   caption?: string
   className?: string

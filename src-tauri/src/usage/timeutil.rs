@@ -46,6 +46,12 @@ pub fn next_month_start(ts_ms: i64) -> i64 {
     days_from_civil(ny, nm, 1) * DAY_MS
 }
 
+/// UTC ms of local midnight on the first day of the month containing `now_ms`.
+pub fn month_start_local(now_ms: i64, offset_ms: i64) -> i64 {
+    let (y, m, _) = civil_from_days((now_ms + offset_ms).div_euclid(DAY_MS));
+    days_from_civil(y, m, 1) * DAY_MS - offset_ms
+}
+
 /// Parses `YYYY-MM-DD` or an RFC 3339 instant to UTC milliseconds; anything else is `None`.
 pub fn parse_iso_ms(text: &str) -> Option<i64> {
     let b = text.as_bytes();
