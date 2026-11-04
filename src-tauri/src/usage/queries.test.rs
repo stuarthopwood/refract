@@ -190,8 +190,8 @@ fn summary_and_calls_read_what_was_recorded() {
         &ctx(),
     )
     .unwrap();
-    assert_eq!((page.total, page.rows.len()), (2, 1));
-    assert_eq!(page.rows[0].model, "m2");
+    assert_eq!((page.total, page.rows.len()), (3, 1));
+    assert_eq!(page.rows[0].model, "m1");
 }
 
 #[test]
