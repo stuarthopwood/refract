@@ -44,7 +44,7 @@ const BASH_HEADER_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
     const label = el.querySelector('[data-slot="collapsed-line-label"]');
     if (label) return /^Ran(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
-    const s = el.querySelector('span.min-w-0.flex-1');
+    const s = el.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
     return s ? /^\\$ /.test((s.textContent || '').trim()) : false;
   })`;
 
@@ -75,7 +75,7 @@ async function readHeaderColours(cdp, index) {
     if (!header) return null;
     const icon = header.querySelector('span.flex svg, span > svg');
     const label = header.querySelector('[data-slot="collapsed-line-label"]');
-    const summary = header.querySelector('span.min-w-0.flex-1');
+    const summary = header.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
     const describedby = header.getAttribute('aria-describedby');
     const detail = describedby ? document.getElementById(describedby) : null;
     const metaFailed = Array.from(header.querySelectorAll('span')).find((s) => /\\d+ failed/.test(s.textContent));
@@ -303,7 +303,7 @@ async function main() {
       // M2 drops every (bash) member's own label; the error colour moved onto its summary span.
       const memberInfo = members.map((li) => {
         const label = li.querySelector('[data-slot="collapsed-line-label"]');
-        const summary = li.querySelector('span.min-w-0.flex-1');
+        const summary = li.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
         const btn = li.querySelector('button');
         const describedby = btn ? btn.getAttribute('aria-describedby') : null;
         const detail = describedby ? document.getElementById(describedby) : null;
@@ -467,7 +467,7 @@ async function main() {
         const h = (${BASH_HEADER_FINDER}).at(-1);
         if (!h) return null;
         const label = h.querySelector('[data-slot="collapsed-line-label"]');
-        const summary = h.querySelector('span.min-w-0.flex-1');
+        const summary = h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
         const srWord = h.querySelector('span.sr-only');
         const describedby = h.getAttribute('aria-describedby');
         const detail = describedby ? document.getElementById(describedby) : null;

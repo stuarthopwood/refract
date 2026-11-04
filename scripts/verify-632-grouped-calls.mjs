@@ -71,7 +71,7 @@ const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filt
   if (el.closest('ol.border-l')) return false;
   const l = el.querySelector('[data-slot="collapsed-line-label"]');
   if (l) return /^(?:Ran|Running|Bash|Searched|Searching|Grep|Find|Glob|Read|Reading|Wrote|Writing|Write|Edited|Editing|Edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
-  const s = el.querySelector('span.min-w-0.flex-1');
+  const s = el.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
   const t = s ? (s.textContent || '').trim() : '';
   return /^\\$ /.test(t) || /^grep "/.test(t);
 })`;
@@ -83,7 +83,7 @@ function groupHeaderInfo(index) {
     const h = (${GROUP_HEADERS}).at(${index});
     if (!h) return null;
     const label = h.querySelector('[data-slot="collapsed-line-label"]');
-    const summaryHost = h.querySelector('span.min-w-0.flex-1');
+    const summaryHost = h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
     const metaHost = h.querySelector('span.tabular-nums');
     return {
       labelText: label ? label.textContent.trim() : null,
@@ -359,7 +359,7 @@ async function main() {
       findings.push(`Second member's own accessible name includes both tool and command: "${member1Ax.name}".`);
     }
 
-    const member0Summary = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); const s = b ? b.querySelector('span.min-w-0.flex-1') : null; return s ? s.textContent.trim() : null; })()`);
+    const member0Summary = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); const s = b ? b.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);
     if (!member0Summary || !member0Summary.startsWith('$ ')) {
       failures.push(`First member row's own text is "${member0Summary}", expected it to start with "$ " (the bash command-style form).`);
     } else {
@@ -370,7 +370,7 @@ async function main() {
     // Reads the COMPUTED `white-space` and asserts no code-block element and no output text.
     const member0ExpandedCheck = await cdp.evaluate(`(() => {
       const b = (${memberButtons}).at(0);
-      const s = b ? b.querySelector('span.min-w-0.flex-1') : null;
+      const s = b ? b.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null;
       const whiteSpace = s ? getComputedStyle(s).whiteSpace : null;
       const root = b ? b.closest('[data-slot="collapsible"]') : null;
       const content = root ? root.querySelector('[data-slot="collapsible-content"]') : null;
@@ -402,7 +402,7 @@ async function main() {
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632b/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (b) finished' });
-    const grepHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('span.min-w-0.flex-1') : null; return s ? s.textContent.trim() : null; })()`);
+    const grepHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);
     if (!grepHeaderText || !grepHeaderText.startsWith('grep "t632GrepMarker"')) {
       failures.push(`Grep call's own row text is "${grepHeaderText}", expected it to start with grep "t632GrepMarker".`);
     } else {
@@ -414,7 +414,7 @@ async function main() {
     await cdp.typeIntoByLabel('Message', TURN_C_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632c/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (c) finished' });
-    const readHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('span.min-w-0.flex-1') : null; return s ? s.textContent.trim() : null; })()`);
+    const readHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);
     if (!readHeaderText || !readHeaderText.includes('t632-read-target.txt')) {
       failures.push(`Read call's own row text is "${readHeaderText}", expected it to contain the read path, unchanged by #632.`);
     } else {
@@ -528,11 +528,11 @@ async function main() {
     // reliably has it): truncated collapsed, wrapped expanded.
     const readSummaryState = `(() => {
       const h = (${GROUP_HEADERS}).at(-1);
-      const s = h ? h.querySelector('span.min-w-0.flex-1') : null;
+      const s = h ? h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null;
       if (!s) return null;
       const t = ${TRANSCRIPT};
       return {
-        text: s.textContent, html: s.innerHTML, hasElementChildren: s.children.length > 0,
+        text: s.textContent, html: s.innerHTML, hasElementChildren: [...s.children].some((c) => c.getAttribute('data-slot') !== 'tool-target'),
         whiteSpace: getComputedStyle(s).whiteSpace,
         transcriptScrollWidth: t ? t.scrollWidth : null, transcriptClientWidth: t ? t.clientWidth : null,
       };
