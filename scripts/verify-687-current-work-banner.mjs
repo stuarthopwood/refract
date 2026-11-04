@@ -128,7 +128,10 @@ async function main() {
     await expectBanner(cdp, /Running a command/, 'A call with no intent falls back to a plain verb, never the raw tool name');
     assertTrue(!/bash/i.test(await cdp.evaluate(BANNER_TEXT)), 'The raw tool name "bash" is never shown');
 
-    await expectBanner(cdp, /Retrying · attempt 2 of 3/, 'Banner shows the retry variant');
+    // RetryLine owns the retry text; the banner deliberately never shows it.
+    await cdp.waitFor(`/Retrying\\s*Attempt 2 of 3/.test(document.querySelector('[data-testid="retry-line"]')?.textContent ?? '')`, { timeoutMs: 20_000, label: 'Retry line shows attempt 2 of 3' });
+    assertTrue(!/Retrying/.test((await cdp.evaluate(BANNER_TEXT)) ?? ''), 'The banner leaves the retry text to the Retry line');
+    console.log(`${LOG}: PASS Retry line shows attempt 2 of 3`);
     await shot(cdp, 'retrying.png');
     await expectBanner(cdp, /Compacting context…/, 'Banner shows the compaction variant');
     await shot(cdp, 'compacting.png');
