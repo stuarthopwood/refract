@@ -1,6 +1,6 @@
 // Parses every `.theme-*` block in globals.css into linear-sRGB token tables; shared by the contrast and display-profile checks.
 
-import { readFileSync } from 'node:fs'
+import { readThemeCssSource } from './theme-css-source.mjs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { addDerivedTokens } from './derived-tokens.mjs'
@@ -23,7 +23,7 @@ function stripCssComments(source, label) {
   }
   return stripped
 }
-const css = stripCssComments(readFileSync(cssPath, 'utf-8'), path.relative(repoRoot, cssPath))
+const css = stripCssComments(readThemeCssSource(), 'globals.css + styles/themes/*.css')
 
 // OKLab -> linear sRGB, Bjorn Ottosson's reference matrices (https://bottosson.github.io/posts/oklab/).
 function oklabToLinearSrgb(L, a, b) {

@@ -47,7 +47,8 @@ export function focusedBadgeContrastRows(themes) {
       push(name, 'surface-1 (scroll-to-bottom / attachment-remove)', min, contrastRatio(relativeLuminance(fgLinear), relativeLuminance(surfaceBackdrop.linear)), linearToHex(fgLinear), linearToHex(surfaceBackdrop.linear))
     }
     // High contrast has tint == background (no tint); its edge carries 3:1 instead.
-    const ladderOk = lum(background, background) <= tintLum + 1e-9 && tintLum < relativeLuminance(surfaceBackdrop.linear)
+    const bgLum = lum(background, background), s1Lum = relativeLuminance(surfaceBackdrop.linear)
+    const ladderOk = /^light/.test(themeId) ? bgLum >= tintLum - 1e-9 && tintLum > s1Lum : bgLum <= tintLum + 1e-9 && tintLum < s1Lum
     rows.push({ themeId, fg: 'ladder', bg: 'background <= pane-focused < surface-1', min: 0, ratio: tintLum, pass: ladderOk, note: ladderOk ? undefined : 'tint out of ladder order' })
     if (edge && edge.alpha > 0) {
       const edgeLinear = resolvedLinear(edge, background)

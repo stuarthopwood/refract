@@ -81,6 +81,7 @@ function linearToHex([r, g, b]) {
 
 const globalsCssPath = path.join(repoRoot, 'src/renderer/styles/globals.css')
 // The `.theme-<id>` regexes aren't comment-aware, so strip every CSS comment first (failing on an unterminated marker) to keep a commented-out token from parsing as live.
+import { readThemeCssSource } from './theme-css-source.mjs'
 function stripCssComments(source, label) {
   const stripped = source.replace(/\/\*[\s\S]*?\*\//g, '')
   const openCount = (source.match(/\/\*/g) || []).length
@@ -93,7 +94,7 @@ function stripCssComments(source, label) {
   }
   return stripped
 }
-const globalsCss = stripCssComments(readFileSync(globalsCssPath, 'utf-8'), path.relative(repoRoot, globalsCssPath))
+const globalsCss = stripCssComments(readThemeCssSource(), 'globals.css + styles/themes/*.css')
 const OKLCH_RE = /^oklch\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+)%)?\s*\)$/i
 const HEX_RE = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i
 // `--card` may be `var(--surface-1)` (#550), so resolve `var(--name)` hops before matching a literal (same as check-theme-contrast.mjs's `resolveRawValue`,

@@ -8,7 +8,8 @@ export type MermaidTokenReader = (name: string) => string
 
 const range = (n: number): number[] => Array.from({ length: n }, (_, i) => i)
 
-export function buildMermaidThemeVariables(read: MermaidTokenReader): MermaidThemeVariables {
+/** `darkMode` is false for the light presets (#1590) so Mermaid derives its own tints from a light base. */
+export function buildMermaidThemeVariables(read: MermaidTokenReader, darkMode = true): MermaidThemeVariables {
   const palette = range(12).map((i) => read(`palette-${i + 1}`))
   const ink = read('ink')
   const line = read('line')
@@ -24,7 +25,7 @@ export function buildMermaidThemeVariables(read: MermaidTokenReader): MermaidThe
     secondaryColor: secondary,
     tertiaryColor: read('tertiary'),
     textColor: read('text'),
-    darkMode: true,
+    darkMode,
     altSectionBkgColor: secondary,
     sectionBkgColor: secondary,
     sectionBkgColor2: secondary,

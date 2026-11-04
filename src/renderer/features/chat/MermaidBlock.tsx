@@ -106,15 +106,16 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
         const mermaid = (await getMermaid()).default
         // Mermaid's config is global, so re-reading tokens and re-initialising only matters when the theme key changes.
         if (initializedForThemeKey !== themeKey) {
+          const dark = document.documentElement.classList.contains('dark')
           const { themeVariables, themeCSS } = withResolvedTokens('mermaid-', (read) => ({
-            themeVariables: buildMermaidThemeVariables(read),
+            themeVariables: buildMermaidThemeVariables(read, dark),
             themeCSS: getMermaidThemeCSS(read)
           }))
           mermaid.initialize({
             startOnLoad: false,
             securityLevel: 'strict',
             suppressErrorRendering: true,
-            theme: 'dark',
+            theme: dark ? 'dark' : 'default',
             themeVariables,
             // Patches Mermaid CSS gaps `themeVariables` can't reach (see `getMermaidThemeCSS`).
             themeCSS

@@ -1,6 +1,12 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+@import "./themes/light.css";
+@import "./themes/light-warm-paper.css";
+@import "./themes/light-high-contrast.css";
+@import "./themes/lagoon.css";
+@import "./themes/amethyst.css";
+@import "./themes/hearth.css";
 
 /* Geist (SIL OFL-1.1, see src/renderer/assets/fonts/OFL.txt) is the default UI font and the
  * brand display font; Geist Mono (same licence) is the default code font (issue #1246). Both are

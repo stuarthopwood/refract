@@ -13,7 +13,9 @@ export function switchTrackContrastRows(themes) {
       rows.push({ themeId, fg: 'switch-off-track (foreground/40)', bg: 'background', min: 3, ratio: null, pass: false, note: 'token missing' })
       continue
     }
-    const trackEntry = { raw: 'foreground/40', alpha: foreground.alpha * 0.4, linear: foreground.linear }
+    // Light presets drop `.dark`, so the track is `bg-input`, not foreground/40.
+    const input = props['input']
+    const trackEntry = /^light/.test(themeId) && input ? input : { raw: 'foreground/40', alpha: foreground.alpha * 0.4, linear: foreground.linear }
     for (const [bgName, bgEntry] of [['background', background], ['popover', popover]]) {
       const trackLinear = resolvedLinear(trackEntry, bgEntry)
       const ratio = contrastRatio(relativeLuminance(trackLinear), relativeLuminance(bgEntry.linear))
