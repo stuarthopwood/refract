@@ -150,7 +150,6 @@ async function runPhaseA({ exePath, exeHash, launcherExe, log, results }) {
       { timeoutMs: 60_000, label: 'Phase A: readiness green' },
     );
     await cdp.openLocalFolderDialog();
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Phase A: Add repository dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });
@@ -237,7 +236,6 @@ async function runPhaseB({ exePath, exeHash, launcherExe, log, results }) {
       { timeoutMs: 60_000, label: 'Phase B: readiness green' },
     );
     await cdp.openLocalFolderDialog();
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Phase B: Add repository dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });
@@ -346,7 +344,6 @@ async function runPhaseC({ exePath, exeHash, launcherExe, log, results }) {
       { timeoutMs: 60_000, label: 'Phase C: readiness green' },
     );
     await cdp.openLocalFolderDialog();
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Phase C: Add repository dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });

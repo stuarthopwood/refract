@@ -65,7 +65,6 @@ export async function runOffSeasonBaseline(ctx) {
       { timeoutMs: 60_000, label: 'off-season baseline: Readiness green (fake omp)' }
     );
     await cdp.openLocalFolderDialog();
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'off-season baseline: Add repository dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });

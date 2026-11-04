@@ -219,7 +219,6 @@ async function main() {
       label: 'Readiness green (fake omp)'
     });
     await cdp.openLocalFolderDialog();
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });

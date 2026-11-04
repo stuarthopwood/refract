@@ -218,7 +218,7 @@ export async function addRepository(cdp, dir) {
   await cdp.click(`document.querySelector('[role="dialog"] input')`);
   await cdp.send('Input.insertText', { text: dir });
   await cdp.clickByText('Add project', { inDialog: true });
-  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'Add repository dialog closed' });
+  await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 30_000, label: 'Add project dialog closed' });
 }
 
 /** Removes an empty Repository via its header menu and the confirmation dialog; the prune check proves its id leaves `settings.json`, not just the renderer. */

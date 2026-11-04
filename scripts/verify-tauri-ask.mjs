@@ -251,7 +251,6 @@ async function runAskChecks(cdp, evidenceDir, { repoDir, message }) {
       { timeoutMs: 60_000, label: 'Readiness checklist all green (Add repository enabled)' },
     );
     await cdp.openLocalFolderDialog();
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
     await cdp.clickByText('Add project', { inDialog: true });

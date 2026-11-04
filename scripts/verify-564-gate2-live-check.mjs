@@ -137,7 +137,6 @@ async function main() {
       { timeoutMs: 60_000, label: 'readiness green, Add repository enabled' },
     );
     await first.cdp.openLocalFolderDialog();
-    await first.cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
     await first.cdp.click(`document.querySelector('[role="dialog"] input')`);
     await first.cdp.send('Input.insertText', { text: repoDir });
     await first.cdp.clickByText('Add project', { inDialog: true });

@@ -140,7 +140,6 @@ async function main() {
     if (!isTargetOwningPort(port1, launched1.targetPid)) throw new Error('CDP target on launch 1 is not owned by the process this run launched');
     await cdp1.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
     await cdp1.openLocalFolderDialog();
-    await cdp1.waitFor(`!!document.querySelector('[role="dialog"] input')`, { label: 'Add repository dialog' });
     await cdp1.click(`document.querySelector('[role="dialog"] input')`);
     await cdp1.send('Input.insertText', { text: repoDir });
     await cdp1.clickByText('Add project', { inDialog: true });

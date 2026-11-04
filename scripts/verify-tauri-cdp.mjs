@@ -162,7 +162,7 @@ export class CdpSession {
     return this.click(finder);
   }
 
-  /** Opens the "Add project" dropdown (the first-run primary button, else the list footer's) and picks "Local folder…"; resolves once the dialog's path input is mounted. */
+  /** First-run shows the readiness primary button; once projects exist the list footer's "Add project" button takes over. */
   async openLocalFolderDialog() {
     const item = `Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Local folder…')`;
     await this.click(`document.querySelector('[data-readiness-primary]') ?? Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project')`);
