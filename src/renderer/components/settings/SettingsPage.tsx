@@ -28,10 +28,10 @@ export function SettingsPage({ title, intro, width = 'default', headingRef, clas
     <div className={cn('flex w-full flex-col', width === 'wide' ? 'max-w-3xl' : 'max-w-2xl', className)}>
       {title && (
         <div className="mb-1 flex items-center justify-between gap-4">
-          <h2 ref={ref} tabIndex={-1} className="text-base font-semibold outline-none">
+          <h2 ref={ref} tabIndex={-1} className="min-w-0 truncate text-base font-semibold outline-none">
             {title}
           </h2>
-          {actions}
+          {actions && <div className="shrink-0">{actions}</div>}
         </div>
       )}
       {intro && <p className="mb-4 text-sm text-muted-foreground">{intro}</p>}

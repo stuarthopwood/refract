@@ -32,7 +32,10 @@ export function describeValue(info: Pick<TokenGuardKeyInfo, 'unit' | 'percentOfW
   if (typeof value === 'boolean') return value ? 'on' : 'off'
   if (typeof value === 'string') return info.options?.find((o) => o.value === value)?.label ?? value
   if (Array.isArray(value)) return value.map((m) => COMPACTION_METHODS.find((c) => c.value === m)?.label ?? m).join(', ')
-  if (value && Object.keys(value).length > 0) return `${Object.keys(value).length} models`
+  if (value && Object.keys(value).length > 0) {
+    const count = Object.keys(value).length
+    return count === 1 ? '1 model' : `${count} models`
+  }
   return 'none'
 }
 
