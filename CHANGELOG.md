@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.27.0 (2026-11-04)
+
+### Features
+
+- feat(chat): render tool row targets as shared inline-code chips (https://github.com/stuarthopwood/refract/pull/1645)
+- feat(usage): averages section (https://github.com/stuarthopwood/refract/pull/1643)
+- feat(settings): optimise token usage button (https://github.com/stuarthopwood/refract/pull/1661)
+- feat(chat): header badge tracks Session-written PRs and issues (https://github.com/stuarthopwood/refract/pull/1644)
+- feat(themes): six new themes (https://github.com/stuarthopwood/refract/pull/1653)
+- feat(lists): refresh PR and issue lists after a merge, close or Session write (https://github.com/stuarthopwood/refract/pull/1675)
+
+### Fixes
+
+- fix(chat): line up transcript row chevrons with an in-row action gutter (https://github.com/stuarthopwood/refract/pull/1674)
+- fix(usage): show Project for worktree and scratch cwds (https://github.com/stuarthopwood/refract/pull/1676)
+
+### Other
+
+- docs(plan): file #1641 (stale verify scripts) (https://github.com/stuarthopwood/refract/pull/1642)
+- docs(remote): spike OMP /collab over RPC and security assessment (https://github.com/stuarthopwood/refract/pull/1649)
+- docs(plan): file #1646, #1647 and #1648 (number field, watermark, command output) (https://github.com/stuarthopwood/refract/pull/1650)
+- docs(plan): file #1651 (pause card border) (https://github.com/stuarthopwood/refract/pull/1652)
+- docs(plan): block #1639 on OMP RPC collab (#18079) (https://github.com/stuarthopwood/refract/pull/1654)
+- docs(plan): add usage credit gap issues #1655 to #1658 (https://github.com/stuarthopwood/refract/pull/1659)
+- chore(config): hide off-topic skills in Refract sessions (https://github.com/stuarthopwood/refract/pull/1660)
+- docs(plan): add #1663 and #1664 (https://github.com/stuarthopwood/refract/pull/1665)
+- docs(plan): add #1666 (https://github.com/stuarthopwood/refract/pull/1667)
+- docs(plan): promote #1304 to P0 (https://github.com/stuarthopwood/refract/pull/1668)
+- docs(plan): add #1669 (https://github.com/stuarthopwood/refract/pull/1670)
+- chore(verify): repair stale verify scripts after batch 2 polish (https://github.com/stuarthopwood/refract/pull/1662)
+- docs(plan): add #1672 (https://github.com/stuarthopwood/refract/pull/1673)
+
 ## Unreleased
 
 ### Features
