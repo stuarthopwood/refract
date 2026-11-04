@@ -84,7 +84,7 @@ export function OptimiseTokenUsage({ rows }: { rows: ChangedRow[] }) {
       >
         <ul className="grid gap-2 text-sm">
           {snapshot.map((row) => (
-            <li key={row.key} className="grid gap-0.5">
+            <li key={row.key} className="grid gap-1">
               <span className="text-muted-foreground">{row.label}</span>
               <span className="[overflow-wrap:anywhere]">
                 {row.from}
