@@ -1086,4 +1086,4 @@ Also filed 2026-11-04 (Stuart, grilled: start in place): **#1678** (`p1`, `desig
 
 Also filed 2026-11-04 (Stuart, Usage bug): **#1680** (`p1`, `bug`), the Usage view shows the no-data state before the first ingest scan has run; show a loading state until a scan finishes.
 
-Also filed 2026-11-04 (Stuart, chat polish): **#1682** (`p1`, `design`), mute inline code chips (tool target pills) in chat messages only: lower background opacity and a more muted text colour, in every theme preset.
+Also filed 2026-11-04 (Stuart, chat polish): **#1682** (`p0`, `design`), mute inline code chips (tool target pills) in chat messages only: lower background opacity and a more muted text colour, in every theme preset.
