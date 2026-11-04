@@ -27,7 +27,7 @@ const TARGET_CHIP_CLASS = 'text-tool-row-fg ring-1 ring-inset ring-divider [font
 const TARGET_COLLAPSED_CLASS = 'inline-block min-w-0 max-w-full truncate py-1 align-top leading-3'
 // Wrapping: flows inline, keeps its fill per line (box-decoration-clone) and sits on the row's 20px
 // pitch, so it must not be an overflow-hidden inline-block (its baseline would be the bottom edge).
-const TARGET_WRAPPED_CLASS = 'inline overflow-visible text-clip whitespace-pre-wrap break-words py-0.5 align-baseline leading-[inherit]'
+const TARGET_WRAPPED_CLASS = 'inline overflow-visible text-clip whitespace-pre-wrap break-words py-0 align-baseline leading-[inherit]'
 
 // A tool target (path, command, code or search pattern) as a muted inline-code chip. It takes the
 // wrapped look inside a wrapping `CollapsedLine` summary, or wherever `inline` is set (text already

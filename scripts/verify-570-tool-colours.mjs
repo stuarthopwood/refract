@@ -22,6 +22,7 @@ import {
   switchTheme,
   requireSharedCargoTarget
 } from './verify-tauri-scratch-helpers.mjs';
+import { TOOL_ROW_SUMMARY_SELECTOR } from './verify-tool-row-selectors.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -161,10 +162,11 @@ async function main() {
     findings.push('Readiness green against the REAL ambient omp install, scratch data dir.');
 
     await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+    await cdp.clickByText('Local folder…', { tag: '[role="menuitem"]' });
+    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
       { timeoutMs: 30_000, label: 'Scratch repository added' },

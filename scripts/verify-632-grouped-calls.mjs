@@ -24,6 +24,7 @@ import {
   sha256OfFile,
   getAccessibleNameAndRole
 } from './verify-tauri-scratch-helpers.mjs';
+import { TOOL_ROW_SUMMARY_SELECTOR } from './verify-tool-row-selectors.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -31,20 +32,20 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_632_SHOTS_DIR || path.join(tmpdir(), 'refract-632-grouped-calls-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// The literal `grep "` substring appears only in #632's `commandRowText`, so its presence in the
-// non-minified dev bundle cheaply proves this exe contains #632's code.
+// The literal `tool-target` slot appears only in the tool-row chip code (#1583), which renders the
+// command-style grep/bash text #632 introduced, so its presence proves this exe has both.
 function assertBundleContainsStory632Marker() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory632Marker: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
   const files = readdirSync(assetsDir).filter((f) => f.endsWith('.js'));
   for (const file of files) {
     const text = readFileSync(path.join(assetsDir, file), 'utf8');
-    if (text.includes('grep "')) {
-      console.log(`verify-632: confirmed #632-only marker 'grep "' present in the built renderer bundle (${file}).`);
+    if (text.includes('tool-target')) {
+      console.log(`verify-632: confirmed chip marker 'tool-target' present in the built renderer bundle (${file}).`);
       return;
     }
   }
-  throw new Error('assertBundleContainsStory632Marker: \'grep "\' not found in any built renderer asset -- this build does not contain #632\'s code.');
+  throw new Error('assertBundleContainsStory632Marker: \'tool-target\' not found in any built renderer asset -- this build does not contain the tool-row chip code.');
 }
 
 const TURN_A_PROMPT =
@@ -158,7 +159,7 @@ async function main() {
 
     const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-632' });
     assertBundleContainsStory632Marker();
-    findings.push('Built renderer bundle contains the #632-only `grep "` marker text (verified before launch).');
+    findings.push('Built renderer bundle contains the `tool-target` chip marker (verified before launch).');
     const exePath = built.dest;
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
@@ -180,10 +181,11 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green (real omp --version + get_state round trip)' },
     );
     await cdp.click(`document.querySelector('[data-readiness-primary]')`);
-    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add repository dialog open' });
+    await cdp.clickByText('Local folder…', { tag: '[role="menuitem"]' });
+    await cdp.waitFor(`!!document.querySelector('[role="dialog"] input')`, { timeoutMs: 15_000, label: 'Add project dialog open' });
     await cdp.click(`document.querySelector('[role="dialog"] input')`);
     await cdp.send('Input.insertText', { text: repoDir });
-    await cdp.clickByText('Add repository', { inDialog: true });
+    await cdp.clickByText('Add project', { inDialog: true });
     await cdp.waitFor(
       `!!Array.from(document.querySelectorAll('[aria-label]')).find((el) => el.getAttribute('aria-label').startsWith('New session from a branch in '))`,
       { timeoutMs: 30_000, label: 'Scratch repository added' },
@@ -360,10 +362,10 @@ async function main() {
     }
 
     const member0Summary = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); const s = b ? b.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);
-    if (!member0Summary || !member0Summary.startsWith('$ ')) {
-      failures.push(`First member row's own text is "${member0Summary}", expected it to start with "$ " (the bash command-style form).`);
+    if (!member0Summary || !member0Summary.includes('t632-one')) {
+      failures.push(`First member row's own text is "${member0Summary}", expected the bash command chip containing "t632-one".`);
     } else {
-      findings.push(`First member row reads "${member0Summary}" ($ plus the command, not the raw target).`);
+      findings.push(`First member row reads "${member0Summary}" (the command chip, not the raw target).`);
     }
     await cdp.click(`(${memberButtons}).at(0)`);
     await cdp.waitFor(`(${memberButtons}).at(0).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'First member expanded' });
@@ -403,10 +405,10 @@ async function main() {
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632b/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (b) finished' });
     const grepHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);
-    if (!grepHeaderText || !grepHeaderText.startsWith('grep "t632GrepMarker"')) {
-      failures.push(`Grep call's own row text is "${grepHeaderText}", expected it to start with grep "t632GrepMarker".`);
+    if (!grepHeaderText || !grepHeaderText.startsWith('"t632GrepMarker"')) {
+      failures.push(`Grep call's own row text is "${grepHeaderText}", expected it to start with "t632GrepMarker" (pattern chip).`);
     } else {
-      findings.push(`Grep call's own row reads "${grepHeaderText}" (command-style form).`);
+      findings.push(`Grep call's own row reads "${grepHeaderText}" (pattern chip).`);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '02-turn-b-grep.png'));
 

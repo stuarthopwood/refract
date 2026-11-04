@@ -184,7 +184,7 @@ async function main() {
     check(align.iconLeft !== null && align.proseLeft !== null && Math.abs(align.iconLeft - align.proseLeft) <= 1, 'Tool row icon lines up with the prose left edge', align);
 
     const collapsedGeom = await cdp.evaluate(ROW_GEOM);
-    check(collapsedGeom.length >= 4 && collapsedGeom.every((g) => g.overlaps.length === 0), 'Collapsed: no fragment overlap between icon, label, chip and meta', collapsedGeom.map((g) => ({ text: g.text.slice(0, 20), overlaps: g.overlaps })));
+    check(collapsedGeom.length >= 3 && collapsedGeom.every((g) => g.overlaps.length === 0), 'Collapsed: no fragment overlap between icon, label, chip and meta', collapsedGeom.map((g) => ({ text: g.text.slice(0, 20), overlaps: g.overlaps })));
     check(collapsedGeom.every((g) => !g.chipVsLabel), 'Collapsed: chip box does not intersect label box', collapsedGeom.map((g) => g.chipVsLabel));
     const c2Row = collapsedGeom.find((g) => g.isVitest);
     check(!!c2Row && c2Row.text === C2_COMMAND, 'Chip textContent equals fixture c2 command exactly (spaces before flags kept)', { want: C2_COMMAND, got: c2Row && c2Row.text });

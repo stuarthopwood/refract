@@ -198,7 +198,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         id={id}
         tabIndex={-1}
         {...focusHandlers}
-        className={cn('flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
+        className={cn('-mx-2 flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
       >
         {row}
       </div>
@@ -206,7 +206,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   }
 
   return (
-    <Collapsible open={actualOpen} onOpenChange={setOpen} className={className}>
+    <Collapsible open={actualOpen} onOpenChange={setOpen} className={cn('-mx-2', className)}>
       <div className="flex items-start gap-1">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}
