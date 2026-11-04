@@ -1,10 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1583 (tool row targets as shared inline-code chips). Drives the already
-// built debug exe against the FAKE `omp` shim (`tool-chips-1583` tape: read, a long bash, grep, a
-// two-call bash group whose second call fails, then a reply containing an inline-code span).
-// Proves: each target chip uses the Markdown inline-code fill and shape, the chip text is the
-// muted tool colour, a wrapped target restarts at the label's left edge with its fill on every
-// line, and tool row icons line up with the prose's left edge. Screenshots in several themes.
+// Live CDP check for #1583 (tool row targets as inline-code chips) against the fake `omp` shim
+// and the `tool-chips-1583` tape. Proves chip fill/shape, muted chip text, wrapped-target
+// alignment, and icon/prose left-edge alignment; screenshots in several themes.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-1583-tool-chips.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } from 'node:fs';
