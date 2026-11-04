@@ -6,7 +6,7 @@
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1581.mjs
 // Env: REFRACT_1581_SHOTS_DIR overrides the screenshot/report directory.
 
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, rmSync, existsSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, readFileSync, existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -326,7 +326,7 @@ async function main() {
     const storePath = path.join(dataDir, STORE_FILE);
     const aside = path.join(dataDir, 'token-guard.seed.json');
     copyFileSync(storePath, aside);
-    rmSync(storePath);
+    await safeRmSync(storePath, LOG);
     mkdirSync(storePath);
     writeFileSync(path.join(storePath, 'blocker.txt'), 'blocks the rename');
     await openDialog(cdp);
@@ -353,7 +353,7 @@ async function main() {
     const reopened = await cdp.evaluate(`!((${DLG})?.innerText ?? '').includes(${JSON.stringify(RESET_ERROR)})`);
     check(reopened === true, 'Failure: the error is cleared after Cancel and reopen', reopened);
     // Retry after the fault is repaired.
-    rmSync(storePath, { recursive: true });
+    await safeRmSync(storePath, LOG);
     copyFileSync(aside, storePath);
     await cdp.click(CONFIRM);
     await waitDialogGone(cdp, 'Retry: dialog closes after the repaired write');
