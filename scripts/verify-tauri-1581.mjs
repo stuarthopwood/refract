@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 // Live CDP check for issue #1581 (Settings > Advanced > "Optimise token usage" + confirm dialog).
-// Drives the already built debug exe (copied to scratch) against scratch data only, with the
-// recorded-frame fake `omp` on PATH and a scratch OMP_PROFILE; no model turn, no network.
-// Covers: already-optimised state, 1-row and many-row confirm dialogs (long unbroken values),
-// success, a forced write failure (token-guard.json swapped for a directory) and its retry, the
-// busy state (resetAll held open from the page), and the Settings header at 720px.
+// Drives the built debug exe (scratch copy) with scratch data, a fake `omp` on PATH and a scratch
+// OMP_PROFILE; no model turn, no network. Covers already-optimised, 1-row and many-row dialogs,
+// success, forced write failure and retry, busy state, and the 720px header.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1581.mjs
 // Env: REFRACT_1581_SHOTS_DIR overrides the screenshot/report directory.
 
