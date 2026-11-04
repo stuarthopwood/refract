@@ -10,6 +10,7 @@ import { parseFileReference, looksWithinWorktree } from '@/lib/linkify'
 import { toast } from 'sonner'
 import { useSessionsStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { InlineCode } from '@/components/ui/inline-code'
 import { CodeBlock } from './CodeBlock'
 import { MermaidBlock } from './MermaidBlock'
 import { linkClassName, mutedLinkClassName } from './linkStyles'
@@ -316,11 +317,7 @@ const components: Components = {
         const trimmed = text.trim()
         // Linked only when the whole span is one URL/path (#610); whitespace would be percent-encoded by `new URL`.
         const safe = trimmed && !/\s/.test(trimmed) ? safeUrl(trimmed) : undefined
-        const chip = (inner: React.ReactNode): React.ReactNode => (
-          <code className="rounded bg-md-code-bg px-1 py-1 font-code text-code-inline text-md-code-fg" {...props}>
-            {inner}
-          </code>
-        )
+        const chip = (inner: React.ReactNode): React.ReactNode => <InlineCode {...props}>{inner}</InlineCode>
         if (safe) {
           return streaming ? (
             chip(<span className={mutedInertLinkClassName}>{text}</span>)
@@ -335,11 +332,7 @@ const components: Components = {
           return <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} wrapLink={chip} />
         }
       }
-      return (
-        <code className="rounded bg-md-code-bg px-1 py-1 font-code text-code-inline text-md-code-fg" {...props}>
-          {children}
-        </code>
-      )
+      return <InlineCode {...props}>{children}</InlineCode>
     }
     // The advisor's quoted note wraps instead of scrolling (#558).
     if (lang === 'advisor-note') return <CodeBlock code={text} lang={null} wrap streaming={streaming} />

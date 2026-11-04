@@ -7,7 +7,7 @@ import { ToolCallDialog } from './ToolCallDialog'
 import { ToolIcon } from '@/components/ToolIcon'
 import { formatDuration, type RowStatus } from './toolStatus'
 import { resolveToolDisplay, toolRowLabel } from './toolDisplay'
-import { hasIntent, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, useShowToolNames } from './toolRowParts'
+import { hasIntent, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, ToolTarget, toolTargetChip, useShowToolNames } from './toolRowParts'
 import { commandRowText, sanitizeLines } from './formatToolCommand'
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
@@ -24,6 +24,19 @@ interface ToolCallBodyProps {
 
 const QUIET_SUMMARY_MAX_CHARS = 200
 const ATTRIBUTION_PREFIX_MAX_CHARS = 40
+
+// Keeps the head and the tail (the filename end of a path), which is what tells two failures apart.
+function middleTruncate(text: string, max: number): string {
+  if (text.length <= max) return text
+  const tail = Math.ceil((max - 1) * 0.6)
+  return `${text.slice(0, max - 1 - tail)}\u2026${text.slice(-tail)}`
+}
+
+// `commandRowText` sanitises bash and grep itself; any other target (a path, a pattern) is stripped of ANSI and bidi here.
+function rowTarget(item: ToolItem): string {
+  const text = commandRowText(item)
+  return item.tool === 'bash' || item.tool === 'grep' ? text : (sanitizeLines(text)[0] ?? '')
+}
 
 function quietSummary(output: string | undefined): string | undefined {
   if (!output || output.includes('\n') || output.length > QUIET_SUMMARY_MAX_CHARS) return undefined
@@ -110,7 +123,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   const display = resolveToolDisplay(item.tool, item.target)
   const rawId = showToolNames ? display.rawId : undefined
   const label = toolRowLabel(item.tool, item.target, item.intent, item.status)
-  const target = commandRowText(item)
+  const target = rowTarget(item)
   const failed = item.status === 'error'
   const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
   const memberAriaLabel = joinAriaParts([
@@ -125,7 +138,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       iconTooltip={display.rawId}
       label={label}
       labelClassName={failed ? 'text-tool-row-error-fg' : undefined}
-      summary={toolRowSummary(rawId, target)}
+      summary={toolRowSummary(rawId, toolTargetChip(target))}
       summaryWrap={summaryWrap}
       wrapWhenOpen
       meta={toolRowMeta(item.status, callMeta(item))}
@@ -187,7 +200,10 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
   const toolLabel = toolRowLabel(first.tool, first.target, solo ? last.intent : undefined, verbPhase)
   const visibleLabel = solo ? toolLabel : `${toolLabel} \u00d7${group.items.length}`
   const failed = status === 'error'
-  const summary = toolRowSummary(rawId, skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined)
+  const summary =
+    skillName !== undefined
+      ? toolRowSummary(rawId, <bdi>{skillName}</bdi>)
+      : toolRowSummary(rawId, solo ? toolTargetChip(rowTarget(last)) : undefined)
   const totalDurationMs = group.items.reduce((sum, item) => sum + (item.durationMs ?? 0), 0)
   const allHaveDuration = group.items.every((item) => item.durationMs != null)
   const totalDuration = !isRunning && allHaveDuration ? formatDuration(totalDurationMs) : undefined
@@ -203,7 +219,7 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
         ])
   )
 
-  const soloSummaryText = skillName !== undefined ? skillName : commandRowText(last)
+  const soloSummaryText = skillName !== undefined ? skillName : rowTarget(last)
   const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
   const triggerAriaLabel = solo
     ? joinAriaParts([
@@ -240,14 +256,14 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
           ? solo
             ? errorLine(lastFailedItem)
             : (() => {
-                const failingCommandText = sanitizeLines(commandRowText(lastFailedItem))[0]
-                const truncatedPrefix =
-                  failingCommandText && failingCommandText.length > ATTRIBUTION_PREFIX_MAX_CHARS
-                    ? `${failingCommandText.slice(0, ATTRIBUTION_PREFIX_MAX_CHARS)}…`
-                    : failingCommandText
+                const failingCommandText = sanitizeLines(rowTarget(lastFailedItem))[0]
+                const truncatedPrefix = failingCommandText ? middleTruncate(failingCommandText, ATTRIBUTION_PREFIX_MAX_CHARS) : failingCommandText
                 return truncatedPrefix ? (
                   <>
-                    <bdi className="inline-block max-w-[40%] truncate align-bottom text-tool-row-fg">{truncatedPrefix}:</bdi>{' '}
+                    <ToolTarget inline>
+                      <bdi>{truncatedPrefix}</bdi>
+                    </ToolTarget>
+                    :{' '}
                     {errorLine(lastFailedItem)}
                   </>
                 ) : (

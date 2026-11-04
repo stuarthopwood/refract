@@ -24,6 +24,7 @@ import {
   sha256OfFile,
   getAccessibleNameAndRole
 } from './verify-tauri-scratch-helpers.mjs';
+import { TOOL_ROW_SUMMARY_SELECTOR } from './verify-tool-row-selectors.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -31,20 +32,20 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_632_SHOTS_DIR || path.join(tmpdir(), 'refract-632-grouped-calls-shots', new Date().toISOString().replace(/[:.]/g, '-'));
 
-// The literal `grep "` substring appears only in #632's `commandRowText`, so its presence in the
-// non-minified dev bundle cheaply proves this exe contains #632's code.
+// The literal `tool-target` slot appears only in the tool-row chip code (#1583), which renders the
+// command-style grep/bash text #632 introduced, so its presence proves this exe has both.
 function assertBundleContainsStory632Marker() {
   const assetsDir = path.join(REPO_ROOT, 'out', 'tauri-web', 'assets');
   if (!existsSync(assetsDir)) throw new Error(`assertBundleContainsStory632Marker: ${assetsDir} not found -- the renderer build did not run or wrote elsewhere.`);
   const files = readdirSync(assetsDir).filter((f) => f.endsWith('.js'));
   for (const file of files) {
     const text = readFileSync(path.join(assetsDir, file), 'utf8');
-    if (text.includes('grep "')) {
-      console.log(`verify-632: confirmed #632-only marker 'grep "' present in the built renderer bundle (${file}).`);
+    if (text.includes('tool-target')) {
+      console.log(`verify-632: confirmed chip marker 'tool-target' present in the built renderer bundle (${file}).`);
       return;
     }
   }
-  throw new Error('assertBundleContainsStory632Marker: \'grep "\' not found in any built renderer asset -- this build does not contain #632\'s code.');
+  throw new Error('assertBundleContainsStory632Marker: \'tool-target\' not found in any built renderer asset -- this build does not contain the tool-row chip code.');
 }
 
 const TURN_A_PROMPT =
@@ -63,17 +64,15 @@ const TURN_F_PROMPT =
   `Make exactly ONE bash tool call that runs exactly this, byte for byte, with no retyping or reinterpreting: \`echo '\x1b[31mHostile\x1b[0m ${HOSTILE_LONG_LINE}'; exit 5\` (deliberately fails; its output has a real ANSI colour escape byte and a very long line). Then reply with exactly the single word 't632f' and nothing else.`;
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
-// Top-level TOOL-call group header buttons. The label filter excludes Thought runs and Stage entries
-// that share `CollapsedLine` markup ("Thought for 1s" once hijacked `.at(0)`); a solo `bash`/`grep` row
-// has no label, so it is accepted by its `$ `/`grep "` summary. Buttons inside a Spine `ol.border-l`
-// are excluded: an expanded group's member rows match the same label-less fallback.
+// Top-level TOOL-call header buttons. The label filter excludes Thought runs and Stage entries that
+// share `CollapsedLine` markup ("Thought for 1s" once hijacked `.at(0)`); a solo call whose label is the
+// agent's own intent is accepted by its command/path chip (`tool-target`, #1583), which only tool rows
+// render. Buttons inside a Spine `ol.border-l` are excluded: an expanded group's member rows match too.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
   if (el.closest('ol.border-l')) return false;
   const l = el.querySelector('[data-slot="collapsed-line-label"]');
-  if (l) return /^(?:Ran|Running|Bash|Searched|Searching|Grep|Find|Glob|Read|Reading|Wrote|Writing|Write|Edited|Editing|Edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
-  const s = el.querySelector('span.min-w-0.flex-1');
-  const t = s ? (s.textContent || '').trim() : '';
-  return /^\\$ /.test(t) || /^grep "/.test(t);
+  if (l && /^(?:Ran|Running|Bash|Searched|Searching|Grep|Find|Glob|Read|Reading|Wrote|Writing|Write|Edited|Editing|Edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim())) return true;
+  return !!el.querySelector('[data-slot="tool-target"]');
 })`;
 const BASH_GROUP_LABEL = /^Ran\s*\u00d72$/;
 
@@ -83,7 +82,7 @@ function groupHeaderInfo(index) {
     const h = (${GROUP_HEADERS}).at(${index});
     if (!h) return null;
     const label = h.querySelector('[data-slot="collapsed-line-label"]');
-    const summaryHost = h.querySelector('span.min-w-0.flex-1');
+    const summaryHost = h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
     const metaHost = h.querySelector('span.tabular-nums');
     return {
       labelText: label ? label.textContent.trim() : null,
@@ -158,7 +157,7 @@ async function main() {
 
     const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-632' });
     assertBundleContainsStory632Marker();
-    findings.push('Built renderer bundle contains the #632-only `grep "` marker text (verified before launch).');
+    findings.push('Built renderer bundle contains the `tool-target` chip marker (verified before launch).');
     const exePath = built.dest;
     exeHash = built.hash;
     const launcherExe = buildLauncher(launcherDir);
@@ -292,8 +291,8 @@ async function main() {
       findings.push(`Expanded group (members collapsed) measured ${heightCheck.lines.toFixed(1)} lines tall -- matches the issue's own "about 4 lines, against about 20 today".`);
     }
 
-    // Scoped to THIS group's <ol>, not every <li> in the transcript.
-    const memberButtons = `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; const ol = root ? root.querySelector('ol.border-l') : null; return ol ? Array.from(ol.querySelectorAll('li button')) : []; })()`;
+    // Scoped to THIS group's <ol>, not every <li> in the transcript; the collapsible trigger only, since each member also has a kebab button.
+    const memberButtons = `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; const ol = root ? root.querySelector('ol.border-l') : null; return ol ? Array.from(ol.querySelectorAll('li [data-slot="collapsible-trigger"]')) : []; })()`;
     const memberCount = await cdp.evaluate(`(${memberButtons}).length`);
     if (memberCount !== 2) failures.push(`Expected 2 member rows inside the expanded group, found ${memberCount}.`);
     else findings.push('Expanded group shows both members down the shared Spine.');
@@ -344,32 +343,34 @@ async function main() {
       }
     }
 
-    // Each member's accessible name must include its tool and command.
+    // Each member's accessible name must lead with its own label (the agent's intent, else "Ran") and include its command;
+    // a failed call keeps its "Failed" status word, since the label alone would not say so.
+    const memberLabels = await cdp.evaluate(`(${memberButtons}).map((b) => { const l = b.querySelector('[data-slot="collapsed-line-label"]'); return l ? l.textContent.trim() : null; })`);
     const member0Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(0)`);
     const member1Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(1)`);
-    if (!member0Ax.name || !member0Ax.name.includes('Ran') || !member0Ax.name.includes('t632-one')) {
-      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include "Ran" and "t632-one".`);
+    if (!member0Ax.name || !memberLabels[0] || !member0Ax.name.includes(memberLabels[0]) || !member0Ax.name.includes('t632-one')) {
+      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include its label "${memberLabels[0]}" and "t632-one".`);
     } else {
-      findings.push(`First member's own accessible name includes both tool and command: "${member0Ax.name}".`);
+      findings.push(`First member's own accessible name includes both label and command: "${member0Ax.name}".`);
     }
-    if (!member1Ax.name || !/^Failed Bash\b/.test(member1Ax.name) || !member1Ax.name.includes('exit 9')) {
-      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to start "Failed Bash" (a failed call shows its tool name, #1208) and include "exit 9".`);
+    if (!member1Ax.name || !/^Failed\b/.test(member1Ax.name) || !memberLabels[1] || !member1Ax.name.includes(memberLabels[1]) || !member1Ax.name.includes('exit 9')) {
+      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to start "Failed", include its label "${memberLabels[1]}" and "exit 9".`);
     } else {
-      findings.push(`Second member's own accessible name includes both tool and command: "${member1Ax.name}".`);
+      findings.push(`Second member's own accessible name includes status, label and command: "${member1Ax.name}".`);
     }
 
-    const member0Summary = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); const s = b ? b.querySelector('span.min-w-0.flex-1') : null; return s ? s.textContent.trim() : null; })()`);
-    if (!member0Summary || !member0Summary.startsWith('$ ')) {
-      failures.push(`First member row's own text is "${member0Summary}", expected it to start with "$ " (the bash command-style form).`);
+    const member0Summary = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); const s = b ? b.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);
+    if (!member0Summary || !member0Summary.includes('t632-one')) {
+      failures.push(`First member row's own text is "${member0Summary}", expected the bash command chip containing "t632-one".`);
     } else {
-      findings.push(`First member row reads "${member0Summary}" ($ plus the command, not the raw target).`);
+      findings.push(`First member row reads "${member0Summary}" (the command chip, not the raw target).`);
     }
     await cdp.click(`(${memberButtons}).at(0)`);
     await cdp.waitFor(`(${memberButtons}).at(0).getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'First member expanded' });
     // Reads the COMPUTED `white-space` and asserts no code-block element and no output text.
     const member0ExpandedCheck = await cdp.evaluate(`(() => {
       const b = (${memberButtons}).at(0);
-      const s = b ? b.querySelector('span.min-w-0.flex-1') : null;
+      const s = b ? b.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null;
       const whiteSpace = s ? getComputedStyle(s).whiteSpace : null;
       const root = b ? b.closest('[data-slot="collapsible"]') : null;
       const content = root ? root.querySelector('[data-slot="collapsible-content"]') : null;
@@ -401,11 +402,11 @@ async function main() {
     await cdp.typeIntoByLabel('Message', TURN_B_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632b/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (b) finished' });
-    const grepHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('span.min-w-0.flex-1') : null; return s ? s.textContent.trim() : null; })()`);
-    if (!grepHeaderText || !grepHeaderText.startsWith('grep "t632GrepMarker"')) {
-      failures.push(`Grep call's own row text is "${grepHeaderText}", expected it to start with grep "t632GrepMarker".`);
+    const grepHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);
+    if (!grepHeaderText || !grepHeaderText.startsWith('"t632GrepMarker"')) {
+      failures.push(`Grep call's own row text is "${grepHeaderText}", expected it to start with "t632GrepMarker" (pattern chip).`);
     } else {
-      findings.push(`Grep call's own row reads "${grepHeaderText}" (command-style form).`);
+      findings.push(`Grep call's own row reads "${grepHeaderText}" (pattern chip).`);
     }
     await cdp.screenshot(path.join(SHOTS_DIR, '02-turn-b-grep.png'));
 
@@ -413,7 +414,7 @@ async function main() {
     await cdp.typeIntoByLabel('Message', TURN_C_PROMPT);
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`(() => { const t = ${TRANSCRIPT}; return !!t && (t.textContent.match(/t632c/g) ?? []).length >= 2; })()`, { timeoutMs: 180_000, label: 'Turn (c) finished' });
-    const readHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('span.min-w-0.flex-1') : null; return s ? s.textContent.trim() : null; })()`);
+    const readHeaderText = await cdp.evaluate(`(() => { const hs = ${GROUP_HEADERS}; const h = hs.at(-1); const s = h ? h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);
     if (!readHeaderText || !readHeaderText.includes('t632-read-target.txt')) {
       failures.push(`Read call's own row text is "${readHeaderText}", expected it to contain the read path, unchanged by #632.`);
     } else {
@@ -527,11 +528,11 @@ async function main() {
     // reliably has it): truncated collapsed, wrapped expanded.
     const readSummaryState = `(() => {
       const h = (${GROUP_HEADERS}).at(-1);
-      const s = h ? h.querySelector('span.min-w-0.flex-1') : null;
+      const s = h ? h.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null;
       if (!s) return null;
       const t = ${TRANSCRIPT};
       return {
-        text: s.textContent, html: s.innerHTML, hasElementChildren: s.children.length > 0,
+        text: s.textContent, html: s.innerHTML, hasElementChildren: [...s.children].some((c) => c.getAttribute('data-slot') !== 'tool-target'),
         whiteSpace: getComputedStyle(s).whiteSpace,
         transcriptScrollWidth: t ? t.scrollWidth : null, transcriptClientWidth: t ? t.clientWidth : null,
       };

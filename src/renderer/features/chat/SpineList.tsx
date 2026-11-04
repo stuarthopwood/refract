@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 export const SPINE_HOST_CONTENT_CLASS = 'space-y-0 p-0'
 
 export interface SpineListProps {
-  /** `<li>` rows; member icons keep their own `px-2` for the gap right of the line. */
+  /** `<li>` rows; a row's own `px-2` leaves its icon 8px right of the line. */
   children: React.ReactNode
   /** Row gap: 4px `member` (default) or 8px `stage` (between stages). */
   gap?: 'member' | 'stage'
