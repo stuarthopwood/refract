@@ -2,6 +2,7 @@ import * as React from 'react'
 import { EyeIcon, InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { InlineCode } from '@/components/ui/inline-code'
 import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { SourceTag } from '@/components/SourceTag'
 import { CopyButton } from '@/components/ui/copy-button'
@@ -182,7 +183,6 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
   return (
     <div data-advisory-severity={item.severity} className={cn(striped ? STRIPE_CLASS[item.severity] : undefined)}>
       <CollapsedLine
-        className={striped ? 'ml-0' : undefined}
         ref={innerRef}
         leading={leading}
         triggerAriaLabel={triggerAriaLabel}
@@ -206,8 +206,8 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
           <div className="space-y-1">
             <div className="text-xs text-muted-foreground">{locations.length > 1 ? 'Locations' : 'Location'}</div>
             {locations.map((location) => (
-              <div key={location.raw} className="select-text font-code text-xs [overflow-wrap:anywhere]">
-                {location.raw}
+              <div key={location.raw} className="select-text [overflow-wrap:anywhere]">
+                <InlineCode>{location.raw}</InlineCode>
               </div>
             ))}
           </div>

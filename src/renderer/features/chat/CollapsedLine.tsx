@@ -9,6 +9,9 @@ import { ShimmerText } from '@/components/ShimmerText'
 /** Left padding that aligns row content under the label column. */
 export const LABEL_COLUMN_CONTENT_CLASS = 'pl-8'
 
+/** True while the summary flows inline as wrapping text; summary content (the tool chip) reads it to pick its look. */
+export const SummaryWrapContext = React.createContext(false)
+
 /** Props for {@link CollapsedLine}. */
 export interface CollapsedLineProps {
   labelShimmer?: boolean
@@ -84,7 +87,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const detailMounted = detail !== undefined
   const detailVisuallyHidden = hideDetailWhenOpen && actualOpen
   const showDetail = detailMounted && !detailVisuallyHidden
-  const inlineWrap = summary !== undefined && !summaryFixedWidth && (summaryWrap || (wrapWhenOpen && actualOpen))
+  const inlineWrap = summary !== undefined && !summaryFixedWidth && !!(summaryWrap || (wrapWhenOpen && actualOpen))
   const [tooltipHovered, setTooltipHovered] = React.useState(false)
   const [rowFocusVisible, setRowFocusVisible] = React.useState(false)
   const [tooltipDismissed, setTooltipDismissed] = React.useState(false)
@@ -146,45 +149,39 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           </TooltipContent>
         </Tooltip>
       )}
-      {inlineWrap ? (
-        // Label and summary flow as one paragraph so wrapped lines restart at the label's left edge.
-        <span data-summary-wrap="" className="group/summary min-w-0 flex-1 whitespace-normal [overflow-wrap:anywhere]">
-          {label !== undefined && (
-            <span data-slot="collapsed-line-label" className={cn('mr-2 text-foreground', labelClassName)}>
-              {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
-            </span>
-          )}
-          <span className={summaryClassName ?? 'text-muted-foreground'}>{summary}</span>
-        </span>
-      ) : (
-        <>
-          {label !== undefined && (
-            <span data-slot="collapsed-line-label" className={cn('min-w-0 max-w-full truncate text-foreground', labelClassName)} title={typeof label === 'string' ? label : undefined}>
-              {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
-            </span>
-          )}
-          {summary !== undefined ? (
-            <>
-              <span
-                className={cn(
-                  'group/summary',
-                  summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1',
-                  summaryWrap || (wrapWhenOpen && actualOpen) ? '[overflow-wrap:anywhere] whitespace-normal' : 'truncate',
-                  summaryClassName ?? 'text-muted-foreground'
-                )}
-                title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
-              >
-                {summary}
-              </span>
-              {summaryFixedWidth && (
-                <span className="min-w-0 flex-1" />
+      {/* One tree in both modes (so expanding never remounts the label): wrapping, the host is one flex
+          item whose label and summary flow as a paragraph, so wrapped lines restart at the label's left
+          edge; collapsed, the host is `contents` and they are the row's own flex items. */}
+      <span
+        data-summary-wrap={inlineWrap ? '' : undefined}
+        className={inlineWrap ? 'min-w-0 flex-1 whitespace-normal [overflow-wrap:anywhere]' : 'contents'}
+      >
+        {label !== undefined && (
+          <span
+            data-slot="collapsed-line-label"
+            className={cn(inlineWrap ? 'mr-2 text-foreground' : 'min-w-0 max-w-full truncate text-foreground', labelClassName)}
+            title={typeof label === 'string' ? label : undefined}
+          >
+            {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
+          </span>
+        )}
+        {summary !== undefined ? (
+          <>
+            <span
+              className={cn(
+                !inlineWrap && (summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1 truncate'),
+                summaryClassName ?? 'text-muted-foreground'
               )}
-            </>
-          ) : (
-            <span className="min-w-0 flex-1" />
-          )}
-        </>
-      )}
+              title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
+            >
+              <SummaryWrapContext.Provider value={inlineWrap}>{summary}</SummaryWrapContext.Provider>
+            </span>
+            {summaryFixedWidth && <span className="min-w-0 flex-1" />}
+          </>
+        ) : (
+          <span className="min-w-0 flex-1" />
+        )}
+      </span>
       {meta !== undefined && (
         <span className={cn('shrink-0 text-xs leading-5 text-muted-foreground tabular-nums', metaClassName)}>
           <span className="sr-only">, </span>
@@ -201,7 +198,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         id={id}
         tabIndex={-1}
         {...focusHandlers}
-        className={cn('-ml-2 flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
+        className={cn('flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
       >
         {row}
       </div>
@@ -209,7 +206,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   }
 
   return (
-    <Collapsible open={actualOpen} onOpenChange={setOpen} className={cn('-ml-2', className)}>
+    <Collapsible open={actualOpen} onOpenChange={setOpen} className={className}>
       <div className="flex items-start gap-1">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}

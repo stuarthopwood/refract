@@ -55,7 +55,9 @@ export function LinkActions({ copyText, copyLabel, copiedMessage, actions, wrapp
             className={cn(
               "size-5 align-middle text-muted-foreground transition-opacity hover:text-foreground hover:opacity-100 group-has-[:focus-visible]/link:text-foreground group-has-[:focus-visible]/link:opacity-100 group-hover/link:text-foreground group-hover/link:opacity-100 group-data-[state=open]/link:text-foreground group-data-[state=open]/link:opacity-100 [&_svg:not([class*='size-'])]:size-3",
               // A chip keeps no gap after it: the button takes no width and its icon overlays the next word only while revealed.
-              wrapLink ? "w-0! justify-start overflow-visible opacity-0 [&_svg]:ml-1" : "ml-1 opacity-50"
+              wrapLink
+                ? 'pointer-events-none w-0! justify-start overflow-visible opacity-0 group-hover/link:pointer-events-auto group-has-[:focus-visible]/link:pointer-events-auto group-data-[state=open]/link:pointer-events-auto [&_svg]:ml-1'
+                : 'ml-1 opacity-50'
             )}
           />
         </span>

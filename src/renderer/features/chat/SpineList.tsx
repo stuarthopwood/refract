@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 export const SPINE_HOST_CONTENT_CLASS = 'space-y-0 p-0'
 
 export interface SpineListProps {
-  /** `<li>` rows; each `SpineItem` pads 8px so the row's own `-ml-2` leaves its icon that gap right of the line. */
+  /** `<li>` rows; a row's own `px-2` leaves its icon 8px right of the line. */
   children: React.ReactNode
   /** Row gap: 4px `member` (default) or 8px `stage` (between stages). */
   gap?: 'member' | 'stage'
@@ -29,5 +29,5 @@ export function SpineList({ children, gap = 'member', className }: SpineListProp
 /** One `<li>` in a `SpineList`. `isNew` is read once on first render so a mid-fade re-render can't cut the animation short. */
 export function SpineItem({ isNew, children, className }: { isNew: boolean; children: React.ReactNode; className?: string }) {
   const [fadesIn] = React.useState(isNew)
-  return <li className={cn('pl-2', fadesIn && 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150', className)}>{children}</li>
+  return <li className={cn(fadesIn && 'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150', className)}>{children}</li>
 }
