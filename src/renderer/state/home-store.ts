@@ -34,7 +34,7 @@ interface HomeState {
   /** The Project ids the last fetch was scoped to; Home refetches when the set changes. */
   fetchedProjectKey: string | null
   loading: boolean
-  /** Resolves false when a refresh was already running and this call did nothing. `quiet` leaves `loading` and section errors alone, keeping the old rows on failure. */
+  /** Resolves false when a refresh was already running and this call did nothing (the caller reruns once `loading` clears). `quiet` leaves `loading` and section errors alone, keeping the old rows on failure. */
   refresh(repositories: Repository[], quiet?: boolean): Promise<boolean>
   loadLastMessages(sessionIds: string[]): Promise<void>
 }
@@ -76,6 +76,7 @@ function unwrap<T>(entry: PromiseSettledResult<Result<T> | null> | undefined): S
 
 // One quiet refetch at a time, without touching `loading`, which drives the visible Refresh button.
 let quietInFlight = false
+let refreshSequence = 0
 
 /** A quiet refresh keeps the previous section when the new one failed, so no error appears unprompted. */
 function quietKeep<U>(quiet: boolean, next: HomeSection<U>, previous: HomeSection<U>): HomeSection<U> {
@@ -102,6 +103,8 @@ export const useHomeStore = create<HomeState>((set, get) => ({
   },
   async refresh(repositories, quiet = false) {
     if (get().loading || (quiet && quietInFlight)) return false
+    refreshSequence += 1
+    const sequence = refreshSequence
     if (quiet) quietInFlight = true
     else set({ loading: true })
     try {
@@ -113,6 +116,8 @@ export const useHomeStore = create<HomeState>((set, get) => ({
         Promise.allSettled(ISSUE_TABS.map((tab) => (noProjects ? null : api.issues.list(tab, 'open', ids, [], '')))),
         Promise.allSettled([noProjects ? null : api.home.closedBranches(ids)])
       ])
+      // A later fetch started meanwhile (a user Refresh during a quiet one); whichever started last wins.
+      if (sequence !== refreshSequence) return true
       const { prs: previousPrs, issues: previousIssues, closed: previousClosed } = get()
       const prs = { ...previousPrs }
       PR_TABS.forEach((tab, index) => {
