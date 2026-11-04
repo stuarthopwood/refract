@@ -64,17 +64,15 @@ const TURN_F_PROMPT =
   `Make exactly ONE bash tool call that runs exactly this, byte for byte, with no retyping or reinterpreting: \`echo '\x1b[31mHostile\x1b[0m ${HOSTILE_LONG_LINE}'; exit 5\` (deliberately fails; its output has a real ANSI colour escape byte and a very long line). Then reply with exactly the single word 't632f' and nothing else.`;
 
 const TRANSCRIPT = `document.querySelector('[aria-label="Transcript"]')`;
-// Top-level TOOL-call group header buttons. The label filter excludes Thought runs and Stage entries
-// that share `CollapsedLine` markup ("Thought for 1s" once hijacked `.at(0)`); a solo `bash`/`grep` row
-// has no label, so it is accepted by its `$ `/`grep "` summary. Buttons inside a Spine `ol.border-l`
-// are excluded: an expanded group's member rows match the same label-less fallback.
+// Top-level TOOL-call header buttons. The label filter excludes Thought runs and Stage entries that
+// share `CollapsedLine` markup ("Thought for 1s" once hijacked `.at(0)`); a solo call whose label is the
+// agent's own intent is accepted by its command/path chip (`tool-target`, #1583), which only tool rows
+// render. Buttons inside a Spine `ol.border-l` are excluded: an expanded group's member rows match too.
 const GROUP_HEADERS = `Array.from(${TRANSCRIPT}.querySelectorAll('button')).filter((el) => {
   if (el.closest('ol.border-l')) return false;
   const l = el.querySelector('[data-slot="collapsed-line-label"]');
-  if (l) return /^(?:Ran|Running|Bash|Searched|Searching|Grep|Find|Glob|Read|Reading|Wrote|Writing|Write|Edited|Editing|Edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim());
-  const s = el.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
-  const t = s ? (s.textContent || '').trim() : '';
-  return /^\\$ /.test(t) || /^grep "/.test(t);
+  if (l && /^(?:Ran|Running|Bash|Searched|Searching|Grep|Find|Glob|Read|Reading|Wrote|Writing|Write|Edited|Editing|Edit)(?:\\s*\\u00d7\\d+)?$/.test((l.textContent || '').trim())) return true;
+  return !!el.querySelector('[data-slot="tool-target"]');
 })`;
 const BASH_GROUP_LABEL = /^Ran\s*\u00d72$/;
 
@@ -295,8 +293,8 @@ async function main() {
       findings.push(`Expanded group (members collapsed) measured ${heightCheck.lines.toFixed(1)} lines tall -- matches the issue's own "about 4 lines, against about 20 today".`);
     }
 
-    // Scoped to THIS group's <ol>, not every <li> in the transcript.
-    const memberButtons = `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; const ol = root ? root.querySelector('ol.border-l') : null; return ol ? Array.from(ol.querySelectorAll('li button')) : []; })()`;
+    // Scoped to THIS group's <ol>, not every <li> in the transcript; the collapsible trigger only, since each member also has a kebab button.
+    const memberButtons = `(() => { const h = (${GROUP_HEADERS}).at(0); const root = h ? h.closest('[data-slot="collapsible"]') : null; const ol = root ? root.querySelector('ol.border-l') : null; return ol ? Array.from(ol.querySelectorAll('li [data-slot="collapsible-trigger"]')) : []; })()`;
     const memberCount = await cdp.evaluate(`(${memberButtons}).length`);
     if (memberCount !== 2) failures.push(`Expected 2 member rows inside the expanded group, found ${memberCount}.`);
     else findings.push('Expanded group shows both members down the shared Spine.');
@@ -347,18 +345,20 @@ async function main() {
       }
     }
 
-    // Each member's accessible name must include its tool and command.
+    // Each member's accessible name must lead with its own label (the agent's intent, else "Ran") and include its command;
+    // a failed call keeps its "Failed" status word, since the label alone would not say so.
+    const memberLabels = await cdp.evaluate(`(${memberButtons}).map((b) => { const l = b.querySelector('[data-slot="collapsed-line-label"]'); return l ? l.textContent.trim() : null; })`);
     const member0Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(0)`);
     const member1Ax = await getAccessibleNameAndRole(cdp, `(${memberButtons}).at(1)`);
-    if (!member0Ax.name || !member0Ax.name.includes('Ran') || !member0Ax.name.includes('t632-one')) {
-      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include "Ran" and "t632-one".`);
+    if (!member0Ax.name || !memberLabels[0] || !member0Ax.name.includes(memberLabels[0]) || !member0Ax.name.includes('t632-one')) {
+      failures.push(`First member's own accessible name is "${member0Ax.name}", expected it to include its label "${memberLabels[0]}" and "t632-one".`);
     } else {
-      findings.push(`First member's own accessible name includes both tool and command: "${member0Ax.name}".`);
+      findings.push(`First member's own accessible name includes both label and command: "${member0Ax.name}".`);
     }
-    if (!member1Ax.name || !/^Failed Bash\b/.test(member1Ax.name) || !member1Ax.name.includes('exit 9')) {
-      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to start "Failed Bash" (a failed call shows its tool name, #1208) and include "exit 9".`);
+    if (!member1Ax.name || !/^Failed\b/.test(member1Ax.name) || !memberLabels[1] || !member1Ax.name.includes(memberLabels[1]) || !member1Ax.name.includes('exit 9')) {
+      failures.push(`Second member's own accessible name is "${member1Ax.name}", expected it to start "Failed", include its label "${memberLabels[1]}" and "exit 9".`);
     } else {
-      findings.push(`Second member's own accessible name includes both tool and command: "${member1Ax.name}".`);
+      findings.push(`Second member's own accessible name includes status, label and command: "${member1Ax.name}".`);
     }
 
     const member0Summary = await cdp.evaluate(`(() => { const b = (${memberButtons}).at(0); const s = b ? b.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}') : null; return s ? s.textContent.trim() : null; })()`);

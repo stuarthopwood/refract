@@ -39,14 +39,15 @@ const TURN_C_PROMPT =
   "Make exactly ONE bash tool call: run exactly `sleep 20`. Then reply with exactly the single word 't570c' and nothing else.";
 const TURN_A_SENTINEL = 't570a';
 const TURN_B_SENTINEL = 't570b';
-// Matches a `ToolGroupRow`/solo header by its "bash" label (or "bash ×N", #632), falling back to a
-// label-less button whose summary starts with "$ " (`commandRowText`).
+// Matches a `ToolGroupRow`/solo header: a "Ran"/"Ran ×N" label, or a row whose own label is the agent's
+// intent (a solo call) and which carries a command chip (`tool-target`, #1583). Rows inside an expanded
+// group's Spine are members, not headers.
 const BASH_HEADER_FINDER =
   `Array.from(document.querySelectorAll('[aria-label="Transcript"] button')).filter((el) => {
+    if (el.closest('ol.border-l')) return false;
     const label = el.querySelector('[data-slot="collapsed-line-label"]');
-    if (label) return /^Ran(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim());
-    const s = el.querySelector('${TOOL_ROW_SUMMARY_SELECTOR}');
-    return s ? /^\\$ /.test((s.textContent || '').trim()) : false;
+    if (label && /^Ran(\\s*\\u00d7\\d+)?$/.test(label.textContent.trim())) return true;
+    return !!el.querySelector('[data-slot="tool-target"]');
   })`;
 
 async function countBashHeaders(cdp) {
