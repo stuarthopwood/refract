@@ -99,7 +99,7 @@
   --divider: oklch(0 0 0 / 60%);
   --titlebar: var(--card);
   --pane-focused: #ffffff;
-  --pane-focused-edge: transparent;
+  --pane-focused-edge: var(--active-indicator);
   --focused-badge-bg: color-mix(in oklab, var(--active-indicator) 14%, transparent);
   --border-strong: var(--border);
   --accent-text: #1a1aa6;
