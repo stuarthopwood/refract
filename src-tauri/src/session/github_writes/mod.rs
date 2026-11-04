@@ -27,7 +27,6 @@ pub enum WriteKind {
     Issue,
 }
 
-#[allow(dead_code)] // The variants are the grammar's vocabulary; #1589's `github:changed` event will read them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WriteAction {
     Create,
@@ -39,7 +38,6 @@ pub enum WriteAction {
 }
 
 /// One detected write. `repo` is `None` when the command named none (the Session's repo applies).
-#[allow(dead_code)] // `action` is read by #1589's `github:changed` event.
 #[derive(Debug, Clone)]
 pub struct GithubWrite {
     pub repo: Option<(String, String)>,

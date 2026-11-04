@@ -1,6 +1,7 @@
 import type { Repository } from '../../shared/model'
 import type { Result, SessionSummary } from '../../shared/ipc'
 import type { GitHubAccount } from '../../shared/accounts'
+import { onGithubChanged } from './github-changed-refresh'
 import { useAccountsStore } from './accounts'
 import { useAdvisorRosterStore } from './advisor-roster-store'
 import { useCommandsStore } from './commands-store'
@@ -197,6 +198,8 @@ export function initStores(): void {
     githubBroadcastReceived = true
     useAccountsStore.getState().setGithub(accounts)
   })
+  // A merge, close or Session write changed a PR or issue: refresh the loaded lists quietly. (#1589)
+  window.refract.onGithubChanged(onGithubChanged)
   window.refract.onAccountsGithubAddProgress((progress) => {
     const current = useAccountsStore.getState().addFlow
     // A progress event for a different flowId is stale; ignore it rather than clobber the flow on screen.

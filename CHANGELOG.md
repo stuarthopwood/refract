@@ -4,6 +4,7 @@
 
 ### Features
 
+- feat(lists): PR list, Issues list and Home counts refresh quietly after a merge or close in the app or by a Session agent, through a `github:changed` event (#1589)
 - feat(themes): six new themes, the first light ones: Light, Light (warm paper), Light (high contrast), Lagoon, Amethyst and Hearth (#1590, https://github.com/stuarthopwood/refract/pull/1653)
 
 ## v0.26.0 (2026-11-03)

@@ -15,6 +15,7 @@ import { usageBridge } from './usage'
 import type { AdvisorRoster, AdvisorRosterDetected } from '../shared/ipc-advisor-roster'
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { ClosedBranchesResult } from '../shared/ipc-home'
+import type { GithubChangedPayload } from '../shared/ipc-github-changed'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch, SessionWithKickoff } from '../shared/ipc-issues'
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
@@ -491,6 +492,7 @@ const refract: RefractApi = {
   onFileExplorerReset: (handler) => on<{ sessionId: string }>(IPC_EVENTS.FILE_EXPLORER_RESET, handler),
   onGitChangesRefresh: (handler) => on<{ sessionId: string }>(IPC_EVENTS.GIT_CHANGES_REFRESH, handler),
   onAccountsGithubChanged: (handler) => on<GitHubAccount[]>(IPC_EVENTS.ACCOUNTS_GITHUB_CHANGED, handler),
+  onGithubChanged: (handler) => on<GithubChangedPayload>(IPC_EVENTS.GITHUB_CHANGED, handler),
   onAccountsGithubAddProgress: (handler) => on<GitHubAddFlowProgress>(IPC_EVENTS.ACCOUNTS_GITHUB_ADD_PROGRESS, handler),
   onReadinessInstallProgress: (handler) =>
     on<DependencyInstallProgress>(IPC_EVENTS.READINESS_INSTALL_PROGRESS, handler),

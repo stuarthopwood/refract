@@ -39,6 +39,8 @@ pub const FILE_EXPLORER_RESET: &str = "file-explorer:reset";
 // Payload-free ping; the renderer re-lists changes itself.
 pub const GIT_CHANGES_REFRESH: &str = "git-changes:refresh";
 pub const ACCOUNTS_GITHUB_CHANGED: &str = "accounts:github-changed";
+/// A PR or issue was merged, closed, created or edited: `{ repositoryId?, kind: 'pr' | 'issue', number }`.
+pub const GITHUB_CHANGED: &str = "github:changed";
 pub const ACCOUNTS_GITHUB_ADD_PROGRESS: &str = "accounts:github-add-progress";
 pub const READINESS_INSTALL_PROGRESS: &str = "readiness:install-progress";
 pub const READINESS_CHANGED: &str = "readiness:changed";
@@ -118,6 +120,14 @@ impl EventSink {
         self.send(
             SESSION_DELETED,
             serde_json::json!({ "sessionId": session_id }),
+        );
+    }
+
+    /// `github:changed`: the renderer refreshes its PR and issue lists in the background.
+    pub fn emit_github_changed(&self, repository_id: Option<&str>, kind: &str, number: u64) {
+        self.send(
+            GITHUB_CHANGED,
+            github_changed_payload(repository_id, kind, number),
         );
     }
 
@@ -325,6 +335,23 @@ pub fn emit<P: Serialize + Clone>(app: &AppHandle, event: &str, payload: P) {
     if let Err(err) = app.emit(event, payload) {
         log::warn!("refract-tauri: failed to emit {event}: {err}");
     }
+}
+
+fn github_changed_payload(
+    repository_id: Option<&str>,
+    kind: &str,
+    number: u64,
+) -> serde_json::Value {
+    serde_json::json!({ "repositoryId": repository_id, "kind": kind, "number": number })
+}
+
+/// Same event for IPC handlers, which hold an `AppHandle` and no `EventSink`.
+pub fn emit_github_changed(app: &AppHandle, repository_id: Option<&str>, kind: &str, number: u64) {
+    emit(
+        app,
+        GITHUB_CHANGED,
+        github_changed_payload(repository_id, kind, number),
+    );
 }
 
 #[cfg(test)]

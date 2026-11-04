@@ -1,8 +1,10 @@
 // Pull requests view state (issue #874, spec 057): one cross-Project list, so a flat store like
 // `issues-store.ts` rather than per-repository slices. Fetches on open, on a filter change, on
-// explicit Refresh and on "Show more" only, never on a timer. A separate cross-Project "active
+// explicit Refresh and on "Show more" only, never on a timer; a `github:changed` write adds one
+// quiet refetch (#1589). A separate cross-Project "active
 // count" slice (issue #569) feeds the sidebar badge and is independent of the list.
 import { create } from 'zustand'
+import { selectionAfterRefresh } from './selection-handoff'
 import type { IpcError, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
@@ -77,10 +79,12 @@ interface PullRequestsState {
   openPullRequest(repositoryId: string, number: number): void
   /** `allRepositoryIds` is every added Project, used when no Project is chosen. */
   refresh(allRepositoryIds: string[], more?: boolean): Promise<void>
+  /** Background refetch with the applied filters after a `github:changed` write: no loading or error state, old rows kept on failure, selection moves on if its row is gone. */
+  refreshQuiet(allRepositoryIds: string[]): Promise<void>
   loadMore(allRepositoryIds: string[]): Promise<void>
   /** The sidebar badge: open pull requests across every added Project, the set the view lists by default. */
   activeCount: PullRequestsActiveCount
-  /** Never polled; callers are the sidebar mount effect, the window focus refresh, the account-change refetch and the list's Refresh. */
+  /** Never polled; callers are the sidebar mount effect, the window focus refresh, the account-change refetch, the list's Refresh and `github:changed`. */
   refreshActiveCount(allRepositoryIds: string[]): Promise<void>
   /** The active GitHub account changed: the cached count is stale. */
   clearActiveCounts(): void
@@ -188,6 +192,38 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     })
     // On default filters this search is the badge's search; reuse it and drop any badge fetch in flight.
     if (!more && sharesActiveCountSearch({ tab, state, repositoryIds, query, limit }, allRepositoryIds)) {
+      activeCountSequence += 1
+      activeCountInFlight = null
+      set({ activeCount: activeCountFrom(result.value, allRepositoryIds.length) })
+    }
+  },
+  async refreshQuiet(allRepositoryIds) {
+    const { tab, state, repositoryIds, appliedQuery, limit } = get()
+    const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
+    const sequence = refreshSequence
+    let result: Result<{ items: PullRequestAcrossItem[]; hasMore: boolean; skipped: IssueSkippedProject[]; fetchedAt: string }>
+    try {
+      result = await window.refract.pullRequests.listAcross(tab, state, ids, appliedQuery.trim(), limit)
+    } catch {
+      return
+    }
+    // A user-driven refresh or filter change started meanwhile; it owns the list now.
+    if (sequence !== refreshSequence || !result.ok) return
+    const { items: previous, selected } = get()
+    set({
+      items: result.value.items,
+      skipped: result.value.skipped,
+      hasMore: result.value.hasMore,
+      fetchedAt: result.value.fetchedAt,
+      selected: selectionAfterRefresh(
+        previous,
+        result.value.items,
+        selected,
+        (item, s) => item.repositoryId === s.repositoryId && item.number === s.number,
+        (item) => ({ repositoryId: item.repositoryId, number: item.number })
+      )
+    })
+    if (sharesActiveCountSearch({ tab, state, repositoryIds, query: appliedQuery, limit }, allRepositoryIds)) {
       activeCountSequence += 1
       activeCountInFlight = null
       set({ activeCount: activeCountFrom(result.value, allRepositoryIds.length) })

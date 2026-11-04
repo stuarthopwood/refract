@@ -389,6 +389,7 @@ const EVENT_LANES = {
   FILE_EXPLORER_RESET: 'R7',
   ACCOUNTS_GITHUB_CHANGED: 'R9', // #792
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'R9',
+  GITHUB_CHANGED: 'R9', // #1589, list refresh after a merge, close or Session write
   USAGE_PROGRESS: 'U', // #1331
 };
 
