@@ -1,11 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for #1587 (session header badge for pull requests and issues the session touched).
-// Two scenarios against one fresh exe: `badge` (branch has no PR) and `overflow` (branch PR #5 exists).
-// Fake omp tape session-pr-badge-1587 runs `gh pr create`, `gh issue comment 12` and a foreign `gh pr comment 7`.
-//
-// Usage (shared target dir required):
-//   CARGO_TARGET_DIR=<shared target dir> REFRACT_1587_SHOTS_DIR=C:/Users/shopwood/AppData/Local/Temp/verify1587/shots node scripts/verify-1587-session-pr-badge.mjs
-// The repo has no light theme, so the second theme pass uses Nordic Frost.
+// Live CDP check for #1587: session header badge/overflow for PRs and issues the session touched.
+// Scenarios badge (no branch PR) and overflow (branch PR #5), tape session-pr-badge-1587.
+// Run: CARGO_TARGET_DIR=<shared target> node scripts/verify-1587-session-pr-badge.mjs
+// Shots dir: REFRACT_1587_SHOTS_DIR. No light theme exists, so Nordic Frost is the second pass.
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
