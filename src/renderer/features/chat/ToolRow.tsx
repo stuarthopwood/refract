@@ -7,7 +7,7 @@ import { ToolCallDialog } from './ToolCallDialog'
 import { ToolIcon } from '@/components/ToolIcon'
 import { formatDuration, type RowStatus } from './toolStatus'
 import { resolveToolDisplay, toolRowLabel } from './toolDisplay'
-import { hasIntent, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, useShowToolNames } from './toolRowParts'
+import { hasIntent, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, ToolTarget, useShowToolNames } from './toolRowParts'
 import { commandRowText, sanitizeLines } from './formatToolCommand'
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
@@ -187,7 +187,10 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
   const toolLabel = toolRowLabel(first.tool, first.target, solo ? last.intent : undefined, verbPhase)
   const visibleLabel = solo ? toolLabel : `${toolLabel} \u00d7${group.items.length}`
   const failed = status === 'error'
-  const summary = toolRowSummary(rawId, skillName !== undefined ? <bdi>{skillName}</bdi> : solo ? commandRowText(last) : undefined)
+  const summary =
+    skillName !== undefined
+      ? toolRowSummary(rawId, <bdi>{skillName}</bdi>, true)
+      : toolRowSummary(rawId, solo ? commandRowText(last) : undefined)
   const totalDurationMs = group.items.reduce((sum, item) => sum + (item.durationMs ?? 0), 0)
   const allHaveDuration = group.items.every((item) => item.durationMs != null)
   const totalDuration = !isRunning && allHaveDuration ? formatDuration(totalDurationMs) : undefined
@@ -247,7 +250,10 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
                     : failingCommandText
                 return truncatedPrefix ? (
                   <>
-                    <bdi className="inline-block max-w-[40%] truncate align-bottom text-tool-row-fg">{truncatedPrefix}:</bdi>{' '}
+                    <ToolTarget className="max-w-[40%] align-bottom">
+                      <bdi>{truncatedPrefix}</bdi>
+                    </ToolTarget>
+                    :{' '}
                     {errorLine(lastFailedItem)}
                   </>
                 ) : (

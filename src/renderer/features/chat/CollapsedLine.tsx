@@ -84,6 +84,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const detailMounted = detail !== undefined
   const detailVisuallyHidden = hideDetailWhenOpen && actualOpen
   const showDetail = detailMounted && !detailVisuallyHidden
+  const inlineWrap = summary !== undefined && !summaryFixedWidth && (summaryWrap || (wrapWhenOpen && actualOpen))
   const [tooltipHovered, setTooltipHovered] = React.useState(false)
   const [rowFocusVisible, setRowFocusVisible] = React.useState(false)
   const [tooltipDismissed, setTooltipDismissed] = React.useState(false)
@@ -145,29 +146,44 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           </TooltipContent>
         </Tooltip>
       )}
-      {label !== undefined && (
-        <span data-slot="collapsed-line-label" className={cn('min-w-0 max-w-full truncate text-foreground', labelClassName)} title={typeof label === 'string' ? label : undefined}>
-          {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
+      {inlineWrap ? (
+        // Label and summary flow as one paragraph so wrapped lines restart at the label's left edge.
+        <span data-summary-wrap="" className="group/summary min-w-0 flex-1 whitespace-normal [overflow-wrap:anywhere]">
+          {label !== undefined && (
+            <span data-slot="collapsed-line-label" className={cn('mr-2 text-foreground', labelClassName)}>
+              {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
+            </span>
+          )}
+          <span className={summaryClassName ?? 'text-muted-foreground'}>{summary}</span>
         </span>
-      )}
-      {summary !== undefined ? (
+      ) : (
         <>
-          <span
-            className={cn(
-              summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1',
-              summaryWrap || (wrapWhenOpen && actualOpen) ? '[overflow-wrap:anywhere] whitespace-normal' : 'truncate',
-              summaryClassName ?? 'text-muted-foreground'
-            )}
-            title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
-          >
-            {summary}
-          </span>
-          {summaryFixedWidth && (
+          {label !== undefined && (
+            <span data-slot="collapsed-line-label" className={cn('min-w-0 max-w-full truncate text-foreground', labelClassName)} title={typeof label === 'string' ? label : undefined}>
+              {labelShimmer ? <ShimmerText active>{label}</ShimmerText> : label}
+            </span>
+          )}
+          {summary !== undefined ? (
+            <>
+              <span
+                className={cn(
+                  'group/summary',
+                  summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1',
+                  summaryWrap || (wrapWhenOpen && actualOpen) ? '[overflow-wrap:anywhere] whitespace-normal' : 'truncate',
+                  summaryClassName ?? 'text-muted-foreground'
+                )}
+                title={summaryFixedWidth && typeof summary === 'string' ? summary : undefined}
+              >
+                {summary}
+              </span>
+              {summaryFixedWidth && (
+                <span className="min-w-0 flex-1" />
+              )}
+            </>
+          ) : (
             <span className="min-w-0 flex-1" />
           )}
         </>
-      ) : (
-        <span className="min-w-0 flex-1" />
       )}
       {meta !== undefined && (
         <span className={cn('shrink-0 text-xs leading-5 text-muted-foreground tabular-nums', metaClassName)}>
@@ -185,7 +201,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         id={id}
         tabIndex={-1}
         {...focusHandlers}
-        className={cn('flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
+        className={cn('-ml-2 flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
       >
         {row}
       </div>
@@ -193,7 +209,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   }
 
   return (
-    <Collapsible open={actualOpen} onOpenChange={setOpen} className={className}>
+    <Collapsible open={actualOpen} onOpenChange={setOpen} className={cn('-ml-2', className)}>
       <div className="flex items-start gap-1">
         <CollapsibleTrigger
           ref={ref as React.Ref<HTMLButtonElement>}

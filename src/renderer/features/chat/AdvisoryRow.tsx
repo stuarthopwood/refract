@@ -178,9 +178,11 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
   const askReasonId = `${item.id}-ask-reason`
   const askReason = !sessionId ? 'No Session to send this to.' : sessionUnavailable ? 'Start the agent to send this.' : undefined
 
+  const striped = item.severity === 'blocker' || open
   return (
-    <div data-advisory-severity={item.severity} className={cn(item.severity === 'blocker' || open ? STRIPE_CLASS[item.severity] : undefined)}>
+    <div data-advisory-severity={item.severity} className={cn(striped ? STRIPE_CLASS[item.severity] : undefined)}>
       <CollapsedLine
+        className={striped ? 'ml-0' : undefined}
         ref={innerRef}
         leading={leading}
         triggerAriaLabel={triggerAriaLabel}

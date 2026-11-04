@@ -1,5 +1,7 @@
 import * as React from 'react'
 import { useSettingsStore } from '@/state'
+import { cn } from '@/lib/utils'
+import { InlineCode } from '@/components/ui/inline-code'
 import { StatusIcon, type RowStatus } from './toolStatus'
 import { toolAriaPrefix } from './toolVerbs'
 
@@ -16,18 +18,38 @@ export function hasIntent(intent: string | undefined): boolean {
   return !!intent?.trim()
 }
 
+// A tool target (path, command, code or search pattern) as a muted inline-code chip. Truncating, it
+// is an inline-block whose text ends in its own ellipsis so the right edge stays drawn; inside a
+// wrapping `CollapsedLine` summary (`data-summary-wrap`) it flows inline and keeps its fill per line.
+export function ToolTarget({ className, children }: { className?: string; children: React.ReactNode }) {
+  return (
+    <InlineCode
+      data-slot="tool-target"
+      className={cn(
+        'inline-block max-w-full truncate py-1 align-top leading-3 text-tool-row-fg',
+        'group-data-[summary-wrap]/summary:inline group-data-[summary-wrap]/summary:overflow-visible group-data-[summary-wrap]/summary:whitespace-normal',
+        className
+      )}
+    >
+      {children}
+    </InlineCode>
+  )
+}
+
 // FR-010, FR-006: the summary slot reads the raw tool id (only while the setting is on, muted like
-// the target and truncating with it, before the label does), then the target.
-export function toolRowSummary(rawId: string | undefined, target: React.ReactNode): React.ReactNode | undefined {
+// the target and truncating with it, before the label does), then the target. `plain` keeps a
+// non-code target (a skill name) out of the chip.
+export function toolRowSummary(rawId: string | undefined, target: React.ReactNode, plain = false): React.ReactNode | undefined {
   const hasTarget = target !== undefined && target !== null && target !== ''
-  if (rawId === undefined) return hasTarget ? target : undefined
+  const targetNode = hasTarget && !plain ? <ToolTarget>{target}</ToolTarget> : target
+  if (rawId === undefined) return hasTarget ? targetNode : undefined
   return (
     <>
       <span data-slot="tool-raw-id">{rawId}</span>
       {hasTarget && (
         <>
           {' '}
-          {target}
+          {targetNode}
         </>
       )}
     </>

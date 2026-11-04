@@ -214,6 +214,7 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'sidebar', min: 3 }, // grip focus/drag beside the session list
   // #1472 per-element tokens: one pair per fg/bg token on its real surface.
   { fg: 'tool-row-fg', bg: 'background', min: 4.5 },
+  { fg: 'tool-row-fg', bg: 'md-code-bg', min: 4.5 },
   { fg: 'tool-row-error-fg', bg: 'background', min: 4.5 },
   { fg: 'thinking-row-fg', bg: 'background', min: 4.5 },
   { fg: 'thinking-row-active-fg', bg: 'background', min: 4.5 },
