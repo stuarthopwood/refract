@@ -8,6 +8,10 @@
 - fix(chat): every transcript row's chevron lines up in one column: the action gutter now sits inside each expandable row's hover surface, so tool rows no longer end 28px short of thought, note and asked-user rows, and the hover fill covers the full row (#1612, https://github.com/stuarthopwood/refract/pull/1674)
 - feat(themes): six new themes, the first light ones: Light, Light (warm paper), Light (high contrast), Lagoon, Amethyst and Hearth (#1590, https://github.com/stuarthopwood/refract/pull/1653)
 
+### Bug Fixes
+
+- fix(usage): worktree and scratch cwds show their Project (or one **Other** row) in every Usage section and the Project filter, and session folders without a cwd are matched too; stored rows are relabelled in place (#1571)
+
 ## v0.26.0 (2026-11-03)
 
 ### Features

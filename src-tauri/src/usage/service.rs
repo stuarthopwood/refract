@@ -7,11 +7,11 @@ use std::sync::mpsc::{channel, Receiver, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
-use rusqlite::{params, Connection};
+use rusqlite::Connection;
 use serde::Serialize;
 
 use super::project_label::ProjectIndex;
-use super::{ingest, paths, rollup, scan, schema};
+use super::{ingest, paths, relabel, scan, schema};
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const EMIT_INTERVAL: Duration = Duration::from_secs(1);
@@ -50,6 +50,8 @@ struct Inner {
     last_error: Mutex<Option<String>>,
     started: AtomicBool,
     scan_pending: AtomicBool,
+    /// The index the stored labels were last recomputed under.
+    labelled: Mutex<Option<ProjectIndex>>,
 }
 
 pub struct UsageService {
@@ -88,6 +90,7 @@ impl UsageService {
                 last_error: Mutex::new(None),
                 started: AtomicBool::new(false),
                 scan_pending: AtomicBool::new(false),
+                labelled: Mutex::new(None),
             }),
             tx: Mutex::new(None),
         }
@@ -242,9 +245,7 @@ fn set_status(inner: &Inner, f: impl FnOnce(&mut UsageStatus)) -> UsageStatus {
 
 fn full_scan(inner: &Inner, conn: &mut Connection) {
     let projects = (inner.projects)();
-    if let Err(e) = relabel_all(conn, &inner.root, &projects) {
-        log::warn!("usage relabel failed: {e}");
-    }
+    run_relabel(inner, conn, &projects);
     let found = inner.root.is_dir();
     (inner.emit)(&set_status(inner, |s| {
         s.running = true;
@@ -268,6 +269,8 @@ fn full_scan(inner: &Inner, conn: &mut Connection) {
         },
         &|| !inner.started.load(Ordering::SeqCst),
     );
+    // Files ingested above were labelled one by one; this merges case-duplicate folder rows.
+    run_relabel(inner, conn, &projects);
     (inner.emit)(&set_status(inner, |s| {
         s.running = false;
         s.sessions_seen = report.seen;
@@ -275,8 +278,24 @@ fn full_scan(inner: &Inner, conn: &mut Connection) {
     }));
 }
 
+/// Relabels stored rows when the registry changed since the last relabel, so a Project added
+/// between scans takes effect on the next ingested message rather than the next full scan.
+fn relabel_if_changed(inner: &Inner, conn: &mut Connection, projects: &ProjectIndex) {
+    if lock(&inner.labelled).as_ref() != Some(projects) {
+        run_relabel(inner, conn, projects);
+    }
+}
+
+fn run_relabel(inner: &Inner, conn: &mut Connection, projects: &ProjectIndex) {
+    match relabel::relabel(conn, &inner.root, projects) {
+        Ok(()) => *lock(&inner.labelled) = Some(projects.clone()),
+        Err(e) => log::warn!("usage relabel failed: {e}"),
+    }
+}
+
 fn nudge_one(inner: &Inner, conn: &mut Connection, path: &Path) {
     let projects = (inner.projects)();
+    relabel_if_changed(inner, conn, &projects);
     let agent = scan::agent_type_for(path, &inner.root);
     loop {
         match ingest::ingest_file(conn, path, agent, &inner.root, &projects) {
@@ -294,34 +313,4 @@ fn nudge_one(inner: &Inner, conn: &mut Connection, path: &Path) {
             }
         }
     }
-}
-
-/// Recomputes Project labels after a Project is added, renamed or removed; moves changed rollups.
-fn relabel_all(
-    conn: &mut Connection,
-    root: &Path,
-    projects: &ProjectIndex,
-) -> rusqlite::Result<()> {
-    let rows: Vec<(String, String, String)> = {
-        let mut stmt = conn.prepare(
-            "SELECT session_file, cwd, project_label FROM file_offsets \
-             WHERE cwd IS NOT NULL AND cwd != ''",
-        )?;
-        let mapped = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-        mapped.collect::<Result<_, _>>()?
-    };
-    for (file, cwd, old) in rows {
-        let new = projects.label(Some(&cwd), Path::new(&file), root);
-        if new == old {
-            continue;
-        }
-        let tx = conn.transaction()?;
-        rollup::relabel_file(&tx, &file, &new)?;
-        tx.execute(
-            "UPDATE file_offsets SET project_label = ?1 WHERE session_file = ?2",
-            params![new, file],
-        )?;
-        tx.commit()?;
-    }
-    Ok(())
 }
