@@ -227,7 +227,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           {/* Reserves the action's column in every expandable row so all chevrons share one x; the action is laid over it below. */}
           <span aria-hidden="true" className="h-5 w-6 shrink-0" />
         </CollapsibleTrigger>
-        {action !== undefined && <span className="absolute right-2 top-0.5 flex">{action}</span>}
+        {action !== undefined && <span className="absolute right-2 top-0 flex translate-y-0.5">{action}</span>}
       </div>
       {detailMounted && (
         <p
