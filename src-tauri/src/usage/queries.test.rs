@@ -114,7 +114,8 @@ fn today_starts_at_local_midnight_and_rollup_filters_on_the_hour() {
 #[test]
 fn summary_and_calls_read_what_was_recorded() {
     let conn = scratch_db();
-    // `c` sits three days back (same month at NOW) so active_days and month_active_days differ.
+    // NOW is a fixed instant (21st of its month, UTC), so `c` three days back stays in the same month
+    // on any run date and active_days differs from month_active_days.
     for (id, model, cost, file, ago) in [
         ("a", "m1", 1.0, "file", 60_000),
         ("b", "m2", 2.0, "file2", 60_000),
