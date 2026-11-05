@@ -12,4 +12,5 @@
 - [x] T10 `verify-tauri-087.mjs` (FR-018)
 - [x] T11 PLAN.md row
 - [x] T12 `pnpm ci:local` under the build slot
+- [x] T13 Convergence (#1651): drop `border border-border` from the Paused card in `PausedBody.tsx`; keep `bg-background`, `rounded-md`, `shadow-md` (FR-002)
 

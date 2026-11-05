@@ -19,7 +19,7 @@ The spec 070 and spec 068 gates left Medium and Low findings: the usage agent fi
 ## Functional requirements
 
 - FR-001 `UsageFilters.tsx` offers `advisor` ("Advisor") in the agent filter.
-- FR-002 `LoadingOverlay` delays its blur and loading card ~150 ms (`delayMs`, default 150); `aria-busy` (loading only, not for a custom overlay such as Paused) and `inert` apply immediately; a custom overlay has a `bg-scrim-bg` backing (Paused adds an opaque card). Theme and chat width pickers select optimistically and roll back on failure only for the latest request. `PausedBody` uses it (`delayMs={0}` so Resume takes focus at once).
+- FR-002 `LoadingOverlay` delays its blur and loading card ~150 ms (`delayMs`, default 150); `aria-busy` (loading only, not for a custom overlay such as Paused) and `inert` apply immediately; a custom overlay has a `bg-scrim-bg` backing (Paused adds an opaque card with background, radius and shadow but no border, #1651). Theme and chat width pickers select optimistically and roll back on failure only for the latest request. `PausedBody` uses it (`delayMs={0}` so Resume takes focus at once).
 - FR-003 `CompactList` shows truncated text through the shared Tooltip, not `title`.
 - FR-004 Compact `Sparkline` `aria-label` ends with "latest X, low Y, high Z".
 - FR-005 Removing an Issues-list label pill announces "Removed label filter {name}" through `useChatAreaAnnouncer`.
