@@ -187,16 +187,18 @@ async function pressEscape(cdp) {
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
 }
 
-/** Tabs (bounded) until `selector` is focused, independent of how many stops precede it. */
-async function tabUntilFocused(cdp, selector, { maxTabs = 40 } = {}) {
-  await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+/** Tabs (bounded) until `selector` is focused, independent of how many stops precede it. Focusing the body first
+ * resets Chromium's sequential-focus starting point, which a prior click would otherwise leave on that element. */
+async function tabUntilFocused(cdp, selector, { maxTabs = 120 } = {}) {
+  await cdp.evaluate(`(() => { const b = document.body; b.setAttribute('tabindex', '-1'); b.focus(); b.removeAttribute('tabindex'); })()`);
   for (let i = 0; i < maxTabs; i++) {
     await pressTab(cdp);
     await waitTwoFrames(cdp);
     const isTarget = await cdp.evaluate(`document.activeElement === (${selector})`);
     if (isTarget) return;
   }
-  throw new Error(`tabUntilFocused: never reached ${selector} within ${maxTabs} Tab presses`);
+  const active = await cdp.evaluate(`document.activeElement ? document.activeElement.tagName + ' ' + (document.activeElement.getAttribute('aria-label') ?? document.activeElement.textContent ?? '').slice(0, 60) : null`);
+  throw new Error(`tabUntilFocused: never reached ${selector} within ${maxTabs} Tab presses (focus ended on ${active})`);
 }
 
 /** Structural proxy for "inert text": no non-off `aria-live` and no implicit live-region role. */
@@ -369,6 +371,11 @@ async function main() {
     await moveToNeutralPoint(cdp);
     await clickTodoPill(cdp);
     assertEqual((await readPill(cdp)).ariaPressed, 'false', 'Todo pill unpinned again, restoring the hover/focus card for the remaining checks');
+    // The preceding Tab press leaves keyboard modality on, so the re-enabled pill would open its own card on focus; drop focus first.
+    await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+    await cdp.waitFor(`!(${TODO_CARD_SELECTOR})`, { timeoutMs: 2_000, label: 'Todo card closed after unpin and blur' });
+    await moveToNeutralPoint(cdp);
+    await cdp.waitFor(`!document.querySelector('[role="tooltip"], [data-slot="tooltip-content"], [data-slot="hover-card-content"]')`, { timeoutMs: 3_000, label: 'tooltips settle after the pointer leaves the Todo pill' });
 
     await assertNoStrayOverlay(cdp, 'the Agents card hover test');
     await hoverElement(cdp, AGENTS_PILL_SELECTOR);
@@ -506,7 +513,7 @@ async function main() {
     assertTrue(!(await cdp.evaluate(`!!(${AGENTS_CARD_SELECTOR})`)), 'Agents card does not open on hover once no subagent is running, even with finished/failed counts non-zero');
     await moveToNeutralPoint(cdp);
     // Session B still in the list adds tab stops (needs 44, past the default 40).
-    await tabUntilFocused(cdp, AGENTS_PILL_SELECTOR, { maxTabs: 60 });
+    await tabUntilFocused(cdp, AGENTS_PILL_SELECTOR, { maxTabs: 120 });
     assertTrue(await cdp.evaluate(`document.activeElement === (${AGENTS_PILL_SELECTOR}) && document.activeElement.matches(':focus-visible')`), 'Tab-focused zero-running Agents pill genuinely matches :focus-visible before the no-open check');
     await sleep(100);
     assertTrue(!(await cdp.evaluate(`!!(${AGENTS_CARD_SELECTOR})`)), 'Agents card does not open on keyboard focus-visible once no subagent is running');
