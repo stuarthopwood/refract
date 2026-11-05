@@ -17,6 +17,8 @@
 {"type":"tool_execution_end","toolCallId":"call-1","toolName":"bash","result":{"content":[{"type":"text","text":"https://github.com/fake-owner/fake-repo-1121/pull/5"}]},"isError":false}
 {"type":"tool_execution_start","toolCallId":"call-2","toolName":"bash","args":{"command":"gh issue comment 12 --body \"progress\""},"intent":"Commenting on an issue"}
 {"type":"tool_execution_end","toolCallId":"call-2","toolName":"bash","result":{"content":[{"type":"text","text":"https://github.com/fake-owner/fake-repo-1121/issues/12#issuecomment-1"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-4","toolName":"bash","args":{"command":"gh api -X PATCH repos/other-owner/other-repo/pulls/9 -f state=closed"},"intent":"Closing a foreign pull request through the API"}
+{"type":"tool_execution_end","toolCallId":"call-4","toolName":"bash","result":{"content":[{"type":"text","text":"{\"number\":9,\"state\":\"closed\"}"}]},"isError":false}
 {"type":"tool_execution_start","toolCallId":"call-3","toolName":"bash","args":{"command":"gh pr comment 7 -R other-owner/other-repo --body \"see this\""},"intent":"Commenting on a foreign pull request"}
 {"type":"tool_execution_end","toolCallId":"call-3","toolName":"bash","result":{"content":[{"type":"text","text":"https://github.com/other-owner/other-repo/pull/7#issuecomment-2"}]},"isError":false}
 {"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
