@@ -393,7 +393,7 @@ mod tests {
     use tokio::sync::Mutex as AsyncMutex;
 
     fn temp_dir(label: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
+        let dir = crate::test_scratch::path(format!(
             "refract-session-manager-test-{label}-{}",
             uuid::Uuid::new_v4()
         ));

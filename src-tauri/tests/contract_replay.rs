@@ -61,16 +61,21 @@ fn run_git(dir: &Path, args: &[&str]) {
     assert!(status.success(), "git {args:?} failed in {dir:?}");
 }
 
+/// A `TempDir` that removes itself on drop, so the test leaves nothing in %TEMP%.
+fn scratch_dir(prefix: &str) -> tempfile::TempDir {
+    tempfile::Builder::new()
+        .prefix(prefix)
+        .tempdir()
+        .expect("create scratch dir")
+}
+
 /// A fresh scratch git repository with one commit on `main`. Mirrors
 /// `git::test_support::init_repo`'s own recipe exactly, but cannot call that helper directly:
 /// it is `pub(crate)`, invisible to this external integration-test crate (`tests/` binaries only
 /// ever see the library's `pub` surface).
-fn make_scratch_repo() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "refract-contract-replay-repo-{}",
-        uuid::Uuid::new_v4()
-    ));
-    std::fs::create_dir_all(&dir).expect("create scratch repo dir");
+fn make_scratch_repo() -> tempfile::TempDir {
+    let guard = scratch_dir("refract-contract-replay-repo-");
+    let dir = guard.path().to_path_buf();
     run_git(&dir, &["init", "--initial-branch=main", "-q"]);
     run_git(
         &dir,
@@ -80,7 +85,7 @@ fn make_scratch_repo() -> PathBuf {
     std::fs::write(dir.join("README.md"), b"seed\n").expect("write seed file");
     run_git(&dir, &["add", "."]);
     run_git(&dir, &["commit", "-q", "-m", "seed"]);
-    dir
+    guard
 }
 
 /// Compiles `scripts/verify-tauri-omp-shim.rs` into `<dir>/omp.exe` with the exact bare `rustc`
@@ -401,17 +406,10 @@ fn ipc_steps_of(trace: &Value) -> Vec<&Value> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn session_scenario_replays_against_the_fake_omp_tape() {
-    // Scratch directories below (`shim_dir`/`data_dir`/`repo_dir`) are created under the OS temp
-    // dir and never removed -- the same deliberate, documented choice this crate's own
-    // `git::test_support` already makes for its scratch repos (see that module's header
-    // comment): cleaning them up would need a destructive-delete guard this crate does not have
-    // yet, and leaving them behind is harmless. Matches the existing crate convention rather
-    // than inventing a new one.
+    // Scratch directories are `TempDir`s held until the test ends, so nothing is left in %TEMP%.
     // --- Fixture wiring: PATH-shim the fake `omp`, point it at the `session` scenario tape. ---
-    let shim_dir = std::env::temp_dir().join(format!(
-        "refract-contract-replay-shim-{}",
-        uuid::Uuid::new_v4()
-    ));
+    let shim_guard = scratch_dir("refract-contract-replay-shim-");
+    let shim_dir = shim_guard.path().to_path_buf();
     build_omp_shim(&shim_dir);
     let fake_omp_script = repo_root()
         .join("scripts")
@@ -436,16 +434,14 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
     }
 
     // --- AppState / Dispatcher, same construction recipe as this crate's own handler tests. ---
-    let data_dir = std::env::temp_dir().join(format!(
-        "refract-contract-replay-data-{}",
-        uuid::Uuid::new_v4()
-    ));
-    std::fs::create_dir_all(&data_dir).expect("create scratch data dir");
+    let data_guard = scratch_dir("refract-contract-replay-data-");
+    let data_dir = data_guard.path().to_path_buf();
     let state = make_state(&data_dir).await;
     let mut dispatcher = Dispatcher::new();
     register_handlers(&mut dispatcher);
 
-    let repo_dir = make_scratch_repo();
+    let repo_guard = make_scratch_repo();
+    let repo_dir = repo_guard.path().to_path_buf();
 
     let mut steps: Vec<Value> = Vec::new();
 
@@ -585,7 +581,7 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
 
     // --- Normalize and compare against the frozen golden trace. ---
     // Windows note (found via a real CI failure, 2026-10-14): `repo_dir` (built from
-    // `std::env::temp_dir()`, the literal string this test passes as `repositories.add`'s raw
+    // `tempfile::TempDir` path, the literal string this test passes as `repositories.add`'s raw
     // argument) and `repo_path` (the SAME directory, but read back from that handler's own
     // response, which canonicalizes it) are not always byte-identical strings for the identical
     // physical path -- a Windows account whose profile directory has an 8.3 short name (seen on

@@ -198,7 +198,7 @@ mod tests {
     use super::*;
 
     fn temp_dir(label: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!(
+        let dir = crate::test_scratch::path(format!(
             "refract-remote-test-{label}-{}",
             uuid::Uuid::new_v4()
         ));

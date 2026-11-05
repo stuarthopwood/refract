@@ -72,7 +72,7 @@ fn an_ordinary_relative_token_is_safe() {
 }
 
 async fn fixture() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("refract-resolve-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-resolve-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(dir.join("sub")).await.unwrap();
     tokio::fs::write(dir.join("sub").join("file.txt"), b"hi")
         .await
@@ -204,7 +204,7 @@ async fn a_dot_token_resolving_to_root_is_file_missing() {
 #[tokio::test]
 async fn a_missing_worktree_root_is_worktree_missing() {
     let root =
-        std::env::temp_dir().join(format!("refract-resolve-missing-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-resolve-missing-{}", uuid::Uuid::new_v4()));
     let result = resolve_in_worktree(&root, "sub/file.txt").await;
     assert_eq!(result.unwrap_err(), ResolveReason::WorktreeMissing);
 }
@@ -234,7 +234,7 @@ fn make_junction(target_dir: &Path, link: &Path) -> bool {
 async fn a_junction_escaping_the_worktree_is_outside_worktree() {
     let root = fixture().await;
     let outside =
-        std::env::temp_dir().join(format!("refract-resolve-outside-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-resolve-outside-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&outside).await.unwrap();
     tokio::fs::write(outside.join("secret.txt"), b"nope")
         .await
@@ -301,7 +301,7 @@ async fn a_worktree_reached_through_its_own_junction_alias_still_accepts_the_ali
     // An absolute token in the junction-alias form must still be accepted.
     let real_root = fixture().await;
     let alias_root =
-        std::env::temp_dir().join(format!("refract-resolve-alias-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-resolve-alias-{}", uuid::Uuid::new_v4()));
     if !make_junction(&real_root, &alias_root) {
         return;
     }

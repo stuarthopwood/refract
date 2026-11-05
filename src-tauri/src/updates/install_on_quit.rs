@@ -461,7 +461,7 @@ mod tests {
     use crate::updates::state::{UpdatePhase, UpdateStateStore};
 
     async fn store_with_phase(phase: UpdatePhase) -> (UpdateStateStore, std::path::PathBuf) {
-        let dir = std::env::temp_dir().join(format!(
+        let dir = crate::test_scratch::path(format!(
             "refract-tauri-installonquit-test-{}-{}",
             std::process::id(),
             uuid::Uuid::new_v4()

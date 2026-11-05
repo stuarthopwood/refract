@@ -24,7 +24,7 @@ fn make_junction(target_dir: &std::path::Path, link: &std::path::Path) {
 }
 
 fn fixture() -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("refract-listdir-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-listdir-test-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(dir.join("sub")).unwrap();
     std::fs::write(dir.join("sub").join("file.txt"), b"hi").unwrap();
     std::fs::create_dir_all(dir.join(".git")).unwrap();
@@ -107,7 +107,7 @@ async fn an_unregistered_orphaned_folder_is_worktree_missing_not_empty() {
     let session = format!("s-{}", uuid::Uuid::new_v4());
     let repo = init_repo().await;
     let orphan =
-        std::env::temp_dir().join(format!("refract-listdir-orphan-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-listdir-orphan-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&orphan).unwrap();
     let result = list_directory_entries(&session, Some(&repo), &orphan, "").await;
     assert!(
@@ -119,7 +119,7 @@ async fn an_unregistered_orphaned_folder_is_worktree_missing_not_empty() {
 #[tokio::test]
 async fn entries_beyond_the_cap_are_truncated_and_counted() {
     let session = format!("s-{}", uuid::Uuid::new_v4());
-    let root = std::env::temp_dir().join(format!("refract-listdir-cap-{}", uuid::Uuid::new_v4()));
+    let root = crate::test_scratch::path(format!("refract-listdir-cap-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&root).unwrap();
     for i in 0..(MAX_ENTRIES_PER_DIRECTORY + 200) {
         std::fs::write(root.join(format!("f{i:05}.txt")), b"x").unwrap();
@@ -134,10 +134,10 @@ async fn entries_beyond_the_cap_are_truncated_and_counted() {
 #[tokio::test]
 async fn a_junction_escaping_the_worktree_is_classified_cannot_access() {
     let session = format!("s-{}", uuid::Uuid::new_v4());
-    let root = std::env::temp_dir().join(format!("refract-listdir-junc-{}", uuid::Uuid::new_v4()));
+    let root = crate::test_scratch::path(format!("refract-listdir-junc-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&root).unwrap();
     let outside =
-        std::env::temp_dir().join(format!("refract-listdir-outside-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-listdir-outside-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&outside).unwrap();
     let link = root.join("escape-link");
     make_junction(&outside, &link);
@@ -159,7 +159,7 @@ async fn a_junction_escaping_the_worktree_is_classified_cannot_access() {
 async fn a_junction_staying_inside_the_worktree_is_classified_as_a_folder() {
     let session = format!("s-{}", uuid::Uuid::new_v4());
     let root =
-        std::env::temp_dir().join(format!("refract-listdir-junc-in-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-listdir-junc-in-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(root.join("real")).unwrap();
     let link = root.join("alias");
     make_junction(&root.join("real"), &link);

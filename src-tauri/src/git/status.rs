@@ -221,7 +221,7 @@ mod tests {
     #[tokio::test]
     async fn a_non_repo_directory_returns_none() {
         let dir =
-            std::env::temp_dir().join(format!("refract-status-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-status-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         assert!(read_git_status(&dir).await.is_none());
     }

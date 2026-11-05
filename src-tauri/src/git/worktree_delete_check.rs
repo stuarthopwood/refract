@@ -214,7 +214,7 @@ mod tests {
     #[tokio::test]
     async fn delete_check_for_session_is_zero_risk_when_the_repository_is_unreadable() {
         let missing_repo =
-            std::env::temp_dir().join(format!("refract-no-such-repo-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-no-such-repo-{}", uuid::Uuid::new_v4()));
         let check =
             delete_check_for_session(&missing_repo, &missing_repo.join("worktree"), "irrelevant")
                 .await

@@ -56,10 +56,10 @@ fn a_path_that_escapes_the_root_via_dotdot_is_not_a_descendant() {
     ));
 }
 
-// `delete_session_conversations`: real temp dir (never cleaned up).
+// `delete_session_conversations`: real temp dir under `test_scratch` (removed when the test thread ends).
 
 fn temp_session_dir(label: &str) -> std::path::PathBuf {
-    std::env::temp_dir().join(format!(
+    crate::test_scratch::path(format!(
         "refract-sessions-lifecycle-test-{label}-{}",
         uuid::Uuid::new_v4()
     ))
@@ -127,7 +127,7 @@ async fn session_dir_itself_is_removed_once_cleanup_leaves_it_empty() {
 // Handler tests against a temp registry and a real repo (`make_state` pattern).
 
 fn temp_registry_dir(label: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
+    let dir = crate::test_scratch::path(format!(
         "refract-sessions-lifecycle-registry-test-{label}-{}",
         uuid::Uuid::new_v4()
     ));

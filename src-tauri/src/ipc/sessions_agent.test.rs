@@ -652,7 +652,7 @@ async fn attach_snapshot_decision_notifies_list_changed_only_when_the_agent_actu
 // refused by the registry lookup before any agent is created.
 
 fn temp_registry_dir(label: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
+    let dir = crate::test_scratch::path(format!(
         "refract-sessions-agent-test-registry-{label}-{}",
         uuid::Uuid::new_v4()
     ));
