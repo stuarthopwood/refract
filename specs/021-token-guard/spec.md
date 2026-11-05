@@ -59,6 +59,16 @@ All answers come from #1581's grilled block (Stuart, 2026-11-02, "Grilled ... al
 - #1581 Q: Nothing to change? -> A: "When every row already equals its default, the button is disabled with the tooltip 'Already optimised'."
 - #1581 Q: Write path? -> A: "It uses the same write path as each row's **Reset**, so new Sessions pick up the change in the same way." Implemented as one `tokenGuard.resetAll` channel that applies `values::reset` semantics to every key in a single store write.
 
+### Session 2026-11-05 (#1646 NumberField chevrons)
+
+All answers come from #1646's grilled block (Stuart, 2026-11-04, "all resolved, none deferred").
+
+- #1646 Q: What replaces the native spinner? -> A: Two small stacked `ChevronUpIcon`/`ChevronDownIcon` buttons inside the field's right edge, with an 8px gap between the value and the buttons (right padding reserves the space). The native spinner is hidden (`::-webkit-inner-spin-button` and `::-webkit-outer-spin-button`: `appearance: none`, `margin: 0`). This supersedes #1579's "native spinner arrows stay visible".
+- #1646 Q: Colour and states? -> A: `text-muted-foreground`, no fill, at rest; hover and press `text-foreground`; each button is disabled when the field is disabled, or at `max` (up) or `min` (down). At least 3:1 non-text contrast against the field background in every theme.
+- #1646 Q: Click behaviour? -> A: `stepUp()`/`stepDown()` on the input, then a native `input` event so `onChange` fires exactly as typing does, honouring `min`, `max` and `step`.
+- #1646 Q: Accessibility? -> A: The buttons are `tabIndex={-1}` and `aria-hidden`; ArrowUp/ArrowDown already step the focused input, so keyboard and screen reader users lose nothing and the tab order does not grow.
+- #1646 Q: Scope? -> A: Inside `NumberField.tsx` only; callers keep their props; built on the shared `Button`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Token-cost settings cannot drift for Refract Sessions (Priority: P1)
@@ -202,12 +212,13 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **FR-024** (#1553): `compaction.modelThresholds` MUST hold `"N%"` strings (1-99) with no built-in entries (supersedes the per-model token entries in FR-004); each row shows "≈ N of W tokens" when the window is known; "Add model" seeds the global percent.
 - **FR-025** (#1553): The idle compaction threshold MUST be edited as a percent of the Default role model's window and stored as tokens, falling back to a token field when that window is unknown.
 - **FR-026** (#1553): Loading a version 1 store MUST reset stored global and per-model token thresholds to the new defaults, bump `version` to 2, and show a one-line note once.
-- **FR-027** (#1579): A shared `NumberField` primitive MUST back every number-only input in Settings > Advanced: visible spinners, ArrowUp/ArrowDown stepping, per-unit `step`, `min`/`max`, blocked `e`/`+`/`-`, wheel-safe focus, unchanged commit and validation behaviour.
+- **FR-027** (#1579, #1646): A shared `NumberField` primitive MUST back every number-only input in Settings > Advanced: ArrowUp/ArrowDown stepping, per-unit `step`, `min`/`max`, blocked `e`/`+`/`-`, wheel-safe focus, unchanged commit and validation behaviour. The native spinner MUST be hidden and replaced by muted stacked chevron step buttons (FR-033).
 - **FR-028** (#1555): Settings > Advanced row descriptions, the two renamed labels, the "Every step" option and per-method compaction hints MUST use the approved plain wording, with hints linked by `aria-describedby`.
 - **FR-029** (#1580): `TokenGuardKeyInfo` MUST carry an optional `impact` and `AdvancedRow` MUST render a warning line only when the value is costlier than its default; the global compaction threshold warns above 70% and a per-model row warns above the current global percent.
 - **FR-030** (#1581): Settings > Advanced MUST offer an "Optimise token usage" primary button in the page header that, after a confirm dialog listing each row whose value differs from its default (label, current value, default), resets every token guard row (including `modelRoles.advisor`) to its default through one `tokenGuard.resetAll` channel using the same semantics as the per-row Reset; nothing is written before confirmation; it is disabled with the tooltip "Already optimised" when every row already equals its default.
 - **FR-031** (#1581): Before the button ships, each token guard default MUST be reviewed against the Usage database and the OMP settings docs; findings MUST be applied to `default_for` (`values.rs`) and `TOKEN_GUARD_ROWS` (`tokenGuard.ts`) in the same PR, each changed default with a one-time migration that moves users still on the old default and keeps a value the user set; the PR reports old value, new value and evidence per changed default.
 - **FR-032** (#1581): The confirm dialog MUST use the shared `ConfirmAlertDialog` with a real list, a busy state and an error live region on failure, and focus MUST return to the button when it closes; a failed write leaves the dialog open with the reason in text.
+- **FR-033** (#1646): `NumberField` MUST hide the native spinner and draw two stacked `ChevronUpIcon`/`ChevronDownIcon` `Button`s inside the field's right edge, 8px clear of the value, `text-muted-foreground` at rest and `text-foreground` on hover and press, no fill, 3:1 against the field background in every theme. They MUST be `tabIndex={-1}` and `aria-hidden`, be disabled when the field is disabled or read-only, or at `max` (up) or `min` (down), and call `stepUp()`/`stepDown()` then dispatch a native `input` event so `onChange` fires as typing does. Callers keep their props.
 
 ### Key Entities
 
@@ -232,6 +243,7 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **SC-006**: Every overlay row in Settings > OMP is reachable and operable by keyboard alone and states "Set by Refract" in text.
 - **SC-007**: With all values at default, Settings > Advanced shows no impact warnings; raising a costlier value shows its warning, and the compaction rows show percentages with the "≈ N tokens" hint where the window is known.
 - **SC-008**: With any row changed, Optimise token usage lists exactly the changed rows (from and to) and writes nothing until confirmed; after confirming, every row equals its default, no warning shows, and the next Session's overlay carries the defaults; with all rows at default the button is disabled with "Already optimised".
+- **SC-009**: In Settings > Advanced every number field shows muted chevrons (no native grey spinner) with an 8px gap after the value in the dark and light themes; clicking a chevron steps the value by `step` within `min`/`max` and commits like typing; the chevrons are not in the tab order.
 
 ## Assumptions
 
