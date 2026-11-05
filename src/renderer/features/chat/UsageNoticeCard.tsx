@@ -40,14 +40,14 @@ export function UsageNoticeCard({ report }: { report: UsageReport }) {
         <CardTitle className="text-sm">Usage{report.age ? ` (${report.age} ago)` : ''}</CardTitle>
       </CardHeader>
       <CardContent className="flex flex-col gap-4 px-4">
-        {report.groups.map((group) => (
-          <section key={`${group.provider}-${group.window}`} className="flex flex-col gap-2" aria-label={group.provider}>
+        {report.groups.map((group, groupIndex) => (
+          <section key={`${group.provider}-${group.window}-${groupIndex}`} className="flex flex-col gap-2" aria-label={group.provider}>
             <h4 className="text-xs font-medium text-foreground">
               {group.provider}
               {group.window ? <span className="font-normal text-muted-foreground"> - {group.window}</span> : null}
             </h4>
-            {group.rows.map((row) => (
-              <UsageRowView key={row.account} row={row} />
+            {group.rows.map((row, rowIndex) => (
+              <UsageRowView key={`${row.account}-${rowIndex}`} row={row} />
             ))}
           </section>
         ))}

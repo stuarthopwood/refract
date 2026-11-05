@@ -63,7 +63,7 @@ export function NoticeRow({ level, text: rawText, commandOutput = false }: Notic
         summaryClassName={NOTICE_CLASS[level]}
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}
       >
-        <div className="max-h-60 overflow-y-auto text-xs [overflow-wrap:anywhere]">
+        <div tabIndex={0} role="region" aria-label="Command output" className="max-h-60 overflow-y-auto [overflow-wrap:anywhere]">
           <Markdown id={markdownId} text={text} variant="chat" />
         </div>
       </CollapsedLine>
@@ -88,7 +88,7 @@ export function NoticeRow({ level, text: rawText, commandOutput = false }: Notic
       summaryClassName={NOTICE_CLASS[level]}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
-      <div className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-notice-info-fg [overflow-wrap:anywhere]">{text}</div>
+      <div tabIndex={0} role="region" aria-label="Notice text" className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-notice-info-fg [overflow-wrap:anywhere]">{text}</div>
     </CollapsedLine>
   )
 }
