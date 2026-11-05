@@ -6,7 +6,7 @@ Two stacked slices. Slice 1 is Rust plus contract with no UI; Slice 2 is the ren
 
 New `src-tauri/src/usage/`, each file under 600 lines:
 
-- `mod.rs`: `UsageService` (worker handle, status, nudge channel), `start`/`stop`.
+- `mod.rs`: `UsageService` (worker handle, status, nudge channel), `start`; started from Tauri setup (#1655).
 - `schema.rs`: DDL, `user_version`, corruption rebuild (`usage.db.bak-<ts>`), prefs table.
 - `paths.rs`: `usage_db_path()` from `crate::data_dir()`; `sessions_dir()` with the pure `REFRACT_OMP_SESSIONS_DIR` override (same logic shape as `lib.rs::resolve_data_dir_override`).
 - `scan.rs`: directory walk, `(len, mtime)` change detection, newest-first backfill order, progress counters.
@@ -26,7 +26,7 @@ New `src-tauri/src/usage/`, each file under 600 lines:
 
 ## Slice 2: renderer Usage view
 
-- State: `MainView` gains `'usage'`; `view-store` `openUsage`; `state/usage-store.ts` (filters, prefs, results, progress; one fetch per filter change; stops the rescan when the view closes).
+- State: `MainView` gains `'usage'`; `view-store` `openUsage`; `state/usage-store.ts` (filters, prefs, results, progress; one fetch per filter change; closing the view only unsubscribes, ingest keeps running).
 - Nav: Usage item in `features/sessions/ViewsNavGroup.tsx` after Issues. Palette: `features/usage/usageViewAction.ts` descriptor, registered when #5 lands.
 - `App.tsx`: one branch beside `pull-requests`/`issues` (net zero lines: baseline cap).
 - Shared components (ADR 0003), reusing `ScreenHeader`, `FilterTabs`, `ScreenSection`, `Empty`, `RefreshButton`, `Select`, `ListToolbar`: new `components/ui/chart.tsx` (stacked bars, patterns, direct labels, sparkline, "View as table"), `components/StatCard.tsx` (value, label, caption as one unit), `components/SortableTable.tsx` (`aria-sort`, keyboard, paging), `components/ProgressStrip.tsx` (`role="progressbar"`, polite live region).

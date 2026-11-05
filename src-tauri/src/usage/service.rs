@@ -1,5 +1,5 @@
-// The Usage ingest service: one lazily started thread owns the writer connection to `usage.db`.
-// It scans on start and every five minutes, and ingests single files on `nudge`.
+// The Usage ingest service: one thread owns the writer connection to `usage.db`. It is started at
+// app launch, scans then and every five minutes, and ingests single files on `nudge`.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -37,8 +37,6 @@ enum Msg {
     /// The five-minute timer fired; unlike `Scan` it is not deduped through `scan_pending`.
     Rescan,
     Nudge(PathBuf),
-    /// `stop()` ran: the worker drops its connection and sleeps until the next `start()`.
-    Stop,
 }
 
 struct Inner {
@@ -48,7 +46,6 @@ struct Inner {
     emit: StatusEmit,
     status: Mutex<UsageStatus>,
     last_error: Mutex<Option<String>>,
-    started: AtomicBool,
     scan_pending: AtomicBool,
     /// The index the stored labels were last recomputed under.
     labelled: Mutex<Option<ProjectIndex>>,
@@ -88,7 +85,6 @@ impl UsageService {
                 emit,
                 status: Mutex::new(status),
                 last_error: Mutex::new(None),
-                started: AtomicBool::new(false),
                 scan_pending: AtomicBool::new(false),
                 labelled: Mutex::new(None),
             }),
@@ -96,18 +92,9 @@ impl UsageService {
         }
     }
 
-    /// Starts ingesting (idempotent): the first call spawns the worker and queues a scan.
+    /// Starts ingesting (idempotent): the first call spawns the worker, each call queues a scan.
     pub fn start(&self) {
-        self.inner.started.store(true, Ordering::SeqCst);
         self.send(Msg::Scan);
-    }
-
-    /// Stops periodic scans and nudges; an in-flight scan stops between files.
-    pub fn stop(&self) {
-        self.inner.started.store(false, Ordering::SeqCst);
-        if let Some(tx) = lock(&self.tx).as_ref() {
-            let _ = tx.send(Msg::Stop);
-        }
     }
 
     pub fn status(&self) -> UsageStatus {
@@ -124,7 +111,7 @@ impl UsageService {
     /// Ingests one changed session file now. Ignores anything that is not a `.jsonl` under the
     /// sessions directory, or a path that climbs out of it with `..`.
     pub fn nudge(&self, path: &Path) {
-        if !self.inner.started.load(Ordering::SeqCst) || !self.accepts(path) {
+        if !self.accepts(path) {
             return;
         }
         self.send(Msg::Nudge(path.to_path_buf()));
@@ -177,35 +164,11 @@ fn worker(inner: &Inner, rx: &Receiver<Msg>) {
     let mut conn: Option<Connection> = None;
     let mut next_scan = Instant::now() + SCAN_INTERVAL;
     loop {
-        // Idle: block with no timer so nothing rescans. Started: the timer retries open_db.
-        let msg = if inner.started.load(Ordering::SeqCst) {
-            match rx.recv_timeout(next_scan.saturating_duration_since(Instant::now())) {
-                Ok(msg) => msg,
-                Err(RecvTimeoutError::Timeout) => Msg::Rescan,
-                Err(RecvTimeoutError::Disconnected) => break,
-            }
-        } else {
-            match rx.recv() {
-                Ok(msg) => msg,
-                Err(_) => break,
-            }
+        let msg = match rx.recv_timeout(next_scan.saturating_duration_since(Instant::now())) {
+            Ok(msg) => msg,
+            Err(RecvTimeoutError::Timeout) => Msg::Rescan,
+            Err(RecvTimeoutError::Disconnected) => break,
         };
-        let started = inner.started.load(Ordering::SeqCst);
-        match msg {
-            Msg::Stop => {
-                if !started {
-                    conn = None;
-                }
-                continue;
-            }
-            Msg::Scan | Msg::Rescan | Msg::Nudge(_) if !started => {
-                if matches!(msg, Msg::Scan) {
-                    inner.scan_pending.store(false, Ordering::SeqCst);
-                }
-                continue;
-            }
-            _ => {}
-        }
         if conn.is_none() {
             match schema::open_db(&inner.db_path) {
                 Ok(c) => {
@@ -213,6 +176,7 @@ fn worker(inner: &Inner, rx: &Receiver<Msg>) {
                     conn = Some(c);
                 }
                 Err(e) => {
+                    log::warn!("usage db unavailable: {e}");
                     *lock(&inner.last_error) = Some(e.to_string());
                     inner.scan_pending.store(false, Ordering::SeqCst);
                     next_scan = Instant::now() + SCAN_INTERVAL;
@@ -232,7 +196,6 @@ fn worker(inner: &Inner, rx: &Receiver<Msg>) {
                 next_scan = Instant::now() + SCAN_INTERVAL;
             }
             Msg::Nudge(path) => nudge_one(inner, c, &path),
-            Msg::Stop => {}
         }
     }
 }
@@ -267,7 +230,6 @@ fn full_scan(inner: &Inner, conn: &mut Connection) {
                 (inner.emit)(&snapshot);
             }
         },
-        &|| !inner.started.load(Ordering::SeqCst),
     );
     // Files ingested above were labelled one by one; this merges case-duplicate folder rows.
     run_relabel(inner, conn, &projects);

@@ -249,6 +249,7 @@ pub fn run() {
                 .app_handle
                 .lock()
                 .expect("app_handle mutex poisoned") = Some(app.handle().clone());
+            ipc::usage::start_at_launch(&managed.app_state);
 
             // Set before any renderer script runs, so the synchronous theme bootstrap can read it.
             let (bootstrap_custom, reset_notice) =

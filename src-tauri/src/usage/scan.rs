@@ -94,13 +94,12 @@ fn unchanged(conn: &Connection, file: &SessionFile) -> bool {
         .is_some_and(|(mtime, len)| mtime == file.mtime_ms && len == file.len)
 }
 
-/// Ingests every changed file under `root`. `stop()` is polled between files so shutdown is prompt.
+/// Ingests every changed file under `root`.
 pub fn scan(
     conn: &mut Connection,
     root: &Path,
     projects: &ProjectIndex,
     progress: &mut dyn FnMut(usize, usize),
-    stop: &dyn Fn() -> bool,
 ) -> ScanReport {
     let files = list_session_files(root);
     let mut report = ScanReport {
@@ -109,9 +108,6 @@ pub fn scan(
     };
     progress(report.seen, 0);
     for file in &files {
-        if stop() {
-            break;
-        }
         if !unchanged(conn, file) {
             let agent = agent_type_for(&file.path, root);
             loop {

@@ -46,3 +46,10 @@ Format: `ID [P] description (paths)`. `[P]` = parallelisable with its neighbours
 - [X] S2-17 Docs: `docs/PLAN.md` row done, `CONTEXT.md`, `docs/design/components.md` (chart, StatCard, SortableTable, ProgressStrip).
 - [X] S2-18 Extend `scripts/verify-tauri-1331.mjs` with the `quickstart.md` step 5 checks and a screenshot per state; include the large generated fixture for the progress bar and the empty `sessions\` folder.
 - S2-19 Verify: `pnpm ci:local`, live check, then `code-reviewer`, `security-auditor`, `performance-optimiser`, `accessibility-auditor` gates; PR (`feat(usage): usage view`, `Closes #1331`). Depends on S2-14 to S2-18.
+
+## Phase 3: Convergence (#1655, ingest at launch)
+
+- [X] C-01 `src-tauri/src/ipc/usage.rs` and `src-tauri/src/lib.rs`: `start_at_launch(&AppState)` called from Tauri setup after app state exists; logs `usage: ingest started at launch`; `usage.start` stays idempotent per FR-006.
+- [X] C-02 Remove `usage.stop` end to end: Rust handler, `UsageService::stop`, `Msg::Stop`, scan `stop` callback, `USAGE_STOP`, `UsageApi.stop`, bridge method, `check-parity.mjs` entry, renderer `usage-service.ts` holder set; the stores call `usage.start()` directly and never stop it.
+- [X] C-03 Amend `spec.md` (FR-006, Session 2026-11-05), `plan.md`, `analysis.md`, `contracts/ipc.md` and `quickstart.md` to match.
+- [ ] C-04 Verify: `pnpm ci:local`; live driver `scripts/verify-tauri-1655.mjs` proves ingest ran at launch without the Usage view being opened; PR `fix(usage): start ingest at app launch`, `Closes #1655`.

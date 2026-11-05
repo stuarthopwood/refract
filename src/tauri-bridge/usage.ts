@@ -10,7 +10,6 @@ export function usageBridge(
   const tz = (tzOffsetMinutes: number | undefined): unknown[] => (tzOffsetMinutes === undefined ? [] : [tzOffsetMinutes])
   return {
     start: () => request<UsageStatus>(IPC_USAGE_REQUESTS.USAGE_START),
-    stop: () => request<null>(IPC_USAGE_REQUESTS.USAGE_STOP),
     status: () => request<UsageStatus>(IPC_USAGE_REQUESTS.USAGE_STATUS),
     summary: (filters, tzOffsetMinutes) =>
       request(IPC_USAGE_REQUESTS.USAGE_SUMMARY, filters, ...tz(tzOffsetMinutes)),

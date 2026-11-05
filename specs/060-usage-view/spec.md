@@ -33,6 +33,14 @@ Grill outcomes are Stuart's (2026-10-29, grill-with-docs, recorded on #1331, non
 - **Split (Decided (Skippy, delegated by Stuart 2026-10-30)):** two stacked PRs. Slice 1 is Rust and contract with no UI, mergeable and live-checkable on its own via the IPC. Slice 2 is the renderer.
 - **Untrusted text:** Project paths, model ids, tool names and OMP provider labels render as text only.
 
+### Session 2026-11-05 (#1655)
+
+Grill outcomes are Stuart's (2026-11-04, grill-with-docs, recorded on #1655, none deferred). They supersede the "Ingest (grill 7)" start rule and the stop half of FR-006.
+
+- **Start at launch (grill 1):** the ingest service starts in Rust app setup, so session files rotated, compacted or deleted while the Usage view was closed are still read. Opening the view does not create a second service.
+- **`usage.start` kept (grill 2):** it stays as an idempotent IPC, so the view still works if the launch start failed. It returns the status of the running service. A failed launch start (for example, `usage.db` unavailable) is logged, retried on the five-minute timer, and surfaced by the existing `usage-db-unavailable` error state of the view.
+- **`usage.stop` removed (lane decision, clean cutover):** a stop on view close would end launch ingest and defeat the fix, and nothing else called it. The renderer's holder set (`usage-service.ts`), the `stop` bridge method, `USAGE_STOP`, the Rust handler, `UsageService::stop`, its `Msg::Stop` and the scan `stop` callback are deleted.
+
 ## Functional requirements
 
 - FR-001: `MainView` gains `'usage'`; a left-nav Usage entry (ChartColumnIcon) sits in the GitHub nav group after Issues, `aria-current` when active.
@@ -40,7 +48,7 @@ Grill outcomes are Stuart's (2026-10-29, grill-with-docs, recorded on #1331, non
 - FR-003: Ingest scans `<sessions dir>/**/*.jsonl`, keeps `file_offsets(session_file, offset, last_modified)`, reads only complete lines from the stored offset, and commits rows and the new offset in one transaction. A file shorter than its offset restarts from 0.
 - FR-004: Per file, `model_change` and `thinking_level_change` are replayed in order so each call carries its model and reasoning level.
 - FR-005: Ingest is idempotent: re-reading a file adds nothing (FR dedupe keys above).
-- FR-006: `usage.start()` begins backfill and the five-minute rescan; `usage.stop()` ends the rescan (view closed); `usage.status()` reports sessions seen, sessions done, and whether an ingest is running. A `usage.progress` event reports the same.
+- FR-006: Ingest starts during app setup (Tauri `setup`, after app state exists), not when the view opens, then rescans every five minutes for the life of the app (#1655). `usage.start()` stays as an idempotent IPC: it returns `UsageStatus` and queues an incremental scan, which also retries a launch start that failed. There is no `usage.stop`; nothing ends ingest short of quitting. `usage.status()` reports sessions seen, sessions done, and whether an ingest is running. A `usage.progress` event reports the same.
 - FR-007: A Refract Session's `message_end` nudges the worker for that Session's file.
 - FR-008: `usage.summary(filters)` returns the cards; `usage.timeseries(filters, bucket, tzOffsetMinutes)`; `usage.tokenMix(filters)`; `usage.breakdown(filters, by)` for `project`, `model`, `tool`; `usage.topSessions(filters)`; `usage.calls(filters, sort, page)`; `usage.frustration(filters)`. All SQL-side, over rollups where the shape allows.
 - FR-009: Filters are `{range, from?, to?, project?, model?, reasoning?, agentType?}`; every card, chart and table honours them.

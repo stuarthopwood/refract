@@ -2,7 +2,6 @@ import type { Result } from './ipc'
 
 export const IPC_USAGE_REQUESTS = {
   USAGE_START: 'usage.start',
-  USAGE_STOP: 'usage.stop',
   USAGE_STATUS: 'usage.status',
   USAGE_SUMMARY: 'usage.summary',
   USAGE_TIMESERIES: 'usage.timeseries',
@@ -154,8 +153,8 @@ export interface UsagePrefs {
  * day buckets are wrong without it.
  */
 export interface UsageApi {
+  /** The app already starts ingest at launch; this is idempotent and only retries a failed start. */
   start(): Promise<Result<UsageStatus>>
-  stop(): Promise<Result<null>>
   status(): Promise<Result<UsageStatus>>
   summary(filters: UsageFilters, tzOffsetMinutes?: number): Promise<Result<UsageSummary>>
   timeseries(
