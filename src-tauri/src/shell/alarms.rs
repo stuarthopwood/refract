@@ -3,6 +3,7 @@ use std::sync::{Arc, LazyLock};
 use std::time::Duration;
 
 use tauri::AppHandle;
+#[cfg(not(windows))]
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::{Mutex as AsyncMutex, Notify};
 
@@ -26,7 +27,18 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-fn show_notification(app: &AppHandle, alarm: &Alarm) {
+/// Windows shows the alarm scenario toast with a looping sound; other platforms use the plugin.
+#[cfg(windows)]
+fn show_notification(app: &AppHandle, alarm: &Alarm, sound: bool) {
+    let body = if alarm.label.is_empty() { "Alarm" } else { alarm.label.as_str() };
+    let app_id = super::alarm_toast::app_id(&app.config().identifier);
+    if let Err(err) = super::alarm_toast::build(&app_id, body, sound).show() {
+        log::warn!("refract-tauri: failed to show alarm notification: {err}");
+    }
+}
+
+#[cfg(not(windows))]
+fn show_notification(app: &AppHandle, alarm: &Alarm, _sound: bool) {
     let body = if alarm.label.is_empty() {
         "Alarm".to_string()
     } else {
@@ -48,7 +60,7 @@ pub fn spawn(app: AppHandle, settings: Arc<AsyncMutex<SettingsStore>>) {
     tauri::async_runtime::spawn(async move {
         loop {
             let now = now_ms();
-            let (fired, snapshot, next, save_failed) = {
+            let (fired, snapshot, next, save_failed, sound) = {
                 let mut store = settings.lock().await;
                 let before = store.alarms().to_vec();
                 let (fired, err) = store.take_due_alarms(now).await;
@@ -57,10 +69,10 @@ pub fn spawn(app: AppHandle, settings: Arc<AsyncMutex<SettingsStore>>) {
                 }
                 let changed = store.alarms() != before.as_slice();
                 let snapshot = changed.then(|| store.get());
-                (fired, snapshot, store.next_alarm_ms(), err.is_some())
+                (fired, snapshot, store.next_alarm_ms(), err.is_some(), store.alarm_sounds())
             };
             for alarm in &fired {
-                show_notification(&app, alarm);
+                show_notification(&app, alarm, sound);
                 emit(&app, ALARM_FIRED, alarm);
             }
             // An overdue alarm deactivated without notifying still changes the list the renderer shows.

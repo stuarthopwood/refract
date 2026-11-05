@@ -101,6 +101,10 @@ pub struct Settings {
     pub default_clone_folder: Option<String>,
     /// One-shot Alarms from the composer clock (`alarms.rs`, #1426).
     pub alarms: Vec<Alarm>,
+    /// Sound on Session needs-you and finished OS notifications; default on (#1666).
+    pub session_notification_sounds: bool,
+    /// Looping sound on the alarm OS notification; default on (#1666).
+    pub alarm_sounds: bool,
     /// Unrecognised keys, flattened into the top-level object; never overlaps a known field.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -140,6 +144,8 @@ mod default_clone_folder;
 mod finished_turn_times;
 #[path = "scrollbar_map.rs"]
 mod scrollbar_map;
+#[path = "notification_sounds.rs"]
+mod notification_sounds;
 #[path = "typography.rs"]
 mod typography;
 pub use typography::Typography;
@@ -220,6 +226,8 @@ impl SettingsStore {
         let default_clone_folder = default_clone_folder::parse(&object);
         let alarms = alarms::parse(&object);
         let show_scrollbar_map = scrollbar_map::parse(&object);
+        let session_notification_sounds = notification_sounds::parse_session(&object);
+        let alarm_sounds = notification_sounds::parse_alarm(&object);
         let show_finished_turn_times = finished_turn_times::parse(&object);
         let typography = typography::parse(&object);
 
@@ -250,7 +258,7 @@ impl SettingsStore {
             .filter(|id| !id.is_empty() && id.len() <= 48)
             .map(str::to_string);
 
-        const KNOWN_FIELDS: [&str; 29] = [
+        const KNOWN_FIELDS: [&str; 31] = [
             "customTheme",
             "version",
             "approvalMode",
@@ -280,6 +288,8 @@ impl SettingsStore {
             right_pane::KEY,
             default_clone_folder::KEY,
             alarms::KEY,
+            notification_sounds::SESSION_KEY,
+            notification_sounds::ALARM_KEY,
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -317,6 +327,8 @@ impl SettingsStore {
             right_pane,
             default_clone_folder,
             alarms,
+            session_notification_sounds,
+            alarm_sounds,
             extra,
         };
 
@@ -410,6 +422,11 @@ impl SettingsStore {
         map.insert(right_pane::KEY.to_string(), json!(self.data.right_pane));
         default_clone_folder::write(&mut map, &self.data.default_clone_folder);
         alarms::write(&mut map, &self.data.alarms);
+        notification_sounds::write(
+            &mut map,
+            self.data.session_notification_sounds,
+            self.data.alarm_sounds,
+        );
         // Re-inserts keys captured at `open()` with no slot here, never overwriting a known key,
         // so unported settings survive every save and reach the wire.
         for (key, value) in &self.data.extra {
