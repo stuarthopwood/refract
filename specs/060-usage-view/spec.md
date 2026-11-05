@@ -41,6 +41,11 @@ Grill outcomes are Stuart's (2026-11-04, grill-with-docs, recorded on #1655, non
 - **`usage.start` kept (grill 2):** it stays as an idempotent IPC, so the view still works if the launch start failed. It returns the status of the running service. A failed launch start (for example, `usage.db` unavailable) is logged, retried on the five-minute timer, and surfaced by the existing `usage-db-unavailable` error state of the view.
 - **`usage.stop` removed (lane decision, clean cutover):** a stop on view close would end launch ingest and defeat the fix, and nothing else called it. The renderer's holder set (`usage-service.ts`), the `stop` bridge method, `USAGE_STOP`, the Rust handler, `UsageService::stop`, its `Msg::Stop` and the scan `stop` callback are deleted.
 
+### Session 2026-11-05 (#1656)
+
+- **Rewrite detection (Decided (Stuart, grill-with-docs 2026-11-04, recorded on #1656)):** a session file OMP rewrote with the same head, at least as long as the stored offset, resumed inside new content and skipped rows. Ingest also fingerprints the up-to-256 bytes that end at the stored offset; a mismatch restarts the file from byte 0 and the `(file, entry id)` dedupe keeps rows unique. Rows a rewrite removed stay in `usage.db` (usage history is append-only).
+- **Migration (Decided (Skippy, delegated by Stuart 2026-11-05)):** `user_version` 2 to 3 adds `tail_len` and `tail_hash` with `ALTER TABLE`, defaulting to 0 (unknown: the next pass records the window without a reset). A rebuild would drop the rows a rewrite removed, so version 2 is migrated in place; version 1 still rebuilds.
+
 ## Functional requirements
 
 - FR-001: `MainView` gains `'usage'`; a left-nav Usage entry (ChartColumnIcon) sits in the GitHub nav group after Issues, `aria-current` when active.
@@ -61,6 +66,7 @@ Grill outcomes are Stuart's (2026-11-04, grill-with-docs, recorded on #1655, non
 - FR-016: `src/shared/ipc.ts` gains no lines; the contract is `src/shared/ipc-usage.ts`. Every new Rust file is under 600 lines.
 - FR-017: `REFRACT_OMP_SESSIONS_DIR` overrides the sessions folder.
 - FR-018: Slice 2 uses shared components only (ADR 0003); a chart primitive is added to `components/ui/`.
+- FR-019: Ingest stores a fingerprint of the up-to-256 bytes ending at the saved offset (`file_offsets.tail_len`, `tail_hash`). A resumed file whose head or that window no longer matches restarts from byte 0 (FR-003, FR-005 keep it duplicate-free). An empty window (a database from before the column) is unknown: no reset, and the next pass records it.
 
 ## Success criteria
 
@@ -68,10 +74,11 @@ Grill outcomes are Stuart's (2026-11-04, grill-with-docs, recorded on #1655, non
 - SC-002: With a 4,200-file history the view shows partial data within 5 seconds of opening and the UI thread never blocks.
 - SC-003: Every filter combination returns in under 300 ms once backfill is done.
 - SC-004: With jokes off no caption or frustration text is rendered.
+- SC-005: A session file rewritten so its first 256 bytes and its length-or-more are intact but the bytes before the old offset differ is re-read in full on the next pass: every row of the new content is present exactly once, and rows only the old content had are kept.
 
 ## Edge cases
 
-Truncated last line (offset stays before it); file rewritten shorter; unknown provider or model (kept, no credits); `usage` missing on an assistant entry (skipped); signed-out Copilot (budget unavailable with reason); `omp` missing (other providers absent, no error banner); `usage.db` locked or corrupt (rebuild); sessions folder missing (empty state with the path).
+Truncated last line (offset stays before it); file rewritten shorter; file rewritten with the same head but different content before the old offset (#1656); unknown provider or model (kept, no credits); `usage` missing on an assistant entry (skipped); signed-out Copilot (budget unavailable with reason); `omp` missing (other providers absent, no error banner); `usage.db` locked or corrupt (rebuild); `usage.db` at version 2 (migrated in place); sessions folder missing (empty state with the path).
 
 ## Deferred
 

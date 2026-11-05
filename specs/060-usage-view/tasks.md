@@ -53,3 +53,14 @@ Format: `ID [P] description (paths)`. `[P]` = parallelisable with its neighbours
 - [X] C-02 Remove `usage.stop` end to end: Rust handler, `UsageService::stop`, `Msg::Stop`, scan `stop` callback, `USAGE_STOP`, `UsageApi.stop`, bridge method, `check-parity.mjs` entry, renderer `usage-service.ts` holder set; the stores call `usage.start()` directly and never stop it.
 - [X] C-03 Amend `spec.md` (FR-006, Session 2026-11-05), `plan.md`, `analysis.md`, `contracts/ipc.md` and `quickstart.md` to match.
 - [X] C-04 Verify: `pnpm ci:local`; live driver `scripts/verify-tauri-1655.mjs` proves ingest ran at launch without the Usage view being opened; PR `fix(usage): start ingest at app launch`, `Closes #1655`.
+
+## Phase 4: Convergence (#1656, rewritten session file; FR-019, SC-005)
+
+Findings: FR-003 and FR-005 (partial): a file rewritten with the same head and a length at or past the stored offset resumed inside new content and skipped rows. SC-005 (missing): no regression test.
+
+- [ ] C-05 `src-tauri/src/usage/fingerprint.rs`: move `fnv1a` and the head window helper out of `ingest.rs`; add a window fingerprint at any start offset per FR-019 (partial)
+- [ ] C-06 `src-tauri/src/usage/schema.rs`: `tail_len`, `tail_hash` in the DDL, `user_version` 3, in-place `ALTER TABLE` from version 2 (version 1 still rebuilds) per FR-019 (partial)
+- [ ] C-07 `src-tauri/src/usage/ingest.rs`: store the tail window on save; a head or tail mismatch on resume restarts at byte 0; an empty window is unknown and is recorded without a reset per FR-019 (partial)
+- [ ] C-08 Regression tests in `ingest.test.rs` (same-head longer rewrite, truncated rewrite, unknown-window legacy row, no double counting) and `schema.rs` (a version 2 database keeps its rows and gains the columns) per SC-005 (missing)
+- [ ] C-09 `scripts/verify-tauri-1656.mjs` live driver per `quickstart.md` step 7 (missing)
+- C-10 Verify: `pnpm ci:local`, the C-09 driver; PR `fix(usage): re-ingest session files rewritten past the first 256 bytes`, `Closes #1656`. Depends on C-05 to C-09.
