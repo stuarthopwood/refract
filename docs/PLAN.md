@@ -1099,4 +1099,4 @@ Also filed 2026-11-04 (Stuart, Usage bug): **#1680** (`p1`, `bug`), the Usage vi
 Also filed 2026-11-04 (Stuart, chat polish): **#1682** (`p0`, `design`), mute inline code chips (tool target pills) in chat messages only: lower background opacity and a more muted text colour, in every theme preset.
 Done (PR #1688, merged 2026-11-05, release v0.28.0; spec `053-markdown-theme-tokens`): #1682 inline code chips muted in chat messages.
 
-Also filed 2026-11-05 (Stuart, grilled): **#825** (`p3`, `enhancement`), keyboard zoom: Ctrl+=, Ctrl+- and Ctrl+0 zoom in, out and reset through an in-window WebView2 keydown (no global accelerators); the zoom level persists in `zoom.json`. In review (branch `feat/825-zoom`).
+Also filed 2026-11-05 (Stuart, grilled): **#825** (`p3`, `enhancement`), keyboard zoom: Ctrl+=, Ctrl+- and Ctrl+0 zoom in, out and reset through an in-window WebView2 keydown (no global accelerators); the zoom level persists in `zoom.json`. Done: PR #1718 merged 2026-11-06 (Closes #825).
