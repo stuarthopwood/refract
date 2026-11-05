@@ -1350,6 +1350,15 @@
   stay a Note row? -> A: Only short narration: at most 3 lines and at most 280 characters. A longer
   reply renders expanded as normal prose, with no clamp, even when a tool call follows it.
 
+### Session 2026-11-05 (virtual write targets drawn as dead file links, #758)
+
+- Q: Issue #758 (grilled with Stuart 2026-11-05, none deferred): what does the predicate refuse? -> A:
+  The issue's own list, including `~` and UNC paths: empty, `scheme://`, `file://`, `~`, `$VAR`,
+  `%VAR%`, UNC (FR-123).
+- Q: Where does the guard live? -> A: Inside `FileLinkButton`, so the tool row, the diff header and
+  Markdown all get it, and `isPathShaped` calls the same predicate so the two routes cannot drift.
+- Q: Tests? -> A: None; the prototyping rule wins. Verified live by a fake-omp run instead.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -2206,6 +2215,16 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `role="progressbar"` with `aria-valuenow`/`min`/`max` and a visible text label, so state is never
   colour alone. Output that does not parse falls back to the Markdown rendering of FR-121, never raw
   text. The expand/collapse keyboard behaviour of `CollapsedLine` is kept.
+- **FR-123** (new, 2026-11-05, issue #758; amends the file-link behaviour of #610): A tool-row write
+  path, an edit diff header and Markdown inline code MUST all decide "is this a file link" through
+  the one predicate `isLinkableFilePath` in `src/renderer/lib/linkify.ts`, applied inside
+  `FileLinkButton` so no caller can bypass it. It is false for an empty string, any `scheme://` target
+  (OMP virtual targets such as `xd://`, `agent://`, `local://`, and `file://`), a `~`-prefixed path, a
+  `$VAR` or `%VAR%`-prefixed path, and a UNC path (`\\host\share` or `//host/share`); a drive letter
+  (`C:/`) is not a scheme. A refused target renders as the plain-text span `FileLinkButton` already
+  uses outside the worktree: no underline, no button, not focusable, no tooltip, no toast. Relative and
+  in-worktree absolute paths, with or without `:line`, are unchanged. Making virtual targets useful
+  links is out of scope.
 
 ### Key Entities
 

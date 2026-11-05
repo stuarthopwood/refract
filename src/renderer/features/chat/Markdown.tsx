@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm'
 import rehypeSanitize from 'rehype-sanitize'
 import { cn } from '@/lib/utils'
 import { safeUrl } from '@/lib/safe-url'
-import { parseFileReference, looksWithinWorktree } from '@/lib/linkify'
+import { parseFileReference, looksWithinWorktree, isLinkableFilePath } from '@/lib/linkify'
 import { toast } from 'sonner'
 import { useSessionsStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -155,8 +155,10 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
     sessionId ? state.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
   )
   const label = display ?? path
-  // String-only early-out, not the security boundary (`resolveInWorktree` checks on click).
-  const withinWorktree = worktreePath === undefined || looksWithinWorktree(path, worktreePath)
+  // String-only early-out, not the security boundary (`resolveInWorktree` checks on click). Virtual and
+  // home/UNC targets are refused here so every caller gets the guard, not only the Markdown route.
+  const withinWorktree =
+    isLinkableFilePath(path) && (worktreePath === undefined || looksWithinWorktree(path, worktreePath))
 
   // Outside a Session or the worktree: plain text, never a link-styled span that does nothing.
   if (!sessionId || !withinWorktree) {
