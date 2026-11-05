@@ -279,7 +279,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     group: 'Tool output',
     impact: {
       costlierWhen: below,
-      text: 'Reading a large file takes more calls at a lower limit, and each call costs a premium request.'
+      text: 'Reading a large file takes more calls at a lower limit, and each call costs AI credits.'
     },
     description: 'How many lines the agent sees when it opens a file without asking for a specific part.'
   },
