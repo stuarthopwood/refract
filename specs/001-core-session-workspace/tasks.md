@@ -5468,5 +5468,5 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `%VAR%`, UNC) and call it from `isPathShaped`, per FR-123 (missing)
 - [x] T421 [US1] `Markdown.tsx`: `FileLinkButton` renders plain text when the path is not linkable, so
   `ToolRow` and `DiffView` are covered, per FR-123 (missing)
-- [ ] T422 [US1] Live check `scripts/verify-tauri-758.mjs`, update `docs/PLAN.md`, then
+- [x] T422 [US1] Live check `scripts/verify-tauri-758.mjs`, update `docs/PLAN.md`, then
   `node scripts/ci-local.mjs` per FR-123 (missing)
