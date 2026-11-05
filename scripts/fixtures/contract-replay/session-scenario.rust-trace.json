@@ -12,7 +12,7 @@
         "name": "<REPO_NAME>",
         "path": "<REPO_DIR>",
         "remote": {
-          "kind": "unknown"
+          "kind": "none"
         }
       }
     }

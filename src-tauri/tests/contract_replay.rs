@@ -305,14 +305,10 @@ fn fold_electron_events(events: &[Value]) -> Value {
 
 /// Gate-round-1/round-2/round-3 remediation (issue #795 R12b): normalizes away the cross-shell
 /// diff's documented, intentional divergences in place, identically on both sides, so the final
-/// `assert_eq!` only ever fails on a REAL, un-triaged regression. One allowlisted divergence
-/// (#835) plus `value:null`-vs-absent tolerance:
-/// - `remote.kind`: `repositories.add` always returns the Rust port's `unknown` placeholder
-///   (`repositories.rs`'s `with_unknown_remote`) vs the Electron build's eager computation --
-///   filed as issue #835 rather than fixed here (a real, pre-existing design difference, not a
-///   one-line bug: see that issue for the full citation). `details` (round-1 HIGH #3) was fixed
-///   at the source (`omp/transcript.rs`) and is deliberately NOT scrubbed here any more, so a
-///   regression back to `details: null` fails this diff instead of being silently tolerated.
+/// `assert_eq!` only ever fails on a REAL, un-triaged regression. `details` (round-1 HIGH #3) was
+/// fixed at the source (`omp/transcript.rs`) and is deliberately NOT scrubbed here any more, so a
+/// regression back to `details: null` fails this diff instead of being silently tolerated.
+/// Tolerated:
 /// - `value: null` vs an absent `value` key: `chat.answer`'s Rust envelope is
 ///   `{ok:true,value:null}` while Electron's stays `{ok:true}` (`JSON.stringify` drops an
 ///   `undefined` value) -- `Dispatcher::dispatch` always includes `value` (round-2 CRITICAL #1
@@ -323,19 +319,10 @@ fn fold_electron_events(events: &[Value]) -> Value {
 fn scrub_known_divergences(value: &mut Value) {
     match value {
         Value::Object(map) => {
-            if let Some(remote_obj) = map.get_mut("remote").and_then(Value::as_object_mut) {
-                if remote_obj.contains_key("kind") {
-                    remote_obj.insert(
-                        "kind".to_string(),
-                        json!("<ALLOWLISTED:repositories.add remote.kind, issue #835>"),
-                    );
-                }
-            }
             // Lane R5 (issue #788/#724): `readout.branch` is a brand-new, Rust-only field --
             // Electron's own frozen `readout.ts`/`SessionReadout` never had one (epic #797 rule
             // 5, "a feature that exists only in Rust is acceptable"), so it never appears on
-            // that shell's side of this diff at all. Dropped from both sides before comparing,
-            // the same pattern `remote.kind` above uses.
+            // that shell's side of this diff at all. Dropped from both sides before comparing.
             if map.contains_key("changes") && map.contains_key("contextUsage") {
                 map.remove("branch");
                 // Issue #941: `readout`'s own `todoPhases` ("Up next") is the same kind of
