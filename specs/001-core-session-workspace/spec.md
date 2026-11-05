@@ -1339,9 +1339,9 @@
   `command-output:` notices (FR-047's command replies, spec 001 Session 2026-10-17). They render
   through the shared chat `Markdown` renderer (FR-121); startup, warning and error notices stay plain.
 - Q: How does the command name reach the renderer? -> A: Decided (Skippy, delegated by Stuart
-  2026-11-05): Rust adds it to the notice, taken from the `command_output` frame's `command`,
-  `commandName` or `name`, else read from the `/usage` header of the text, so the renderer never
-  guesses from the id alone (FR-122).
+  2026-11-05): it does not. The one typed parser (`src/shared/usageOutput.ts`) recognises the
+  `/usage` header itself, so no Rust or wire change is needed and a reply that does not parse takes
+  the Markdown path (FR-121, FR-122).
 - Q: What does the collapsed summary show? -> A: The first content line with fences and Markdown
   markers stripped, so "``` Usage (4m ago)" reads "Usage (4m ago)".
 - Q: What if `/usage` text does not parse? -> A: Markdown rendering (FR-121), never raw text.
@@ -2193,8 +2193,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
   (`variant="chat"`), so code blocks, tables, lists and headings format. Its collapsed summary is the
   first content line with code fences and Markdown markers stripped, never the raw fence. Startup,
   warning and error notices are unchanged, and `computeTurnEnd` still skips command-output notices.
-- **FR-122** (new, 2026-11-05, issue #1648): The notice carries the command name (`usage`) so the
-  renderer can choose a view. A `/usage` reply that parses renders as a card built from the shared
+- **FR-122** (new, 2026-11-05, issue #1648): A `command-output:` notice whose text parses as a
+  `/usage` reply (a `Usage (4m ago)` header, then provider windows with per-account rows) renders as a card built from the shared
   `Card` and `ProgressStrip`: a header with the fetched-at age, then one row per provider and limit
   window with provider and plan, window, used amount, and a bar with the percentage left whose colour
   follows the state roles (ok, warning near the limit, error at it). The bar is a labelled
