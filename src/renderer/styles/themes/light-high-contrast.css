@@ -1,5 +1,6 @@
 /* Light (high contrast) (#1590). Doubled selector so it outranks globals.css's shared `:is(:root, ...)` defaults regardless of import order. */
 :root.theme-light-high-contrast {
+  --chat-card-bg: var(--card);
   color-scheme: light;
   --role-default: oklch(0.42 0.11 197);
   --role-smol: oklch(0.42 0.12 340);
