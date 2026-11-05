@@ -17,6 +17,15 @@ export function isMidTurnProse(item: { kind: string }): item is MidTurnProse {
   return item.kind === 'mid-turn-prose'
 }
 
+// Short narration only (#1663, FR-117): a longer reply stays a normal reply even with more work after it.
+const NOTE_MAX_LINES = 3
+const NOTE_MAX_CHARS = 280
+
+function isShortNarration(text: string): boolean {
+  const trimmed = text.trim()
+  return trimmed.length <= NOTE_MAX_CHARS && trimmed.split(/\r?\n/).length <= NOTE_MAX_LINES
+}
+
 // Kinds that make an earlier assistant text "mid-turn": more of the agent's work follows it.
 // Thinking, notices, advisories and requests alone do not (Stuart 2026-10-27).
 const FOLLOWER_KINDS: ReadonlySet<string> = new Set(['tool-group', 'tool', 'stage-group', 'subagent', 'assistant-text'])
@@ -30,7 +39,10 @@ export function groupMidTurnProse(items: (StageGroupedItem | AdvisoryRun)[]): Ad
   let followed = false
   for (let index = items.length - 1; index >= 0; index -= 1) {
     const item = items[index]!
-    result[index] = item.kind === 'assistant-text' && followed ? { kind: 'mid-turn-prose', id: item.id, items: [item] } : item
+    result[index] =
+      item.kind === 'assistant-text' && followed && isShortNarration(item.text)
+        ? { kind: 'mid-turn-prose', id: item.id, items: [item] }
+        : item
     if (FOLLOWER_KINDS.has(item.kind)) followed = true
   }
   return result

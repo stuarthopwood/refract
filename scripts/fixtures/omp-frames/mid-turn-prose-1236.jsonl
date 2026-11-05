@@ -15,7 +15,7 @@
 {"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
 {"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
 {"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"NOTE-ONE-1236 first line."}],"timestamp":0}}}
-{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"NOTE-ONE-1236 first line.\n\nParagraph 1 of the long note.\n\nParagraph 2 of the long note.\n\nParagraph 3 of the long note.\n\nParagraph 4 of the long note.\n\nParagraph 5 of the long note.\n\nParagraph 6 of the long note.\n\nParagraph 7 of the long note.\n\nParagraph 8 of the long note.\n\nParagraph 9 of the long note.\n\nParagraph 10 of the long note.\n\nParagraph 11 of the long note.\n\nParagraph 12 of the long note.\n\nParagraph 13 of the long note.\n\nParagraph 14 of the long note."}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"NOTE-ONE-1236 first line.\n\nSecond paragraph of the note."}],"timestamp":0}}
 {"__delay__":3000}
 {"type":"tool_execution_start","toolCallId":"call-1","toolName":"read","args":{"path":"a.txt"},"intent":"Reading a.txt"}
 {"type":"tool_execution_end","toolCallId":"call-1","toolName":"read","result":{"content":[{"type":"text","text":"contents of a"}]},"isError":false}
