@@ -1333,6 +1333,20 @@
 - Q: Screen readers with the switch off? -> A: The sr-only "Turn took Ns" text goes with the
   settled line (Stuart 2026-10-27, confirmed at pickup); the whole line is not rendered.
 
+### Session 2026-11-05 (OMP command output as Markdown, #1648)
+
+- Q: Issue #1648 (grilled with Stuart 2026-11-04, none deferred): which notices change? -> A: Only
+  `command-output:` notices (FR-047's command replies, spec 001 Session 2026-10-17). They render
+  through the shared chat `Markdown` renderer (FR-121); startup, warning and error notices stay plain.
+- Q: How does the command name reach the renderer? -> A: Decided (Skippy, delegated by Stuart
+  2026-11-05): it does not. The one typed parser (`src/shared/usageOutput.ts`) recognises the
+  `/usage` header itself, so no Rust or wire change is needed and a reply that does not parse takes
+  the Markdown path (FR-121, FR-122).
+- Q: What does the collapsed summary show? -> A: The first content line with fences and Markdown
+  markers stripped, so "``` Usage (4m ago)" reads "Usage (4m ago)".
+- Q: What if `/usage` text does not parse? -> A: Markdown rendering (FR-121), never raw text.
+- Q: Turn time? -> A: Unchanged; `turnTiming.ts` still skips command-output notices.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -2174,6 +2188,19 @@ The developer types a slash command and finds the ones the agent offers. If a se
   the composer exactly once. The composer's resting and focus outline in Dark (high contrast) were
   measured against 3:1 (WCAG 1.4.11): focus ring 15.42:1, resting border 9.54:1, control border
   5.27:1, so no theme token changes. Converge route; spec 092 records the folder choice.
+- **FR-121** (new, 2026-11-05, issue #1648; amends FR-047): A `command-output:` notice (a user-run
+  slash command's reply) MUST render its body through the shared chat `Markdown` renderer
+  (`variant="chat"`), so code blocks, tables, lists and headings format. Its collapsed summary is the
+  first content line with code fences and Markdown markers stripped, never the raw fence. Startup,
+  warning and error notices are unchanged, and `computeTurnEnd` still skips command-output notices.
+- **FR-122** (new, 2026-11-05, issue #1648): A `command-output:` notice whose text parses as a
+  `/usage` reply (a `Usage (4m ago)` header, then provider windows with per-account rows) renders as a card built from the shared
+  `Card` and `ProgressStrip`: a header with the fetched-at age, then one row per provider and limit
+  window with provider and plan, window, used amount, and a bar with the percentage left whose colour
+  follows the state roles (ok, warning near the limit, error at it). The bar is a labelled
+  `role="progressbar"` with `aria-valuenow`/`min`/`max` and a visible text label, so state is never
+  colour alone. Output that does not parse falls back to the Markdown rendering of FR-121, never raw
+  text. The expand/collapse keyboard behaviour of `CollapsedLine` is kept.
 
 ### Key Entities
 

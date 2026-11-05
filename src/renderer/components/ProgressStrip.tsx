@@ -10,9 +10,13 @@ export interface ProgressStripProps {
   label: string
   /** Announced (and shown nowhere) when `value` reaches `max` after being below it; omit when a screen owns the announcement. */
   doneText?: string
+  /** Fill colour role: ok (default), warning near a limit, error at it. The label must also say so; colour is never the only cue. */
+  state?: 'ok' | 'warning' | 'error'
 }
 
-export function ProgressStrip({ value, max, label, doneText }: ProgressStripProps) {
+const FILL_CLASS = { ok: 'bg-foreground', warning: 'bg-severity-warning', error: 'bg-severity-error' } as const
+
+export function ProgressStrip({ value, max, label, doneText, state = 'ok' }: ProgressStripProps) {
   const labelId = useId()
   const done = max > 0 && value >= max
   const [announce, setAnnounce] = useState('')
@@ -38,7 +42,7 @@ export function ProgressStrip({ value, max, label, doneText }: ProgressStripProp
         aria-valuetext={`${percent}%`}
         className="h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted"
       >
-        <div className="h-full bg-foreground transition-[width] motion-reduce:transition-none" style={{ width: `${percent}%` }} />
+        <div className={`h-full ${FILL_CLASS[state]} transition-[width] motion-reduce:transition-none`} style={{ width: `${percent}%` }} />
       </div>
       <div role="status" aria-live="polite" className="sr-only">
         {announce}

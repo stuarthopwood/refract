@@ -84,9 +84,11 @@ async function main() {
   // `resolveCssVarColor` resolves oklch/hex/alias custom properties to the same computed rgb() a class-driven colour yields.
   async function readNoticeStyle(cdp, levelLabel) {
     return cdp.evaluate(`(() => {
-      const rows = (${noticeFinder(levelLabel)});
+      // The sidebar's own "Warning:" banner (unverified agent version) shares the sr-only label, so match the scripted notice text.
+      const rows = (${noticeFinder(levelLabel)}).filter((r) => (r.textContent ?? '').includes('997 live check'));
       const row = rows[rows.length - 1];
-      const span = row?.querySelector(':scope > span.min-w-0.flex-1');
+      // CollapsedLine now carries the severity colour on the summary span inside the wrapping host span.
+      const span = row?.querySelector(':scope > span.min-w-0.flex-1 > span');
       if (!span) return null;
       const style = getComputedStyle(span);
       return { color: style.color, overflowWrap: style.overflowWrap, className: span.className, text: (span.textContent ?? '').trim() };
@@ -171,7 +173,7 @@ async function main() {
       assertEqual(warningResult.color, warningProbeColor, `${theme.name}: warning NoticeRow colour equals --severity-warning`);
       assertEqual(warningResult.overflowWrap, 'anywhere', `${theme.name}: warning NoticeRow summary carries overflow-wrap: anywhere`);
       // Colour equality alone cannot tell a reinstated `text-state-needs-you` (same value, wrong name) from the fix, so check classList too.
-      assertTrue(warningResult.className.split(' ').includes('text-severity-warning'), `${theme.name}: warning NoticeRow classList contains text-severity-warning`, {
+      assertTrue(warningResult.className.split(' ').includes('text-notice-warning-fg'), `${theme.name}: warning NoticeRow classList contains text-notice-warning-fg (aliases --severity-warning)`, {
         className: warningResult.className
       });
       assertTrue(!warningResult.className.split(' ').includes('text-state-needs-you'), `${theme.name}: warning NoticeRow classList does not contain the old text-state-needs-you`, {
@@ -182,7 +184,7 @@ async function main() {
       const errorResult = await readNoticeStyle(cdp, 'Error:');
       assertTrue(errorResult !== null, `${theme.name}: error NoticeRow found`);
       assertEqual(errorResult.color, errorProbeColor, `${theme.name}: error NoticeRow colour equals --severity-error`);
-      assertTrue(errorResult.className.split(' ').includes('text-severity-error'), `${theme.name}: error NoticeRow classList contains text-severity-error`, {
+      assertTrue(errorResult.className.split(' ').includes('text-notice-error-fg'), `${theme.name}: error NoticeRow classList contains text-notice-error-fg (aliases --severity-error)`, {
         className: errorResult.className
       });
       assertTrue(!errorResult.className.split(' ').includes('text-destructive'), `${theme.name}: error NoticeRow classList does not contain the old text-destructive`, {
@@ -251,6 +253,8 @@ async function main() {
 
     // A refusal leaves the draft untouched (FR-019), so Send again resends the same text.
     await cdp.clickByLabel('Send message');
+    // The first toast is still on screen when the click lands, so `length === 1` is already true; let dismiss-then-create settle first.
+    await sleep(1_000);
     await cdp.waitFor(`${toastSelector}.length === 1`, { timeoutMs: 5_000, label: 'unknown-command refusal sent twice: exactly ONE refusal toast settles on screen' });
     assertEqual(await cdp.evaluate(`${toastSelector}.length`), 1, 'unknown-command refusal sent twice: exactly ONE refusal toast exists (deduped via explicit dismiss-then-create), not two stacked');
 
@@ -278,14 +282,18 @@ async function main() {
 
     // Real Tab presses, not `.focus()`, and `:focus-visible` rather than `:focus` (Chromium also sets `:focus` on mouse focus).
     const closeButtonExpr = `(${freshToastExpr})?.querySelector('[data-close-button]')`;
-    await cdp.evaluate(`document.querySelector('[aria-label="Message"]')?.focus()`);
+    // Tab inside the composer is consumed by the slash-command menu (the draft is still "/…"), so start from the Send button.
+    await cdp.evaluate(`document.querySelector('[aria-label="Send message"]')?.focus()`);
     let reachedCloseButton = false;
-    const CLOSE_BUTTON_TAB_CAP = 10;
+    const focusTrail = [];
+    // The composer toolbar and right rail now sit between the composer and the toaster in tab order.
+    const CLOSE_BUTTON_TAB_CAP = 40;
     for (let i = 0; i < CLOSE_BUTTON_TAB_CAP && !reachedCloseButton; i++) {
       await pressTab(cdp);
       reachedCloseButton = await cdp.evaluate(`document.activeElement === (${closeButtonExpr})`);
+      focusTrail.push(await cdp.evaluate(`(() => { const a = document.activeElement; return a ? (a.tagName + ':' + (a.getAttribute('aria-label') ?? (a.textContent ?? '').trim().slice(0, 30))) : null; })()`));
     }
-    assertTrue(reachedCloseButton, `unknown-command refusal toast: a real Tab sequence (bounded at ${CLOSE_BUTTON_TAB_CAP}) reaches the close button`);
+    assertTrue(reachedCloseButton, `unknown-command refusal toast: a real Tab sequence (bounded at ${CLOSE_BUTTON_TAB_CAP}) reaches the close button`, { focusTrail });
     const closeButtonFocusVisible = await cdp.evaluate(`(${closeButtonExpr})?.matches(':focus-visible') ?? false`);
     assertTrue(closeButtonFocusVisible, 'unknown-command refusal toast: the close button shows a real :focus-visible ring via real keyboard Tab');
     await cdp.screenshot(path.join(SHOTS_DIR, 'toast-close-button.png'));

@@ -31,6 +31,8 @@
 // direction glyph, the violet label, the grouping boundary and the failed state. Synthesized from the
 // wire shape read from local OMP session files (field names only); every earlier consumer reads
 // first-match NoticeRow/Mermaid elements and is unaffected.
+// EXTENDED AGAIN (#1648): two `command_output` frames (a Markdown reply, then a `/usage` reply) after the notices, so
+// `scripts/verify-tauri-1648.mjs` can assert Markdown rendering and the usage card. Synthesized; earlier consumers are unaffected.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -51,6 +53,8 @@
 {"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}
 {"type":"notice","level":"warning","message":"Issue #997 live check: short warning notice (NoticeRow colour)."}
 {"type":"notice","level":"error","message":"Issue #997 live check: short error notice (NoticeRow colour)."}
+{"type":"command_output","text":"## Tools report 1648\n\nIssue #1648 live check: commands render as Markdown.\n\n- first item\n- second item\n\n| Tool | State |\n| --- | --- |\n| read | ready |\n| write | ready |\n\n```bash\necho hello-1648\n```\n"}
+{"type":"command_output","text":"Usage (4m ago)\nGitHub Copilot - Premium Requests (business) - Monthly\n  alpha-1648: 120 requests used (60.0% left)\n  beta-1648: 270 requests used (10.0% left)\n  gamma-1648: 300 requests used (0.0% left)\n"}
 {"type":"message_end","messageId":"msg-irc-838-1","message":{"role":"custom","customType":"irc:incoming","content":"R1_Worker: gate round 1 done.","display":true,"details":{"id":"irc-838-1","from":"R1_Worker","message":"Issue #838 live check: gate round 1 done, PR opened."},"timestamp":0}}
 {"type":"message_end","messageId":"msg-irc-838-2","message":{"role":"custom","customType":"irc:incoming","content":"Main: rebase first.","display":true,"details":{"id":"irc-838-2","from":"Main","message":"Issue #838 live check: rebase on main first.","fromParent":true,"replyTo":"irc-838-1"},"timestamp":0}}
 {"type":"message_end","messageId":"msg-irc-838-3","message":{"role":"custom","customType":"irc:incoming","content":"R2_Reviewer: two issues.","display":true,"details":{"id":"irc-838-3","from":"R2_Reviewer","to":"R1_Worker","message":"Issue #838 live check: found two issues in your diff."},"timestamp":0}}

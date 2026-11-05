@@ -16,6 +16,7 @@ import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCa
 import { UserMessageRow } from './UserMessageRow'
 import { MessageMenu } from './MessageMenu'
 import { NoticeRow } from './NoticeRow'
+import { COMMAND_OUTPUT_NOTICE_PREFIX } from '../../../shared/commandOutputNotice'
 import { TurnErrorRow } from './TurnErrorRow'
 import { SkillPromptRow } from './SkillPromptRow'
 
@@ -155,7 +156,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
     }
 
     case 'notice':
-      return <NoticeRow level={item.level} text={item.text} />
+      return <NoticeRow level={item.level} text={item.text} commandOutput={item.id.startsWith(COMMAND_OUTPUT_NOTICE_PREFIX)} />
 
     case 'turn-error':
       return <TurnErrorRow item={item} sessionId={sessionId} />
