@@ -117,12 +117,26 @@ mod tests {
     fn renders_nested_yaml_with_version_header() {
         let text = render(&defaults());
         assert!(text.starts_with("# refract-overlay-version: 2\n"));
-        assert!(text.contains("task:\n  maxConcurrency: 6\n  softRequestBudget: 80\n"));
+        assert!(text.contains("task:\n  maxConcurrency: 6\n  softRequestBudget: 60\n"));
+        assert!(text.contains("providers:\n  cacheWarming: \"idle\"\n"));
         assert!(text.contains("  thresholdPercent: 70\n"));
         assert!(text.contains("  thresholdTokens: -1\n"));
         assert!(text.contains("  modelThresholds: {}\n"));
         assert!(text.contains("  methodOrder:\n    - \"snapcompact\"\n    - \"shake\"\n"));
         assert!(text.contains("  systemPrompt: \"none\"\n"));
         assert!(text.contains("modelRoles:\n  advisor: \"github-copilot/gemini-4-argon:auto\"\n"));
+    }
+
+    #[test]
+    fn default_overlay_omits_cache_retention_and_overrides() {
+        let text = render(&defaults());
+        for absent in [
+            "cacheRetention",
+            "modelOverrides",
+            "promptCache",
+            "agentSoftRequestBudget",
+        ] {
+            assert!(!text.contains(absent), "{absent}");
+        }
     }
 }

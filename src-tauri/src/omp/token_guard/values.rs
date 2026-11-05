@@ -32,6 +32,7 @@ const KEYS: &[(&str, Kind)] = &[
     ("snapcompact.toolResults", Kind::Bool),
     ("snapcompact.systemPrompt", Kind::Text),
     ("task.softRequestBudget", Kind::Int),
+    ("providers.cacheWarming", Kind::Text),
     ("task.maxConcurrency", Kind::Int),
     ("autolearn.autoContinue", Kind::Bool),
     ("advisor.reviewMode", Kind::Text),
@@ -61,6 +62,9 @@ struct Stored {
     /// Set when the version 2 migration dropped stored token thresholds; cleared once Settings has told the user.
     #[serde(default)]
     thresholds_reset_pending: bool,
+    /// Set once a stored `task.softRequestBudget` of 80 (the old default) has been dropped (#1672).
+    #[serde(default)]
+    soft_budget_migrated: bool,
 }
 
 /// Serialises read-modify-write on the store file (Settings edits and launch reads).
@@ -80,7 +84,8 @@ pub fn default_for(key: &str) -> Option<Value> {
         "compaction.methodOrder" => json!(["snapcompact", "shake", "handoff", "soft"]),
         "snapcompact.toolResults" => json!(true),
         "snapcompact.systemPrompt" => json!("none"),
-        "task.softRequestBudget" => json!(80),
+        "task.softRequestBudget" => json!(60),
+        "providers.cacheWarming" => json!("idle"),
         "task.maxConcurrency" => json!(6),
         "autolearn.autoContinue" => json!(false),
         "advisor.reviewMode" => json!("agent-end"),
@@ -109,6 +114,7 @@ const MAX_ENTRIES: usize = 64;
 const METHODS: &[&str] = &["remote", "snapcompact", "shake", "handoff", "soft"];
 const REVIEW_MODES: &[&str] = &["agent-end", "turn"];
 const TODO_EAGER_MODES: &[&str] = &["default", "preferred", "always"];
+const CACHE_WARMING_MODES: &[&str] = &["off", "streaming", "idle"];
 /// The agent clamps a percent threshold to this range.
 const PERCENT_RANGE: std::ops::RangeInclusive<u64> = 1..=99;
 /// Token thresholds the version 1 store held; the percent keys replace them.
@@ -170,6 +176,7 @@ pub fn validate(key: &str, value: &Value) -> Result<(), String> {
         (Kind::Int, _) => is_count(value, min, max),
         (Kind::Bool, _) => value.is_boolean(),
         (Kind::Text, "advisor.reviewMode") => is_member(value, REVIEW_MODES),
+        (Kind::Text, "providers.cacheWarming") => is_member(value, CACHE_WARMING_MODES),
         (Kind::Text, "todo.eager") => is_member(value, TODO_EAGER_MODES),
         (Kind::Text, _) => is_text(value),
         (Kind::TextList, _) => value.as_array().is_some_and(|items| {
@@ -197,10 +204,7 @@ fn store_path(dir: &Path) -> PathBuf {
     dir.join(FILE_NAME)
 }
 
-async fn read_stored(dir: &Path) -> Stored {
-    let mut stored: Stored = read_json_file(&store_path(dir), Stored::default)
-        .await
-        .unwrap_or_default();
+fn migrate(stored: &mut Stored) {
     // Persisted with the next write; until then this runs again with the same outcome.
     if !stored.read_limit_migrated {
         if stored.overrides.get("read.defaultLimit") == Some(&json!(200)) {
@@ -216,6 +220,20 @@ async fn read_stored(dir: &Path) -> Stored {
         stored.thresholds_reset_pending |= dropped > 0;
         stored.version = PERCENT_STORE_VERSION;
     }
+    // The old default 80 was stored by earlier builds; drop it once so the new 60 applies (#1672).
+    if !stored.soft_budget_migrated {
+        if stored.overrides.get("task.softRequestBudget") == Some(&json!(80)) {
+            stored.overrides.remove("task.softRequestBudget");
+        }
+        stored.soft_budget_migrated = true;
+    }
+}
+
+async fn read_stored(dir: &Path) -> Stored {
+    let mut stored: Stored = read_json_file(&store_path(dir), Stored::default)
+        .await
+        .unwrap_or_default();
+    migrate(&mut stored);
     stored
 }
 
@@ -353,5 +371,45 @@ mod tests {
         assert!(validate("advisor.reviewMode", &json!("whatever")).is_err());
         assert!(validate("advisor.reviewMode", &json!("turn")).is_ok());
         assert!(validate("modelRoles.advisor", &json!("x".repeat(201))).is_err());
+    }
+
+    #[test]
+    fn migrate_drops_stored_80_once() {
+        let mut stored = Stored {
+            version: STORE_VERSION,
+            read_limit_migrated: true,
+            ..Stored::default()
+        };
+        stored
+            .overrides
+            .insert("task.softRequestBudget".into(), json!(80));
+        migrate(&mut stored);
+        assert!(!stored.overrides.contains_key("task.softRequestBudget"));
+        assert!(stored.soft_budget_migrated);
+        stored
+            .overrides
+            .insert("task.softRequestBudget".into(), json!(80));
+        migrate(&mut stored);
+        assert_eq!(stored.overrides["task.softRequestBudget"], json!(80));
+        for kept in [40, 0] {
+            let mut s = Stored::default();
+            s.overrides
+                .insert("task.softRequestBudget".into(), json!(kept));
+            migrate(&mut s);
+            assert_eq!(s.overrides["task.softRequestBudget"], json!(kept));
+            assert!(s.soft_budget_migrated);
+        }
+    }
+
+    #[test]
+    fn cache_warming_accepts_known_modes_only() {
+        for ok in ["idle", "off", "streaming"] {
+            assert!(
+                validate("providers.cacheWarming", &json!(ok)).is_ok(),
+                "{ok}"
+            );
+        }
+        assert!(validate("providers.cacheWarming", &json!("always")).is_err());
+        assert!(validate("providers.cacheWarming", &json!("")).is_err());
     }
 }
