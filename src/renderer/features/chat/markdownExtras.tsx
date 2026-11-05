@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils'
 // `StreamingContext`). Defaults reproduce the chat behaviour: no GitHub styling, never fetch images.
 export interface MarkdownOptions {
   githubStyle: boolean
+  // `chat` mutes the inline-code chip (`--chat-code-*`); `default` keeps the `--md-code-*` chip.
+  variant?: 'default' | 'chat'
   resolveImage?: (url: string) => Promise<string | null>
 }
 

@@ -104,7 +104,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
         <MessageMenu id={item.id} text={item.text} streaming={item.streaming} sessionId={sessionId}>
           <Message>
             <MessageContent className="w-full">
-              <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
+              <Markdown id={item.id} text={item.text} streaming={item.streaming} variant="chat" className="text-chat-foreground" />
               {item.streaming && (
                 <span aria-hidden className="ml-1 inline-block h-4 w-1.5 animate-pulse bg-foreground/50 align-middle" />
               )}

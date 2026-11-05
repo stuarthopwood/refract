@@ -74,7 +74,7 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
             </div>
           )}
           {item.images && item.images.length > 0 && <MessageImageGrid images={item.images} className="mb-2" />}
-          {item.text.trim() !== '' && <Markdown id={item.id} text={item.text} className="text-chat-user-bubble-fg" />}
+          {item.text.trim() !== '' && <Markdown id={item.id} text={item.text} variant="chat" className="text-chat-user-bubble-fg" />}
           {/* An image-only message whose images are missing still says so (#744). */}
           {item.text.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
         </MessageContent>

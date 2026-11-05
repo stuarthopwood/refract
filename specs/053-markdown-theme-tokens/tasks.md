@@ -12,3 +12,8 @@
 
 ## Analysis (/speckit.analyze)
 FR-001..FR-006 each map to a task above (FR-003 -> T006, FR-005 -> T007). No constitution conflict: Principle V untouched (no new IPC, no new capabilities). Risk: `Markdown.tsx` baseline growth (mitigated by extracting the highlighter).
+
+## Phase 2: Convergence (#1682)
+- [x] T010 Add `--chat-code-bg`/`--chat-code-fg` to every preset, `theme-tokens.json` and the Tailwind `@theme` map per FR-007 (missing)
+- [x] T011 Add `variant` to `Markdown`/`MarkdownOptions` and pass `variant="chat"` from the chat transcript rows per FR-007 (missing)
+- [x] T012 Gate chat chip contrast in `markdown-token-contrast.mjs` per FR-008 (missing)

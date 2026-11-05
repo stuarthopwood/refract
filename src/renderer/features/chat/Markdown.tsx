@@ -302,6 +302,8 @@ const components: Components = {
   // Unwrapped: `code` owns block rendering, avoiding nested <pre>.
   pre: ({ children }) => <>{children}</>,
   code({ className, children, node: _node, ...props }) {
+    const { variant } = React.useContext(MarkdownOptionsContext)
+    const chipClass = variant === 'chat' ? 'bg-chat-code-bg text-chat-code-fg' : undefined
     const streaming = React.useContext(StreamingContext)
     const insideLink = React.useContext(InsideLinkContext)
     const sessionId = React.useContext(LinkContext)
@@ -317,7 +319,7 @@ const components: Components = {
         const trimmed = text.trim()
         // Linked only when the whole span is one URL/path (#610); whitespace would be percent-encoded by `new URL`.
         const safe = trimmed && !/\s/.test(trimmed) ? safeUrl(trimmed) : undefined
-        const chip = (inner: React.ReactNode): React.ReactNode => <InlineCode {...props}>{inner}</InlineCode>
+        const chip = (inner: React.ReactNode): React.ReactNode => <InlineCode {...props} className={chipClass}>{inner}</InlineCode>
         if (safe) {
           return streaming ? (
             chip(<span className={mutedInertLinkClassName}>{text}</span>)
@@ -332,7 +334,7 @@ const components: Components = {
           return <FileLinkButton path={fileRef.path} display={text} muted streaming={streaming} wrapLink={chip} />
         }
       }
-      return <InlineCode {...props}>{children}</InlineCode>
+      return <InlineCode {...props} className={chipClass}>{children}</InlineCode>
     }
     // The advisor's quoted note wraps instead of scrolling (#558).
     if (lang === 'advisor-note') return <CodeBlock code={text} lang={null} wrap streaming={streaming} />
@@ -351,6 +353,8 @@ interface MarkdownProps {
   className?: string
   // Pull requests view only: GitHub-style tables.
   githubStyle?: boolean
+  // Chat transcript messages pass `chat` to mute inline-code chips; omitted keeps the shared chip.
+  variant?: 'default' | 'chat'
   // Pull requests view only: resolves an image URL to a `data:` URL; omitted means images stay alt-text links.
   resolveImage?: (url: string) => Promise<string | null>
 }
@@ -358,11 +362,11 @@ interface MarkdownProps {
 // Agent/tool text is untrusted: react-markdown yields a hast tree (never raw HTML) and
 // rehype-sanitize strips anything outside its default schema. `streaming` goes via context so
 // `components` stays static.
-function MarkdownImpl({ text, id, streaming = false, className, githubStyle = false, resolveImage }: MarkdownProps) {
+function MarkdownImpl({ text, id, streaming = false, className, githubStyle = false, variant = 'default', resolveImage }: MarkdownProps) {
   // Replaces (not extends) mdast's default `clobberPrefix`: rehype-sanitize already adds `user-content-`.
   const footnotePrefix = React.useMemo(() => `${id.replace(/[^a-zA-Z0-9_-]/g, '-')}-`, [id])
   const remarkRehypeOptions = React.useMemo(() => ({ clobberPrefix: footnotePrefix }), [footnotePrefix])
-  const options = React.useMemo(() => ({ githubStyle, resolveImage }), [githubStyle, resolveImage])
+  const options = React.useMemo(() => ({ githubStyle, variant, resolveImage }), [githubStyle, variant, resolveImage])
   return (
     <StreamingContext.Provider value={streaming}>
       <MarkdownOptionsContext.Provider value={options}>

@@ -15,6 +15,9 @@ export const MARKDOWN_PAIRS = [
   { fg: 'md-code-label', bg: 'card', min: 4.5 },
   { fg: 'md-code-label', bg: 'code-block-bg', min: 4.5 },
   { fg: 'md-code-fg', bg: 'md-code-bg', min: 4.5 },
+  // #1682: the muted chat chip over an assistant message (background) and the user bubble's worst case (muted).
+  { fg: 'chat-code-fg', bg: 'chat-code-bg', on: 'background', min: 4.5 },
+  { fg: 'chat-code-fg', bg: 'chat-code-bg', on: 'muted', min: 4.5 },
   { fg: 'md-code-fg', bg: 'background', min: 4.5 },
   { fg: 'md-code-fg', bg: 'card', min: 4.5 },
   { fg: 'md-table-header-fg', bg: 'muted', min: 4.5 },
