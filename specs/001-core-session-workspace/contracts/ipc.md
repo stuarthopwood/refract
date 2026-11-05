@@ -128,6 +128,7 @@ implementation.
 | Method | Returns | Notes |
 |---|---|---|
 | `window.popupMenu(menuId, x, y)` | `void` | Pops open one of the in-app `AppMenuBar`'s real submenus (`'file' \| 'edit' \| 'view' \| 'window'`) at `x`/`y`, the clicked button's own `getBoundingClientRect()` CSS-pixel coordinates; main multiplies by `webContents.getZoomFactor()` before calling `Menu.popup`. Error `invalid-argument` (bad `menuId`, or non-finite `x`/`y`), `not-found` (no window, or `menuId` has no submenu). |
+| `window.zoom(action)` | `void` | Page zoom (#825): `action` is `'in' \| 'out' \| 'reset'`, one 1.1x step clamped to 25%-300%, applied to the main window and persisted (debounced, latest value wins) to `zoom.json` in the data dir, restored at startup. Error `invalid-argument` (any other `action`), `not-found` (no window). Driven by Ctrl+`=`/`-`/`0` (in-window `keydown`) and the View menu. |
 
 There is no `window.toggleMaximize`: verified live (tasks.md T100) that double-clicking a `.drag-region` area already maximises/restores the window entirely at the OS level (HTCAPTION) before the double-click ever reaches the renderer's own JS, so a renderer-driven toggle IPC was unreachable dead code and was removed rather than kept.
 

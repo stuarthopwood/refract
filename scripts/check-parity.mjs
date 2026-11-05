@@ -297,6 +297,7 @@ const REQUEST_LANES = {
   MODEL_ROLES_SET: 'R8',
   MODEL_ROLES_LIST_CATALOG: 'R8',
   WINDOW_POPUP_MENU: 'R8', // #791, shell/menu.rs ("native menu")
+  WINDOW_ZOOM: 'R8', // #825, shell/zoom.rs
   PULL_REQUESTS_LIST: 'R9', // #792, ipc/pull_requests.rs
   HOME_LAST_MESSAGES: 'R9', // #869, ipc/home.rs
   HOME_CLOSED_BRANCHES: 'R9', // #869, ipc/home.rs

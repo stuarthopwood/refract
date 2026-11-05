@@ -1,7 +1,5 @@
 // Popup-only menu for `window.popupMenu`; never the window's own menu bar, which would duplicate AppMenuBar.
-// Ctrl+W and the zoom items are custom, so Ctrl+W reaches the renderer (#621); zoom labels have no accelerator (#825).
-
-use std::sync::Mutex as StdMutex;
+// Ctrl+W is custom so it reaches the renderer (#621); zoom keys are handled in-window by `zoom.rs` (#825).
 
 use serde_json::Value;
 use tauri::menu::{MenuItemBuilder, PredefinedMenuItem, Submenu, SubmenuBuilder};
@@ -11,13 +9,6 @@ use tokio::sync::OnceCell;
 use crate::ipc::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
 const MENU_IDS: [&str; 4] = ["file", "edit", "view", "window"];
-
-const ZOOM_STEP: f64 = 1.1;
-const ZOOM_MIN: f64 = 0.25;
-const ZOOM_MAX: f64 = 3.0;
-
-/// Page zoom the View menu tracks, since this Tauri version has no zoom getter.
-static ZOOM_FACTOR: StdMutex<f64> = StdMutex::new(1.0);
 
 /// Registers the app menu's custom and predefined items with the dispatcher.
 pub fn register(d: &mut Dispatcher) {
@@ -38,14 +29,6 @@ fn submenu_for<'a>(menus: &'a AppMenus, id: &str) -> Option<&'a Submenu<Wry>> {
         "view" => Some(&menus.view),
         "window" => Some(&menus.window),
         _ => None,
-    }
-}
-
-fn apply_zoom(app: &tauri::AppHandle, new_factor: f64) {
-    let clamped = new_factor.clamp(ZOOM_MIN, ZOOM_MAX);
-    *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned") = clamped;
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.set_zoom(clamped);
     }
 }
 
@@ -116,15 +99,9 @@ fn build_menus(app: &tauri::AppHandle) -> tauri::Result<AppMenus> {
                     let _ = window.set_fullscreen(!is_fullscreen);
                 }
             }
-            "view-reset-zoom" => apply_zoom(app, 1.0),
-            "view-zoom-in" => {
-                let current = *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned");
-                apply_zoom(app, current * ZOOM_STEP);
-            }
-            "view-zoom-out" => {
-                let current = *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned");
-                apply_zoom(app, current / ZOOM_STEP);
-            }
+            "view-reset-zoom" => super::zoom::apply(app, 1.0),
+            "view-zoom-in" => super::zoom::step(app, true),
+            "view-zoom-out" => super::zoom::step(app, false),
             _ => {}
         }
     });
@@ -192,7 +169,7 @@ fn window_popup_menu(state: AppState, args: Vec<Value>) -> HandlerFuture {
         };
 
         // Fire-and-forget: the popup runs a modal loop, so awaiting it would hang the IPC call.
-        let zoom = *ZOOM_FACTOR.lock().expect("zoom factor mutex poisoned");
+        let zoom = super::zoom::current();
         let position = Position::Logical(LogicalPosition::new(x * zoom, y * zoom));
         tauri::async_runtime::spawn_blocking(move || {
             if let Err(err) = window.popup_menu_at(submenu, position) {

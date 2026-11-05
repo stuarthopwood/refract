@@ -43,6 +43,9 @@ import type { ActivityText, SessionActivity } from './activity'; import type { U
 export const APP_MENU_IDS = ['file', 'edit', 'view', 'window'] as const;
 export type AppMenuId = (typeof APP_MENU_IDS)[number];
 
+/** What a zoom shortcut asks the shell to do to the window's page zoom. */
+export type ZoomAction = 'in' | 'out' | 'reset';
+
 
 export type IpcErrorCode =
   | 'not-a-repo'
@@ -341,6 +344,7 @@ export const IPC_REQUESTS = {
   MODEL_SET_THINKING_LEVEL: 'model.setThinkingLevel',
   WORKING_MODE_SET: 'workingMode.set',
   WINDOW_POPUP_MENU: 'window.popupMenu',
+  WINDOW_ZOOM: 'window.zoom',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_LIST_ACROSS: 'pullRequests.listAcross',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
@@ -564,6 +568,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
 
   window: {
     popupMenu(menuId: AppMenuId, x: number, y: number): Promise<Result<void>>;
+    zoom(action: ZoomAction): Promise<Result<void>>;
   };
 
   pullRequests: PullRequestsAcrossApi & {

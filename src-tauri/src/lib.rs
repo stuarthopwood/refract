@@ -294,6 +294,10 @@ pub fn run() {
                     tracker.on_window_event(&window_for_events, event)
                 });
             }
+            tauri::async_runtime::block_on(shell::zoom::restore_on_startup(
+                &data_dir_for_setup,
+                &window,
+            ));
             app.manage(window_state_tracker);
             app.manage(update_state_for_setup.clone());
             // Read by `shell::notifications` for the sound switch.
