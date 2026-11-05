@@ -216,21 +216,16 @@ fn full_scan(inner: &Inner, conn: &mut Connection) {
         s.sessions_done = 0;
     }));
     let mut last_emit = Instant::now();
-    let report = scan::scan(
-        conn,
-        &inner.root,
-        &projects,
-        &mut |seen, done| {
-            let snapshot = set_status(inner, |s| {
-                s.sessions_seen = seen;
-                s.sessions_done = done;
-            });
-            if last_emit.elapsed() >= EMIT_INTERVAL {
-                last_emit = Instant::now();
-                (inner.emit)(&snapshot);
-            }
-        },
-    );
+    let report = scan::scan(conn, &inner.root, &projects, &mut |seen, done| {
+        let snapshot = set_status(inner, |s| {
+            s.sessions_seen = seen;
+            s.sessions_done = done;
+        });
+        if last_emit.elapsed() >= EMIT_INTERVAL {
+            last_emit = Instant::now();
+            (inner.emit)(&snapshot);
+        }
+    });
     // Files ingested above were labelled one by one; this merges case-duplicate folder rows.
     run_relabel(inner, conn, &projects);
     (inner.emit)(&set_status(inner, |s| {
