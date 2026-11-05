@@ -3,7 +3,7 @@ use super::*;
 
 /// A fresh, uniquely-named scratch directory under the OS temp root, never deleted.
 async fn open_scratch_store(initial_json: Option<Value>) -> SettingsStore {
-    let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir)
         .await
         .expect("create scratch dir");
@@ -88,7 +88,7 @@ async fn set_transcript_display_is_idempotent_and_never_affects_the_other_field(
 
 #[tokio::test]
 async fn set_transcript_display_persists_across_a_reopen() {
-    let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let mut first = SettingsStore::open(&dir).await.unwrap();
     first
@@ -103,7 +103,7 @@ async fn set_transcript_display_persists_across_a_reopen() {
 /// Unknown keys round-trip untouched so renderer features can add fields later (#791).
 #[tokio::test]
 async fn unknown_keys_round_trip_untouched_across_an_unrelated_setter_and_a_reopen() {
-    let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     tokio::fs::write(
         dir.join("settings.json"),
@@ -142,7 +142,7 @@ async fn unknown_keys_round_trip_untouched_across_an_unrelated_setter_and_a_reop
 
 #[tokio::test]
 async fn set_approval_mode_persists_across_a_reopen() {
-    let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let mut store = SettingsStore::open(&dir).await.unwrap();
     let next = store.set_approval_mode(ApprovalMode::Auto).await.unwrap();
@@ -153,7 +153,7 @@ async fn set_approval_mode_persists_across_a_reopen() {
 
 #[tokio::test]
 async fn set_readout_visibility_persists_across_a_reopen() {
-    let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let mut store = SettingsStore::open(&dir).await.unwrap();
     let next = store
@@ -167,7 +167,7 @@ async fn set_readout_visibility_persists_across_a_reopen() {
 
 #[tokio::test]
 async fn set_split_persists_across_a_reopen() {
-    let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let mut store = SettingsStore::open(&dir).await.unwrap();
     let layout = SplitLayout {
@@ -186,7 +186,7 @@ async fn set_split_persists_across_a_reopen() {
 
 #[tokio::test]
 async fn set_watermark_enabled_persists_across_a_reopen() {
-    let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let mut store = SettingsStore::open(&dir).await.unwrap();
     let next = store.set_watermark_enabled(false).await.unwrap();
@@ -197,7 +197,7 @@ async fn set_watermark_enabled_persists_across_a_reopen() {
 
 #[tokio::test]
 async fn set_detect_image_paths_on_paste_persists_across_a_reopen() {
-    let dir = std::env::temp_dir().join(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let mut store = SettingsStore::open(&dir).await.unwrap();
     let next = store.set_detect_image_paths_on_paste(false).await.unwrap();

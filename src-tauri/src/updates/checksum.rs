@@ -61,7 +61,7 @@ mod tests {
     #[tokio::test]
     async fn hex_digest_file_streams_correctly_for_a_multi_chunk_file() {
         let dir =
-            std::env::temp_dir().join(format!("refract-checksum-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-checksum-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir)
             .await
             .expect("create temp dir");

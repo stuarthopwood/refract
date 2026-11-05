@@ -214,7 +214,7 @@ mod tests {
     #[tokio::test]
     async fn plain_text_file_is_kind_text() {
         let dir =
-            std::env::temp_dir().join(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("a.txt");
         tokio::fs::write(&path, b"hello world").await.unwrap();
@@ -226,7 +226,7 @@ mod tests {
     #[tokio::test]
     async fn markdown_extension_is_kind_markdown() {
         let dir =
-            std::env::temp_dir().join(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("a.md");
         tokio::fs::write(&path, b"# hi").await.unwrap();
@@ -237,7 +237,7 @@ mod tests {
     #[tokio::test]
     async fn nul_byte_content_is_kind_binary() {
         let dir =
-            std::env::temp_dir().join(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("a.bin");
         tokio::fs::write(&path, [1u8, 0, 2, 3]).await.unwrap();
@@ -248,7 +248,7 @@ mod tests {
     #[tokio::test]
     async fn png_magic_bytes_are_kind_image() {
         let dir =
-            std::env::temp_dir().join(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("a.png");
         let mut bytes = vec![0x89u8, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -262,7 +262,7 @@ mod tests {
     #[tokio::test]
     async fn over_cap_file_is_kind_too_large() {
         let dir =
-            std::env::temp_dir().join(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("big.txt");
         let bytes = vec![b'a'; (MAX_PREVIEW_BYTES + 10) as usize];
@@ -276,7 +276,7 @@ mod tests {
     #[tokio::test]
     async fn missing_file_is_kind_deleted() {
         let dir =
-            std::env::temp_dir().join(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("nope.txt");
         let preview = read_preview(&path, "nope.txt").await;
@@ -286,7 +286,7 @@ mod tests {
     #[tokio::test]
     async fn a_directory_target_is_kind_read_error() {
         let dir =
-            std::env::temp_dir().join(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-preview-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let preview = read_preview(&dir, "subdir").await;
         assert_eq!(preview.kind, FilePreviewKind::ReadError);

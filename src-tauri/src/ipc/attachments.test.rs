@@ -119,7 +119,7 @@ struct TempWorktree {
 
 impl TempWorktree {
     fn new() -> Self {
-        let root = std::env::temp_dir().join(format!("refract-r4-attach-test-{}", Uuid::new_v4()));
+        let root = crate::test_scratch::path(format!("refract-r4-attach-test-{}", Uuid::new_v4()));
         std::fs::create_dir_all(&root).expect("create scratch worktree dir");
         Self { root }
     }
@@ -181,7 +181,7 @@ async fn resolve_in_worktree_rejects_a_missing_file() {
 
 #[tokio::test]
 async fn resolve_in_worktree_rejects_a_missing_worktree_root() {
-    let missing_root = std::env::temp_dir().join(format!("refract-r4-missing-{}", Uuid::new_v4()));
+    let missing_root = crate::test_scratch::path(format!("refract-r4-missing-{}", Uuid::new_v4()));
     let resolved = resolve_in_worktree(missing_root.to_str().unwrap(), "inside.png").await;
     assert!(matches!(resolved, Err(ResolveReason::WorktreeMissing)));
 }
@@ -248,7 +248,7 @@ async fn symlink_inside_the_worktree_resolves_through_the_link() {
 #[tokio::test]
 async fn symlink_escaping_the_worktree_is_rejected() {
     let wt = TempWorktree::new();
-    let outside_dir = std::env::temp_dir().join(format!("refract-r4-outside-{}", Uuid::new_v4()));
+    let outside_dir = crate::test_scratch::path(format!("refract-r4-outside-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&outside_dir).expect("create outside dir");
     let outside_target = outside_dir.join("secret.png");
     std::fs::write(&outside_target, fake_png_bytes()).expect("write outside file");
@@ -303,7 +303,7 @@ async fn resolve_no_follow_rejects_a_link_cycle() {
 async fn junction_escaping_the_worktree_is_rejected() {
     let wt = TempWorktree::new();
     let outside_dir =
-        std::env::temp_dir().join(format!("refract-r4-junction-outside-{}", Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-r4-junction-outside-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&outside_dir).expect("create outside dir");
     std::fs::write(outside_dir.join("secret.png"), fake_png_bytes()).expect("write outside file");
     let link = wt.path().join("escape-dir");
@@ -325,11 +325,11 @@ async fn junction_escaping_the_worktree_is_rejected() {
 #[cfg(windows)]
 async fn junctioned_worktree_root_resolves_correctly() {
     let real_dir =
-        std::env::temp_dir().join(format!("refract-r4-junction-real-{}", Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-r4-junction-real-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&real_dir).expect("create real worktree dir");
     std::fs::write(real_dir.join("inside.png"), fake_png_bytes()).expect("write real file");
     let junction_root =
-        std::env::temp_dir().join(format!("refract-r4-junction-alias-{}", Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-r4-junction-alias-{}", Uuid::new_v4()));
     assert!(
         try_junction(&real_dir, &junction_root),
         "directory junction creation must not need elevation"
@@ -349,11 +349,11 @@ async fn junctioned_worktree_root_resolves_correctly() {
 #[cfg(windows)]
 async fn absolute_token_through_a_junction_resolves() {
     let real_dir =
-        std::env::temp_dir().join(format!("refract-r4-junction-abs-real-{}", Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-r4-junction-abs-real-{}", Uuid::new_v4()));
     std::fs::create_dir_all(&real_dir).expect("create real dir");
     std::fs::write(real_dir.join("photo.png"), fake_png_bytes()).expect("write real file");
     let link_dir =
-        std::env::temp_dir().join(format!("refract-r4-junction-abs-link-{}", Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-r4-junction-abs-link-{}", Uuid::new_v4()));
     assert!(
         try_junction(&real_dir, &link_dir),
         "directory junction creation must not need elevation"

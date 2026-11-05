@@ -8,7 +8,7 @@ static SCRATCH_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 async fn write_scratch(content: &str) -> String {
     let n = SCRATCH_COUNTER.fetch_add(1, Ordering::Relaxed);
-    let file = std::env::temp_dir().join(format!(
+    let file = crate::test_scratch::path(format!(
         "refract-termination-test-{}-{n}-{}.jsonl",
         std::process::id(),
         uuid::Uuid::new_v4()
@@ -64,7 +64,7 @@ async fn reports_clean_for_a_null_file() {
 
 #[tokio::test]
 async fn reports_clean_for_a_missing_file() {
-    let missing = std::env::temp_dir().join("refract-termination-test-does-not-exist.jsonl");
+    let missing = crate::test_scratch::path("refract-termination-test-does-not-exist.jsonl");
     let result = detect_unexpected_termination(Some(&missing.to_string_lossy())).await;
     assert!(is_clean(&result));
 }
@@ -422,7 +422,7 @@ async fn marker_valid_when_conversation_and_size_both_match() {
 
 #[tokio::test]
 async fn marker_invalid_when_the_conversation_file_no_longer_exists() {
-    let file = std::env::temp_dir().join(format!(
+    let file = crate::test_scratch::path(format!(
         "refract-marker-gone-{}.jsonl",
         uuid::Uuid::new_v4()
     ));
@@ -509,7 +509,7 @@ async fn make_marker_test_agent(
     marker_conversation: Option<&str>,
     marker_size: Option<i64>,
 ) -> std::sync::Arc<SessionAgent> {
-    let dir = std::env::temp_dir().join(format!(
+    let dir = crate::test_scratch::path(format!(
         "refract-termination-marker-agent-{label}-{}",
         uuid::Uuid::new_v4()
     ));
@@ -625,7 +625,7 @@ async fn record_marker_records_nothing_when_conversation_is_none() {
 #[tokio::test]
 async fn record_marker_never_panics_when_the_conversation_file_is_missing() {
     let agent = make_marker_test_agent("missing-file", None, None).await;
-    let missing = std::env::temp_dir().join(format!(
+    let missing = crate::test_scratch::path(format!(
         "refract-termination-marker-missing-{}.jsonl",
         uuid::Uuid::new_v4()
     ));

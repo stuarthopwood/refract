@@ -13,7 +13,7 @@ fn scratch(label: &str) -> PathBuf {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!(
+    let dir = crate::test_scratch::path(format!(
         "refract-usage-{label}-{}-{nanos}",
         std::process::id()
     ));

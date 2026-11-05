@@ -362,7 +362,7 @@ mod tests {
     #[tokio::test]
     async fn emit_settings_changed_does_not_panic_before_a_window_exists() {
         let dir =
-            std::env::temp_dir().join(format!("refract-events-test-{}", uuid::Uuid::new_v4()));
+            crate::test_scratch::path(format!("refract-events-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         let registry = RegistryStore::open(&dir).await.unwrap();
         let sink = EventSink::new(

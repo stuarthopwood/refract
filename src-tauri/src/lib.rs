@@ -9,6 +9,8 @@ pub mod process;
 pub mod session;
 pub mod shell;
 pub mod store;
+#[cfg(test)]
+mod test_scratch;
 pub mod updates;
 pub mod usage;
 

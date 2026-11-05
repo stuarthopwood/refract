@@ -78,7 +78,7 @@ fn scratch_and_temp_cwds_fold_into_other() {
     let idx = index();
     assert_eq!(label_of(&idx, "C:\\tmp\\g671-r6-wt-delete"), "Other");
     assert_eq!(label_of(&idx, "c:\\TMP"), "Other");
-    let temp = std::env::temp_dir().join("refract-scratch");
+    let temp = crate::test_scratch::path("refract-scratch");
     assert_eq!(label_of(&idx, &temp.to_string_lossy()), "Other");
     assert_eq!(
         label_of(&idx, "C:\\Users\\SHOPWO~1\\AppData\\Local\\Temp\\x"),
