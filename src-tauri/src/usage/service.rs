@@ -11,7 +11,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use super::project_label::ProjectIndex;
-use super::{ingest, paths, relabel, scan, schema};
+use super::{copilot_cli, ingest, paths, relabel, scan, schema};
 
 const SCAN_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const EMIT_INTERVAL: Duration = Duration::from_secs(1);
@@ -42,6 +42,8 @@ enum Msg {
 
 struct Inner {
     root: PathBuf,
+    /// Copilot CLI's `session-state` folder; scanned on every pass, never nudged.
+    copilot_root: PathBuf,
     db_path: PathBuf,
     projects: ProjectsProvider,
     emit: StatusEmit,
@@ -61,6 +63,7 @@ impl UsageService {
     pub fn new(emit: StatusEmit, projects: ProjectsProvider) -> Self {
         Self::with_paths(
             paths::sessions_dir(),
+            paths::copilot_sessions_dir(),
             paths::usage_db_path(),
             emit,
             projects,
@@ -69,6 +72,7 @@ impl UsageService {
 
     pub fn with_paths(
         root: PathBuf,
+        copilot_root: PathBuf,
         db_path: PathBuf,
         emit: StatusEmit,
         projects: ProjectsProvider,
@@ -81,6 +85,7 @@ impl UsageService {
         Self {
             inner: Arc::new(Inner {
                 root,
+                copilot_root,
                 db_path,
                 projects,
                 emit,
@@ -240,6 +245,23 @@ fn full_scan(inner: &Inner, conn: &mut Connection) {
             (inner.emit)(&snapshot);
         }
     });
+    let omp_seen = report.seen;
+    let omp_done = report.done;
+    let copilot = copilot_cli::scan(conn, &inner.copilot_root, &projects, &mut |seen, done| {
+        let snapshot = set_status(inner, |s| {
+            s.sessions_seen = omp_seen + seen;
+            s.sessions_done = omp_done + done;
+        });
+        if last_emit.elapsed() >= EMIT_INTERVAL {
+            last_emit = Instant::now();
+            (inner.emit)(&snapshot);
+        }
+    });
+    let report = scan::ScanReport {
+        seen: omp_seen + copilot.seen,
+        done: omp_done + copilot.done,
+        new_messages: report.new_messages + copilot.new_messages,
+    };
     // Files ingested above were labelled one by one; this merges case-duplicate folder rows.
     run_relabel(inner, conn, &projects);
     (inner.emit)(&set_status(inner, |s| {

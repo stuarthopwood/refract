@@ -19,7 +19,7 @@ use super::rollup::{
 use super::timeutil::parse_iso_ms;
 
 /// Lines longer than this are skipped unread.
-const MAX_LINE_BYTES: u64 = 8 * 1024 * 1024;
+pub(super) const MAX_LINE_BYTES: u64 = 8 * 1024 * 1024;
 /// One pass stops after this many bytes; the caller re-queues the file when `more` is set.
 const MAX_PASS_BYTES: u64 = 64 * 1024 * 1024;
 /// Only this many leading characters of a user message are scored.
@@ -48,7 +48,7 @@ struct FileState {
     tail: Window,
 }
 
-enum LineRead {
+pub(super) enum LineRead {
     Eof,
     /// No trailing newline yet: the writer has not finished the line.
     Partial,
@@ -56,7 +56,7 @@ enum LineRead {
     Oversize(u64),
 }
 
-fn read_line<R: BufRead>(r: &mut R, buf: &mut Vec<u8>) -> std::io::Result<LineRead> {
+pub(super) fn read_line<R: BufRead>(r: &mut R, buf: &mut Vec<u8>) -> std::io::Result<LineRead> {
     buf.clear();
     let n = r.by_ref().take(MAX_LINE_BYTES + 1).read_until(b'\n', buf)? as u64;
     if n == 0 {
@@ -163,7 +163,7 @@ fn num_f64(v: Option<&Value>) -> f64 {
     v.and_then(Value::as_f64).unwrap_or(0.0)
 }
 
-fn text_of(v: Option<&Value>) -> Option<&str> {
+pub(super) fn text_of(v: Option<&Value>) -> Option<&str> {
     v.and_then(Value::as_str).filter(|s| !s.is_empty())
 }
 
