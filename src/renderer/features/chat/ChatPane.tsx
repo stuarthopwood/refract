@@ -684,7 +684,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
       />
       <PausedBody sessionId={sessionId}>
       <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
-        {showWatermark && <BrandWatermark variant="live" allowHoliday={false} />}
+        {showWatermark && <BrandWatermark variant="live" />}
         {showAmbientLoop && <HolidayAmbientLoop avoidTextColumn />}
         <Transcript
           sessionId={sessionId}

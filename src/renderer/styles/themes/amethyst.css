@@ -38,7 +38,7 @@
   --secondary-foreground: var(--foreground);
   --muted: var(--surface-hover);
   --muted-foreground: oklch(1 0 0 / 68%);
-  --holiday-artwork-opacity: 0.28;
+  --holiday-artwork-opacity: 0.16; /* #1647: about 1.3:1 over #100b19 */
   --accent: var(--surface-hover);
   --accent-foreground: var(--foreground);
   --viewer-tint: #1c1529;

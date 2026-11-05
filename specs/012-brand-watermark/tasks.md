@@ -277,3 +277,13 @@ first if desired.
 - NOT verified: T015 (text selection and clicks through the mark; `pointer-events: none` is confirmed), T016 (drag-resize behaviours), T018 (the full quickstart pass), and the settings screen's dark high-contrast appearance.
 
 - [X] T020 Retune opacity (issue #1298): set `--watermark-opacity` and `--holiday-artwork-opacity` per theme to about 1.6:1 (0.30 Dark/Amber, 0.28 Obsidian/Nordic, 0.24 high contrast) and refresh the stale ~3:1 comments, per research decision 5
+
+## Phase 8: Convergence (#1647, holiday glyph returns, fainter marks)
+
+Written after the spec amendment (spec.md Session 2026-11-04, FR-023 to FR-026), alongside the code, per the converge route.
+
+- [X] T021 [US1] Delete `allowHoliday` from `src/renderer/features/chat/BrandWatermark.tsx` and its two call sites (`ChatPane.tsx`, `AppearanceSection.tsx`) so the holiday glyph shows in transcript panes and the preview, per FR-023, US1/AC7 (missing)
+- [X] T022 [US1] Add `src/renderer/components/brand/BrandMark.tsx` (inline SVG, per-facet `--watermark-tone-*` fills) and the 18 `--watermark-tone-*` tokens in `globals.css`; drop the `.watermark-mark` mask rule, per FR-025, US1/AC8 (missing)
+- [X] T023 [US1] Retune `--watermark-opacity` and `--holiday-artwork-opacity` in `globals.css` and the six `themes/*.css` files to about 1.3:1 per theme, with the measured ratio in each comment, per FR-024, US1/AC8 (partial: values were 1.6:1)
+- [ ] T024 [US1] Add `scripts/verify-tauri-1647.mjs` asserting computed opacity, glyph and facet fills live in a dark and a light theme, plus a holiday-date state, per FR-023 to FR-026, US1/AC7-AC8 (missing)
+- [ ] T025 [US1] Update the "Brand watermark" section of `docs/design/product-look-and-feel.md` and amend spec 109 FR-1 as superseded, then run `pnpm ci:local` (23/23) and the driver, per FR-023 to FR-026 (missing)
