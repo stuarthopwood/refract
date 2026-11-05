@@ -52,4 +52,4 @@ Format: `ID [P] description (paths)`. `[P]` = parallelisable with its neighbours
 - [X] C-01 `src-tauri/src/ipc/usage.rs` and `src-tauri/src/lib.rs`: `start_at_launch(&AppState)` called from Tauri setup after app state exists; logs `usage: ingest started at launch`; `usage.start` stays idempotent per FR-006.
 - [X] C-02 Remove `usage.stop` end to end: Rust handler, `UsageService::stop`, `Msg::Stop`, scan `stop` callback, `USAGE_STOP`, `UsageApi.stop`, bridge method, `check-parity.mjs` entry, renderer `usage-service.ts` holder set; the stores call `usage.start()` directly and never stop it.
 - [X] C-03 Amend `spec.md` (FR-006, Session 2026-11-05), `plan.md`, `analysis.md`, `contracts/ipc.md` and `quickstart.md` to match.
-- [ ] C-04 Verify: `pnpm ci:local`; live driver `scripts/verify-tauri-1655.mjs` proves ingest ran at launch without the Usage view being opened; PR `fix(usage): start ingest at app launch`, `Closes #1655`.
+- [X] C-04 Verify: `pnpm ci:local`; live driver `scripts/verify-tauri-1655.mjs` proves ingest ran at launch without the Usage view being opened; PR `fix(usage): start ingest at app launch`, `Closes #1655`.
