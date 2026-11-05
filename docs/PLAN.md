@@ -1082,7 +1082,11 @@ Also filed 2026-11-04 (Stuart, grilled, none deferred): **#1666** (`p1`, `featur
 
 Promoted 2026-11-04 (Stuart): **#1304** (raised from p1 to `p0`), Agents create and control Sessions and Conversations. Placed as queue row `1c` after #695; #433 moves to `1d`. It still needs #1193.
 
-Also filed 2026-11-04 (Stuart, chat bug): **#1669** (`p1`, `bug`, `chat`), collapse repeated snapcompact and compaction headroom warnings into one chat row, and stop Refract from re-firing automatic maintenance after OMP pauses it. In progress (decided 2026-11-05: `×N` count on one row, fixed 10k regrowth margin, one pause flag); omp's own idle compaction is not controllable from Refract, so only `/shake` honours the pause.
+Also filed 2026-11-04 (Stuart, chat bug): **#1669** (`p1`, `bug`, `chat`), collapse repeated snapcompact and compaction headroom warnings into one chat row, and stop Refract from re-firing automatic maintenance after OMP pauses it. Done (PR #1698, merged 2026-11-05; decided 2026-11-05: `×N` count on one row, fixed 10k regrowth margin, one pause flag); omp's own idle compaction is not controllable from Refract, so only `/shake` honours the pause.
+
+Also filed 2026-11-05 (follow-up to #1669): **#1701** (`p1`, `feat`), pause omp's own idle compaction when omp pauses automatic maintenance. Blocked on omp exposing an RPC or setting for it; until then only `/shake` honours the pause.
+
+Also filed 2026-11-05 (PR #1698 gate, 5/5 PASS Medium findings): **#1702** (`p1`, `bug`), harden warning collapse and the shake pause: in-place row change instead of cloning, `saturating_add` on forged counts, one baseline method, stats-failure and stale-baseline handling, and long-warning truncation in `NoticeRow`. Files: `src-tauri/src/omp/transcript/warning_collapse.rs`, `src-tauri/src/session/shake.rs`, `src-tauri/src/session/token_guard.rs`, `src/renderer/features/chat/NoticeRow.tsx`.
 
 Also filed 2026-11-04 (Stuart, scope decided: all three parts): **#1672** (`p0`, `enhancement`, `settings`), cut prompt cache writes. Placed as queue row `1d` after #1304; #433 moves to `1e`.
 Done (PR #1684, merged 2026-11-05, release v0.28.0; spec `121-token-guard-cache-writes`): #1672 is queue row `1d`; the two measurement ACs stay open on the issue.
