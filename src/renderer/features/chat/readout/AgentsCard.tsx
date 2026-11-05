@@ -64,7 +64,8 @@ export function AgentsCard({
           12px size, short of the 4.5:1 body-text floor -- `text-foreground` (an EXISTING checked
           pair, `popover-foreground / popover`) plus a permanent (not hover-only) underline reads
           clearly as a link without introducing a new colour this card alone would need checked. */}
-      <Button type="button" variant="link" size="sm" className="mt-2 h-auto p-0 text-xs text-foreground underline underline-offset-4" onClick={onOpenPanel}>
+      {/* Pointer-only: the hover card must not pull keyboard focus (WCAG 2.4.3); keyboards reach the panel elsewhere. */}
+      <Button type="button" variant="link" size="sm" tabIndex={-1} className="mt-2 h-auto p-0 text-xs text-foreground underline underline-offset-4" onClick={onOpenPanel}>
         Open subagents panel
       </Button>
     </div>
