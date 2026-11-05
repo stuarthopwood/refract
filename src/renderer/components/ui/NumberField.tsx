@@ -11,7 +11,8 @@ const BLOCKED_KEYS: Record<string, true> = { e: true, E: true, "+": true, "-": t
 const HIDE_NATIVE_SPINNER =
   "[appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none"
 
-const STEP_BUTTON = "h-auto min-h-0 w-[17px] flex-1 rounded-sm p-0 text-muted-foreground hover:bg-transparent hover:text-foreground active:text-foreground dark:hover:bg-transparent [&_svg]:size-3"
+// 17px = the 1px border + pr-6's 24px, minus the 8px gap; offsets stay 0 because 1px insets fail check:spacing.
+const STEP_BUTTON = "h-auto min-h-0 w-[17px] flex-1 rounded-sm p-0 text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent"
 
 /** `value` as a number, or `undefined` when empty or not controlled. */
 function numericValue(value: unknown): number | undefined {
@@ -34,6 +35,7 @@ function NumberField({ className, onKeyDown, onWheel, ref, ...props }: Omit<Reac
   const step = (direction: 1 | -1): void => {
     const input = inputRef.current
     if (!input) return
+    input.focus() // fallback: the step buttons already keep focus on mousedown
     if (direction > 0) input.stepUp()
     else input.stepDown()
     input.dispatchEvent(new Event("input", { bubbles: true }))
@@ -64,11 +66,11 @@ function NumberField({ className, onKeyDown, onWheel, ref, ...props }: Omit<Reac
         {...props}
       />
       <div className="absolute inset-y-0 right-0 flex flex-col">
-        <Button type="button" variant="ghost" tabIndex={-1} aria-hidden disabled={inert || atMax} className={STEP_BUTTON} onClick={() => step(1)}>
-          <ChevronUpIcon />
+        <Button type="button" variant="ghost" tabIndex={-1} aria-hidden disabled={inert || atMax} className={STEP_BUTTON} onMouseDown={(e) => e.preventDefault()} onClick={() => step(1)}>
+          <ChevronUpIcon className="size-3" />
         </Button>
-        <Button type="button" variant="ghost" tabIndex={-1} aria-hidden disabled={inert || atMin} className={STEP_BUTTON} onClick={() => step(-1)}>
-          <ChevronDownIcon />
+        <Button type="button" variant="ghost" tabIndex={-1} aria-hidden disabled={inert || atMin} className={STEP_BUTTON} onMouseDown={(e) => e.preventDefault()} onClick={() => step(-1)}>
+          <ChevronDownIcon className="size-3" />
         </Button>
       </div>
     </div>

@@ -117,4 +117,4 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 
 - [x] T050 Hide the native spinner in `src/renderer/components/ui/NumberField.tsx` and draw two stacked muted `ChevronUpIcon`/`ChevronDownIcon` `Button`s (ghost, `tabIndex={-1}`, `aria-hidden`) at the right edge with an 8px gap after the value; click calls `stepUp()`/`stepDown()` then dispatches an `input` event; disabled when the field is disabled/read-only or at `max`/`min` per FR-033 (missing)
 - [x] T051 Update the Number fields paragraph in `docs/design/components.md` to describe the chevrons per FR-027 (partial)
-- [ ] T052 Live verification with `scripts/verify-tauri-1646.mjs`: NumberField in Settings > Advanced in a dark and a light theme, zoomed on the chevrons and the gap; click steps and fires onChange; screenshots per SC-009 (missing)
+- [x] T052 Live verification with `scripts/verify-tauri-1646.mjs`: NumberField in Settings > Advanced in a dark and a light theme, zoomed on the chevrons and the gap; click steps and fires onChange; screenshots per SC-009 (missing)

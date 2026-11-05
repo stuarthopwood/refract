@@ -29,7 +29,7 @@ function check(ok, label, evidence) {
   if (ok !== true) process.exitCode = 1;
 }
 
-// A number row with a value, a min and a max (task.maxConcurrency is a plain count row).
+// The first NumberField in Settings > Advanced; it must carry a value, a min and a max.
 const FIELD = `document.querySelector('[data-slot="number-field"]')`;
 const ROOT = `(${FIELD}).closest('[data-slot="number-field-root"]')`;
 const CHEVRON = (n) => `(${ROOT}).querySelectorAll('button')[${n}]`;
@@ -70,20 +70,26 @@ const facts = (cdp) =>
   cdp.evaluate(`(() => {
     const input = ${FIELD};
     const root = ${ROOT};
+    if (root.querySelectorAll('button').length !== 2) return { buttons: root.querySelectorAll('button').length };
     const [up, down] = root.querySelectorAll('button');
+    const probe = (name) => { const p = document.createElement('span'); p.style.color = 'var(' + name + ')'; root.appendChild(p); const c = getComputedStyle(p).color; p.remove(); return c; };
     const cs = getComputedStyle(input);
     const ir = input.getBoundingClientRect();
     const ur = up.getBoundingClientRect();
     const contentRight = ir.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight);
     const rgb = (el) => getComputedStyle(el).color;
+    // Computed style of a UA pseudo-element reports the input's own textfield, so read the authored spin-button rule instead.
+    const spinRule = (rules) => { for (const r of rules) { if (r.selectorText && r.selectorText.includes('::-webkit-inner-spin-button') && r.style.getPropertyValue('appearance')) return r.style.getPropertyValue('appearance'); if (r.cssRules) { const v = spinRule(r.cssRules); if (v) return v; } } return null; };
+    const nativeSpinner = Array.from(document.styleSheets).map((s) => { try { return spinRule(s.cssRules); } catch { return null; } }).find(Boolean) ?? null;
     return {
       value: input.value, min: input.min, max: input.max, step: input.step,
-      nativeSpinnerAppearance: getComputedStyle(input, '::-webkit-inner-spin-button').appearance,
+      nativeSpinnerAppearance: nativeSpinner,
       gapPx: Math.round((ur.left - contentRight) * 10) / 10,
       buttons: root.querySelectorAll('button').length,
       tabIndexes: [up.tabIndex, down.tabIndex],
       ariaHidden: [up.getAttribute('aria-hidden'), down.getAttribute('aria-hidden')],
-      upColour: rgb(up), downColour: rgb(down), fieldColour: cs.color, mutedToken: getComputedStyle(document.documentElement).getPropertyValue('--muted-foreground').trim(),
+      upColour: rgb(up), downColour: rgb(down), fieldColour: cs.color, mutedRgb: probe('--muted-foreground'), fgRgb: probe('--foreground'),
+      activeIsField: document.activeElement === input, activeTag: document.activeElement ? document.activeElement.tagName : null,
       upDisabled: up.disabled, downDisabled: down.disabled,
       rect: [Math.round(ir.left), Math.round(ir.top), Math.round(ir.width), Math.round(ir.height)]
     };
@@ -141,8 +147,9 @@ async function main() {
       await cdp.evaluate(`(${FIELD}).scrollIntoView({ block: 'center' })`);
       const f = await facts(cdp);
       check(f.buttons === 2 && f.tabIndexes.every((t) => t === -1) && f.ariaHidden.every((a) => a === 'true'), `${theme}: two chevron buttons, tabIndex -1 and aria-hidden`, f);
-      check(f.gapPx >= 8 && f.gapPx <= 9, `${theme}: the gap between the value and the chevrons is 8px`, f.gapPx);
-      check(f.upColour === f.downColour && f.upColour !== f.fieldColour, `${theme}: chevrons rest in the muted colour, not the field text colour`, { up: f.upColour, field: f.fieldColour, token: f.mutedToken });
+      check(Math.abs(f.gapPx - 8) < 0.5, `${theme}: the gap between the value and the chevrons is 8px`, f.gapPx);
+      check(f.upColour === f.downColour && f.upColour === f.mutedRgb && f.upColour !== f.fieldColour, `${theme}: chevrons rest in the resolved --muted-foreground colour, not the field text colour`, { up: f.upColour, field: f.fieldColour, muted: f.mutedRgb });
+      check(f.nativeSpinnerAppearance === 'none', `${theme}: the native spinner is hidden`, f.nativeSpinnerAppearance);
       await zoomShot(cdp, `${theme}-resting.png`);
     }
 
@@ -152,7 +159,7 @@ async function main() {
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y, buttons: 0 });
     await sleep(400);
     const hover = await cdp.evaluate(`getComputedStyle(${CHEVRON(0)}).color`);
-    check(hover !== before.upColour, 'Hover: the chevron turns to the foreground colour', { rest: before.upColour, hover });
+    check(hover === before.fgRgb && hover !== before.upColour, 'Hover: the chevron turns to the resolved --foreground colour', { rest: before.upColour, hover, foreground: before.fgRgb });
     await zoomShot(cdp, 'light-hover-up.png');
     await cdp.click(CHEVRON(0));
     await sleep(300);
@@ -170,11 +177,40 @@ async function main() {
     check(Number((await facts(cdp)).value) === Number(afterDown.value) + Number(before.step || 1), 'ArrowUp still steps the focused field', null);
     const tabbables = await cdp.evaluate(`Array.from((${ROOT}).querySelectorAll('button')).filter((b) => b.tabIndex >= 0).length`);
     check(tabbables === 0, 'Tab order: the chevrons are not tabbable', tabbables);
-    // Max: push the value to the bound, the up chevron disables.
-    await cdp.evaluate(`(() => { const i = ${FIELD}; i.focus(); })()`);
+
+    // Focus and persistence: a chevron click must not blur the input, or the commit-on-blur caller never saves the step.
+    await cdp.evaluate(`(${FIELD}).blur()`);
+    await cdp.click(CHEVRON(0));
+    await sleep(300);
+    const clicked = await facts(cdp);
+    check(clicked.activeIsField === true, 'Focus: a chevron click leaves document.activeElement on the input', { active: clicked.activeTag });
+    await cdp.evaluate(`(${FIELD}).blur()`);
+    await sleep(600);
+    await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
+    await cdp.waitFor(`!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings closed' });
+    await openAdvanced(cdp);
+    const persisted = await facts(cdp);
+    check(persisted.value === clicked.value, 'Persistence: the stepped value survives blur and reopening Settings', { stepped: clicked.value, reopened: persisted.value });
+
+    // Bounds: step with the chevrons to each limit, waiting on the value after every click.
     const bounds = await facts(cdp);
     check(bounds.min !== '' && bounds.max !== '', 'The field carries min and max', { min: bounds.min, max: bounds.max });
-    await zoomShot(cdp, 'light-after-steps.png');
+    const stepTo = async (index, bound) => {
+      for (let i = 0; i < 400; i += 1) {
+        const f = await facts(cdp);
+        if (Number(f.value) === Number(bound) || (index === 0 ? f.upDisabled : f.downDisabled)) return;
+        await cdp.click(CHEVRON(index));
+        await cdp.waitFor(`(${FIELD}).value !== ${JSON.stringify(f.value)}`, { timeoutMs: 10_000, label: 'value changed after chevron click' });
+      }
+    };
+    await stepTo(0, bounds.max);
+    const atMax = await facts(cdp);
+    check(Number(atMax.value) === Number(bounds.max) && atMax.upDisabled === true && atMax.downDisabled === false, 'Max: the up chevron is disabled and the down chevron enabled', { value: atMax.value, up: atMax.upDisabled, down: atMax.downDisabled });
+    await zoomShot(cdp, 'light-at-max.png');
+    await stepTo(1, bounds.min);
+    const atMin = await facts(cdp);
+    check(Number(atMin.value) === Number(bounds.min) && atMin.downDisabled === true && atMin.upDisabled === false, 'Min: the down chevron is disabled and the up chevron enabled', { value: atMin.value, up: atMin.upDisabled, down: atMin.downDisabled });
+    await zoomShot(cdp, 'light-at-min.png');
     report.push({ step: 'screenshots (sha256)', ok: true, evidence: citeScreenshots(SHOTS_DIR, shotNames) });
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
