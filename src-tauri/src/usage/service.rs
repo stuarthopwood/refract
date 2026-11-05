@@ -25,6 +25,7 @@ pub struct UsageStatus {
     pub sessions_done: usize,
     pub sessions_dir: String,
     pub found: bool,
+    pub scan_completed: bool,
 }
 
 /// Supplies the current Projects and Worktrees for Project labelling; called once per pass.
@@ -136,6 +137,7 @@ impl UsageService {
                 .spawn(move || worker(&inner, &rx));
             if let Err(e) = spawned {
                 *lock(&self.inner.last_error) = Some(format!("usage worker: {e}"));
+                mark_scan_completed(&self.inner);
                 self.inner.scan_pending.store(false, Ordering::SeqCst);
                 return;
             }
@@ -180,6 +182,7 @@ fn worker(inner: &Inner, rx: &Receiver<Msg>) {
                     *lock(&inner.last_error) = Some(e.to_string());
                     inner.scan_pending.store(false, Ordering::SeqCst);
                     next_scan = Instant::now() + SCAN_INTERVAL;
+                    mark_scan_completed(inner);
                     continue;
                 }
             }
@@ -204,6 +207,17 @@ fn set_status(inner: &Inner, f: impl FnOnce(&mut UsageStatus)) -> UsageStatus {
     let mut status = lock(&inner.status);
     f(&mut status);
     status.clone()
+}
+
+/// Flips `scan_completed` and emits once, so a database that stays unavailable does not re-emit on every nudge.
+fn mark_scan_completed(inner: &Inner) {
+    let mut flipped = false;
+    let snapshot = set_status(inner, |s| {
+        flipped = !std::mem::replace(&mut s.scan_completed, true)
+    });
+    if flipped {
+        (inner.emit)(&snapshot);
+    }
 }
 
 fn full_scan(inner: &Inner, conn: &mut Connection) {
@@ -232,6 +246,7 @@ fn full_scan(inner: &Inner, conn: &mut Connection) {
         s.running = false;
         s.sessions_seen = report.seen;
         s.sessions_done = report.done;
+        s.scan_completed = true;
     }));
 }
 
