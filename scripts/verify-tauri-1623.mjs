@@ -16,7 +16,7 @@ import { settleForScreenshot } from './verify-700-todo-pin-helpers.mjs';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const SHOTS_DIR = process.env.REFRACT_1623_SHOTS_DIR || path.join(tmpdir(), `refract-1623-shots-${Date.now()}`);
-const CHAIN_TRIGGER = `Array.from(document.querySelectorAll('[data-slot="collapsible-trigger"]')).find((b) => (b.getAttribute('aria-label') || '').startsWith('Subagents, '))`;
+const ROW_TEXTS = `Array.from(document.querySelectorAll('button, [role="button"], [data-slot="collapsible-trigger"]')).map((b) => (b.getAttribute('aria-label') || '') + ' ' + b.innerText).filter((t) => /gamma/i.test(t) && t.length < 300)`;
 
 async function main() {
   const findings = [];
@@ -53,25 +53,26 @@ async function main() {
     await addRepository(cdp, dirs.repo);
     await createSessionViaQuickCreate(cdp, repoName);
     await latestSessionIdAndName(cdp, repoName, []);
-    const snap = () => cdp.evaluate(`(() => { const t = ${CHAIN_TRIGGER}; return t ? { label: t.getAttribute('aria-label'), text: t.innerText } : null; })()`);
+    const snap = async () => ({ rows: await cdp.evaluate(ROW_TEXTS) });
 
     await cdp.typeIntoByLabel('Message', 'Start gamma in the background (issue #1623 live check).');
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`document.body.innerText.includes('Started gamma in the background')`, { timeoutMs: 30_000, label: 'turn 1 settled' });
-    await cdp.waitFor(`!!(${CHAIN_TRIGGER})`, { timeoutMs: 30_000, label: 'Subagents row mounted' });
+    await cdp.waitFor(`${ROW_TEXTS}.length > 0`, { timeoutMs: 30_000, label: 'gamma row mounted' });
     const afterSpawn = await snap();
     findings.push(`after spawn: ${JSON.stringify(afterSpawn)}`);
-    if (/finished/i.test(afterSpawn.text) || !/running/i.test(`${afterSpawn.label} ${afterSpawn.text}`)) failures.push(`#1623: not Running after spawn: ${JSON.stringify(afterSpawn)}`);
+    const spawnText = afterSpawn.rows.join(' | ');
+    if (!/running/i.test(spawnText) || /finished/i.test(spawnText)) failures.push(`#1623: not Running after spawn: ${spawnText}`);
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, '1623-after-spawn-running.png'));
 
     await cdp.typeIntoByLabel('Message', 'Check on gamma.');
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(`document.body.innerText.includes('gamma finished investigating.')`, { timeoutMs: 30_000, label: 'turn 2 done' });
-    await cdp.waitFor(`!!(${CHAIN_TRIGGER})?.innerText.includes('Finished')`, { timeoutMs: 15_000, label: 'settled by wait' });
+    await cdp.waitFor(`${ROW_TEXTS}.some((t) => /Finished|\\d+(\\.\\d+)?s/.test(t))`, { timeoutMs: 15_000, label: 'gamma settled by wait' });
     const afterWait = await snap();
     findings.push(`after wait: ${JSON.stringify(afterWait)}`);
-    if (/running/i.test(afterWait.label)) failures.push(`#1623: still Running after wait: ${JSON.stringify(afterWait)}`);
+    if (afterWait.rows.some((t) => /running/i.test(t))) failures.push(`#1623: still Running after wait: ${JSON.stringify(afterWait)}`);
     await settleForScreenshot(cdp);
     await cdp.screenshot(path.join(SHOTS_DIR, '1623-after-wait-finished.png'));
 
