@@ -4,7 +4,7 @@ use std::sync::Mutex as StdMutex;
 
 #[tokio::test]
 async fn assert_conversation_file_exists_resolves_for_a_file_that_exists() {
-    let file = std::env::temp_dir().join(format!(
+    let file = crate::test_scratch::path(format!(
         "refract-assert-conv-exists-test-{}.jsonl",
         uuid::Uuid::new_v4()
     ));
@@ -16,7 +16,7 @@ async fn assert_conversation_file_exists_resolves_for_a_file_that_exists() {
 
 #[tokio::test]
 async fn assert_conversation_file_exists_throws_naming_the_path_for_a_missing_file() {
-    let file = std::env::temp_dir().join(format!(
+    let file = crate::test_scratch::path(format!(
         "refract-assert-conv-missing-test-{}.jsonl",
         uuid::Uuid::new_v4()
     ));

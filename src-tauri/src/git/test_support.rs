@@ -1,5 +1,5 @@
 // Real git repos, since a mocked git proves nothing about the safety properties under test.
-// Scratch dirs under the temp dir are never removed: no destructive-delete guard exists yet.
+// Scratch dirs live in a `test_scratch` TempDir that is removed when the test thread ends.
 
 use std::path::{Path, PathBuf};
 
@@ -7,7 +7,7 @@ use tokio::process::Command;
 
 /// Creates a fresh repository with one commit on `main`.
 pub(crate) async fn init_repo() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("refract-git-test-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-git-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir)
         .await
         .expect("create temp repo dir");

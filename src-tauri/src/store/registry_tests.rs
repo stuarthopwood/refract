@@ -3,7 +3,7 @@
 use super::*;
 
 fn fresh_dir() -> PathBuf {
-    std::env::temp_dir().join(format!("refract-registry-test-{}", uuid::Uuid::new_v4()))
+    crate::test_scratch::path(format!("refract-registry-test-{}", uuid::Uuid::new_v4()))
 }
 
 fn make_repository(id: &str, path: &str) -> Repository {

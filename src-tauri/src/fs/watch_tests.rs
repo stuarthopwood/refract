@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::mpsc::channel;
 
 fn temp_root(label: &str) -> PathBuf {
-    std::env::temp_dir().join(format!(
+    crate::test_scratch::path(format!(
         "refract-watch-test-{label}-{}",
         uuid::Uuid::new_v4()
     ))

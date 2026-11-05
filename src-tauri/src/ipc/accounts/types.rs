@@ -433,7 +433,7 @@ mod tests {
     #[tokio::test]
     async fn to_github_accounts_flattens_cache_hit_and_miss() {
         // A missing file reads as an empty cache, so this never touches disk.
-        let scratch = std::env::temp_dir().join(format!(
+        let scratch = crate::test_scratch::path(format!(
             "refract-accounts-test-{}-{}",
             std::process::id(),
             now_epoch_millis()

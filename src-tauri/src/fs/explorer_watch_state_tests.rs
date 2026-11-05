@@ -80,7 +80,7 @@ fn begin_worktree_operation_finish_clears_busy_and_forgets() {
 async fn ensure_watcher_refuses_a_busy_session() {
     let session = unique_session("ensure-busy");
     mark_session_busy(&session);
-    let dir = std::env::temp_dir().join(format!("refract-watch-state-test-{session}"));
+    let dir = crate::test_scratch::path(format!("refract-watch-state-test-{session}"));
     std::fs::create_dir_all(&dir).unwrap();
     let runtime = tokio::runtime::Handle::current();
     ensure_watcher(runtime, no_app_handle(), None, &session, &dir, None, false);
@@ -91,7 +91,7 @@ async fn ensure_watcher_refuses_a_busy_session() {
 #[tokio::test]
 async fn ensure_watcher_is_idempotent_and_race_free() {
     let session = unique_session("ensure-race");
-    let dir = std::env::temp_dir().join(format!("refract-watch-state-test-{session}"));
+    let dir = crate::test_scratch::path(format!("refract-watch-state-test-{session}"));
     std::fs::create_dir_all(&dir).unwrap();
     let runtime = tokio::runtime::Handle::current();
 
@@ -160,8 +160,8 @@ async fn cached_worktree_validity_caches_only_valid_until_a_reset() {
 async fn cached_worktree_validity_never_caches_an_invalid_result() {
     // `Invalid` is never cached, so a repaired worktree shows its live state on retry.
     let session = unique_session("validity-invalid");
-    let repo = std::env::temp_dir().join(format!("refract-watch-state-repo-{session}"));
-    let worktree = std::env::temp_dir().join(format!("refract-watch-state-wt-{session}"));
+    let repo = crate::test_scratch::path(format!("refract-watch-state-repo-{session}"));
+    let worktree = crate::test_scratch::path(format!("refract-watch-state-wt-{session}"));
     std::fs::create_dir_all(&repo).unwrap();
     std::fs::create_dir_all(&worktree).unwrap();
 

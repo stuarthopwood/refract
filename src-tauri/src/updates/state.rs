@@ -190,7 +190,7 @@ mod tests {
 
     #[tokio::test]
     async fn open_falls_back_to_default_on_malformed_file() {
-        let dir = std::env::temp_dir().join(format!(
+        let dir = crate::test_scratch::path(format!(
             "refract-tauri-updatestate-test-{}-{}",
             std::process::id(),
             uuid::Uuid::new_v4()

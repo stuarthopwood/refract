@@ -27,7 +27,7 @@ fn scratch_db() -> Connection {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_nanos();
-    let dir = std::env::temp_dir().join(format!("refract-usage-q-{}-{nanos}", std::process::id()));
+    let dir = crate::test_scratch::path(format!("refract-usage-q-{}-{nanos}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     schema::open_db(&dir.join("usage.db")).unwrap()
 }

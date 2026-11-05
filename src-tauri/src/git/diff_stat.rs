@@ -275,7 +275,7 @@ mod tests {
     }
 
     fn fresh_dir() -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("refract-diff-stat-test-{}", uuid::Uuid::new_v4()))
+        crate::test_scratch::path(format!("refract-diff-stat-test-{}", uuid::Uuid::new_v4()))
     }
 
     async fn init_repo(dir: &Path) {

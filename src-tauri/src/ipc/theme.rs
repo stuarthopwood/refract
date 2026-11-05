@@ -58,7 +58,7 @@ mod tests {
     use crate::store::settings::SettingsStore;
 
     async fn open_scratch_store() -> SettingsStore {
-        let dir = std::env::temp_dir().join(format!("refract-theme-test-{}", uuid::Uuid::new_v4()));
+        let dir = crate::test_scratch::path(format!("refract-theme-test-{}", uuid::Uuid::new_v4()));
         tokio::fs::create_dir_all(&dir).await.unwrap();
         SettingsStore::open(&dir).await.unwrap()
     }

@@ -5,7 +5,7 @@ use super::*;
 /// Security regression: a mid-line seek must not return a credential fragment that redaction misses.
 #[tokio::test]
 async fn read_tail_bytes_drops_a_mid_line_fragment_from_an_arbitrary_seek() {
-    let dir = std::env::temp_dir().join(format!("refract-process-tests-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-process-tests-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let path = dir.join("log.txt");
     let token = format!("sk-{}", "a".repeat(40));
@@ -23,7 +23,7 @@ async fn read_tail_bytes_drops_a_mid_line_fragment_from_an_arbitrary_seek() {
 
 #[tokio::test]
 async fn read_tail_bytes_returns_everything_when_the_file_is_smaller_than_the_cap() {
-    let dir = std::env::temp_dir().join(format!("refract-process-tests-{}", uuid::Uuid::new_v4()));
+    let dir = crate::test_scratch::path(format!("refract-process-tests-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let path = dir.join("log.txt");
     tokio::fs::write(&path, b"short content, no seek needed")

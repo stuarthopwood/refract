@@ -16,7 +16,7 @@ async fn assert_within_worktrees_root_accepts_a_path_inside_the_root() {
 #[tokio::test]
 async fn assert_within_worktrees_root_reports_outside_missing_for_a_gone_path_elsewhere() {
     let repo = init_repo().await;
-    let elsewhere = std::env::temp_dir().join(format!("refract-outside-{}", uuid::Uuid::new_v4()));
+    let elsewhere = crate::test_scratch::path(format!("refract-outside-{}", uuid::Uuid::new_v4()));
     let result = assert_within_worktrees_root(&repo, &elsewhere).await;
     assert!(matches!(result, Ok(RootContainment::OutsideMissing)));
 }
@@ -26,7 +26,7 @@ async fn assert_within_worktrees_root_reports_outside_missing_for_a_gone_path_el
 async fn assert_within_worktrees_root_refuses_a_path_outside_the_root_that_exists() {
     let repo = init_repo().await;
     let elsewhere =
-        std::env::temp_dir().join(format!("refract-outside-exists-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-outside-exists-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&elsewhere).await.unwrap();
     let result = assert_within_worktrees_root(&repo, &elsewhere).await;
     assert!(
@@ -64,7 +64,7 @@ async fn remove_session_worktree_removes_an_unregistered_empty_orphan_folder() {
 async fn remove_session_worktree_refuses_a_path_outside_the_worktrees_root_that_exists() {
     let repo = init_repo().await;
     let elsewhere =
-        std::env::temp_dir().join(format!("refract-outside-delete-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-outside-delete-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&elsewhere).await.unwrap();
     tokio::fs::write(elsewhere.join("keep-me.txt"), b"do not delete")
         .await
@@ -113,7 +113,7 @@ async fn remove_session_worktree_leaves_a_marker_outside_a_junction_planted_insi
     let root = worktrees_root(&repo);
     tokio::fs::create_dir_all(&root).await.unwrap();
     let outside_target =
-        std::env::temp_dir().join(format!("refract-junction-outside-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-junction-outside-{}", uuid::Uuid::new_v4()));
     let outside_session = outside_target.join("session");
     tokio::fs::create_dir_all(&outside_session).await.unwrap();
     let marker = outside_session.join("marker.txt");
@@ -221,7 +221,7 @@ async fn assert_within_worktrees_root_is_unaffected_by_a_junction_above_it() {
     let root = worktrees_root(&repo);
     tokio::fs::create_dir_all(&root).await.unwrap();
     let junction_target =
-        std::env::temp_dir().join(format!("refract-junction-target-{}", uuid::Uuid::new_v4()));
+        crate::test_scratch::path(format!("refract-junction-target-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&junction_target).await.unwrap();
     let junction = root
         .parent()

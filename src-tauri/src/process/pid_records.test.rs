@@ -2,7 +2,7 @@
 use super::*;
 
 fn scratch_file() -> PathBuf {
-    std::env::temp_dir().join(format!(
+    crate::test_scratch::path(format!(
         "refract-pid-records-test-{}-{}.json",
         std::process::id(),
         uuid::Uuid::new_v4()
@@ -210,7 +210,7 @@ fn identity_matches_is_case_insensitive_on_the_path() {
 #[tokio::test]
 async fn global_path_init_and_reap_then_record_process_round_trips() {
     // The one test allowed to touch the process-wide `FILE_PATH` `OnceLock`; the rest use `*_with`.
-    let dir = std::env::temp_dir().join(format!(
+    let dir = crate::test_scratch::path(format!(
         "refract-pid-records-global-test-{}-{}",
         std::process::id(),
         uuid::Uuid::new_v4()

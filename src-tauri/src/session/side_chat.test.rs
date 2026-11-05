@@ -263,7 +263,7 @@ async fn make_test_agent(
     label: &str,
     initial_conversation: Option<&str>,
 ) -> std::sync::Arc<SessionAgent> {
-    let dir = std::env::temp_dir().join(format!(
+    let dir = crate::test_scratch::path(format!(
         "refract-side-chat-test-agent-{label}-{}",
         uuid::Uuid::new_v4()
     ));
