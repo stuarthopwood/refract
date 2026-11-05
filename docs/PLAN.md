@@ -1087,7 +1087,7 @@ Also filed 2026-11-04 (Stuart, chat bug): **#1669** (`p1`, `bug`, `chat`), colla
 Also filed 2026-11-04 (Stuart, scope decided: all three parts): **#1672** (`p0`, `enhancement`, `settings`), cut prompt cache writes. Placed as queue row `1d` after #1304; #433 moves to `1e`.
 Done (PR #1684, merged 2026-11-05, release v0.28.0; spec `121-token-guard-cache-writes`): #1672 is queue row `1d`; the two measurement ACs stay open on the issue.
 
-Also filed 2026-11-04 (Stuart, grilled: start in place): **#1678** (`p1`, `design`), Session row menu: a **Start agent** item for stopped, unarchived Sessions in the slot **Stop agent** uses, starting the agent without changing the shown Session.
+Also filed 2026-11-04 (Stuart, grilled: start in place): **#1678** (`p1`, `design`), Session row menu: a **Start agent** item for stopped, unarchived Sessions in the slot **Stop agent** uses, starting the agent without changing the shown Session. Status: built on branch `fix/1678-play-icon` (`PlayIcon`, #1405 convention), draft PR open.
 
 Also filed 2026-11-04 (Stuart, Usage bug): **#1680** (`p1`, `bug`), the Usage view shows the no-data state before the first ingest scan has run; show a loading state until a scan finishes. In progress: backend `scanCompleted` flag gates the view's Loading state.
 

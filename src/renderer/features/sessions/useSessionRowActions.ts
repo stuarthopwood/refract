@@ -335,6 +335,11 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       onHide: hideSession.hide,
       onUnhide: hideSession.unhide,
       onStopAgent: () => void stopAgent(session.id),
+      // Starts in place like the Agent stopped bar; the shown Session and focus stay put.
+      onStartAgent: () => {
+        useSplitStore.getState().markOpened(session.id)
+        void useSessionsStore.getState().open(session.id, true)
+      },
       onTogglePause: () => void setSessionPaused(session.id, !session.pause),
       prewalk: { state: prewalkState, onToggle: () => void setPrewalk(session.id, prewalkState !== 'armed') },
       onDelete: () => {
