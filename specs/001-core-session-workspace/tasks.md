@@ -5461,3 +5461,12 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   280 characters; longer text stays a normal `assistant-text` row, per FR-117 (partial)
 - [x] T419 Live check that a long mid-turn reply renders expanded and a short one stays a Note row, update
   `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-117 (missing)
+
+## Phase 86: Convergence (#758 virtual write targets are not file links, FR-123)
+
+- [x] T420 [US1] `linkify.ts`: add `isLinkableFilePath` (refuses empty, `scheme://`, `~`, `$VAR`,
+  `%VAR%`, UNC) and call it from `isPathShaped`, per FR-123 (missing)
+- [x] T421 [US1] `Markdown.tsx`: `FileLinkButton` renders plain text when the path is not linkable, so
+  `ToolRow` and `DiffView` are covered, per FR-123 (missing)
+- [ ] T422 [US1] Live check `scripts/verify-tauri-758.mjs`, update `docs/PLAN.md`, then
+  `node scripts/ci-local.mjs` per FR-123 (missing)

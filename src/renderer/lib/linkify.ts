@@ -11,15 +11,14 @@ export interface FileReference {
 const TRAILING_LINE_COL_RE = /^(.*?):(\d+)(?::(\d+))?$/
 
 // Rejects tokens that merely contain a separator (`origin/main`, `and/or`, `@/lib/x`, globs, shell commands):
-// no whitespace, no Windows-forbidden or glob characters, no `://`, no UNC or `@/` prefix, and, unless a
-// `:line` suffix was stripped, a real extension on the last segment.
+// no whitespace, no Windows-forbidden or glob characters, nothing `isLinkableFilePath` refuses (schemes,
+// `~`/env-var prefixes, UNC), no `@/` prefix, and, unless a `:line` suffix was stripped, a real extension on
+// the last segment.
 function isPathShaped(candidate: string, hadLineSuffix: boolean): boolean {
   if (!candidate) return false
   if (/\s/.test(candidate)) return false
   if (/[*?<>|"#]/.test(candidate)) return false
-  if (candidate.includes('://')) return false
-  // Normalise first so a backslash-form UNC path (`\\host\share`) is caught too.
-  if (candidate.replace(/\\/g, '/').startsWith('//')) return false
+  if (!isLinkableFilePath(candidate)) return false
   // A drive-relative token (`D:foo/x.ts`) is always rejected server-side, so don't render a dead button.
   if (/^[A-Za-z]:(?![\\/])/.test(candidate)) return false
   if (candidate.startsWith('@/')) return false
@@ -53,6 +52,20 @@ export function parseFileReference(token: string): FileReference | null {
 
   if (!isPathShaped(candidate, hadLineSuffix)) return null
   return { path: candidate, line, col }
+}
+
+// `scheme://` needs two or more scheme letters so a drive letter (`C:/`) is never mistaken for one.
+const URL_SCHEME_RE = /^[A-Za-z][A-Za-z0-9+.-]+:\/\//
+// `$VAR` / `%VAR%` prefixes: the shell would expand them, the worktree resolver never does.
+const ENV_VAR_PREFIX_RE = /^(?:\$|%[^%\\/]+%)/
+
+/** `false` for a target that is not a worktree file path (`xd://`, `file://`, `~`, `$VAR`, `%VAR%`, UNC, empty), so it must never be drawn as a file link. */
+export function isLinkableFilePath(filePath: string): boolean {
+  if (!filePath) return false
+  if (URL_SCHEME_RE.test(filePath)) return false
+  if (filePath.startsWith('~') || ENV_VAR_PREFIX_RE.test(filePath)) return false
+  // Normalise first so a backslash-form UNC path (`\\host\share`) is caught too.
+  return !filePath.replace(/\\/g, '/').startsWith('//')
 }
 
 /** String-only early-out for an absolute path obviously outside the worktree; relative paths pass. Not the security boundary (`resolveInWorktree` is). */
