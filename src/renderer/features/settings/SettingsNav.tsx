@@ -5,6 +5,7 @@ import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import type { SettingIcon } from '@/components/settings/SettingRow'
 import { cn } from '@/lib/utils'
 import {
+  BellIcon,
   BrainIcon,
   FolderIcon,
   LayersIcon,
@@ -29,6 +30,7 @@ export const SETTINGS_SECTIONS: SettingsSectionDescriptor[] = [
   { id: 'models', label: 'Models', icon: BrainIcon },
   { id: 'advanced', label: 'Advanced', icon: SlidersHorizontalIcon },
   { id: 'sessions', label: 'Sessions', icon: LayersIcon },
+  { id: 'notifications', label: 'Notifications', icon: BellIcon },
   { id: 'projects', label: 'Projects', icon: FolderIcon },
   { id: 'panels', label: 'Panels', icon: PanelRightIcon }
 ]

@@ -1,5 +1,7 @@
 // Window shell, chrome, notifications, single instance and window state.
 
+#[cfg(windows)]
+pub mod alarm_toast;
 pub mod alarms;
 pub mod app_identity;
 pub mod memory;

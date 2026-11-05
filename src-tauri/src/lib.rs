@@ -294,6 +294,8 @@ pub fn run() {
             }
             app.manage(window_state_tracker);
             app.manage(update_state_for_setup.clone());
+            // Read by `shell::notifications` for the sound switch.
+            app.manage(managed.app_state.settings.clone());
 
             shell::notifications::init(app.handle());
             shell::alarms::spawn(app.handle().clone(), managed.app_state.settings.clone());

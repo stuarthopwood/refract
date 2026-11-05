@@ -13,6 +13,7 @@ import { ModelRolesSection } from './ModelRolesSection'
 import { AdvancedSection } from './AdvancedSection'
 import { RightPaneSection } from './RightPaneSection'
 import { SessionsSection } from './SessionsSection'
+import { NotificationsSection } from './NotificationsSection'
 import { ProjectsSection } from './ProjectsSection'
 import { SettingsNav } from './SettingsNav'
 import { StatusLineSection } from './StatusLineSection'
@@ -55,6 +56,8 @@ export function SettingsScreen() {
             <AdvancedSection />
           ) : settingsSection === 'sessions' ? (
             <SessionsSection />
+          ) : settingsSection === 'notifications' ? (
+            <NotificationsSection />
           ) : settingsSection === 'projects' ? (
             <ProjectsSection />
           ) : settingsSection === 'panels' ? (
