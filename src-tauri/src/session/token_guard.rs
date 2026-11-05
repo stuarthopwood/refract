@@ -29,8 +29,21 @@ async fn emit_calls(agent: &SessionAgent) {
         .emit_token_guard_calls(agent.session_id(), &format!("c{conversation}"), calls);
 }
 
-/// `agent/frame.rs` lane hook: counts one call per completed assistant message.
+/// `agent/frame.rs` lane hook: counts one call per completed assistant message, and pauses the
+/// shake when omp reports it paused automatic maintenance.
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
+    if frame_type == "notice" && shake::is_maintenance_paused_notice(frame) {
+        // Spawned: the stats RPC reply is read by the loop that delivers this frame.
+        let agent = agent.arc();
+        tokio::spawn(async move {
+            if let Some(tokens) = context_tokens(&agent).await {
+                agent
+                    .with_token_guard_state(|s| s.shake.pause_maintenance(tokens))
+                    .await;
+            }
+        });
+        return;
+    }
     let Some(message) = counter::assistant_message_end(frame_type, frame) else {
         return;
     };
