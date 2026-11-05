@@ -177,7 +177,9 @@ fn try_open(path: &Path) -> rusqlite::Result<Connection> {
     if version < USER_VERSION {
         // Version 2 holds rows a rewritten session file no longer has, so it is altered, not rebuilt.
         let ddl = if version == 2 { MIGRATE_2_TO_3 } else { DDL };
-        conn.execute_batch(&format!("BEGIN;{ddl}PRAGMA user_version = {USER_VERSION};COMMIT;"))?;
+        conn.execute_batch(&format!(
+            "BEGIN;{ddl}PRAGMA user_version = {USER_VERSION};COMMIT;"
+        ))?;
     }
     Ok(conn)
 }

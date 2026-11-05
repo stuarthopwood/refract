@@ -57,7 +57,9 @@ fn version_1_database_is_set_aside_and_rebuilt() {
 
     let conn = open_db(&path).unwrap();
     assert_eq!(version(&conn), USER_VERSION);
-    assert!(std::fs::read_dir(path.parent().unwrap())
+    assert!(std::fs::read_dir(path.parent().unwrap()).unwrap().any(|e| e
         .unwrap()
-        .any(|e| e.unwrap().file_name().to_string_lossy().contains(".bak-")));
+        .file_name()
+        .to_string_lossy()
+        .contains(".bak-")));
 }
