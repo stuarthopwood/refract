@@ -265,10 +265,9 @@ pub(super) fn apply_batch_task_result(
             }
             if let Some(entry) = entry {
                 let entry_status = entry.get("status").and_then(Value::as_str);
-                *status = match map_progress_status(entry_status) {
-                    SubagentStatus::Running => fallback_status,
-                    settled => settled,
-                };
+                // An async `task` returns at spawn with entries still running; the item stays
+                // Running until a jobs or lifecycle signal settles it with a real duration (#1623).
+                *status = map_progress_status(entry_status);
                 if let Some(jid) = entry_job_id {
                     *job_id = Some(jid);
                 }
@@ -414,6 +413,28 @@ pub(super) fn apply_async_result_jobs(
     items
 }
 
+/// History has no live process, so an item still Running after replay (every later job result
+/// already applied) will never get a settle signal; settle it Done rather than spin (#1623).
+pub(super) fn settle_unsettled_history_subagents(items: &mut [Arc<TranscriptItem>]) -> bool {
+    let mut changed = false;
+    for item in items.iter_mut() {
+        if !matches!(
+            item.as_ref(),
+            TranscriptItem::Subagent {
+                status: SubagentStatus::Running,
+                ..
+            }
+        ) {
+            continue;
+        }
+        if let TranscriptItem::Subagent { status, .. } = Arc::make_mut(item) {
+            *status = SubagentStatus::Done;
+            changed = true;
+        }
+    }
+    changed
+}
+
 /// `details.jobs[]` reader shared by `tool_execution_end`/`toolResult` for the `wait` tool.
 pub(super) fn jobs_from_details(details: &Value) -> Option<Vec<Value>> {
     details.get("jobs").and_then(Value::as_array).cloned()
@@ -503,3 +524,7 @@ pub(super) fn build_message_subagent_items(
     }
     result
 }
+
+#[cfg(test)]
+#[path = "subagent_items_tests.rs"]
+mod tests;

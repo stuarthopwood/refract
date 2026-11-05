@@ -1449,13 +1449,13 @@ fn attach_tool_result(
         .collect()
 }
 
-/// Settles a `running` tool row to `'interrupted'` when the process died or a later `user` item
-/// follows it (#510). Returns `true` when any row changed.
+/// Settles leftover history subagents to Done, and a `running` tool row to `'interrupted'` when the
+/// process died or a later `user` item follows it (#510). Returns `true` when any item changed.
 fn settle_interrupted_tool_rows_items(
     mut items: Vec<Arc<TranscriptItem>>,
     terminated_unexpectedly: bool,
 ) -> (Vec<Arc<TranscriptItem>>, bool) {
-    let mut changed = false;
+    let mut changed = subagent_items::settle_unsettled_history_subagents(&mut items);
     let mut saw_later_user = false;
     for item in items.iter_mut().rev() {
         if matches!(item.as_ref(), TranscriptItem::User { .. }) {
