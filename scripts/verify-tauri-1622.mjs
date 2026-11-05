@@ -100,8 +100,7 @@ function assertGeometry(m, themeId, findings, failures) {
       if (a.tag !== 'button') failures.push(`${tag} ${label} is not a clickable button`);
     }
   }
-  const longAgent = m.stages[1]?.agents[1];
-  if (longAgent && longAgent.rowH <= 22 && !longAgent.titleOverflow) failures.push(`${tag} the long agent name did not truncate at this width`);
+  // The long-name truncation check runs in a narrow viewport pass below; at the default width the name simply fits.
   findings.push(`${tag} ${JSON.stringify({ headerIconX: m.headerIconX, outerRailX: m.outerRailX, stageIconX: stageIconXs, agentIconX: agentIconXs[0], elbowColor: m.elbowColor, counts, stageDurations: m.stages.map((s) => s.stage.durText) })}`);
 }
 
@@ -165,6 +164,19 @@ async function main() {
         await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: 'none' }] });
       }
     }
+    // Narrow viewport: the long agent name must truncate and every row must stay one line (no wrapping).
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 640, height: 800, deviceScaleFactor: 1, mobile: false });
+    await new Promise((r) => setTimeout(r, 500));
+    await cdp.evaluate(`${CHAIN_TRIGGER}.scrollIntoView({ block: 'center' })`);
+    const narrow = await cdp.evaluate(MEASURE);
+    const narrowAgents = narrow.stages.flatMap((s) => s.agents);
+    const longAgent = narrow.stages[1]?.agents[1];
+    if (!longAgent?.titleOverflow) failures.push('narrow: the long agent name did not truncate');
+    if (narrowAgents.some((a) => a.rowH > 22) || narrow.stages.some((s) => s.stage.rowH > 22)) failures.push('narrow: a row wrapped');
+    findings.push(`narrow: ${JSON.stringify({ longTitleOverflow: longAgent?.titleOverflow, rowHeights: narrowAgents.map((a) => a.rowH), longDurRight: longAgent?.durRight, rowRight: longAgent?.rowRight })}`);
+    await settleForScreenshot(cdp);
+    await cdp.screenshot(path.join(SHOTS_DIR, '1622-chain-narrow.png'));
+    await cdp.send('Emulation.clearDeviceMetricsOverride', {});
     // The three-agent Stage's own agent still opens the Subagents panel (button behaviour unchanged, #1001).
     const clickable = await cdp.evaluate(`document.body.innerText.includes('BetaOne') && !!Array.from(document.querySelectorAll('[role="group"] button')).find((b) => b.innerText.includes('BetaOne'))`);
     findings.push(`BetaOne is a button: ${clickable}`);
