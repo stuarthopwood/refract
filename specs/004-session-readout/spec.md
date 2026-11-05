@@ -216,6 +216,13 @@ field whose bottom bar shows the mode, model, and agent.
   at the 4.5:1 body-text floor; `--background` (the pinned panel's own surface) was already
   gated there by #941.
 
+### Session 2026-11-05 (Todo card self-reopen, issue #1151 PR 1 of 3; grilled by Stuart)
+
+- Q: The Todo card can reopen itself after a conversation reset clears the plan mid-hover. What
+  changes? → A: FR-031 gains one condition: the Todo card's `useReadoutCard` is also disabled while
+  the session has no todo plan (`hasTodoPlan` false), alongside the existing pinned condition. The
+  issue's other findings ship as separate PRs (Agents link focus, verify scripts).
+
 ### Session 2026-10-22 (context usage gradient, issue #1082; grilled by Stuart 2026-10-20)
 
 - Q: What is coloured? -> A: The figures text "N/M (P%)" only; the gauge icon stays muted (FR-033).
@@ -729,7 +736,9 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   neither the readout nor the card itself is hovered or focused, stays open while the pointer
   moves between the readout and the card, and opens above the readout. The card MUST be hidden
   whenever its own readout is hidden (FR-021, FR-007); the Todo card MUST NOT open at all while
-  the todo list is pinned (FR-028), and the Agents card MUST NOT open at all while no subagent is
+  the todo list is pinned (FR-028) or while the session has no todo plan (issue #1151: a
+  conversation reset clears the plan, and a hover left pending then must not reopen the card when
+  a plan returns), and the Agents card MUST NOT open at all while no subagent is
   currently running, even if some finished, failed, or were cancelled this turn (FR-007's own
   quiet settled counts still read on the pill itself regardless). The Todo card's content is
   entirely non-focusable, non-announced inert text; the Agents card's own link to the Subagent

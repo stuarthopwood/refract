@@ -114,6 +114,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
           // Flipped so the running state stands out.
           className={subagentCount.running > 0 ? 'text-foreground' : undefined}
           onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerMove={card.anchorHandlers.onPointerMove}
           onPointerLeave={card.anchorHandlers.onPointerLeave}
           onFocus={card.anchorHandlers.onFocus}
           onBlur={card.anchorHandlers.onBlur}
@@ -142,8 +143,9 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
   const todoTree = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.todoTree)
   const pinned = useTodoPinStore((s) => s.pinnedBySession[sessionId] ?? false)
   const togglePinned = useTodoPinStore((s) => s.togglePinned)
-  // `disabled` forces `card.open` false and ignores hover/focus, so the card never opens while pinned.
-  const card = useReadoutCard({ disabled: pinned })
+  // `disabled` forces `card.open` false and ignores hover/focus: while pinned, and while there is no plan,
+  // so a conversation reset cannot leave the card to reopen itself when the plan returns.
+  const card = useReadoutCard({ disabled: pinned || !hasTodoPlan(todoTree) })
   const onActivate = () => {
     card.close()
     togglePinned(sessionId)
@@ -169,6 +171,7 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
           pinHookId={sessionId}
           className={pinned ? 'aria-pressed:border aria-pressed:border-ring' : undefined}
           onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerMove={card.anchorHandlers.onPointerMove}
           onPointerLeave={card.anchorHandlers.onPointerLeave}
           onFocus={card.anchorHandlers.onFocus}
           onBlur={card.anchorHandlers.onBlur}
