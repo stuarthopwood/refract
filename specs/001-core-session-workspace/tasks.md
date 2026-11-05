@@ -5454,3 +5454,10 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `ProgressStrip` (state prop), with the Markdown fallback, per FR-122 (missing)
 - [ ] T417 [US1] Live check `scripts/verify-tauri-1648.mjs` in a light and a dark theme, update
   `docs/PLAN.md`, then `node scripts/ci-local.mjs` and gate
+
+## Phase 85: Convergence (#1663 only short mid-turn prose is a Note row, FR-117)
+
+- [x] T418 `groupMidTurnProse.ts`: wrap a followed assistant text only when it is at most 3 lines and
+  280 characters; longer text stays a normal `assistant-text` row, per FR-117 (partial)
+- [ ] T419 Live check that a long mid-turn reply renders expanded and a short one stays a Note row, update
+  `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-117 (missing)

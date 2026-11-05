@@ -1346,6 +1346,9 @@
   markers stripped, so "``` Usage (4m ago)" reads "Usage (4m ago)".
 - Q: What if `/usage` text does not parse? -> A: Markdown rendering (FR-121), never raw text.
 - Q: Turn time? -> A: Unchanged; `turnTiming.ts` still skips command-output notices.
+- Q: Issue #1663 (grilled with Stuart 2026-11-04, none deferred; amends FR-117): which mid-turn texts
+  stay a Note row? -> A: Only short narration: at most 3 lines and at most 280 characters. A longer
+  reply renders expanded as normal prose, with no clamp, even when a tool call follows it.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -2161,10 +2164,12 @@ The developer types a slash command and finds the ones the agent offers. If a se
   announcement, insertion marker) MUST be one list-agnostic hook and component set in
   `src/renderer/components`, so #638 (rearrange repositories) reuses it rather than a second
   implementation. The rail is its first consumer.
-- **FR-117** (new, 2026-10-27, issue #1236): In the chat transcript, an assistant text that is
+- **FR-117** (new, 2026-10-27, issue #1236; amended 2026-11-05, issue #1663): In the chat transcript, a
+  short assistant text (at most 3 lines AND at most 280 characters, trimmed) that is
   followed later in the same turn by a tool call, a subagent row, or another assistant text MUST
   render as a closed `CollapsedLine` row labelled "Note", its first line (Markdown markers
-  stripped) as the summary, with an icon distinct from the thought row's. The turn's last assistant
+  stripped) as the summary, with an icon distinct from the thought row's. A longer assistant text
+  renders expanded as a normal reply even when more of the turn follows it. The turn's last assistant
   text, and any text with only thinking after it, renders as a normal reply. The subagent panel's
   own rendering is unchanged.
 - **FR-118** (new, 2026-10-27, issue #1236): A block renders as a normal reply while it streams and

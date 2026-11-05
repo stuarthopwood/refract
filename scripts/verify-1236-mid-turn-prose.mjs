@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live CDP check (#1236): mid-turn assistant prose becomes a closed, clamped "Note" row; the final reply stays a message.
+// Live CDP check (#1236): short mid-turn assistant prose becomes a closed "Note" row; the final reply stays a message.
 // Needs a prior `pnpm exec tauri build --debug --no-bundle`; uses the fake `omp` shim, never a real one.
 
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
@@ -135,26 +135,9 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '2-collapsed.png'));
 
     await cdp.click(`${NOTE_ROWS}[0]`);
-    await cdp.waitFor(
-      `Array.from(document.querySelectorAll('button[aria-expanded]')).some((b) => b.textContent.trim() === 'Show more')`,
-      { timeoutMs: 10_000, label: 'Show more appears on the long Note' }
-    );
-    const clamp = await cdp.evaluate(`(() => {
-      const more = Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.trim() === 'Show more');
-      const body = document.getElementById(more.getAttribute('aria-controls'));
-      return { expanded: more.getAttribute('aria-expanded'), maxHeight: body.style.maxHeight, clipped: body.scrollHeight > body.clientHeight };
-    })()`);
-    check(clamp.expanded === 'false' && clamp.maxHeight === '8lh' && clamp.clipped, 'Long Note is clamped to 8 lines', clamp);
-    await cdp.screenshot(path.join(SHOTS_DIR, '3-clamped.png'));
-    await cdp.click(`Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.trim() === 'Show more')`);
-    const grown = await cdp.evaluate(`(() => {
-      const less = Array.from(document.querySelectorAll('button[aria-expanded]')).find((b) => b.textContent.trim() === 'Show less');
-      if (!less) return null;
-      const body = document.getElementById(less.getAttribute('aria-controls'));
-      return { expanded: less.getAttribute('aria-expanded'), clipped: body.scrollHeight > body.clientHeight + 1, hasLast: body.textContent.includes('Paragraph 14') };
-    })()`);
-    check(!!grown && grown.expanded === 'true' && !grown.clipped && grown.hasLast, 'Show more reveals the whole Note and flips to Show less', grown);
-    await cdp.screenshot(path.join(SHOTS_DIR, '4-expanded.png'));
+    const opened = await cdp.evaluate(`${NOTE_ROWS}[0].getAttribute('aria-expanded')`);
+    check(opened === 'true', 'Clicking a Note row opens it', { opened });
+    await cdp.screenshot(path.join(SHOTS_DIR, '3-expanded.png'));
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     throw err;
