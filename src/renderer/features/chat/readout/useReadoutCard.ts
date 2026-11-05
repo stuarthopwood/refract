@@ -2,7 +2,7 @@
 // anchor button already has its own click behaviour and those triggers want exclusive ownership of its events.
 // The card content is inert, so there is no focus trap to manage. (#700)
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { FocusEvent, RefObject } from 'react'
+import type { FocusEvent, PointerEvent, RefObject } from 'react'
 
 const OPEN_DELAY_MS = 400
 // Covers the small `sideOffset` gap between anchor and content without letting the card linger.
@@ -20,6 +20,7 @@ function clearTimer(ref: { current: TimerHandle | null }) {
 
 export interface ReadoutCardAnchorHandlers {
   onPointerEnter: () => void
+  onPointerMove: (event: PointerEvent<HTMLElement>) => void
   onPointerLeave: () => void
   onFocus: (event: FocusEvent<HTMLElement>) => void
   onBlur: () => void
@@ -90,10 +91,20 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
     }, CLOSE_GRACE_MS)
   }
 
+  // Hover opens from a real pointer move, not from enter: Chromium synthesises an enter (and a move at the
+  // same coordinates) when the chip remounts under a parked pointer, which must not reopen the card.
+  const lastMoveRef = useRef<{ x: number; y: number } | null>(null)
   const onPointerEnter = () => {
     if (disabled) return
     hoveringRef.current = true
     clearTimer(closeTimerRef)
+  }
+  const onPointerMove = (event: PointerEvent<HTMLElement>) => {
+    if (disabled) return
+    const last = lastMoveRef.current
+    if (last && last.x === event.clientX && last.y === event.clientY) return
+    lastMoveRef.current = { x: event.clientX, y: event.clientY }
+    hoveringRef.current = true
     if (open || openTimerRef.current) return
     openTimerRef.current = setTimeout(() => {
       openTimerRef.current = null
@@ -101,6 +112,7 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
     }, OPEN_DELAY_MS)
   }
   const onPointerLeave = () => {
+    lastMoveRef.current = null
     hoveringRef.current = false
     clearTimer(openTimerRef)
     scheduleClose()
@@ -127,7 +139,7 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
   return {
     open,
     anchorRef,
-    anchorHandlers: { onPointerEnter, onPointerLeave, onFocus, onBlur },
+    anchorHandlers: { onPointerEnter, onPointerMove, onPointerLeave, onFocus, onBlur },
     contentHandlers: { onPointerEnter: onContentPointerEnter, onPointerLeave: onContentPointerLeave },
     close
   }

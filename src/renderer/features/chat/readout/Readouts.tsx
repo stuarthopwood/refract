@@ -114,6 +114,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
           // Flipped so the running state stands out.
           className={subagentCount.running > 0 ? 'text-foreground' : undefined}
           onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerMove={card.anchorHandlers.onPointerMove}
           onPointerLeave={card.anchorHandlers.onPointerLeave}
           onFocus={card.anchorHandlers.onFocus}
           onBlur={card.anchorHandlers.onBlur}
@@ -170,6 +171,7 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
           pinHookId={sessionId}
           className={pinned ? 'aria-pressed:border aria-pressed:border-ring' : undefined}
           onPointerEnter={card.anchorHandlers.onPointerEnter}
+          onPointerMove={card.anchorHandlers.onPointerMove}
           onPointerLeave={card.anchorHandlers.onPointerLeave}
           onFocus={card.anchorHandlers.onFocus}
           onBlur={card.anchorHandlers.onBlur}
