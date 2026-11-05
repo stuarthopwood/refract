@@ -5,6 +5,23 @@
 **Status**: Draft
 **Input**: GitHub issue #1672 (`p0`, `enhancement`, scope `settings`), scope decided by Stuart 2026-11-04 (all three parts), grilled 2026-11-05. Builds on spec 021 (token guard); 021 is not edited.
 
+## Clarifications
+
+### Session 2026-11-05
+
+Answers come from the issue's grill with Stuart (2026-11-04 and 2026-11-05), director rulings and the installed OMP bundle and docs. No `[NEEDS CLARIFICATION]` marker was left open.
+
+- Q: Is there an on/off switch for any of this? -> A: No. The new values are defaults only (`KEYS`/`default_for` in `values.rs`, rendered by `overlay::render`; `args.rs` `launch_args` always writes `token-guard-overlay.yml`). One spec, one PR, three slices. (from grill)
+- Q: Can the `--config` overlay YAML carry `modelOverrides` with `promptCache`, as `~/.omp/agent/models.yml` does? -> A: No. `modelOverrides.promptCache` is honoured (docs/models.md "Prompt cache lifetimes", highest priority) but only from `models.yml`: `ModelRegistry` loads it through its own `ConfigFile("models")`, and uses the settings object only for disabled providers and the context-window toggle. The `--config` file is a settings layer (global, project, `configOverlay`, overrides) with no `modelOverrides` entry. So the plan adds no `promptCache` override, and an upstream issue asks OMP to ship `promptCache: {short: 300}` metadata for `github-copilot` Claude models. Refract never writes the user's `models.yml`. (checked in the OMP bundle)
+- Q: Why add `providers.cacheWarming: idle` if it is already OMP's default? -> A: The root cause is not the setting: the warmer (`cache-warmer.ts`) needs `model.promptCache[tier]`, which OMP sets only for anthropic, bedrock and factory-droid, not `github-copilot`. Pinning `idle` keeps warming on if the default moves and puts the value in the generated file where the PR can report it. Stuart's own `models.yml` already declares `promptCache: {short: 300}` for his Copilot Claude models, so warming works for him; other users need the upstream fix. (grill; bundle)
+- Q: Does OMP have a per-agent `cacheRetention`? -> A: No. `providers.cacheRetention` is one global setting; there is no `task.agentCacheRetention`, no agent-frontmatter value and no `task` argument, unlike `task.agentSoftRequestBudget`, `task.agentServiceTierOverrides` and `task.agentCompactionThresholdOverrides`. So there is no code change, never a global `cacheRetention` (it would also cut main Sessions to 5-minute entries), and an upstream issue asks for `task.agentCacheRetention`. (checked in the bundle and docs)
+- Q: Should `agentSoftRequestBudget` get per-type entries? -> A: No. Only agent type `task` exceeds the stop: 271 runs, p90 206 requests, max 778. Every other type peaks at 68 or fewer. (usage data)
+- Q: How do detached or revived subagents get their budget? -> A: They get none. In `runSubagent` the first spawn passes `softRequestBudget: MZe(agent.name, task.softRequestBudget, task.agentSoftRequestBudget)` with the notice on. The IRC wake-turn job (`detached: true`) and the keep-alive/revive path both pass `softRequestBudget: 0, softRequestBudgetNotice: false`; the guard starts with `if (budget <= 0) return`, and the request count starts at 0 in every call, so revival neither inherits the count nor a budget. Cause recorded; no Refract watchdog; an upstream issue covers it. (checked in the bundle)
+- Q: Why 60? -> A: Runs over 120 requests (the old stop, 80 x 1.5): 191, about $9.1k. A budget of 60 covers 84% of the over-stop cost. (usage data)
+- Q: What happens to users already on the old default? -> A: Spec 021 FR-031: a one-time migration, like #1545's `read_limit_migrated`, drops a stored override of exactly 80 and sets `soft_budget_migrated`. Other values stay. No migration for `providers.cacheWarming` (new key). (director ruling)
+- Q: Which acceptance criteria stay open? -> A: "Idle writes down by half after a week" and "no run passes 1.5x" are left open on the issue; they need post-release data and the upstream detached-budget fix. (grill)
+- Q: Evidence figures? -> A: Cache writes about $5.3k of $12.9k over 30 days; main-session gaps of 300 to 3600 s are 3.4% of messages and 56.3% of main-session cache-write cost; `github-copilot` has 24 warm-like calls in 257k messages. (usage database)
+
 ## User Scenarios & Testing
 
 ### User Story 1 - Idle Sessions keep their prompt cache warm (Priority: P1)
