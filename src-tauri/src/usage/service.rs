@@ -25,6 +25,7 @@ pub struct UsageStatus {
     pub sessions_done: usize,
     pub sessions_dir: String,
     pub found: bool,
+    pub scan_completed: bool,
 }
 
 /// Supplies the current Projects and Worktrees for Project labelling; called once per pass.
@@ -180,6 +181,7 @@ fn worker(inner: &Inner, rx: &Receiver<Msg>) {
                     *lock(&inner.last_error) = Some(e.to_string());
                     inner.scan_pending.store(false, Ordering::SeqCst);
                     next_scan = Instant::now() + SCAN_INTERVAL;
+                    (inner.emit)(&set_status(inner, |s| s.scan_completed = true));
                     continue;
                 }
             }
@@ -232,6 +234,7 @@ fn full_scan(inner: &Inner, conn: &mut Connection) {
         s.running = false;
         s.sessions_seen = report.seen;
         s.sessions_done = report.done;
+        s.scan_completed = true;
     }));
 }
 

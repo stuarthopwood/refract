@@ -45,7 +45,8 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
     wasRunning.current = running
   }, [running, seen, announce])
 
-  const nothingFound = status !== null && !status.running && (!status.found || status.sessionsSeen === 0)
+  const scanPending = status !== null && !status.scanCompleted
+  const nothingFound = status !== null && !scanPending && !status.running && (!status.found || status.sessionsSeen === 0)
   const showProgress = status !== null && (status.running || (status.sessionsSeen > 0 && status.sessionsDone < status.sessionsSeen))
   const pending = (empty: boolean): boolean => !s.loaded || (running && empty)
   const activeFilters = countActiveFilters(s.filters)
@@ -75,7 +76,9 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
           />
         )}
         {s.error && <ScreenSection title="Usage figures" error={`Some figures could not be loaded: ${s.error}`} />}
-        {nothingFound ? (
+        {scanPending ? (
+          <ScreenSection title="Usage" loading />
+        ) : nothingFound ? (
           <UsageEmptyState sessionsDir={status.sessionsDir} found={status.found} jokes={s.jokes} />
         ) : filteredEmpty ? (
           <Empty>

@@ -13,7 +13,7 @@ export interface UsageFilters {
   reasoning?: string | null
   agentType?: 'main' | 'subagent' | null
 }
-export interface UsageStatus { running: boolean; sessionsSeen: number; sessionsDone: number; sessionsDir: string; found: boolean }
+export interface UsageStatus { running: boolean; sessionsSeen: number; sessionsDone: number; sessionsDir: string; found: boolean; scanCompleted: boolean }
 ```
 
 | Channel | Args | Result |
