@@ -19,7 +19,6 @@ let unsubscribe: (() => void) | undefined
 function ensureSubscribed(): void {
   if (unsubscribe) return
   const onFileDrop = window.refract.attachments.onFileDrop
-  if (!onFileDrop) return
   unsubscribe = onFileDrop(({ paths, position }) => {
     // The DOM `drop` never fires here, so nothing else clears the drag-over overlay.
     for (const pane of panes) {

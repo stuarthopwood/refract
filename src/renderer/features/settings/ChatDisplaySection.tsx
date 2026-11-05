@@ -34,7 +34,7 @@ export function ChatDisplaySection() {
       intro={
         <>
           Choose what the chat transcript shows, how pasted content is handled, and how context usage is drawn
-          {wordPredictionEnabled !== undefined && ', and whether word suggestions appear while you type'}.
+          , and whether word suggestions appear while you type.
         </>
       }
     >
@@ -90,15 +90,13 @@ export function ChatDisplaySection() {
           checked={detectImagePathsOnPaste}
           onCheckedChange={(checked) => void setDetectImagePathsOnPaste(checked)}
         />
-        {wordPredictionEnabled !== undefined && (
-          <SettingSwitchRow
-            id="word-prediction-enabled"
-            label="Word prediction (ghost text)"
-            description="Suggests how to finish the word you're typing in the message box. Off by default: the shared prediction engine can use several hundred MB of memory once started."
-            checked={wordPredictionEnabled}
-            onCheckedChange={(checked) => void setWordPredictionEnabled(checked)}
-          />
-        )}
+        <SettingSwitchRow
+          id="word-prediction-enabled"
+          label="Word prediction (ghost text)"
+          description="Suggests how to finish the word you're typing in the message box. Off by default: the shared prediction engine can use several hundred MB of memory once started."
+          checked={wordPredictionEnabled}
+          onCheckedChange={(checked) => void setWordPredictionEnabled(checked)}
+        />
       </SettingsGroup>
       <SettingsGroup title="Context usage">
         <SettingSwitchRow
