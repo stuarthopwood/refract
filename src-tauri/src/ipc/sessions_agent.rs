@@ -217,6 +217,9 @@ impl ResumableAgent for ResumeAgentAdapter<'_> {
     }
 
     async fn start(&self) -> Result<(), AgentError> {
+        // Re-checked here because the caller may have waited on the registry lock while a delete claimed the Session.
+        super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(&self.id)
+            .map_err(|e| AgentError::new(e.code, e.message))?;
         self.agent.start().await
     }
 
@@ -322,6 +325,7 @@ pub(crate) async fn attach_snapshot_decision<A: AttachableAgent>(
 
 struct AttachAgentAdapter<'a> {
     state: &'a AppState,
+    id: &'a str,
     agent: Arc<SessionAgent>,
 }
 
@@ -335,6 +339,9 @@ impl AttachableAgent for AttachAgentAdapter<'_> {
     }
 
     async fn start(&self) -> Result<(), AgentError> {
+        // Re-checked here because the caller may have waited on the registry lock while a delete claimed the Session.
+        super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(self.id)
+            .map_err(|e| AgentError::new(e.code, e.message))?;
         self.agent.start().await
     }
 
@@ -359,6 +366,7 @@ async fn attach_snapshot_core(
     }
     let adapter = AttachAgentAdapter {
         state,
+        id,
         agent: agent.clone(),
     };
     let detection = attach_snapshot_decision(&adapter, force_start).await;

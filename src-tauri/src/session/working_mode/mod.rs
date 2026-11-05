@@ -204,6 +204,12 @@ fn restart(agent: &SessionAgent) {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        // A delete may have claimed the Session during the waits above; starting now would race the worktree removal.
+        if crate::ipc::sessions_lifecycle::delete_in_flight::refuse_if_deleting(agent.session_id())
+            .is_err()
+        {
+            return;
+        }
         if let Err(err) = agent.start().await {
             log::warn!("working_mode: restart after plan switch failed: {err}");
         }
