@@ -2515,8 +2515,9 @@ samp {
   box-shadow: none;
 }
 
-/* Close button at 24px (WCAG 2.5.8 minimum target), the extra [data-sonner-toaster] level out-ranking sonner's 20px. */
-[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+/* Close button at 24px (WCAG 2.5.8 minimum target). Sonner's rule is [data-sonner-toast][data-styled=true] [data-close-button] and
+ * is injected after this sheet, so an equal-specificity override would lose; [data-styled="true"] here out-ranks it. */
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-close-button] {
   width: 24px;
   height: 24px;
 }
