@@ -84,7 +84,7 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
         className="flex min-h-0 flex-1 flex-col"
         contentClassName="flex min-h-0 flex-1 flex-col"
         overlay={
-          <div role="group" aria-label="Session paused" className="rounded-md border border-border bg-background shadow-md">
+          <div role="group" aria-label="Session paused" className="rounded-md bg-background shadow-md">
             <Empty className="flex-none">
               <EmptyHeader>
                 <EmptyMedia>
