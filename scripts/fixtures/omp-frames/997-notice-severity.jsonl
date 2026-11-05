@@ -33,6 +33,8 @@
 // first-match NoticeRow/Mermaid elements and is unaffected.
 // EXTENDED AGAIN (#1648): two `command_output` frames (a Markdown reply, then a `/usage` reply) after the notices, so
 // `scripts/verify-tauri-1648.mjs` can assert Markdown rendering and the usage card. Synthesized; earlier consumers are unaffected.
+// EXTENDED AGAIN (#758): four `write` calls (a relative path, `xd://`, `~/` and a UNC path) after the steers, so
+// `scripts/verify-tauri-758.mjs` can assert only the relative one is drawn as a file link. Synthesized.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -66,5 +68,13 @@
 {"type":"tool_execution_end","toolCallId":"call-838-read-b","toolName":"read","result":{"content":[{"type":"text","text":"issue-838 fixture readme content"}]},"isError":false}
 {"type":"tool_execution_start","toolCallId":"call-838-steer-fail","toolName":"write","args":{"path":"agent://Nobody","content":"Issue #838 live check: this agent does not exist."},"intent":"Steering Nobody"}
 {"type":"tool_execution_end","toolCallId":"call-838-steer-fail","toolName":"write","result":{"content":[{"type":"text","text":"Agent not found: Nobody"}]},"isError":true}
+{"type":"tool_execution_start","toolCallId":"call-758-rel","toolName":"write","args":{"path":"notes-758.txt","content":"relative"},"intent":"Writing notes-758.txt"}
+{"type":"tool_execution_end","toolCallId":"call-758-rel","toolName":"write","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-758-xd","toolName":"write","args":{"path":"xd://mcp__skippy_brain_save_memory","content":"virtual"},"intent":"Saving a memory"}
+{"type":"tool_execution_end","toolCallId":"call-758-xd","toolName":"write","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-758-home","toolName":"write","args":{"path":"~/notes-758.md","content":"home"},"intent":"Writing ~/notes-758.md"}
+{"type":"tool_execution_end","toolCallId":"call-758-home","toolName":"write","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}
+{"type":"tool_execution_start","toolCallId":"call-758-unc","toolName":"write","args":{"path":"\\\\server\\share\\notes-758.md","content":"unc"},"intent":"Writing a UNC file"}
+{"type":"tool_execution_end","toolCallId":"call-758-unc","toolName":"write","result":{"content":[{"type":"text","text":"ok"}]},"isError":false}
 {"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
 {"type":"session_settled"}
