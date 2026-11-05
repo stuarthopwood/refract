@@ -189,6 +189,7 @@
   --notice-warning-fg: var(--severity-warning);
   --notice-error-fg: var(--severity-error);
   --approval-card-bg: var(--card);
+  --chat-card-bg: color-mix(in oklab, var(--card) 60%, transparent);
   --approval-card-fg: var(--card-foreground);
   --approval-card-border: var(--elevated-edge);
   --composer-control-fg: var(--muted-foreground);

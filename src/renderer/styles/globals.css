@@ -51,6 +51,7 @@
   --color-chat-user-bubble-bg: var(--chat-user-bubble-bg);
   --color-chat-user-bubble-fg: var(--chat-user-bubble-fg);
   --color-chat-user-bubble-border: var(--chat-user-bubble-border);
+  --color-chat-card-bg: var(--chat-card-bg);
   --color-tool-row-fg: var(--tool-row-fg);
   --color-tool-row-error-fg: var(--tool-row-error-fg);
   --color-thinking-row-fg: var(--thinking-row-fg);
@@ -59,7 +60,6 @@
   --color-notice-warning-fg: var(--notice-warning-fg);
   --color-notice-error-fg: var(--notice-error-fg);
   --color-approval-card-bg: var(--approval-card-bg);
-  --color-chat-card-bg: var(--chat-card-bg);
   --color-approval-card-fg: var(--approval-card-fg);
   --color-approval-card-border: var(--approval-card-border);
   --color-composer-control-fg: var(--composer-control-fg);
@@ -443,7 +443,6 @@ samp {
   --notice-warning-fg: var(--severity-warning);
   --notice-error-fg: var(--severity-error);
   --approval-card-bg: var(--card);
-  /* Shared by the Subagents chain card and the Ask card; the high-contrast themes override it to a solid fill. */
   --chat-card-bg: color-mix(in oklab, var(--card) 60%, transparent);
   --approval-card-fg: var(--card-foreground);
   --approval-card-border: var(--elevated-edge);
