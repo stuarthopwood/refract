@@ -106,6 +106,8 @@
   --md-code-label: var(--accent-text);
   --md-code-bg: var(--muted);
   --md-code-fg: #ffc39f;
+  --chat-code-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  --chat-code-fg: var(--muted-foreground);
   --md-table-header-fg: var(--md-code-fg);
   --code-block-bg: var(--card);
   --code-block-fg: oklch(0.93 0 0);

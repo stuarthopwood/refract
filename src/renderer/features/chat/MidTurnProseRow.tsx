@@ -39,7 +39,7 @@ export function MidTurnProseRow({ group }: { group: MidTurnProse }) {
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}
         clampLines={MID_TURN_CLAMP_LINES}
       >
-        <Markdown id={item.id} text={item.text} streaming={item.streaming} className="text-chat-foreground" />
+        <Markdown id={item.id} text={item.text} streaming={item.streaming} variant="chat" className="text-chat-foreground" />
       </CollapsedLine>
     </div>
   )

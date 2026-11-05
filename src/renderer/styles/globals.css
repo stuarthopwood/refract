@@ -155,6 +155,8 @@
   --color-md-marker: var(--md-marker);
   --color-md-quote-bar: var(--md-quote-bar);
   --color-md-code-label: var(--md-code-label);
+  --color-chat-code-bg: var(--chat-code-bg);
+  --color-chat-code-fg: var(--chat-code-fg);
   --color-md-code-bg: var(--md-code-bg);
   --color-md-code-fg: var(--md-code-fg);
   --color-md-table-header-fg: var(--md-table-header-fg);
@@ -715,6 +717,8 @@ samp {
   --md-code-label: var(--accent-text);
   --md-code-bg: var(--muted);
   --md-code-fg: oklch(0.85 0.09 279);
+  --chat-code-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  --chat-code-fg: var(--muted-foreground);
   --md-table-header-fg: var(--md-code-fg);
   --code-block-bg: var(--card);
   --code-block-fg: oklch(0.93 0 0);
@@ -957,6 +961,8 @@ samp {
   --md-code-label: var(--accent-text);
   --md-code-bg: var(--muted);
   --md-code-fg: oklch(0.85 0.09 279);
+  --chat-code-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  --chat-code-fg: var(--muted-foreground);
   --md-table-header-fg: var(--md-code-fg);
   --code-block-bg: var(--card);
   --code-block-fg: oklch(0.93 0 0);
@@ -1360,6 +1366,8 @@ samp {
   --md-code-label: var(--accent-text);
   --md-code-bg: var(--muted);
   --md-code-fg: oklch(0.93 0.06 264);
+  --chat-code-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  --chat-code-fg: var(--muted-foreground);
   --md-table-header-fg: var(--md-code-fg);
   --code-block-bg: var(--card);
   /* github-dark-high-contrast values; built-in HC keeps the bundled Shiki theme, a custom theme overriding any of these switches to css-variables. */
@@ -1601,6 +1609,8 @@ samp {
   --md-code-label: var(--accent-text);
   --md-code-bg: var(--muted);
   --md-code-fg: oklch(0.87 0.09 195);
+  --chat-code-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  --chat-code-fg: var(--muted-foreground);
   --md-table-header-fg: var(--md-code-fg);
   --code-block-bg: var(--card);
   --code-block-fg: oklch(0.93 0 0);
@@ -1887,6 +1897,8 @@ samp {
   --md-code-label: var(--accent-text);
   --md-code-bg: var(--muted);
   --md-code-fg: oklch(0.87 0.10 60);
+  --chat-code-bg: color-mix(in oklab, var(--muted) 50%, transparent);
+  --chat-code-fg: var(--muted-foreground);
   --md-table-header-fg: var(--md-code-fg);
   --code-block-bg: var(--card);
   --code-block-fg: oklch(0.93 0 0);

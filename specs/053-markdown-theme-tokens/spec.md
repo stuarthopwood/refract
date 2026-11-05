@@ -16,6 +16,11 @@ Highlighted code uses an accent-led palette (keywords and functions in the accen
 ### US3 - Mermaid on the same accent source (P2)
 Node borders, arrowheads and cluster borders use the theme accent; node fills a faint accent tint; labels in prose colour.
 
+### US4 - Muted inline-code chips in chat (P1, amended by #1682)
+As a user reading a chat transcript, inline code chips (tool targets such as paths and commands) no longer outshout the message text.
+- Given a chat transcript message (assistant text, mid-turn prose, user message), then inline `code` paints on a lower-opacity background (`--chat-code-bg`, `--muted` at about 50%) with a muted foreground (`--chat-code-fg`, `--muted-foreground`) in every theme preset.
+- The Pull requests view, Issues, file preview and every other `Markdown` surface keep the `--md-code-*` chip.
+
 ## Requirements
 
 - **FR-001** Named tokens in `globals.css`, one set per theme: `--md-heading`, `--md-marker`, `--md-quote-bar`, `--md-code-label`, `--md-code-fg`, `--md-code-bg`, `--md-table-header-fg`, `--code-block-bg` (defaults to `--card`), and `--syntax-keyword/function/string/constant/parameter/punctuation/comment`, `--code-block-fg`.
@@ -24,6 +29,9 @@ Node borders, arrowheads and cluster borders use the theme accent; node fills a 
 - **FR-004** Colour is never the only cue: links keep their underline, headings their weight, bullets their shape.
 - **FR-005** Mermaid palette (`src/shared/mermaidTheme.ts`) derives its accent colours from the same per-theme accent.
 - **FR-006** No new tests (prototyping phase). Existing tests keep passing.
+
+- **FR-007** (#1682) `Markdown` takes `variant="chat"` (default `default`); only that variant swaps the inline-code chip to `bg-chat-code-bg text-chat-code-fg`. `--chat-code-bg` and `--chat-code-fg` are defined in every preset (globals.css and styles/themes/*.css), listed in `theme-tokens.json`, and mapped as Tailwind colours. Transcript rows (assistant text, mid-turn prose, user message) pass the variant; no renderer is copied.
+- **FR-008** (#1682) `--chat-code-fg` is >= 4.5:1 against the composited `--chat-code-bg` over `--background` (assistant text) and over `--muted` (user-bubble worst case) in every theme, gated in `markdown-token-contrast.mjs`.
 
 ## Out of scope
 `<mark>`, `::selection`, find highlight (follow-up). Tailwind palette colours in ChangesTab/Readiness (see decision record on the issue).
