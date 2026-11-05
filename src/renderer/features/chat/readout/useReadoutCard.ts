@@ -37,8 +37,15 @@ export interface ReadoutCard {
   anchorRef: RefObject<HTMLButtonElement | null>
   anchorHandlers: ReadoutCardAnchorHandlers
   contentHandlers: ReadoutCardContentHandlers
+  /** Radix `collisionBoundary`: the owning session pane, so the portaled card stays inside a narrow split pane. */
+  collisionBoundary: Element[]
   /** Closes the card and cancels a pending hover-open (for outside clicks, Escape and anchor clicks). */
   close: () => void
+}
+
+function paneBoundaryOf(anchor: HTMLElement | null): Element[] {
+  const pane = anchor?.closest('[data-session-pane]')
+  return pane ? [pane] : []
 }
 
 /** `disabled` forces `open` false and ignores hover/focus without the caller returning before this hook. */
@@ -145,6 +152,8 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
   return {
     open,
     anchorRef,
+    // Read at render while open (anchor is mounted by then); the portaled card would otherwise collide with the window, not its pane.
+    collisionBoundary: open ? paneBoundaryOf(anchorRef.current) : [],
     anchorHandlers: { onPointerEnter, onPointerMove, onPointerLeave, onFocus, onBlur },
     contentHandlers: { onPointerEnter: onContentPointerEnter, onPointerLeave: onContentPointerLeave },
     close

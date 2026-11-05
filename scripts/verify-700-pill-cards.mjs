@@ -496,10 +496,7 @@ async function main() {
     await moveToNeutralPoint(cdp);
     await settleCardScreenshot(cdp, { anchorSelector: AGENTS_PILL_SELECTOR });
     const agentsCardRectInSplit = await cdp.evaluate(PANE_RECTS_EXPR(AGENTS_CARD_SELECTOR, sessionIdA));
-    // The card is portaled and anchored align=start, so it may extend past a 360px pane's right edge (a known
-    // product overspill); it must still be fully visible within the window.
-    const viewport = await cdp.evaluate(`({ width: window.innerWidth, height: window.innerHeight })`);
-    assertTrue(agentsCardRectInSplit.left >= 0 && agentsCardRectInSplit.top >= 0 && agentsCardRectInSplit.right <= viewport.width && agentsCardRectInSplit.bottom <= viewport.height, 'Agents card stays fully inside the window while its pane is 360px, never clipped', { ...agentsCardRectInSplit, viewport, overspillsPaneRightPx: Math.max(0, Math.round(agentsCardRectInSplit.right - agentsCardRectInSplit.pane.right)) });
+    assertTrue(isInsidePane(agentsCardRectInSplit), 'Agents card stays fully inside the 360px split pane, never clipped', agentsCardRectInSplit);
     await cdp.screenshot(path.join(SHOTS_DIR, 'agents-card-split-360.png'));
     await moveToNeutralPoint(cdp);
     await cdp.send('Emulation.clearDeviceMetricsOverride', {});
