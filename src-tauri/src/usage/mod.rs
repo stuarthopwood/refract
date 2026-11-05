@@ -2,6 +2,7 @@
 
 pub mod budget;
 pub mod credits;
+mod fingerprint;
 pub mod frustration;
 pub mod ingest;
 pub mod paths;

@@ -9,7 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CWD = 'C:\\Work\\verify1331proj';
 
-function entry(value) {
+export function entry(value) {
   return `${JSON.stringify(value)}\n`;
 }
 
@@ -38,7 +38,7 @@ export function assistantLine(id, usage, cost, toolCallId) {
   });
 }
 
-function toolResult(id, callId, isError) {
+export function toolResult(id, callId, isError) {
   return entry({
     type: 'message',
     id,
