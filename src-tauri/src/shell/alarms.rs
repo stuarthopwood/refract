@@ -30,7 +30,11 @@ fn now_ms() -> i64 {
 /// Windows shows the alarm scenario toast with a looping sound; other platforms use the plugin.
 #[cfg(windows)]
 fn show_notification(app: &AppHandle, alarm: &Alarm, sound: bool) {
-    let body = if alarm.label.is_empty() { "Alarm" } else { alarm.label.as_str() };
+    let body = if alarm.label.is_empty() {
+        "Alarm"
+    } else {
+        alarm.label.as_str()
+    };
     let app_id = super::alarm_toast::app_id(&app.config().identifier);
     if let Err(err) = super::alarm_toast::build(&app_id, body, sound).show() {
         log::warn!("refract-tauri: failed to show alarm notification: {err}");
@@ -69,7 +73,13 @@ pub fn spawn(app: AppHandle, settings: Arc<AsyncMutex<SettingsStore>>) {
                 }
                 let changed = store.alarms() != before.as_slice();
                 let snapshot = changed.then(|| store.get());
-                (fired, snapshot, store.next_alarm_ms(), err.is_some(), store.alarm_sounds())
+                (
+                    fired,
+                    snapshot,
+                    store.next_alarm_ms(),
+                    err.is_some(),
+                    store.alarm_sounds(),
+                )
             };
             for alarm in &fired {
                 show_notification(&app, alarm, sound);

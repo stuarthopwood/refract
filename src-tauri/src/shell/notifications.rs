@@ -150,7 +150,11 @@ pub fn on_session_status(
             .extra("sessionId", session_id.clone());
         if sounds {
             // Windows toast sound names: "Reminder" for a prompt, "Default" for a plain finish.
-            notification = notification.sound(if became_needs_you { "Reminder" } else { "Default" });
+            notification = notification.sound(if became_needs_you {
+                "Reminder"
+            } else {
+                "Default"
+            });
         }
         if let Err(err) = notification.show() {
             log::warn!("refract-tauri: failed to show notification for {session_id}: {err}");

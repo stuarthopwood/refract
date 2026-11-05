@@ -17,12 +17,7 @@ pub fn settings_set_session_notification_sounds(
     args: Vec<Value>,
 ) -> HandlerFuture {
     Box::pin(async move {
-        let enabled = require_bool(
-            &args,
-            0,
-            "settings.setSessionNotificationSounds",
-            "enabled",
-        )?;
+        let enabled = require_bool(&args, 0, "settings.setSessionNotificationSounds", "enabled")?;
         let value = state
             .settings
             .lock()

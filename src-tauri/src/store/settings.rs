@@ -142,10 +142,10 @@ mod code_ligatures;
 mod default_clone_folder;
 #[path = "finished_turn_times.rs"]
 mod finished_turn_times;
-#[path = "scrollbar_map.rs"]
-mod scrollbar_map;
 #[path = "notification_sounds.rs"]
 mod notification_sounds;
+#[path = "scrollbar_map.rs"]
+mod scrollbar_map;
 #[path = "typography.rs"]
 mod typography;
 pub use typography::Typography;
