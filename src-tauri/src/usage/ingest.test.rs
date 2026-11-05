@@ -251,15 +251,15 @@ fn longer_rewrite_with_the_same_head_is_reread_without_double_counting() {
     append(&fx.file, &assistant("a2", 1_790_000_100_000, 0.25, vec![]));
     assert_eq!(fx.ingest().new_messages, 2);
 
-    // Same first bytes, longer than the old offset, but the bytes before that offset moved.
+    // Same first bytes, longer than the old offset, but the lines just before that offset differ.
     let rewritten = header()
+        + &assistant("a1", 1_790_000_000_000, 0.5, vec![])
         + &assistant("b1", 1_790_000_200_000, 0.1, vec![])
-        + &assistant("a2", 1_790_000_100_000, 0.25, vec![])
         + &assistant("b2", 1_790_000_300_000, 0.2, vec![]);
     std::fs::write(&fx.file, rewritten).unwrap();
     assert_eq!(fx.ingest().new_messages, 2);
 
-    // a1 survives from the old content, a2 is not counted twice, b1 and b2 are new.
+    // a1 is not counted twice, a2 stays from the old content, b1 and b2 are new.
     assert_eq!(fx.count("messages"), 4);
     assert_eq!(rollup_calls(&fx), 4);
     assert_eq!(fx.ingest().new_messages, 0);

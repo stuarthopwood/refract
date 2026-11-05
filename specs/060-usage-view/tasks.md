@@ -58,9 +58,9 @@ Format: `ID [P] description (paths)`. `[P]` = parallelisable with its neighbours
 
 Findings: FR-003 and FR-005 (partial): a file rewritten with the same head and a length at or past the stored offset resumed inside new content and skipped rows. SC-005 (missing): no regression test.
 
-- [ ] C-05 `src-tauri/src/usage/fingerprint.rs`: move `fnv1a` and the head window helper out of `ingest.rs`; add a window fingerprint at any start offset per FR-019 (partial)
-- [ ] C-06 `src-tauri/src/usage/schema.rs`: `tail_len`, `tail_hash` in the DDL, `user_version` 3, in-place `ALTER TABLE` from version 2 (version 1 still rebuilds) per FR-019 (partial)
-- [ ] C-07 `src-tauri/src/usage/ingest.rs`: store the tail window on save; a head or tail mismatch on resume restarts at byte 0; an empty window is unknown and is recorded without a reset per FR-019 (partial)
-- [ ] C-08 Regression tests in `ingest.test.rs` (same-head longer rewrite, truncated rewrite, unknown-window legacy row, no double counting) and `schema.rs` (a version 2 database keeps its rows and gains the columns) per SC-005 (missing)
-- [ ] C-09 `scripts/verify-tauri-1656.mjs` live driver per `quickstart.md` step 7 (missing)
+- [X] C-05 `src-tauri/src/usage/fingerprint.rs`: move `fnv1a` and the head window helper out of `ingest.rs`; add a window fingerprint at any start offset per FR-019 (partial)
+- [X] C-06 `src-tauri/src/usage/schema.rs`: `tail_len`, `tail_hash` in the DDL, `user_version` 3, in-place `ALTER TABLE` from version 2 (version 1 still rebuilds) per FR-019 (partial)
+- [X] C-07 `src-tauri/src/usage/ingest.rs`: store the tail window on save; a head or tail mismatch on resume restarts at byte 0; an empty window is unknown and is recorded without a reset per FR-019 (partial)
+- [X] C-08 Regression tests in `ingest.test.rs` (same-head longer rewrite, truncated rewrite, unknown-window legacy row, no double counting) and `schema.rs` (a version 2 database keeps its rows and gains the columns) per SC-005 (missing)
+- [X] C-09 `scripts/verify-tauri-1656.mjs` live driver per `quickstart.md` step 7 (missing)
 - C-10 Verify: `pnpm ci:local`, the C-09 driver; PR `fix(usage): re-ingest session files rewritten past the first 256 bytes`, `Closes #1656`. Depends on C-05 to C-09.
