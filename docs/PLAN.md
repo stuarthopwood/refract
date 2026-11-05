@@ -772,7 +772,7 @@ Also filed 2026-10-15: #874 Pull requests view across Projects on #504's shared 
 
 Also filed 2026-10-15: #878 Markdown editor (always-editable Rendered view, editable Source view, formatting toolbar, block-level save fidelity), grilled with Stuart (10 questions, none deferred), placed as row C7b before #470 (C8, which now reuses its write path). Commented on #470 and #732. `CONTEXT.md` gained **Rendered view** and **Source view**.
 
-Also filed 2026-10-15: #885 Chore, tests leave temp folders behind (57,255 leftover entries, 1.19 GB in `%TEMP%`, plus 124 junctions, found and swept 2026-10-15), no Queue or index placement -- cross-cutting test-hygiene fix across every Rust test module under `src-tauri/src` that builds a scratch path with `std::env::temp_dir()` and never removes it; setup/teardown only, no new tests. **In review** (PR #1715)
+Also filed 2026-10-15: #885 Chore, tests leave temp folders behind (57,255 leftover entries, 1.19 GB in `%TEMP%`, plus 124 junctions, found and swept 2026-10-15), no Queue or index placement -- cross-cutting test-hygiene fix across every Rust test module under `src-tauri/src` that builds a scratch path with `std::env::temp_dir()` and never removes it; setup/teardown only, no new tests. **PR #1715 merged 2026-11-05** (`Refs #885`; the production `omp/config.rs` scratch dir is still open)
 
 Also filed 2026-10-15: #887 Project colour for the Session list header (presets, hex, in-app picker), grilled with Stuart (7 questions, none deferred), placed as the Phase D "Project colour" row after Home. It amends the 2026-10-08 decorative-colour decision (Decisions list). `CONTEXT.md` gained **Project colour**.
 
