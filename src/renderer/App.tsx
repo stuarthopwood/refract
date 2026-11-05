@@ -4,6 +4,7 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/componen
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { IconButton } from '@/components/IconButton'
 import { AppMenuBar } from '@/features/app-menu/AppMenuBar'
+import { useZoomShortcut } from '@/features/app-menu/useZoomShortcut'
 import { HomeView } from '@/features/home/HomeView'
 import { ChatPane } from '@/features/chat/ChatPane'
 import { ErrorBoundary } from '@/features/chat/ErrorBoundary'
@@ -106,6 +107,7 @@ export function App() {
 
   useChordDispatcher(!showReadiness)
   usePaletteShortcut(!showReadiness)
+  useZoomShortcut()
   return (
     // #1200: `relative` makes this the containing block for every absolutely positioned descendant
     // (e.g. an `sr-only` node at the end of a long scroller); with `h-screen overflow-hidden` none can

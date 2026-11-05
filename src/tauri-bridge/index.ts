@@ -349,7 +349,8 @@ const refract: RefractApi = {
   },
 
   window: {
-    popupMenu: (menuId, x, y) => request<void>(IPC_REQUESTS.WINDOW_POPUP_MENU, menuId, x, y)
+    popupMenu: (menuId, x, y) => request<void>(IPC_REQUESTS.WINDOW_POPUP_MENU, menuId, x, y),
+    zoom: (action) => request<void>(IPC_REQUESTS.WINDOW_ZOOM, action)
   },
 
   issues: {
