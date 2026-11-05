@@ -11,6 +11,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use crate::events::UI_OPEN_SESSION;
 use crate::store::registry::RegistryStore;
+use crate::store::settings::SettingsStore;
 
 /// Previous `status` per Session id, so a repeat emit for an unrelated field never re-notifies.
 static LAST_STATUS: LazyLock<StdMutex<HashMap<String, String>>> =
@@ -136,14 +137,22 @@ pub fn on_session_status(
         } else {
             format!("{name} finished.")
         };
-        if let Err(err) = app
+        // Managed in `lib.rs` setup; absent only before setup, when no Session can have notified.
+        let sounds = match app.try_state::<Arc<AsyncMutex<SettingsStore>>>() {
+            Some(settings) => settings.lock().await.session_notification_sounds(),
+            None => true,
+        };
+        let mut notification = app
             .notification()
             .builder()
             .title("Refract")
             .body(body)
-            .extra("sessionId", session_id.clone())
-            .show()
-        {
+            .extra("sessionId", session_id.clone());
+        if sounds {
+            // Windows toast sound names: "Reminder" for a prompt, "Default" for a plain finish.
+            notification = notification.sound(if became_needs_you { "Reminder" } else { "Default" });
+        }
+        if let Err(err) = notification.show() {
             log::warn!("refract-tauri: failed to show notification for {session_id}: {err}");
         }
     });

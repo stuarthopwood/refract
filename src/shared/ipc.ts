@@ -316,6 +316,8 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SHOW_SCROLLBAR_MAP: 'settings.setShowScrollbarMap',
   SETTINGS_SET_TYPOGRAPHY: 'settings.setTypography',
   SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
+  SETTINGS_SET_SESSION_NOTIFICATION_SOUNDS: 'settings.setSessionNotificationSounds',
+  SETTINGS_SET_ALARM_SOUNDS: 'settings.setAlarmSounds',
   SETTINGS_UPSERT_ALARM: 'settings.upsertAlarm',
   SETTINGS_DELETE_ALARM: 'settings.deleteAlarm',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'settings.setWordPredictionEnabled',
@@ -541,6 +543,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     upsertAlarm(alarm: Alarm): Promise<Result<Settings>>; // Issue #1426: create or edit one composer-clock Alarm; `alarm-limit` when the list is full.
     deleteAlarm(id: string): Promise<Result<Settings>>;
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
+    setSessionNotificationSounds(enabled: boolean): Promise<Result<Settings>>; setAlarmSounds(enabled: boolean): Promise<Result<Settings>>; // Issue #1666: OS notification sound switches, both default on.
     setStatusStyle(value: StatusStyle): Promise<Result<Settings>>; setChatRowDensity(value: ChatRowDensity): Promise<Result<Settings>>; setActivityText(value: ActivityText): Promise<Result<Settings>>; // #482 setStatusStyle (Appearance Status style, applies live). #526 (FR-111): same pattern as setHolidayTouches; applies live.
     setSessionListCollapse(value: SessionListCollapse): Promise<Result<Settings>>; // #735: whole-value write, same race-safety pattern as setSplit; session-list-store.ts never reads the reply or a later broadcast back into itself.
     setRightPane(value: Settings['rightPane']): Promise<Result<Settings>>; // Spec 024: sole writer is `right-pane-persistence.ts`; Rust clamps width and repairs the active tab. Pushes settings:changed.

@@ -299,6 +299,8 @@ const refract: RefractApi = {
     upsertAlarm: (alarm) => request<Settings>(IPC_REQUESTS.SETTINGS_UPSERT_ALARM, alarm),
     deleteAlarm: (id) => request<Settings>(IPC_REQUESTS.SETTINGS_DELETE_ALARM, id),
     setShowFinishedTurnTimes: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_FINISHED_TURN_TIMES, enabled),
+    setSessionNotificationSounds: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_NOTIFICATION_SOUNDS, enabled),
+    setAlarmSounds: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ALARM_SOUNDS, enabled),
     setSessionListCollapse: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SESSION_LIST_COLLAPSE, value),
     // Issue #772, lane R6: Rust-only, see `IPC_REQUESTS.SETTINGS_SET_WORD_PREDICTION_ENABLED`'s
     // own doc comment.
