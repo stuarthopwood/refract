@@ -56,7 +56,7 @@ fn a_path_that_escapes_the_root_via_dotdot_is_not_a_descendant() {
     ));
 }
 
-// `delete_session_conversations`: real temp dir (never cleaned up).
+// `delete_session_conversations`: real temp dir under `test_scratch` (removed when the test thread ends).
 
 fn temp_session_dir(label: &str) -> std::path::PathBuf {
     crate::test_scratch::path(format!(

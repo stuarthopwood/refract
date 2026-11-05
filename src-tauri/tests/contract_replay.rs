@@ -581,7 +581,7 @@ async fn session_scenario_replays_against_the_fake_omp_tape() {
 
     // --- Normalize and compare against the frozen golden trace. ---
     // Windows note (found via a real CI failure, 2026-10-14): `repo_dir` (built from
-    // `std::env::temp_dir()`, the literal string this test passes as `repositories.add`'s raw
+    // `tempfile::TempDir` path, the literal string this test passes as `repositories.add`'s raw
     // argument) and `repo_path` (the SAME directory, but read back from that handler's own
     // response, which canonicalizes it) are not always byte-identical strings for the identical
     // physical path -- a Windows account whose profile directory has an 8.3 short name (seen on

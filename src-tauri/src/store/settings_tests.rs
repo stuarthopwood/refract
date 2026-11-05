@@ -1,7 +1,7 @@
 // Test suite for `store::settings`, split out to keep `settings.rs` under the size cap.
 use super::*;
 
-/// A fresh, uniquely-named scratch directory under the OS temp root, never deleted.
+/// A fresh, uniquely-named scratch directory under the `test_scratch` TempDir, removed when the test thread ends.
 async fn open_scratch_store(initial_json: Option<Value>) -> SettingsStore {
     let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir)

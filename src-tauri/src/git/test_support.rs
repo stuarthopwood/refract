@@ -1,5 +1,5 @@
 // Real git repos, since a mocked git proves nothing about the safety properties under test.
-// Scratch dirs under the temp dir are never removed: no destructive-delete guard exists yet.
+// Scratch dirs live in a `test_scratch` TempDir that is removed when the test thread ends.
 
 use std::path::{Path, PathBuf};
 
