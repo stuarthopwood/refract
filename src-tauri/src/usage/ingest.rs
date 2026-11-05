@@ -9,6 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use super::credits::credits_for;
+use super::fingerprint::Window;
 use super::frustration;
 use super::project_label::ProjectIndex;
 use super::rollup::{
@@ -41,33 +42,10 @@ struct FileState {
     project_label: String,
     cur_model: String,
     cur_reasoning: String,
-    /// Bytes of the file head covered by `head_hash` (never more than the consumed offset).
-    head_len: i64,
-    head_hash: i64,
-}
-
-/// A head longer than this is not fingerprinted further.
-const HEAD_BYTES: i64 = 256;
-
-/// FNV-1a: stable across Rust versions, unlike `DefaultHasher`.
-fn fnv1a(bytes: &[u8]) -> i64 {
-    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
-    for b in bytes {
-        h ^= u64::from(*b);
-        h = h.wrapping_mul(0x0100_0000_01b3);
-    }
-    h as i64
-}
-
-/// Hash of the first `len` bytes, or `None` when the file is now shorter than that.
-fn head_fingerprint(file: &mut File, len: i64) -> std::io::Result<Option<i64>> {
-    let mut buf = vec![0u8; len.max(0) as usize];
-    file.seek(SeekFrom::Start(0))?;
-    match file.read_exact(&mut buf) {
-        Ok(()) => Ok(Some(fnv1a(&buf))),
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(None),
-        Err(e) => Err(e),
-    }
+    /// Fingerprint of the first bytes of the file (never past the consumed offset).
+    head: Window,
+    /// Fingerprint of the bytes just before `offset`; unknown (len 0) in rows saved before it existed.
+    tail: Window,
 }
 
 enum LineRead {
@@ -108,8 +86,8 @@ fn read_line<R: BufRead>(r: &mut R, buf: &mut Vec<u8>) -> std::io::Result<LineRe
 fn load_state(conn: &Connection, key: &str) -> rusqlite::Result<FileState> {
     Ok(conn
         .prepare(
-            "SELECT offset, session_id, cwd, project_label, cur_model, cur_reasoning, head_len, head_hash \
-             FROM file_offsets WHERE session_file = ?1",
+            "SELECT offset, session_id, cwd, project_label, cur_model, cur_reasoning, \
+             head_len, head_hash, tail_len, tail_hash FROM file_offsets WHERE session_file = ?1",
         )?
         .query_row([key], |r| {
             Ok(FileState {
@@ -119,8 +97,14 @@ fn load_state(conn: &Connection, key: &str) -> rusqlite::Result<FileState> {
                 project_label: r.get(3)?,
                 cur_model: r.get(4)?,
                 cur_reasoning: r.get(5)?,
-                head_len: r.get(6)?,
-                head_hash: r.get(7)?,
+                head: Window {
+                    len: r.get(6)?,
+                    hash: r.get(7)?,
+                },
+                tail: Window {
+                    len: r.get(8)?,
+                    hash: r.get(9)?,
+                },
             })
         })
         .optional()?
@@ -137,14 +121,15 @@ fn save_state(
 ) -> rusqlite::Result<()> {
     conn.prepare(
         "INSERT INTO file_offsets (session_file, offset, last_modified, file_len, session_id, cwd, \
-         agent_type, project_label, cur_model, cur_reasoning, head_len, head_hash) \
-         VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12) \
+         agent_type, project_label, cur_model, cur_reasoning, head_len, head_hash, tail_len, \
+         tail_hash) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) \
          ON CONFLICT(session_file) DO UPDATE SET offset = excluded.offset, \
          last_modified = excluded.last_modified, file_len = excluded.file_len, \
          session_id = excluded.session_id, cwd = excluded.cwd, agent_type = excluded.agent_type, \
          project_label = excluded.project_label, cur_model = excluded.cur_model, \
          cur_reasoning = excluded.cur_reasoning, head_len = excluded.head_len, \
-         head_hash = excluded.head_hash",
+         head_hash = excluded.head_hash, tail_len = excluded.tail_len, \
+         tail_hash = excluded.tail_hash",
     )?
     .execute(params![
         key,
@@ -157,8 +142,10 @@ fn save_state(
         state.project_label,
         state.cur_model,
         state.cur_reasoning,
-        state.head_len,
-        state.head_hash,
+        state.head.len,
+        state.head.hash,
+        state.tail.len,
+        state.tail.hash,
     ])?;
     Ok(())
 }
@@ -458,12 +445,19 @@ pub fn ingest_file(
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
     let mut state = load_state(&tx, &key).map_err(|e| e.to_string())?;
-    // A shrunk or re-headed file was replaced: restart from byte 0. Re-read rows dedupe on (file, entry id).
-    let head_changed = state.head_len > 0
-        && head_fingerprint(&mut file, state.head_len)
+    // A shrunk file, a re-headed file, or one whose bytes before the saved offset changed was
+    // rewritten: restart from byte 0. Re-read rows dedupe on (file, entry id).
+    let offset = state.offset;
+    let rewritten = offset as u64 > len
+        || state
+            .head
+            .changed(&mut file, 0)
             .map_err(|e| format!("read {key}: {e}"))?
-            .is_none_or(|h| h != state.head_hash);
-    if state.offset as u64 > len || head_changed {
+        || state
+            .tail
+            .changed(&mut file, offset - state.tail.len)
+            .map_err(|e| format!("read {key}: {e}"))?;
+    if rewritten {
         state = FileState::default();
     }
     let mut reader = BufReader::new(file);
@@ -503,14 +497,8 @@ pub fn ingest_file(
     let mut state = pass.state;
     let new_messages = pass.new_messages;
     state.offset += consumed as i64;
-    state.head_len = state.offset.min(HEAD_BYTES);
-    state.head_hash = 0;
-    if state.head_len > 0 {
-        match head_fingerprint(reader.get_mut(), state.head_len) {
-            Ok(Some(h)) => state.head_hash = h,
-            _ => state.head_len = 0,
-        }
-    }
+    state.head = Window::head(reader.get_mut(), state.offset);
+    state.tail = Window::tail(reader.get_mut(), state.offset);
     save_state(&tx, &key, &state, agent_type, len as i64, mtime_ms).map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     Ok(IngestOutcome { new_messages, more })

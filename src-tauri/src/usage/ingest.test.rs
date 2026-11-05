@@ -236,3 +236,66 @@ fn non_copilot_provider_has_no_credits() {
         .unwrap();
     assert_eq!(credits, None);
 }
+
+fn rollup_calls(fx: &Fixture) -> i64 {
+    fx.conn
+        .query_row("SELECT sum(calls) FROM message_rollup", [], |r| r.get(0))
+        .unwrap()
+}
+
+#[test]
+fn longer_rewrite_with_the_same_head_is_reread_without_double_counting() {
+    let mut fx = Fixture::new("rewrite-longer");
+    append(&fx.file, &header());
+    append(&fx.file, &assistant("a1", 1_790_000_000_000, 0.5, vec![]));
+    append(&fx.file, &assistant("a2", 1_790_000_100_000, 0.25, vec![]));
+    assert_eq!(fx.ingest().new_messages, 2);
+
+    // Same first bytes, longer than the old offset, but the bytes before that offset moved.
+    let rewritten = header()
+        + &assistant("b1", 1_790_000_200_000, 0.1, vec![])
+        + &assistant("a2", 1_790_000_100_000, 0.25, vec![])
+        + &assistant("b2", 1_790_000_300_000, 0.2, vec![]);
+    std::fs::write(&fx.file, rewritten).unwrap();
+    assert_eq!(fx.ingest().new_messages, 2);
+
+    // a1 survives from the old content, a2 is not counted twice, b1 and b2 are new.
+    assert_eq!(fx.count("messages"), 4);
+    assert_eq!(rollup_calls(&fx), 4);
+    assert_eq!(fx.ingest().new_messages, 0);
+}
+
+#[test]
+fn truncated_and_rewritten_file_is_reread_without_double_counting() {
+    let mut fx = Fixture::new("rewrite-shorter");
+    append(&fx.file, &header());
+    append(&fx.file, &assistant("a1", 1_790_000_000_000, 0.5, vec![]));
+    append(&fx.file, &assistant("a2", 1_790_000_100_000, 0.25, vec![]));
+    fx.ingest();
+
+    let rewritten = header() + &assistant("b1", 1_790_000_200_000, 0.1, vec![]);
+    std::fs::write(&fx.file, rewritten).unwrap();
+    assert_eq!(fx.ingest().new_messages, 1);
+    assert_eq!(fx.count("messages"), 3);
+    assert_eq!(rollup_calls(&fx), 3);
+}
+
+#[test]
+fn row_saved_before_the_tail_window_existed_records_it_without_a_reset() {
+    let mut fx = Fixture::new("tail-unknown");
+    append(&fx.file, &header());
+    append(&fx.file, &assistant("a1", 1_790_000_000_000, 0.5, vec![]));
+    fx.ingest();
+    fx.conn
+        .execute("UPDATE file_offsets SET tail_len = 0, tail_hash = 0", [])
+        .unwrap();
+
+    append(&fx.file, &assistant("a2", 1_790_000_100_000, 0.25, vec![]));
+    assert_eq!(fx.ingest().new_messages, 1);
+    let tail_len: i64 = fx
+        .conn
+        .query_row("SELECT tail_len FROM file_offsets", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(tail_len, 256);
+    assert_eq!((fx.count("messages"), rollup_calls(&fx)), (2, 2));
+}

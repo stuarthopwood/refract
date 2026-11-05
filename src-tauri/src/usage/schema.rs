@@ -6,7 +6,15 @@ use std::time::Duration;
 
 use rusqlite::{Connection, ErrorCode, OptionalExtension};
 
-pub const USER_VERSION: i64 = 2;
+pub const USER_VERSION: i64 = 3;
+/// Older files are rebuilt; version 2 is migrated in place.
+const MIN_MIGRATABLE: i64 = 2;
+
+/// `tail_len` 0 reads as an unknown window: the next ingest pass records it without a reset.
+const MIGRATE_2_TO_3: &str = "
+ALTER TABLE file_offsets ADD COLUMN tail_len INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE file_offsets ADD COLUMN tail_hash INTEGER NOT NULL DEFAULT 0;
+";
 
 /// Unknown key parts are `''` rather than NULL so the primary keys stay unique.
 const DDL: &str = "
@@ -22,7 +30,9 @@ CREATE TABLE IF NOT EXISTS file_offsets (
   cur_model TEXT NOT NULL DEFAULT '',
   cur_reasoning TEXT NOT NULL DEFAULT '',
   head_len INTEGER NOT NULL DEFAULT 0,
-  head_hash INTEGER NOT NULL DEFAULT 0
+  head_hash INTEGER NOT NULL DEFAULT 0,
+  tail_len INTEGER NOT NULL DEFAULT 0,
+  tail_hash INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS messages (
   session_file TEXT NOT NULL,
@@ -156,7 +166,7 @@ fn try_open(path: &Path) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     conn.busy_timeout(Duration::from_secs(5))?;
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version > USER_VERSION || (version > 0 && version < USER_VERSION) {
+    if version > USER_VERSION || (version > 0 && version < MIN_MIGRATABLE) {
         return Err(rusqlite::Error::SqliteFailure(
             rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_NOTADB),
             Some("usage.db has a different schema version".to_string()),
@@ -165,8 +175,9 @@ fn try_open(path: &Path) -> rusqlite::Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     if version < USER_VERSION {
-        conn.execute_batch(DDL)?;
-        conn.pragma_update(None, "user_version", USER_VERSION)?;
+        // Version 2 holds rows a rewritten session file no longer has, so it is altered, not rebuilt.
+        let ddl = if version == 2 { MIGRATE_2_TO_3 } else { DDL };
+        conn.execute_batch(&format!("BEGIN;{ddl}PRAGMA user_version = {USER_VERSION};COMMIT;"))?;
     }
     Ok(conn)
 }
@@ -216,3 +227,7 @@ pub fn prefs_set(conn: &Connection, key: &str, value: &str) -> rusqlite::Result<
     )?;
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "schema.test.rs"]
+mod tests;
