@@ -348,7 +348,10 @@ pub fn forget_file_messages(conn: &Connection, session_file: &str) -> rusqlite::
         &rollup_messages_of_file("project_label"),
         params!["\0", -1i64, session_file],
     )?;
-    conn.execute("DELETE FROM messages WHERE session_file = ?1", [session_file])?;
+    conn.execute(
+        "DELETE FROM messages WHERE session_file = ?1",
+        [session_file],
+    )?;
     conn.execute(
         "DELETE FROM session_rollup WHERE session_file = ?1",
         [session_file],
