@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.28.0 (2026-11-05)
+
+### Features
+
+- feat(token-guard): cut prompt cache writes (https://github.com/stuarthopwood/refract/pull/1684)
+- feat(chat): mute inline code chips in chat messages (https://github.com/stuarthopwood/refract/pull/1688)
+- feat(1646): NumberField muted chevron step buttons with an 8px gap (https://github.com/stuarthopwood/refract/pull/1685)
+- feat(ui): fainter brand watermark with holiday glyph in transcripts (https://github.com/stuarthopwood/refract/pull/1689)
+- feat(chat): render OMP command output as Markdown with a usage card (https://github.com/stuarthopwood/refract/pull/1690)
+- feat(chat): subagents card tree rail with elbows (https://github.com/stuarthopwood/refract/pull/1692)
+
+### Fixes
+
+- fix(1651): remove the border from the Paused card (https://github.com/stuarthopwood/refract/pull/1686)
+- fix(usage): start ingest at app launch (https://github.com/stuarthopwood/refract/pull/1687)
+- fix(chat): keep async task subagents running after spawn (https://github.com/stuarthopwood/refract/pull/1691)
+- fix(usage): re-ingest session files rewritten past the first 256 bytes (https://github.com/stuarthopwood/refract/pull/1693)
+
+### Other
+
+- docs(plan): mark batch of 10 done (https://github.com/stuarthopwood/refract/pull/1677)
+- docs(plan): add #1678 (https://github.com/stuarthopwood/refract/pull/1679)
+- docs(plan): add #1680 (https://github.com/stuarthopwood/refract/pull/1681)
+- docs(plan): add #1682 (https://github.com/stuarthopwood/refract/pull/1683)
+
 ## v0.27.0 (2026-11-04)
 
 ### Features
