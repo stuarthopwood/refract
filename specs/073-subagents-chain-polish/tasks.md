@@ -17,8 +17,8 @@
 
 ## Phase 3: Convergence
 
-- [ ] T014 Add the opt-in `elbows` option to `SpineList`/`SpineItem` (decorative border tick, forced-colors safe) per FR-6 (missing)
-- [ ] T015 Export the `h-5 w-4` icon-slot class from `CollapsedLine` and use it in the Stage and agent rows per FR-8 (missing)
-- [ ] T016 Rebuild `ChainStageLine` as an `items-center` Stage row (icon, truncated title, right-end duration, `StageUsesLine` below) with agents in a nested elbowed `SpineList` per FR-7, FR-8 (missing)
-- [ ] T017 Turn elbows on for the card's Stage list in `SubagentChainRow` per FR-7 (missing)
+- [x] T014 Add the opt-in `elbows` option to `SpineList`/`SpineItem` (decorative border tick, forced-colors safe) per FR-6
+- [x] T015 Export the `h-5 w-4` icon-slot class from `CollapsedLine` and use it in the Stage and agent rows per FR-8
+- [x] T016 Rebuild `ChainStageLine` as an `items-center` Stage row (icon, truncated title, right-end duration, `StageUsesLine` below) with agents in a nested elbowed `SpineList` per FR-7, FR-8
+- [x] T017 Turn elbows on for the card's Stage list in `SubagentChainRow` per FR-7
 - [ ] T018 `pnpm ci:local`, live check `scripts/verify-tauri-1622.mjs` in dark, light and high-contrast per SC-5 (missing)

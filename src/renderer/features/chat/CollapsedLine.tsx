@@ -9,6 +9,9 @@ import { ShimmerText } from '@/components/ShimmerText'
 /** Left padding that aligns row content under the label column. */
 export const LABEL_COLUMN_CONTENT_CLASS = 'pl-8'
 
+/** The icon column box: one width per row so icons and text share a centre line across header, stage and agent rows. */
+export const ICON_SLOT_CLASS = 'flex h-5 w-4 shrink-0 items-center justify-center'
+
 /** True while the summary flows inline as wrapping text; summary content (the tool chip) reads it to pick its look. */
 export const SummaryWrapContext = React.createContext(false)
 
@@ -112,11 +115,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     <>
       {leading !== undefined && <span className="flex h-5 shrink-0 items-center">{leading}</span>}
       {iconTooltip === undefined ? (
-        <span className="flex h-5 w-4 shrink-0 items-center justify-center">{icon}</span>
+        <span className={ICON_SLOT_CLASS}>{icon}</span>
       ) : !tooltipArmed ? (
         <span
           aria-hidden="true"
-          className="flex h-5 w-4 shrink-0 items-center justify-center"
+          className={ICON_SLOT_CLASS}
           onPointerEnter={(event) => {
             if (event.pointerType === 'touch') return
             setTooltipArmed(true)
@@ -135,7 +138,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           }}
         >
           <TooltipTrigger asChild>
-            <span aria-hidden="true" className="flex h-5 w-4 shrink-0 items-center justify-center">
+            <span aria-hidden="true" className={ICON_SLOT_CLASS}>
               {icon}
             </span>
           </TooltipTrigger>

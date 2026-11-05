@@ -322,7 +322,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       triggerAriaLabel={`Subagents, ${summary}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${!isRunning && durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       action={<ChainShowPanelButton sessionId={sessionId} />}
     >
-      <SpineList gap="stage">
+      <SpineList gap="stage" elbows>
         {stages.map((stage) => (
           <SpineItem key={stage.id} isNew={!seenStageIds.has(stage.id) && isRunning}>
             <ChainStageLine stage={stage} sessionId={sessionId} />

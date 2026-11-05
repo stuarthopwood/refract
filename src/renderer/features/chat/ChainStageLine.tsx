@@ -3,6 +3,8 @@ import * as React from 'react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import { StageUsesLine } from './StageDependencies'
+import { ICON_SLOT_CLASS } from './CollapsedLine'
+import { SpineItem, SpineList } from './SpineList'
 import { rowVisibility } from './transcriptRowVisibility'
 import { JumpToStageContext } from './stageJump'
 import { formatElapsed } from './formatElapsed'
@@ -15,7 +17,6 @@ import {
   SUBAGENT_STATUS_LABEL,
   SUBAGENT_SUCCESS_TEXT_CLASS,
   SubagentStatusGlyph,
-  SubagentStatusIcon,
   subagentStatusTextClass,
   summarizeSubagentStatuses
 } from '../subagents/subagentStatus'
@@ -25,22 +26,30 @@ function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: s
   const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
   const status = chatRowStatus(item.status)
   const duration = item.durationMs != null ? formatElapsed(item.durationMs) : undefined
+  // The glyph alone sits in the shared icon slot (its sr-only word keeps the accessible name); the visible word follows the name.
   const content = (
     <>
-      <SubagentStatusIcon status={status} />
+      <span className={ICON_SLOT_CLASS}>
+        <SubagentStatusGlyph status={status} />
+      </span>
       <span className={cn('min-w-0 truncate', isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)} title={item.name}>
         {item.name}
       </span>
+      {status !== 'finished' && (
+        <span aria-hidden="true" className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">
+          {SUBAGENT_STATUS_LABEL[status]}
+        </span>
+      )}
       {duration && <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{duration}</span>}
     </>
   )
   if (!match || !sessionId) {
-    return <span className="inline-flex max-w-48 items-center gap-1 px-2 py-1 text-sm text-muted-foreground">{content}</span>
+    return <span className="flex w-fit max-w-full items-center gap-2 px-2 text-sm text-muted-foreground">{content}</span>
   }
   return (
     <button
       type="button"
-      className="inline-flex max-w-48 items-center gap-1 rounded px-2 py-1 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      className="flex w-fit max-w-full items-center gap-2 rounded px-2 text-left text-sm hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       onClick={(event) =>
         openHostedPanel('subagents', sessionId, {
           selectSubagentId: match.id,
@@ -71,42 +80,46 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
     <div
       role="group"
       aria-label={`${speechHeading}, ${summaryText}${status === 'running' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
-      className="flex flex-wrap items-baseline gap-x-2 gap-y-1 px-2 text-sm"
+      className="text-sm"
       data-status={status}
     >
-      {/* Status is in the group's accessible name; the glyph keeps it from being colour-only. */}
-      <span aria-hidden="true" className="inline-flex shrink-0 items-center self-center">
-        <SubagentStatusGlyph status={status} />
-      </span>
-      {canJump ? (
-        <button
-          type="button"
-          title={`Go to ${stageLabel}`}
-          className={cn(
-            'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
-            colorClass
-          )}
-          aria-label={`Go to ${speechHeading}`}
-          onClick={() => jumpToStageRow(stage.id)}
-        >
-          {stageLabel}
-        </button>
-      ) : (
-        <span className={cn('min-w-0 max-w-full truncate', colorClass)} title={stageLabel}>
-          {stageLabel}
+      <div className="flex min-w-0 items-center gap-2 px-2">
+        {/* Status is in the group's accessible name; the glyph keeps it from being colour-only. */}
+        <span aria-hidden="true" className={ICON_SLOT_CLASS}>
+          <SubagentStatusGlyph status={status} />
         </span>
-      )}
-      {durationMs != null && (
-        <span aria-hidden="true" className="shrink-0 tabular-nums text-xs text-muted-foreground">
-          {formatElapsed(durationMs)}
-        </span>
-      )}
-      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-        {stage.items.map((item) => (
-          <ChainAgentEntry key={item.id} item={item} sessionId={sessionId} />
-        ))}
+        {canJump ? (
+          <button
+            type="button"
+            title={`Go to ${stageLabel}`}
+            className={cn(
+              'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 -my-1 hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+              colorClass
+            )}
+            aria-label={`Go to ${speechHeading}`}
+            onClick={() => jumpToStageRow(stage.id)}
+          >
+            {stageLabel}
+          </button>
+        ) : (
+          <span className={cn('min-w-0 max-w-full truncate', colorClass)} title={stageLabel}>
+            {stageLabel}
+          </span>
+        )}
+        {durationMs != null && (
+          <span aria-hidden="true" className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground">
+            {formatElapsed(durationMs)}
+          </span>
+        )}
       </div>
-      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="basis-full" />
+      {/* pl-8 = icon slot plus gap, so "Uses:" starts under the title. */}
+      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="pl-8 pr-2" />
+      <SpineList elbows>
+        {stage.items.map((item) => (
+          <SpineItem key={item.id} isNew={false}>
+            <ChainAgentEntry item={item} sessionId={sessionId} />
+          </SpineItem>
+        ))}
+      </SpineList>
     </div>
   )
-}
