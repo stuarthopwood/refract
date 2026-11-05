@@ -11,7 +11,7 @@ const BLOCKED_KEYS: Record<string, true> = { e: true, E: true, "+": true, "-": t
 const HIDE_NATIVE_SPINNER =
   "[appearance:textfield] [&::-webkit-inner-spin-button]:m-0 [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:m-0 [&::-webkit-outer-spin-button]:appearance-none"
 
-const STEP_BUTTON = "h-auto min-h-0 w-4 flex-1 rounded-sm p-0 text-muted-foreground hover:bg-transparent hover:text-foreground active:text-foreground dark:hover:bg-transparent [&_svg]:size-3"
+const STEP_BUTTON = "h-auto min-h-0 w-[17px] flex-1 rounded-sm p-0 text-muted-foreground hover:bg-transparent hover:text-foreground active:text-foreground dark:hover:bg-transparent [&_svg]:size-3"
 
 /** `value` as a number, or `undefined` when empty or not controlled. */
 function numericValue(value: unknown): number | undefined {
@@ -63,7 +63,7 @@ function NumberField({ className, onKeyDown, onWheel, ref, ...props }: Omit<Reac
         }}
         {...props}
       />
-      <div className="absolute inset-y-px right-px flex flex-col">
+      <div className="absolute inset-y-0 right-0 flex flex-col">
         <Button type="button" variant="ghost" tabIndex={-1} aria-hidden disabled={inert || atMax} className={STEP_BUTTON} onClick={() => step(1)}>
           <ChevronUpIcon />
         </Button>
