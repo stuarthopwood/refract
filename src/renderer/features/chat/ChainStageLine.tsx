@@ -123,3 +123,4 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
       </SpineList>
     </div>
   )
+}
