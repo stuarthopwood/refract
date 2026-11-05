@@ -55,12 +55,9 @@ export const DEFAULT_SETTINGS: Settings = {
   detectImagePathsOnPaste: true,
   sessionListCollapse: DEFAULT_SESSION_LIST_COLLAPSE,
   rightPane: DEFAULT_RIGHT_PANE,
-  pullRequestsListWidthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX // #930: default and remembered-width floor; see `pull-requests-layout-store.ts`
-  // Issue #772 (Rust build only, FINDINGS item 28): `wordPredictionEnabled` is deliberately
-  // ABSENT here (not `false`) -- `MessageInput.tsx`'s own `!== false` read treats an absent
-  // value as enabled, so this client-only placeholder never flickers ghost text off for
-  // Electron (whose real `settings.get()` never returns the field at all) during the brief
-  // window before the real Settings row arrives.
+  pullRequestsListWidthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, // #930: default and remembered-width floor; see `pull-requests-layout-store.ts`
+  // Placeholder until the real row arrives (Rust default is `false`); `true` keeps ghost text from flickering off meanwhile.
+  wordPredictionEnabled: true
 }
 
 export const useSettingsStore = create<SettingsState>((set) => ({
