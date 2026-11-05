@@ -31,6 +31,8 @@ interface SettingsState {
   setCodeLigatures(enabled: boolean): Promise<void>
   setShowScrollbarMap(enabled: boolean): Promise<void>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
+  setSessionNotificationSounds(enabled: boolean): Promise<void>
+  setAlarmSounds(enabled: boolean): Promise<void>
   /** Resolves `true` on success so the form closes only after a real save. */
   upsertAlarm(alarm: Alarm): Promise<boolean>
   deleteAlarm(id: string): Promise<boolean>
@@ -195,6 +197,16 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setShowFinishedTurnTimes: async (enabled) => {
     const result = await window.refract.settings.setShowFinishedTurnTimes(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+  },
+  setSessionNotificationSounds: async (enabled) => {
+    const result = await window.refract.settings.setSessionNotificationSounds(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+  },
+  setAlarmSounds: async (enabled) => {
+    const result = await window.refract.settings.setAlarmSounds(enabled)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
   },
