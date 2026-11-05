@@ -113,8 +113,7 @@ async function main() {
     );
     const mdExpr = `(() => {
       const trigger = Array.from(document.querySelectorAll('button')).find((x) => (x.textContent ?? '').includes(${JSON.stringify(MARKDOWN_SUMMARY)}));
-      const root = trigger?.closest('[data-state]')?.parentElement ?? trigger?.parentElement?.parentElement;
-      const scope = trigger?.closest('[data-state]') ?? root;
+      const scope = trigger?.closest('[data-slot="collapsible"]');
       if (!scope) return null;
       return {
         expanded: trigger.getAttribute('aria-expanded'),
