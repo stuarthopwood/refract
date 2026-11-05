@@ -122,7 +122,7 @@ export class CdpSession {
   async evaluate(expression) {
     const result = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
     if (result.exceptionDetails) {
-      throw new Error(`evaluate failed: ${result.exceptionDetails.exception?.description ?? JSON.stringify(result.exceptionDetails)} | line=${result.exceptionDetails.lineNumber} col=${result.exceptionDetails.columnNumber} | EXPR>>>${expression}<<<EXPR`);
+      throw new Error(`evaluate failed: ${result.exceptionDetails.exception?.description ?? JSON.stringify(result.exceptionDetails)} | line=${result.exceptionDetails.lineNumber} col=${result.exceptionDetails.columnNumber}`);
     }
     return result.result.value;
   }

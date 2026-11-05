@@ -127,6 +127,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
         side="top"
         align="start"
         collisionPadding={8}
+        collisionBoundary={card.collisionBoundary}
         className="w-auto p-4"
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
@@ -188,6 +189,7 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
         side="top"
         align="start"
         collisionPadding={8}
+        collisionBoundary={card.collisionBoundary}
         className="w-auto p-4"
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
