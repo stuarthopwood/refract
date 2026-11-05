@@ -81,7 +81,7 @@ pub fn list_session_files(root: &Path) -> Vec<SessionFile> {
     found
 }
 
-fn unchanged(conn: &Connection, file: &SessionFile) -> bool {
+pub(super) fn unchanged(conn: &Connection, file: &SessionFile) -> bool {
     conn.prepare("SELECT last_modified, file_len FROM file_offsets WHERE session_file = ?1")
         .and_then(|mut s| {
             s.query_row([file.path.to_string_lossy().as_ref()], |r| {

@@ -34,3 +34,18 @@ pub fn resolve_sessions_dir(raw: Option<String>, home: Option<PathBuf>) -> PathB
         .join("agent")
         .join("sessions")
 }
+
+/// Copilot CLI's `session-state` folder (read-only); `COPILOT_HOME` relocates the data root.
+pub fn copilot_sessions_dir() -> PathBuf {
+    resolve_copilot_sessions_dir(std::env::var("COPILOT_HOME").ok(), dirs::home_dir())
+}
+
+/// Pure resolution; a blank or relative `COPILOT_HOME` falls back to `.copilot` under `home`.
+pub fn resolve_copilot_sessions_dir(raw: Option<String>, home: Option<PathBuf>) -> PathBuf {
+    let from_env = raw
+        .map(|r| PathBuf::from(r.trim()))
+        .filter(|p| !p.as_os_str().is_empty() && p.is_absolute());
+    from_env
+        .unwrap_or_else(|| home.unwrap_or_default().join(".copilot"))
+        .join("session-state")
+}

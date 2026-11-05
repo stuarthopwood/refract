@@ -1,6 +1,7 @@
-// Refract's own usage database, fed from OMP's session files.
+// Refract's own usage database, fed from OMP's session files and Copilot CLI's session events.
 
 pub mod budget;
+pub mod copilot_cli;
 pub mod credits;
 mod fingerprint;
 pub mod frustration;
