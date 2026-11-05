@@ -339,3 +339,31 @@ pub fn relabel_file(conn: &Connection, session_file: &str, new: &str) -> rusqlit
     )?;
     Ok(())
 }
+
+/// Removes every message of one file and subtracts it from the rollups, so a source whose rows are
+/// replaced wholesale (Copilot CLI's per-session total) can be rewritten. Runs inside a transaction.
+pub fn forget_file_messages(conn: &Connection, session_file: &str) -> rusqlite::Result<()> {
+    // A NUL label differs from every stored label, so the subtracting statement selects all rows.
+    conn.execute(
+        &rollup_messages_of_file("project_label"),
+        params!["\0", -1i64, session_file],
+    )?;
+    conn.execute(
+        "DELETE FROM messages WHERE session_file = ?1",
+        [session_file],
+    )?;
+    conn.execute(
+        "DELETE FROM session_rollup WHERE session_file = ?1",
+        [session_file],
+    )?;
+    conn.execute("DELETE FROM message_rollup WHERE calls <= 0", [])?;
+    conn.execute(
+        "UPDATE message_rollup SET cost_total = max(cost_total, 0.0), cost_input = max(cost_input, 0.0), \
+         cost_output = max(cost_output, 0.0), cost_cache_read = max(cost_cache_read, 0.0), \
+         cost_cache_write = max(cost_cache_write, 0.0), credits = max(credits, 0.0) \
+         WHERE cost_total < 0 OR cost_input < 0 OR cost_output < 0 OR cost_cache_read < 0 \
+         OR cost_cache_write < 0 OR credits < 0",
+        [],
+    )?;
+    Ok(())
+}
