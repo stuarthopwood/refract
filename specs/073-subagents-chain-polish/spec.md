@@ -19,6 +19,13 @@ A card around the in-chat Subagents chain (renderer) and one status pipeline for
 - Q: A synchronous `task` end with no progress entry for an index? [Decided] Unchanged: settles Done. Error and Stop paths (#563, #911) are unchanged.
 - Q: History replay of a background item that never gets a settle signal? [Decided] Replay applies later `wait` jobs and async-result messages first (history carries both). Any item still Running after replay belongs to a dead process, so it settles Done with no duration; it must not spin forever.
 
+### Session 2026-11-05 (amendment, #1622, grilled 2026-11-03 by Stuart)
+
+- Q: How does the card show hierarchy? [Decided] The shared `SpineList` rail runs down from the header icon; each Stage gets a short horizontal elbow into its icon, and a Stage's agents hang off a second rail that starts under the Stage icon. The elbow is an opt-in `SpineList` option; other users are unchanged.
+- Q: Where do a Stage's agents sit? [Decided] Always on their own lines under the Stage title, on the Stage's rail, even for a one-agent Stage. No inline-versus-wrapped shapes.
+- Q: How do rows align? [Decided] Header, Stage and agent rows share the `CollapsedLine` `h-5 w-4` icon box and an `items-center` row, so icons, text and durations share one centre line. The Stage duration sits at the row's right end; an agent's duration stays after its name; `StageUsesLine` stays below the title.
+- Q: Accessibility? [Decided] Rails and elbows are decorative borders, visible in `forced-colors`; the list stays `ol`/`li`; Stage and agent button keyboard and focus behaviour is unchanged (#1001).
+
 ## Functional requirements
 
 - FR-1 (#1436): A chain of two or more Stages renders in a neutral card; collapse, Spine, header and actions are unchanged.
@@ -26,6 +33,9 @@ A card around the in-chat Subagents chain (renderer) and one status pipeline for
 - FR-3 (#1437): A single shared function maps an OMP status word to an outcome.
 - FR-4 (#1623): A non-error `task` end whose progress entry reads running leaves the `subagent` item Running (job id still stored); it settles later via jobs or lifecycle with `durationMs`.
 - FR-5 (#1623): History replay settles a still-Running `subagent` item Done once all later job results are applied.
+- FR-6 (#1622): `SpineList` gains an opt-in `elbows` option; each `SpineItem` of such a list draws a decorative tick from the rail to its row's icon centre line. Lists without the option render as before.
+- FR-7 (#1622): The chain card's Stage list uses rail plus elbows under the header icon; each Stage renders its agents (one or many) as a nested elbowed `SpineList` under the Stage title, whose rail starts under the Stage icon.
+- FR-8 (#1622): Stage and agent rows are single `items-center` lines that never wrap: icon box, truncated title (with `title` tooltip), duration. Agent rows have no vertical padding offset, so they match the Stage row height; clickable agents keep the hover fill and focus ring.
 
 ## Success criteria
 
@@ -33,3 +43,4 @@ A card around the in-chat Subagents chain (renderer) and one status pipeline for
 - SC-2: `pnpm ci:local` passes.
 - SC-3: No new tests (rapid-prototyping phase).
 - SC-4 (#1623): Rust tests cover the async end, the later `wait` settle, the sync end, and history replay (the SC-3 no-new-tests rule is lifted for Rust, epic #797).
+- SC-5 (#1622): Live check shows one-agent and multi-agent Stages with elbows, agents under their Stage, and one icon column per level, in dark, light and high-contrast themes. No new tests (SC-3).
