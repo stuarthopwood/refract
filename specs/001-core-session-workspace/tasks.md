@@ -5443,3 +5443,14 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T412 Stop banner focus handoff: `focusStopBanner`, `useComposerFocusHandoff`, single
   `stopAndRestore` focus, per FR-120 (issue #1285)
 - [x] T413 Live check `scripts/verify-tauri-092.mjs` for FR-120, then `ci:local` and gate
+
+## Phase 84: Convergence (#1648 OMP command output as Markdown, FR-121, FR-122)
+
+- [ ] T414 [US1] Rust: carry the command name on a command-output `Notice` (`transcript.rs`,
+  `notice_prefixes.rs`, `src/shared/model.ts`), with Rust tests, per FR-122 (missing)
+- [ ] T415 [US1] `NoticeRow.tsx`: render command-output bodies through `Markdown` (variant chat) with a
+  stripped first-line summary, per FR-121 (missing)
+- [ ] T416 [US1] `parseUsageOutput` (one typed parser) and a `UsageNoticeCard` built from `Card` and
+  `ProgressStrip` (state prop), with the Markdown fallback, per FR-122 (missing)
+- [ ] T417 [US1] Live check `scripts/verify-tauri-1648.mjs` in a light and a dark theme, update
+  `docs/PLAN.md`, then `node scripts/ci-local.mjs` and gate
