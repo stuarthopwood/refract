@@ -20,7 +20,6 @@ static SERVICE: OnceLock<Arc<UsageService>> = OnceLock::new();
 
 pub fn register(d: &mut Dispatcher) {
     d.register("usage.start", usage_start);
-    d.register("usage.stop", usage_stop);
     d.register("usage.status", usage_status);
     d.register("usage.summary", usage_summary);
     d.register("usage.timeseries", usage_timeseries);
@@ -33,7 +32,7 @@ pub fn register(d: &mut Dispatcher) {
     super::usage_prefs::register(d);
 }
 
-/// Nothing to nudge until the Usage view starts the worker.
+/// The one service for the app's lifetime; `start_at_launch` and `usage.start` share it.
 fn service(state: &AppState) -> Arc<UsageService> {
     SERVICE
         .get_or_init(|| {
@@ -54,7 +53,7 @@ fn service(state: &AppState) -> Arc<UsageService> {
         .clone()
 }
 
-/// Called on each finished message. A no-op until the Usage worker starts.
+/// Called on each finished message. A no-op until the service exists (created at launch).
 pub fn nudge(path: &std::path::Path) {
     if let Some(service) = SERVICE.get() {
         service.nudge(path);
@@ -76,20 +75,19 @@ fn to_json<T: Serialize>(value: &T) -> HandlerResult {
     serde_json::to_value(value).map_err(|e| IpcError::new("usage-db-unavailable", e.to_string()))
 }
 
+/// Starts ingest during app setup so session files are read before the Usage view ever opens.
+pub fn start_at_launch(state: &AppState) {
+    service(state).start();
+    log::info!("usage: ingest started at launch");
+}
+
+/// Idempotent: the launch start owns the worker, so this only queues a scan, which also retries a
+/// launch start that failed (for example, an unopenable `usage.db`).
 fn usage_start(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let service = service(&state);
         service.start();
         to_json(&service.status())
-    })
-}
-
-fn usage_stop(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        if let Some(service) = SERVICE.get() {
-            service.stop();
-        }
-        Ok(Value::Null)
     })
 }
 

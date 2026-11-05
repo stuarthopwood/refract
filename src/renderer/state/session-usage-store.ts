@@ -13,8 +13,6 @@ import type {
   UsageTokenMixRow
 } from '../../shared/ipc-usage'
 
-import { acquireUsageService, releaseUsageService } from './usage-service'
-
 export const SESSION_CALLS_STEP = 10
 export const MAX_CALLS = 100
 
@@ -116,7 +114,7 @@ export const useSessionUsageStore = create<SessionUsageState>((set, get) => ({
       if (!same) set({ status })
       if (watchedDir) scheduleRefresh(get().refresh)
     })
-    const started = await acquireUsageService('session-usage')
+    const started = await window.refract.usage.start()
     if (started.ok) set({ status: started.value })
     const budget = await window.refract.usage.budget()
     if (budget.ok) set({ budget: budget.value })
@@ -129,7 +127,6 @@ export const useSessionUsageStore = create<SessionUsageState>((set, get) => ({
     trailing = null
     dirty = false
     sequence += 1
-    releaseUsageService('session-usage')
   },
   async refresh(sessionDir) {
     watchedDir = sessionDir

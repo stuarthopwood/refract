@@ -11,7 +11,7 @@ Rules: `ipc.ts` and `App.tsx` do not grow (contract in `ipc-usage.ts`, prefs in 
 Findings:
 - Fixed during this pass: `topSessions` could not honour model, reasoning or agent filters from `session_rollup`; `data-model.md` now groups `messages` in that case.
 - Risk, accepted: `usage.premiumRequests` is stored but unused; if Copilot billing reverts to request multipliers the credits rule (spec Clarifications) is revisited.
-- Risk, accepted: a Project added after ingest relabels only on the next `usage.start`; the view always starts the worker on open, so the user sees it on the next open.
+- Risk, accepted: a Project added after ingest relabels only on the next scan (five-minute rescan or `usage.start`); ingest starts at app launch (#1655), so the view does not need to start it.
 - Open (not blocking): Command palette "Open Usage" cannot be registered until #5 exists; S2-16 ships the descriptor only.
 - Open (verify at implement): `plan_snapshot()` assumes `quota_snapshots.premium_interactions` also exposes `entitlement` and `quota_remaining` in the same units as `omp usage --json` (both observed consistent: 2,000,000 limit); S1-19's fake `gh` must use the real field names, and S1-13 confirms the units against one real read-only call.
 - Open (verify at implement): SC-002 and SC-003 timings are targets until measured on the fixture.

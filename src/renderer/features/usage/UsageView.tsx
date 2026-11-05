@@ -1,6 +1,7 @@
 // Spec 060 S2-14: the top-level Usage view (left nav, same shell as Pull requests and Issues).
-// Opening it starts the backfill and the rescan; leaving it stops the rescan. The dashboard fills
-// as data arrives, with a progress strip while the first backfill runs.
+// Ingest already runs from app launch; opening this re-asks for a start (idempotent) and leaving it
+// only unsubscribes. The dashboard fills as data arrives, with a progress strip while the first
+// backfill runs.
 import { useEffect, useRef } from 'react'
 import { ProgressStrip } from '@/components/ProgressStrip'
 import { ScreenHeader } from '@/components/ScreenHeader'

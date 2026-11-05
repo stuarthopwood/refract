@@ -1,9 +1,9 @@
 // Usage view state (spec 060 S2-05): filters and prefs persisted through `usage.setPrefs`, the
-// results of every query for the current filters, and the ingest progress. `open()` starts the
-// backfill and the progress subscription; `close()` stops the rescan. One fetch per filter change,
-// and one per progress event while an ingest runs (the host emits at most one a second).
+// results of every query for the current filters, and the ingest progress. Ingest itself runs from
+// app launch; `open()` re-asks for a start (idempotent) and subscribes to progress, `close()`
+// unsubscribes. One fetch per filter change, and one per progress event while an ingest runs (the
+// host emits at most one a second).
 import { create } from 'zustand'
-import { acquireUsageService, releaseUsageService } from './usage-service'
 import type {
   UsageBreakdownRow,
   UsageBudget,
@@ -112,7 +112,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
         if (finished) void window.refract.usage.budget().then((r) => r.ok && set({ budget: r.value }))
       })
     })
-    const started = await acquireUsageService('usage-view')
+    const started = await window.refract.usage.start()
     if (started.ok) {
       set({ status: started.value })
       lastRunning = started.value.running
@@ -124,7 +124,6 @@ export const useUsageStore = create<UsageState>((set, get) => ({
     unsubscribe = null
     sequence += 1
     set({ refreshing: false })
-    releaseUsageService('usage-view')
   },
   setFilters(patch) {
     const filters = { ...get().filters, ...patch }
