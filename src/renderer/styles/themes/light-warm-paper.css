@@ -38,7 +38,8 @@
   --secondary-foreground: var(--foreground);
   --muted: #ded4c0;
   --muted-foreground: oklch(0 0 0 / 70%);
-  --holiday-artwork-opacity: 0.2;
+  --watermark-opacity: 0.225; /* #1647: about 1.3:1 over #faf3e5 (mean facet grey) */
+  --holiday-artwork-opacity: 0.165; /* #1647: about 1.3:1 over #faf3e5 */
   --accent: #ded4c0;
   --accent-foreground: var(--foreground);
   --viewer-tint: #f6efe1;

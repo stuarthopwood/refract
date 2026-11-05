@@ -113,6 +113,15 @@ watermark. A dedicated new CSS token (e.g. `--watermark-color`) instead of reusi
 `--muted-foreground` — rejected as an unnecessary new per-theme value when an existing, correctly-
 scoped token already fits.
 
+**Amended 2026-11-04 (issue #1647, supersedes this decision's single-colour rule)**: the plain mark
+is an inline SVG (`src/renderer/components/brand/BrandMark.tsx`) with the same paths as
+`refract-hero.svg`. Each facet fills with `var(--watermark-tone-<brand hex>)`, a grey at the
+OKLCH lightness of that brand colour with chroma 0 (0.340 to 0.791 across the 18 distinct
+colours), declared once in `:root` so a theme may tune any of them. The whole mark keeps
+`--watermark-opacity`. Reason: one flat grey lost the 3D shape and the brand identity; the greys
+keep both and stay colourless, so the contrast proof still reduces to grey on the background. The
+`.watermark-mark` mask rule is removed.
+
 ## 5. Opacity: one named constant, with a real measured starting value and ceiling
 
 **Decision**: `--watermark-opacity: 0.06;` is declared once in `globals.css`'s `:root` block
@@ -150,6 +159,12 @@ the same value: Dark and Cyber Amber 0.30 (1.64:1), Obsidian and Nordic Frost 0.
 1.61:1), Dark high contrast 0.24 (opaque grey muted foreground, about 1.6:1). The `:root` fallback
 is 0.30. The 0.12 ceiling above no longer applies; the mark is decorative and exempt from WCAG
 1.4.11, and stays hidden in forced colors. No new token.
+
+**Amended 2026-11-04 (issue #1647, supersedes the 1.6:1 target and the per-theme values above)**:
+both marks now target about **1.3:1** against the theme background, same method. The plain mark
+is measured on its mean facet grey (decision 4's 2026-11-04 amendment); the holiday glyph on
+`--muted-foreground` at its own alpha times the opacity. Each theme's measured ratio sits in the
+CSS comment beside the value. Muted transcript text over the mark keeps the 4.5:1 floor.
 
 ## 6. Size: a CSS container-query clamp, not a JS resize listener
 

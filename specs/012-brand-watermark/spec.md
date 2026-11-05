@@ -73,6 +73,20 @@ already import.
   estimated (roughly 7.2:1/13.8:1 at 0.06, for the tighter Dark preset), and the opacity's
   documented ceiling is set from that real arithmetic, not the review's unverified guess.
 
+### Session 2026-11-04 (issue #1647, grilled by Stuart, none deferred)
+
+- Q: Does the holiday glyph come back to transcript panes? -> A: Yes. This reverses #1256's
+  `allowHoliday={false}` ruling (and spec 109 FR-1 for the preview); the overlap concern drops
+  with the lower opacity (FR-023, FR-024).
+- Q: How faint? -> A: About 1.3:1 against the theme background for both the plain mark and the
+  holiday glyph, down from about 1.6:1 (#1298). Measured per theme with the #1233 method
+  (sRGB-gamma composite, WCAG luminance) and recorded in the CSS comments (FR-024).
+- Q: Is the single-colour rule (research decision 4) kept? -> A: No. The plain mark becomes an
+  inline SVG whose facets are greys matched to each brand colour's OKLCH lightness, chroma 0,
+  as CSS variables a theme can tune (FR-025). The 1.3:1 target is measured on the mean facet
+  grey; the lightest and darkest facets are recorded as the range.
+- Q: Any open question? -> A: None; answered from the issue and `docs/design/product-look-and-feel.md`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Sees Refract's own mark quietly anchored in the workspace (Priority: P1)
@@ -117,6 +131,12 @@ to the right pane, not two.
    shown, **When** the developer looks at the chat area, **Then** the mark's anchored corner is
    unaffected by either panel's state (though its clamped size still responds to how much width
    the reading area itself has left, the same as any other content inside it).
+7. **Given** Bonfire Night (or any holiday) is in season and Holiday touches is not Off, **When**
+   the developer opens a Session, **Then** the corner watermark is the holiday glyph, and so is
+   the Appearance preview (#1647, FR-023).
+8. **Given** the mark is the plain mark, **When** the developer looks at it, **Then** the teal,
+   orange and violet faces read as distinct greys that keep the mark's 3D shape, at about 1.3:1
+   against the background (#1647, FR-024, FR-025).
 
 ---
 
@@ -260,6 +280,8 @@ right-most (or single) pane's reading area.
 - **FR-003**: The mark MUST render as a single-colour silhouette derived from the active theme's
   own muted/secondary tone, not the artwork's full multi-hue palette, so it reads as a tonal
   watermark and needs no per-theme recolouring work.
+  *Amended 2026-11-04 (#1647): the silhouette is now per-facet greys of the brand colours, see
+  FR-025. FR-002's "no second copy" is met by an inline SVG with identical paths, not a recolour.*
 - **FR-004**: The mark's faintness MUST be driven by one named, tunable opacity constant with a
   single declared home in the stylesheet, not a value repeated at each call site; its starting
   value and the upper bound later tuning should not exceed are both set from a real, measured WCAG
@@ -331,6 +353,23 @@ right-most (or single) pane's reading area.
   per-frame JavaScript, no remote request, and no new npm dependency; it MUST pass the existing
   Content Security Policy (`img-src 'self' data:`, `src/renderer/index.html`) unchanged, the same
   way the existing hero asset already does.
+- **FR-023** (#1647): In season, with Holiday touches not Off and the watermark switch on, the live
+  watermark in a transcript pane and the Appearance preview MUST show the holiday glyph, the same
+  as the empty state. This reverses #1256's `allowHoliday={false}` ruling; `BrandWatermark` no
+  longer takes an `allowHoliday` prop.
+- **FR-024** (#1647): Both the plain mark and the holiday glyph MUST read at about **1.3:1**
+  against the theme background (was about 1.6:1, #1298). `--watermark-opacity` and
+  `--holiday-artwork-opacity` are tuned per theme to that target, and each measured ratio is
+  recorded in the CSS comment beside the value. The marks are decorative and exempt from WCAG
+  1.4.11; muted transcript text over the mark keeps the 4.5:1 floor of FR-015.
+- **FR-025** (#1647): The plain mark MUST render as an inline SVG (the same paths as
+  `refract-hero.svg`, a shared component in `src/renderer/components/brand/`), not a CSS mask.
+  Each facet's fill is a grey with the OKLCH lightness of its brand colour and chroma 0, exposed
+  as a CSS custom property so a theme can tune it; the whole mark keeps `--watermark-opacity`.
+  The Settings preview reuses the same component.
+- **FR-026** (#1647): Both marks MUST stay hidden under `forced-colors: active` and
+  `prefers-reduced-transparency: reduce`, `aria-hidden`, `pointer-events: none` (FR-012 to FR-014
+  unchanged).
 
 ### Key Entities
 

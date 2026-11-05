@@ -61,7 +61,7 @@ export function AppearanceSection() {
               onCheckedChange={(checked) => void setWatermarkEnabled(checked)}
             />
             <div className="mb-4 flex size-28 items-center justify-center rounded-md border border-border">
-              <BrandWatermark variant="preview" allowHoliday={false} />
+              <BrandWatermark variant="preview" />
             </div>
           </div>
           <SettingRow

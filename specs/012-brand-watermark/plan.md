@@ -162,6 +162,10 @@ smaller change than the first draft's own new App.tsx wrapper, not a larger one.
   branch or `ChatPane.tsx` itself, and `App.tsx` already replaces that whole region's render branch
   for Settings/Readiness/the future Manage sessions screen, there is no extra `view === 'chat'`
   check to add or forget.
+- **Amended 2026-11-04 (#1647)**: the mark is the shared inline SVG `BrandMark` (per-facet greys,
+  `--watermark-tone-*` in `:root`), both marks target about 1.3:1 per theme, and the holiday glyph
+  shows in transcript panes and the Appearance preview. `scripts/verify-tauri-1647.mjs` asserts
+  the computed opacity, ratio and glyph live.
 
 ### Build order and dependencies on other specs
 

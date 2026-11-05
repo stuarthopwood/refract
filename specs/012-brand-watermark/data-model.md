@@ -80,6 +80,10 @@ Both variants read the same `watermarkEnabled` state; `variant: 'preview'` addit
 `FR-011`'s full-screen suppression rule, since it is explicitly meant to render inside Settings
 (research.md decision 9).
 
+**Amended 2026-11-04 (#1647)**: the plain mark renders the shared `BrandMark` inline SVG
+(`src/renderer/components/brand/BrandMark.tsx`), not a mask-image box. `BrandWatermark` no longer
+takes `allowHoliday`; every caller shows the holiday glyph in season (spec.md FR-023, FR-025).
+
 ### Extended `ChatPaneProps` (`src/renderer/features/chat/ChatPane.tsx`)
 
 ```ts

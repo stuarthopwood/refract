@@ -342,12 +342,32 @@ samp {
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
   --radius: 0.25rem;
-  /* Spec 012 FR-004, #1369: the one home of the mark's opacity (about 1.6:1 over the Dark
-     background). A theme overrides it only where its own background needs a different value. */
-  --watermark-opacity: 0.30;
-  /* #1233, #1298: safe default for the Halloween artwork (bats and glyph); every `.theme-*` block
-     overrides it with the value that gives about 1.6:1 against its own background. */
-  --holiday-artwork-opacity: 0.30;
+  /* About 1.3:1 over the Dark background (#1647); a theme overrides it where its background
+     needs another value. */
+  --watermark-opacity: 0.26;
+  /* #1233, #1298, #1647: the holiday glyph and bats, about 1.3:1 over the Dark background (1.31:1,
+     muted foreground at 60% alpha times this). Every `.theme-*` block sets its own value. */
+  --holiday-artwork-opacity: 0.19;
+  /* Facet greys: each brand colour of `refract-hero.svg` at chroma 0, keyed by its hex, so the
+     mark keeps its 3D shape without hue (#1647). BrandMark.tsx reads them by name. */
+  --watermark-tone-3eac9e: oklch(0.678 0 0);
+  --watermark-tone-1c8f8f: oklch(0.591 0 0);
+  --watermark-tone-199d95: oklch(0.629 0 0);
+  --watermark-tone-f8a740: oklch(0.791 0 0);
+  --watermark-tone-d9811c: oklch(0.683 0 0);
+  --watermark-tone-eca231: oklch(0.767 0 0);
+  --watermark-tone-a877e0: oklch(0.662 0 0);
+  --watermark-tone-7544c9: oklch(0.517 0 0);
+  --watermark-tone-4b278a: oklch(0.380 0 0);
+  --watermark-tone-7844cd: oklch(0.523 0 0);
+  --watermark-tone-52208e: oklch(0.383 0 0);
+  --watermark-tone-8041b5: oklch(0.510 0 0);
+  --watermark-tone-4d1f8e: oklch(0.376 0 0);
+  --watermark-tone-45187a: oklch(0.340 0 0);
+  --watermark-tone-32ac9e: oklch(0.675 0 0);
+  --watermark-tone-f09b29: oklch(0.758 0 0);
+  --watermark-tone-492484: oklch(0.369 0 0);
+  --watermark-tone-864dd6: oklch(0.556 0 0);
   /* #579: translucent surfaces as tokens instead of Tailwind opacity modifiers; same element as the theme class, so they follow each preset's base colours. */
   --row-hover-bg: color-mix(in oklab, var(--muted) 50%, transparent);
   /* Resting (non-interactive) fills: same value as the hover fill today, but a theme can now split them. */
@@ -568,11 +588,11 @@ samp {
   /* #1074: white at 60% alpha over this theme's own `--background` -- 7.30:1, the dimmest of
    * the three text tiers, reserved for low-emphasis/meta text. */
   --muted-foreground: oklch(1 0 0 / 60%);
-  /* #1233, #1298: plain watermark, Halloween bats and glyph opacity, tuned per theme so the artwork
-   * reads at about 1.6:1 against `--background` (this value times the 60% muted alpha; measured
-   * 1.64:1 at 0.30). Was about 3:1 (0.58) for the Halloween artwork and 1.06:1 (0.06) for the plain
-   * mark. The plain mark uses the `:root` `--watermark-opacity`, which is this value. */
-  --holiday-artwork-opacity: 0.30;
+  /* #1233, #1298, #1647: Halloween bats and glyph opacity, tuned per theme so the artwork
+   * reads at about 1.3:1 against `--background` (this value times the 60% muted alpha; measured
+   * 1.31:1 at 0.19). Was about 3:1 (0.58) at #1233 and 1.6:1 (0.30) at #1298. The plain mark
+   * uses `--watermark-opacity` instead (the `:root` default is tuned for this theme). */
+  --holiday-artwork-opacity: 0.19;
   --accent: oklch(0.269 0 0);
   --accent-foreground: var(--foreground);
   /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
@@ -910,8 +930,8 @@ samp {
    * `.theme-dark`'s own comment explains in full. */
   --foreground: oklch(1 0 0 / 90%);
   --muted-foreground: oklch(1 0 0 / 60%);
-  --watermark-opacity: 0.28;
-  --holiday-artwork-opacity: 0.28; /* #1298: about 1.6:1 over #0F1014 (1.63:1) */
+  --watermark-opacity: 0.24; /* #1647: about 1.3:1 over #0F1014 (1.29:1, mean facet grey) */
+  --holiday-artwork-opacity: 0.17; /* #1647: 1.30:1 over #0F1014 */
   --sidebar: #14161E;
   /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
   --project-1: oklch(0.76 0.11 125);
@@ -1238,8 +1258,8 @@ samp {
   --secondary-foreground: oklch(1 0 0);
   --muted: oklch(0.26 0 0);
   --muted-foreground: oklch(0.85 0 0);
-  --watermark-opacity: 0.24;
-  --holiday-artwork-opacity: 0.24; /* #1298: about 1.6:1 over pure black (opaque muted grey) */
+  --watermark-opacity: 0.28; /* #1647: 1.30:1 over pure black (mean facet grey) */
+  --holiday-artwork-opacity: 0.16; /* #1647: 1.30:1 over pure black (opaque muted grey) */
   --accent: oklch(0.26 0 0);
   --accent-foreground: oklch(1 0 0);
   /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
@@ -1507,8 +1527,8 @@ samp {
    * `.theme-dark`'s own comment explains in full. */
   --foreground: oklch(1 0 0 / 90%);
   --muted-foreground: oklch(1 0 0 / 60%);
-  --watermark-opacity: 0.28;
-  --holiday-artwork-opacity: 0.28; /* #1298: about 1.6:1 over #060f1e (1.61:1) */
+  --watermark-opacity: 0.25; /* #1647: 1.30:1 over #060f1e (mean facet grey) */
+  --holiday-artwork-opacity: 0.18; /* #1647: 1.31:1 over #060f1e */
   --sidebar: #0c1626;
   /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
   --project-1: oklch(0.78 0.11 125);
@@ -1802,7 +1822,7 @@ samp {
    * popover are themselves byte-identical to Dark's own. */
   --foreground: oklch(1 0 0 / 90%);
   --muted-foreground: oklch(1 0 0 / 60%);
-  --holiday-artwork-opacity: 0.30; /* #1298: same as Dark (identical background) */
+  --holiday-artwork-opacity: 0.19; /* #1647: same as Dark (identical background) */
   --sidebar: oklch(0.205 0 0);
   /* Project colour presets (#887): 4.5:1 against --sidebar, the Session list background. */
   --project-1: oklch(0.78 0.11 125);
@@ -1986,21 +2006,9 @@ samp {
   --agent-spinner-core: #9A68E4;
 }
 
-/* ===== Spec 012: Brand watermark (research.md decisions 1-11) ===========================
- * A faint, single-colour silhouette of the Refract mark, anchored to the bottom-right corner
- * of the active chat pane's reading area (BrandWatermark.tsx). `.watermark-mark` carries the
- * shared mask-image/colour/opacity every variant renders with; `.watermark-mark--live` adds
- * the responsive clamp and corner anchor the 'live' variant uses (decisions 5-7) -- the
- * 'preview' variant (AppearanceSection.tsx) uses a plain Tailwind size utility instead, since
- * it needs no corner anchor. Hidden outright under Windows High Contrast or with "Show
- * transparency in Windows" off (decision 11) -- both media features confirmed real, supported,
- * and correctly recognised at this app's pinned Electron/Chromium (44.5.1 / Chromium 152). */
+/* Brand watermark (spec 012). Hidden under Windows High Contrast or with transparency off,
+ * where a faint mark would be invisible or opaque. */
 .watermark-mark {
-  mask-image: url('../assets/brand/refract-hero.svg');
-  mask-size: contain;
-  mask-repeat: no-repeat;
-  mask-position: center;
-  background-color: var(--muted-foreground);
   opacity: var(--watermark-opacity);
 }
 
@@ -2051,7 +2059,7 @@ samp {
  * `Element.animate()` call in `HolidayAmbientLoop.tsx` itself -- genuinely NO animation,
  * CSS or JS, running between flights, so `document.getAnimations()` is empty almost all the
  * time. Single colour (`--muted-foreground`, the same token the watermark itself uses) at the
- * per-theme `--holiday-artwork-opacity` (#1233, #1298: about 1.6:1 against the theme background). */
+ * per-theme `--holiday-artwork-opacity` (#1233, #1298, #1647: about 1.3:1 against the theme background). */
 .holiday-ambient-loop-bat {
   color: var(--muted-foreground);
   opacity: var(--holiday-artwork-opacity);

@@ -4,7 +4,7 @@ Status: in progress. Source: #406 gate leftovers (PR #1365), decisions in the "D
 
 ## Requirements
 
-- FR-1 The Settings watermark preview passes `allowHoliday={false}`, so it matches the session pane (#1256); the row description no longer promises a seasonal glyph.
+- FR-1 The Settings watermark preview passes `allowHoliday={false}`, so it matches the session pane (#1256); the row description no longer promises a seasonal glyph. _Superseded by #1647 (spec 012 FR-023): `allowHoliday` is gone and the preview shows the holiday glyph in season._
 - FR-2 The Appearance section separates the Decoration sub-section from the groups above with a divider (spec 012 FR-017).
 - FR-3 The Background watermark row is a `SettingSwitchRow` (ADR 0003).
 - FR-4 `--watermark-opacity` has one `:root` default in `globals.css`; a theme overrides it only where its background needs another value (spec 012 FR-004).
