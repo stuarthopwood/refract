@@ -387,6 +387,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
   return (
     <Card
       size="sm"
+      className="bg-chat-card-bg"
       role="group"
       aria-labelledby={groupAriaLabelledBy}
       aria-label={groupAriaLabel}
