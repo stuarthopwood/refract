@@ -20,6 +20,8 @@ use subagent_items::{
 };
 mod notice_prefixes;
 use notice_prefixes::{COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX};
+mod warning_collapse;
+use warning_collapse::collapse_repeated_warning;
 pub mod file_attachment_markers;
 use file_attachment_markers::FileAttachmentRef;
 mod user_images;
@@ -1337,6 +1339,11 @@ fn apply_frame_items(
                 .unwrap_or("")
                 .to_string();
             let mut items = items;
+            if level == NoticeLevel::Warning {
+                if let Some(merged) = collapse_repeated_warning(&items, &message) {
+                    return merged;
+                }
+            }
             let id = if has_user_acted {
                 format!("notice-{}", items.len())
             } else {

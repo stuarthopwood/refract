@@ -11,9 +11,11 @@ pub const SHAKE_CONTEXT_THRESHOLD: u64 = 60_000;
 pub const SHAKE_REPLY_WINDOW_MS: u64 = 2_000;
 /// Upper bound the next user prompt waits for an in-flight shake.
 pub const SHAKE_PROMPT_WAIT_MS: u64 = 10_000;
-/// After a shake, the context must grow by this many tokens before another one is attempted, so
-/// a shake that cannot get below the threshold does not re-run on every turn.
-pub const SHAKE_REGROWTH_TOKENS: u64 = 15_000;
+/// After a shake, or after omp reports it paused automatic maintenance, the context must grow by
+/// this many tokens before another shake is attempted, so one that cannot help does not re-run.
+pub const SHAKE_REGROWTH_TOKENS: u64 = 10_000;
+/// Text omp's warning carries when compaction cannot create headroom and it stops maintenance.
+const MAINTENANCE_PAUSED_MARKER: &str = "pausing automatic maintenance";
 
 #[derive(Default)]
 pub struct ShakeState {
@@ -74,6 +76,12 @@ impl ShakeState {
         self.post_shake_tokens = Some(tokens);
     }
 
+    /// The shared pause: omp stopped automatic maintenance at `tokens`, so no shake is attempted
+    /// until the context regrows by the margin.
+    pub fn pause_maintenance(&mut self, tokens: u64) {
+        self.post_shake_tokens = Some(tokens);
+    }
+
     /// Above the threshold, and (after a previous shake) grown enough since it.
     pub fn needs_shake(&self, tokens: Option<u64>) -> bool {
         exceeds_threshold(tokens)
@@ -111,6 +119,14 @@ pub fn is_shake_reply(frame: &Value) -> bool {
         .iter()
         .find_map(|k| frame.get(*k).and_then(Value::as_str))
         .is_none_or(|name| name.trim_start_matches('/') == "shake")
+}
+
+/// Whether a `notice` frame is omp saying it paused automatic maintenance.
+pub fn is_maintenance_paused_notice(frame: &Value) -> bool {
+    frame
+        .get("message")
+        .and_then(Value::as_str)
+        .is_some_and(|m| m.contains(MAINTENANCE_PAUSED_MARKER))
 }
 
 /// Fresh context size from a `get_session_stats` response's `data` (never the possibly stale
