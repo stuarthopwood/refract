@@ -75,7 +75,7 @@ function toViewDetail(pr) {
     changedFiles: 1,
     files: [{ path: 'file.txt', additions: 10, deletions: 2, changeType: 'MODIFIED' }],
     headRefOid: `head-${pr.number}`,
-    body: `Description for pull request #${pr.number}.`,
+    body: `Description for pull request #${pr.number}, mentioning \`pr-chip\`.`,
     isCrossRepository: false,
     headRepositoryOwner: null
   };
