@@ -67,7 +67,10 @@ fn wait_end_settles_the_agent_with_a_real_duration() {
     state.apply_frame(&task_end(&["running", "running"]), false);
     state.apply_frame(&wait_end("completed"), false);
     let rows = subagent_states(&state);
-    assert_eq!(rows[0], (SubagentStatus::Done, Some(4200), Some("job-0".into())));
+    assert_eq!(
+        rows[0],
+        (SubagentStatus::Done, Some(4200), Some("job-0".into()))
+    );
     assert_eq!(rows[1].0, SubagentStatus::Running);
 }
 
@@ -117,10 +120,12 @@ fn history(with_wait: bool) -> Vec<Value> {
             "details": { "progress": [{ "id": "job-0", "status": "running" }] } }),
     ];
     if with_wait {
-        messages.push(json!({ "role": "toolResult", "toolCallId": "wait-1", "toolName": "wait",
+        messages.push(
+            json!({ "role": "toolResult", "toolCallId": "wait-1", "toolName": "wait",
             "isError": false, "content": [],
             "details": { "jobs": [{ "jobId": "job-0", "label": "ImplA", "status": "completed",
-                "durationMs": 700, "resultText": "ok" }] } }));
+                "durationMs": 700, "resultText": "ok" }] } }),
+        );
     }
     messages
 }

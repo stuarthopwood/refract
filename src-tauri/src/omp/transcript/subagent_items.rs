@@ -415,13 +415,16 @@ pub(super) fn apply_async_result_jobs(
 
 /// History has no live process, so an item still Running after replay (every later job result
 /// already applied) will never get a settle signal; settle it Done rather than spin (#1623).
-pub(super) fn settle_unsettled_history_subagents(
-    items: &mut [Arc<TranscriptItem>],
-) -> bool {
+pub(super) fn settle_unsettled_history_subagents(items: &mut [Arc<TranscriptItem>]) -> bool {
     let mut changed = false;
     for item in items.iter_mut() {
-        if !matches!(item.as_ref(), TranscriptItem::Subagent { status: SubagentStatus::Running, .. })
-        {
+        if !matches!(
+            item.as_ref(),
+            TranscriptItem::Subagent {
+                status: SubagentStatus::Running,
+                ..
+            }
+        ) {
             continue;
         }
         if let TranscriptItem::Subagent { status, .. } = Arc::make_mut(item) {
