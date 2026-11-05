@@ -23,5 +23,5 @@ export interface AttachmentsApi {
   pickFiles(sessionId: string): Promise<Result<string[]>>;
   recordDroppedPaths(sessionId: string, paths: string[]): Promise<Result<void>>;
   getPathForFile?(file: File): string;
-  onFileDrop?(handler: (event: { paths: string[]; position: { x: number; y: number } }) => void): Unsubscribe;
+  onFileDrop(handler: (event: { paths: string[]; position: { x: number; y: number } }) => void): Unsubscribe;
 }

@@ -1,7 +1,6 @@
 // Tauri/Rust build's renderer entry point (plan.md Project Structure). Assigns `window.refract`
 // BEFORE the renderer's own entry module ever runs, so `main.tsx`'s very first line --
-// `window.refract.themeBootstrap()` -- always sees it defined, the same ordering guarantee
-// Electron's preload script gives for free by running in a separate, earlier-loading context.
+// `window.refract.themeBootstrap()` -- always sees it defined.
 //
 // Exception to static-import-only: ES module imports are hoisted and fully evaluated (including
 // every top-level statement in the imported module) before ANY of this file's OWN top-level
