@@ -202,7 +202,12 @@ pub(super) async fn add_repository_at(
         .add_repository(repository.clone())
         .await
         .map_err(map_registry_error)?;
-    Ok(with_unknown_remote(&repository))
+    // Same eager recompute as `.rename`; `repository_remote` caps itself at 3s and `None` falls
+    // back to `unknown`, so a slow `git remote` never stalls adding a project.
+    let remote = repository_remote(std::path::Path::new(&repository.path))
+        .await
+        .unwrap_or(RepositoryRemoteKind::Unknown);
+    Ok(with_remote(&repository, &remote))
 }
 
 pub fn repositories_remove(state: AppState, args: Vec<Value>) -> HandlerFuture {
