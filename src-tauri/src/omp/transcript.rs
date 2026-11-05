@@ -1455,7 +1455,7 @@ fn settle_interrupted_tool_rows_items(
     mut items: Vec<Arc<TranscriptItem>>,
     terminated_unexpectedly: bool,
 ) -> (Vec<Arc<TranscriptItem>>, bool) {
-    let mut changed = false;
+    let mut changed = subagent_items::settle_unsettled_history_subagents(&mut items);
     let mut saw_later_user = false;
     for item in items.iter_mut().rev() {
         if matches!(item.as_ref(), TranscriptItem::User { .. }) {

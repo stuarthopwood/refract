@@ -7,3 +7,10 @@
 - [x] T005 `pnpm ci:local`
 - [x] T006 Live check with fake omp (lifecycle-only settle)
 - [x] T007 Review gate
+
+## Phase 2: Convergence
+
+- [ ] T010 Keep a background `task` end Running in `apply_batch_task_result` per FR-4 (missing)
+- [ ] T011 Settle still-Running subagent items Done after history replay per FR-5 (missing)
+- [ ] T012 Rust tests: async end stays Running, `wait` jobs settle with duration, sync end Done, history replay per SC-4 (missing)
+- [ ] T013 `pnpm ci:local`, live check with fake omp or log proof (missing)
