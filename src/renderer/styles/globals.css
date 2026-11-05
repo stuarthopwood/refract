@@ -340,16 +340,14 @@ samp {
      unused "light theme" block (research.md decision 1: Refract ships dark-only presets, never a
      light theme) now lives only inside each `.theme-<id>` block below. */
   --radius: 0.25rem;
-  /* Spec 012 FR-004, FR-024, #1647: the one home of the plain mark's opacity, tuned to about 1.3:1
-     over the Dark background (1.31:1, measured on the mean facet grey below; was 1.6:1, #1298).
-     A theme overrides it where its own background needs another value. */
+  /* About 1.3:1 over the Dark background (#1647); a theme overrides it where its background
+     needs another value. */
   --watermark-opacity: 0.26;
   /* #1233, #1298, #1647: the holiday glyph and bats, about 1.3:1 over the Dark background (1.31:1,
      muted foreground at 60% alpha times this). Every `.theme-*` block sets its own value. */
   --holiday-artwork-opacity: 0.19;
-  /* Spec 012 FR-025, #1647: the plain mark's facet greys. Each is the OKLCH lightness of its brand
-     colour in `refract-hero.svg` at chroma 0 (key = the brand hex), so the mark keeps its 3D
-     shape but carries no hue. A theme may tune any of them; BrandMark.tsx reads them by name. */
+  /* Facet greys: each brand colour of `refract-hero.svg` at chroma 0, keyed by its hex, so the
+     mark keeps its 3D shape without hue (#1647). BrandMark.tsx reads them by name. */
   --watermark-tone-3eac9e: oklch(0.678 0 0);
   --watermark-tone-1c8f8f: oklch(0.591 0 0);
   --watermark-tone-199d95: oklch(0.629 0 0);
@@ -1996,16 +1994,8 @@ samp {
   --agent-spinner-core: #9A68E4;
 }
 
-/* ===== Spec 012: Brand watermark (research.md decisions 1-11) ===========================
- * A faint mark of Refract, anchored to the bottom-right corner of the active chat pane's
- * reading area (BrandWatermark.tsx). `.watermark-mark` is the inline `BrandMark` SVG: each facet
- * fills with its own grey `--watermark-tone-*` (#1647, FR-025) and the whole mark takes
- * `--watermark-opacity`; `.watermark-mark--live` adds
- * the responsive clamp and corner anchor the 'live' variant uses (decisions 5-7) -- the
- * 'preview' variant (AppearanceSection.tsx) uses a plain Tailwind size utility instead, since
- * it needs no corner anchor. Hidden outright under Windows High Contrast or with "Show
- * transparency in Windows" off (decision 11) -- both media features confirmed real, supported,
- * and correctly recognised at this app's pinned Electron/Chromium (44.5.1 / Chromium 152). */
+/* Brand watermark (spec 012). Hidden under Windows High Contrast or with transparency off,
+ * where a faint mark would be invisible or opaque. */
 .watermark-mark {
   opacity: var(--watermark-opacity);
 }

@@ -1,7 +1,5 @@
 #!/usr/bin/env node
-// Live CDP check for #1647: in a transcript pane and the Appearance preview the plain watermark is the inline-SVG
-// BrandMark (facets fill with --watermark-tone-*, opacity = --watermark-opacity) and in season the holiday glyph
-// shows instead. Drives a REAL built Tauri debug exe against the FAKE `omp` shim; scratch REFRACT_DATA_DIR.
+// Live CDP check for #1647 against the debug exe and fake `omp`: plain BrandMark and holiday glyph.
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_1647_SHOTS_DIR=<dir> node scripts/verify-tauri-1647.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';

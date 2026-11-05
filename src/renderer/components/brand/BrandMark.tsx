@@ -1,7 +1,5 @@
-// Spec 012 FR-025 (#1647): the Refract mark as an inline SVG with the same paths as
-// `assets/brand/refract-hero.svg`, each facet filled with the grey `--watermark-tone-<brand hex>`
-// token from globals.css so the 3D shape survives without any hue. Flat paths, no `<defs>`/`<use>`
-// ids, so two instances in the DOM never collide.
+// Inline copy of `refract-hero.svg` so each facet takes a grey `--watermark-tone-*` (3D shape, no hue).
+// Flat paths, no `<defs>` ids, so two instances never collide.
 const FACETS: ReadonlyArray<readonly [tone: string, d: string]> = [
   ['3eac9e', 'M101.5 156.5 L137.5 136 L210.5 178 L174.5 198.5 Z'],
   ['1c8f8f', 'M101.5 156.5 L101.5 198.5 L174.5 241 L174.5 198.5 Z'],
