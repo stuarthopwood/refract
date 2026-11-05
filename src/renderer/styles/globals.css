@@ -51,6 +51,7 @@
   --color-chat-user-bubble-bg: var(--chat-user-bubble-bg);
   --color-chat-user-bubble-fg: var(--chat-user-bubble-fg);
   --color-chat-user-bubble-border: var(--chat-user-bubble-border);
+  --color-chat-card-bg: var(--chat-card-bg);
   --color-tool-row-fg: var(--tool-row-fg);
   --color-tool-row-error-fg: var(--tool-row-error-fg);
   --color-thinking-row-fg: var(--thinking-row-fg);
@@ -442,6 +443,7 @@ samp {
   --notice-warning-fg: var(--severity-warning);
   --notice-error-fg: var(--severity-error);
   --approval-card-bg: var(--card);
+  --chat-card-bg: color-mix(in oklab, var(--card) 60%, transparent);
   --approval-card-fg: var(--card-foreground);
   --approval-card-border: var(--elevated-edge);
   --composer-control-fg: var(--muted-foreground);
@@ -1172,6 +1174,7 @@ samp {
  * `dark-high-contrast` swatch comment, so every other token's margin is measured against the
  * starkest possible background this design system can express. */
 .theme-dark-high-contrast {
+  --chat-card-bg: var(--card);
   --mermaid-bg: #000000;
   --mermaid-node-fill: #090909;
   --mermaid-node-fg: #ffffff;
