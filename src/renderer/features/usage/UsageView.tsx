@@ -45,7 +45,9 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
     wasRunning.current = running
   }, [running, seen, announce])
 
-  const scanPending = status !== null && !status.scanCompleted
+  // Null status is the first paint before start() answers; a dashboard skeleton there flashes then swaps.
+  // A failed start leaves it null, so that case falls through to the error section.
+  const scanPending = status === null ? s.error === null : !status.scanCompleted
   const nothingFound = status !== null && !scanPending && !status.running && (!status.found || status.sessionsSeen === 0)
   const showProgress = status !== null && (status.running || (status.sessionsSeen > 0 && status.sessionsDone < status.sessionsSeen))
   const pending = (empty: boolean): boolean => !s.loaded || (running && empty)
@@ -77,7 +79,7 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
         )}
         {s.error && <ScreenSection title="Usage figures" error={`Some figures could not be loaded: ${s.error}`} />}
         {scanPending ? (
-          <ScreenSection title="Usage" loading />
+          <ScreenSection title="Usage figures" loading busy />
         ) : nothingFound ? (
           <UsageEmptyState sessionsDir={status.sessionsDir} found={status.found} jokes={s.jokes} />
         ) : filteredEmpty ? (

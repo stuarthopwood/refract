@@ -40,7 +40,7 @@ export interface UsageStatus {
   sessionsDone: number
   sessionsDir: string
   found: boolean
-  /** False until the first scan has finished (or the database proved unavailable). */
+  /** False until the first scan has finished (or the database or ingest worker proved unavailable). */
   scanCompleted: boolean
 }
 
