@@ -24,7 +24,8 @@ if (args[0] === 'api' && args[1] === 'graphql' && joined.includes('issueOrPullRe
   const known = {
     'fake-owner/fake-repo-1121#5': ['PullRequest', 'Badge fixture pull request', 'pull/5'],
     'fake-owner/fake-repo-1121#12': ['Issue', 'Badge fixture issue', 'issues/12'],
-    'other-owner/other-repo#7': ['PullRequest', 'Foreign repo pull request', 'pull/7']
+    'other-owner/other-repo#7': ['PullRequest', 'Foreign repo pull request', 'pull/7'],
+    'other-owner/other-repo#9': ['PullRequest', 'Foreign API-patched pull request', 'pull/9']
   };
   const hit = known[kv.owner + '/' + kv.name + '#' + kv.number];
   if (!hit) out({ data: { repository: { issueOrPullRequest: null } } });

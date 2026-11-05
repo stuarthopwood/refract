@@ -5,6 +5,8 @@ use serde_json::Value;
 mod gh_commands;
 mod history;
 mod shell_words;
+#[cfg(test)]
+mod tests;
 pub(super) mod touched;
 
 pub(super) use history::detect_in_history;

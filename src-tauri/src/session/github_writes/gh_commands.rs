@@ -285,7 +285,8 @@ pub(super) fn all_github_urls(text: &str) -> Vec<(String, String, WriteKind, u64
 
 fn parse_api(args: &[String]) -> Option<ParsedWrite> {
     let mut method: Option<String> = None;
-    let mut has_input = false;
+    // `gh api` sends POST when any field or an input file is given and no method is set.
+    let mut has_body = false;
     let mut endpoint: Option<&str> = None;
     let mut i = 0;
     while i < args.len() {
@@ -306,45 +307,52 @@ fn parse_api(args: &[String]) -> Option<ParsedWrite> {
                         v
                     }
                 };
-                if flag == "--method" {
-                    method = value.map(|v| v.to_ascii_uppercase());
-                } else if flag == "--input" {
-                    has_input = true;
+                match flag.as_str() {
+                    "--method" => method = value.map(|v| v.to_ascii_uppercase()),
+                    "--input" | "--field" | "--raw-field" => has_body = true,
+                    _ => {}
                 }
             }
         } else if arg.len() > 1 && arg.starts_with('-') {
             let letter = arg.chars().nth(1).unwrap_or('-');
             if API_VALUE_SHORT.contains(&letter) {
                 let value = if arg.len() > 2 {
-                    Some(arg[2..].to_string())
+                    // pflag accepts `-X=PATCH` as well as `-XPATCH`.
+                    Some(arg[2..].strip_prefix('=').unwrap_or(&arg[2..]).to_string())
                 } else {
                     let v = args.get(i).cloned();
                     i += 1;
                     v
                 };
-                if letter == 'X' {
-                    method = value.map(|v| v.to_ascii_uppercase());
+                match letter {
+                    'X' => method = value.map(|v| v.to_ascii_uppercase()),
+                    'F' | 'f' => has_body = true,
+                    _ => {}
                 }
             }
         } else if endpoint.is_none() {
             endpoint = Some(arg);
         }
     }
-    let writes =
-        has_input || matches!(method.as_deref(), Some("POST" | "PATCH" | "PUT" | "DELETE"));
-    if !writes {
+    let method = method.or_else(|| has_body.then(|| "POST".to_string()));
+    if !matches!(method.as_deref(), Some("POST" | "PATCH" | "PUT" | "DELETE")) {
         return None;
     }
-    let path = endpoint?.trim_start_matches('/');
+    let path = endpoint?.split(['?', '#']).next()?.trim_start_matches('/');
     let mut segments = path.split('/');
     if segments.next()? != "repos" {
         return None;
     }
     let owner = segments.next()?;
     let name = segments.next()?;
-    if !valid_segment(owner) || !valid_segment(name) {
+    // `gh` fills these placeholders from the current repository, as for a command with no repo.
+    let repo = if is_repo_placeholder(owner, name) {
+        None
+    } else if valid_segment(owner) && valid_segment(name) {
+        Some((owner.to_string(), name.to_string()))
+    } else {
         return None;
-    }
+    };
     let kind = match segments.next()? {
         "pulls" => WriteKind::Pr,
         "issues" => WriteKind::Issue,
@@ -357,9 +365,13 @@ fn parse_api(args: &[String]) -> Option<ParsedWrite> {
         None => return None,
     };
     Some(ParsedWrite {
-        repo: Some((owner.to_string(), name.to_string())),
+        repo,
         kind,
         number,
         action: WriteAction::ApiWrite,
     })
+}
+
+fn is_repo_placeholder(owner: &str, name: &str) -> bool {
+    matches!((owner, name), ("{owner}" | ":owner", "{repo}" | ":repo"))
 }
