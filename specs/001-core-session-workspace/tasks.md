@@ -5459,5 +5459,5 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 
 - [x] T418 `groupMidTurnProse.ts`: wrap a followed assistant text only when it is at most 3 lines and
   280 characters; longer text stays a normal `assistant-text` row, per FR-117 (partial)
-- [ ] T419 Live check that a long mid-turn reply renders expanded and a short one stays a Note row, update
+- [x] T419 Live check that a long mid-turn reply renders expanded and a short one stays a Note row, update
   `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-117 (missing)
