@@ -71,7 +71,14 @@ pub fn apply(app: &tauri::AppHandle, factor: f64) {
 /// One zoom step in (`true`) or out (`false`) from the current level.
 pub fn step(app: &tauri::AppHandle, zoom_in: bool) {
     let current = current();
-    apply(app, if zoom_in { current * ZOOM_STEP } else { current / ZOOM_STEP });
+    apply(
+        app,
+        if zoom_in {
+            current * ZOOM_STEP
+        } else {
+            current / ZOOM_STEP
+        },
+    );
 }
 
 /// `window.zoom`: `'in'` | `'out'` | `'reset'`.
