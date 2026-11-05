@@ -31,6 +31,9 @@
       "nsis": {
         "installMode": "currentUser",
         "installerIcon": "icons/icon.ico",
+        "uninstallerIcon": "installer/uninstaller.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp",
         "installerHooks": "installerHooks.nsh"
       }
     }
