@@ -1,9 +1,6 @@
 // `window.refract`: the sole renderer-to-backend bridge for the Tauri/Rust build (FR-009), built
-// over `@tauri-apps/api`'s `invoke`/`listen` instead of Electron's `contextBridge`/`ipcRenderer`.
-// Method-for-method mirror of `src/preload/index.ts` -- same channel per method, same argument
-// order, same `Unsubscribe` semantics -- so `src/renderer` (unchanged) loads identically against
-// either backend. `entry.ts` assigns this to `window.refract` before importing the renderer's
-// own entry point.
+// over `@tauri-apps/api`'s `invoke`/`listen`. `entry.ts` assigns this to `window.refract` before
+// importing the renderer's own entry point.
 
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
@@ -78,15 +75,13 @@ import type { ThemeId } from '../shared/themes'
 import type { Typography } from '../shared/typography'
 
 // Every request channel answers with a Result<T>; the Rust backend's `refract_request` command
-// is trusted to shape it correctly, so the cast below is the one place that trust is spent --
-// the same contract `src/preload/index.ts`'s own `request<T>` documents.
+// is trusted to shape it correctly, so the cast below is the one place that trust is spent.
 function request<T>(channel: string, ...args: unknown[]): Promise<Result<T>> {
   return invoke<Result<T>>('refract_request', { channel, args })
 }
 
-// Every event channel is backend-pushed, no-reply. Unlike Electron's synchronous
-// `ipcRenderer.on`/`removeListener`, Tauri's `listen` is itself async (it returns a Promise for
-// the unlisten function), so the subscription is pending for one microtask after this returns --
+// Every event channel is backend-pushed, no-reply. Tauri's `listen` is async (it returns a Promise
+// for the unlisten function), so the subscription is pending for one microtask after this returns --
 // `cancelled` below covers the (rare) case where the caller unsubscribes before that Promise
 // settles, so the listener is torn down the instant it is ready rather than leaking.
 function on<T>(channel: string, handler: (payload: T) => void): Unsubscribe {
@@ -422,8 +417,7 @@ const refract: RefractApi = {
   // first lines, before React mounts, so the renderer's single JS thread blocks until the right
   // theme class is already known. Reads `window.__REFRACT_THEME_BOOTSTRAP__`, set by an
   // initialization script `lib.rs`'s `setup` hook registers BEFORE the window ever loads a page
-  // (FR-010) -- no IPC round trip, matching the Electron preload's own synchronous
-  // `ipcRenderer.sendSync` contract exactly.
+  // (FR-010) -- no IPC round trip.
   themeBootstrap: () => window.__REFRACT_THEME_BOOTSTRAP__ ?? { theme: 'dark' },
 
   accounts: {

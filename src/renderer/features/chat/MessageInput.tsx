@@ -106,7 +106,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // Turns off path-based image-attach detection; a pasted clipboard image is unaffected (#514).
   const detectImagePathsOnPaste = useSettingsStore((s) => s.settings.detectImagePathsOnPaste)
   // Absent means enabled (#772).
-  const wordPredictionEnabled = useSettingsStore((s) => s.settings.wordPredictionEnabled !== false)
+  const wordPredictionEnabled = useSettingsStore((s) => s.settings.wordPredictionEnabled)
   // Reactive so Send's `aria-disabled` reflects an in-flight path/drop read, like `handleSend`.
   const pendingAttachmentReads = useDraftStore((s) => s.bySession[sessionId]?.pendingAttachmentReads ?? 0)
   const { followUp, steering } = useQueueStore((s) => s.bySession[sessionId] ?? EMPTY_QUEUE)
