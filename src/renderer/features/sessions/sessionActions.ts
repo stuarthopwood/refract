@@ -34,6 +34,7 @@ export interface SessionRowActionHandlers {
   onHide(): void
   onUnhide(): void
   onStopAgent(): void
+  onStartAgent(): void
   onTogglePause(): void
   onDelete(): void
   onNewSession?(): void
@@ -99,7 +100,9 @@ export function buildSessionRowActions(
       : []),
     ...(session.status !== 'stopped'
       ? ([{ kind: 'item', key: 'stop', icon: SquareIcon, label: 'Stop agent', onSelect: handlers.onStopAgent }] as const)
-      : []),
+      : isArchived
+        ? []
+        : ([{ kind: 'item', key: 'start', icon: PlayIcon, label: 'Start agent', onSelect: handlers.onStartAgent }] as const)),
     { kind: 'separator' },
     {
       kind: 'item',
