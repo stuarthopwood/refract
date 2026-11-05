@@ -2515,6 +2515,12 @@ samp {
   box-shadow: none;
 }
 
+/* Close button at 24px (WCAG 2.5.8 minimum target), the extra [data-sonner-toaster] level out-ranking sonner's 20px. */
+[data-sonner-toaster] [data-sonner-toast] [data-close-button] {
+  width: 24px;
+  height: 24px;
+}
+
 /* Issue #1242 (spec 004 FR-042): the one shared status-text shimmer (#1210 reuses it). A band
  * brighter than the text sweeps across a gradient clipped to the glyphs; the base stops are the
  * plain base colour (`--shimmer-base`, default the row's own text colour; `ShimmerText`'s `tone` sets it), so the text never drops below that colour's own contrast, and the

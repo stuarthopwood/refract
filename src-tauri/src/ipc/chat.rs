@@ -193,7 +193,7 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 };
                 return Err(IpcError::new(
                     "unknown-command",
-                    format!("Unknown command: /{original_name}{suffix}"),
+                    format!("Unknown command: /{original_name}{suffix}. Type / to see the available commands."),
                 ));
             }
             let commands = agent.available_commands().await;
@@ -206,7 +206,7 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     };
                     return Err(IpcError::new(
                         "unknown-command",
-                        format!("Unknown command: /{original_name}{suffix}"),
+                        format!("Unknown command: /{original_name}{suffix}. Type / to see the available commands."),
                     ));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {

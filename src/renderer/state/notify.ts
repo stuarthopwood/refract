@@ -22,14 +22,11 @@ export function notify(error: IpcError, sessionId?: string): void {
       closeButton: true,
       onDismiss: () => {
         if (openRefusal?.id === id) openRefusal = null
-      },
-      onAutoClose: () => {
-        if (openRefusal?.id === id) openRefusal = null
       }
     })
     return
   }
-  toast.error(error.message)
+  toast.error(error.message, { duration: Infinity, closeButton: true })
 }
 
 /** Dismisses the open slash-command-refusal toast, but ONLY when one is tracked for THIS Session. */
