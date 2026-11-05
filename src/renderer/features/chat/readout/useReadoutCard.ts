@@ -1,6 +1,6 @@
 // One shared hover/focus controller for the Todo and Agents readout cards. Not a Radix HoverCard/Tooltip: the
 // anchor button already has its own click behaviour and those triggers want exclusive ownership of its events.
-// The card content is inert, so there is no focus trap to manage. (#700)
+// The card body has no focus trap; its one link is tabIndex -1, so keyboard focus stays on the anchor. (#700)
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { FocusEvent, PointerEvent, RefObject } from 'react'
 
@@ -48,6 +48,9 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
   const closeTimerRef = useRef<TimerHandle | null>(null)
   // True while the pointer is over the anchor or the content, which keeps the card hoverable.
   const hoveringRef = useRef(false)
+  // Hover opens from a real pointer move, not from enter: Chromium synthesises an enter (and a move at the
+  // same coordinates) when the chip remounts under a parked pointer, which must not reopen the card.
+  const lastMoveRef = useRef<{ x: number; y: number } | null>(null)
   const anchorRef = useRef<HTMLButtonElement | null>(null)
 
   const close = useCallback(() => {
@@ -60,10 +63,16 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
     return () => {
       clearTimer(openTimerRef)
       clearTimer(closeTimerRef)
+      hoveringRef.current = false
+      lastMoveRef.current = null
     }
   }, [])
+  // A disabled chip gets no pointerleave/blur, so stale hover state would reopen the card when re-enabled.
   useEffect(() => {
-    if (disabled) close()
+    if (!disabled) return
+    hoveringRef.current = false
+    lastMoveRef.current = null
+    close()
   }, [disabled, close])
 
   // Content has no focusable element, so a window listener (capture phase) handles Escape; capture and
@@ -91,9 +100,6 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
     }, CLOSE_GRACE_MS)
   }
 
-  // Hover opens from a real pointer move, not from enter: Chromium synthesises an enter (and a move at the
-  // same coordinates) when the chip remounts under a parked pointer, which must not reopen the card.
-  const lastMoveRef = useRef<{ x: number; y: number } | null>(null)
   const onPointerEnter = () => {
     if (disabled) return
     hoveringRef.current = true

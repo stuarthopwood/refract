@@ -92,14 +92,20 @@ async function assertNoStrayOverlay(cdp, label) {
 }
 
 /** Compares a completed row's icon/text colour with a throwaway `text-severity-success` span; the raw
- * CSS custom property may be an unresolved `oklch(...)` that never matches a computed RGB. */
+ * CSS custom property may be an unresolved `oklch(...)` that never matches a computed RGB. `distinct`
+ * guards against the reference colour collapsing into the neutral text colour, which would pass vacuously. */
 async function completedRowMatchesSeveritySuccess(cdp, cardSelector, rowTextIncludes) {
-  return cdp.evaluate(`(() => {
-    const ref = document.createElement('span');
-    ref.className = 'text-severity-success';
-    document.body.appendChild(ref);
-    const refColor = getComputedStyle(ref).color;
-    ref.remove();
+  const read = await cdp.evaluate(`(() => {
+    const colorOf = (cls) => {
+      const probe = document.createElement('span');
+      probe.className = cls;
+      document.body.appendChild(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    };
+    const refColor = colorOf('text-severity-success');
+    const neutralColor = colorOf('text-foreground');
     const card = ${cardSelector};
     const row = Array.from(card.querySelectorAll('li')).find((li) => li.textContent.includes(${JSON.stringify(rowTextIncludes)}));
     const icon = row?.querySelector('svg') ?? null;
@@ -107,10 +113,12 @@ async function completedRowMatchesSeveritySuccess(cdp, cardSelector, rowTextIncl
     return {
       found: !!row,
       refColor,
+      neutralColor,
       iconColor: icon ? getComputedStyle(icon).color : null,
       textColor: text ? getComputedStyle(text).color : null
     };
   })()`);
+  return { ...read, matches: read.found && read.refColor !== read.neutralColor && read.iconColor === read.refColor && read.textColor === read.refColor };
 }
 
 async function hoverElement(cdp, selector) {
@@ -141,6 +149,31 @@ async function moveToNeutralPoint(cdp) {
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 0, y: 0 });
   await sleep(50);
   await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: width - 20, y: 20 });
+}
+
+const PANE_TARGET_PX = 360;
+
+/** Card rect plus the owning pane's rect, so clipping is judged against the pane rather than the window. */
+const PANE_RECTS_EXPR = (cardSelector, paneId) => `(() => {
+  const r = (${cardSelector}).getBoundingClientRect();
+  const p = document.querySelector('[data-session-pane="${paneId}"]').getBoundingClientRect();
+  return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, pane: { left: p.left, right: p.right, top: p.top, bottom: p.bottom } };
+})()`;
+
+function isInsidePane(rects) {
+  return rects.left >= rects.pane.left && rects.right <= rects.pane.right && rects.top >= rects.pane.top && rects.bottom <= rects.pane.bottom;
+}
+
+/** Both readout pills must render with a real box wholly inside the pane (no overflow-hidden clipping at narrow width). */
+async function pillsLegibleInPane(cdp, paneId) {
+  return cdp.evaluate(`(() => {
+    const p = document.querySelector('[data-session-pane="${paneId}"]').getBoundingClientRect();
+    return [${TODO_PILL_SELECTOR}, ${AGENTS_PILL_SELECTOR}].every((el) => {
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && r.left >= p.left && r.right <= p.right && (el.textContent ?? '').trim().length + (el.getAttribute('aria-label') ?? '').length > 0;
+    });
+  })()`);
 }
 
 /** Real Tab key, not `.focus()`: Chromium suppresses `:focus-visible` after mouse-driven focus. */
@@ -300,7 +333,7 @@ async function main() {
     const finalizeRow = todoCardRead.rows.find((r) => r.text.includes('Finalize'));
     assertTrue(!!finalizeRow && /In progress/.test(finalizeRow.text), 'Todo card shows the in-progress task\'s visible "In progress" word', finalizeRow);
     const scaffoldColorInCard = await completedRowMatchesSeveritySuccess(cdp, TODO_CARD_SELECTOR, 'Scaffold');
-    assertTrue(scaffoldColorInCard.found && scaffoldColorInCard.iconColor === scaffoldColorInCard.refColor && scaffoldColorInCard.textColor === scaffoldColorInCard.refColor, 'Todo card\'s completed "Scaffold" row -- icon AND text -- renders in text-severity-success, not neutral grey', scaffoldColorInCard);
+    assertTrue(scaffoldColorInCard.matches, 'Todo card\'s completed "Scaffold" row -- icon AND text -- renders in text-severity-success, distinct from neutral text', scaffoldColorInCard);
     await cdp.screenshot(path.join(SHOTS_DIR, 'todo-card-completed-green.png'));
     await assertCardIsInert(cdp, TODO_CARD_SELECTOR, 'Todo card');
 
@@ -322,7 +355,7 @@ async function main() {
     await cdp.waitFor(`!!document.querySelector('[data-slot="pinned-todo-panel"]')`, { timeoutMs: 2_000, label: 'Pinned todo panel mounts once pinned' });
     // "Scaffold" sits in the fully completed Setup phase, which the pinned panel folds away; "Write tests" is in the open Work phase.
     const writeTestsColorInPanel = await completedRowMatchesSeveritySuccess(cdp, `document.querySelector('[data-slot="pinned-todo-panel"]')`, 'Write tests');
-    assertTrue(writeTestsColorInPanel.found && writeTestsColorInPanel.iconColor === writeTestsColorInPanel.refColor && writeTestsColorInPanel.textColor === writeTestsColorInPanel.refColor, 'Pinned todo panel\'s completed "Write tests" row -- icon AND text -- renders in text-severity-success, not neutral grey', writeTestsColorInPanel);
+    assertTrue(writeTestsColorInPanel.matches, 'Pinned todo panel\'s completed "Write tests" row -- icon AND text -- renders in text-severity-success, distinct from neutral text', writeTestsColorInPanel);
     await cdp.screenshot(path.join(SHOTS_DIR, 'pinned-panel-completed-green.png'));
     await assertNoStrayOverlay(cdp, 'the pinned-Todo-card-never-opens test');
     await hoverElement(cdp, TODO_PILL_SELECTOR);
@@ -330,6 +363,7 @@ async function main() {
     assertTrue(!(await cdp.evaluate(`!!(${TODO_CARD_SELECTOR})`)), 'Todo card does not open on hover while the todo list is pinned');
     await moveToNeutralPoint(cdp);
     await tabUntilFocused(cdp, TODO_PILL_SELECTOR);
+    assertTrue(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR}) && document.activeElement.matches(':focus-visible')`), 'Tab-focused pinned Todo pill genuinely matches :focus-visible before the no-open check');
     await sleep(100);
     assertTrue(!(await cdp.evaluate(`!!(${TODO_CARD_SELECTOR})`)), 'Todo card does not open on keyboard focus-visible while the todo list is pinned');
     await moveToNeutralPoint(cdp);
@@ -373,6 +407,7 @@ async function main() {
     assertTrue(!(await cdp.evaluate(`!!(${SUBAGENTS_PANEL_SELECTOR})`)), 'Subagents panel is not open yet');
     await cdp.click(`(${AGENTS_CARD_SELECTOR}).querySelector('button, a')`);
     await cdp.waitFor(`!!(${SUBAGENTS_PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'The Agents card\'s own link opens the Subagents panel' });
+    assertTrue(await cdp.evaluate(`document.activeElement !== document.body && document.activeElement !== null`), 'Focus is not stranded on <body> after the card link opens the Subagents panel');
     const subagentRows = await cdp.evaluate(`Array.from((${SUBAGENTS_PANEL_SELECTOR}).querySelectorAll('[role="treeitem"]')).map((el) => el.textContent.trim())`);
     assertTrue(subagentRows.length >= 3, 'Subagents panel lists all three subagents (alpha, beta, gamma)', subagentRows);
     notExercised.push('gamma\'s own taskSummary (no sentence-ending punctuation at all in its `task` text, so Rust falls back to the whole string) has no live DOM surface to assert against once it is `failed`: the Agents card only ever renders a row for a RUNNING agent, and the Subagents panel shows `nameOrTask`, never `taskSummary`.');
@@ -380,6 +415,7 @@ async function main() {
     // The pill only opens/re-focuses the panel (never toggles), so close it via its Close control.
     await cdp.click(`document.querySelector('[data-panel-close]')`);
     await cdp.waitFor(`!(${SUBAGENTS_PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Subagents panel closes via its own Close control' });
+    assertTrue(await cdp.evaluate(`document.activeElement === (${AGENTS_PILL_SELECTOR})`), 'Closing the Subagents panel returns focus to the Agents pill');
 
     await cdp.click(AGENTS_PILL_SELECTOR);
     await cdp.waitFor(`!!(${SUBAGENTS_PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Clicking the Agents pill itself still opens the Subagents panel' });
@@ -413,26 +449,30 @@ async function main() {
     const sessionToSplit = currentPaneId === sessionIdA ? sessionIdB : sessionIdA;
     await openSessionInSplitViaMenu(cdp, sessionToSplit);
     await cdp.waitFor(`document.querySelectorAll('[data-session-pane]').length === 2`, { timeoutMs: 15_000, label: 'Split view open: both panes rendered' });
-    // Sidebar share is percentage-based, so step the width down and re-confirm the split stays open at each step.
-    let paneWidth = await cdp.evaluate(`document.querySelector('[data-session-pane="${sessionIdA}"]').getBoundingClientRect().width`); let targetWindowWidth = 1800;
-    for (const candidateWidth of [1600, 1450, 1300, 1150, 1050]) {
-      if (paneWidth <= 420) break;
+    // Sidebar share is percentage-based, so step the window width down until the pane reaches the 360px the AC names.
+    const paneWidthOf = () => cdp.evaluate(`document.querySelector('[data-session-pane="${sessionIdA}"]').getBoundingClientRect().width`);
+    let paneWidth = await paneWidthOf();
+    let targetWindowWidth = 1800;
+    for (let candidateWidth = 1700; candidateWidth >= 900 && paneWidth > PANE_TARGET_PX; candidateWidth -= 20) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width: candidateWidth, height: 900, deviceScaleFactor: 1, mobile: false });
-      await sleep(300);
+      await sleep(250);
       if ((await cdp.evaluate(`document.querySelectorAll('[data-session-pane]').length`)) !== 2) break;
       targetWindowWidth = candidateWidth;
-      paneWidth = await cdp.evaluate(`document.querySelector('[data-session-pane="${sessionIdA}"]').getBoundingClientRect().width`);
+      paneWidth = await paneWidthOf();
     }
-    assertTrue(paneWidth <= 420, `Session A's own split pane is narrowed to roughly 360px (actual ${Math.round(paneWidth)}px)`, { paneWidth, targetWindowWidth });
+    assertTrue(paneWidth <= PANE_TARGET_PX && paneWidth >= PANE_TARGET_PX - 20, `Session A's own split pane is narrowed to 360px (actual ${Math.round(paneWidth)}px)`, { paneWidth, targetWindowWidth });
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: targetWindowWidth, height: 900, deviceScaleFactor: 1, mobile: false });
+    await sleep(250);
 
     await settleCardScreenshot(cdp, { anchorSelector: TODO_PILL_SELECTOR });
-    const todoCardRectInSplit = await cdp.evaluate(`(() => { const r = (${TODO_CARD_SELECTOR}).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight }; })()`);
-    assertTrue(todoCardRectInSplit.left >= 0 && todoCardRectInSplit.right <= todoCardRectInSplit.innerWidth && todoCardRectInSplit.top >= 0 && todoCardRectInSplit.bottom <= todoCardRectInSplit.innerHeight, 'Todo card stays fully inside the window at a 360px split pane width, never clipped', todoCardRectInSplit);
+    const todoCardRectInSplit = await cdp.evaluate(PANE_RECTS_EXPR(TODO_CARD_SELECTOR, sessionIdA));
+    assertTrue(isInsidePane(todoCardRectInSplit), 'Todo card stays fully inside the 360px split pane, never clipped', todoCardRectInSplit);
+    assertTrue(await pillsLegibleInPane(cdp, sessionIdA), 'Todo and Agents pills stay visible, non-empty and inside the 360px split pane');
     await cdp.screenshot(path.join(SHOTS_DIR, 'todo-card-split-360.png'));
     await moveToNeutralPoint(cdp);
     await settleCardScreenshot(cdp, { anchorSelector: AGENTS_PILL_SELECTOR });
-    const agentsCardRectInSplit = await cdp.evaluate(`(() => { const r = (${AGENTS_CARD_SELECTOR}).getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, innerWidth: window.innerWidth, innerHeight: window.innerHeight }; })()`);
-    assertTrue(agentsCardRectInSplit.left >= 0 && agentsCardRectInSplit.right <= agentsCardRectInSplit.innerWidth && agentsCardRectInSplit.top >= 0 && agentsCardRectInSplit.bottom <= agentsCardRectInSplit.innerHeight, 'Agents card stays fully inside the window at a 360px split pane width, never clipped', agentsCardRectInSplit);
+    const agentsCardRectInSplit = await cdp.evaluate(PANE_RECTS_EXPR(AGENTS_CARD_SELECTOR, sessionIdA));
+    assertTrue(isInsidePane(agentsCardRectInSplit), 'Agents card stays fully inside the 360px split pane, never clipped', agentsCardRectInSplit);
     await cdp.screenshot(path.join(SHOTS_DIR, 'agents-card-split-360.png'));
     await moveToNeutralPoint(cdp);
     await cdp.send('Emulation.clearDeviceMetricsOverride', {});
@@ -467,6 +507,7 @@ async function main() {
     await moveToNeutralPoint(cdp);
     // Session B still in the list adds tab stops (needs 44, past the default 40).
     await tabUntilFocused(cdp, AGENTS_PILL_SELECTOR, { maxTabs: 60 });
+    assertTrue(await cdp.evaluate(`document.activeElement === (${AGENTS_PILL_SELECTOR}) && document.activeElement.matches(':focus-visible')`), 'Tab-focused zero-running Agents pill genuinely matches :focus-visible before the no-open check');
     await sleep(100);
     assertTrue(!(await cdp.evaluate(`!!(${AGENTS_CARD_SELECTOR})`)), 'Agents card does not open on keyboard focus-visible once no subagent is running');
     await moveToNeutralPoint(cdp);

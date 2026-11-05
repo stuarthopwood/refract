@@ -31,7 +31,7 @@ export function AgentsCard({
   const moreCount = running.length - shown.length
 
   return (
-    <div className="w-64" aria-label="Running subagents">
+    <div className="w-64" role="group" aria-label="Running subagents">
       <div data-slot="agents-card-header" className="text-xs text-foreground">{running.length} running</div>
       {shown.length > 0 && (
         <ul className="mt-2 max-h-[min(16rem,40vh)] space-y-2 overflow-y-auto">
@@ -64,7 +64,7 @@ export function AgentsCard({
           12px size, short of the 4.5:1 body-text floor -- `text-foreground` (an EXISTING checked
           pair, `popover-foreground / popover`) plus a permanent (not hover-only) underline reads
           clearly as a link without introducing a new colour this card alone would need checked. */}
-      {/* Pointer-only: the hover card must not pull keyboard focus (WCAG 2.4.3); keyboards reach the panel elsewhere. */}
+      {/* Pointer-only: the hover card must not pull keyboard focus (WCAG 2.4.3); keyboards open the panel from the Subagents chip (a ReadoutItem in Readouts.tsx whose onActivate opens it). */}
       <Button type="button" variant="link" size="sm" tabIndex={-1} className="mt-2 h-auto p-0 text-xs text-foreground underline underline-offset-4" onClick={onOpenPanel}>
         Open subagents panel
       </Button>
