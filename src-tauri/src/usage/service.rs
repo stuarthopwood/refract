@@ -212,7 +212,9 @@ fn set_status(inner: &Inner, f: impl FnOnce(&mut UsageStatus)) -> UsageStatus {
 /// Flips `scan_completed` and emits once, so a database that stays unavailable does not re-emit on every nudge.
 fn mark_scan_completed(inner: &Inner) {
     let mut flipped = false;
-    let snapshot = set_status(inner, |s| flipped = !std::mem::replace(&mut s.scan_completed, true));
+    let snapshot = set_status(inner, |s| {
+        flipped = !std::mem::replace(&mut s.scan_completed, true)
+    });
     if flipped {
         (inner.emit)(&snapshot);
     }
