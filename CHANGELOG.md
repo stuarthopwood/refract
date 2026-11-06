@@ -1,5 +1,39 @@
 # Changelog
 
+## v0.29.0 (2026-11-06)
+
+### Features
+
+- feat(usage): ingest Copilot CLI credits per session (https://github.com/stuarthopwood/refract/pull/1707)
+- feat(notifications): sounds for session notifications and alarms (https://github.com/stuarthopwood/refract/pull/1710)
+- feat(shell): zoom in, out and reset with Ctrl+=, Ctrl+- and Ctrl+0 (https://github.com/stuarthopwood/refract/pull/1718)
+- feat(renderer): clearer, dismissible toasts with severity icons (https://github.com/stuarthopwood/refract/pull/1719)
+
+### Fixes
+
+- fix(chat): only short mid-turn narration collapses to a Note row (https://github.com/stuarthopwood/refract/pull/1695)
+- fix(usage): show Loading until the first scan completes (https://github.com/stuarthopwood/refract/pull/1697)
+- fix(sessions): add Start agent to the Session row menu (https://github.com/stuarthopwood/refract/pull/1696)
+- fix(settings): say each call costs AI credits in the file-read limit tip (https://github.com/stuarthopwood/refract/pull/1699)
+- fix(token-guard): collapse repeated warnings and pause shake after omp pauses maintenance (https://github.com/stuarthopwood/refract/pull/1698)
+- fix(repositories): compute remote kind eagerly in repositories.add (https://github.com/stuarthopwood/refract/pull/1705)
+- fix(chat): share a translucent card background for subagent and ask cards (https://github.com/stuarthopwood/refract/pull/1706)
+- fix(readout): treat gh api fields, query strings and repo placeholders as PR writes (https://github.com/stuarthopwood/refract/pull/1708)
+- fix(chat): do not draw virtual, ~ and UNC write targets as file links (https://github.com/stuarthopwood/refract/pull/1709)
+- fix(sessions): refuse agent start while Session delete is in flight (https://github.com/stuarthopwood/refract/pull/1712)
+- fix(chat): keep the Todo card closed while the session has no plan (https://github.com/stuarthopwood/refract/pull/1711)
+- fix(readout): keep the subagents panel link out of the tab order (https://github.com/stuarthopwood/refract/pull/1713)
+- fix(readout): finish the readout chip verify scripts and card refs (https://github.com/stuarthopwood/refract/pull/1714)
+- fix(installer): brand NSIS header, sidebar and uninstaller icon (https://github.com/stuarthopwood/refract/pull/1717)
+
+### Other
+
+- docs(plan): mark the 2026-11-05 batch done (https://github.com/stuarthopwood/refract/pull/1694)
+- docs(plan): mark #1658, #1663, #1678, #1680 done (https://github.com/stuarthopwood/refract/pull/1700)
+- docs(plan): mark #1669 done, add #1701 and #1702 (https://github.com/stuarthopwood/refract/pull/1703)
+- chore(tests): clean up Rust test temp dirs with tempfile (https://github.com/stuarthopwood/refract/pull/1715)
+- chore(renderer): remove Electron-only leftovers (https://github.com/stuarthopwood/refract/pull/1716)
+
 ## v0.28.0 (2026-11-05)
 
 ### Features
