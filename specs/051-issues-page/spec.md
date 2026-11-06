@@ -17,7 +17,7 @@ Amended 2026-11-06 for #1740 (Skippy, delegated by Stuart; Stuart's decisions as
 
 - A row shows at most two labels; the "+N" overflow is a sibling control, not text inside the row's select button, because a button cannot nest another focusable control. The row becomes a container holding the title `<button data-issue-row>`; the container carries the hover and selected fill and the kebab inset, and the button's stretched hit area still covers the whole row.
 - "+N" is a keyboard-focusable pill built on `Badge`, in the shared `LabelOverflow` component (`components/LabelOverflow.tsx`) so other label lists can reuse it. On hover and on keyboard focus its `Tooltip` lists every hidden label, one per line, each with its `ColourDot`.
-- The accessible name stays the full list, for example "2 more labels: enhancement, p1". A row with two or fewer labels renders no overflow control and is unchanged.
+- The accessible name starts with the visible text, for example "+2 more labels" (WCAG 2.5.3); the tooltip, exposed through `aria-describedby`, lists the names. A row with two or fewer labels renders no overflow control and is unchanged.
 - Labels stay untrusted text; the tooltip renders them as plain text.
 
 ## Functional requirements
