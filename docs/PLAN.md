@@ -1123,3 +1123,5 @@ Also filed 2026-11-06 (Stuart): **#1747** (`p1`, `design`), Chat: answered Ask q
 Also filed 2026-11-06 (Stuart): **#1749** (`p1`, `feature`), Chat: bash rows show Truncated and Minimized badges from the OMP `elided*`, `columnTruncated*` and `minimized` output metadata.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1750** (`p1`, `feature`), Chat: the tool call dialog gets Raw and Pseudo views for bash commands; Raw is the default, and Pseudo is a Refract-only static view parsed from the command text, with no live state.
+
+Also filed 2026-11-06 (Stuart, grilled): **#1756** (`p1`, `design`), Chat: Subagents card: Stages whose agents all succeeded collapse to one line (running, failed and stopped Stages stay expanded) with a sticky chevron toggle, and Stage titles fill the row because the 60-character label cap is replaced by CSS truncation.
