@@ -1116,3 +1116,5 @@ Also filed 2026-11-06 (Stuart, UI polish): **#1742** (`p1`, `design`, `pull-requ
 Also filed 2026-11-06 (Stuart, grilled): **#1743** (`p1`, `design`), Session usage panel: a Session or Conversation scope toggle (Conversation filters on `session_file`) and an All time or Today range toggle that uses the Usage view's local-day boundary; both choices persist.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1745** (`p1`, `design`), Chat header: the touched, branch PR and linked-issue badges become the click target (one item opens it, "+N" opens the list menu); the View, View PR and View issue buttons are removed; this reverses #1524 item 3.
+
+Also filed 2026-11-06 (Stuart): **#1747** (`p1`, `design`), Chat: answered Ask questions render expanded by default; a new "Expand answered questions" switch in Settings > Chat > Transcript (on by default) restores the collapsed summary.
