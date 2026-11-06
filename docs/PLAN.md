@@ -874,7 +874,7 @@ Also filed 2026-10-22 (Stuart, grilled, none deferred): **#1155** chat Item refe
 
 Also filed 2026-10-22 (Stuart's #1055 grill, Lane D): **#1157** and **#1158** (`p2`) and **#1159** (`p3`), the #1055 items refiled when #1055 was narrowed to the delete-wait timeout and two copy fixes; placed as rows after the Delete dialog follow-ups row.
 
-Also filed 2026-10-22 (Stuart, grilled, none deferred): **#1169** `Pull (n)` from the default branch (Git changes panel and composer strip) and **#1170** live Markdown styling in the composer, placed as rows after #1155. Both `p2`.
+Also filed 2026-10-22 (Stuart, grilled, none deferred): **#1169** `Pull (n)` from the default branch (Git changes panel and composer strip) and **#1170** live Markdown styling in the composer, placed as rows after #1155. `#1169` raised to `p1` 2026-11-06 (Stuart); `#1170` stays `p2`.
 
 Also filed 2026-10-22 (Stuart, grilled, none deferred): **#1184** OMP settings guard (`p1`), placed as Priority order 3, after #1055; comment posted on #691 (Guarded tag and baseline edit).
 
@@ -1137,3 +1137,5 @@ Also filed 2026-11-06 (Stuart, grilled): **#1767** (`p0`, `bug`, `settings`), Se
 Also filed 2026-11-06 (Stuart): **#1774** (`p1`, `design`, `chat`), Subagents: drop the duplicate agent list above the composer; move per-agent Show into the Subagents card.
 
 Also filed 2026-11-06 (Stuart): **#1776** (`p3`, `idea`, `worktree`, `build`), Idea: reusable lane worktree pool to cap the shared cargo cache. Parked: pick up only if the cargo cache changes are not enough.
+
+Also filed 2026-11-06 (Stuart): **#1778** (`p1`, `design`), UI Polish: Usage icon: use the gauge icon in the left rail and command palette to match the right rail.
