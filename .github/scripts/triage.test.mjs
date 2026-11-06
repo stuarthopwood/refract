@@ -25,10 +25,10 @@ const issue = (title, body = "A sufficiently long description of the requested c
   ...extra,
 });
 
-test("heuristic classifies a crash report as a p0 bug", () => {
+test("heuristic classifies a crash report as a bug capped at p1", () => {
   const c = heuristicClassify(issue("App crash when opening a session", "It crashes every time I open a worktree session on start."));
   assert.equal(c.type, "bug");
-  assert.equal(c.priority, "p0");
+  assert.equal(c.priority, "p1");
 });
 
 test("heuristic marks a near-empty issue as needs-info", () => {
