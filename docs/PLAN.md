@@ -1135,3 +1135,5 @@ Also filed 2026-11-06 (Stuart): **#1765** (`p0`, `bug`, `settings`), Settings: t
 Also filed 2026-11-06 (Stuart, grilled): **#1767** (`p0`, `bug`, `settings`), Settings: token guard settings write to OMP's global config instead of a per-launch overlay, so Refract is the source of truth; the first launch backs up and overwrites the global token guard keys, and Settings shows the effective compaction trigger. Supersedes #1765 once live reload is confirmed.
 
 Also filed 2026-11-06 (Stuart): **#1774** (`p1`, `design`, `chat`), Subagents: drop the duplicate agent list above the composer; move per-agent Show into the Subagents card.
+
+Also filed 2026-11-06 (Stuart): **#1776** (`p3`, `idea`, `worktree`, `build`), Idea: reusable lane worktree pool to cap the shared cargo cache. Parked: pick up only if the cargo cache changes are not enough.
