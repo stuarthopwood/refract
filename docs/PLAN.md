@@ -1112,7 +1112,7 @@ Also filed 2026-11-06 (Stuart, UI polish): **#1740** (`p1`, `design`), Issue lis
 
 Also filed 2026-11-06 (Stuart, grilled): **#1741** (`p1`, `design`, `pull-requests`), Markdown: images inside links go through `resolveImage` (`data:` URLs, no CSP change), so the Dependabot compatibility score badge and other linked badges render in PR descriptions.
 
-Also filed 2026-11-06 (Stuart, UI polish): **#1742** (`p1`, `design`, `pull-requests`), PR detail header: Merge becomes the filled primary button (`variant="default"`); the other header buttons stay ghost, per the #1387 rule.
+Also filed 2026-11-06 (Stuart, UI polish): **#1742** (`p1`, `design`, `pull-requests`), PR detail header: Merge becomes the filled primary button (`variant="default"`); the other header buttons stay ghost, per the #1387 rule. **Status: built on `fix/1742-merge-button`; awaiting merge.** Spec 088 FR-007 and Q7, spec 003, `components.md` and `accessibility.md` now match.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1743** (`p1`, `design`), Session usage panel: a Session or Conversation scope toggle (Conversation filters on `session_file`) and an All time or Today range toggle that uses the Usage view's local-day boundary; both choices persist.
 
