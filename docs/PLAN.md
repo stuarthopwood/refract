@@ -1125,3 +1125,5 @@ Also filed 2026-11-06 (Stuart): **#1749** (`p1`, `feature`), Chat: bash rows sho
 Also filed 2026-11-06 (Stuart, grilled): **#1750** (`p1`, `feature`), Chat: the tool call dialog gets Raw and Pseudo views for bash commands; Raw is the default, and Pseudo is a Refract-only static view parsed from the command text, with no live state.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1756** (`p1`, `design`), Chat: Subagents card: Stages whose agents all succeeded collapse to one line (running, failed and stopped Stages stay expanded) with a sticky chevron toggle, and Stage titles fill the row because the 60-character label cap is replaced by CSS truncation.
+
+Also filed 2026-11-06 (Stuart, grilled): **#1758** (`p1`, `design`), Chat: a Tool targets setting in Settings > Chat > Transcript (Hide, Hover, Show; default Hover); Hover drops the target chip from tool row summaries and shows the full, untruncated target in a tooltip on the verb; the failed-group detail and the View full call dialog are unchanged.
