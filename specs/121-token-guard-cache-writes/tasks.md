@@ -24,3 +24,10 @@
 ## Phase 4: Verification
 
 - [x] T011 Main's run worker: `cargo fmt --check`, `cargo test` (token_guard), `cargo clippy`, ci-local.
+
+## Phase 5: Convergence (2026-11-06)
+
+- [x] T012 Converge `spec.md` with upstream: OMP PR can1357/oh-my-pi#17988 (merge 830d04d9, in v18.17.0) keeps `softRequestBudget` on revived, restored and workpool subagents; budget is resolved by registry id (`persisted-revive.ts:556`). AC2 ("no run passes 1.5x") is covered upstream for OMP >= 18.17.0; Refract builds no watchdog (FR-006 stands).
+- [x] T013 Record retention as decided, not set: no `cacheRetention` override (global or per-agent); `providers.cacheRetention: long` for main Sessions is dropped (FR-003).
+- [x] T014 Drop the detached-budget upstream draft: `upstream/upstream-detached-budget.md` removed; FR-007 now lists two drafts (supersedes T008's third file).
+- [ ] T015 AC1 (idle-expiry cache writes down by half) stays open pending the post-release measurement (~2026-11-12). Shipped earlier in PR #1684: `providers.cacheWarming=idle` and `softRequestBudget` 80 to 60 (`values.rs:87-88,225-227`); unchanged here.
