@@ -1,12 +1,14 @@
-// #1212 (spec 021, #714 amendment): Settings > Advanced. Every value Refract itself sets for `omp`
-// at launch (the token guard overlay), grouped by area. The values live in Refract's own store,
-// never in OMP's config files; a change applies to the next Session that launches. The Advisor
-// model is edited under Models > Advisor.
-import { useEffect, useRef } from 'react'
+// #1212 (spec 021), #1767: Settings > Advanced. The token guard values Refract owns, grouped by area.
+// They are written to OMP's global config (`~/.omp/agent/config.yml`), so Refract is the source of
+// truth. Only keys marked `live` reach a running Session; the rest apply to new Conversations.
+// The Advisor model is edited under Models > Advisor.
+import { useEffect } from 'react'
 import { InfoIcon } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingsPage } from '@/components/settings/SettingsPage'
+import { useDefaultRepositoryId } from '@/lib/defaultRepository'
 import { useModelRolesStore } from '@/state'
 import { useTokenGuardStore } from '@/state/token-guard-store'
 import { TOKEN_GUARD_GROUPS, TOKEN_GUARD_KEYS } from '../../../shared/tokenGuard'
@@ -14,13 +16,14 @@ import type { TokenGuardKeyInfo } from '../../../shared/tokenGuard'
 import { AdvancedRow } from './advanced/AdvancedRow'
 import { defaultRoleWindow } from './advanced/contextWindow'
 import { changedRows } from './advanced/changedRows'
+import { formatCount } from './advanced/NumberUnitField'
 import { OptimiseTokenUsage } from './advanced/OptimiseTokenUsage'
 
 const ADVISOR_GROUP_HINT = 'Applies in review mode only.'
-const THRESHOLDS_RESET_NOTICE = 'Compaction thresholds are now a percent of the context window. Your old token thresholds were reset to the defaults.'
 
 export function AdvancedSection() {
-  const { values, defaults, loaded, thresholdsReset, error, load, set, reset, dismissThresholdsReset } = useTokenGuardStore()
+  const { values, defaults, loaded, migration, effectiveTriggers, projectOverrides, error, load, set, reset, dismissMigrationNotice } = useTokenGuardStore()
+  const repositoryId = useDefaultRepositoryId()
   const roles = useModelRolesStore((state) => state.roles)
   const rolesLoaded = useModelRolesStore((state) => state.loaded)
   const loadRoles = useModelRolesStore((state) => state.load)
@@ -29,26 +32,8 @@ export function AdvancedSection() {
   const loadCatalog = useModelRolesStore((state) => state.loadCatalog)
 
   useEffect(() => {
-    void load()
-  }, [load])
-
-  // Once shown, the notice is spent: dismiss it on leaving so reopening Settings does not repeat it.
-  // StrictMode re-mounts synchronously, so the dismissal waits a microtask and the refs reset on mount.
-  const noticeShown = useRef(false)
-  const mounted = useRef(false)
-  useEffect(() => {
-    noticeShown.current = false
-    mounted.current = true
-    return () => {
-      mounted.current = false
-      queueMicrotask(() => {
-        if (!mounted.current && noticeShown.current) dismissThresholdsReset()
-      })
-    }
-  }, [dismissThresholdsReset])
-  useEffect(() => {
-    noticeShown.current ||= thresholdsReset
-  }, [thresholdsReset])
+    void load(repositoryId)
+  }, [load, repositoryId])
 
   useEffect(() => {
     if (!rolesLoaded) void loadRoles()
@@ -68,13 +53,32 @@ export function AdvancedSection() {
     <SettingsPage
       title="Advanced"
       actions={loaded ? <OptimiseTokenUsage rows={changedRows(values, defaults, defaultWindow)} /> : undefined}
-      intro="Refract sets these values every time it starts a Session, to keep token use down. Changes apply to new Sessions only; running Sessions keep the values they launched with."
+      intro="Refract writes these values to OMP's global config, so they apply to every Session you start from Refract. Keys marked 'Applies to new Conversations' do not change a running Conversation."
     >
-      {thresholdsReset && (
+      {migration?.status === 'failed' && (
+        <p role="alert" className="mb-2 text-sm text-destructive">
+          Could not move your old token guard settings into OMP's config. Refract tries again next launch, and the old settings stay in use until then. {migration.error}
+        </p>
+      )}
+      {migration?.backupPath && (
         <Alert role="status" className="mb-6">
           <InfoIcon aria-hidden />
-          <AlertDescription>{THRESHOLDS_RESET_NOTICE}</AlertDescription>
+          <AlertDescription className="flex items-center justify-between gap-2">
+            <span>Your previous OMP config was backed up to {migration.backupPath}.</span>
+            <Button variant="ghost" size="sm" onClick={dismissMigrationNotice}>
+              Dismiss
+            </Button>
+          </AlertDescription>
         </Alert>
+      )}
+      {loaded && effectiveTriggers.length > 0 && (
+        <ul aria-label="Where compaction starts" className="mb-6 flex flex-col gap-1 text-xs text-muted-foreground">
+          {effectiveTriggers.map((t) => (
+            <li key={t.model}>
+              {t.model}: {t.modelThreshold === undefined ? `${t.thresholdPercent}% (global)` : `${t.modelThreshold} (per-model)`} of {formatCount(t.contextWindow)} tokens, so compaction starts at {formatCount(t.triggerTokens)} tokens.
+            </li>
+          ))}
+        </ul>
       )}
       {error && (
         <p role="alert" className="mb-2 text-sm text-destructive">
@@ -91,6 +95,7 @@ export function AdvancedSection() {
                 value={values[info.key]}
                 defaultValue={defaults[info.key]}
                 disabledReason={reasonFor(info)}
+                projectOverride={projectOverrides.includes(info.key)}
                 seedPercent={seedPercent}
                 defaultWindow={defaultWindow}
                 catalogLoading={catalog === undefined && !catalogFailed}

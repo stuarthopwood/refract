@@ -1,23 +1,61 @@
-// Per-model compaction thresholds as a small table (Settings > Advanced): model picker, percent of
-// that model's context window, remove, and an "Add model" button. A new row is a local draft until
-// a model is picked, because a threshold without a model is not a valid value.
+// Per-model compaction thresholds as a small table (Settings > Advanced): model picker, a threshold
+// (`80%`, `120000` tokens or `f200000` fixed tokens), remove, and an "Add model" button. A new row is a
+// local draft until a model is picked, because a threshold without a model is not a valid value.
 import { useEffect, useState } from 'react'
 import { ChevronRightIcon, PlusIcon, Trash2Icon } from 'lucide-react'
 import { ImpactWarning } from '@/components/settings/ImpactWarning'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useModelRolesStore } from '@/state'
-import { parsePercent } from '../../../../shared/tokenGuard'
+import { formatThreshold, parseThreshold, parseThresholdInput } from '../../../../shared/tokenGuard'
 import type { TokenGuardImpact } from '../../../../shared/tokenGuard'
-import { MAX_PERCENT, MIN_PERCENT, percentToTokens, windowFor } from './contextWindow'
-import { formatCount, NumberUnitField, WINDOW_UNKNOWN_HINT } from './NumberUnitField'
+import { windowFor } from './contextWindow'
+import { formatCount, WINDOW_UNKNOWN_HINT } from './NumberUnitField'
+
+const THRESHOLD_FORMAT_HINT = 'Use a percent such as 80%, a token count such as 120000, or f200000 for a fixed token trigger.'
+
+/** A text field that commits a valid threshold on Enter or blur and shows the format hint otherwise. */
+function ThresholdField({ id, value, label, describedBy, disabled, onCommit }: { id: string; value: string | number; label: string; describedBy?: string; disabled?: boolean; onCommit: (entry: string | number) => Promise<boolean> }) {
+  const shown = String(formatThreshold(parseThreshold(value)))
+  const [draft, setDraft] = useState(shown)
+  const [invalid, setInvalid] = useState(false)
+  useEffect(() => setDraft(shown), [shown])
+  const commit = (): void => {
+    const entry = parseThresholdInput(draft)
+    setInvalid(entry === undefined)
+    if (entry !== undefined && entry !== value) void onCommit(entry).then((ok) => !ok && setDraft(shown))
+  }
+  const errorId = `${id}-error`
+  return (
+    <div className="flex flex-col gap-1">
+      <Input
+        id={id}
+        className="w-32"
+        value={draft}
+        aria-label={label}
+        aria-invalid={invalid}
+        aria-describedby={[describedBy, invalid ? errorId : undefined].filter(Boolean).join(' ') || undefined}
+        disabled={disabled}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && commit()}
+      />
+      {invalid && (
+        <span id={errorId} role="alert" className="text-xs text-destructive">
+          {THRESHOLD_FORMAT_HINT}
+        </span>
+      )}
+    </div>
+  )
+}
 
 interface PerModelThresholdTableProps {
   id: string
-  /** Model selector to `"N%"`. */
-  value: Record<string, string>
+  /** Model selector to a threshold entry: `"80%"`, `120000` or `"f200000"`. */
+  value: Record<string, string | number>
   /** Warns on a row whose percent is above the global threshold (`seedPercent`). */
   impact?: TokenGuardImpact
   /** Percent a newly added model starts with: the global threshold. */
@@ -27,7 +65,7 @@ interface PerModelThresholdTableProps {
   /** Whether the table is expanded; owned by the row so its summary warning is only described while closed. */
   open: boolean
   onOpenChange: (open: boolean) => void
-  onChange: (value: Record<string, string>) => Promise<boolean>
+  onChange: (value: Record<string, string | number>) => Promise<boolean>
 }
 
 export function PerModelThresholdTable({ id, value, impact, seedPercent, disabled, describedBy, open, onOpenChange, onChange }: PerModelThresholdTableProps) {
@@ -44,7 +82,7 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
     void loadCatalog('chat')
   }, [loadCatalog])
 
-  const save = (next: Record<string, string>): Promise<boolean> =>
+  const save = (next: Record<string, string | number>): Promise<boolean> =>
     onChange(next).then((ok) => {
       setSaveFailed(!ok)
       return ok
@@ -100,12 +138,12 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
   const costlier = (model: string): boolean => impact?.costlierWhen(value[model], `${seedPercent}%`) === true
   const summaryCostlier = models.some(costlier)
 
-  const thresholdHint = (model: string, percent: number): string | undefined => {
+  const thresholdHint = (model: string): string | undefined => {
     if (catalog === undefined && !catalogFailed) return undefined
+    const entry = parseThreshold(value[model])
+    if (entry.mode !== 'percent') return entry.mode === 'fixed' ? 'Fixed trigger in tokens.' : 'Trigger in tokens.'
     const size = windowFor(catalog, model)
-    return size === null
-      ? WINDOW_UNKNOWN_HINT
-      : `≈ ${formatCount(percentToTokens(percent, size))} of ${formatCount(size)} tokens`
+    return size === null ? WINDOW_UNKNOWN_HINT : `≈ ${formatCount(Math.round((entry.amount * size) / 100))} of ${formatCount(size)} tokens`
   }
 
   return (
@@ -146,25 +184,22 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
                 <tr key={model}>
                   <td className="py-1 pr-2 align-top">
                     {picker(`${id}-model-${index}`, `Model ${index + 1}`, model, (selector) => {
-                      const next: Record<string, string> = {}
+                      const next: Record<string, string | number> = {}
                       for (const [key, percent] of Object.entries(value)) next[key === model ? selector : key] = percent
                       void save(next)
                     })}
                   </td>
                   <td className="py-1 pr-2 align-top">
                     <div className="flex flex-col gap-1">
-                      <NumberUnitField
+                      <ThresholdField
                         id={`${id}-percent-${index}`}
-                        value={parsePercent(value[model])}
-                        unit="%"
-                        min={MIN_PERCENT}
-                        max={MAX_PERCENT}
-                        hint={thresholdHint(model, parsePercent(value[model]))}
-                        ariaLabel={`Threshold for ${model}`}
+                        value={value[model] ?? ''}
+                        label={`Threshold for ${model}`}
                         describedBy={costlier(model) ? `${describedBy ?? ''} ${id}-impact-${index}`.trim() : describedBy}
                         disabled={disabled}
-                        onCommit={(percent) => save({ ...value, [model]: `${percent}%` })}
+                        onCommit={(entry) => save({ ...value, [model]: entry })}
                       />
+                      <span className="text-xs text-muted-foreground">{thresholdHint(model)}</span>
                       {impact && <ImpactWarning id={`${id}-impact-${index}`} text={impact.text} active={costlier(model)} />}
                     </div>
                   </td>
