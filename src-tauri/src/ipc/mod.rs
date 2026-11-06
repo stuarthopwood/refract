@@ -199,6 +199,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     model::register(dispatcher);
     working_mode::register(dispatcher);
     crate::shell::menu::register(dispatcher);
+    crate::shell::zoom::register(dispatcher);
 }
 
 pub fn invalid_argument(message: impl Into<String>) -> IpcError {
