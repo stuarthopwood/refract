@@ -97,7 +97,7 @@ export function heuristicClassify(issue) {
   // Word-bounded intent phrases, because a bare `token` or `cost` is common in this agent app.
   const title = (issue.title ?? "").toLowerCase();
   let priority = "p2";
-  if (has(/\b(crash(es|ed|ing)?|data loss|security (hole|vulnerability|issue|bug)|vulnerabilit(y|ies)|can'?t start|cannot start|won'?t start|blocker|blocking|broken workflow|slow(er|ly|ness)?|performance|memory leak|token (usage|cost|budget|spend)|tokens? (usage|cost)|(reduce|lower|cut) (the )?costs?|cost reduction)\b/)) priority = "p0";
+  if (has(/\b(crash(es|ed|ing)?|data loss|security (hole|vulnerability|issue|bug)|vulnerabilit(y|ies)|can'?t start|cannot start|won'?t start|blocker|blocking|broken workflow|slow(er|ly|ness)?|performance|memory leak|tokens? (usage|cost|budget|spend)|(reduce|lower|cut) (the )?costs?|cost reductions?)\b/)) priority = "p0";
   else if (has(/\b(typo|nice to have|someday|low priority)\b/)) priority = "p3";
   else if (/\b(ux|usability|redesign|major feature|ui (change|overhaul|improvement))\b/.test(title)) priority = "p1";
   else if (has(/\b(small|cosmetic|tweak|minor|polish|deferred)\b/)) priority = "p2";
