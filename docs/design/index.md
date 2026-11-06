@@ -81,7 +81,7 @@ Ideas and features live in the GitHub issue log for `stuarthopwood/refract`. Lab
 
 - **Type**: `idea` (the inbox), `feature`, `bug`, `spike`, `chore`.
 - **Area**: `session-list`, `chat`, `approvals`, `worktree`, `transport`, `notifications`, `settings`, `design`, `right-pane`, `build`.
-- **Priority**: `p1`, `p2`, `p3`.
+- **Priority**: `p0`, `p1`, `p2`, `p3`.
 - **Spec link**: `spec:NNN` when an issue has been shaped into `specs/NNN-...`.
 
 Status is only open or closed. A new thought is filed as an `idea`; when it is worth building it is shaped with `/speckit.specify`, gets a `spec:NNN` label, and links to the spec.

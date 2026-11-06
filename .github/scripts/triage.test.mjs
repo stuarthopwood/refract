@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildCopilotArgs,
+  PRIORITIES,
   classifyWithFallback,
   heuristicClassify,
   isSpecRelated,
@@ -24,10 +25,10 @@ const issue = (title, body = "A sufficiently long description of the requested c
   ...extra,
 });
 
-test("heuristic classifies a crash report as a p1 bug", () => {
+test("heuristic classifies a crash report as a p0 bug", () => {
   const c = heuristicClassify(issue("App crash when opening a session", "It crashes every time I open a worktree session on start."));
   assert.equal(c.type, "bug");
-  assert.equal(c.priority, "p1");
+  assert.equal(c.priority, "p0");
 });
 
 test("heuristic marks a near-empty issue as needs-info", () => {
@@ -194,7 +195,7 @@ test("two consecutive runs converge to exactly one type/priority/state label eac
 
   const finalLabels = new Set([...labelsAfterRun1, ...run2.labelsToAdd].filter((l) => !run2.labelsToRemove.includes(l)));
   const TYPES_SET = ["bug", "enhancement", "feature", "documentation", "spike", "chore", "question", "design"];
-  const PRIORITIES_SET = ["p1", "p2", "p3"];
+  const PRIORITIES_SET = PRIORITIES;
   const STATES_SET = ["ready-for-agent", "ready-for-human", "needs-info", "needs-triage"];
   assert.equal([...finalLabels].filter((l) => TYPES_SET.includes(l)).length, 1);
   assert.equal([...finalLabels].filter((l) => PRIORITIES_SET.includes(l)).length, 1);
