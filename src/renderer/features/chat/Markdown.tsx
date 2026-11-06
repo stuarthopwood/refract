@@ -7,8 +7,7 @@ import rehypeSanitize from 'rehype-sanitize'
 import { cn } from '@/lib/utils'
 import { safeUrl } from '@/lib/safe-url'
 import { parseFileReference, looksWithinWorktree, isLinkableFilePath } from '@/lib/linkify'
-import { toast } from 'sonner'
-import { useSessionsStore } from '@/state'
+import { notifyPersistentError, useSessionsStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { InlineCode } from '@/components/ui/inline-code'
 import { CodeBlock } from './CodeBlock'
@@ -183,7 +182,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
   const reveal = (): void => {
     void window.refract.sessions.revealFile(sessionId, path).then((result) => {
       // Dismiss-until-cleared: a stale/wrong file reference needs a moment to read (round 3).
-      if (!result.ok) toast.error(result.error.message, { duration: Infinity, closeButton: true })
+      if (!result.ok) notifyPersistentError(result.error.message)
     })
   }
   return (
