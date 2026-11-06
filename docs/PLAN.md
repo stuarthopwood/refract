@@ -1114,3 +1114,5 @@ Also filed 2026-11-06 (Stuart, grilled): **#1741** (`p1`, `design`, `pull-reques
 Also filed 2026-11-06 (Stuart, UI polish): **#1742** (`p1`, `design`, `pull-requests`), PR detail header: Merge becomes the filled primary button (`variant="default"`); the other header buttons stay ghost, per the #1387 rule.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1743** (`p1`, `design`), Session usage panel: a Session or Conversation scope toggle (Conversation filters on `session_file`) and an All time or Today range toggle that uses the Usage view's local-day boundary; both choices persist.
+
+Also filed 2026-11-06 (Stuart, grilled): **#1745** (`p1`, `design`), Chat header: the touched, branch PR and linked-issue badges become the click target (one item opens it, "+N" opens the list menu); the View, View PR and View issue buttons are removed; this reverses #1524 item 3.
