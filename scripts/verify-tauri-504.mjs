@@ -123,6 +123,7 @@ async function main() {
     check(true, 'Hovering "+2" shows the hidden labels in the tooltip', await cdp.evaluate(tooltipText));
     await shot(cdp, '02a-overflow-hover.png');
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+    await pressEscape();
     await cdp.waitFor(`${tooltipText} === ''`, { timeoutMs: 10_000, label: 'hover tooltip closed' });
     await cdp.evaluate(`document.querySelector('[data-issue-row][data-issue-number="12"]').focus()`);
     let reached = false;

@@ -18,7 +18,7 @@ export function LabelOverflow({ labels, className }: { labels: readonly Overflow
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <Badge asChild variant="secondary" className={cn('h-6 min-w-6 cursor-default hover:bg-secondary-hover-bg', className)}>
+        <Badge asChild variant="outline" className={cn('h-6 min-w-6 cursor-default text-muted-foreground hover:border-ring hover:text-foreground', className)}>
           <button type="button" aria-label={`${labels.length} more ${noun}: ${labels.map((label) => label.name).join(', ')}`}>
             +{labels.length}
           </button>
