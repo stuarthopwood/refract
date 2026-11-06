@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   buildCopilotArgs,
+  PRIORITIES,
   classifyWithFallback,
   heuristicClassify,
   isSpecRelated,
@@ -194,7 +195,7 @@ test("two consecutive runs converge to exactly one type/priority/state label eac
 
   const finalLabels = new Set([...labelsAfterRun1, ...run2.labelsToAdd].filter((l) => !run2.labelsToRemove.includes(l)));
   const TYPES_SET = ["bug", "enhancement", "feature", "documentation", "spike", "chore", "question", "design"];
-  const PRIORITIES_SET = ["p1", "p2", "p3"];
+  const PRIORITIES_SET = PRIORITIES;
   const STATES_SET = ["ready-for-agent", "ready-for-human", "needs-info", "needs-triage"];
   assert.equal([...finalLabels].filter((l) => TYPES_SET.includes(l)).length, 1);
   assert.equal([...finalLabels].filter((l) => PRIORITIES_SET.includes(l)).length, 1);

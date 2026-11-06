@@ -40,10 +40,10 @@ Rules:
 
 | Priority | Meaning |
 | --- | --- |
-| `p0` | App- or workflow-breaking bugs, performance issues and improvements, token maxxing and cost reductions, severe bug fixes |
+| `p0` | App- or workflow-breaking bugs, performance issues and improvements, token-usage and cost reductions, severe bug fixes |
 | `p1` | Major new features, UI/UX improvements, high-severity bug fixes |
 | `p2` | Smaller new features, smaller cosmetic fixes or tweaks, medium-severity bug fixes, P1 items explicitly deferred |
-| `p3` | Low-severity bug fixes and similar |
+| `p3` | Low-severity bug fixes and trivial polish |
 
 | State | Meaning |
 | --- | --- |

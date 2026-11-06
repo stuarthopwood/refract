@@ -94,12 +94,13 @@ export function heuristicClassify(issue) {
   // Area keywords match too loosely in free text; a wrong area label is worse than none.
   const area = null;
 
-  // First match wins, most severe first; word-bounded so e.g. `tokenizer` is not a cost report.
+  // Word-bounded intent phrases, because a bare `token` or `cost` is common in this agent app.
+  const title = (issue.title ?? "").toLowerCase();
   let priority = "p2";
-  if (has(/\b(security|data loss|cannot start|can'?t start|blocker|blocking|crash|broken workflow|slow|performance|memory leak|tokens?|cost)\b/)) priority = "p0";
+  if (has(/\b(crash(es|ed|ing)?|data loss|security (hole|vulnerability|issue|bug)|vulnerabilit(y|ies)|can'?t start|cannot start|won'?t start|blocker|blocking|broken workflow|slow(er|ly|ness)?|performance|memory leak|token (usage|cost|budget|spend)|tokens? (usage|cost)|(reduce|lower|cut) (the )?costs?|cost reduction)\b/)) priority = "p0";
   else if (has(/\b(typo|nice to have|someday|low priority)\b/)) priority = "p3";
+  else if (/\b(ux|usability|redesign|major feature|ui (change|overhaul|improvement))\b/.test(title)) priority = "p1";
   else if (has(/\b(small|cosmetic|tweak|minor|polish|deferred)\b/)) priority = "p2";
-  else if (has(/\b(ux|ui|usability|redesign)\b/)) priority = "p1";
 
   const specRelated = isSpecRelated(issue);
   let route = "none";
@@ -396,7 +397,7 @@ function buildPrompt(issue, openIssues) {
     "Return ONLY a JSON object with keys: type, area, priority, state, duplicate_of, speckit_route, rationale, pickup_notes.",
     `type: one of ${TYPES.join("|")}.`,
     `area: one of ${AREAS.join("|")} or null.`,
-    "priority: p0 = app- or workflow-breaking bugs, performance issues and improvements, token maxxing and cost reductions, severe bug fixes; p1 = major new features, UI/UX improvements, high-severity bug fixes; p2 = smaller new features, smaller cosmetic fixes or tweaks, medium-severity bug fixes, and P1 items explicitly deferred; p3 = low-severity bug fixes and similar.",
+    "priority: p0 = app- or workflow-breaking bugs, performance issues and improvements, token-usage and cost reductions, severe bug fixes; p1 = major new features, UI/UX improvements, high-severity bug fixes; p2 = smaller new features, smaller cosmetic fixes or tweaks, medium-severity bug fixes, and P1 items explicitly deferred; p3 = low-severity bug fixes and trivial polish.",
     `state: ready-for-agent (the request is clear enough that an agent can write a spec/plan/tasks for it, even if it has open design choices an agent can assume), ready-for-human (needs a real-world decision, external account, purchase, or manual work that a spec cannot settle), needs-info (too vague), needs-triage (unsure or possible duplicate).`,
     "duplicate_of: number of an open issue in <open_issues> that is clearly the same request, else null.",
     "speckit_route: route on SCOPE, not on type. specify = needs a new spec: a new user-facing capability, OR a change spanning many files or app-wide behaviour (for example renaming the product across code and packaging, or an icon set wired into the Tauri build and window config); converge = a change to behaviour already covered by an existing spec (specs/001-core-session-workspace) so the spec and tasks must be amended; none = no spec work (docs, questions, spikes, pure asset requests with no code wiring, tiny one-file fixes).",
