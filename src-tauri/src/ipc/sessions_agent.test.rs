@@ -123,11 +123,11 @@ fn check_resume_eligible_allows_the_normal_resume_case() {
 fn check_resume_eligible_refuses_an_otherwise_eligible_session_once_archived() {
     assert_eq!(
         check_resume_eligible(SessionStatus::Stopped, Some("agent-exited"), false, true),
-        Some("not-eligible")
+        Some("archived")
     );
     assert_eq!(
         check_resume_eligible(SessionStatus::Stopped, Some("not-started"), true, true),
-        Some("not-eligible")
+        Some("archived")
     );
 }
 
@@ -372,10 +372,7 @@ async fn resume_session_core_refuses_an_archived_session_without_reading_the_tai
         false,
     );
     let result = resume_session_core(&agent, &id, true).await;
-    assert!(matches!(
-        result,
-        Err(ResumeCoreError::Refused("not-eligible"))
-    ));
+    assert!(matches!(result, Err(ResumeCoreError::Refused("archived"))));
     assert!(!*agent.start_called.lock().unwrap());
     assert!(
         !*agent.resolve_termination_called.lock().unwrap(),
@@ -402,10 +399,7 @@ async fn resume_session_core_refuses_when_archived_during_the_tail_read() {
         true,
     );
     let result = resume_session_core(&agent, &id, false).await;
-    assert!(matches!(
-        result,
-        Err(ResumeCoreError::Refused("not-eligible"))
-    ));
+    assert!(matches!(result, Err(ResumeCoreError::Refused("archived"))));
     assert!(
         !*agent.start_called.lock().unwrap(),
         "must never start the agent for a Session it is about to report as ineligible"
@@ -535,6 +529,7 @@ struct FakeAttachableAgent {
     notify_called: StdMutex<bool>,
     /// Proves `attach_snapshot_decision` returns early (no tail read) for a non-stopped Session.
     resolve_termination_called: StdMutex<bool>,
+    archived: StdMutex<bool>,
 }
 
 impl AttachableAgent for FakeAttachableAgent {
@@ -548,6 +543,10 @@ impl AttachableAgent for FakeAttachableAgent {
             terminated_unexpectedly: self.terminated_unexpectedly,
             ..Default::default()
         }
+    }
+
+    async fn is_archived(&self) -> bool {
+        *self.archived.lock().unwrap()
     }
 
     async fn start(&self) -> Result<(), AgentError> {
@@ -567,6 +566,7 @@ fn fake_attachable(status: SessionStatus, terminated_unexpectedly: bool) -> Fake
         start_called: StdMutex::new(false),
         notify_called: StdMutex::new(false),
         resolve_termination_called: StdMutex::new(false),
+        archived: StdMutex::new(false),
     }
 }
 
@@ -574,7 +574,7 @@ fn fake_attachable(status: SessionStatus, terminated_unexpectedly: bool) -> Fake
 async fn attach_snapshot_decision_is_none_and_never_starts_when_not_stopped() {
     // Asserts the tail read itself never happens when the agent is not stopped.
     let agent = fake_attachable(SessionStatus::Working, false);
-    let detection = attach_snapshot_decision(&agent, false).await;
+    let detection = attach_snapshot_decision(&agent, false).await.unwrap();
     assert!(detection.is_none());
     assert!(!*agent.start_called.lock().unwrap());
     assert!(
@@ -586,7 +586,7 @@ async fn attach_snapshot_decision_is_none_and_never_starts_when_not_stopped() {
 #[tokio::test]
 async fn attach_snapshot_decision_force_start_restarts_even_an_agent_exited_reason() {
     let agent = fake_attachable(SessionStatus::Stopped, false);
-    let detection = attach_snapshot_decision(&agent, true).await;
+    let detection = attach_snapshot_decision(&agent, true).await.unwrap();
     assert!(detection.is_some());
     assert!(
         *agent.start_called.lock().unwrap(),
@@ -598,7 +598,7 @@ async fn attach_snapshot_decision_force_start_restarts_even_an_agent_exited_reas
 #[tokio::test]
 async fn attach_snapshot_decision_passive_open_never_auto_starts_an_agent_exited_session() {
     let agent = fake_attachable(SessionStatus::Stopped, false);
-    let detection = attach_snapshot_decision(&agent, false).await;
+    let detection = attach_snapshot_decision(&agent, false).await.unwrap();
     assert!(
         detection.is_some(),
         "the snapshot still reports the FRESH detection either way"
@@ -613,7 +613,7 @@ async fn attach_snapshot_decision_passive_open_never_auto_starts_an_agent_exited
 async fn attach_snapshot_decision_passive_open_never_starts_even_when_nothing_is_wrong() {
     // A passive open shows saved history and never starts the agent (#1205).
     let agent = fake_attachable(SessionStatus::Stopped, false);
-    let detection = attach_snapshot_decision(&agent, false).await;
+    let detection = attach_snapshot_decision(&agent, false).await.unwrap();
     assert!(detection.is_some());
     assert!(!*agent.start_called.lock().unwrap());
     assert!(!*agent.notify_called.lock().unwrap());
@@ -625,7 +625,7 @@ async fn attach_snapshot_decision_a_genuinely_crashed_session_with_the_same_stop
     // A tail read proving death mid-turn (`terminated_unexpectedly`) blocks auto-start, and the
     // detection still reaches `build_snapshot`.
     let agent = fake_attachable(SessionStatus::Stopped, true);
-    let detection = attach_snapshot_decision(&agent, false).await;
+    let detection = attach_snapshot_decision(&agent, false).await.unwrap();
     assert!(
         !*agent.start_called.lock().unwrap(),
         "a Session whose tail shows it died mid-turn must never auto-start"
@@ -640,12 +640,31 @@ async fn attach_snapshot_decision_a_genuinely_crashed_session_with_the_same_stop
 async fn attach_snapshot_decision_notifies_list_changed_only_when_the_agent_actually_starts() {
     // Notifies listChanged only when the agent actually starts.
     let not_stopped = fake_attachable(SessionStatus::Working, false);
-    attach_snapshot_decision(&not_stopped, false).await;
+    attach_snapshot_decision(&not_stopped, false).await.unwrap();
     assert!(!*not_stopped.notify_called.lock().unwrap());
 
     let starts = fake_attachable(SessionStatus::Stopped, false);
-    attach_snapshot_decision(&starts, true).await;
+    attach_snapshot_decision(&starts, true).await.unwrap();
     assert!(*starts.notify_called.lock().unwrap());
+}
+
+#[tokio::test]
+async fn attach_snapshot_decision_force_start_refuses_an_archived_session_without_starting() {
+    let agent = fake_attachable(SessionStatus::Stopped, false);
+    *agent.archived.lock().unwrap() = true;
+    let result = attach_snapshot_decision(&agent, true).await;
+    assert!(matches!(result, Err("archived")));
+    assert!(!*agent.start_called.lock().unwrap());
+    assert!(!*agent.notify_called.lock().unwrap());
+}
+
+#[tokio::test]
+async fn attach_snapshot_decision_passive_open_still_shows_an_archived_session() {
+    let agent = fake_attachable(SessionStatus::Stopped, false);
+    *agent.archived.lock().unwrap() = true;
+    let detection = attach_snapshot_decision(&agent, false).await.unwrap();
+    assert!(detection.is_some());
+    assert!(!*agent.start_called.lock().unwrap());
 }
 
 // `sessions_resume`/`attach_snapshot_core` against a real `AppState`: an unknown session id is
