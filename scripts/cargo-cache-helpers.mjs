@@ -4,8 +4,9 @@ import path from 'node:path';
 
 export const CACHE_WARN_BYTES = 10 * 2 ** 30;
 
-/** Total bytes of regular files under `dir`; symlinks are counted as links, never followed. */
-export function dirSizeBytes(dir) {
+/** Total bytes of regular files under `dir`; symlinks are counted as links, never followed.
+ *  With `limit`, stops walking once the running total exceeds it (the result is then a lower bound). */
+export function dirSizeBytes(dir, limit = Infinity) {
   let total = 0;
   const stack = [dir];
   while (stack.length > 0) {
@@ -23,6 +24,7 @@ export function dirSizeBytes(dir) {
       } else {
         try {
           total += lstatSync(full).size;
+          if (total > limit) return total;
         } catch {
           // deleted between readdir and stat
         }
@@ -37,23 +39,22 @@ export function formatGiB(bytes) {
 }
 
 const LOCK_NAMES = ['.cargo-lock', '.cargo-build-lock', '.cargo-artifact-lock'];
-const LOCK_ERRORS = new Set(['EBUSY', 'EPERM', 'EACCES']);
 
-/** Cargo holds an OS file lock on these files for the whole of a build, and on Windows that lock
- *  is mandatory: a read of the locked range fails even on the empty file, so a failed 1-byte read
- *  means a build is in flight. Read-only, so it never disturbs cargo. */
+/** Cargo holds an OS file lock on these files for the whole of a build. Only Windows enforces it
+ *  (mandatory lock: a 1-byte read fails); on Linux/macOS flock is advisory so the read succeeds and
+ *  this never reports a lock. Read-only, so it never disturbs cargo. */
 function isLocked(file) {
   let fd;
   try {
     fd = openSync(file, 'r');
   } catch (err) {
-    return LOCK_ERRORS.has(err.code);
+    return err.code !== 'ENOENT'; // unknown open failure: fail safe as locked
   }
   try {
     readSync(fd, Buffer.alloc(1), 0, 1, 0);
     return false;
   } catch (err) {
-    return LOCK_ERRORS.has(err.code);
+    return err.code !== 'ENOENT';
   } finally {
     closeSync(fd);
   }

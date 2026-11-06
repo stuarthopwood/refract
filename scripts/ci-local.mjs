@@ -110,9 +110,9 @@ function formatDuration(ms) {
 }
 
 function warnIfCacheLarge() {
-  const size = dirSizeBytes(path.resolve(process.env.CARGO_TARGET_DIR));
+  const size = dirSizeBytes(path.resolve(process.env.CARGO_TARGET_DIR), CACHE_WARN_BYTES);
   if (size > CACHE_WARN_BYTES) {
-    console.warn(`ci-local: warning: shared cargo target is ${formatGiB(size)} (over ${formatGiB(CACHE_WARN_BYTES)}); run \`pnpm cache:sweep\` to prune stale artefacts.`);
+    console.warn(`ci-local: warning: shared cargo target is over ${formatGiB(CACHE_WARN_BYTES)}; run \`pnpm cache:sweep\` to prune stale artefacts.`);
   }
 }
 
