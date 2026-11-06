@@ -35,10 +35,12 @@ struct Check {
 /// The fixed hint shown whenever the sign-in probe cannot confirm OMP's default model is usable.
 const SIGNED_IN_HINT: &str = "Run omp, complete /login, then Re-check.";
 
-/// Minimum supported OMP is 18.6.3; later 18.x passes but warns unless minor is the probed 18.8.x.
+/// Minimum supported OMP is 18.6.3; 18.x up to the tested line passes, newer minors warn.
 const OMP_MINIMUM_MAJOR: u32 = 18;
 const OMP_MINIMUM_MINOR: u32 = 6;
 const OMP_MINIMUM_PATCH: u32 = 3;
+/// Newest OMP minor Refract has been reviewed against (#689); bump it with each review.
+const OMP_TESTED_MINOR: u32 = 17;
 
 // The scratch probe needs a shorter ready-wait bound than real Sessions (#512).
 const PROBE_READY_PROMPT_AFTER_MS: u64 = 30_000;
@@ -202,7 +204,7 @@ async fn check_omp() -> Check {
         };
     }
 
-    if minor == 8 {
+    if minor <= OMP_TESTED_MINOR {
         return Check {
             ok: true,
             found: Some(found),
@@ -215,7 +217,7 @@ async fn check_omp() -> Check {
         found: Some(found.clone()),
         warning: Some(true),
         hint: Some(format!(
-            "omp {found} is at or above the minimum supported version (18.6.3) but outside the specifically re-probed 18.8.x range; Refract has not been checked against it individually but is expected to keep working."
+            "omp {found} is newer than 18.{OMP_TESTED_MINOR}.x, the newest version Refract has been checked against. It is expected to keep working."
         )),
     }
 }
