@@ -369,6 +369,30 @@ pub async fn get_config(key: &str, strip_env_vars: &[&str]) -> Result<Value, Omp
     get_config_with(&RealOmpExecutor, key, strip_env_vars).await
 }
 
+/// `omp config list --json`: every effective setting as `{ "<key>": { value?, type, description } }`.
+pub async fn list_config_with(
+    executor: &dyn OmpExecutor,
+    strip_env_vars: &[&str],
+) -> Result<Value, OmpConfigError> {
+    let args = vec![
+        "config".to_string(),
+        "list".to_string(),
+        "--json".to_string(),
+    ];
+    let stdout = call_config_locked(
+        executor,
+        &args,
+        "Could not read omp config.",
+        strip_env_vars,
+    )
+    .await?;
+    parse_object_json(&stdout)
+}
+
+pub async fn list_config(strip_env_vars: &[&str]) -> Result<Value, OmpConfigError> {
+    list_config_with(&RealOmpExecutor, strip_env_vars).await
+}
+
 /// `omp config set <key> --json -- <json>`. Always writes the global `config.yml`.
 pub async fn set_config_with(
     executor: &dyn OmpExecutor,

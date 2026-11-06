@@ -3,7 +3,9 @@
 
 use serde_json::{json, Value};
 
+use crate::ipc::model_roles::list_catalog_models;
 use crate::omp::token_guard::values::{self, ValueMap};
+use crate::omp::token_guard::{legacy, migrate, triggers};
 
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -48,6 +50,70 @@ fn snapshot(values: &ValueMap) -> Value {
     json!({ "values": values::to_object(values), "defaults": values::to_object(&values::defaults()) })
 }
 
+/// Default model plus the models of open Sessions, each with its resulting compaction trigger.
+async fn effective_triggers(state: &AppState, values: &ValueMap) -> Vec<Value> {
+    let mut models: Vec<String> = Vec::new();
+    if let Ok(list) = values::read_list().await {
+        if let Some(m) = list
+            .pointer("/modelRoles/value/default")
+            .and_then(Value::as_str)
+        {
+            models.push(m.to_string());
+        }
+    }
+    for s in state.registry.lock().await.snapshot().sessions {
+        if s.archived_at.is_none() {
+            if let Some(m) = s.last_model {
+                let id = format!("{}/{}", m.provider, m.id);
+                if !models.contains(&id) {
+                    models.push(id);
+                }
+            }
+        }
+    }
+    let catalog = list_catalog_models("chat").await.unwrap_or_default();
+    models
+        .iter()
+        .filter_map(|model| {
+            let bare = model.split(':').next().unwrap_or(model);
+            let window = catalog
+                .iter()
+                .find(|e| e.selector == *model || e.selector == bare)?
+                .context_window?;
+            serde_json::to_value(triggers::trigger_for(bare, window, values)).ok()
+        })
+        .collect()
+}
+
+async fn project_overrides(state: &AppState, args: &[Value]) -> Vec<String> {
+    let Some(id) = args
+        .first()
+        .and_then(|a| a.get("repositoryId"))
+        .and_then(Value::as_str)
+    else {
+        return Vec::new();
+    };
+    let path = state
+        .registry
+        .lock()
+        .await
+        .get_repository(id)
+        .map(|r| r.path.clone());
+    match path {
+        Some(p) => triggers::project_overrides(std::path::Path::new(&p)).await,
+        None => Vec::new(),
+    }
+}
+
+async fn full_snapshot(state: &AppState, args: &[Value], values: &ValueMap) -> Value {
+    let mut result = snapshot(values);
+    result["thresholdsReset"] = json!(false);
+    result["migration"] = json!(migrate::status(&state.data_dir).await);
+    result["effectiveTriggers"] = json!(effective_triggers(state, values).await);
+    result["projectOverrides"] = json!(project_overrides(state, args).await);
+    result
+}
+
 fn key_arg(args: &[Value], channel: &str) -> Result<String, IpcError> {
     args.first()
         .and_then(|arg| arg.get("key"))
@@ -58,17 +124,21 @@ fn key_arg(args: &[Value], channel: &str) -> Result<String, IpcError> {
 
 /// Only reports the migration notice: screens other than Settings > Advanced also load, and must
 /// not spend it.
-fn token_guard_get(state: AppState, _args: Vec<Value>) -> HandlerFuture {
+fn token_guard_get(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let mut result = snapshot(&values::load(&state.data_dir).await);
-        result["thresholdsReset"] = json!(values::thresholds_reset_pending(&state.data_dir).await);
-        Ok(result)
+        migrate::ensure(&state.data_dir).await;
+        let values = if migrate::is_done(&state.data_dir).await {
+            values::load_global().await.map_err(invalid_argument)?
+        } else {
+            legacy::effective(&state.data_dir).await
+        };
+        Ok(full_snapshot(&state, &args, &values).await)
     })
 }
 
 fn token_guard_dismiss_thresholds_reset(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        values::dismiss_thresholds_reset(&state.data_dir)
+        migrate::dismiss_notice(&state.data_dir)
             .await
             .map_err(invalid_argument)?;
         Ok(Value::Null)
@@ -83,28 +153,22 @@ fn token_guard_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .and_then(|arg| arg.get("value"))
             .cloned()
             .ok_or_else(|| invalid_argument("tokenGuard.set expects { key, value }"))?;
-        let updated = values::set(&state.data_dir, &key, value)
-            .await
-            .map_err(invalid_argument)?;
-        Ok(snapshot(&updated))
+        let updated = values::set(&key, value).await.map_err(invalid_argument)?;
+        Ok(full_snapshot(&state, &args, &updated).await)
     })
 }
 
 fn token_guard_reset(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let key = key_arg(&args, "tokenGuard.reset")?;
-        let updated = values::reset(&state.data_dir, &key)
-            .await
-            .map_err(invalid_argument)?;
-        Ok(snapshot(&updated))
+        let updated = values::reset(&key).await.map_err(invalid_argument)?;
+        Ok(full_snapshot(&state, &args, &updated).await)
     })
 }
 
-fn token_guard_reset_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
+fn token_guard_reset_all(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let updated = values::reset_all(&state.data_dir)
-            .await
-            .map_err(invalid_argument)?;
-        Ok(snapshot(&updated))
+        let updated = values::reset_all().await.map_err(invalid_argument)?;
+        Ok(full_snapshot(&state, &args, &updated).await)
     })
 }
