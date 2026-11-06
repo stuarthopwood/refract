@@ -1129,3 +1129,5 @@ Also filed 2026-11-06 (Stuart, grilled): **#1756** (`p1`, `design`), Chat: Subag
 Also filed 2026-11-06 (Stuart, grilled): **#1758** (`p1`, `design`), Chat: a Tool targets setting in Settings > Chat > Transcript (Hide, Hover, Show; default Hover); Hover drops the target chip from tool row summaries and shows the full, untruncated target in a tooltip on the verb; the failed-group detail and the View full call dialog are unchanged.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1760** (`p1`, `bug`, `session-list`), Session list: the Session details card opens after 1200 ms instead of 750 ms, stays closed after a row click until the pointer leaves the row, and never opens on click focus (Tab focus still opens it).
+
+Also filed 2026-11-06 (Stuart): **#1765** (`p0`, `bug`, `settings`), Settings: token guard changes (idle compaction threshold and others) apply only to new Sessions; saving must rewrite the overlay files so running Sessions pick the change up through OMP live reload.
