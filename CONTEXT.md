@@ -440,6 +440,30 @@ Ctrl+F (only with focus inside a chat pane) or the header ghost search icon open
 **Scrollbar map**:
 A canvas strip in the scrollbar gutter with one mark per navigable message (user left, agent right) and a viewport window; covers rendered rows only plus an "N earlier turns" stub that triggers Load earlier. Hidden under 1.5 viewports of content. Has a Settings toggle "Show scrollbar map" in the Chat group, default on (#754).
 
+**Label overflow chip** (#1740):
+The "+N" chip at the end of an **Issues view** row that stands for the labels beyond the first two. It is focusable, and hovering or focusing it shows the hidden labels in a tooltip.
+_Avoid_: label count, more-labels badge
+
+**Shared build cache**:
+The single `CARGO_TARGET_DIR` every worktree builds into (`docs/rust-build.md`), so a lane never creates its own `src-tauri/target`.
+_Avoid_: target folder, per-worktree target
+
+**Token guard**:
+Refract's Settings > OMP launch-overlay values (`src-tauri/src/session/token_guard.rs`, `src/shared/tokenGuard.ts`) that cap what the agent spends. App-wide, applied to new **Sessions** at launch, not set per **Session**.
+_Avoid_: spend limit, cost cap
+
+**Soft request budget**:
+OMP's `task.softRequestBudget`, edited in the token guard as "Subagent request budget": the model-call count at which a subagent is asked to wrap up. It is stopped at 1.5 times that number; 0 means no limit.
+_Avoid_: hard limit, request cap
+
+**Cache warming**:
+OMP's `providers.cacheWarming` setting (off, streaming or idle) that keeps the provider prompt cache alive. The token guard pins it to idle (#1672).
+_Avoid_: keep-alive, cache ping
+
+**Prompt cache write**:
+A model call that writes the provider prompt cache, billed higher than a cache read. It happens when the cache has expired, so the token guard works to avoid them (#1684).
+_Avoid_: cache miss, cache fill
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.
