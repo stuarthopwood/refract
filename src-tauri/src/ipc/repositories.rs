@@ -16,7 +16,7 @@ use crate::git::worktrees::{default_branch, list_branches};
 use crate::store::registry::{Repository, Session, REPOSITORY_HAS_SESSIONS_MESSAGE};
 
 use super::{
-    arg_str, find_repository, invalid_argument, map_git_error, map_registry_error, now_iso8601,
+    find_repository, invalid_argument, map_git_error, map_registry_error, now_iso8601,
     required_str, with_resolved_remote, AppState, Dispatcher, HandlerFuture, IpcError,
 };
 
@@ -165,10 +165,7 @@ pub fn repositories_list(state: AppState, _args: Vec<Value>) -> HandlerFuture {
 
 pub fn repositories_add(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let repo_path = match arg_str(&args, 0) {
-            Some(path) => path.to_string(),
-            None => return Err(invalid_argument("repositories.add expects a string path")),
-        };
+        let repo_path = required_str(&args, 0, "repositories.add expects a string path")?;
         add_repository_at(&state, &repo_path).await
     })
 }
