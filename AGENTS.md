@@ -126,7 +126,7 @@ requests view had drifted into two different filters, search fields and headers 
 
 ## Verifying the Rust (Tauri) build (epic #797)
 
-- Point `CARGO_TARGET_DIR` at the shared build cache for every `cargo`/`tauri` command; never let `src-tauri/target` appear in a worktree. Wait for a build in flight rather than starting a second one. Never delete under the shared cache except `cargo clean -p <crate>` for a confirmed stale-path error.
+- Point `CARGO_TARGET_DIR` at the shared build cache for every `cargo`/`tauri` command; never let `src-tauri/target` appear in a worktree. Wait for a build in flight rather than starting a second one. Never delete under the shared cache except `cargo clean -p <crate>` for a confirmed stale-path error, or `pnpm cache:sweep` (age-based, refuses while a build holds the lock; run it when `pnpm ci:local` warns the cache is over 10 GB).
 - Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to a scratch dir, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR`, never `%APPDATA%\refract-tauri`. `pnpm verify:tauri` does this with a recorded-frame fake `omp` for no model cost.
 - Details: `docs/rust-build.md`.
 

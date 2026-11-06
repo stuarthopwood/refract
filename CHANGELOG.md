@@ -98,6 +98,7 @@
 - feat(lists): PR list, Issues list and Home counts refresh quietly after a merge or close in the app or by a Session agent, through a `github:changed` event (#1589)
 - fix(chat): every transcript row's chevron lines up in one column: the action gutter now sits inside each expandable row's hover surface, so tool rows no longer end 28px short of thought, note and asked-user rows, and the hover fill covers the full row (#1612, https://github.com/stuarthopwood/refract/pull/1674)
 - feat(themes): six new themes, the first light ones: Light, Light (warm paper), Light (high contrast), Lagoon, Amethyst and Hearth (#1590, https://github.com/stuarthopwood/refract/pull/1653)
+- feat(cache): `pnpm cache:sweep` prunes shared cargo target artefacts unused for 7+ days (pinned cargo-sweep, refuses while a build holds the lock); `pnpm ci:local` warns when the target passes 10 GB and defaults `CARGO_INCREMENTAL=0` (#1736, https://github.com/stuarthopwood/refract/pull/1754)
 
 ### Bug Fixes
 
