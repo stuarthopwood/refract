@@ -1133,3 +1133,5 @@ Also filed 2026-11-06 (Stuart, grilled): **#1760** (`p1`, `bug`, `session-list`)
 Also filed 2026-11-06 (Stuart): **#1765** (`p0`, `bug`, `settings`), Settings: token guard changes (idle compaction threshold and others) apply only to new Sessions; saving must rewrite the overlay files so running Sessions pick the change up through OMP live reload.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1767** (`p0`, `bug`, `settings`), Settings: token guard settings write to OMP's global config instead of a per-launch overlay, so Refract is the source of truth; the first launch backs up and overwrites the global token guard keys, and Settings shows the effective compaction trigger. Supersedes #1765 once live reload is confirmed.
+
+Status 2026-11-06 (#1767): backend in `e45c4daa` (global write, backup, migration retry, `effectiveTriggers`, `projectOverrides`); renderer and spec 021 FR-034..FR-039 / T053..T055 done. Open: Rust build and live verification (T056), and the live-key probe evidence. #1765 stays open.

@@ -118,3 +118,12 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 - [x] T050 Hide the native spinner in `src/renderer/components/ui/NumberField.tsx` and draw two stacked muted `ChevronUpIcon`/`ChevronDownIcon` `Button`s (ghost, `tabIndex={-1}`, `aria-hidden`) at the right edge with an 8px gap after the value; click calls `stepUp()`/`stepDown()` then dispatches an `input` event; disabled when the field is disabled/read-only or at `max`/`min` per FR-033 (missing)
 - [x] T051 Update the Number fields paragraph in `docs/design/components.md` to describe the chevrons per FR-027 (partial)
 - [x] T052 Live verification with `scripts/verify-tauri-1646.mjs`: NumberField in Settings > Advanced in a dark and a light theme, zoomed on the chevrons and the gap; click steps and fires onChange; screenshots per SC-009 (missing)
+
+## Phase 5: Convergence
+
+**Scope**: #1767 global config as the token guard store, spec FR-034..FR-039. Backend in `e45c4daa`; no new renderer tests (prototyping rule).
+
+- [x] T053 `src/shared/tokenGuard.ts`: `TokenGuardMigration`, `TokenGuardTrigger`, snapshot `migration`/`effectiveTriggers`/`projectOverrides`, `live` flag per key, `parseThresholdInput` per FR-035..FR-039
+- [x] T054 `token-guard-store.ts`, bridge and `ipc.ts`: pass `repositoryId`, expose migration, triggers, overrides, `dismissMigrationNotice`; drop the thresholds-reset notice
+- [x] T055 `AdvancedSection.tsx`, `AdvancedRow.tsx`, `PerModelThresholdTable.tsx`: migration notice and error, trigger list, "Applies to new Conversations", project override note, three-form threshold field
+- [ ] T056 Live verification on a scratch `REFRACT_DATA_DIR` and scratch `~/.omp` home: backup file, retry on failure, probe of live keys, override note (blocked on a Rust build; C: full)
