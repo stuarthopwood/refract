@@ -21,6 +21,7 @@ This page covers the readiness checklist, first-run empty states, the product-le
 - Theme: shipped (spec 007) -- Appearance section, Dark / Dark (high contrast) presets, live preview. UI font, code font (family, ligatures, size): wanted, not yet built; tracked as issue #4.
 - Background watermark: shipped (spec 012) -- Appearance section, a switch below Chat width (issue #554 inserted Chat width between the theme picker and this switch) with a live preview; on by default, applies immediately with no restart.
 - Chat width: shipped (issue #554) -- Appearance section, Full (default) / Reading column, autosaved on choose (spec 068), directly below the theme picker.
+- OMP settings: Refract is the source of truth for every OMP setting it exposes (see [Principles](index.md#principles)). Settings writes the value to OMP's global config, overwrites any existing value after a backup, and shows the effective value. Tracked in #691 and #1767.
 
 Note: the canvas-colour decision (#474 agenda item 9) adds a built-in **Obsidian** preset alongside Dark and Dark (high contrast); see [foundations-tokens-theming.md](foundations-tokens-theming.md).
 
