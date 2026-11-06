@@ -87,9 +87,7 @@ async function checkPullRequests(cdp) {
       sessionTitle: session ? session.getAttribute('title') : null,
       draftReason: header.querySelector('[data-draft-reason]')?.textContent.trim() ?? null,
       mergeReason: header.querySelector('[data-merge-reason]')?.textContent.trim() ?? null,
-      titleGrows: getComputedStyle(title).flexGrow,
-      actionsWrap: getComputedStyle(actions).flexWrap,
-      actionsShrink: getComputedStyle(actions).flexShrink
+      titleGrows: getComputedStyle(title).flexGrow
     };
   })()`);
   await open(1);
