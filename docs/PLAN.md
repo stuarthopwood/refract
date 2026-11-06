@@ -1127,3 +1127,5 @@ Also filed 2026-11-06 (Stuart, grilled): **#1750** (`p1`, `feature`), Chat: the 
 Also filed 2026-11-06 (Stuart, grilled): **#1756** (`p1`, `design`), Chat: Subagents card: Stages whose agents all succeeded collapse to one line (running, failed and stopped Stages stay expanded) with a sticky chevron toggle, and Stage titles fill the row because the 60-character label cap is replaced by CSS truncation.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1758** (`p1`, `design`), Chat: a Tool targets setting in Settings > Chat > Transcript (Hide, Hover, Show; default Hover); Hover drops the target chip from tool row summaries and shows the full, untruncated target in a tooltip on the verb; the failed-group detail and the View full call dialog are unchanged.
+
+Also filed 2026-11-06 (Stuart, grilled): **#1760** (`p1`, `bug`, `session-list`), Session list: the Session details card opens after 1200 ms instead of 750 ms, stays closed after a row click until the pointer leaves the row, and never opens on click focus (Tab focus still opens it).
