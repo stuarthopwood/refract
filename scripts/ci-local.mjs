@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // `pnpm ci:local`: runs every `run:` step of `.github/workflows/ci.yml` locally, in order, stopping at the first failure.
 // Re-parses the workflow so the step list cannot drift; `uses:` setup steps are skipped.
-// CARGO_TARGET_DIR/CARGO_INCREMENTAL pass through unchanged; cargo/tauri steps refuse a worktree-local target (#946).
+// CARGO_TARGET_DIR passes through unchanged; CARGO_INCREMENTAL defaults to 0 (incremental data is most of the shared
+// cache's growth, #1736). Cargo/tauri steps refuse a worktree-local target (#946) and warn when the cache is over 10 GB.
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -9,6 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import yaml from 'js-yaml';
 import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { CACHE_WARN_BYTES, dirSizeBytes, formatGiB } from './cargo-cache-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -107,6 +109,13 @@ function formatDuration(ms) {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function warnIfCacheLarge() {
+  const size = dirSizeBytes(path.resolve(process.env.CARGO_TARGET_DIR));
+  if (size > CACHE_WARN_BYTES) {
+    console.warn(`ci-local: warning: shared cargo target is ${formatGiB(size)} (over ${formatGiB(CACHE_WARN_BYTES)}); run \`pnpm cache:sweep\` to prune stale artefacts.`);
+  }
+}
+
 function main() {
   const steps = loadSteps();
   // Unset, cargo falls back to a worktree-local `src-tauri/target` (#946); refuse before any step runs.
@@ -116,6 +125,8 @@ function main() {
     } catch (err) {
       fail(err.message);
     }
+    warnIfCacheLarge();
+    process.env.CARGO_INCREMENTAL ??= '0';
   }
   const results = [];
   let failedAt = -1;
