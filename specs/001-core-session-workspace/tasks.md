@@ -5487,3 +5487,14 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   (signature checked), with Rust tests, per FR-124 (missing)
 - [x] T427 Live check a Dependabot PR description, update `docs/PLAN.md`, then `cargo` and
   `node scripts/ci-local.mjs` per FR-124
+
+## Phase 89: Convergence (#1817 skill-prompt row never built in Rust, FR-063)
+
+- [x] T428 [US1] `transcript/skill_prompt.rs`: build the `skill-prompt` item (name, args, line count, summary) from
+  OMP's custom message, called once from the live `message_*` path and once from the history path in
+  `transcript.rs`, with a `SkillPrompt` variant and the `description` field in `model.ts`, per FR-063 (missing)
+- [x] T429 Rust tests from the captured live and replay messages (`tests/fixtures/skill-prompt.json`) and the
+  malformed (no name) Notice fallback, per FR-063
+- [x] T430 [US1] `SkillPromptRow.tsx`: pass the summary as `iconTooltip` (hover and keyboard focus), per FR-063 (missing)
+- [ ] T431 Live check a `/skill:<name>` send on a built app (live and after a Session reopen), update `docs/PLAN.md`,
+  then `cargo` and `node scripts/ci-local.mjs` per FR-063

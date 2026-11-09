@@ -383,6 +383,8 @@ export type TranscriptItem =
       name: string;
       args?: string;
       lineCount?: number;
+      /** The skill's own summary (front-matter `description`, else the first body paragraph) for the row's tooltip. */
+      description?: string;
       text: string;
     };
 
