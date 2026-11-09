@@ -5,7 +5,7 @@
 // dialogs open from a plain state flag with no Trigger for Radix to return focus to.
 import type { ReactNode } from 'react'
 import { cn } from '@/lib/utils'
-import { InlineStatus } from '@/components/InlineStatus'
+import { DialogError } from '@/components/DialogError'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -80,11 +80,7 @@ export function ConfirmAlertDialog({
             {children}
           </div>
         )}
-        {error !== undefined && (
-          <InlineStatus tone="error" className={cn('p-0', !error && 'sr-only')}>
-            {error ?? ''}
-          </InlineStatus>
-        )}
+        {error !== undefined && <DialogError message={error} />}
         {busyLabel && (
           <span role="status" className="sr-only">
             {busy ? busyLabel : ''}

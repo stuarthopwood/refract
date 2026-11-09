@@ -5473,21 +5473,21 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 
 ## Phase 87: Convergence (#1159 Delete flow hardening, FR-124, FR-029)
 
-- [ ] T423 [US6] `fs/leftover_summary.rs`: move the read guard into the `spawn_blocking` closure, so a
+- [x] T423 [US6] `fs/leftover_summary.rs`: move the read guard into the `spawn_blocking` closure, so a
   dropped IPC future cannot release it while the walk runs, per FR-124(d) (missing)
-- [ ] T424 [US6] `fs/remove_tree.rs`: pin the attempt-1 canonical path across retries, refuse when a
+- [x] T424 [US6] `fs/remove_tree.rs`: pin the attempt-1 canonical path across retries, refuse when a
   later attempt resolves elsewhere, and `log::debug!` each retry; keep the #1158 behaviour, per
   FR-124(b) (missing)
-- [ ] T425 [US6] `git/worktree_holders.rs`: give `Unreadable` its own message and use
+- [x] T425 [US6] `git/worktree_holders.rs`: give `Unreadable` its own message and use
   `normalize_git_path` for the displayed path, per FR-124(a), (b) (missing)
-- [ ] T426 [US6] `git/worktree_delete.rs`: reword `registration_unknown_message` and normalise its
+- [x] T426 [US6] `git/worktree_delete.rs`: reword `registration_unknown_message` and normalise its
   path, per FR-124(a) (partial)
-- [ ] T427 [US6] `git/worktree_delete_check.rs`: leave `D` and ` D` porcelain lines out of
+- [x] T427 [US6] `git/worktree_delete_check.rs`: leave `D` and ` D` porcelain lines out of
   `uncommitted_files`, per FR-124(c) (missing)
-- [ ] T428 [US6] `components/DialogError.tsx`: the shared always-mounted error live region; use it in
+- [x] T428 [US6] `components/DialogError.tsx`: the shared always-mounted error live region; use it in
   `ConfirmAlertDialog.tsx` and `ReviewDialog.tsx`, per FR-124(f) (missing)
-- [ ] T429 [US6] `DeleteDialog.tsx`: bump the generation in the open effect, keep "Retry" while
+- [x] T429 [US6] `DeleteDialog.tsx`: bump the generation in the open effect, keep "Retry" while
   deleting, spinner and "Rechecking…" for loading and re-check, drop the dead `outline-offset`
   class, reword the unreadable-list copy, per FR-124(e), US6/AC8 (missing)
-- [ ] T430 [US6] Update `docs/PLAN.md` and `docs/design/components.md`, then run the TS checks;
+- [x] T430 [US6] Update `docs/PLAN.md` and `docs/design/components.md`, then run the TS checks;
   `cargo`, `ci:local` and the live check stay pending per FR-124 (missing)
