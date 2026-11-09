@@ -5470,3 +5470,12 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `ToolRow` and `DiffView` are covered, per FR-123 (missing)
 - [x] T422 [US1] Live check `scripts/verify-tauri-758.mjs`, update `docs/PLAN.md`, then
   `node scripts/ci-local.mjs` per FR-123 (missing)
+
+## Phase 87: Convergence (#1741 linked images in PR descriptions, FR-124)
+
+- [x] T423 [US1] `Markdown.tsx`: an image inside a link renders `ResolvedImage` (alt text as fallback)
+  when `resolveImage` is set; the chat branch is unchanged, per FR-124 (missing)
+- [x] T424 `github/images.rs`: allow `dependabot-badges.githubapp.com` and accept SVG from that host only
+  (signature checked), with Rust tests, per FR-124 (missing)
+- [ ] T425 Live check a Dependabot PR description, update `docs/PLAN.md`, then `cargo` and
+  `node scripts/ci-local.mjs` per FR-124

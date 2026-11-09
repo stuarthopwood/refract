@@ -1110,7 +1110,7 @@ Also filed 2026-11-06 (deferred review findings and tooling follow-ups, not plac
 
 Also filed 2026-11-06 (Stuart, UI polish): **#1740** (`p1`, `design`), Issue list: the "+N" label overflow becomes a focusable pill with a tooltip that lists the hidden labels and their colour dots (`IssueRow.tsx`).
 
-Also filed 2026-11-06 (Stuart, grilled): **#1741** (`p1`, `design`, `pull-requests`), Markdown: images inside links go through `resolveImage` (`data:` URLs, no CSP change), so the Dependabot compatibility score badge and other linked badges render in PR descriptions.
+Also filed 2026-11-06 (Stuart, grilled): **#1741** (`p1`, `design`, `pull-requests`), Markdown: images inside links go through `resolveImage` (`data:` URLs, no CSP change), so the Dependabot compatibility score badge and other linked badges render in PR descriptions. In progress (PR on `fix/1741-linked-images`, FR-124): Rust `cargo`, `ci:local` and the live check are pending.
 
 Also filed 2026-11-06 (Stuart, UI polish): **#1742** (`p1`, `design`, `pull-requests`), PR detail header: Merge becomes the filled primary button (`variant="default"`); the other header buttons stay ghost, per the #1387 rule.
 
