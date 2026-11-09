@@ -193,7 +193,7 @@ async function checkManageSessions(cdp) {
   log(`invalid ring: ${JSON.stringify(ring)}`);
   await shot(cdp, '07-invalid-field.png');
   assert(ring && ring.after !== ring.before && ring.after !== 'none', 'aria-invalid draws a ring on an Input');
-  assert(ring.focusVisible && ring.focusedBorder === ring.ringColour && ring.focusedBorder !== ring.invalidBorder, 'A focused invalid Input swaps its border to the --ring colour');
+  assert(ring.focusVisible && ring.focusedBorder === ring.invalidBorder, 'A focused invalid Input keeps the destructive border (spec 100 superseded the ring swap)');
 }
 
 async function main() {
