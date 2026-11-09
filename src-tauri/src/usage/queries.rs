@@ -40,6 +40,8 @@ pub struct Filters {
     pub agent_type: Option<String>,
     /// A Refract Session directory; matches every conversation file at or below it.
     pub session_dir: Option<String>,
+    /// One conversation file (a `session_file` value); matches that file only.
+    pub session_file: Option<String>,
 }
 
 /// The clock and time zone a query runs in.
@@ -245,10 +247,22 @@ impl Filters {
     }
 
     fn session_clause(&self, w: &mut Where, column: Option<&str>) -> QueryResult<Option<String>> {
-        match (self.session_dir.as_deref(), column) {
-            (Some(dir), Some(column)) => session::clause(w, dir, column).map(Some),
-            _ => Ok(None),
+        let Some(column) = column else {
+            return Ok(None);
+        };
+        let mut parts = Vec::new();
+        if let Some(dir) = self.session_dir.as_deref() {
+            parts.push(session::clause(w, dir, column)?);
         }
+        if let Some(file) = self.session_file.as_deref() {
+            parts.push(session::file_clause(w, file, column)?);
+        }
+        Ok((!parts.is_empty()).then(|| parts.join(" AND ")))
+    }
+
+    /// True when a Session directory or one conversation file narrows the query.
+    fn session_scoped(&self) -> bool {
+        self.session_dir.is_some() || self.session_file.is_some()
     }
 
     /// Checks the allowlists and that a custom range is not inverted. `ipc/usage.rs` calls it too.
@@ -273,6 +287,9 @@ impl Filters {
         }
         if let Some(dir) = self.session_dir.as_deref() {
             session::normalise(dir)?;
+        }
+        if let Some(file) = self.session_file.as_deref() {
+            session::normalise(file)?;
         }
         Ok(())
     }
@@ -306,8 +323,8 @@ impl Filters {
                 format!(" WHERE {}", c.join(" AND "))
             }
         };
-        // The rollups carry no session column, so a Session filter reads the per-call rows.
-        if exact || self.session_dir.is_some() {
+        // The rollups carry no session column, so a Session or conversation filter reads the per-call rows.
+        if exact || self.session_scoped() {
             let mut c = bounds(w, "ts");
             c.extend(self.session_clause(w, Some("session_file"))?);
             return Ok(format!(
@@ -345,9 +362,9 @@ impl Filters {
         ))
     }
 
-    /// True when a model, reasoning or Session filter forces the per-call tool table.
+    /// True when a model, reasoning, Session or conversation filter forces the per-call tool table.
     pub(super) fn needs_tool_calls(&self) -> bool {
-        self.model.is_some() || self.reasoning.is_some() || self.session_dir.is_some()
+        self.model.is_some() || self.reasoning.is_some() || self.session_scoped()
     }
 }
 
