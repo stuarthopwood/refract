@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
+use crate::fs::worktree_access::read_guard_bounded;
 use crate::github::gh::owner_repo_for;
 
 use super::{now_ms, readout_pr, schedule_readout_update};
@@ -167,7 +168,10 @@ async fn resolve_repos(agent: &SessionAgent, writes: Vec<GithubWrite>) -> Vec<Re
                 if session_repo.is_none() {
                     let path = session_worktree(agent).await;
                     session_repo = Some(match path {
-                        Some(p) => owner_repo_for(Path::new(&p)).await.ok(),
+                        Some(p) => match read_guard_bounded(agent.session_id()).await {
+                            Ok(_guard) => owner_repo_for(Path::new(&p)).await.ok(),
+                            Err(_) => None,
+                        },
                         None => None,
                     });
                 }
@@ -222,7 +226,13 @@ pub(super) async fn refresh(agent: &Arc<SessionAgent>, worktree_path: &str) {
         let agent = agent.clone();
         let cwd = worktree_path.to_string();
         tokio::spawn(async move {
-            let info = readout_pr::item_by_number(Path::new(&cwd), &owner, &name, number).await;
+            // Refused guard reads as no info, like a failed lookup; the TTL retries it (#1157).
+            let info = match read_guard_bounded(agent.session_id()).await {
+                Ok(_guard) => {
+                    readout_pr::item_by_number(Path::new(&cwd), &owner, &name, number).await
+                }
+                Err(_) => None,
+            };
             let finished_at = now_ms();
             agent
                 .with_readout_state(|s| {

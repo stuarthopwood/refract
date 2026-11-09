@@ -9,6 +9,7 @@ use std::time::Duration;
 
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 
+use crate::fs::worktree_access::read_guard_bounded;
 use crate::git::git::git_raw;
 
 use super::agent::SessionAgent;
@@ -20,8 +21,9 @@ const GIT_PATH_TIMEOUT: Duration = Duration::from_secs(3);
 static WATCHERS: LazyLock<StdMutex<HashMap<String, RecommendedWatcher>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
-async fn resolve_head_dir(worktree_path: &str) -> Option<PathBuf> {
+async fn resolve_head_dir(session_id: &str, worktree_path: &str) -> Option<PathBuf> {
     let worktree = Path::new(worktree_path);
+    let _guard = read_guard_bounded(session_id).await.ok()?;
     let out = git_raw(
         worktree,
         &["rev-parse", "--git-path", "HEAD"],
@@ -43,7 +45,7 @@ async fn resolve_head_dir(worktree_path: &str) -> Option<PathBuf> {
 
 /// Pushes the new branch on the last readout at once; the full recompute stores the rest later.
 async fn push_branch_now(agent: &Arc<SessionAgent>, worktree_path: &str) {
-    let branch = compute_branch(worktree_path).await;
+    let branch = compute_branch(agent.session_id(), worktree_path).await;
     let mut readout = current_readout_value(agent).await;
     if readout.get("branch") == Some(&branch) || !agent.is_visible() {
         return;
@@ -58,7 +60,7 @@ async fn push_branch_now(agent: &Arc<SessionAgent>, worktree_path: &str) {
 pub(super) async fn start(agent: &SessionAgent, worktree_path: &str) {
     let session_id = agent.session_id().to_string();
     stop(&session_id);
-    let Some(dir) = resolve_head_dir(worktree_path).await else {
+    let Some(dir) = resolve_head_dir(&session_id, worktree_path).await else {
         return;
     };
     let weak = Arc::downgrade(&agent.arc());
