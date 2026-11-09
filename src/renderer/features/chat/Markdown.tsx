@@ -255,7 +255,7 @@ const components: Components = {
     // with the alt text (never a second anchor) as the loading/failure fallback.
     if (insideLink) {
       const text = alt || safe
-      if (resolveImage && !streaming) return <ResolvedImage src={safe} alt={alt ?? ''} resolveImage={resolveImage} fallback={text} />
+      if (resolveImage && !streaming) return <ResolvedImage src={safe} alt={text} resolveImage={resolveImage} fallback={text} />
       return <>{text}</>
     }
     if (streaming) return <span className={inertLinkClassName}>{alt || safe}</span>
