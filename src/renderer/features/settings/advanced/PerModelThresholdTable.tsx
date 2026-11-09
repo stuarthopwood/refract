@@ -195,11 +195,13 @@ export function PerModelThresholdTable({ id, value, impact, seedPercent, disable
                         id={`${id}-percent-${index}`}
                         value={value[model] ?? ''}
                         label={`Threshold for ${model}`}
-                        describedBy={costlier(model) ? `${describedBy ?? ''} ${id}-impact-${index}`.trim() : describedBy}
+                        describedBy={[describedBy, costlier(model) ? `${id}-impact-${index}` : undefined, thresholdHint(model) ? `${id}-hint-${index}` : undefined].filter(Boolean).join(' ') || undefined}
                         disabled={disabled}
                         onCommit={(entry) => save({ ...value, [model]: entry })}
                       />
-                      <span className="text-xs text-muted-foreground">{thresholdHint(model)}</span>
+                      <span id={`${id}-hint-${index}`} className="text-xs text-muted-foreground">
+                        {thresholdHint(model)}
+                      </span>
                       {impact && <ImpactWarning id={`${id}-impact-${index}`} text={impact.text} active={costlier(model)} />}
                     </div>
                   </td>

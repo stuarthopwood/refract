@@ -2,7 +2,7 @@
 // They are written to OMP's global config (`~/.omp/agent/config.yml`), so Refract is the source of
 // truth. Only keys marked `live` reach a running Session; the rest apply to new Conversations.
 // The Advisor model is edited under Models > Advisor.
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { InfoIcon } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -40,6 +40,7 @@ export function AdvancedSection() {
     void loadCatalog('chat')
   }, [rolesLoaded, loadRoles, loadCatalog])
 
+  const headingRef = useRef<HTMLHeadingElement>(null)
   const defaultWindow = defaultRoleWindow(roles, catalog)
   const seedPercent = typeof values['compaction.thresholdPercent'] === 'number' ? values['compaction.thresholdPercent'] : Number(defaults['compaction.thresholdPercent'])
 
@@ -52,6 +53,7 @@ export function AdvancedSection() {
   return (
     <SettingsPage
       title="Advanced"
+      headingRef={headingRef}
       actions={loaded ? <OptimiseTokenUsage rows={changedRows(values, defaults, defaultWindow)} /> : undefined}
       intro="Refract writes these values to OMP's global config, so they apply to every Session you start from Refract. Keys marked 'Applies to new Conversations' do not change a running Conversation."
     >
@@ -65,7 +67,14 @@ export function AdvancedSection() {
           <InfoIcon aria-hidden />
           <AlertDescription className="flex items-center justify-between gap-2">
             <span>Your previous OMP config was backed up to {migration.backupPath}.</span>
-            <Button variant="ghost" size="sm" onClick={dismissMigrationNotice}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                void dismissMigrationNotice()
+                headingRef.current?.focus()
+              }}
+            >
               Dismiss
             </Button>
           </AlertDescription>

@@ -107,7 +107,6 @@ async fn project_overrides(state: &AppState, args: &[Value]) -> Vec<String> {
 
 async fn full_snapshot(state: &AppState, args: &[Value], values: &ValueMap) -> Value {
     let mut result = snapshot(values);
-    result["thresholdsReset"] = json!(false);
     result["migration"] = json!(migrate::status(&state.data_dir).await);
     result["effectiveTriggers"] = json!(effective_triggers(state, values).await);
     result["projectOverrides"] = json!(project_overrides(state, args).await);
@@ -120,6 +119,17 @@ fn key_arg(args: &[Value], channel: &str) -> Result<String, IpcError> {
         .and_then(Value::as_str)
         .map(str::to_string)
         .ok_or_else(|| invalid_argument(format!("{channel} expects {{ key }}")))
+}
+
+/// A write while the migration is pending would be overwritten when it later runs.
+async fn require_migrated(state: &AppState) -> Result<(), IpcError> {
+    if migrate::ensure(&state.data_dir).await {
+        return Ok(());
+    }
+    let status = migrate::status(&state.data_dir).await;
+    Err(invalid_argument(status.error.unwrap_or_else(|| {
+        "The token guard migration has not finished".to_string()
+    })))
 }
 
 /// Only reports the migration notice: screens other than Settings > Advanced also load, and must
@@ -153,6 +163,7 @@ fn token_guard_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .and_then(|arg| arg.get("value"))
             .cloned()
             .ok_or_else(|| invalid_argument("tokenGuard.set expects { key, value }"))?;
+        require_migrated(&state).await?;
         let updated = values::set(&key, value).await.map_err(invalid_argument)?;
         Ok(full_snapshot(&state, &args, &updated).await)
     })
@@ -161,6 +172,7 @@ fn token_guard_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
 fn token_guard_reset(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let key = key_arg(&args, "tokenGuard.reset")?;
+        require_migrated(&state).await?;
         let updated = values::reset(&key).await.map_err(invalid_argument)?;
         Ok(full_snapshot(&state, &args, &updated).await)
     })
@@ -168,6 +180,7 @@ fn token_guard_reset(state: AppState, args: Vec<Value>) -> HandlerFuture {
 
 fn token_guard_reset_all(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
+        require_migrated(&state).await?;
         let updated = values::reset_all().await.map_err(invalid_argument)?;
         Ok(full_snapshot(&state, &args, &updated).await)
     })

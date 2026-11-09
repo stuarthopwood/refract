@@ -15,6 +15,7 @@ use crate::omp::config::set_config;
 use crate::store::atomic_json::write_json_file;
 
 const MARKER_FILE: &str = "token-guard-migration.json";
+const PENDING_FILE: &str = "token-guard-migration-backup.json";
 const RETIRED_SUFFIX: &str = ".migrated";
 
 #[derive(Serialize, Deserialize, Default)]
@@ -43,9 +44,22 @@ fn marker_path(dir: &Path) -> PathBuf {
     dir.join(MARKER_FILE)
 }
 
+/// A corrupt marker still counts as done: re-running would clobber settings the user may have changed since.
 async fn read_marker(dir: &Path) -> Option<Marker> {
     let bytes = tokio::fs::read(marker_path(dir)).await.ok()?;
     Some(serde_json::from_slice(&bytes).unwrap_or_default())
+}
+
+fn pending_path(dir: &Path) -> PathBuf {
+    dir.join(PENDING_FILE)
+}
+
+/// The backup taken by an earlier, unfinished attempt, if its file still exists.
+async fn pending_backup(dir: &Path) -> Option<String> {
+    let bytes = tokio::fs::read(pending_path(dir)).await.ok()?;
+    let value: Value = serde_json::from_slice(&bytes).ok()?;
+    let path = value.get("backupPath")?.as_str()?.to_string();
+    Path::new(&path).is_file().then_some(path)
 }
 
 /// `YYYY-MM-DD` (UTC) from a Unix timestamp, by the days-to-civil algorithm.
@@ -97,13 +111,20 @@ where
     W: Fn(String, Value) -> F,
     F: Future<Output = Result<(), String>>,
 {
-    let mut backup = None;
-    if let Some(config) = config.filter(|c| c.is_file()) {
-        let target = backup_path(config, date, |p| p.exists());
-        tokio::fs::copy(config, &target)
-            .await
-            .map_err(|err| format!("Could not back up the omp config: {err}"))?;
-        backup = Some(target.to_string_lossy().into_owned());
+    let mut backup = pending_backup(dir).await;
+    if backup.is_none() {
+        if let Some(config) = config.filter(|c| c.is_file()) {
+            let target = backup_path(config, date, |p| p.exists());
+            tokio::fs::copy(config, &target)
+                .await
+                .map_err(|err| format!("Could not back up the omp config: {err}"))?;
+            let path = target.to_string_lossy().into_owned();
+            // Recorded before any write so a retry reuses the pristine copy.
+            write_json_file(&pending_path(dir), &json!({ "backupPath": path }))
+                .await
+                .map_err(|err| format!("Could not record the backup: {err}"))?;
+            backup = Some(path);
+        }
     }
     let mut wanted = legacy::effective(dir).await;
     // A positive thresholdTokens would beat the percent, so Refract pins it off.
@@ -259,14 +280,37 @@ mod tests {
             .await
             .unwrap();
         let marker = read_marker(&dir).await.expect("marker");
-        assert!(marker
-            .backup_path
+        let backup = marker.backup_path.unwrap();
+        assert!(backup.ends_with("refract-backup-2026-11-06"));
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), "a: 1\n");
+        let backups = std::fs::read_dir(&dir)
             .unwrap()
-            .ends_with("refract-backup-2026-11-06-2"));
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .contains("refract-backup")
+            })
+            .count();
+        assert_eq!(backups, 1);
         assert!(!legacy::path(&dir).exists());
         let written = written.lock().unwrap();
         assert!(written.contains(&("task.maxConcurrency".to_string(), json!(3))));
         assert!(written.contains(&("compaction.thresholdTokens".to_string(), json!(-1))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn success_marks_done_and_retires_the_file() {
+        let dir = scratch("done");
+        std::fs::write(legacy::path(&dir), r#"{"version":2,"overrides":{}}"#).unwrap();
+        attempt(&dir, None, "2026-11-06", |_, _| async { Ok(()) })
+            .await
+            .unwrap();
+        assert!(is_done(&dir).await);
+        assert_eq!(status(&dir).await.status, "done");
+        assert!(!legacy::path(&dir).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

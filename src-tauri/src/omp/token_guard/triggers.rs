@@ -29,7 +29,7 @@ pub fn trigger_for(model: &str, window: i64, values: &ValueMap) -> Trigger {
         .get("compaction.modelThresholds")
         .and_then(|v| v.get(model))
         .cloned();
-    let of_window = |p: i64| window * p / 100;
+    let of_window = |p: i64| window.saturating_mul(p) / 100;
     let tokens = match &entry {
         Some(Value::String(s)) if s.starts_with('f') => s[1..].parse().unwrap_or(0),
         Some(Value::String(s)) => of_window(s.trim_end_matches('%').parse().unwrap_or(0)),
@@ -49,14 +49,27 @@ pub fn trigger_for(model: &str, window: i64, values: &ValueMap) -> Trigger {
     }
 }
 
+/// Largest project config read; a bigger file is not a plausible settings file.
+const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
+
 /// Token guard keys written in a project's `.omp/config.yml`, as dotted paths. Reads only; a missing
 /// or unreadable file means no overrides.
 pub async fn project_overrides(project_path: &Path) -> Vec<String> {
-    let Ok(text) = tokio::fs::read_to_string(project_path.join(".omp").join("config.yml")).await
+    use tokio::io::AsyncReadExt;
+    let Ok(file) = tokio::fs::File::open(project_path.join(".omp").join("config.yml")).await
     else {
         return Vec::new();
     };
-    overrides_in(&text)
+    let mut bytes = Vec::new();
+    if file
+        .take(MAX_CONFIG_BYTES)
+        .read_to_end(&mut bytes)
+        .await
+        .is_err()
+    {
+        return Vec::new();
+    }
+    overrides_in(&String::from_utf8_lossy(&bytes))
 }
 
 fn overrides_in(text: &str) -> Vec<String> {
