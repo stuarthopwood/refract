@@ -6,8 +6,8 @@ This page covers the readiness checklist, first-run empty states, the product-le
 
 ## First run and empty states
 
-- With nothing configured, the window shows a readiness checklist: git found, OMP found and on the supported version, OMP signed in. Each failing item has a fix hint.
-- Above the checklist sits a brand header with the hero icon, the bold **Refract** wordmark, and the tagline *One Pi, every angle.* in a lighter-weight Geist font (no longer italic); the checklist itself keeps only its own title, **Get Refract ready**, with no tagline inside it.
+- A successful launch shows no checklist. When git, OMP (found and on the supported version) or OMP sign-in fails, the window shows a three-step stepper (git found, OMP found and supported, OMP signed in) with the failed step expanded and its fix hint in the body.
+- Above the stepper sits a brand header with the hero icon, the bold **Refract** wordmark, and the tagline *One Pi, every angle.* (no longer italic); the header wraps and scales down below the `sm` breakpoint so it never forces horizontal scroll at 320 px.
 - One primary action, **Add project** (a menu: Local folder... or Clone from GitHub...), is disabled until the checklist passes. After that, Sessions are created from the Project header buttons in the session list; with no Session shown in a pane (including after closing the only open one, issue #621), the chat pane reads "Select a Session or create one."
 - Once a project exists, the first-run screen is gone, so the session list keeps a persistent **Add project** menu button in a footer below the project groups. Its items are **Local folder...** (the paste-or-browse dialog) and **Clone from GitHub...**; focus returns to the button on close.
 - **Settings > Projects** holds one group, **Cloning**, with **Default clone folder**: the folder the Clone from GitHub dialog prefills. It shows the path (or "Not set"), **Browse**, and **Clear**, and saves immediately.

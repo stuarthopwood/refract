@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
+import { StepperItem } from '@/components/Stepper'
 import type { Check } from '../../../shared/ipc'
 
 export const CHECK_ORDER = ['git', 'omp', 'ompSignedIn'] as const
@@ -66,9 +67,22 @@ export interface CheckRowProps {
   check?: Check
   checking: boolean
   showStateWord?: boolean
+  /** 1-based position; when set the row renders as a shared stepper step (launch-failure view) instead of a checklist row. */
+  step?: number
 }
 
-export function CheckRow({ label, check, checking, showStateWord = false }: CheckRowProps) {
+export function CheckRow({ label, check, checking, showStateWord = false, step }: CheckRowProps) {
+  if (step !== undefined) {
+    const status = !check ? 'pending' : check.ok ? 'done' : 'failed'
+    return (
+      <StepperItem index={step} status={status} title={label}>
+        {check?.found && <span className="break-words text-xs text-muted-foreground">{check.found}</span>}
+        {check && !check.ok && check.hint && <span className="break-words text-sm text-destructive">{check.hint}</span>}
+        {check?.ok && check.warning && check.hint && <span className="break-words text-xs text-state-needs-you">{check.hint}</span>}
+        <span className="sr-only">{checkStateWord(check, checking)}</span>
+      </StepperItem>
+    )
+  }
   return (
     <li className="flex items-start gap-2">
       <CheckStatusIcon check={check} checking={checking} srWord={!showStateWord} />

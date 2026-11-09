@@ -6,6 +6,7 @@ import refractHero from '@/assets/brand/refract-hero.svg'
 import { AddProjectMenu } from '@/features/sessions/AddProjectMenu'
 import type { Check, IpcError, Readiness as ReadinessChecks } from '../../../shared/ipc'
 import { useHealthStore } from '@/state'
+import { Stepper } from '@/components/Stepper'
 import { CHECK_LABELS, CHECK_ORDER, CheckRow } from './CheckRow'
 
 function checksFromError(error: IpcError): ReadinessChecks {
@@ -56,31 +57,47 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
     onReadyChange?.(allPass)
   }, [allPass, onReadyChange])
 
+  const failedKey = checks ? CHECK_ORDER.find((key) => !checks[key].ok) : undefined
+  const failedStep = failedKey ? CHECK_ORDER.indexOf(failedKey) + 1 : 0
+
   return (
     <div className="relative isolate h-full">
       <TitlebarBand reservesWindowControls />
-      <div className="flex h-full flex-col items-center justify-center gap-6 overflow-y-auto p-6">
-        <div className="flex items-center gap-4">
-          <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0" />
+      <div className="flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-6">
+        <div className="flex flex-wrap items-center justify-center gap-4">
+          <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0 sm:h-24 sm:w-24" />
           <div className="flex flex-col">
-            <span className="font-brand text-5xl font-bold leading-none text-foreground">Refract</span>
-            <span className="font-brand mt-1 text-sm font-medium leading-tight tracking-wide text-muted-foreground">One Pi, every angle.</span>
+            <span className="font-brand text-5xl font-bold leading-none text-foreground sm:text-7xl">Refract</span>
+            <span className="font-brand mt-2 text-lg font-medium leading-tight tracking-wide text-muted-foreground sm:text-xl">One Pi, every angle.</span>
           </div>
         </div>
         <div className="w-full max-w-sm p-6 text-foreground">
-          <h1 tabIndex={-1} data-readiness-root className="text-base font-medium outline-none">Get Refract ready</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Refract checks these before a project can be added.</p>
-          <ul aria-label="Readiness checklist" aria-live="polite" className="mt-4 flex flex-col gap-2">
-            {CHECK_ORDER.map((key) => (
-              <CheckRow key={key} label={CHECK_LABELS[key]} check={checks?.[key]} checking={checking && checks === null} />
-            ))}
-          </ul>
+          <h1 tabIndex={-1} data-readiness-root className="text-base font-medium outline-none">
+            {failedKey ? 'Refract can’t start yet' : allPass ? 'Add a project to begin' : 'Getting Refract ready'}
+          </h1>
+          {/* Polite live region, always mounted: the failure text is the one thing announced, not the whole list. */}
+          <p aria-live="polite" className="mt-2 text-sm text-muted-foreground">
+            {failedKey
+              ? `Step ${failedStep} of ${CHECK_ORDER.length} failed: ${CHECK_LABELS[failedKey]}.`
+              : allPass
+                ? ''
+                : 'Checking git and the agent…'}
+          </p>
+          {failedKey && checks && (
+            <Stepper label="Readiness steps">
+              {CHECK_ORDER.map((key, i) => (
+                <CheckRow key={key} step={i + 1} label={CHECK_LABELS[key]} check={key === failedKey ? checks[key] : { ...checks[key], hint: undefined }} checking={false} />
+              ))}
+            </Stepper>
+          )}
           <div className="mt-4 flex items-center gap-2">
             <AddProjectMenu variant="first-run" disabled={!allPass} />
-            <Button variant="ghost" onClick={() => void runCheck()} disabled={checking}>
-              {checking && <LoaderCircleIcon aria-hidden className="animate-spin" />}
-              Re-check
-            </Button>
+            {(failedKey || checking) && (
+              <Button variant="ghost" onClick={() => void runCheck()} disabled={checking}>
+                {checking && <LoaderCircleIcon aria-hidden className="animate-spin" />}
+                Re-check
+              </Button>
+            )}
           </div>
         </div>
       </div>
