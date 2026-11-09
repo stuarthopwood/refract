@@ -1166,3 +1166,5 @@ Also filed 2026-11-09 (Stuart): **#1827** (`p1`, `enhancement`, `chat`), Enhance
 Also filed 2026-11-09 (Stuart): **#1831** (`p0`, `bug`, `chat`), Bug: Ask: support OMP 18.18.3's HTML-form ask (ui.formDialog) so the Ask card works again.
 
 Also filed 2026-11-09 (Stuart): **#1832** (`p2`, `feature`, `chat`), Feat: Run a shell command without adding it to the model's context (OMP RPC bash excludeFromContext).
+
+Also filed 2026-11-09 (Stuart): `#1254` raised to `p1` (chat message image polish follow-ups from #1245 gate; headline item is the image viewer dialog filling the window for small images).
