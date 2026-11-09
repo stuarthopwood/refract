@@ -1,7 +1,7 @@
 // One shared hover/focus controller for the Todo and Agents readout cards. Not a Radix HoverCard/Tooltip: the
 // anchor button already has its own click behaviour and those triggers want exclusive ownership of its events.
 // The card body has no focus trap; its one link is tabIndex -1, so keyboard focus stays on the anchor. (#700)
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { FocusEvent, PointerEvent, RefObject } from 'react'
 
 const OPEN_DELAY_MS = 400
@@ -26,6 +26,12 @@ export interface ReadoutCardAnchorHandlers {
   onBlur: () => void
 }
 
+/** Spread onto the anchor chip: `aria-describedby` exists only while the card is mounted, so it never dangles. */
+export interface ReadoutCardAnchorAria {
+  'aria-expanded': boolean
+  'aria-describedby': string | undefined
+}
+
 export interface ReadoutCardContentHandlers {
   onPointerEnter: () => void
   onPointerLeave: () => void
@@ -33,6 +39,9 @@ export interface ReadoutCardContentHandlers {
 
 export interface ReadoutCard {
   open: boolean
+  /** Id for the card content (`PopoverContent id`); the chip's `aria-describedby` points at it while open. */
+  cardId: string
+  anchorAria: ReadoutCardAnchorAria
   /** Anchor chip ref; `scheduleClose` reads it to tell a keyboard-focused anchor from a grazed one. */
   anchorRef: RefObject<HTMLButtonElement | null>
   anchorHandlers: ReadoutCardAnchorHandlers
@@ -51,6 +60,7 @@ function paneBoundaryOf(anchor: HTMLElement | null): Element[] {
 /** `disabled` forces `open` false and ignores hover/focus without the caller returning before this hook. */
 export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}): ReadoutCard {
   const [open, setOpen] = useState(false)
+  const cardId = useId()
   const openTimerRef = useRef<TimerHandle | null>(null)
   const closeTimerRef = useRef<TimerHandle | null>(null)
   // True while the pointer is over the anchor or the content, which keeps the card hoverable.
@@ -151,6 +161,8 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
 
   return {
     open,
+    cardId,
+    anchorAria: { 'aria-expanded': open, 'aria-describedby': open ? cardId : undefined },
     anchorRef,
     // Read at render while open (anchor is mounted by then); the portaled card would otherwise collide with the window, not its pane.
     collisionBoundary: open ? paneBoundaryOf(anchorRef.current) : [],
