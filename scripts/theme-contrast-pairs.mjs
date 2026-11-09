@@ -110,6 +110,13 @@ export const PAIRS = [
   { fg: 'muted-foreground', bg: 'muted', min: 4.5 },
   { fg: 'muted-foreground', bg: 'accent', min: 4.5 },
   { fg: 'muted-foreground', bg: 'card', min: 4.5 },
+  // #1728: body text on the Subagents chain / Ask card fill (`--chat-card-bg`, `--card` at 60% over the page). The card edge and fill step are an accepted
+  // departure below 3:1 in non-high-contrast themes (docs/design/accessibility.md); floors are the measured ratios, so they can't regress.
+  { fg: 'muted-foreground', bg: 'chat-card-bg', on: 'background', min: 4.5 },
+  { fg: 'foreground', bg: 'chat-card-bg', on: 'background', min: 4.5 },
+  { fg: 'divider', bg: 'chat-card-bg', on: 'background', min: 1.39 },
+  { fg: 'divider', bg: 'chat-card-bg', on: 'background', min: 3, onlyThemes: HIGH_CONTRAST_THEMES },
+  { fg: 'chat-card-bg', bg: 'background', min: 1.04 },
   // Chrome band (#682): text and icons on the shared `--titlebar` surface.
   { fg: 'foreground', bg: 'titlebar', min: 4.5 },
   { fg: 'muted-foreground', bg: 'titlebar', min: 4.5 },
