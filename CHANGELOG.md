@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.31.0 (2026-11-09)
+
+### Features
+
+- feat(issues): focusable label overflow chip with tooltip (https://github.com/stuarthopwood/refract/pull/1772)
+- feat(readiness): three-step stepper on launch failure and a larger logo (https://github.com/stuarthopwood/refract/pull/1825)
+- feat(session-list): start list filters after three characters (https://github.com/stuarthopwood/refract/pull/1824)
+- feat(readiness): horizontal three-step stepper on every launch (https://github.com/stuarthopwood/refract/pull/1830)
+
+### Fixes
+
+- fix(worktree): guard git readers against worktree deletion (https://github.com/stuarthopwood/refract/pull/1763)
+- fix(pull-requests): make Merge the filled primary action in the PR header (https://github.com/stuarthopwood/refract/pull/1771)
+- fix(worktree): match reaper process paths on a name boundary at both ends (https://github.com/stuarthopwood/refract/pull/1783)
+- fix(chat): announce readout hover cards on keyboard focus (https://github.com/stuarthopwood/refract/pull/1782)
+- fix(a11y): guard the chat card background contrast pair (https://github.com/stuarthopwood/refract/pull/1820)
+- fix(pull-requests): render linked images in PR descriptions (https://github.com/stuarthopwood/refract/pull/1784)
+- fix(chat): drop the card footer band so actions sit on the card (https://github.com/stuarthopwood/refract/pull/1823)
+
+### Other
+
+- docs(plan): add the built-in browser epic, API tool, and loading page polish (https://github.com/stuarthopwood/refract/pull/1805)
+- refactor(ipc): extract repository lookup, remote and required-arg helpers (https://github.com/stuarthopwood/refract/pull/1770)
+- chore(build): prune stale file-size baseline entries (https://github.com/stuarthopwood/refract/pull/1781)
+- docs(plan): add filters, slash commands, prompt templates, hooks, docs site, and tests epic (https://github.com/stuarthopwood/refract/pull/1816)
+- docs(plan): add #1817 and #1818 (https://github.com/stuarthopwood/refract/pull/1819)
+- docs(plan): remove stray conflict marker (https://github.com/stuarthopwood/refract/pull/1822)
+- docs(plan): add #1827 (https://github.com/stuarthopwood/refract/pull/1828)
+- docs(plan): add the OMP 18.18 review row, #1831 and #1832 (https://github.com/stuarthopwood/refract/pull/1833)
+- docs(plan): raise #1254 to p1 (https://github.com/stuarthopwood/refract/pull/1834)
+- docs(plan): add #1835 pause subagents bug (https://github.com/stuarthopwood/refract/pull/1836)
+
 ## v0.30.0 (2026-11-09)
 
 ### Features

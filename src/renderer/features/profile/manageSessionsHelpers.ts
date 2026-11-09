@@ -6,6 +6,7 @@ import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import type { SessionFilters } from '@/state/view-store'
 import { displayStatus, matchesNameOrBranch } from '@/features/sessions/sessionDisplay'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import type { SessionDisplayStatus } from '@/features/sessions/sessionDisplay'
 
 // Issue #731 decision 8: Manage sessions' own Status sort order -- needs-you, Unread response,
@@ -30,7 +31,7 @@ export function filterAndSortSessions(
   filters: SessionFilters
 ): SessionSummary[] {
   const repoNameById = new Map(repositories.map((repository) => [repository.id, repository.name]))
-  const query = filters.search.trim().toLowerCase()
+  const query = effectiveFilterQuery(filters.search).toLowerCase()
   const filtered = sessions.filter((session) => {
     if (filters.repositoryId !== 'all' && session.repositoryId !== filters.repositoryId) return false
     if (filters.archiveFilter === 'active' && session.archivedAt) return false
