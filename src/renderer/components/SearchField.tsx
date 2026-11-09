@@ -6,6 +6,7 @@ import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { FILTER_MIN_CHARS, FILTER_MIN_CHARS_HINT } from '@/components/filterQueryRule'
+import { FilterResultStatus } from '@/components/FilterResultStatus'
 
 export interface SearchFieldProps {
   value: string
@@ -16,6 +17,8 @@ export interface SearchFieldProps {
   clearLabel?: string
   /** Opts out of the three-character rule (`filterQueryRule.ts`) for a type-ahead (the command palette) or a text search (find in chat); every list filter leaves it off and so states the rule. */
   instant?: boolean
+  /** How many rows the filter left. Given, the field announces "N results" politely once the query is long enough to filter; leave it off when the screen announces its own count. */
+  resultCount?: number
   /** Replaces Esc-clears: when given, Esc anywhere in the field calls this instead (a find bar that closes on Esc, say), and the Esc hints are not shown. */
   onEscape?(): void
   /** Called on Enter in the input (not while composing text), with whether Shift was held. */
@@ -43,6 +46,7 @@ export function SearchField({
   tooltipSide = 'top',
   clearLabel = 'Clear filter',
   instant = false,
+  resultCount,
   onEscape,
   onSubmit,
   className,
@@ -145,6 +149,7 @@ export function SearchField({
           </Tooltip>
         )}
       </InputWithAction>
+      {!instant && resultCount !== undefined && <FilterResultStatus query={value} count={resultCount} />}
     </div>
   )
 }

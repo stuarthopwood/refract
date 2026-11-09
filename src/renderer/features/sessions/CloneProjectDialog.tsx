@@ -326,7 +326,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
                 )
               }
               countText={countText}
-              announcement={countText}
+              announceResults={!loading && !loadError}
             />
           )}
           <div role="status" className="sr-only">

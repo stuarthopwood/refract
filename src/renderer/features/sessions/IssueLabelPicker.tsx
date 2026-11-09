@@ -64,7 +64,7 @@ export function IssueLabelPicker({ labels, selected, onChange, disabled, unavail
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="flex w-72 flex-col gap-2 p-2">
-            <SearchField label="Filter labels" placeholder="Filter labels…" value={filter} onValueChange={setFilter} />
+            <SearchField label="Filter labels" placeholder="Filter labels…" value={filter} onValueChange={setFilter} resultCount={visible.length} />
             <div role="group" aria-label="Labels" className="flex max-h-56 flex-col gap-1 overflow-y-auto">
               {visible.length === 0 && <InlineStatus density="compact">No matching labels</InlineStatus>}
               {visible.map((label) => (
