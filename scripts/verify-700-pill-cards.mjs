@@ -211,6 +211,38 @@ async function tabUntilFocused(cdp, selector, { maxTabs = 120 } = {}) {
   throw new Error(`tabUntilFocused: never reached ${selector} within ${maxTabs} Tab presses (focus ended on ${active})`);
 }
 
+/** The card must be fully unmounted (exit animation finished) before a keyboard-open check, or a card still fading out from an earlier hover satisfies "opens" without the focus handler having run. */
+const waitForCardGone = (cdp, cardSelector, label) => cdp.waitFor(`!(${cardSelector})`, { timeoutMs: 3_000, label: `${label} fully unmounted before the keyboard-open check` });
+/** After a real Tab onto `pillSelector`: the card reaches data-state=open, the chip reports aria-expanded=true, and aria-describedby is the card's own id. */
+async function assertKeyboardOpened(cdp, { pillSelector, cardSelector, label }) {
+  await cdp.waitFor(`(${cardSelector})?.getAttribute('data-state') === 'open'`, { timeoutMs: 2_000, label: `${label} reaches data-state=open on keyboard focus-visible (no hover delay)` });
+  const read = await cdp.evaluate(`({ expanded: (${pillSelector})?.getAttribute('aria-expanded') ?? null, describedBy: (${pillSelector})?.getAttribute('aria-describedby') ?? null, cardId: (${cardSelector})?.id ?? '' })`);
+  assertEqual(read.expanded, 'true', `${label} chip reports aria-expanded=true once the card is open`);
+  assertTrue(read.cardId.length > 0 && read.describedBy === read.cardId, `${label} chip's aria-describedby is the open card's id`, read);
+}
+/** The chip stops claiming a card: aria-expanded=false and no aria-describedby, which must not dangle at a card that is gone. */
+async function assertKeyboardClosed(cdp, { pillSelector, cardSelector, label, how }) {
+  await cdp.waitFor(`(() => { const p = ${pillSelector}; return p?.getAttribute('aria-expanded') === 'false' && !p.hasAttribute('aria-describedby'); })()`, { timeoutMs: 2_000, label: `${label} chip drops aria-expanded and aria-describedby after ${how}` });
+  await waitForCardGone(cdp, cardSelector, `${label} after ${how}`);
+}
+
+/** Real keyboard path onto a chip, then away again with a real Tab: the card opens on focus and closes on blur. */
+async function assertKeyboardFocusCardLifecycle(cdp, { pillSelector, cardSelector, label }) {
+  await waitForCardGone(cdp, cardSelector, label);
+  await tabUntilFocused(cdp, pillSelector);
+  assertTrue(await cdp.evaluate(`document.activeElement.matches(':focus-visible')`), `Tab-focused ${label} chip genuinely matches :focus-visible`);
+  await assertKeyboardOpened(cdp, { pillSelector, cardSelector, label });
+  await pressEscape(cdp);
+  await assertKeyboardClosed(cdp, { pillSelector, cardSelector, label, how: 'Escape' });
+  assertTrue(await cdp.evaluate(`document.activeElement === (${pillSelector})`), `Focus stays on the ${label} chip after Escape closes the card`);
+  await tabUntilFocused(cdp, pillSelector);
+  await assertKeyboardOpened(cdp, { pillSelector, cardSelector, label: `${label} (reopened)` });
+  await pressTab(cdp);
+  await waitTwoFrames(cdp);
+  assertTrue(await cdp.evaluate(`document.activeElement !== (${pillSelector})`), `A further Tab moves focus off the ${label} chip`);
+  await assertKeyboardClosed(cdp, { pillSelector, cardSelector, label, how: 'blur' });
+}
+
 /** Structural proxy for "inert text": no non-off `aria-live` and no implicit live-region role. */
 async function assertCardIsInert(cdp, selector, label) {
   const inert = await cdp.evaluate(`(() => {
@@ -317,6 +349,10 @@ async function main() {
     // `get_state` reconciliation runs as a separate task after the composer re-enables; poll the pill.
     await cdp.waitFor(`(() => { const p = ${TODO_PILL_SELECTOR}; return !!p && (p.querySelector('span[aria-hidden]')?.textContent ?? '').trim() === 'Todo 5/7'; })()`, { timeoutMs: 10_000, label: 'Todo pill reads the settled "Todo 5/7" figure' });
 
+    // Fresh keyboard path: nothing has hovered either chip yet, so no earlier pointer interaction can mask a focus handler that fails to open its card.
+    await assertKeyboardFocusCardLifecycle(cdp, { pillSelector: TODO_PILL_SELECTOR, cardSelector: TODO_CARD_SELECTOR, label: 'Todo (fresh, no prior hover)' });
+    await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+    await waitForCardGone(cdp, AGENTS_CARD_SELECTOR, 'Agents card');
     await assertNoStrayOverlay(cdp, 'the Todo card hover test');
     await hoverElement(cdp, TODO_PILL_SELECTOR);
     assertTrue(!!(await cdp.evaluate(`!!(${TODO_CARD_SELECTOR})`)) === false, 'Todo card is not yet open the instant the pointer arrives (the ~400ms delay has not elapsed)');
@@ -357,13 +393,10 @@ async function main() {
     await moveToNeutralPoint(cdp);
     await cdp.waitFor(`!(${TODO_CARD_SELECTOR})`, { timeoutMs: 2_000, label: 'Todo card closes once the pointer leaves both the pill and the card' });
 
-    await tabUntilFocused(cdp, TODO_PILL_SELECTOR);
-    assertTrue(await cdp.evaluate(`document.activeElement.matches(':focus-visible')`), 'Tab-focused Todo pill genuinely matches :focus-visible');
-    await cdp.waitFor(`!!(${TODO_CARD_SELECTOR})`, { timeoutMs: 2_000, label: 'Todo card opens immediately on keyboard focus-visible (no hover delay)' });
-    await pressEscape(cdp);
-    await cdp.waitFor(`!(${TODO_CARD_SELECTOR})`, { timeoutMs: 2_000, label: 'Escape closes the Todo card' });
-    assertTrue(await cdp.evaluate(`document.activeElement === (${TODO_PILL_SELECTOR})`), 'Focus stays on the Todo pill after Escape closes the card');
-
+    await assertKeyboardFocusCardLifecycle(cdp, { pillSelector: TODO_PILL_SELECTOR, cardSelector: TODO_CARD_SELECTOR, label: 'Todo' });
+    // A real Tab off the Todo chip lands on its sibling chip, whose card opens in turn; blur it so the pinning steps start clean.
+    await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);
+    await waitForCardGone(cdp, AGENTS_CARD_SELECTOR, 'Agents card');
     await clickTodoPill(cdp);
     assertEqual((await readPill(cdp)).ariaPressed, 'true', 'Todo pill is pinned');
     await cdp.waitFor(`!!document.querySelector('[data-slot="pinned-todo-panel"]')`, { timeoutMs: 2_000, label: 'Pinned todo panel mounts once pinned' });
@@ -440,12 +473,7 @@ async function main() {
     await cdp.waitFor(`!!(${SUBAGENTS_PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Clicking the Agents pill itself still opens the Subagents panel' });
 
     await moveToNeutralPoint(cdp);
-    await tabUntilFocused(cdp, AGENTS_PILL_SELECTOR);
-    assertTrue(await cdp.evaluate(`document.activeElement.matches(':focus-visible')`), 'Tab-focused Agents pill genuinely matches :focus-visible');
-    await cdp.waitFor(`!!(${AGENTS_CARD_SELECTOR})`, { timeoutMs: 2_000, label: 'Agents card opens immediately on keyboard focus-visible' });
-    await pressEscape(cdp);
-    await cdp.waitFor(`!(${AGENTS_CARD_SELECTOR})`, { timeoutMs: 2_000, label: 'Escape closes the Agents card' });
-    assertTrue(await cdp.evaluate(`document.activeElement === (${AGENTS_PILL_SELECTOR})`), 'Focus stays on the Agents pill after Escape closes the card');
+    await assertKeyboardFocusCardLifecycle(cdp, { pillSelector: AGENTS_PILL_SELECTOR, cardSelector: AGENTS_CARD_SELECTOR, label: 'Agents' });
 
     // The panels are percentage-sized siblings, so close the Subagents panel to free width for the split maths below.
     if (await cdp.evaluate(`!!(${SUBAGENTS_PANEL_SELECTOR})`)) { await cdp.click(`document.querySelector('[data-panel-close]')`); await cdp.waitFor(`!(${SUBAGENTS_PANEL_SELECTOR})`, { timeoutMs: 5_000, label: 'Subagents panel closed before the split-view section' }); }
