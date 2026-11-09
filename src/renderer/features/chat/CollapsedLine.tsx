@@ -87,6 +87,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const actualOpen = isControlled ? open : uncontrolledOpen
   const setOpen = onOpenChange ?? setUncontrolledOpen
   const detailId = React.useId()
+  const tooltipDescId = React.useId()
   const detailMounted = detail !== undefined
   const detailVisuallyHidden = hideDetailWhenOpen && actualOpen
   const showDetail = detailMounted && !detailVisuallyHidden
@@ -110,6 +111,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
             if (e.target === e.currentTarget) setRowFocusVisible(false)
           }
         }
+
+  const describedBy = [showDetail ? detailId : null, iconTooltip === undefined ? null : tooltipDescId].filter(Boolean).join(' ') || undefined
 
   const row = (
     <>
@@ -230,6 +233,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           {/* Reserves the action's column in every expandable row so all chevrons share one x; the action is laid over it below. */}
           <span aria-hidden="true" className="h-5 w-6 shrink-0" />
         </CollapsibleTrigger>
+        {iconTooltip !== undefined && (
+          <span id={tooltipDescId} className="sr-only">
+            {iconTooltip}
+          </span>
+        )}
         {iconTooltip !== undefined && (
           <span id={tooltipDescId} className="sr-only">
             {iconTooltip}
