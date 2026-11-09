@@ -189,6 +189,8 @@ export function DeleteDialog({
         setLeftoverLoading(true)
         void window.refract.sessions.deleteLeftoverSummary(deletingId).then((refreshed) => {
           if (sessionIdRef.current !== deletingId || deleteGenerationRef.current !== myGeneration) return
+          // The refreshed result may unmount the list (error or empty); move focus off it first.
+          if (leftoverListRef.current?.contains(document.activeElement)) confirmRef.current?.focus()
           setLeftoverLoading(false)
           if (!refreshed.ok) {
             setLeftoverError(true)
