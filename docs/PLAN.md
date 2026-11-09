@@ -1143,3 +1143,9 @@ Also filed 2026-11-06 (Stuart): **#1776** (`p3`, `idea`, `worktree`, `build`), I
 Also filed 2026-11-06 (Stuart): **#1778** (`p1`, `design`), UI Polish: Usage icon: use the gauge icon in the left rail and command palette to match the right rail.
 
 Also filed 2026-11-09 (Stuart): **#1789** (`p1`, `feature`, `chat`), Composer: # picker to search and insert a pull request or issue reference; pairs with #1155.
+
+Also filed 2026-11-09 (Stuart): **#1804** (`p2`, `feature`, `right-pane`), Epic: Built-in browser (element selection, devtools, API tool hand-off); children #1795 to #1803 (#1795 is the Tauri embedding spike and comes first; #1803 depends on #1793).
+
+Also filed 2026-11-09 (Stuart): **#1793** (`p2`, `feature`, `right-pane`), Feat: API tool: Postman-style saved requests scoped by project, environment, and folder; linked from #1803.
+
+Also filed 2026-11-09 (Stuart): **#1794** (`p1`, `design`, `accessibility`), UI Polish: Loading page: three-step progress indicator and larger logo and tagline; related #566 and #7.
