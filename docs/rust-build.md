@@ -39,8 +39,13 @@ from the former Electron CDP skill (`scripts/verify-tauri-cdp.mjs`).
   clean -p <crate>` for a confirmed stale-path error, or `pnpm cache:sweep` (`scripts/cache-sweep.mjs`,
   #1736): a pinned `cargo-sweep` that removes only artefacts unused for N days (default 7,
   `--days N`; `--dry-run` previews), and refuses while any cargo build holds a target lock (Windows only: Linux/macOS cargo locks are advisory and not detected).
-  `pnpm ci:local` warns when the cache passes 10 GB and defaults `CARGO_INCREMENTAL=0`, because
-  incremental data was about 6.5 GB of a 14.8 GB cache.
+  `pnpm ci:local` warns when the cache passes 10 GB. `.cargo/config.toml` turns incremental
+  compilation off for every cargo run whose working directory is inside the repo, because
+  incremental data was about 6.5 GB of a 14.8 GB cache. Set `CARGO_INCREMENTAL=1` to opt back in
+  for one run. `[profile.dev]` in `src-tauri/Cargo.toml` sets `debug = "line-tables-only"`, which
+  keeps file and line numbers in backtraces but drops variable-level debug info, so a debugger
+  cannot inspect locals. Neither setting removes existing artefacts; after changing them, run
+  `pnpm cache:sweep` to drop the stale incremental data and the old full-debug dev build.
 - `scripts/verify-tauri.mjs` (`pnpm verify:tauri`, issue #795) is the CDP harness: a scratch data
   directory (`REFRACT_DATA_DIR`, debug builds only, since Tauri has no `--user-data-dir`
   equivalent), a scratch git repository, and a recorded-frame fake `omp` on PATH ahead of the
