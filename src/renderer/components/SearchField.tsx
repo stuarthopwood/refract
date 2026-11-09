@@ -5,6 +5,7 @@ import { InputActionButton, InputWithAction } from '@/components/ui/input-with-a
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { FILTER_MIN_CHARS, FILTER_MIN_CHARS_HINT } from '@/components/filterQueryRule'
 
 export interface SearchFieldProps {
   value: string
@@ -13,6 +14,8 @@ export interface SearchFieldProps {
   placeholder: string
   tooltipSide?: 'top' | 'right' | 'bottom' | 'left'
   clearLabel?: string
+  /** Opts out of the three-character rule (`filterQueryRule.ts`) for a type-ahead (the command palette) or a text search (find in chat); every list filter leaves it off and so states the rule. */
+  instant?: boolean
   /** Replaces Esc-clears: when given, Esc anywhere in the field calls this instead (a find bar that closes on Esc, say), and the Esc hints are not shown. */
   onEscape?(): void
   /** Called on Enter in the input (not while composing text), with whether Shift was held. */
@@ -39,6 +42,7 @@ export function SearchField({
   placeholder,
   tooltipSide = 'top',
   clearLabel = 'Clear filter',
+  instant = false,
   onEscape,
   onSubmit,
   className,
@@ -52,6 +56,8 @@ export function SearchField({
   const resolvedRef = inputRef ?? localRef
   const hasValue = value !== ''
   const clearHintId = useId()
+  const ruleHintId = useId()
+  const describedBy = [!instant ? ruleHintId : undefined, hasValue && !onEscape ? clearHintId : undefined].filter(Boolean).join(' ') || undefined
 
   function clear(): void {
     onValueChange('')
@@ -102,13 +108,18 @@ export function SearchField({
             })}
         value={value}
         onChange={(event) => onValueChange(event.target.value)}
-        placeholder={placeholder}
+        placeholder={instant ? placeholder : `${placeholder} (${FILTER_MIN_CHARS}+ characters)`}
         aria-label={label}
-        aria-describedby={hasValue && !onEscape ? clearHintId : undefined}
+        aria-describedby={describedBy}
         className="h-8 pl-8 text-sm forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
         {...inputProps}
       >
         <SearchIcon aria-hidden className="pointer-events-none absolute left-[9px] top-2 size-4 text-muted-foreground" />
+        {!instant && (
+          <span id={ruleHintId} className="sr-only">
+            {FILTER_MIN_CHARS_HINT}
+          </span>
+        )}
         {hasValue && !onEscape && (
           <span id={clearHintId} className="sr-only">
             Press Escape to clear
