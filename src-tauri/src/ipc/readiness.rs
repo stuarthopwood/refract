@@ -18,6 +18,7 @@ use super::{AppState, Dispatcher, HandlerFuture, IpcError};
 
 pub fn register(d: &mut Dispatcher) {
     d.register("readiness.check", readiness_check);
+    d.register("readiness.checkStep", readiness_check_step);
     d.register("readiness.installDependency", readiness_install_dependency);
 }
 
@@ -51,6 +52,44 @@ const PROBE_REQUEST_TIMEOUT_MS: u64 = 60_000;
 const OMP_VERSION_PROBE_TIMEOUT_MS: u64 = 10_000;
 pub fn readiness_check(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move { Ok(compute_readiness().await) })
+}
+
+/// The launch checks in the order the loading page runs them; keys match `Readiness` fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Step {
+    Git,
+    Omp,
+    OmpSignedIn,
+}
+
+impl Step {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "git" => Some(Self::Git),
+            "omp" => Some(Self::Omp),
+            "ompSignedIn" => Some(Self::OmpSignedIn),
+            _ => None,
+        }
+    }
+}
+
+/// Runs one check so the loading page can show the three steps one at a time and stop at the
+/// first failure; resolves to a bare `Check` (same shape as a `readiness.check` field).
+fn readiness_check_step(_state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let Some(step) = args.first().and_then(Value::as_str).and_then(Step::parse) else {
+            return Err(IpcError::new(
+                "invalid-argument",
+                "readiness.checkStep expects one of 'git' | 'omp' | 'ompSignedIn'",
+            ));
+        };
+        let check = match step {
+            Step::Git => check_git().await,
+            Step::Omp => check_omp().await,
+            Step::OmpSignedIn => check_omp_signed_in().await,
+        };
+        Ok(serde_json::json!(check))
+    })
 }
 
 /// Shared by the `readiness.check` handler and the post-install re-check.
@@ -499,4 +538,22 @@ fn readiness_install_dependency(state: AppState, args: Vec<Value>) -> HandlerFut
         state.session_manager.emit_readiness_changed(&readiness);
         Ok(Value::Null)
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn step_parse_accepts_the_three_readiness_keys() {
+        assert_eq!(Step::parse("git"), Some(Step::Git));
+        assert_eq!(Step::parse("omp"), Some(Step::Omp));
+        assert_eq!(Step::parse("ompSignedIn"), Some(Step::OmpSignedIn));
+    }
+
+    #[test]
+    fn step_parse_rejects_unknown_keys() {
+        assert_eq!(Step::parse("github"), None);
+        assert_eq!(Step::parse(""), None);
+    }
 }

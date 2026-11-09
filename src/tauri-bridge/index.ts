@@ -19,6 +19,7 @@ import type { SessionActivity } from '../shared/activity'
 import type {
   IpcErrorCode,
   BranchEntry,
+  Check,
   ChatAnswer,
   DiffStat,
   FilePreview,
@@ -130,6 +131,7 @@ function onFileDrop(handler: (event: { paths: string[]; position: { x: number; y
 const refract: RefractApi = {
   readiness: {
     check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK),
+    checkStep: (step) => request<Check>(IPC_REQUESTS.READINESS_CHECK_STEP, step),
     installDependency: (dependency) => request<void>(IPC_REQUESTS.READINESS_INSTALL_DEPENDENCY, dependency)
   },
 

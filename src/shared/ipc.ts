@@ -222,6 +222,7 @@ export type { LeftoverSummary } from './ipc-sessions';
 
 export const IPC_REQUESTS = {
   READINESS_CHECK: 'readiness.check',
+  READINESS_CHECK_STEP: 'readiness.checkStep',
   REPOSITORIES_LIST: 'repositories.list',
   REPOSITORIES_ADD: 'repositories.add',
   REPOSITORIES_REMOVE: 'repositories.remove',
