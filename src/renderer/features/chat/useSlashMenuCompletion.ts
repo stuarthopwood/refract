@@ -23,6 +23,8 @@ export interface UseSlashMenuCompletionArgs {
   clearGhostState: () => void
   textChips: readonly PendingTextChip[]
   announceChipRemoval: (removed: readonly PendingTextChip[]) => void
+  /** True while no command list exists yet because the agent has not started (#1812). */
+  awaitingCommands?: boolean
 }
 
 export interface SlashMenuSelectOptions {
@@ -54,7 +56,8 @@ export function useSlashMenuCompletion({
   setSlashDismissed,
   clearGhostState,
   textChips,
-  announceChipRemoval
+  announceChipRemoval,
+  awaitingCommands = false
 }: UseSlashMenuCompletionArgs): UseSlashMenuCompletionResult {
   const slashMenuState = parseSlashMenuState(text, commands)
   const slashMatches = slashMenuState !== null ? rankSlashMenuCommands(slashMenuState, commands) : EMPTY_MATCHES
@@ -64,7 +67,12 @@ export function useSlashMenuCompletion({
   const slashMenuViewProps = {
     labelPrefix: slashMenuState?.step === 'subcommand' ? '' : '/',
     ariaLabel: slashMenuState?.step === 'subcommand' ? `/${slashMenuState.parent.name} subcommands` : 'Slash commands',
-    noMatchesText: slashMenuState?.step === 'subcommand' ? 'No matching subcommands' : 'No matching commands',
+    noMatchesText:
+      slashMenuState?.step === 'subcommand'
+        ? 'No matching subcommands'
+        : awaitingCommands && commands.length === 0
+          ? 'Starting agent…'
+          : 'No matching commands',
     hasQuery: (slashMenuState?.query ?? '') !== ''
   }
 

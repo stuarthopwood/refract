@@ -60,7 +60,7 @@ import { ComposerIndentHint } from './ComposerIndentHint'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import type { QueuedMessages } from './useQueuedMessages'
 import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
-import { parseSlashCommand } from '../../../shared/slash-commands'
+import { isLocalNativeCommand, parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
 
@@ -207,7 +207,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     setSlashDismissed,
     clearGhostState,
     textChips: attachments.textChips,
-    announceChipRemoval
+    announceChipRemoval,
+    awaitingCommands: commands.length === 0 && (notStarted || starting)
   })
   // Clamp at render: until the reset effect runs, the index can point past a shorter filtered list.
   const clampedSlashActiveIndex = slashMatches.length > 0 ? Math.min(slashActiveIndex, slashMatches.length - 1) : 0
@@ -219,8 +220,20 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     setSlashActiveIndex(0)
   }, [slashMenuKey])
 
+  // One send at a time per Session: a retry or re-render during the awaits must not send twice (#1812).
+  const sendInFlightRef = useRef(false)
   /** `overrideText` sends that text at once; `text` is this render's stale closure value (#938). */
   async function handleSend(overrideText?: string) {
+    if (sendInFlightRef.current) return
+    sendInFlightRef.current = true
+    try {
+      await sendOnce(overrideText)
+    } finally {
+      sendInFlightRef.current = false
+    }
+  }
+
+  async function sendOnce(overrideText?: string) {
     // Refuse mid-read, or Enter sends the message without the pending image.
     if (disabled || deleting || starting || pendingAttachmentReads > 0) return
     const draftText = overrideText ?? text
@@ -239,7 +252,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       else openRoleSwitcher(sessionId)
       return
     }
-    if (notStarted) {
+    // Refract-native commands run locally and must not start the agent (#1812).
+    const attachmentFree = attachments.images.length === 0 && attachments.files.length === 0
+    const runsWithoutAgent = attachmentFree && modelsInvocation !== undefined && isLocalNativeCommand(modelsInvocation)
+    if (notStarted && !runsWithoutAgent) {
       // Clear pristine before open() so ChatPane's effect is the sole `applySnapshot` caller (a second apply races `transcript:patch`).
       useSplitStore.getState().markOpened(sessionId)
       let snapshot

@@ -15,6 +15,10 @@ impl SessionAgent {
     pub async fn start_new_conversation(&self) -> Result<(), AgentError> {
         let proc = {
             let mut state = self.state.lock().await;
+            // A never-started Session has no Conversation to reset; `/new` is a no-op there (#1812).
+            if state.status == SessionStatus::Stopped && state.process.is_none() {
+                return Ok(());
+            }
             if state.status != SessionStatus::Idle || state.process.is_none() {
                 return Err(AgentError::new(
                     "not-idle",
