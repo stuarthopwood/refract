@@ -108,6 +108,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
       <PopoverAnchor asChild>
         <ReadoutItem
           ref={card.anchorRef}
+          {...card.anchorAria}
           icon={READOUT_KIND_ICONS.subagents}
           onActivate={onActivate}
           accessibleName={`Open subagents panel (${phrase})`}
@@ -123,6 +124,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
         </ReadoutItem>
       </PopoverAnchor>
       <PopoverContent
+        id={card.cardId}
         data-slot="agents-card"
         side="top"
         align="start"
@@ -164,6 +166,7 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
       <PopoverAnchor asChild>
         <ReadoutItem
           ref={card.anchorRef}
+          {...card.anchorAria}
           icon={pinned ? PinIcon : READOUT_KIND_ICONS['todo-progress']}
           onActivate={onActivate}
           accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
@@ -185,6 +188,7 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
         </ReadoutItem>
       </PopoverAnchor>
       <PopoverContent
+        id={card.cardId}
         data-slot="todo-card"
         side="top"
         align="start"
