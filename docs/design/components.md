@@ -36,6 +36,7 @@ Built with the Project colour work (#887) and the Status style setting (#482):
 - **ColorPicker** (`components/ColorPicker.tsx`): Hue, Saturation and Lightness sliders that keep their own `[h, s, l]` so the hue does not snap at S=0 or L=0/100. Optional `presets` (a labelled swatch radio group with Tooltip names, a border and `forced-color-adjust: none` so swatches show in Windows High Contrast), `presetValue`, `onPresetChange` and a `presetsAction` slot.
 - **StatusDot** (`features/sessions/StatusDot.tsx`): the Dots Status style, one shape per state: Idle a hollow ring, Working a filled dot, Needs you a filled disc inside a ring, Stopped a small square, Unread response an open ring with a badge dot at the top right.
 - **StatusStylePreview** (`components/StatusStylePreview.tsx`): all five Session states drawn in one Status style, as phrasing content so it can sit inside a radio option.
+- **Stepper** (`src/renderer/components/Stepper.tsx`): an ordered list of steps, each with a state glyph and an optional expanded body.
 
 ## Button
 
