@@ -1,35 +1,45 @@
 import { create } from 'zustand'
 import { toast } from 'sonner'
 import type { Result } from '../../shared/ipc'
-import type { TokenGuardLaunchWarning, TokenGuardSnapshot } from '../../shared/tokenGuard'
+import type { TokenGuardLaunchWarning, TokenGuardMigration, TokenGuardSnapshot, TokenGuardTrigger } from '../../shared/tokenGuard'
 import type { TokenGuardValues } from '../../shared/tokenGuard'
 
-// #1212: the Refract-owned `omp` launch overlay values behind Settings > OMP. A change here
-// applies to the next launched Session only.
+const MIGRATION_POLL_MS = 1500
+
+// #1767: the token guard values live in OMP's global config; this store mirrors them for Settings
+// > Advanced. A change reaches a running Session only for the keys marked `live`.
 interface TokenGuardState {
   values: TokenGuardValues
   defaults: TokenGuardValues
   loaded: boolean
-  /** True once an upgrade dropped stored token thresholds; the backend keeps reporting it until `dismissThresholdsReset()`. */
-  thresholdsReset: boolean
+  migration: TokenGuardMigration | null
+  effectiveTriggers: TokenGuardTrigger[]
+  projectOverrides: string[]
   error: string | null
-  load(): Promise<void>
+  /** Loads the snapshot; `repositoryId` is the open Project whose `.omp/config.yml` is checked for overrides. */
+  load(repositoryId?: string): Promise<void>
   set(key: string, value: unknown): Promise<boolean>
   reset(key: string): Promise<void>
   resetAll(): Promise<void>
-  dismissThresholdsReset(): void
+  dismissMigrationNotice(): void
 }
 
-export const useTokenGuardStore = create<TokenGuardState>((set) => {
+export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
+  // The Project the last `load` named; later writes pass it so their snapshot keeps the overrides.
+  let repositoryId: string | undefined
+  // Several Settings rows call `load` on mount; one poll chain serves them all.
+  let pollScheduled = false
   const apply = (result: Result<TokenGuardSnapshot>): boolean => {
     if (result.ok) {
-      set((state) => ({
+      set({
         values: result.value.values,
         defaults: result.value.defaults,
-        thresholdsReset: state.thresholdsReset || result.value.thresholdsReset === true,
+        migration: result.value.migration,
+        effectiveTriggers: result.value.effectiveTriggers,
+        projectOverrides: result.value.projectOverrides,
         loaded: true,
         error: null
-      }))
+      })
     } else {
       set({ error: result.error.message })
     }
@@ -39,16 +49,31 @@ export const useTokenGuardStore = create<TokenGuardState>((set) => {
     values: {},
     defaults: {},
     loaded: false,
-    thresholdsReset: false,
+    migration: null,
+    effectiveTriggers: [],
+    projectOverrides: [],
     error: null,
-    load: async () => void apply(await window.refract.tokenGuard.get()),
-    set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value)),
-    reset: async (key) => void apply(await window.refract.tokenGuard.reset(key)),
-    resetAll: async () => void apply(await window.refract.tokenGuard.resetAll()),
-    dismissThresholdsReset: () => {
-      set({ thresholdsReset: false })
+    load: async (id) => {
+      repositoryId = id
+      const ok = apply(await window.refract.tokenGuard.get(id))
+      // The migration runs in the background; its backup notice and the OMP values arrive on a later read.
+      // A failed read ends the chain, so an erroring backend is not hammered every poll.
+      if (ok && get().migration?.status === 'pending' && !pollScheduled) {
+        pollScheduled = true
+        setTimeout(() => {
+          pollScheduled = false
+          void get().load(repositoryId)
+        }, MIGRATION_POLL_MS)
+      }
+    },
+    set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value, repositoryId)),
+    reset: async (key) => void apply(await window.refract.tokenGuard.reset(key, repositoryId)),
+    resetAll: async () => void apply(await window.refract.tokenGuard.resetAll(repositoryId)),
+    dismissMigrationNotice: () => {
+      const { migration } = get()
+      if (migration) set({ migration: { ...migration, backupPath: undefined } })
       // A failed write means the notice shows again the next time Settings loads.
-      void window.refract.tokenGuard.dismissThresholdsReset().catch(() => {})
+      void window.refract.tokenGuard.dismissMigrationNotice().catch(() => {})
     }
   }
 })

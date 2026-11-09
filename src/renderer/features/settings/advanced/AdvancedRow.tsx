@@ -22,6 +22,8 @@ interface AdvancedRowProps {
   defaultValue: TokenGuardValue | undefined
   /** Set while the row's controlling toggle is off. */
   disabledReason?: string
+  /** True when the open Project's `.omp/config.yml` sets this key; Refract never edits that file. */
+  projectOverride?: boolean
   /** Percent a new per-model threshold starts with. */
   seedPercent: number
   /** Context window of the Default role's model; null when unknown. */
@@ -35,14 +37,14 @@ interface AdvancedRowProps {
 // The first control to focus after Reset (the Reset button itself is skipped).
 const FIRST_CONTROL = 'input:not(:disabled), [role="switch"], [role="radio"][aria-checked="true"], [role="checkbox"], button:not([data-reset]):not(:disabled)'
 
-export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPercent, defaultWindow, catalogLoading, onChange, onReset }: AdvancedRowProps) {
+export function AdvancedRow({ info, value, defaultValue, disabledReason, projectOverride, seedPercent, defaultWindow, catalogLoading, onChange, onReset }: AdvancedRowProps) {
   const id = `advanced-${info.key}`
   const isDefault = sameValue(value, defaultValue)
   const disabled = disabledReason !== undefined
   const rowRef = useRef<HTMLDivElement>(null)
   const [tableOpen, setTableOpen] = useState(false)
   const impactId = `${id}-impact`
-  const models: Record<string, string> = info.kind === 'record' && value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const models: Record<string, string | number> = info.kind === 'record' && value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
   const { impact } = info
   const costlier =
     impact !== undefined &&
@@ -52,7 +54,8 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
   // The expanded per-model table warns on its own rows; the summary warning (rendered under the
   // trigger) is only referenced while the table is closed.
   const summaryShown = costlier && !(info.kind === 'record' && tableOpen)
-  const describedBy = [`${id}-description`, summaryShown ? impactId : undefined, disabled ? `${id}-reason` : undefined].filter(Boolean).join(' ')
+  const noteId = `${id}-status`
+  const describedBy = [`${id}-description`, summaryShown ? impactId : undefined, disabled ? `${id}-reason` : undefined, info.live ? undefined : noteId, projectOverride ? `${noteId}-project` : undefined].filter(Boolean).join(' ')
   const stacked = info.kind === 'order' || info.kind === 'record'
 
   const description: ReactNode = (
@@ -76,17 +79,31 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, seedPer
       Reset
     </Button>
   )
-  const note =
-    (info.impact && info.kind !== 'record') || disabled ? (
-      <>
-        {info.impact && info.kind !== 'record' && <ImpactWarning id={impactId} text={info.impact.text} active={costlier} />}
-        {disabled && (
-          <span id={`${id}-reason`} className="text-xs text-muted-foreground">
-            {disabledReason}
-          </span>
-        )}
-      </>
-    ) : undefined
+  const statusNotes = (
+    <>
+      {!info.live && (
+        <span id={noteId} className="text-xs text-muted-foreground">
+          Applies to new Conversations
+        </span>
+      )}
+      {projectOverride && (
+        <span id={`${noteId}-project`} className="text-xs text-muted-foreground">
+          This Project's .omp/config.yml sets this too, so it wins here. Refract does not edit that file.
+        </span>
+      )}
+    </>
+  )
+  const note = (
+    <>
+      {info.impact && info.kind !== 'record' && <ImpactWarning id={impactId} text={info.impact.text} active={costlier} />}
+      {disabled && (
+        <span id={`${id}-reason`} className="text-xs text-muted-foreground">
+          {disabledReason}
+        </span>
+      )}
+      {statusNotes}
+    </>
+  )
 
   let row: ReactNode
   if (info.kind === 'enum') {

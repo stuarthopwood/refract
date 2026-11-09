@@ -24,7 +24,10 @@ pub(super) fn sessions_diff_stat(state: AppState, args: Vec<Value>) -> HandlerFu
             .get_session(&id)
             .cloned()
             .ok_or_else(|| not_found(format!("Session not found: {id}")))?;
-        let result = diff_stat(Path::new(&session.worktree_path), &session.base_branch).await;
+        let result = match crate::fs::worktree_access::read_guard_bounded(&id).await {
+            Ok(_guard) => diff_stat(Path::new(&session.worktree_path), &session.base_branch).await,
+            Err(_) => None,
+        };
         Ok(serde_json::to_value(result).expect("Option<DiffStatResult> is always serialisable"))
     })
 }

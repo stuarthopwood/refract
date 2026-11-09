@@ -16,8 +16,8 @@ use crate::git::worktrees::{default_branch, list_branches};
 use crate::store::registry::{Repository, Session, REPOSITORY_HAS_SESSIONS_MESSAGE};
 
 use super::{
-    arg_str, invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, AppState,
-    Dispatcher, HandlerFuture, IpcError,
+    find_repository, invalid_argument, map_git_error, map_registry_error, now_iso8601,
+    required_str, with_resolved_remote, AppState, Dispatcher, HandlerFuture, IpcError,
 };
 
 pub fn register(d: &mut Dispatcher) {
@@ -138,7 +138,7 @@ fn branch_entries(
 }
 
 /// Embeds `remote` into `repository`'s JSON (the wire `Repository` has a `remote` field).
-fn with_remote(repository: &Repository, remote: &RepositoryRemoteKind) -> Value {
+pub(super) fn with_remote(repository: &Repository, remote: &RepositoryRemoteKind) -> Value {
     let mut value =
         serde_json::to_value(repository).expect("Repository is always JSON-serialisable");
     value
@@ -165,10 +165,7 @@ pub fn repositories_list(state: AppState, _args: Vec<Value>) -> HandlerFuture {
 
 pub fn repositories_add(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let repo_path = match arg_str(&args, 0) {
-            Some(path) => path.to_string(),
-            None => return Err(invalid_argument("repositories.add expects a string path")),
-        };
+        let repo_path = required_str(&args, 0, "repositories.add expects a string path")?;
         add_repository_at(&state, &repo_path).await
     })
 }
@@ -204,18 +201,12 @@ pub(super) async fn add_repository_at(
         .map_err(map_registry_error)?;
     // Same eager recompute as `.rename`; `repository_remote` caps itself at 3s and `None` falls
     // back to `unknown`, so a slow `git remote` never stalls adding a project.
-    let remote = repository_remote(std::path::Path::new(&repository.path))
-        .await
-        .unwrap_or(RepositoryRemoteKind::Unknown);
-    Ok(with_remote(&repository, &remote))
+    Ok(with_resolved_remote(&repository).await)
 }
 
 pub fn repositories_remove(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let id = match arg_str(&args, 0) {
-            Some(id) => id.to_string(),
-            None => return Err(invalid_argument("repositories.remove expects a string id")),
-        };
+        let id = required_str(&args, 0, "repositories.remove expects a string id")?;
         let has_owned_sessions = state
             .registry
             .lock()
@@ -307,34 +298,14 @@ fn resolve_repository_name(trimmed: &str, basename: &str) -> String {
 
 pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let id = match arg_str(&args, 0) {
-            Some(id) => id.to_string(),
-            None => {
-                return Err(invalid_argument(
-                    "repositories.rename expects (id, name) strings",
-                ))
-            }
-        };
-        let name = match arg_str(&args, 1) {
-            Some(name) => name.to_string(),
-            None => {
-                return Err(invalid_argument(
-                    "repositories.rename expects (id, name) strings",
-                ))
-            }
-        };
+        let id = required_str(&args, 0, "repositories.rename expects (id, name) strings")?;
+        let name = required_str(&args, 1, "repositories.rename expects (id, name) strings")?;
         // Rejected before `trim()` as defence in depth: IPC payloads have no size cap here; the
         // real guard is `validate_repository_name`'s length check.
         if name.chars().count() > 4 * MAX_REPOSITORY_NAME_LENGTH {
             return Err(invalid_argument("repositories.rename name too long"));
         }
-        let repository = {
-            let registry = state.registry.lock().await;
-            registry
-                .get_repository(&id)
-                .ok_or_else(|| not_found(format!("Project not found: {id}")))?
-                .clone()
-        };
+        let repository = find_repository(&state, &id).await?;
         let trimmed = name.trim();
         // No channel prefix: the message shows inline in the rename field's alert, never a toast.
         if let Some(validation_error) = validate_repository_name(trimmed) {
@@ -355,10 +326,7 @@ pub fn repositories_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
         state.session_manager.notify_list_changed();
         // Recompute the real remote inline like `.add` (#528); a 3s timeout (`None`) falls back
         // to `unknown`.
-        let remote = repository_remote(std::path::Path::new(&updated.path))
-            .await
-            .unwrap_or(RepositoryRemoteKind::Unknown);
-        Ok(with_remote(&updated, &remote))
+        Ok(with_resolved_remote(&updated).await)
     })
 }
 
@@ -451,21 +419,8 @@ pub fn repositories_remotes(state: AppState, _args: Vec<Value>) -> HandlerFuture
 
 pub fn repositories_branches(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let id = match arg_str(&args, 0) {
-            Some(id) => id.to_string(),
-            None => {
-                return Err(invalid_argument(
-                    "repositories.branches expects a string id",
-                ))
-            }
-        };
-        let repository = {
-            let registry = state.registry.lock().await;
-            let repository = registry
-                .get_repository(&id)
-                .ok_or_else(|| not_found(format!("Project not found: {id}")))?;
-            repository.clone()
-        };
+        let id = required_str(&args, 0, "repositories.branches expects a string id")?;
+        let repository = find_repository(&state, &id).await?;
         let branches = list_branches(std::path::Path::new(&repository.path))
             .await
             .map_err(map_git_error)?;
@@ -507,21 +462,8 @@ pub fn repositories_pick_folder(state: AppState, _args: Vec<Value>) -> HandlerFu
 
 pub fn repositories_user_name(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let id = match arg_str(&args, 0) {
-            Some(id) => id.to_string(),
-            None => {
-                return Err(invalid_argument(
-                    "repositories.userName expects a string id",
-                ))
-            }
-        };
-        let repository = {
-            let registry = state.registry.lock().await;
-            registry
-                .get_repository(&id)
-                .ok_or_else(|| not_found(format!("Project not found: {id}")))?
-                .clone()
-        };
+        let id = required_str(&args, 0, "repositories.userName expects a string id")?;
+        let repository = find_repository(&state, &id).await?;
         let name = resolve_user_name(&repository.id, std::path::Path::new(&repository.path)).await;
         Ok(Value::String(name))
     })
