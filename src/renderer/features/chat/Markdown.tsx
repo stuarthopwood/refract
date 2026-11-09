@@ -251,7 +251,13 @@ const components: Components = {
     const { resolveImage } = React.useContext(MarkdownOptionsContext)
     const safe = safeUrl(typeof src === 'string' ? src : undefined)
     if (!safe) return <>{alt || 'image'}</>
-    if (insideLink) return <>{alt || safe}</>
+    // Only the Pull requests caller resolves images: render the picture inside the outer link so a click still opens it,
+    // with the alt text (never a second anchor) as the loading/failure fallback.
+    if (insideLink) {
+      const text = alt || safe
+      if (resolveImage && !streaming) return <ResolvedImage src={safe} alt={text} resolveImage={resolveImage} fallback={text} />
+      return <>{text}</>
+    }
     if (streaming) return <span className={inertLinkClassName}>{alt || safe}</span>
     const link = <ExternalLink href={safe} className={linkClassName}>{alt || safe}</ExternalLink>
     // Only a caller that passes `resolveImage` (the Pull requests view) ever fetches an image; the link above is also its loading/failure fallback.

@@ -2225,6 +2225,13 @@ The developer types a slash command and finds the ones the agent offers. If a se
   uses outside the worktree: no underline, no button, not focusable, no tooltip, no toast. Relative and
   in-worktree absolute paths, with or without `:line`, are unchanged. Making virtual targets useful
   links is out of scope.
+- **FR-124** (new, 2026-11-09, issue #1741; amends FR-042 and spec 038 FR-006): In the Pull requests
+  view, a Markdown image nested in a link (`[![alt](img)](link)`, e.g. the Dependabot badge) MUST go
+  through `resolveImage` like any other PR image and render inside the link, so clicking it opens the
+  link; the alt text (never a second anchor) is its loading and failure fallback. Without
+  `resolveImage` (chat) and while streaming, a linked image stays its alt text. The backend allow-list
+  adds `dependabot-badges.githubapp.com` and accepts `image/svg+xml` from that host only (ADR 0004
+  amendment); the CSP does not change.
 
 ### Key Entities
 
