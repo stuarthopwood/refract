@@ -1176,3 +1176,5 @@ Also filed 2026-11-09 (Stuart): **#1835** (`p1`, `bug`, `chat`), Bug: Pause: pau
 Also filed 2026-11-09 (Stuart): **#1839** (`p1`, `feature`, `right-pane`), Feat: Git panel: stage, unstage and discard for one file, a selection, a folder, or all files.
 
 Also filed 2026-11-09 (Stuart): **#1840** (`p1`, `design`, `right-pane`), UI Polish: Right rail: Git icon shows the change-count badge before the panel is opened.
+
+Also filed 2026-11-09 (Stuart): **#1842** (`p1`, `feature`, `right-pane`), Feat: File Explorer: stage, unstage and discard changes for a file or a folder with changes.
