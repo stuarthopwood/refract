@@ -21,7 +21,9 @@ pub struct RepoSlug {
 
 impl RepoSlug {
     pub fn parse(owner: &str, repo: &str) -> Result<Self, GhError> {
-        if !is_valid_owner_or_repo_segment(owner) || !is_valid_owner_or_repo_segment(repo) {
+        // A leading `-` could be read as an option by anything downstream; GitHub names never need it.
+        let bad = |s: &str| !is_valid_owner_or_repo_segment(s) || s.starts_with('-');
+        if bad(owner) || bad(repo) {
             return Err(GhError::new(
                 GhErrorCode::GithubFailed,
                 "That is not a valid GitHub repository name.",
@@ -127,6 +129,11 @@ fn is_github_item_url(url: &str, number: u64) -> bool {
         .is_some_and(|rest| rest.ends_with(&format!("/{number}")))
 }
 
+/// Whether GitHub's answer is the item that was asked for (renames redirect, so the repo name is not compared).
+fn reference_matches(returned_number: u64, html_url: &str, number: u64) -> bool {
+    returned_number == number && is_github_item_url(html_url, number)
+}
+
 pub fn valid_item_number(number: u64) -> bool {
     number > 0 && number <= MAX_ITEM_NUMBER
 }
@@ -143,7 +150,7 @@ pub async fn lookup_item(cwd: &Path, slug: &RepoSlug, number: u64) -> Result<Ite
     // The issues endpoint answers for both kinds; `pull_request` marks which one it was.
     let issue_path = slug.api_path("issues", number);
     let raw: RawItem = gh_json(cwd, &["api", &issue_path]).await?;
-    if raw.number != number || !is_github_item_url(&raw.html_url, number) {
+    if !reference_matches(raw.number, &raw.html_url, number) {
         return Err(GhError::new(
             GhErrorCode::GithubFailed,
             "GitHub returned an item that does not match the reference.",
@@ -193,6 +200,21 @@ mod tests {
         assert!(RepoSlug::parse("..", "repo").is_err());
         assert!(RepoSlug::parse("owner", "re/po").is_err());
         assert!(RepoSlug::parse("", "repo").is_err());
+        assert!(RepoSlug::parse("my-org", "a.b_c-d").is_ok());
+        assert!(RepoSlug::parse("-owner", "repo").is_err());
+        assert!(RepoSlug::parse("owner", "-repo").is_err());
+        assert!(RepoSlug::parse("owner", "..").is_err());
+        assert!(RepoSlug::parse("own er", "repo").is_err());
+        assert!(RepoSlug::parse("owner", "re po").is_err());
+        assert!(RepoSlug::parse("ow/ner", "repo").is_err());
+    }
+
+    #[test]
+    fn reference_must_match_number_and_github_url() {
+        assert!(reference_matches(12, "https://github.com/a/b/issues/12", 12));
+        assert!(!reference_matches(13, "https://github.com/a/b/issues/12", 12));
+        assert!(!reference_matches(12, "https://github.com/a/b/issues/13", 12));
+        assert!(!reference_matches(12, "https://evil.example/a/b/issues/12", 12));
     }
 
     #[test]
