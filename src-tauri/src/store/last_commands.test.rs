@@ -5,7 +5,10 @@ use serde_json::{json, Value};
 use super::{load_in, save_in, FILE_NAME};
 
 fn scratch(label: &str) -> std::path::PathBuf {
-    crate::test_scratch::path(format!("refract-last-commands-{label}-{}", uuid::Uuid::new_v4()))
+    crate::test_scratch::path(format!(
+        "refract-last-commands-{label}-{}",
+        uuid::Uuid::new_v4()
+    ))
 }
 
 fn sample() -> Vec<Value> {
@@ -32,16 +35,23 @@ async fn a_missing_file_gives_none() {
 async fn a_corrupt_file_gives_none_and_is_quarantined() {
     let dir = scratch("corrupt");
     tokio::fs::create_dir_all(&dir).await.unwrap();
-    tokio::fs::write(dir.join(FILE_NAME), b"{ not json").await.unwrap();
+    tokio::fs::write(dir.join(FILE_NAME), b"{ not json")
+        .await
+        .unwrap();
     assert_eq!(load_in(&dir).await, None);
-    assert!(!dir.join(FILE_NAME).exists(), "the corrupt file is renamed aside");
+    assert!(
+        !dir.join(FILE_NAME).exists(),
+        "the corrupt file is renamed aside"
+    );
 }
 
 #[tokio::test]
 async fn a_file_of_the_wrong_shape_gives_none() {
     let dir = scratch("wrong-shape");
     tokio::fs::create_dir_all(&dir).await.unwrap();
-    tokio::fs::write(dir.join(FILE_NAME), br#"{"commands":[]}"#).await.unwrap();
+    tokio::fs::write(dir.join(FILE_NAME), br#"{"commands":[]}"#)
+        .await
+        .unwrap();
     assert_eq!(load_in(&dir).await, None);
 }
 
@@ -69,4 +79,56 @@ async fn a_later_list_replaces_the_earlier_one() {
     let newer = vec![json!({ "name": "usage" })];
     save_in(&dir, &newer).await;
     assert_eq!(load_in(&dir).await, Some(newer));
+}
+
+#[tokio::test]
+async fn a_file_over_one_mebibyte_gives_none_and_is_quarantined() {
+    let dir = scratch("oversize-file");
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let padding = " ".repeat(1024 * 1024 + 1);
+    let raw = format!(r#"[{{"name":"todo"}}]{padding}"#);
+    tokio::fs::write(dir.join(FILE_NAME), raw).await.unwrap();
+    assert_eq!(load_in(&dir).await, None);
+    assert!(
+        !dir.join(FILE_NAME).exists(),
+        "the oversize file is renamed aside"
+    );
+}
+
+#[tokio::test]
+async fn a_list_over_500_entries_gives_none_and_is_quarantined() {
+    let dir = scratch("oversize-list");
+    let many: Vec<Value> = (0..501)
+        .map(|i| json!({ "name": format!("cmd{i}") }))
+        .collect();
+    save_in(&dir, &many).await;
+    assert_eq!(load_in(&dir).await, None);
+    assert!(
+        !dir.join(FILE_NAME).exists(),
+        "the oversize list is renamed aside"
+    );
+}
+
+#[tokio::test]
+async fn a_list_of_exactly_500_entries_loads() {
+    let dir = scratch("at-cap");
+    let many: Vec<Value> = (0..500)
+        .map(|i| json!({ "name": format!("cmd{i}") }))
+        .collect();
+    save_in(&dir, &many).await;
+    assert_eq!(load_in(&dir).await, Some(many));
+}
+
+#[tokio::test]
+async fn saving_an_unchanged_list_does_not_rewrite_the_file() {
+    let dir = scratch("unchanged");
+    save_in(&dir, &sample()).await;
+    tokio::fs::remove_file(dir.join(FILE_NAME)).await.unwrap();
+    save_in(&dir, &sample()).await;
+    assert!(
+        !dir.join(FILE_NAME).exists(),
+        "an identical list is not written again"
+    );
+    save_in(&dir, &[json!({ "name": "usage" })]).await;
+    assert!(dir.join(FILE_NAME).exists(), "a changed list is written");
 }

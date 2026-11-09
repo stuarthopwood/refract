@@ -32,7 +32,7 @@ where
 }
 
 /// Best effort: a failed quarantine rename still falls back to a default so startup is never blocked.
-async fn quarantine(file: &Path) {
+pub(super) async fn quarantine(file: &Path) {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())

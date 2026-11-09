@@ -220,20 +220,31 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     setSlashActiveIndex(0)
   }, [slashMenuKey])
 
-  // One send at a time per Session: a retry or re-render during the awaits must not send twice (#1812).
+  // One start-and-send at a time per Session: a retry or re-render during the awaits must not send twice (#1812).
+  // State, not just the ref, so Send exposes aria-busy and a polite "Sending…" status instead of dropping a second submit silently.
+  const [sending, setSending] = useState(false)
   const sendInFlightRef = useRef(false)
   /** `overrideText` sends that text at once; `text` is this render's stale closure value (#938). */
   async function handleSend(overrideText?: string) {
     if (sendInFlightRef.current) return
     sendInFlightRef.current = true
-    try {
-      await sendOnce(overrideText)
-    } finally {
+    setSending(true)
+    let held = true
+    // Idempotent so a later send that took the guard is never released by this one's `finally`.
+    const release = () => {
+      if (!held) return
+      held = false
       sendInFlightRef.current = false
+      setSending(false)
+    }
+    try {
+      await sendOnce(release, overrideText)
+    } finally {
+      release()
     }
   }
 
-  async function sendOnce(overrideText?: string) {
+  async function sendOnce(releaseSendGuard: () => void, overrideText?: string) {
     // Refuse mid-read, or Enter sends the message without the pending image.
     if (disabled || deleting || starting || pendingAttachmentReads > 0) return
     const draftText = overrideText ?? text
@@ -314,6 +325,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       }
       useRightPaneStore.getState().openPanel('side-chat')
       // Clear only after `ask` resolves so a failed RPC doesn't lose the typed text.
+      // The guard covers only start and send: `ask` runs for the whole reply, and a second `/btw` has its own running toast above.
+      releaseSendGuard()
       try {
         await useSideChatStore.getState().ask(sessionId, slashInvocation.rest)
         useDraftStore.getState().clear(sessionId)
@@ -744,6 +757,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         containerRef={attachmentStripRef}
       />
       {pendingAttachmentReads > 0 && <p className="text-xs text-muted-foreground">Attaching…</p>}
+      <p role="status" aria-live="polite" className={sending ? 'text-xs text-muted-foreground' : 'sr-only'}>
+        {sending ? 'Sending…' : ''}
+      </p>
       <ComposerBox>
         <ComposerField disabled={disabled}>
           {showSlashMenu && (
@@ -856,7 +872,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               />
             )}
             <ComposerSendButton
-              blocked={disabled || deleting || starting || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
+              blocked={disabled || deleting || starting || sending || pendingAttachmentReads > 0 || !hasSendableContent(text, attachments)}
+              busy={sending}
               dimWhenBlocked={!disabled}
               keyShortcuts={enterQueuedFollowUp.applies ? undefined : 'Enter'}
               onSend={() => void handleSend()}
