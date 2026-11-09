@@ -43,12 +43,12 @@ The issue-triage workflow's comment is read by whichever agent picks a GitHub is
 
 On 2026-10-08 the user decided that Refract is in a rapid-prototyping phase. Tests come later, once the app's features have stabilised.
 
-- Do not write new tests, and do not add test files, cases, mocks, or fixtures. This applies to the main agent, sub-agents, and workers, including the `test-developer` agent.
+- Scope: the ban covers TypeScript tests (`src/renderer`, `src/shared`, and `scripts`). Do not write new tests, and do not add test files, cases, mocks, or fixtures there. This applies to the main agent, sub-agents, and workers, including the `test-developer` agent.
 - Existing tests stay. Do not delete or rewrite them to dodge a failure, and keep them passing where a change breaks them.
-- Reviewers (including `test-reviewer`) must not ask for new tests, and a missing test is not a reason to block a merge in this phase.
+- Reviewers (including `test-reviewer`) must not ask for new TypeScript tests, and a missing TypeScript test is not a reason to block a merge in this phase.
 - Verify behaviour by running the app and exercising the changed path.
 - The phase ends only when the user says so. Until then, put this rule in every delegation brief.
-- Exception (epic #797, Rust promotion, 2026-10-13 to 2026-10-15): each Rust lane PR ports the TypeScript tests named in its lane issue as Rust tests (`cargo test`); the rule above still applies to `src/renderer` and `src/shared` (`src/main` and `src/preload` no longer exist, deleted at the cutover, #796).
+- New Rust tests (`cargo test`, in `src-tauri`) are allowed and encouraged for new Rust behaviour (Stuart, 2026-11-09).
 - #795's gate suite may keep the contract replay as a CI test (Stuart, 2026-10-14).
 
 ## Docs-only PRs are always merged (HARD RULE)
