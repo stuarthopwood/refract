@@ -76,6 +76,7 @@ function CommandInput({
         label={label}
         placeholder={placeholder}
         clearLabel="Clear search"
+        instant
         tooltipSide="bottom"
         onEscape={onEscape}
         // cmdk's own input keeps its search state and active-row wiring; it reads changes through `onValueChange`.

@@ -6,6 +6,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { FilterToggleButton } from '@/components/FilterToggleButton'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { SearchField } from '@/components/SearchField'
 import { AddProjectMenu } from '@/features/sessions/AddProjectMenu'
 import { ViewsNavGroup } from './ViewsNavGroup'
@@ -28,7 +29,7 @@ export function SessionList() {
   const restored = useSessionListStore((state) => state.restored)
   const query = useSessionListStore((state) => state.query)
   const setQuery = useSessionListStore((state) => state.setQuery)
-  const trimmedQuery = query.trim().toLowerCase()
+  const trimmedQuery = effectiveFilterQuery(query).toLowerCase()
   const hasQuery = trimmedQuery !== ''
   // Issue #748: Show hidden; a hidden Session is listed only while it is on (or a search matches it).
   const showHidden = useSessionListStore((state) => state.showHidden)

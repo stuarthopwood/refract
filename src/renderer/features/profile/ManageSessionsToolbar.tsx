@@ -3,6 +3,7 @@
 import type { RefObject } from 'react'
 import { FilterTabs } from '@/components/FilterTabs'
 import { ListToolbar } from '@/components/ListToolbar'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { FILTER_PICKER_CLASS, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import type { Repository } from '../../../shared/model'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
@@ -45,7 +46,7 @@ export function ManageSessionsToolbar({
   totalCount
 }: ManageSessionsToolbarProps) {
   const filtering =
-    filters.search.trim() !== '' ||
+    effectiveFilterQuery(filters.search) !== '' ||
     filters.repositoryId !== DEFAULT_FILTERS.repositoryId ||
     filters.archiveFilter !== DEFAULT_FILTERS.archiveFilter
   return (

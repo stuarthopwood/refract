@@ -36,8 +36,8 @@ export interface FilterableGroupedListboxProps<T extends ListboxItem> {
   empty: ReactNode
   /** Visible line under the list (for example "Showing 5 of 12"). */
   countText?: string
-  /** Mirrored into a polite sr-only live region so a screen reader hears filter results. */
-  announcement?: string
+  /** False while the rows are still loading or failed to load, so no count is announced for a list that is not final. Defaults to true. */
+  announceResults?: boolean
   inputRef?: RefObject<HTMLInputElement | null>
   className?: string
 }
@@ -57,7 +57,7 @@ export function FilterableGroupedListbox<T extends ListboxItem>({
   selectedId,
   empty,
   countText,
-  announcement,
+  announceResults = true,
   inputRef,
   className
 }: FilterableGroupedListboxProps<T>) {
@@ -132,6 +132,7 @@ export function FilterableGroupedListbox<T extends ListboxItem>({
         placeholder={placeholder}
         inputRef={inputRef}
         combobox={{ listboxId, activeDescendantId: activeRow ? optionId(activeRow.key) : undefined }}
+        resultCount={announceResults ? groups.reduce((total, group) => total + group.items.length, 0) : undefined}
         onInputKeyDown={handleKeyDown}
       />
       {rows.length === 0 && (
@@ -206,9 +207,6 @@ export function FilterableGroupedListbox<T extends ListboxItem>({
         })}
       </div>
       {countText && <p className="text-xs text-muted-foreground">{countText}</p>}
-      <div aria-live="polite" role="status" className="sr-only">
-        {announcement}
-      </div>
     </div>
   )
 }

@@ -4,6 +4,7 @@
 import { create } from 'zustand'
 import { selectionAfterRefresh } from './selection-handoff'
 import type { QuietRefreshOutcome } from './pull-requests-store'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import type { IpcError, Result } from '../../shared/ipc'
 import type { IssueListItem, IssueListResult, IssueSkippedProject, IssueStateFilter, IssueTab } from '../../shared/ipc-issues'
 
@@ -66,7 +67,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   select: (selected) => set({ selected }),
   async refresh(allRepositoryIds, submittedOnly = false) {
     const { tab, state, repositoryIds, labels } = get()
-    const query = submittedOnly ? get().appliedQuery : get().query
+    const query = submittedOnly ? get().appliedQuery : effectiveFilterQuery(get().query)
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
     refreshSequence += 1
     const sequence = refreshSequence
