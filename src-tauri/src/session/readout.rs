@@ -13,6 +13,7 @@ use crate::git::git::git_raw;
 use crate::omp::process::ReadyWaitStage;
 
 use super::agent::SessionAgent;
+use crate::fs::worktree_access::read_guard_bounded;
 
 #[path = "readout_pr.rs"]
 mod readout_pr;
@@ -371,8 +372,12 @@ async fn compute_readout(agent: &Arc<SessionAgent>) {
     readout_touched::refresh(agent, &session.worktree_path).await;
     // Independent reads, so run them concurrently.
     let (diff_result, branch) = tokio::join!(
-        diff_stat(Path::new(&session.worktree_path), &session.base_branch),
-        compute_branch(&session.worktree_path)
+        async {
+            // One guard per read: `join!` branches must not share or nest a guard (#1157).
+            let _guard = read_guard_bounded(agent.session_id()).await.ok()?;
+            diff_stat(Path::new(&session.worktree_path), &session.base_branch).await
+        },
+        compute_branch(agent.session_id(), &session.worktree_path)
     );
     let changes = match diff_result {
         Some(stat) => {
@@ -399,7 +404,8 @@ async fn compute_readout(agent: &Arc<SessionAgent>) {
 
 /// Looks up the PR for the branch; drops the result if the branch changed meanwhile.
 async fn refresh_pull_request(agent: &SessionAgent, worktree_path: &str, branch: &str) {
-    let lookup = pull_request_for_branch(Path::new(worktree_path), branch).await;
+    let lookup =
+        pull_request_for_branch(agent.session_id(), Path::new(worktree_path), branch).await;
     let still_current = agent
         .with_readout_state(|s| s.pull_request_branch.as_deref() == Some(branch))
         .await;
@@ -419,20 +425,27 @@ async fn refresh_pull_request(agent: &SessionAgent, worktree_path: &str, branch:
 }
 
 /// Live checked-out branch, or the short HEAD when detached; null when unreadable (not retained).
-pub(super) async fn compute_branch(worktree_path: &str) -> Value {
+pub(super) async fn compute_branch(session_id: &str, worktree_path: &str) -> Value {
     let path = Path::new(worktree_path);
+    let Ok(guard) = read_guard_bounded(session_id).await else {
+        return Value::Null;
+    };
     let symbolic = git_raw(
         path,
         &["symbolic-ref", "--short", "-q", "HEAD"],
         Some(GIT_READ_TIMEOUT),
     )
     .await;
+    drop(guard);
     if symbolic.code == 0 {
         let name = symbolic.stdout.trim();
         if !name.is_empty() {
             return json!({ "name": name, "detached": false });
         }
     }
+    let Ok(_guard) = read_guard_bounded(session_id).await else {
+        return Value::Null;
+    };
     let rev = git_raw(
         path,
         &["rev-parse", "--short", "HEAD"],

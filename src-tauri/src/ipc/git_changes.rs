@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use serde_json::{json, Value};
 
 use crate::fs::git_changes_watch_state as watch_state;
+use crate::fs::worktree_access::read_guard_bounded;
 use crate::git::changes_diff::diff_text;
 use crate::git::changes_status::{
     commit as git_commit, read_changes_status, stage_files, unstage_files,
@@ -106,7 +107,10 @@ pub fn git_changes_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
         )?;
         let (worktree_path, base_branch, _archived) = session_context(&state, &session_id).await?;
         // Never throws: `None` means a normal "not available" state, not an IPC error.
-        let snapshot = read_changes_status(&worktree_path, &base_branch).await;
+        let snapshot = match read_guard_bounded(&session_id).await {
+            Ok(_guard) => read_changes_status(&worktree_path, &base_branch).await,
+            Err(_) => None,
+        };
         Ok(json!({ "snapshot": snapshot }))
     })
 }
@@ -126,9 +130,14 @@ pub fn git_changes_stage(state: AppState, args: Vec<Value>) -> HandlerFuture {
             "gitChanges.stage expects a string sessionId and a string[] paths",
         )?;
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        stage_files(&worktree_path, &paths)
-            .await
-            .map_err(map_git_error)?;
+        {
+            let _guard = read_guard_bounded(&session_id)
+                .await
+                .map_err(map_git_error)?;
+            stage_files(&worktree_path, &paths)
+                .await
+                .map_err(map_git_error)?;
+        }
         schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         Ok(Value::Null)
     })
@@ -149,9 +158,14 @@ pub fn git_changes_unstage(state: AppState, args: Vec<Value>) -> HandlerFuture {
             "gitChanges.unstage expects a string sessionId and a string[] paths",
         )?;
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        unstage_files(&worktree_path, &paths)
-            .await
-            .map_err(map_git_error)?;
+        {
+            let _guard = read_guard_bounded(&session_id)
+                .await
+                .map_err(map_git_error)?;
+            unstage_files(&worktree_path, &paths)
+                .await
+                .map_err(map_git_error)?;
+        }
         schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         Ok(Value::Null)
     })
@@ -175,7 +189,17 @@ pub fn git_changes_stage_all(state: AppState, args: Vec<Value>) -> HandlerFuture
             "gitChanges.stageAll rejected an oversized group",
         )?;
         let (worktree_path, base_branch, _archived) = session_context(&state, &session_id).await?;
-        if let Some(snapshot) = read_changes_status(&worktree_path, &base_branch).await {
+        {
+            let _guard = read_guard_bounded(&session_id)
+                .await
+                .map_err(map_git_error)?;
+            let Some(snapshot) = read_changes_status(&worktree_path, &base_branch).await else {
+                // A `None` status read is an error here, never a silent success.
+                return Err(map_git_error(GitError::new(
+                    GitErrorCode::GitFailed,
+                    "Couldn't read this worktree's Git status",
+                )));
+            };
             let paths: Vec<String> = match group.as_str() {
                 "changes" => snapshot
                     .groups
@@ -198,14 +222,8 @@ pub fn git_changes_stage_all(state: AppState, args: Vec<Value>) -> HandlerFuture
             stage_files(&worktree_path, &paths)
                 .await
                 .map_err(map_git_error)?;
-            schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
-        } else {
-            // A `None` status read is an error here, never a silent success.
-            return Err(map_git_error(GitError::new(
-                GitErrorCode::GitFailed,
-                "Couldn't read this worktree's Git status",
-            )));
         }
+        schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         Ok(Value::Null)
     })
 }
@@ -220,7 +238,17 @@ pub fn git_changes_unstage_all(state: AppState, args: Vec<Value>) -> HandlerFutu
             "gitChanges.unstageAll rejected an oversized sessionId",
         )?;
         let (worktree_path, base_branch, _archived) = session_context(&state, &session_id).await?;
-        if let Some(snapshot) = read_changes_status(&worktree_path, &base_branch).await {
+        {
+            let _guard = read_guard_bounded(&session_id)
+                .await
+                .map_err(map_git_error)?;
+            let Some(snapshot) = read_changes_status(&worktree_path, &base_branch).await else {
+                // Same as the stageAll branch: a failed status read must not look like success.
+                return Err(map_git_error(GitError::new(
+                    GitErrorCode::GitFailed,
+                    "Couldn't read this worktree's Git status",
+                )));
+            };
             let paths: Vec<String> = snapshot
                 .groups
                 .staged
@@ -230,14 +258,8 @@ pub fn git_changes_unstage_all(state: AppState, args: Vec<Value>) -> HandlerFutu
             unstage_files(&worktree_path, &paths)
                 .await
                 .map_err(map_git_error)?;
-            schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
-        } else {
-            // Same as the stageAll branch: a failed status read must not look like success.
-            return Err(map_git_error(GitError::new(
-                GitErrorCode::GitFailed,
-                "Couldn't read this worktree's Git status",
-            )));
         }
+        schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         Ok(Value::Null)
     })
 }
@@ -264,9 +286,14 @@ pub fn git_changes_commit(state: AppState, args: Vec<Value>) -> HandlerFuture {
             ));
         }
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
-        git_commit(&worktree_path, &message)
-            .await
-            .map_err(map_git_error)?;
+        {
+            let _guard = read_guard_bounded(&session_id)
+                .await
+                .map_err(map_git_error)?;
+            git_commit(&worktree_path, &message)
+                .await
+                .map_err(map_git_error)?;
+        }
         schedule_readout_update(&state.session_manager.get_or_create_agent(&session_id)).await;
         Ok(Value::Null)
     })
@@ -293,6 +320,10 @@ pub fn git_changes_diff(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let staged = args.get(2).and_then(Value::as_bool).unwrap_or(false);
         let untracked = args.get(3).and_then(Value::as_bool).unwrap_or(false);
         let (worktree_path, _base_branch, _archived) = session_context(&state, &session_id).await?;
+        // A refused guard surfaces as the busy error: the diff `reason` set is a closed wire enum (#1157).
+        let _guard = read_guard_bounded(&session_id)
+            .await
+            .map_err(map_git_error)?;
         let (patch, reason) = diff_text(&worktree_path, &path, staged, untracked)
             .await
             .map_err(map_git_error)?;

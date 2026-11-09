@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // `pnpm ci:local`: runs every `run:` step of `.github/workflows/ci.yml` locally, in order, stopping at the first failure.
 // Re-parses the workflow so the step list cannot drift; `uses:` setup steps are skipped.
-// CARGO_TARGET_DIR passes through unchanged; CARGO_INCREMENTAL defaults to 0 (incremental data is most of the shared
-// cache's growth, #1736). Cargo/tauri steps refuse a worktree-local target (#946) and warn when the cache is over 10 GB.
+// CARGO_TARGET_DIR passes through unchanged; incremental compilation is off repo-wide in `.cargo/config.toml` (#1736).
+// Cargo/tauri steps refuse a worktree-local target (#946) and warn when the cache is over 10 GB.
 
 import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -126,7 +126,6 @@ function main() {
       fail(err.message);
     }
     warnIfCacheLarge();
-    process.env.CARGO_INCREMENTAL ??= '0';
   }
   const results = [];
   let failedAt = -1;

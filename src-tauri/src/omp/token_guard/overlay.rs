@@ -90,21 +90,37 @@ pub fn path(dir: &Path) -> PathBuf {
     dir.join(FILE_NAME)
 }
 
-/// Writes the overlay for `values` into `dir` and returns its path.
-pub async fn write(dir: &Path, values: &ValueMap) -> io::Result<PathBuf> {
+/// Pre-#1767 behaviour, used only while the migration to the global config has not succeeded.
+pub async fn write_legacy(dir: &Path, values: &ValueMap) -> io::Result<PathBuf> {
     let file = path(dir);
     super::write_atomic_if_changed(&file, render(values).as_bytes()).await?;
     Ok(file)
 }
 
-/// Like `write`, into a per-plan-state file, so concurrent Sessions never rewrite one another's overlay.
-pub async fn write_plan_variant(dir: &Path, values: &ValueMap, plan: bool) -> io::Result<PathBuf> {
-    let file = dir.join(if plan {
+/// Legacy variant of `write_legacy` with a per-Session plan state.
+pub async fn write_legacy_plan_variant(
+    dir: &Path,
+    values: &ValueMap,
+    plan: bool,
+) -> io::Result<PathBuf> {
+    let file = plan_variant_path(dir, plan);
+    super::write_atomic_if_changed(&file, render(values).as_bytes()).await?;
+    Ok(file)
+}
+
+fn plan_variant_path(dir: &Path, plan: bool) -> PathBuf {
+    dir.join(if plan {
         "token-guard-overlay-plan-on.yml"
     } else {
         "token-guard-overlay-plan-off.yml"
-    });
-    super::write_atomic_if_changed(&file, render(values).as_bytes()).await?;
+    })
+}
+
+/// A per-Session working mode overrides the global `plan.defaultOnStartup` through this one-key overlay.
+pub async fn write_plan_variant(dir: &Path, plan: bool) -> io::Result<PathBuf> {
+    let file = plan_variant_path(dir, plan);
+    let text = format!("plan:\n  defaultOnStartup: {plan}\n");
+    super::write_atomic_if_changed(&file, text.as_bytes()).await?;
     Ok(file)
 }
 

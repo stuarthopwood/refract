@@ -111,6 +111,33 @@ async function main() {
     check(await cdp.evaluate(`document.querySelector('[role="group"][aria-label="Views"] button[aria-current="page"]')?.textContent.trim() === 'Issues'`), 'Issues nav item is aria-current="page"');
     await shot(cdp, '02-issues-two-repos.png');
 
+    // #1740: hello-world#12 has four labels, so its "+2" overflow chip lists docs and p1; #20 has one label and no chip.
+    const CHIP = `document.querySelector('[data-issue-row][data-issue-number="12"]').parentElement.querySelector('button[aria-label^="+2 more labels"]')`;
+    const tooltipText = `Array.from(document.querySelectorAll('[data-slot="tooltip-content"]')).map((el) => el.textContent.trim().replace(/\\s+/g, ' ')).join('|')`;
+    const chip = await cdp.evaluate(`(() => { const el = ${CHIP}; return el && { label: el.getAttribute('aria-label'), text: el.textContent.trim(), tabIndex: el.tabIndex }; })()`);
+    check(chip && chip.label === '+2 more labels' && chip.text === '+2' && chip.tabIndex === 0, 'Overflow "+2" is a focusable button named "+2 more labels"', JSON.stringify(chip));
+    check(await cdp.evaluate(`!document.querySelector('[data-issue-row][data-issue-number="20"]').parentElement.querySelector('button[aria-label*="more label"]')`), 'A row with one label renders no overflow chip');
+    const chipCentre = await cdp.evaluate(`(() => { const r = ${CHIP}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: chipCentre.x, y: chipCentre.y });
+    await cdp.waitFor(`${tooltipText}.includes('docs') && ${tooltipText}.includes('p1')`, { timeoutMs: 10_000, label: 'hover tooltip' });
+    check(true, 'Hovering "+2" shows the hidden labels in the tooltip', await cdp.evaluate(tooltipText));
+    await shot(cdp, '02a-overflow-hover.png');
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+    await pressEscape();
+    await cdp.waitFor(`${tooltipText} === ''`, { timeoutMs: 10_000, label: 'hover tooltip closed' });
+    await cdp.evaluate(`document.querySelector('[data-issue-row][data-issue-number="12"]').focus()`);
+    let reached = false;
+    for (let i = 0; i < 4 && !reached; i++) {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 9, key: 'Tab', code: 'Tab' });
+      reached = await cdp.evaluate(`document.activeElement === ${CHIP}`);
+    }
+    check(reached, 'Tab from the row title reaches the "+2" chip');
+    await cdp.waitFor(`${tooltipText}.includes('docs') && ${tooltipText}.includes('p1')`, { timeoutMs: 10_000, label: 'focus tooltip' });
+    check(true, 'Focusing "+2" shows the hidden labels in the tooltip', await cdp.evaluate(tooltipText));
+    await shot(cdp, '02b-overflow-focus.png');
+    await cdp.evaluate(`document.activeElement.blur()`);
+
     await clickTab('Assigned to me');
     check(await rowsAre(['hello-world#12', 'spoon-knife#5'], 'assigned'), 'Tab "Assigned to me"', 'hello-world#12, spoon-knife#5');
     await shot(cdp, '03-tab-assigned.png');

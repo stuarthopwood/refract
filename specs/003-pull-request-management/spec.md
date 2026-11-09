@@ -53,7 +53,7 @@ header actions for New session, Review, and merge/checks status."
 - Q: Should the list row's and detail view's two existing Refresh controls stay separate? -> A:
   No - both call sites are unified behind one shared `RefreshButton` component.
 - Q: What does the larger detail title and the lighter action-button layout look like? -> A: The
-  title grows to `text-lg`, up to two lines; Merge stays the one filled/primary button, and New
+  title grows to `text-lg`, up to two lines; Merge is the one filled/primary button (`variant="default"`, #1742; spec 088 briefly made it `outline`), rightmost, and New
   session and Review become ghost buttons on the same row (no new row added) so the title leads.
 - Q: Should the Overview/Changes tab pair adopt an underline style, and does that affect the
   five filter tabs? -> A: The Overview/Changes pair gets a local underline style scoped to this

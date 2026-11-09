@@ -89,7 +89,7 @@ Governance (agenda item 12) decided to put this checklist in the Spec Kit plan t
 
 ### Components ([components.md](components.md))
 
-- [ ] Button variant matches its role (`ghost` is the default, `default` only for the one commit action, `outline` only for a dialog's only button and for Merge, `destructive` only as a dialog confirm).
+- [ ] Button variant matches its role (`ghost` is the default, `default` only for the one commit action, including Merge in the pull request detail header, `outline` only for a dialog's only button, `destructive` only as a dialog confirm).
 - [ ] No new use of `secondary` or `link` button variants.
 - [ ] Menu items are all-icon or all-text within one menu, matching its type (action versus destination/settings).
 - [ ] Destructive menu item is last, after a separator.
