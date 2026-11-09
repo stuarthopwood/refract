@@ -134,6 +134,8 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // The chip's own focus event is still bubbling when the card mounts, so Radix's document focusin listener sees it as focus leaving the card and dismisses a keyboard-opened card at once; the chip's onBlur already closes it.
+        onFocusOutside={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <AgentsCard subagents={subagents} counts={subagentCount} onOpenPanel={onOpenPanelFromCard} />
@@ -198,6 +200,8 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // The chip's own focus event is still bubbling when the card mounts, so Radix's document focusin listener sees it as focus leaving the card and dismisses a keyboard-opened card at once; the chip's onBlur already closes it.
+        onFocusOutside={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <TodoCard todoTree={todoTree} />
