@@ -3,6 +3,7 @@
 // Exit: 0 ok; 1 --check problem or --apply failure; 2 bad usage, refused (--apply needs a registry unless --no-registry), or crash.
 // --pr-fixture <json> replaces the `gh` lookup; honoured only when --root and --repo are under the OS temp dir.
 // node_modules goes first via `rmdir /s /q` on a \\?\ path because git cannot delete pnpm junctions (#1181).
+// After the reap it runs `cargo clean -p refract-tauri` when the shared target's build-script output names a reaped or deleted worktree (#1734); `--check` exits 1 for that.
 import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -161,17 +162,94 @@ function ownChain(procs) {
 
 // The match must sit on name boundaries at both ends: `…/wt-1` is not `…/wt` (after), and
 // `/var/tmp/x/wt` is not `/tmp/x/wt` (before, #1734). Quotes, spaces and `=` still count as a boundary.
+// A drive-letter needle is anchored by `x:/` itself, so it also matches glued to a short flag (`-IC:\wt`).
 const NAME_CHAR = /[a-z0-9._-]/
+const DRIVE_NEEDLE = /^[a-z]:\//
 function namesPath(text, wtPath) {
   if (!text) return false
   const hay = text.replace(/\\/g, '/').toLowerCase()
   const needle = norm(wtPath)
+  const anchored = DRIVE_NEEDLE.test(needle)
   for (let i = hay.indexOf(needle); i >= 0; i = hay.indexOf(needle, i + 1)) {
     const before = hay[i - 1]
     const after = hay[i + needle.length]
-    if ((before === undefined || !NAME_CHAR.test(before)) && (after === undefined || !NAME_CHAR.test(after))) return true
+    if ((anchored || before === undefined || !NAME_CHAR.test(before)) && (after === undefined || !NAME_CHAR.test(after))) return true
   }
   return false
+}
+
+// A reaped or deleted worktree leaves its absolute path in the build-script output of the shared
+// cargo target, and the next link then fails on the stale /MANIFESTINPUT path (#1734).
+const CARGO_PROCESS = /^(?:cargo|rustc)(?:\.exe)?$/i
+const SRC_TAURI = /\/src-tauri(?:\/|$)/
+function cargoTargetDir() {
+  if (process.env.CARGO_TARGET_DIR) return path.resolve(process.env.CARGO_TARGET_DIR)
+  // The fixture must never reach the real shared cache.
+  return prFixturePath ? null : path.join(os.homedir(), '.cargo-target', 'refract')
+}
+
+function staleCargoPaths(targetDir, reapedPaths) {
+  const buildDir = path.join(targetDir, 'debug', 'build')
+  let dirs
+  try {
+    dirs = fs.readdirSync(buildDir)
+  } catch {
+    return []
+  }
+  const reaped = reapedPaths.map(norm)
+  const stale = new Set()
+  for (const d of dirs.filter((n) => n.startsWith('refract-tauri-'))) {
+    let text
+    try {
+      text = fs.readFileSync(path.join(buildDir, d, 'output'), 'utf8')
+    } catch {
+      continue
+    }
+    for (const m of text.matchAll(/[A-Za-z]:[\\/][^\r\n"]*/g)) {
+      const p = norm(m[0].trim())
+      const underSrcTauri = p.search(SRC_TAURI)
+      const gone = underSrcTauri > 0 && !fs.existsSync(p.slice(0, underSrcTauri))
+      if (gone || reaped.some((r) => p === r || p.startsWith(`${r}/`))) stale.add(m[0].trim())
+    }
+  }
+  return [...stale]
+}
+
+// Returns the failure count. `reapedPaths` are worktrees this run reaped (or, in a dry run, would reap).
+function cleanStaleCargo(reapedPaths) {
+  const target = cargoTargetDir()
+  if (!target) {
+    console.log('cargo cache: skipped (--pr-fixture without CARGO_TARGET_DIR)')
+    return 0
+  }
+  const stale = staleCargoPaths(target, reapedPaths)
+  if (!stale.length) {
+    console.log(`cargo cache: no stale worktree path in ${target}`)
+    return 0
+  }
+  const cwd = path.join(repo, 'src-tauri')
+  console.log(`cargo cache: ${stale.length} stale worktree path(s) in the build-script output, e.g. ${stale[0]}`)
+  if (!apply) {
+    console.log(`would run: cargo clean -p refract-tauri  (CARGO_TARGET_DIR=${target}, cwd ${cwd})`)
+    return 0
+  }
+  const building = listProcesses().find((p) => CARGO_PROCESS.test(String(p.Name ?? '')))
+  if (building) {
+    console.log(`SKIPPED cargo clean: ${building.Name} (pid ${building.ProcessId}) is running, so a lane is building; rerun --apply when it ends`)
+    return 0
+  }
+  const r = spawnSync('cargo', ['clean', '-p', 'refract-tauri'], {
+    cwd,
+    encoding: 'utf8',
+    windowsHide: true,
+    env: { ...process.env, CARGO_TARGET_DIR: target },
+  })
+  if (r.status === 0) {
+    console.log(`ran: cargo clean -p refract-tauri  (CARGO_TARGET_DIR=${target})`)
+    return 0
+  }
+  console.log(`FAILED: cargo clean -p refract-tauri: ${r.error?.message ?? (r.stderr || '').trim().split('\n')[0]}`)
+  return 1
 }
 
 function prLookup(branch) {
@@ -312,6 +390,9 @@ function check(worktrees) {
   const problems = []
   if (inRoot.length > MAX_WORKTREES) problems.push('too many worktrees: run `pnpm worktrees:reap`')
   if (freeGb !== null && freeGb < MIN_FREE_GB) problems.push('low disk space')
+  const cargoTarget = cargoTargetDir()
+  const stale = cargoTarget ? staleCargoPaths(cargoTarget, []) : []
+  if (stale.length) problems.push(`stale worktree path in the cargo build-script output (${stale[0]}): run \`pnpm worktrees:reap --apply\``)
   for (const p of problems) console.log(`WARN: ${p}`)
   return problems.length ? 1 : 0
 }
@@ -414,6 +495,13 @@ function main() {
   } catch (err) {
     failures++
     console.log(`FAILED  husk pass: ${err.message}`)
+  }
+
+  try {
+    failures += cleanStaleCargo((apply ? removed : reap).map((w) => w.path))
+  } catch (err) {
+    failures++
+    console.log(`FAILED  cargo cache: ${err.message}`)
   }
 
   console.log(
