@@ -1163,6 +1163,8 @@ Also filed 2026-11-09 (Stuart): **#1818** (`p1`, `chat`, `design`), UI Polish: C
 
 Also filed 2026-11-09 (Stuart): **#1827** (`p1`, `enhancement`, `chat`), Enhancement: Composer: /new accepts an initial prompt for the new Conversation.
 
+Also filed 2026-11-09 (Stuart): **#1829** (`p1`, `design`, `accessibility`), UI Polish: Loading page: horizontal three-step stepper on every launch (follows #1794). In progress (PR draft, `feat/1829-horizontal-stepper`): the stepper replaces the vertical one and shows on every launch; steps run one by one through the new `readiness.checkStep` channel and stop at the first failure; each step is a button showing its detail; `ci:local`, the Rust compile and the live check are pending.
+
 Also filed 2026-11-09 (Stuart): **#1831** (`p0`, `bug`, `chat`), Bug: Ask: support OMP 18.18.3's HTML-form ask (ui.formDialog) so the Ask card works again.
 
 Also filed 2026-11-09 (Stuart): **#1832** (`p2`, `feature`, `chat`), Feat: Run a shell command without adding it to the model's context (OMP RPC bash excludeFromContext).
