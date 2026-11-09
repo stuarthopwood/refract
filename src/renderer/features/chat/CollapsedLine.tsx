@@ -238,11 +238,6 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
             {iconTooltip}
           </span>
         )}
-        {iconTooltip !== undefined && (
-          <span id={tooltipDescId} className="sr-only">
-            {iconTooltip}
-          </span>
-        )}
         {action !== undefined && <span className="absolute right-2 top-0 flex translate-y-0.5">{action}</span>}
       </div>
       {detailMounted && (
