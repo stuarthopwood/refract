@@ -76,9 +76,9 @@ export function CheckRow({ label, check, checking, showStateWord = false, step }
     const status = !check ? 'pending' : check.ok ? 'done' : 'failed'
     return (
       <StepperItem index={step} status={status} title={label}>
-        {check?.found && <span className="text-xs text-muted-foreground">{check.found}</span>}
-        {check && !check.ok && check.hint && <span className="text-sm text-destructive">{check.hint}</span>}
-        {check?.ok && check.warning && check.hint && <span className="text-xs text-state-needs-you">{check.hint}</span>}
+        {check?.found && <span className="break-words text-xs text-muted-foreground">{check.found}</span>}
+        {check && !check.ok && check.hint && <span className="break-words text-sm text-destructive">{check.hint}</span>}
+        {check?.ok && check.warning && check.hint && <span className="break-words text-xs text-state-needs-you">{check.hint}</span>}
         <span className="sr-only">{checkStateWord(check, checking)}</span>
       </StepperItem>
     )

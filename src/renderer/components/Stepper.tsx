@@ -6,7 +6,7 @@ export type StepStatus = 'pending' | 'done' | 'failed'
 /** An ordered list of steps; the failed step passes `expanded` content as children. */
 export function Stepper({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <ol aria-label={label} className="flex flex-col gap-3">
+    <ol aria-label={label} className="flex flex-col gap-4">
       {children}
     </ol>
   )
@@ -25,7 +25,7 @@ export interface StepperItemProps {
 export function StepperItem({ index, status, title, children }: StepperItemProps) {
   const glyph = status === 'done' ? '✓' : status === 'failed' ? '✕' : String(index)
   return (
-    <li className="flex items-start gap-3" data-step-status={status}>
+    <li className="flex items-start gap-4" data-step-status={status}>
       <span
         aria-hidden
         className={cn(

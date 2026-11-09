@@ -64,7 +64,7 @@ export function Readiness({ initialChecks, onReadyChange }: ReadinessProps) {
     <div className="relative isolate h-full">
       <TitlebarBand reservesWindowControls />
       <div className="flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-6">
-        <div className="flex flex-wrap items-center justify-center gap-5">
+        <div className="flex flex-wrap items-center justify-center gap-4">
           <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0 sm:h-24 sm:w-24" />
           <div className="flex flex-col">
             <span className="font-brand text-5xl font-bold leading-none text-foreground sm:text-7xl">Refract</span>
