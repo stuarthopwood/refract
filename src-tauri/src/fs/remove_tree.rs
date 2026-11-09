@@ -1,5 +1,5 @@
-// Uses `std::fs::remove_dir_all`, which does not follow links mid-walk. Refusal of a link at the
-// root and the strict-descendant check run first, in one blocking task, to avoid a TOCTOU gap.
+// `remove_dir_all` does not follow links mid-walk; the link and descendant checks share its
+// blocking task so no TOCTOU gap opens between them.
 
 use std::path::{Path, PathBuf};
 

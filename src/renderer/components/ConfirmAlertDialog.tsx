@@ -3,7 +3,7 @@
 // description, Cancel, and an optional confirm action. While `busy`, Escape, the body and both buttons are inert.
 // Focus on close is the caller's choice (`onCloseAutoFocus`; `false` lets Radix restore it), since these
 // dialogs open from a plain state flag with no Trigger for Radix to return focus to.
-import type { ReactNode } from 'react'
+import type { ReactNode, Ref } from 'react'
 import { cn } from '@/lib/utils'
 import { DialogError } from '@/components/DialogError'
 import {
@@ -30,6 +30,7 @@ export function ConfirmAlertDialog({
   children,
   bodyLabel,
   confirmDisabled = false,
+  confirmRef,
   onCancel,
   onConfirm,
   onCloseAutoFocus,
@@ -53,6 +54,8 @@ export function ConfirmAlertDialog({
   bodyLabel?: string
   /** Blocks the confirm without the busy label (a pre-check still loading). */
   confirmDisabled?: boolean
+  /** Lets the caller move focus here before content that holds it is removed. */
+  confirmRef?: Ref<HTMLButtonElement>
   onCancel(): void
   onConfirm?(): void
   /** Return `false` to let Radix restore focus itself; any other result means the caller moved it. */
@@ -102,9 +105,10 @@ export function ConfirmAlertDialog({
           </AlertDialogCancel>
           {confirmLabel && (
             <AlertDialogAction
+              ref={confirmRef}
               variant={tone === 'destructive' ? 'destructive' : 'default'}
               aria-disabled={busy || confirmDisabled}
-              className="aria-disabled:opacity-50"
+              className="min-w-24 aria-disabled:opacity-50"
               onClick={(event) => {
                 event.preventDefault()
                 if (!busy && !confirmDisabled) onConfirm?.()

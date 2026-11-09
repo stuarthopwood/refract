@@ -100,6 +100,8 @@ export function DeleteDialog({
   // a failed post-refusal re-check says so, instead of silently hiding the bullets.
   const [recheckFailed, setRecheckFailed] = useState(false)
   const deleteGenerationRef = useRef(0)
+  const leftoverListRef = useRef<HTMLUListElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
   const deletedRef = useRef(false)
   const sessionIdRef = useRef(session.id)
   sessionIdRef.current = session.id
@@ -182,6 +184,8 @@ export function DeleteDialog({
         })
       }
       if (!leftoverSummaryOverride) {
+        // The list is replaced below; keep focus off the outline-less dialog container.
+        if (leftoverListRef.current?.contains(document.activeElement)) confirmRef.current?.focus()
         setLeftoverLoading(true)
         void window.refract.sessions.deleteLeftoverSummary(deletingId).then((refreshed) => {
           if (sessionIdRef.current !== deletingId || deleteGenerationRef.current !== myGeneration) return
@@ -212,6 +216,7 @@ export function DeleteDialog({
     <ConfirmAlertDialog
       open={open}
       busy={deleting}
+      confirmRef={confirmRef}
       confirmDisabled={loading}
       size="md"
       tone="destructive"
@@ -257,6 +262,7 @@ export function DeleteDialog({
             Files left in the worktree
           </p>
           <ul
+            ref={leftoverListRef}
             aria-labelledby="leftover-files-label"
             tabIndex={0}
             className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"

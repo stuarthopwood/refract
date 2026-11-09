@@ -5491,3 +5491,5 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   class, reword the unreadable-list copy, per FR-124(e), US6/AC8 (missing)
 - [x] T430 [US6] Update `docs/PLAN.md` and `docs/design/components.md`, then run the TS checks;
   `cargo`, `ci:local` and the live check stay pending per FR-124 (missing)
+- [x] T431 [US6] `ConfirmAlertDialog.tsx`/`DeleteDialog.tsx`: confirm button `min-w-24`, move focus to it
+  before the file list is replaced; trim the `fs/remove_tree.rs` header comment, per FR-124(e) (missing)
