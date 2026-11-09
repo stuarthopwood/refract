@@ -5485,5 +5485,5 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   when `resolveImage` is set; the chat branch is unchanged, per FR-124 (missing)
 - [x] T426 `github/images.rs`: allow `dependabot-badges.githubapp.com` and accept SVG from that host only
   (signature checked), with Rust tests, per FR-124 (missing)
-- [ ] T427 Live check a Dependabot PR description, update `docs/PLAN.md`, then `cargo` and
+- [x] T427 Live check a Dependabot PR description, update `docs/PLAN.md`, then `cargo` and
   `node scripts/ci-local.mjs` per FR-124

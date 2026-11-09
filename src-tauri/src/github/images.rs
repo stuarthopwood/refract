@@ -90,7 +90,10 @@ fn resolve_image_mime_type(content_type: Option<&str>, host: &str) -> Option<&'s
 fn looks_like_svg(body: &[u8]) -> bool {
     let head = &body[..body.len().min(1024)];
     let head = String::from_utf8_lossy(head);
-    head.trim_start_matches('\u{feff}').trim_start().starts_with('<') && head.contains("<svg")
+    head.trim_start_matches('\u{feff}')
+        .trim_start()
+        .starts_with('<')
+        && head.contains("<svg")
 }
 
 fn matches_signature(body: &[u8], mime_type: &str) -> bool {
