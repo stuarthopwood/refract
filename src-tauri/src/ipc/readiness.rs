@@ -73,16 +73,24 @@ impl Step {
     }
 }
 
+/// Reads the single step-key argument of `readiness.checkStep`.
+fn step_from_args(args: &[Value]) -> Result<Step, IpcError> {
+    args.first()
+        .and_then(Value::as_str)
+        .and_then(Step::parse)
+        .ok_or_else(|| {
+            IpcError::new(
+                "invalid-argument",
+                "readiness.checkStep expects one of 'git' | 'omp' | 'ompSignedIn'",
+            )
+        })
+}
+
 /// Runs one check so the loading page can show the three steps one at a time and stop at the
 /// first failure; resolves to a bare `Check` (same shape as a `readiness.check` field).
 fn readiness_check_step(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let Some(step) = args.first().and_then(Value::as_str).and_then(Step::parse) else {
-            return Err(IpcError::new(
-                "invalid-argument",
-                "readiness.checkStep expects one of 'git' | 'omp' | 'ompSignedIn'",
-            ));
-        };
+        let step = step_from_args(&args)?;
         let check = match step {
             Step::Git => check_git().await,
             Step::Omp => check_omp().await,
@@ -555,5 +563,34 @@ mod tests {
     fn step_parse_rejects_unknown_keys() {
         assert_eq!(Step::parse("github"), None);
         assert_eq!(Step::parse(""), None);
+    }
+
+    #[test]
+    fn step_parse_rejects_case_and_whitespace_variants() {
+        for raw in [
+            "Git",
+            "GIT",
+            " git",
+            "git ",
+            "omp\n",
+            "ompsignedin",
+            "OmpSignedIn",
+        ] {
+            assert_eq!(Step::parse(raw), None, "{raw:?} must be rejected");
+        }
+    }
+
+    #[test]
+    fn step_from_args_rejects_non_string_and_missing_arguments() {
+        for args in [
+            vec![Value::from(1)],
+            vec![Value::Null],
+            vec![serde_json::json!(["git"])],
+            vec![],
+        ] {
+            let err = step_from_args(&args).expect_err("must reject");
+            assert_eq!(err.code, "invalid-argument");
+        }
+        assert_eq!(step_from_args(&[Value::from("omp")]).unwrap(), Step::Omp);
     }
 }
