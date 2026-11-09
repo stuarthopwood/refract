@@ -25,10 +25,19 @@ fn zero_risk() -> DeleteCheck {
     }
 }
 
+// Porcelain v1 `XY path`: `D ` (staged delete) and ` D` (worktree delete) are the deletions.
+fn is_deleted_status_line(line: &str) -> bool {
+    matches!(line.get(..2), Some("D ") | Some(" D"))
+}
+
 /// Feeds the delete confirmation text.
 pub async fn delete_check(worktree_path: &Path) -> Result<DeleteCheck, GitError> {
     let status = git(worktree_path, &["status", "--porcelain"]).await?;
-    let uncommitted_files = status.lines().filter(|l| !l.trim().is_empty()).count() as i64;
+    // A retry after a partial delete would otherwise count files Refract itself already removed.
+    let uncommitted_files = status
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !is_deleted_status_line(l))
+        .count() as i64;
 
     let upstream = git_raw(
         worktree_path,

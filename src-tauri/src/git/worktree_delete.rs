@@ -53,9 +53,9 @@ fn admin_entry_refusal_message(worktree_path: &Path) -> String {
     format!("Refract did not delete anything. It could not safely identify {}'s own git admin entry. Remove that folder yourself, then choose Retry.", worktree_path.display())
 }
 
-// A slow `git worktree list` must never be read as "not registered" and misroute a destructive branch.
+// Git not answering is not the same as "not registered", so it must never misroute a destructive branch.
 fn registration_unknown_message(worktree_path: &Path) -> String {
-    format!("Refract did not delete anything. It could not confirm with git whether {} is still a registered worktree (a slow response). Nothing was touched. Try again, then choose Retry.", worktree_path.display())
+    format!("Refract did not delete anything. Git did not answer in time when Refract asked whether {} is still a registered worktree, so Refract stopped before touching it. Nothing was touched. Choose Retry.", normalize_git_path(&worktree_path.to_string_lossy()))
 }
 
 // Windows sharing violation (32) and access-denied (5) get dedicated wording.
@@ -97,7 +97,14 @@ fn map_remove_tree_error(err: RemoveTreeError, worktree_path: &Path) -> GitError
             GitErrorCode::WorktreeFailed,
             format!(
                 "Refract did not delete anything. {} resolves outside Refract's worktree folder (likely through a link somewhere above it), so Refract will not remove it. Check what it actually points to, then choose Retry.",
-                worktree_path.display()
+                normalize_git_path(&worktree_path.to_string_lossy())
+            ),
+        ),
+        RemoveTreeError::PathChanged { path } => GitError::new(
+            GitErrorCode::WorktreeFailed,
+            format!(
+                "Some files may already have been deleted. {} resolved to a different folder partway through, so Refract stopped removing it. Check what it points to, then choose Retry.",
+                normalize_git_path(&path.to_string_lossy())
             ),
         ),
         RemoveTreeError::Unreadable { path, source, after_partial } => {
