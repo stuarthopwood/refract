@@ -1148,7 +1148,7 @@ Also filed 2026-11-09 (Stuart): **#1804** (`p2`, `feature`, `right-pane`), Epic:
 
 Also filed 2026-11-09 (Stuart): **#1793** (`p2`, `feature`, `right-pane`), Feat: API tool: Postman-style saved requests scoped by project, environment, and folder; linked from #1803.
 
-Also filed 2026-11-09 (Stuart): **#1794** (`p1`, `design`, `accessibility`), UI Polish: Loading page: three-step progress indicator and larger logo and tagline; related #566 and #7.
+Also filed 2026-11-09 (Stuart): **#1794** (`p1`, `design`, `accessibility`), UI Polish: Loading page: three-step progress indicator and larger logo and tagline; related #566 and #7. In progress (PR draft, `feat/1794-loading-stepper`): successful launch skips the checklist; failure shows a shared three-step `Stepper` with the failed step expanded and the live region moved to the failure message; `ci:local` and the live check are pending.
 
 Also filed 2026-11-09 (Stuart): **#1811** (`p1`, `design`, `session-list`), Filters: start filtering after three characters; **#1812** (`p1`, `chat`, `design`), Composer: `/` commands work before a Session's agent has started.
 
