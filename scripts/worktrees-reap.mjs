@@ -159,13 +159,17 @@ function ownChain(procs) {
   return chain
 }
 
+// The match must sit on name boundaries at both ends: `…/wt-1` is not `…/wt` (after), and
+// `/var/tmp/x/wt` is not `/tmp/x/wt` (before, #1734). Quotes, spaces and `=` still count as a boundary.
+const NAME_CHAR = /[a-z0-9._-]/
 function namesPath(text, wtPath) {
   if (!text) return false
   const hay = text.replace(/\\/g, '/').toLowerCase()
   const needle = norm(wtPath)
   for (let i = hay.indexOf(needle); i >= 0; i = hay.indexOf(needle, i + 1)) {
-    const next = hay[i + needle.length]
-    if (next === undefined || !/[a-z0-9._-]/.test(next)) return true
+    const before = hay[i - 1]
+    const after = hay[i + needle.length]
+    if ((before === undefined || !NAME_CHAR.test(before)) && (after === undefined || !NAME_CHAR.test(after))) return true
   }
   return false
 }
