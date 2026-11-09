@@ -591,11 +591,12 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   themes: ThemesApi;
 
   tokenGuard: {
-    get(): Promise<Result<TokenGuardSnapshot>>;
-    set(key: string, value: unknown): Promise<Result<TokenGuardSnapshot>>;
-    reset(key: string): Promise<Result<TokenGuardSnapshot>>;
-    resetAll(): Promise<Result<TokenGuardSnapshot>>;
-    dismissThresholdsReset(): Promise<Result<null>>;
+    get(repositoryId?: string): Promise<Result<TokenGuardSnapshot>>;
+    set(key: string, value: unknown, repositoryId?: string): Promise<Result<TokenGuardSnapshot>>;
+    reset(key: string, repositoryId?: string): Promise<Result<TokenGuardSnapshot>>;
+    resetAll(repositoryId?: string): Promise<Result<TokenGuardSnapshot>>;
+    /** Marks the one-time migration backup notice as shown. */
+    dismissMigrationNotice(): Promise<Result<null>>;
     handoff(sessionId: string): Promise<Result<TokenGuardHandoffResult>>;
   };
 
