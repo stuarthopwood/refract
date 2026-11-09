@@ -34,6 +34,7 @@ pub use commands::{
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
 pub use requests::is_chat_answer;
+pub use command_wait::COMMANDS_WAIT;
 use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 
