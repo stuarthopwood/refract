@@ -42,6 +42,7 @@ export function Readiness({ onReadyChange }: ReadinessProps) {
   const [results, setResults] = useState<Results>({})
   const [runningKey, setRunningKey] = useState<ReadinessStepKey | null>(CHECK_ORDER[0])
   const [picked, setPicked] = useState<ReadinessStepKey | null>(null)
+  const [dismissed, setDismissed] = useState(false)
   const [rechecking, setRechecking] = useState(false)
   const runId = useRef(0)
   const detailId = useId()
@@ -51,6 +52,7 @@ export function Readiness({ onReadyChange }: ReadinessProps) {
     const id = ++runId.current
     setResults({})
     setPicked(null)
+    setDismissed(false)
     for (const key of CHECK_ORDER) {
       setRunningKey(key)
       const check = await runStep(key)
@@ -90,11 +92,22 @@ export function Readiness({ onReadyChange }: ReadinessProps) {
     return runningKey === key ? 'running' : 'waiting'
   }
 
-  const selectedKey = picked ?? failedKey ?? runningKey ?? (allPass ? CHECK_ORDER[CHECK_ORDER.length - 1] : null)
+  // The detail panel stays hidden until a step fails (that step is selected) or the user picks one;
+  // picking the selected step again hides it.
+  const selectedKey = dismissed ? null : (picked ?? failedKey ?? null)
   const selected = selectedKey ? results[selectedKey] : undefined
   const selectedStatus = selectedKey ? statusOf(selectedKey) : null
   const failedStep = failedKey ? CHECK_ORDER.indexOf(failedKey) + 1 : 0
   const showRecheck = failedKey !== undefined || rechecking
+
+  const select = (key: ReadinessStepKey) => {
+    if (key === selectedKey) {
+      setDismissed(true)
+      return
+    }
+    setPicked(key)
+    setDismissed(false)
+  }
 
   const recheck = () => {
     setRechecking(true)
@@ -104,53 +117,57 @@ export function Readiness({ onReadyChange }: ReadinessProps) {
   return (
     <div className="relative isolate h-full">
       <TitlebarBand reservesWindowControls />
-      <div className="flex h-full flex-col items-center justify-center gap-8 overflow-y-auto p-6">
-        <div className="flex flex-wrap items-center justify-center gap-4">
-          <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0 sm:h-24 sm:w-24" />
-          <div className="flex flex-col">
-            <span className="font-brand text-5xl font-bold leading-none text-foreground sm:text-7xl">Refract</span>
-            <span className="font-brand mt-2 text-lg font-medium leading-tight tracking-wide text-muted-foreground sm:text-xl">One Pi, every angle.</span>
+      <div className="flex h-full flex-col items-center justify-center overflow-y-auto p-6">
+        {/* One shared width: the hero row sets it, and the stepper below is constrained to it so the first and last circle centres sit under the logo's left edge and the wordmark's right edge. */}
+        <div className="flex w-fit max-w-full flex-col gap-8 text-foreground">
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <img src={refractHero} alt="" aria-hidden className="h-16 w-16 shrink-0 sm:h-24 sm:w-24" />
+            <div className="flex flex-col">
+              <span className="font-brand text-5xl font-bold leading-none text-foreground sm:text-7xl">Refract</span>
+              <span className="font-brand mt-2 text-lg font-medium leading-tight tracking-wide text-muted-foreground sm:text-xl">One Pi, every angle.</span>
+            </div>
           </div>
-        </div>
-        <div className="w-full max-w-xl text-foreground">
-          <h1 tabIndex={-1} data-readiness-root className="mb-4 text-center text-base font-medium outline-none">
-            {failedKey ? 'Refract can’t start yet' : allPass ? (hasRepositories ? 'Refract is ready' : 'Add a project to begin') : 'Getting Refract ready'}
-          </h1>
-          {/* Polite live region, always mounted: only the failure or the all-passed result is announced, once. */}
-          <p aria-live="polite" className="sr-only">
-            {failedKey ? `Step ${failedStep} of ${CHECK_ORDER.length} failed: ${STEP_TITLES[failedKey]}.` : allPass ? 'All checks passed' : ''}
-          </p>
-          <Stepper
-            label="Readiness steps"
-            steps={CHECK_ORDER.map((key) => ({ key, title: STEP_TITLES[key], status: statusOf(key) }))}
-            selectedKey={selectedKey ?? null}
-            onSelect={(key) => setPicked(key as ReadinessStepKey)}
-            detailId={detailId}
-          />
-          <div id={detailId} className="mt-6 flex min-h-12 flex-wrap items-start justify-between gap-2 text-sm">
-            {selectedKey && selectedStatus && (
-              <div className="flex min-w-0 flex-1 flex-col gap-1 break-words">
-                <span className="font-medium">
-                  {STEP_TITLES[selectedKey]} <span className="text-muted-foreground">({STEP_STATUS_WORD[selectedStatus]})</span>
-                </span>
-                {selectedStatus === 'waiting' && <span className="text-muted-foreground">Waiting for the earlier steps to pass.</span>}
-                {selectedStatus === 'running' && <span className="text-muted-foreground">Checking…</span>}
-                {selectedStatus === 'passed' && selected?.found && <span className="text-muted-foreground">{selected.found}</span>}
-                {selectedStatus === 'passed' && selected?.warning && selected.hint && <span className="text-state-needs-you">{selected.hint}</span>}
-                {selectedStatus === 'failed' && selected?.hint && <span className="text-destructive">{selected.hint}</span>}
+          {/* `w-0 min-w-full`: contributes nothing to the shared width, then fills it. */}
+          <div className="w-0 min-w-full">
+            <h1 tabIndex={-1} data-readiness-root className="sr-only outline-none">
+              {failedKey ? 'Refract can’t start yet' : allPass ? (hasRepositories ? 'Refract is ready' : 'Add a project to begin') : 'Getting Refract ready'}
+            </h1>
+            {/* Polite live region, always mounted: only the failure or the all-passed result is announced, once. */}
+            <p aria-live="polite" className="sr-only">
+              {failedKey ? `Step ${failedStep} of ${CHECK_ORDER.length} failed: ${STEP_TITLES[failedKey]}.` : allPass ? 'All checks passed' : ''}
+            </p>
+            <Stepper
+              label="Readiness steps"
+              steps={CHECK_ORDER.map((key) => ({ key, title: STEP_TITLES[key], status: statusOf(key) }))}
+              selectedKey={selectedKey}
+              onSelect={(key) => select(key as ReadinessStepKey)}
+              detailId={detailId}
+            />
+            <div id={detailId} hidden={!selectedKey} className="mt-4 flex flex-col items-center gap-2 text-center text-sm">
+              {selectedKey && selectedStatus && (
+                <div className="flex min-w-0 flex-col gap-1 break-words">
+                  <span className="font-medium">
+                    {STEP_TITLES[selectedKey]} <span className="text-muted-foreground">({STEP_STATUS_WORD[selectedStatus]})</span>
+                  </span>
+                  {selectedStatus === 'waiting' && <span className="text-muted-foreground">Waiting for the earlier steps to pass.</span>}
+                  {selectedStatus === 'running' && <span className="text-muted-foreground">Checking…</span>}
+                  {selectedStatus === 'passed' && selected?.found && <span className="text-muted-foreground">{selected.found}</span>}
+                  {selectedStatus === 'passed' && selected?.warning && selected.hint && <span className="text-state-needs-you">{selected.hint}</span>}
+                  {selectedStatus === 'failed' && selected?.hint && <span className="text-destructive">{selected.hint}</span>}
+                </div>
+              )}
+              {selectedKey && showRecheck && (
+                <Button variant="ghost" onClick={recheck} loading={runningKey !== null}>
+                  Re-check
+                </Button>
+              )}
+            </div>
+            {allPass && !hasRepositories && (
+              <div className="mt-4 flex justify-center">
+                <AddProjectMenu variant="first-run" className="flex-none" />
               </div>
             )}
-            {showRecheck && (
-              <Button variant="ghost" onClick={recheck} loading={runningKey !== null}>
-                Re-check
-              </Button>
-            )}
           </div>
-          {allPass && !hasRepositories && (
-            <div className="mt-4 flex justify-center">
-              <AddProjectMenu variant="first-run" />
-            </div>
-          )}
         </div>
       </div>
     </div>
