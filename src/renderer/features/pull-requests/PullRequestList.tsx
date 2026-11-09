@@ -2,6 +2,7 @@
 // pull request tabs, paging and rows. Cross-Project, like the Issues list.
 import { useEffect } from 'react'
 import { ProjectListPane } from '@/components/ProjectListPane'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { MAX_ROWS, sharesActiveCountSearch } from '@/state/pull-requests-store'
 import { useAccountsStore, usePullRequestsStore, useRepositoriesStore } from '@/state'
 import type { FilterTab } from '../../../shared/github'
@@ -65,7 +66,7 @@ export function PullRequestList() {
       onRefresh={() => {
         void refresh(allIds)
         // An explicit Refresh also refreshes the sidebar count, unless this search already feeds it.
-        if (githubStatus === 'ready' && !sharesActiveCountSearch({ tab, state, repositoryIds, query, limit }, allIds)) {
+        if (githubStatus === 'ready' && !sharesActiveCountSearch({ tab, state, repositoryIds, query: effectiveFilterQuery(query), limit }, allIds)) {
           void refreshActiveCount(allIds)
         }
       }}

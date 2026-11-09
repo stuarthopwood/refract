@@ -14,11 +14,13 @@ import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '..
 import type { ClosedBranchesResult } from '../shared/ipc-home'
 import type { GithubChangedPayload } from '../shared/ipc-github-changed'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch, SessionWithKickoff } from '../shared/ipc-issues'
+import type { ItemCard } from '../shared/ipc-item-refs'
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
   IpcErrorCode,
   BranchEntry,
+  Check,
   ChatAnswer,
   DiffStat,
   FilePreview,
@@ -130,6 +132,7 @@ function onFileDrop(handler: (event: { paths: string[]; position: { x: number; y
 const refract: RefractApi = {
   readiness: {
     check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK),
+    checkStep: (step) => request<Check>(IPC_REQUESTS.READINESS_CHECK_STEP, step),
     installDependency: (dependency) => request<void>(IPC_REQUESTS.READINESS_INSTALL_DEPENDENCY, dependency)
   },
 
@@ -358,6 +361,9 @@ const refract: RefractApi = {
     view: (repositoryId, number) => request<IssueDetail>(IPC_REQUESTS.ISSUES_VIEW, repositoryId, number),
     newSession: (repositoryId, number) =>
       request<SessionWithKickoff>(IPC_REQUESTS.ISSUES_NEW_SESSION, repositoryId, number)
+  },
+  itemRefs: {
+    lookup: (repositoryId, owner, repo, number) => request<ItemCard>(IPC_REQUESTS.ITEM_REFS_LOOKUP, repositoryId, owner, repo, number)
   },
 
   home: {

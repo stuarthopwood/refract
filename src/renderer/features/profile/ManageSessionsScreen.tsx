@@ -12,6 +12,7 @@ import { ManageSessionRow } from './ManageSessionRow'
 import { ManageSessionsToolbar } from './ManageSessionsToolbar'
 import { distinctRepositoryCount, filterAndSortSessions, sessionCountLabel } from './manageSessionsHelpers'
 import { showingCountLabel } from '@/features/sessions/sessionDisplay'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { DEFAULT_FILTERS } from '@/state/view-store'
 import { HolidayEmptyStateLine } from '@/features/holidays/HolidayEmptyStateLine'
 
@@ -77,8 +78,9 @@ export function ManageSessionsScreen() {
       announce(showingCountLabel(current.length, state.sessions.length))
     }
 
+    // The effect reruns only when the effective query changes, so a keystroke below the filter threshold announces nothing.
     const onlySearchChanged =
-      filters.search !== previous.search &&
+      effectiveFilterQuery(filters.search) !== effectiveFilterQuery(previous.search) &&
       filters.repositoryId === previous.repositoryId &&
       filters.archiveFilter === previous.archiveFilter
 
@@ -98,7 +100,7 @@ export function ManageSessionsScreen() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.search, filters.repositoryId, filters.archiveFilter])
+  }, [effectiveFilterQuery(filters.search), filters.repositoryId, filters.archiveFilter])
 
   function handleBackToChat(): void {
     useViewStore.getState().openChat()

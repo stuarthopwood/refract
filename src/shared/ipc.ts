@@ -34,7 +34,7 @@ import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } 
 import type { WorkingMode, WorkingModeApi } from './workingMode';
 import type { AdvisorRosterApi, AdvisorRosterDetected } from './ipc-advisor-roster';
 import type { AttachmentsApi } from './ipc-attachments'; import type { ClipboardApi } from './ipc-clipboard'; import type { SpellcheckApi } from './ipc-spellcheck'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
-import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi, SessionWithKickoff } from './ipc-issues'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
+import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi, SessionWithKickoff } from './ipc-issues'; import type { ItemRefsApi } from './ipc-item-refs'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
 import type { ChangedFile, FilterTab, MergeMethod, PullRequestDetail, PullRequestStateFilter, PullRequestSummary, ReviewVerdict } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
 import type { ActivityText, SessionActivity } from './activity'; import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images'; import type { CustomTheme, ThemesApi } from './ipc-themes'; import type { RepositoriesCloneApi, SettingsCloneApi } from './ipc-repositories-clone';
@@ -222,6 +222,7 @@ export type { LeftoverSummary } from './ipc-sessions';
 
 export const IPC_REQUESTS = {
   READINESS_CHECK: 'readiness.check',
+  READINESS_CHECK_STEP: 'readiness.checkStep',
   REPOSITORIES_LIST: 'repositories.list',
   REPOSITORIES_ADD: 'repositories.add',
   REPOSITORIES_REMOVE: 'repositories.remove',
@@ -363,6 +364,7 @@ export const IPC_REQUESTS = {
   ISSUES_LIST: 'issues.list',
   ISSUES_VIEW: 'issues.view',
   ISSUES_NEW_SESSION: 'issues.newSession',
+  ITEM_REFS_LOOKUP: 'itemRefs.lookup',
   HOME_LAST_MESSAGES: 'home.lastMessages',
   HOME_CLOSED_BRANCHES: 'home.closedBranches',
   THEME_SET: 'theme.set',
@@ -524,7 +526,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   fileExplorer: FileExplorerApi;
 
   gitChanges: GitChangesApi;
-  issues: IssuesApi; home: HomeApi;
+  issues: IssuesApi; itemRefs: ItemRefsApi; home: HomeApi;
 
   settings: SettingsCloneApi & {
     get(): Promise<Result<Settings>>;

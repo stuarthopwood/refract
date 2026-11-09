@@ -10,6 +10,7 @@ import { FilterTabs } from '@/components/FilterTabs'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
 import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { SearchField } from '@/components/SearchField'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { FILTER_PICKER_CLASS, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -167,7 +168,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             onValueChange={(value) => {
               props.onQueryChange(value)
               // Emptying a search that was applied refetches at once.
-              if (value === '' && props.appliedQuery !== '') refresh()
+              if (effectiveFilterQuery(value) === '' && props.appliedQuery !== '') refresh()
             }}
             onSubmit={refresh}
             label={`Search ${noun.plural}`}

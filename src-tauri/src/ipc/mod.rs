@@ -33,6 +33,7 @@ pub mod home;
 pub mod image_save;
 pub mod images;
 pub mod issues;
+pub mod item_refs;
 pub mod model;
 pub mod model_roles;
 pub mod pull_requests;
@@ -171,6 +172,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     sessions_visibility::register(dispatcher);
     home::register(dispatcher);
     issues::register(dispatcher);
+    item_refs::register(dispatcher);
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
     chat::register(dispatcher);

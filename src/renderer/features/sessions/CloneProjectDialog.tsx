@@ -4,6 +4,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FolderOpenIcon, LockIcon } from 'lucide-react'
 import { FilterableGroupedListbox } from '@/components/FilterableGroupedListbox'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import type { ListboxGroup } from '@/components/FilterableGroupedListbox'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -35,7 +36,7 @@ function toGroups(
   onRetry: (owner: string) => void
 ): { groups: ListboxGroup<RepoItem>[]; shown: number; total: number } {
   if (!listing) return { groups: [], shown: 0, total: 0 }
-  const needle = filter.trim().toLowerCase()
+  const needle = effectiveFilterQuery(filter).toLowerCase()
   const self = listing.owners.filter((owner) => owner.kind === 'self')
   const orgs = listing.owners.filter((owner) => owner.kind === 'org').sort((a, b) => a.owner.localeCompare(b.owner))
   let shown = 0
@@ -318,14 +319,14 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
                       Retry
                     </Button>
                   </div>
-                ) : filter ? (
+                ) : effectiveFilterQuery(filter) ? (
                   'No repositories match'
                 ) : (
                   'No repositories found'
                 )
               }
               countText={countText}
-              announcement={countText}
+              announceResults={!loading && !loadError}
             />
           )}
           <div role="status" className="sr-only">

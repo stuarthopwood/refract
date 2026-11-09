@@ -18,6 +18,7 @@ use super::{AppState, Dispatcher, HandlerFuture, IpcError};
 
 pub fn register(d: &mut Dispatcher) {
     d.register("readiness.check", readiness_check);
+    d.register("readiness.checkStep", readiness_check_step);
     d.register("readiness.installDependency", readiness_install_dependency);
 }
 
@@ -46,11 +47,61 @@ const OMP_TESTED_MINOR: u32 = 17;
 const PROBE_READY_PROMPT_AFTER_MS: u64 = 30_000;
 const PROBE_READY_CEILING_MS: u64 = 60_000;
 const PROBE_REQUEST_TIMEOUT_MS: u64 = 60_000;
+/// Whole sign-in step (spawn plus every request): a wedged scratch omp must end the step as
+/// Failed rather than leave the loading page spinning for the sum of the per-request bounds.
+const SIGNED_IN_STEP_BOUND_MS: u64 = 90_000;
 
-/// `omp --version` is bounded: a hung PATH-resolved binary must not hang `readiness.check`.
+/// `omp --version` and `git --version` are bounded: a hung PATH-resolved binary must not hang
+/// `readiness.check` or stall a loading-page step.
 const OMP_VERSION_PROBE_TIMEOUT_MS: u64 = 10_000;
 pub fn readiness_check(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move { Ok(compute_readiness().await) })
+}
+
+/// The launch checks in the order the loading page runs them; keys match `Readiness` fields.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Step {
+    Git,
+    Omp,
+    OmpSignedIn,
+}
+
+impl Step {
+    fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "git" => Some(Self::Git),
+            "omp" => Some(Self::Omp),
+            "ompSignedIn" => Some(Self::OmpSignedIn),
+            _ => None,
+        }
+    }
+}
+
+/// Reads the single step-key argument of `readiness.checkStep`.
+fn step_from_args(args: &[Value]) -> Result<Step, IpcError> {
+    args.first()
+        .and_then(Value::as_str)
+        .and_then(Step::parse)
+        .ok_or_else(|| {
+            IpcError::new(
+                "invalid-argument",
+                "readiness.checkStep expects one of 'git' | 'omp' | 'ompSignedIn'",
+            )
+        })
+}
+
+/// Runs one check so the loading page can show the three steps one at a time and stop at the
+/// first failure; resolves to a bare `Check` (same shape as a `readiness.check` field).
+fn readiness_check_step(_state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let step = step_from_args(&args)?;
+        let check = match step {
+            Step::Git => check_git().await,
+            Step::Omp => check_omp().await,
+            Step::OmpSignedIn => check_omp_signed_in().await,
+        };
+        Ok(serde_json::json!(check))
+    })
 }
 
 /// Shared by the `readiness.check` handler and the post-install re-check.
@@ -65,7 +116,12 @@ async fn compute_readiness() -> Value {
 }
 
 async fn check_git() -> Check {
-    let result = git_raw(&std::env::temp_dir(), &["--version"], None).await;
+    let result = git_raw(
+        &std::env::temp_dir(),
+        &["--version"],
+        Some(Duration::from_millis(OMP_VERSION_PROBE_TIMEOUT_MS)),
+    )
+    .await;
     if result.code != 0 {
         return Check {
             ok: false,
@@ -251,9 +307,17 @@ async fn check_omp_signed_in() -> Check {
         ready_ceiling_ms: PROBE_READY_CEILING_MS,
     };
 
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(SIGNED_IN_STEP_BOUND_MS);
     let result = match OmpProcess::spawn(opts).await {
         Ok(proc) => {
-            let outcome = probe_signed_in(&proc).await;
+            let outcome = match tokio::time::timeout_at(deadline, probe_signed_in(&proc)).await {
+                Ok(outcome) => outcome,
+                Err(_) => Check {
+                    ok: false,
+                    hint: Some(format!("The sign-in check timed out. {SIGNED_IN_HINT}")),
+                    ..Default::default()
+                },
+            };
             proc.stop().await;
             outcome
         }
@@ -500,3 +564,6 @@ fn readiness_install_dependency(state: AppState, args: Vec<Value>) -> HandlerFut
         Ok(Value::Null)
     })
 }
+
+#[cfg(test)]
+mod tests;
