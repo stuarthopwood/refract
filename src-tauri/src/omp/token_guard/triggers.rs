@@ -56,8 +56,7 @@ const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 /// or unreadable file means no overrides.
 pub async fn project_overrides(project_path: &Path) -> Vec<String> {
     use tokio::io::AsyncReadExt;
-    let Ok(file) = tokio::fs::File::open(project_path.join(".omp").join("config.yml")).await
-    else {
+    let Ok(file) = tokio::fs::File::open(project_path.join(".omp").join("config.yml")).await else {
         return Vec::new();
     };
     let mut bytes = Vec::new();

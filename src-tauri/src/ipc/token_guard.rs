@@ -1,10 +1,13 @@
 // `tokenGuard.get/set/reset/resetAll/dismissThresholdsReset`. No path or file content comes from the renderer.
 // A change applies to the next launched Session.
 
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
+
 use serde_json::{json, Value};
 
 use crate::ipc::model_roles::list_catalog_models;
-use crate::omp::token_guard::values::{self, ValueMap};
+use crate::omp::token_guard::values::{self, Global};
 use crate::omp::token_guard::{legacy, migrate, triggers};
 
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
@@ -46,21 +49,43 @@ fn token_guard_handoff(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-fn snapshot(values: &ValueMap) -> Value {
+type ContextWindows = Arc<HashMap<String, i64>>;
+
+/// Model context windows by selector. `omp models` takes about a second, so a write reuses what
+/// the last Settings load read; only `tokenGuard.get` refreshes it.
+static CONTEXT_WINDOWS: Mutex<Option<ContextWindows>> = Mutex::new(None);
+
+async fn context_windows(refresh: bool) -> ContextWindows {
+    let cached = CONTEXT_WINDOWS.lock().expect("poisoned").clone();
+    if let (false, Some(windows)) = (refresh, &cached) {
+        return Arc::clone(windows);
+    }
+    match list_catalog_models("chat").await {
+        Ok(entries) => {
+            let windows: ContextWindows = Arc::new(
+                entries
+                    .into_iter()
+                    .filter_map(|e| Some((e.selector, e.context_window?)))
+                    .collect(),
+            );
+            *CONTEXT_WINDOWS.lock().expect("poisoned") = Some(Arc::clone(&windows));
+            windows
+        }
+        Err(_) => cached.unwrap_or_default(),
+    }
+}
+
+fn snapshot(values: &values::ValueMap) -> Value {
     json!({ "values": values::to_object(values), "defaults": values::to_object(&values::defaults()) })
 }
 
 /// Default model plus the models of open Sessions, each with its resulting compaction trigger.
-async fn effective_triggers(state: &AppState, values: &ValueMap) -> Vec<Value> {
-    let mut models: Vec<String> = Vec::new();
-    if let Ok(list) = values::read_list().await {
-        if let Some(m) = list
-            .pointer("/modelRoles/value/default")
-            .and_then(Value::as_str)
-        {
-            models.push(m.to_string());
-        }
-    }
+async fn effective_triggers(
+    state: &AppState,
+    global: &Global,
+    windows: &HashMap<String, i64>,
+) -> Vec<Value> {
+    let mut models: Vec<String> = global.default_model.iter().cloned().collect();
     for s in state.registry.lock().await.snapshot().sessions {
         if s.archived_at.is_none() {
             if let Some(m) = s.last_model {
@@ -71,16 +96,12 @@ async fn effective_triggers(state: &AppState, values: &ValueMap) -> Vec<Value> {
             }
         }
     }
-    let catalog = list_catalog_models("chat").await.unwrap_or_default();
     models
         .iter()
         .filter_map(|model| {
             let bare = model.split(':').next().unwrap_or(model);
-            let window = catalog
-                .iter()
-                .find(|e| e.selector == *model || e.selector == bare)?
-                .context_window?;
-            serde_json::to_value(triggers::trigger_for(bare, window, values)).ok()
+            let window = *windows.get(model.as_str()).or_else(|| windows.get(bare))?;
+            serde_json::to_value(triggers::trigger_for(bare, window, &global.values)).ok()
         })
         .collect()
 }
@@ -105,10 +126,15 @@ async fn project_overrides(state: &AppState, args: &[Value]) -> Vec<String> {
     }
 }
 
-async fn full_snapshot(state: &AppState, args: &[Value], values: &ValueMap) -> Value {
-    let mut result = snapshot(values);
+async fn full_snapshot(
+    state: &AppState,
+    args: &[Value],
+    global: &Global,
+    windows: &HashMap<String, i64>,
+) -> Value {
+    let mut result = snapshot(&global.values);
     result["migration"] = json!(migrate::status(&state.data_dir).await);
-    result["effectiveTriggers"] = json!(effective_triggers(state, values).await);
+    result["effectiveTriggers"] = json!(effective_triggers(state, global, windows).await);
     result["projectOverrides"] = json!(project_overrides(state, args).await);
     result
 }
@@ -133,16 +159,22 @@ async fn require_migrated(state: &AppState) -> Result<(), IpcError> {
 }
 
 /// Only reports the migration notice: screens other than Settings > Advanced also load, and must
-/// not spend it.
+/// not spend it. A migration still running is not awaited: the old values and `pending` come back
+/// at once, and the migration runs in the background.
 fn token_guard_get(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        migrate::ensure(&state.data_dir).await;
-        let values = if migrate::is_done(&state.data_dir).await {
-            values::load_global().await.map_err(invalid_argument)?
+        let (global, windows) = if migrate::is_done(&state.data_dir).await {
+            let (global, windows) = tokio::join!(values::load_global(), context_windows(true));
+            (global.map_err(invalid_argument)?, windows)
         } else {
-            legacy::effective(&state.data_dir).await
+            migrate::start(&state.data_dir);
+            let global = Global {
+                values: legacy::effective(&state.data_dir).await,
+                default_model: None,
+            };
+            (global, context_windows(true).await)
         };
-        Ok(full_snapshot(&state, &args, &values).await)
+        Ok(full_snapshot(&state, &args, &global, &windows).await)
     })
 }
 
@@ -165,7 +197,8 @@ fn token_guard_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .ok_or_else(|| invalid_argument("tokenGuard.set expects { key, value }"))?;
         require_migrated(&state).await?;
         let updated = values::set(&key, value).await.map_err(invalid_argument)?;
-        Ok(full_snapshot(&state, &args, &updated).await)
+        let windows = context_windows(false).await;
+        Ok(full_snapshot(&state, &args, &updated, &windows).await)
     })
 }
 
@@ -174,7 +207,8 @@ fn token_guard_reset(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let key = key_arg(&args, "tokenGuard.reset")?;
         require_migrated(&state).await?;
         let updated = values::reset(&key).await.map_err(invalid_argument)?;
-        Ok(full_snapshot(&state, &args, &updated).await)
+        let windows = context_windows(false).await;
+        Ok(full_snapshot(&state, &args, &updated, &windows).await)
     })
 }
 
@@ -182,6 +216,7 @@ fn token_guard_reset_all(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         require_migrated(&state).await?;
         let updated = values::reset_all().await.map_err(invalid_argument)?;
-        Ok(full_snapshot(&state, &args, &updated).await)
+        let windows = context_windows(false).await;
+        Ok(full_snapshot(&state, &args, &updated, &windows).await)
     })
 }

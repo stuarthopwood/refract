@@ -100,18 +100,19 @@ pub struct RealOmpExecutor;
 /// Concurrent `omp` on one scratch cwd was suspected, not confirmed, to return partial config.
 static OMP_INVOCATION_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
 
-/// Applies one deadline to lock acquisition and the `omp` call together, so queued callers fail
-/// at the same total deadline instead of getting a fresh budget after the lock.
+/// The deadline starts once the lock is held: a call queued behind slow edits must not time out
+/// before it has run at all.
 async fn call_config_locked(
     executor: &dyn OmpExecutor,
     args: &[String],
     failure_message: &str,
     strip_env_vars: &[&str],
 ) -> Result<String, OmpConfigError> {
-    match tokio::time::timeout(Duration::from_millis(TIMEOUT_MS), async {
-        let _permit = OMP_INVOCATION_LOCK.lock().await;
-        executor.call(args, failure_message, strip_env_vars).await
-    })
+    let _permit = OMP_INVOCATION_LOCK.lock().await;
+    match tokio::time::timeout(
+        Duration::from_millis(TIMEOUT_MS),
+        executor.call(args, failure_message, strip_env_vars),
+    )
     .await
     {
         Ok(result) => result,

@@ -4,6 +4,8 @@ import type { Result } from '../../shared/ipc'
 import type { TokenGuardLaunchWarning, TokenGuardMigration, TokenGuardSnapshot, TokenGuardTrigger } from '../../shared/tokenGuard'
 import type { TokenGuardValues } from '../../shared/tokenGuard'
 
+const MIGRATION_POLL_MS = 1500
+
 // #1767: the token guard values live in OMP's global config; this store mirrors them for Settings
 // > Advanced. A change reaches a running Session only for the keys marked `live`.
 interface TokenGuardState {
@@ -52,6 +54,8 @@ export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
     load: async (id) => {
       repositoryId = id
       apply(await window.refract.tokenGuard.get(id))
+      // The migration runs in the background; its backup notice and the OMP values arrive on a later read.
+      if (get().migration?.status === 'pending') setTimeout(() => void get().load(repositoryId), MIGRATION_POLL_MS)
     },
     set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value, repositoryId)),
     reset: async (key) => void apply(await window.refract.tokenGuard.reset(key, repositoryId)),

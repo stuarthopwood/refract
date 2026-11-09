@@ -3,6 +3,7 @@
 
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -11,7 +12,7 @@ use serde_json::{json, Value};
 
 use super::{legacy, values};
 use crate::omp::advisor_roster::agent_dir;
-use crate::omp::config::set_config;
+use crate::omp::config::{list_config, set_config};
 use crate::store::atomic_json::write_json_file;
 
 const MARKER_FILE: &str = "token-guard-migration.json";
@@ -101,8 +102,10 @@ fn backup_path(config: &Path, date: &str, taken: impl Fn(&Path) -> bool) -> Path
 }
 
 /// Backs up, writes Refract's set with the user's `token-guard.json` choices on top, then marks done and retires the file.
+/// A key whose value in `current` (one `omp config list`) already equals the target is not written again.
 async fn attempt<W, F>(
     dir: &Path,
+    current: &Value,
     config: Option<&Path>,
     date: &str,
     write: W,
@@ -130,6 +133,9 @@ where
     // A positive thresholdTokens would beat the percent, so Refract pins it off.
     wanted.insert("compaction.thresholdTokens".to_string(), json!(-1));
     for (key, value) in wanted {
+        if values::raw_value(current, &key) == Some(&value) {
+            continue;
+        }
         write(key.clone(), value)
             .await
             .map_err(|err| format!("Could not write {key}: {err}"))?;
@@ -170,7 +176,9 @@ pub async fn ensure(dir: &Path) -> bool {
         return true;
     }
     let config = agent_dir().map(|d| d.join("config.yml"));
-    match attempt(dir, config.as_deref(), &today(), write_to_omp).await {
+    // A failed read only costs the skipped-write saving: the writes then report omp's own error.
+    let current = list_config(&[]).await.unwrap_or(Value::Null);
+    match attempt(dir, &current, config.as_deref(), &today(), write_to_omp).await {
         Ok(()) => {
             *LAST_ERROR.lock().expect("poisoned") = None;
             true
@@ -181,6 +189,21 @@ pub async fn ensure(dir: &Path) -> bool {
             false
         }
     }
+}
+
+static STARTED: AtomicBool = AtomicBool::new(false);
+
+/// Runs `ensure` in the background (one run at a time) so a read never waits on the migration;
+/// `status` reports `pending` until it finishes.
+pub fn start(dir: &Path) {
+    if STARTED.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    let dir = dir.to_path_buf();
+    tokio::spawn(async move {
+        ensure(&dir).await;
+        STARTED.store(false, Ordering::Release);
+    });
 }
 
 pub async fn status(dir: &Path) -> Status {
@@ -214,7 +237,7 @@ pub async fn dismiss_notice(dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::AtomicUsize;
 
     #[test]
     fn date_is_utc_calendar_day() {
@@ -264,7 +287,7 @@ mod tests {
                 }
             }
         };
-        let err = attempt(&dir, Some(&config), "2026-11-06", failing)
+        let err = attempt(&dir, &Value::Null, Some(&config), "2026-11-06", failing)
             .await
             .unwrap_err();
         assert!(err.contains("boom"));
@@ -276,7 +299,7 @@ mod tests {
             written.lock().unwrap().push((k, v));
             async { Ok(()) }
         };
-        attempt(&dir, Some(&config), "2026-11-06", ok)
+        attempt(&dir, &Value::Null, Some(&config), "2026-11-06", ok)
             .await
             .unwrap();
         let marker = read_marker(&dir).await.expect("marker");
@@ -305,12 +328,37 @@ mod tests {
     async fn success_marks_done_and_retires_the_file() {
         let dir = scratch("done");
         std::fs::write(legacy::path(&dir), r#"{"version":2,"overrides":{}}"#).unwrap();
-        attempt(&dir, None, "2026-11-06", |_, _| async { Ok(()) })
-            .await
-            .unwrap();
+        attempt(&dir, &Value::Null, None, "2026-11-06", |_, _| async {
+            Ok(())
+        })
+        .await
+        .unwrap();
         assert!(is_done(&dir).await);
         assert_eq!(status(&dir).await.status, "done");
         assert!(!legacy::path(&dir).exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn keys_already_at_the_target_are_not_written_again() {
+        let dir = scratch("skip");
+        std::fs::write(
+            legacy::path(&dir),
+            r#"{"version":2,"overrides":{"task.maxConcurrency":3,"task.softRequestBudget":7}}"#,
+        )
+        .unwrap();
+        let current = json!({ "task.maxConcurrency": { "value": 3 } });
+        let written = std::sync::Mutex::new(Vec::new());
+        let ok = |k: String, _: Value| {
+            written.lock().unwrap().push(k);
+            async { Ok(()) }
+        };
+        attempt(&dir, &current, None, "2026-11-06", ok)
+            .await
+            .unwrap();
+        let written = written.lock().unwrap();
+        assert!(!written.contains(&"task.maxConcurrency".to_string()));
+        assert!(written.contains(&"task.softRequestBudget".to_string()));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -197,39 +197,82 @@ pub fn validate(key: &str, value: &Value) -> Result<(), String> {
     }
 }
 
+/// The value `omp config list --json` holds for a key, as stored (no validation or default).
+pub fn raw_value<'a>(list: &'a Value, key: &str) -> Option<&'a Value> {
+    match key.strip_prefix("modelRoles.") {
+        Some(role) => list.pointer(&format!("/modelRoles/value/{role}")),
+        None => list.get(key).and_then(|entry| entry.get("value")),
+    }
+}
+
 /// The effective value of every token guard key in one `omp config list --json` result. A value
 /// that fails validation (for example omp's own `-1` percent) is shown as Refract's default.
 pub fn effective_from_list(list: &Value) -> ValueMap {
     let mut values = defaults();
     for (key, _) in KEYS {
-        let found = match key.strip_prefix("modelRoles.") {
-            Some(role) => list.pointer(&format!("/modelRoles/value/{role}")),
-            None => list.get(*key).and_then(|entry| entry.get("value")),
-        };
-        if let Some(value) = found.filter(|v| validate(key, v).is_ok()) {
+        if let Some(value) = raw_value(list, key).filter(|v| validate(key, v).is_ok()) {
             values.insert((*key).to_string(), value.clone());
         }
     }
     values
 }
 
-/// The effective value of every omp setting, as `omp config list --json` returns it.
-pub async fn read_list() -> Result<Value, String> {
-    list_config(&[])
-        .await
-        .map_err(|err| format!("Could not read token guard values: {}", err.message))
+/// What one `omp config list` yields for the token guard: its values plus the default model
+/// (not a token guard key, but it picks the compaction trigger shown next to them).
+#[derive(Clone)]
+pub struct Global {
+    pub values: ValueMap,
+    pub default_model: Option<String>,
+}
+
+impl Global {
+    fn from_list(list: &Value) -> Self {
+        Self {
+            values: effective_from_list(list),
+            default_model: raw_value(list, "modelRoles.default")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }
+    }
+}
+
+/// The last snapshot read from omp. A write patches it instead of paying for another
+/// `omp config list` (about 2 s); `load_global` refreshes it, so an outside edit shows up the next
+/// time Settings loads.
+static SNAPSHOT: std::sync::Mutex<Option<Global>> = std::sync::Mutex::new(None);
+
+fn cached() -> Option<Global> {
+    SNAPSHOT.lock().expect("poisoned").clone()
+}
+
+fn remember(global: &Global) {
+    *SNAPSHOT.lock().expect("poisoned") = Some(global.clone());
+}
+
+fn forget() {
+    *SNAPSHOT.lock().expect("poisoned") = None;
 }
 
 fn omp_error(err: OmpConfigError) -> String {
     format!("Could not save token guard values: {}", err.message)
 }
 
-/// The effective values for every key, read from the global omp config.
-pub async fn load_global() -> Result<ValueMap, String> {
+/// Reads every key from the global omp config with one `omp config list`.
+pub async fn load_global() -> Result<Global, String> {
     let list = list_config(&[])
         .await
         .map_err(|err| format!("Could not read token guard values: {}", err.message))?;
-    Ok(effective_from_list(&list))
+    let global = Global::from_list(&list);
+    remember(&global);
+    Ok(global)
+}
+
+/// The remembered snapshot, or a fresh read when there is none yet.
+async fn current() -> Result<Global, String> {
+    match cached() {
+        Some(global) => Ok(global),
+        None => load_global().await,
+    }
 }
 
 /// Writes one key to the global omp config. The advisor role is read-merge-written because `omp config get modelRoles.advisor` is unsupported.
@@ -253,23 +296,37 @@ pub async fn write_key(key: &str, value: &Value) -> Result<(), String> {
 }
 
 /// Stores a deliberate change for one key and returns the new effective values.
-pub async fn set(key: &str, value: Value) -> Result<ValueMap, String> {
-    write_key(key, &value).await?;
-    load_global().await
+pub async fn set(key: &str, value: Value) -> Result<Global, String> {
+    if let Err(err) = write_key(key, &value).await {
+        // A write that fails midway (the prewalk pair) may have changed omp anyway.
+        forget();
+        return Err(err);
+    }
+    let mut global = current().await?;
+    global.values.insert(key.to_string(), value);
+    remember(&global);
+    Ok(global)
 }
 
 /// Writes Refract's default for one key (omp has no unset) and returns the new effective values.
-pub async fn reset(key: &str) -> Result<ValueMap, String> {
+pub async fn reset(key: &str) -> Result<Global, String> {
     let default = default_for(key).ok_or_else(|| format!("Unknown token guard key: {key}"))?;
     set(key, default).await
 }
 
 /// Writes Refract's default for every key (the "Optimise token usage" button).
-pub async fn reset_all() -> Result<ValueMap, String> {
+pub async fn reset_all() -> Result<Global, String> {
     for (key, value) in defaults() {
-        write_key(&key, &value).await?;
+        if let Err(err) = write_key(&key, &value).await {
+            // Some keys are already written, so the remembered snapshot no longer matches.
+            forget();
+            return Err(err);
+        }
     }
-    load_global().await
+    let mut global = current().await?;
+    global.values = defaults();
+    remember(&global);
+    Ok(global)
 }
 
 pub fn to_object(values: &ValueMap) -> Value {
@@ -306,6 +363,19 @@ mod tests {
         assert_eq!(values["task.softRequestBudget"], json!(40));
         assert_eq!(values["compaction.thresholdPercent"], json!(70));
         assert_eq!(values["modelRoles.advisor"], json!("p/m:auto"));
+    }
+
+    #[test]
+    fn one_list_gives_the_values_and_the_default_model() {
+        let list = json!({
+            "task.maxConcurrency": { "value": 3 },
+            "modelRoles": { "value": { "default": "p/m:high", "advisor": "p/a:auto" } }
+        });
+        let global = Global::from_list(&list);
+        assert_eq!(global.default_model.as_deref(), Some("p/m:high"));
+        assert_eq!(global.values["task.maxConcurrency"], json!(3));
+        assert_eq!(global.values["modelRoles.advisor"], json!("p/a:auto"));
+        assert_eq!(raw_value(&list, "compaction.thresholdPercent"), None);
     }
 
     #[test]
