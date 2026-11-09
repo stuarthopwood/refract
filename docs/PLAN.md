@@ -1159,3 +1159,5 @@ Also filed 2026-11-09 (Stuart): **#1810** (`p1`, `chore`, `build`), Epic: Unit t
 Also filed 2026-11-09 (Stuart): **#1817** (`p1`, `bug`, `chat`), Bug: Chat: skill invocations show the raw injected prompt instead of the Skill invoked row; add a summary tooltip (regression of #547).
 
 Also filed 2026-11-09 (Stuart): **#1818** (`p1`, `chat`, `design`), UI Polish: Chat: Ask card action bar background matches the card. In progress on `fix/1818-card-footer`: the shared `CardFooter` drops its `bg-surface-subtle` band for every card.
+
+Also filed 2026-11-09 (Stuart): **#1827** (`p1`, `enhancement`, `chat`), Enhancement: Composer: /new accepts an initial prompt for the new Conversation.
