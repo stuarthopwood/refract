@@ -5471,11 +5471,19 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T422 [US1] Live check `scripts/verify-tauri-758.mjs`, update `docs/PLAN.md`, then
   `node scripts/ci-local.mjs` per FR-123 (missing)
 
-## Phase 87: Convergence (#1741 linked images in PR descriptions, FR-124)
+## Phase 87: Convergence (#1157 every Refract git/gh reader holds a worktree read guard, FR-029/FR-030)
 
-- [x] T423 [US1] `Markdown.tsx`: an image inside a link renders `ResolvedImage` (alt text as fallback)
+- [x] T423 [US1] Take `worktree_access::read_guard_bounded` per git/gh call in the explorer status,
+  `sessions.diffStat`, readout `diff_stat`/`compute_branch`, HEAD watch, PR lookup and touched-item
+  lookups; a refusal reads as `None`/unavailable, per FR-029 and FR-030 (missing)
+- [x] T424 [US1] Record the one-guard-per-call rule at `worktree_access.rs`, then `node scripts/ci-local.mjs`
+  per FR-030 (missing)
+
+## Phase 88: Convergence (#1741 linked images in PR descriptions, FR-124)
+
+- [x] T425 [US1] `Markdown.tsx`: an image inside a link renders `ResolvedImage` (alt text as fallback)
   when `resolveImage` is set; the chat branch is unchanged, per FR-124 (missing)
-- [x] T424 `github/images.rs`: allow `dependabot-badges.githubapp.com` and accept SVG from that host only
+- [x] T426 `github/images.rs`: allow `dependabot-badges.githubapp.com` and accept SVG from that host only
   (signature checked), with Rust tests, per FR-124 (missing)
-- [ ] T425 Live check a Dependabot PR description, update `docs/PLAN.md`, then `cargo` and
+- [ ] T427 Live check a Dependabot PR description, update `docs/PLAN.md`, then `cargo` and
   `node scripts/ci-local.mjs` per FR-124
