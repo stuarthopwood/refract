@@ -1150,3 +1150,9 @@ Also filed 2026-11-09 (Stuart): **#1804** (`p2`, `feature`, `right-pane`), Epic:
 Also filed 2026-11-09 (Stuart): **#1793** (`p2`, `feature`, `right-pane`), Feat: API tool: Postman-style saved requests scoped by project, environment, and folder; linked from #1803.
 
 Also filed 2026-11-09 (Stuart): **#1794** (`p1`, `design`, `accessibility`), UI Polish: Loading page: three-step progress indicator and larger logo and tagline; related #566 and #7.
+
+Also filed 2026-11-09 (Stuart): **#1811** (`p1`, `design`, `session-list`), Filters: start filtering after three characters; **#1812** (`p1`, `chat`, `design`), Composer: `/` commands work before a Session's agent has started.
+
+Also filed 2026-11-09 (Stuart): **#1813** (`p2`, `feature`, `chat`, `settings`), Prompt templates: create, edit, and manage OMP prompt templates; **#1814** (`p2`, `feature`, `chat`, `settings`), Hooks: manage OMP hooks in Settings and show hook activity in chat; **#1815** (`p2`, `feature`, `documentation`), Full README and docs site.
+
+Also filed 2026-11-09 (Stuart): **#1810** (`p1`, `chore`, `build`), Epic: Unit tests, CI, and release, with children **#1806** to **#1809** (test strategy first, which ends the AGENTS.md no-new-tests rule when it lands; then CI, release automation, and backfill tests).
