@@ -2,6 +2,7 @@
 // lookup runs only on hover, focus or click (#610: no existence check at render time) and is cached
 // for five minutes per repository and number.
 import * as React from 'react'
+import { InlineStatus } from '@/components/InlineStatus'
 import { UserAvatar } from '@/components/UserAvatar'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { StatePill } from '@/features/pull-requests/StatePill'
@@ -13,17 +14,29 @@ import { linkClassName } from './linkStyles'
 import { resolveItemRef, type ItemRefTarget } from './itemRefs'
 
 const CACHE_MS = 5 * 60 * 1000
+const CACHE_MAX = 200
+// Insertion order is recency order: a hit is deleted and re-inserted, so the first key is the oldest.
 const cache = new Map<string, { at: number; card: Promise<ItemCard | null> }>()
 
 function lookupCard(target: ItemRefTarget): Promise<ItemCard | null> {
   const key = `${target.repositoryId}|${target.owner ?? ''}/${target.repo ?? ''}#${target.number}`
   const hit = cache.get(key)
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.card
+  if (hit) {
+    cache.delete(key)
+    if (Date.now() - hit.at < CACHE_MS) {
+      cache.set(key, hit)
+      return hit.card
+    }
+  }
   const card = window.refract.itemRefs
     .lookup(target.repositoryId, target.owner, target.repo, target.number)
     .then((result) => (result.ok ? result.value : null))
     .catch(() => null)
   cache.set(key, { at: Date.now(), card })
+  if (cache.size > CACHE_MAX) {
+    const oldest = cache.keys().next().value
+    if (oldest !== undefined) cache.delete(oldest)
+  }
   // A failed lookup (offline, no access) must not stick for five minutes.
   void card.then((value) => {
     if (!value && cache.get(key)?.card === card) cache.delete(key)
@@ -70,11 +83,13 @@ export function ItemRefLink({ text, sessionId, streaming }: { text: string; sess
   const repository = useRepositoriesStore((state) => state.repositories.find((candidate) => candidate.id === repositoryId))
   const target = React.useMemo(() => (repository ? resolveItemRef(text, repository) : null), [text, repository])
   const [card, setCard] = React.useState<ItemCard | null | 'loading'>('loading')
+  const [open, setOpen] = React.useState(false)
+  const contentId = React.useId()
   if (!target) return <>{text}</>
   // Inert while streaming, like every other link in a live message.
   if (streaming) return <span className="text-accent-text underline underline-offset-2">{text}</span>
 
-  const open = (): void => {
+  const openItem = (): void => {
     void lookupCard(target).then((found) => {
       if (found?.kind === 'pull-request' && target.inProject) {
         usePullRequestsStore.getState().openPullRequest(target.repositoryId, target.number)
@@ -90,19 +105,38 @@ export function ItemRefLink({ text, sessionId, streaming }: { text: string; sess
   }
 
   return (
-    <HoverCard openDelay={300} onOpenChange={(isOpen) => isOpen && void lookupCard(target).then(setCard)}>
+    <HoverCard
+      openDelay={300}
+      onOpenChange={(isOpen) => {
+        setOpen(isOpen)
+        if (!isOpen) return
+        // A previous failed or loaded card must not flash before this lookup settles.
+        setCard('loading')
+        void lookupCard(target).then(setCard)
+      }}
+    >
       <HoverCardTrigger asChild>
-        <Button type="button" variant="link" className={cn(linkClassName, 'inline h-auto min-h-6 p-0 whitespace-normal')} onClick={open}>
+        <Button
+          type="button"
+          variant="link"
+          className={cn(linkClassName, 'inline h-auto min-h-6 p-0 whitespace-normal')}
+          aria-describedby={open ? contentId : undefined}
+          onClick={openItem}
+        >
           {text}
         </Button>
       </HoverCardTrigger>
-      <HoverCardContent side="top" align="start">
+      <HoverCardContent id={contentId} side="top" align="start">
         {card === 'loading' ? (
-          <span className="text-muted-foreground">Loading {text}…</span>
+          <InlineStatus tone="loading" density="compact" className="p-0">
+            Loading {text}…
+          </InlineStatus>
         ) : card ? (
           <ItemCardBody card={card} />
         ) : (
-          <span className="text-muted-foreground">Could not load {text}.</span>
+          <InlineStatus tone="notice" density="compact" className="p-0">
+            Could not load {text}.
+          </InlineStatus>
         )}
       </HoverCardContent>
     </HoverCard>

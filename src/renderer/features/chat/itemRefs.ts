@@ -65,7 +65,7 @@ function linkChildren(parent: HastNode): void {
   if (!parent.children || (parent.tagName && SKIPPED_TAGS.has(parent.tagName))) return
   const next: HastNode[] = []
   for (const child of parent.children) {
-    const parts = child.type === 'text' && child.value ? splitItemRefs(child.value) : null
+    const parts = child.type === 'text' && child.value?.includes('#') ? splitItemRefs(child.value) : null
     if (!parts) {
       linkChildren(child)
       next.push(child)
