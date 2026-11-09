@@ -27,6 +27,8 @@ interface TokenGuardState {
 export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
   // The Project the last `load` named; later writes pass it so their snapshot keeps the overrides.
   let repositoryId: string | undefined
+  // Several Settings rows call `load` on mount; one poll chain serves them all.
+  let pollScheduled = false
   const apply = (result: Result<TokenGuardSnapshot>): boolean => {
     if (result.ok) {
       set({
@@ -53,9 +55,16 @@ export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
     error: null,
     load: async (id) => {
       repositoryId = id
-      apply(await window.refract.tokenGuard.get(id))
+      const ok = apply(await window.refract.tokenGuard.get(id))
       // The migration runs in the background; its backup notice and the OMP values arrive on a later read.
-      if (get().migration?.status === 'pending') setTimeout(() => void get().load(repositoryId), MIGRATION_POLL_MS)
+      // A failed read ends the chain, so an erroring backend is not hammered every poll.
+      if (ok && get().migration?.status === 'pending' && !pollScheduled) {
+        pollScheduled = true
+        setTimeout(() => {
+          pollScheduled = false
+          void get().load(repositoryId)
+        }, MIGRATION_POLL_MS)
+      }
     },
     set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value, repositoryId)),
     reset: async (key) => void apply(await window.refract.tokenGuard.reset(key, repositoryId)),

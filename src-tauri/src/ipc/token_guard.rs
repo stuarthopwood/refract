@@ -172,7 +172,8 @@ fn token_guard_get(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 values: legacy::effective(&state.data_dir).await,
                 default_model: None,
             };
-            (global, context_windows(true).await)
+            // Cached windows only: `omp models` would queue on the lock the migration is holding.
+            (global, context_windows(false).await)
         };
         Ok(full_snapshot(&state, &args, &global, &windows).await)
     })

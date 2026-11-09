@@ -8,9 +8,11 @@ export type TokenGuardValue = number | boolean | string | string[] | Record<stri
 export type TokenGuardValues = Record<string, TokenGuardValue>;
 
 /** The one-time move of the old `token-guard.json` into the global config. `backupPath` is present
- * until the notice is dismissed; `error` while `failed` (retried every launch). */
+ * until the notice is dismissed; `error` while `failed` (retried every launch). `skipped` is a debug
+ * launch with a scratch `REFRACT_DATA_DIR` but no `PI_CODING_AGENT_DIR`: the real global config is
+ * never touched, `error` says why, and the old values stay in effect. */
 export interface TokenGuardMigration {
-  status: 'pending' | 'done' | 'failed';
+  status: 'pending' | 'done' | 'failed' | 'skipped';
   error?: string;
   backupPath?: string;
 }

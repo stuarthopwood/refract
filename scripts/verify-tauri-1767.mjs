@@ -58,11 +58,14 @@ async function launch(env) {
   return { cdp, child: launched.child };
 }
 
-async function openAdvanced(cdp, repoDir) {
-  await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]') || !!document.querySelector('[aria-label="Settings"]')`, { timeoutMs: 60_000, label: 'Readiness or main screen' });
-  if (await cdp.evaluate(`!document.querySelector('[aria-label="Settings"]') && !!document.querySelector('[data-readiness-primary]')`)) {
-    await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
-    await addRepository(cdp, repoDir);
+async function openAdvanced(cdp, repoDir, { registered = false } = {}) {
+  // A relaunch already has the Project: Readiness only flashes while it checks, so waiting on its button would hang.
+  if (!registered) {
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]') || !!document.querySelector('[aria-label="Settings"]')`, { timeoutMs: 60_000, label: 'Readiness or main screen' });
+    if (await cdp.evaluate(`!document.querySelector('[aria-label="Settings"]') && !!document.querySelector('[data-readiness-primary]')`)) {
+      await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
+      await addRepository(cdp, repoDir);
+    }
   }
   await cdp.waitFor(`!!document.querySelector('[aria-label="Settings"]')`, { timeoutMs: 30_000, label: 'Settings button' });
   await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
@@ -147,7 +150,7 @@ async function main() {
     await stopLauncher(session.child).catch(() => {});
 
     session = await launch(env);
-    await openAdvanced(session.cdp, repoDir);
+    await openAdvanced(session.cdp, repoDir, { registered: true });
     await session.cdp.waitFor(`!!document.querySelector('[aria-label="Where compaction starts"]')`, { timeoutMs: 30_000, label: 'trigger list on relaunch' });
     check(backupsIn(agentDir).length === 1, 'Relaunch: no second backup and no second migration', backupsIn(agentDir));
     check(await session.cdp.evaluate(`!document.body.textContent.includes('was backed up to')`), 'Relaunch: the dismissed backup notice stays gone', null);
