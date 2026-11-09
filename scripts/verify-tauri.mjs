@@ -132,12 +132,16 @@ function copyBuiltExe(destDir) {
 async function launchBuiltExe(launcherExe, exePath, { port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
   const webview2DataDir = path.join(path.dirname(exePath), 'webview2-data');
   mkdirSync(webview2DataDir, { recursive: true });
+  // Without this a scratch REFRACT_DATA_DIR still reaches the real ~/.omp (token guard writes skip only when it is unset).
+  const agentDir = path.join(path.dirname(exePath), 'omp-agent');
+  mkdirSync(agentDir, { recursive: true });
   const pidFile = path.join(path.dirname(exePath), 'target.pid');
   const env = {
     ...process.env,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
     WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
     REFRACT_DATA_DIR: dataDir,
+    PI_CODING_AGENT_DIR: agentDir,
     ...extraEnv,
   };
   if (pathPrepend) env.PATH = `${pathPrepend};${process.env.PATH}`;
