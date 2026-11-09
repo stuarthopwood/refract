@@ -60,7 +60,8 @@ function StepMarker({ index, status, selected }: { index: number; status: StepSt
       {status === 'running' && (
         <span
           data-stepper-spinner
-          className="absolute -inset-0.5 animate-spin rounded-full border-2 border-transparent border-r-accent-text border-t-accent-text motion-reduce:animate-none"
+          style={{ inset: -2 }}
+          className="absolute animate-spin rounded-full border-2 border-transparent border-r-accent-text border-t-accent-text motion-reduce:animate-none"
         />
       )}
     </span>
