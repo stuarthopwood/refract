@@ -5,9 +5,12 @@ use std::path::Path;
 
 pub mod args;
 pub mod counter;
+pub mod legacy;
+pub mod migrate;
 pub mod overlay;
 pub mod rules;
 pub mod shake;
+pub mod triggers;
 pub mod values;
 
 /// Writes `bytes` atomically and skips the write when the file already matches, since Windows rename can fail on an open overlay.

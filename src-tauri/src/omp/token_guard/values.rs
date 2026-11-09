@@ -1,17 +1,13 @@
 // Token guard values store (`token-guard.json`). A bad stored value falls back to its default for that key only.
 
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
-use crate::store::atomic_json::{read_json_file, write_json_file};
+use crate::ipc::model_roles::set_model_role;
+use crate::omp::config::{list_config, set_config, OmpConfigError};
 
 pub const STORE_VERSION: u32 = 2;
-/// Version at which thresholds became percents; older stores drop their token thresholds.
-const PERCENT_STORE_VERSION: u32 = 2;
-const FILE_NAME: &str = "token-guard.json";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Kind {
@@ -50,28 +46,12 @@ const KEYS: &[(&str, Kind)] = &[
 
 pub type ValueMap = BTreeMap<String, Value>;
 
-#[derive(Serialize, Deserialize, Default)]
-struct Stored {
-    #[serde(default)]
-    version: u32,
-    #[serde(default)]
-    overrides: BTreeMap<String, Value>,
-    /// Set once the old 200-line `read.defaultLimit` default has been migrated to 1000 (#1545).
-    #[serde(default)]
-    read_limit_migrated: bool,
-    /// Set when the version 2 migration dropped stored token thresholds; cleared once Settings has told the user.
-    #[serde(default)]
-    thresholds_reset_pending: bool,
-    /// Set once a stored `task.softRequestBudget` of 80 (the old default) has been dropped (#1672).
-    #[serde(default)]
-    soft_budget_migrated: bool,
-}
-
-/// Serialises read-modify-write on the store file (Settings edits and launch reads).
-static STORE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-
 fn kind_of(key: &str) -> Option<Kind> {
     KEYS.iter().find(|(k, _)| *k == key).map(|(_, kind)| *kind)
+}
+
+pub fn is_key(key: &str) -> bool {
+    kind_of(key).is_some()
 }
 
 pub fn default_for(key: &str) -> Option<Value> {
@@ -117,9 +97,7 @@ const TODO_EAGER_MODES: &[&str] = &["default", "preferred", "always"];
 const CACHE_WARMING_MODES: &[&str] = &["off", "streaming", "idle"];
 /// The agent clamps a percent threshold to this range.
 const PERCENT_RANGE: std::ops::RangeInclusive<u64> = 1..=99;
-/// Token thresholds the version 1 store held; the percent keys replace them.
-const LEGACY_THRESHOLD_KEYS: &[&str] =
-    &["compaction.thresholdTokens", "compaction.modelThresholds"];
+const MODEL_THRESHOLD_MAX_TOKENS: u64 = 100_000_000;
 
 /// Upper bound for a count key (thresholds and line/size counts share the token ceiling).
 fn max_count(key: &str) -> u64 {
@@ -157,6 +135,25 @@ fn is_percent_string(value: &Value) -> bool {
         })
 }
 
+/// `"f<tokens>"`: a fixed trigger in tokens.
+fn is_fixed_string(value: &Value) -> bool {
+    value
+        .as_str()
+        .and_then(|s| s.strip_prefix('f'))
+        .is_some_and(|digits| {
+            (1..=9).contains(&digits.len())
+                && !digits.starts_with('0')
+                && digits.bytes().all(|b| b.is_ascii_digit())
+        })
+}
+
+/// A `compaction.modelThresholds` entry: a token base (`120000`), a fixed trigger (`"f200000"`) or a percent (`"80%"`).
+fn is_model_threshold(value: &Value) -> bool {
+    is_count(value, 1, MODEL_THRESHOLD_MAX_TOKENS)
+        || is_fixed_string(value)
+        || is_percent_string(value)
+}
+
 fn is_text(value: &Value) -> bool {
     value
         .as_str()
@@ -189,7 +186,7 @@ pub fn validate(key: &str, value: &Value) -> Result<(), String> {
                 && map.iter().all(|(k, v)| {
                     !k.trim().is_empty()
                         && k.chars().count() <= MAX_TEXT_CHARS
-                        && is_percent_string(v)
+                        && is_model_threshold(v)
                 })
         }),
     };
@@ -200,116 +197,136 @@ pub fn validate(key: &str, value: &Value) -> Result<(), String> {
     }
 }
 
-fn store_path(dir: &Path) -> PathBuf {
-    dir.join(FILE_NAME)
-}
-
-fn migrate(stored: &mut Stored) {
-    // Persisted with the next write; until then this runs again with the same outcome.
-    if !stored.read_limit_migrated {
-        if stored.overrides.get("read.defaultLimit") == Some(&json!(200)) {
-            stored.overrides.remove("read.defaultLimit");
-        }
-        stored.read_limit_migrated = true;
-    }
-    if stored.version < PERCENT_STORE_VERSION {
-        let dropped = LEGACY_THRESHOLD_KEYS
-            .iter()
-            .filter(|key| stored.overrides.remove(**key).is_some())
-            .count();
-        stored.thresholds_reset_pending |= dropped > 0;
-        stored.version = PERCENT_STORE_VERSION;
-    }
-    // The old default 80 was stored by earlier builds; drop it once so the new 60 applies (#1672).
-    if !stored.soft_budget_migrated {
-        if stored.overrides.get("task.softRequestBudget") == Some(&json!(80)) {
-            stored.overrides.remove("task.softRequestBudget");
-        }
-        stored.soft_budget_migrated = true;
+/// The value `omp config list --json` holds for a key, as stored (no validation or default).
+pub fn raw_value<'a>(list: &'a Value, key: &str) -> Option<&'a Value> {
+    match key.strip_prefix("modelRoles.") {
+        Some(role) => list.pointer(&format!("/modelRoles/value/{role}")),
+        None => list.get(key).and_then(|entry| entry.get("value")),
     }
 }
 
-async fn read_stored(dir: &Path) -> Stored {
-    let mut stored: Stored = read_json_file(&store_path(dir), Stored::default)
-        .await
-        .unwrap_or_default();
-    migrate(&mut stored);
-    stored
-}
-
-fn effective(stored: &Stored) -> ValueMap {
+/// The effective value of every token guard key in one `omp config list --json` result. A value
+/// that fails validation (for example omp's own `-1` percent) is shown as Refract's default.
+pub fn effective_from_list(list: &Value) -> ValueMap {
     let mut values = defaults();
-    for (key, value) in &stored.overrides {
-        if validate(key, value).is_ok() {
-            values.insert(key.clone(), value.clone());
+    for (key, _) in KEYS {
+        if let Some(value) = raw_value(list, key).filter(|v| validate(key, v).is_ok()) {
+            values.insert((*key).to_string(), value.clone());
         }
     }
     values
 }
 
-/// The effective values for every overlay key (defaults overlaid by valid overrides).
-pub async fn load(dir: &Path) -> ValueMap {
-    let _guard = STORE_LOCK.lock().await;
-    effective(&read_stored(dir).await)
+/// What one `omp config list` yields for the token guard: its values plus the default model
+/// (not a token guard key, but it picks the compaction trigger shown next to them).
+#[derive(Clone)]
+pub struct Global {
+    pub values: ValueMap,
+    pub default_model: Option<String>,
 }
 
-/// True while the store has dropped token thresholds and Settings has not yet told the user.
-pub async fn thresholds_reset_pending(dir: &Path) -> bool {
-    let _guard = STORE_LOCK.lock().await;
-    read_stored(dir).await.thresholds_reset_pending
-}
-
-/// Clears the pending notice once Settings has shown it.
-pub async fn dismiss_thresholds_reset(dir: &Path) -> Result<(), String> {
-    let _guard = STORE_LOCK.lock().await;
-    let mut stored = read_stored(dir).await;
-    if !stored.thresholds_reset_pending {
-        return Ok(());
+impl Global {
+    fn from_list(list: &Value) -> Self {
+        Self {
+            values: effective_from_list(list),
+            default_model: raw_value(list, "modelRoles.default")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+        }
     }
-    stored.thresholds_reset_pending = false;
-    write_json_file(&store_path(dir), &stored)
+}
+
+/// The last snapshot read from omp. A write patches it instead of paying for another
+/// `omp config list` (about 2 s); `load_global` refreshes it, so an outside edit shows up the next
+/// time Settings loads.
+static SNAPSHOT: std::sync::Mutex<Option<Global>> = std::sync::Mutex::new(None);
+
+fn cached() -> Option<Global> {
+    SNAPSHOT.lock().expect("poisoned").clone()
+}
+
+fn remember(global: &Global) {
+    *SNAPSHOT.lock().expect("poisoned") = Some(global.clone());
+}
+
+fn forget() {
+    *SNAPSHOT.lock().expect("poisoned") = None;
+}
+
+fn omp_error(err: OmpConfigError) -> String {
+    format!("Could not save token guard values: {}", err.message)
+}
+
+/// Reads every key from the global omp config with one `omp config list`.
+pub async fn load_global() -> Result<Global, String> {
+    let list = list_config(&[])
         .await
-        .map_err(|err| format!("Could not save token guard values: {err}"))
+        .map_err(|err| format!("Could not read token guard values: {}", err.message))?;
+    let global = Global::from_list(&list);
+    remember(&global);
+    Ok(global)
+}
+
+/// The remembered snapshot, or a fresh read when there is none yet.
+async fn current() -> Result<Global, String> {
+    match cached() {
+        Some(global) => Ok(global),
+        None => load_global().await,
+    }
+}
+
+/// Writes one key to the global omp config. The advisor role is read-merge-written because `omp config get modelRoles.advisor` is unsupported.
+pub async fn write_key(key: &str, value: &Value) -> Result<(), String> {
+    validate(key, value)?;
+    if key == "modelRoles.advisor" {
+        let selector = value.as_str().unwrap_or_default();
+        return set_model_role("advisor", Some(selector))
+            .await
+            .map(|_| ())
+            .map_err(omp_error);
+    }
+    set_config(key, value, &[]).await.map_err(omp_error)?;
+    // `prewalk.auto` adds a model call per task independent of `prewalk.enabled` (#695).
+    if key == "prewalk.enabled" && value == &Value::Bool(false) {
+        set_config("prewalk.auto", &json!("off"), &[])
+            .await
+            .map_err(omp_error)?;
+    }
+    Ok(())
 }
 
 /// Stores a deliberate change for one key and returns the new effective values.
-pub async fn set(dir: &Path, key: &str, value: Value) -> Result<ValueMap, String> {
-    validate(key, &value)?;
-    let _guard = STORE_LOCK.lock().await;
-    let mut stored = read_stored(dir).await;
-    stored.version = STORE_VERSION;
-    stored.overrides.insert(key.to_string(), value);
-    write_json_file(&store_path(dir), &stored)
-        .await
-        .map_err(|err| format!("Could not save token guard values: {err}"))?;
-    Ok(effective(&stored))
-}
-
-/// Drops the override for one key (back to the default) and returns the new effective values.
-pub async fn reset(dir: &Path, key: &str) -> Result<ValueMap, String> {
-    if kind_of(key).is_none() {
-        return Err(format!("Unknown token guard key: {key}"));
+pub async fn set(key: &str, value: Value) -> Result<Global, String> {
+    if let Err(err) = write_key(key, &value).await {
+        // A write that fails midway (the prewalk pair) may have changed omp anyway.
+        forget();
+        return Err(err);
     }
-    let _guard = STORE_LOCK.lock().await;
-    let mut stored = read_stored(dir).await;
-    stored.version = STORE_VERSION;
-    stored.overrides.remove(key);
-    write_json_file(&store_path(dir), &stored)
-        .await
-        .map_err(|err| format!("Could not save token guard values: {err}"))?;
-    Ok(effective(&stored))
+    let mut global = current().await?;
+    global.values.insert(key.to_string(), value);
+    remember(&global);
+    Ok(global)
 }
 
-/// Drops every override in one write (the "Optimise token usage" button) and returns the new effective values.
-pub async fn reset_all(dir: &Path) -> Result<ValueMap, String> {
-    let _guard = STORE_LOCK.lock().await;
-    let mut stored = read_stored(dir).await;
-    stored.version = STORE_VERSION;
-    stored.overrides.clear();
-    write_json_file(&store_path(dir), &stored)
-        .await
-        .map_err(|err| format!("Could not save token guard values: {err}"))?;
-    Ok(effective(&stored))
+/// Writes Refract's default for one key (omp has no unset) and returns the new effective values.
+pub async fn reset(key: &str) -> Result<Global, String> {
+    let default = default_for(key).ok_or_else(|| format!("Unknown token guard key: {key}"))?;
+    set(key, default).await
+}
+
+/// Writes Refract's default for every key (the "Optimise token usage" button).
+pub async fn reset_all() -> Result<Global, String> {
+    for (key, value) in defaults() {
+        if let Err(err) = write_key(&key, &value).await {
+            // Some keys are already written, so the remembered snapshot no longer matches.
+            forget();
+            return Err(err);
+        }
+    }
+    let mut global = current().await?;
+    global.values = defaults();
+    remember(&global);
+    Ok(global)
 }
 
 pub fn to_object(values: &ValueMap) -> Value {
@@ -334,17 +351,31 @@ mod tests {
     }
 
     #[test]
-    fn invalid_override_falls_back_per_key() {
-        let mut stored = Stored::default();
-        stored
-            .overrides
-            .insert("task.maxConcurrency".into(), json!("many"));
-        stored
-            .overrides
-            .insert("task.softRequestBudget".into(), json!(40));
-        let values = effective(&stored);
+    fn list_result_falls_back_per_key_and_reads_the_advisor() {
+        let list = json!({
+            "task.maxConcurrency": { "value": "many" },
+            "task.softRequestBudget": { "value": 40 },
+            "compaction.thresholdPercent": { "value": -1 },
+            "modelRoles": { "value": { "advisor": "p/m:auto" } }
+        });
+        let values = effective_from_list(&list);
         assert_eq!(values["task.maxConcurrency"], json!(6));
         assert_eq!(values["task.softRequestBudget"], json!(40));
+        assert_eq!(values["compaction.thresholdPercent"], json!(70));
+        assert_eq!(values["modelRoles.advisor"], json!("p/m:auto"));
+    }
+
+    #[test]
+    fn one_list_gives_the_values_and_the_default_model() {
+        let list = json!({
+            "task.maxConcurrency": { "value": 3 },
+            "modelRoles": { "value": { "default": "p/m:high", "advisor": "p/a:auto" } }
+        });
+        let global = Global::from_list(&list);
+        assert_eq!(global.default_model.as_deref(), Some("p/m:high"));
+        assert_eq!(global.values["task.maxConcurrency"], json!(3));
+        assert_eq!(global.values["modelRoles.advisor"], json!("p/a:auto"));
+        assert_eq!(raw_value(&list, "compaction.thresholdPercent"), None);
     }
 
     #[test]
@@ -363,7 +394,7 @@ mod tests {
         assert!(validate("compaction.modelThresholds", &json!({ "a/b": "70%" })).is_ok());
         assert!(validate("compaction.modelThresholds", &json!({ "a/b": "100%" })).is_err());
         assert!(validate("compaction.modelThresholds", &json!({ "a/b": "0%" })).is_err());
-        assert!(validate("compaction.modelThresholds", &json!({ "a/b": 70 })).is_err());
+        assert!(validate("compaction.modelThresholds", &json!({ "a/b": 70 })).is_ok());
         // Unknown key: rejected as unknown, not by a range check.
         assert!(validate("compaction.thresholdTokens", &json!(200_000)).is_err());
         assert!(validate("compaction.modelThresholds", &json!({ "a/b": "05%" })).is_err());
@@ -374,33 +405,27 @@ mod tests {
     }
 
     #[test]
-    fn migrate_drops_stored_80_once() {
-        let mut stored = Stored {
-            version: STORE_VERSION,
-            read_limit_migrated: true,
-            ..Stored::default()
-        };
-        stored
-            .overrides
-            .insert("task.softRequestBudget".into(), json!(80));
-        migrate(&mut stored);
-        assert!(!stored.overrides.contains_key("task.softRequestBudget"));
-        assert!(stored.soft_budget_migrated);
-        stored
-            .overrides
-            .insert("task.softRequestBudget".into(), json!(80));
-        migrate(&mut stored);
-        assert_eq!(stored.overrides["task.softRequestBudget"], json!(80));
-        for kept in [40, 0] {
-            let mut s = Stored::default();
-            s.overrides
-                .insert("task.softRequestBudget".into(), json!(kept));
-            migrate(&mut s);
-            assert_eq!(s.overrides["task.softRequestBudget"], json!(kept));
-            assert!(s.soft_budget_migrated);
+    fn model_thresholds_accept_tokens_fixed_and_percent() {
+        for ok in [json!(120_000), json!("f200000"), json!("80%")] {
+            assert!(
+                validate("compaction.modelThresholds", &json!({ "a/b": ok })).is_ok(),
+                "{ok}"
+            );
+        }
+        for bad in [
+            json!(0),
+            json!(-5),
+            json!("f"),
+            json!("f0"),
+            json!("200000"),
+            json!("x%"),
+        ] {
+            assert!(
+                validate("compaction.modelThresholds", &json!({ "a/b": bad })).is_err(),
+                "{bad}"
+            );
         }
     }
-
     #[test]
     fn cache_warming_accepts_known_modes_only() {
         for ok in ["idle", "off", "streaming"] {
