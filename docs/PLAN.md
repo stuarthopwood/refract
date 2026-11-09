@@ -1172,3 +1172,7 @@ Also filed 2026-11-09 (Stuart): **#1832** (`p2`, `feature`, `chat`), Feat: Run a
 Also filed 2026-11-09 (Stuart): `#1254` raised to `p1` (chat message image polish follow-ups from #1245 gate; headline item is the image viewer dialog filling the window for small images).
 
 Also filed 2026-11-09 (Stuart): **#1835** (`p1`, `bug`, `chat`), Bug: Pause: pausing does not pause running subagents, so the Session never pauses.
+
+Also filed 2026-11-09 (Stuart): **#1839** (`p1`, `feature`, `right-pane`), Feat: Git panel: stage, unstage and discard for one file, a selection, a folder, or all files.
+
+Also filed 2026-11-09 (Stuart): **#1840** (`p1`, `design`, `right-pane`), UI Polish: Right rail: Git icon shows the change-count badge before the panel is opened.
