@@ -107,7 +107,9 @@ pub fn skipped() -> bool {
     if skip {
         static NOTED: Once = Once::new();
         NOTED.call_once(|| {
-            log::info!("token guard: {SKIPPED_REASON}; skipping the global config migration and writes");
+            log::info!(
+                "token guard: {SKIPPED_REASON}; skipping the global config migration and writes"
+            );
         });
     }
     skip

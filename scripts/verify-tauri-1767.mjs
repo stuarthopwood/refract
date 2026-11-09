@@ -146,6 +146,9 @@ async function main() {
     await cdp.evaluate(`document.querySelector('[role="status"]')?.scrollIntoView({ block: 'center' })`);
     await cdp.click(`Array.from(document.querySelectorAll('[role="status"] button')).find((b) => b.textContent.trim() === 'Dismiss')`);
     await cdp.waitFor(`!document.body.textContent.includes('was backed up to')`, { timeoutMs: 10_000, label: 'notice dismissed' });
+    // The renderer dismisses optimistically and persists in the background, so wait for the marker before the relaunch.
+    const markerFile = path.join(dataDir, 'token-guard-migration.json');
+    for (let i = 0; i < 50 && !JSON.parse(readFileSync(markerFile, 'utf8')).noticeDismissed; i++) await sleep(200);
     cdp.close();
     await stopLauncher(session.child).catch(() => {});
 

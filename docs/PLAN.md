@@ -1134,4 +1134,4 @@ Also filed 2026-11-06 (Stuart): **#1765** (`p0`, `bug`, `settings`), Settings: t
 
 Also filed 2026-11-06 (Stuart, grilled): **#1767** (`p0`, `bug`, `settings`), Settings: token guard settings write to OMP's global config instead of a per-launch overlay, so Refract is the source of truth; the first launch backs up and overwrites the global token guard keys, and Settings shows the effective compaction trigger. Supersedes #1765 once live reload is confirmed.
 
-Status 2026-11-06 (#1767): backend in `e45c4daa` (global write, backup, migration retry, `effectiveTriggers`, `projectOverrides`); renderer and spec 021 FR-034..FR-039 / T053..T055 done. Open: Rust build and live verification (T056), and the live-key probe evidence. #1765 stays open.
+Status 2026-11-09 (#1767): done. Backend, renderer and spec 021 FR-034..FR-039 / T053..T056 complete; `scripts/verify-tauri-1767.mjs` passes live on a scratch data dir and scratch OMP agent dir (backup, migration, global writes, relaunch). A scratch `REFRACT_DATA_DIR` without `PI_CODING_AGENT_DIR` skips the migration and every token guard write. #1765 stays open: only 4 keys are proven live.
