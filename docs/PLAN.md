@@ -1110,7 +1110,7 @@ Also filed 2026-11-06 (deferred review findings and tooling follow-ups, not plac
 
 Also filed 2026-11-06 (Stuart, UI polish): **#1740** (`p1`, `design`), Issue list: the "+N" label overflow becomes a focusable pill with a tooltip that lists the hidden labels and their colour dots (`IssueRow.tsx`). In review: draft PR, spec 051 FR-004 amended, shared `src/renderer/components/LabelOverflow.tsx`, live check in `scripts/verify-tauri-504.mjs`.
 
-Also filed 2026-11-06 (Stuart, grilled): **#1741** (`p1`, `design`, `pull-requests`), Markdown: images inside links go through `resolveImage` (`data:` URLs, no CSP change), so the Dependabot compatibility score badge and other linked badges render in PR descriptions.
+Also filed 2026-11-06 (Stuart, grilled): **#1741** (`p1`, `design`, `pull-requests`), Markdown: images inside links go through `resolveImage` (`data:` URLs, no CSP change), so the Dependabot compatibility score badge and other linked badges render in PR descriptions; `dependabot-badges.githubapp.com` is allowed and is the only host whose SVG is accepted (signature checked). Done in PR #1784 (`fix/1741-linked-images`, FR-124): `cargo clippy`/`cargo test` green; the badge renders as an `<img>` inside its single link with the alt text as fallback (checked with a stubbed image response).
 
 Also filed 2026-11-06 (Stuart, UI polish): **#1742** (`p1`, `design`, `pull-requests`), PR detail header: Merge becomes the filled primary button (`variant="default"`); the other header buttons stay ghost, per the #1387 rule. **Status: built on `fix/1742-merge-button`; awaiting merge.** Spec 088 FR-007 and Q7, spec 003, `components.md` and `accessibility.md` now match.
 
@@ -1158,4 +1158,4 @@ Also filed 2026-11-09 (Stuart): **#1810** (`p1`, `chore`, `build`), Epic: Unit t
 
 Also filed 2026-11-09 (Stuart): **#1817** (`p1`, `bug`, `chat`), Bug: Chat: skill invocations show the raw injected prompt instead of the Skill invoked row; add a summary tooltip (regression of #547).
 
-Also filed 2026-11-09 (Stuart): **#1818** (`p1`, `chat`, `design`), UI Polish: Chat: Ask card action bar background matches the card.
+Also filed 2026-11-09 (Stuart): **#1818** (`p1`, `chat`, `design`), UI Polish: Chat: Ask card action bar background matches the card. In progress on `fix/1818-card-footer`: the shared `CardFooter` drops its `bg-surface-subtle` band for every card.
