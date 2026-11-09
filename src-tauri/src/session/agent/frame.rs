@@ -57,6 +57,13 @@ impl SessionAgent {
                     let mut state = self.state.lock().await;
                     state.commands = filtered.clone();
                 }
+                // After the store write, so a waiter that wakes reads this life's own list.
+                self.commands_reported.notify_waiters();
+                // Kept for Sessions that have not started. An empty report would erase a usable list;
+                // the native entries `filtered` always carries do not make it usable. (#1812)
+                if !raw.is_empty() {
+                    crate::store::last_commands::save(&filtered).await;
+                }
                 let commands_value = Value::Array(filtered);
                 self.events
                     .emit_commands_update(&self.session_id, &commands_value);
