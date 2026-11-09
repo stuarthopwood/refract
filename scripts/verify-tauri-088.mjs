@@ -81,12 +81,13 @@ async function checkPullRequests(cdp) {
       openGh: header.querySelector('a[data-open-on-github]')?.getAttribute('aria-label'),
       copyLink: !!header.querySelector('button[aria-label="Copy link"]'),
       mergeClass: merge ? merge.className : null,
+      mergeLast: merge ? merge.parentElement.lastElementChild === merge : false,
+      filledButtons: Array.from(header.querySelectorAll('button')).filter((el) => getComputedStyle(el).backgroundColor !== 'rgba(0, 0, 0, 0)').map((el) => el.textContent.trim()),
+      mergeAria: merge ? { disabled: merge.getAttribute('aria-disabled'), described: merge.getAttribute('aria-describedby'), title: merge.getAttribute('title'), nativeDisabled: merge.disabled } : null,
       sessionTitle: session ? session.getAttribute('title') : null,
       draftReason: header.querySelector('[data-draft-reason]')?.textContent.trim() ?? null,
       mergeReason: header.querySelector('[data-merge-reason]')?.textContent.trim() ?? null,
-      titleGrows: getComputedStyle(title).flexGrow,
-      actionsWrap: getComputedStyle(actions).flexWrap,
-      actionsShrink: getComputedStyle(actions).flexShrink
+      titleGrows: getComputedStyle(title).flexGrow
     };
   })()`);
   await open(1);
@@ -95,8 +96,9 @@ async function checkPullRequests(cdp) {
   await shot(cdp, '01-pr-open-header.png');
   assert(openPr.openGh === 'Open on GitHub (opens in browser)', 'PR header Open on GitHub is the shared icon anchor');
   assert(openPr.copyLink, 'PR header has a Copy link button');
-  assert(openPr.mergeClass && !/bg-primary/.test(openPr.mergeClass) && /border/.test(openPr.mergeClass), 'Merge is an outline button, not a filled one');
-  assert(openPr.titleGrows === '1' && openPr.actionsWrap === 'nowrap' && openPr.actionsShrink === '0', 'PR title row grows and actions stay on one non-shrinking row');
+  assert(openPr.mergeClass && /bg-primary/.test(openPr.mergeClass), 'Merge is the filled primary button (#1742)');
+  assert(openPr.mergeLast && openPr.filledButtons.length === 1 && openPr.filledButtons[0] === 'Merge', 'Merge is the only filled header button and sits rightmost (#1742)');
+  assert(openPr.titleGrows === '1', 'PR title row grows');
   assert(openPr.draftReason === null, 'An open PR shows no draft reason');
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 960, height: 800, deviceScaleFactor: 1, mobile: false });
   await sleep(400);
@@ -120,6 +122,8 @@ async function checkPullRequests(cdp) {
   const conflict = await shape();
   await shot(cdp, '03-pr-conflict-header.png');
   assert(conflict.mergeReason !== null && conflict.draftReason === null, 'A conflicting open PR still shows only the merge reason');
+  assert(conflict.mergeAria.disabled === 'true' && !conflict.mergeAria.nativeDisabled && conflict.mergeAria.described && conflict.mergeAria.title, 'Unavailable Merge keeps aria-disabled, its reason (title and describedby) and keyboard focus (#1742)');
+  assert(conflict.filledButtons.length === 1 && conflict.filledButtons[0] === 'Merge', 'Unavailable Merge is still the only filled header button (#1742)');
 }
 
 async function checkIssues(cdp) {
@@ -189,7 +193,7 @@ async function checkManageSessions(cdp) {
   log(`invalid ring: ${JSON.stringify(ring)}`);
   await shot(cdp, '07-invalid-field.png');
   assert(ring && ring.after !== ring.before && ring.after !== 'none', 'aria-invalid draws a ring on an Input');
-  assert(ring.focusVisible && ring.focusedBorder === ring.ringColour && ring.focusedBorder !== ring.invalidBorder, 'A focused invalid Input swaps its border to the --ring colour');
+  assert(ring.focusVisible && ring.focusedBorder === ring.invalidBorder, 'A focused invalid Input keeps the destructive border (spec 100 superseded the ring swap)');
 }
 
 async function main() {

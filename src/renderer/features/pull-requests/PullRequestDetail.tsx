@@ -213,7 +213,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
                 <Button
                   ref={mergeButtonRef}
                   size="sm"
-                  variant="outline"
+                  variant="default"
                   className="aria-disabled:opacity-50"
                   onClick={() => !mergeBlocked && setMergeOpen(true)}
                   aria-disabled={mergeBlocked || undefined}
