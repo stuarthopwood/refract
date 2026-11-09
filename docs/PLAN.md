@@ -1134,6 +1134,8 @@ Also filed 2026-11-06 (Stuart): **#1765** (`p0`, `bug`, `settings`), Settings: t
 
 Also filed 2026-11-06 (Stuart, grilled): **#1767** (`p0`, `bug`, `settings`), Settings: token guard settings write to OMP's global config instead of a per-launch overlay, so Refract is the source of truth; the first launch backs up and overwrites the global token guard keys, and Settings shows the effective compaction trigger. Supersedes #1765 once live reload is confirmed.
 
+Status 2026-11-09 (#1767): done. Backend, renderer and spec 021 FR-034..FR-039 / T053..T056 complete; `scripts/verify-tauri-1767.mjs` passes live on a scratch data dir and scratch OMP agent dir (backup, migration, global writes, relaunch). A scratch `REFRACT_DATA_DIR` without `PI_CODING_AGENT_DIR` skips the migration and every token guard write. #1765 stays open: only 4 keys are proven live.
+
 Also filed 2026-11-06 (Stuart): **#1774** (`p1`, `design`, `chat`), Subagents: drop the duplicate agent list above the composer; move per-agent Show into the Subagents card.
 
 Also filed 2026-11-06 (Stuart): **#1776** (`p3`, `idea`, `worktree`, `build`), Idea: reusable lane worktree pool to cap the shared cargo cache. Parked: pick up only if the cargo cache changes are not enough.
