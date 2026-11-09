@@ -31,7 +31,7 @@ export function StepperItem({ index, status, title, children }: StepperItemProps
         className={cn(
           'flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-medium',
           status === 'done' && 'border-state-working text-state-working',
-          status === 'failed' && 'border-destructive bg-destructive text-white',
+          status === 'failed' && 'border-destructive text-destructive',
           status === 'pending' && 'border-border text-muted-foreground'
         )}
       >
