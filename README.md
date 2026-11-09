@@ -40,8 +40,8 @@ The shared target regrows without bound (about 19 GB in practice, enough to star
 `pnpm cache:sweep [--days N] [--dry-run]` prunes artefacts unused for N days (default 7) with a
 pinned `cargo-sweep` (installed on first use) and refuses to run while a cargo build holds the
 target lock; it prints the cache size and free space before and after. `pnpm ci:local` warns when the
-shared target exceeds 10 GB and defaults `CARGO_INCREMENTAL=0` when unset, since incremental data is
-most of the growth (issue #1736).
+shared target exceeds 10 GB. Incremental compilation is off repo-wide in `.cargo/config.toml`, since
+incremental data is most of the growth (issue #1736).
 
 There is no packaged installer yet (lane R11, issue #794). After `pnpm build`, launch the Tauri
 binary directly: `src-tauri/target/release/refract-tauri.exe`.
