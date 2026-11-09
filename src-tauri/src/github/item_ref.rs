@@ -36,10 +36,7 @@ impl RepoSlug {
     }
 
     fn api_path(&self, collection: &str, number: u64) -> String {
-        format!(
-            "repos/{}/{}/{collection}/{number}",
-            self.owner, self.repo
-        )
+        format!("repos/{}/{}/{collection}/{number}", self.owner, self.repo)
     }
 
     fn display(&self) -> String {
@@ -211,10 +208,26 @@ mod tests {
 
     #[test]
     fn reference_must_match_number_and_github_url() {
-        assert!(reference_matches(12, "https://github.com/a/b/issues/12", 12));
-        assert!(!reference_matches(13, "https://github.com/a/b/issues/12", 12));
-        assert!(!reference_matches(12, "https://github.com/a/b/issues/13", 12));
-        assert!(!reference_matches(12, "https://evil.example/a/b/issues/12", 12));
+        assert!(reference_matches(
+            12,
+            "https://github.com/a/b/issues/12",
+            12
+        ));
+        assert!(!reference_matches(
+            13,
+            "https://github.com/a/b/issues/12",
+            12
+        ));
+        assert!(!reference_matches(
+            12,
+            "https://github.com/a/b/issues/13",
+            12
+        ));
+        assert!(!reference_matches(
+            12,
+            "https://evil.example/a/b/issues/12",
+            12
+        ));
     }
 
     #[test]
