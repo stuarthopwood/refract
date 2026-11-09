@@ -87,6 +87,11 @@ rusqlite = { version = "0.41.1", default-features = false, features = ["bundled"
 [dev-dependencies]
 tempfile = "3.27.0"
 
+# Line tables keep file and line numbers in backtraces while dropping variable-level debug info,
+# which is most of a dev build's size (shared target growth, #1736). `[profile.test]` inherits it.
+[profile.dev]
+debug = "line-tables-only"
+
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is
 # Windows-only anyway (spec.md Assumptions), but there is no reason to pull Win32 bindings into a
