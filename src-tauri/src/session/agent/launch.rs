@@ -18,12 +18,33 @@ use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
 
 impl SessionAgent {
+    /// Refuses while the Session's worktree is being deleted. Called under `start_lock`, so a
+    /// delete that claims the Session after the caller's earlier check cannot be raced.
+    fn refuse_if_worktree_deleting(&self) -> Result<(), AgentError> {
+        crate::ipc::sessions_lifecycle::delete_in_flight::refuse_if_deleting(&self.session_id)
+            .map_err(|e| AgentError::new(e.code, e.message))
+    }
+
     /// Starts the process, or joins a live one as a no-op. Serialised through `start_lock`.
+    /// Refuses with `worktree-busy` while the worktree is being deleted.
     pub async fn start(&self) -> Result<(), AgentError> {
+        self.start_inner(true).await
+    }
+
+    /// Like `start`, without the deleting check. Only for the refused-Delete restart, which runs
+    /// while its own delete still holds the claim.
+    pub async fn start_unchecked(&self) -> Result<(), AgentError> {
+        self.start_inner(false).await
+    }
+
+    async fn start_inner(&self, refuse_when_deleting: bool) -> Result<(), AgentError> {
         // Snapshot the generation before taking `start_lock`, so a concurrent `shutdown()` is
         // seen. The re-check and the reset must share one lock acquisition.
         let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
+        if refuse_when_deleting {
+            self.refuse_if_worktree_deleting()?;
+        }
         {
             let mut state = self.state.lock().await;
             if state.shutdown_generation != generation_at_entry {
@@ -102,9 +123,10 @@ impl SessionAgent {
 
     /// Resets side chat after the registry write, before `launch()`, so it runs even if the start fails.
     pub async fn start_with_conversation(&self, file: Option<String>) -> Result<(), AgentError> {
-        // Same guard as `start()`.
+        // Same guards as `start()`.
         let generation_at_entry = self.state.lock().await.shutdown_generation;
         let _guard = self.start_lock.lock().await;
+        self.refuse_if_worktree_deleting()?;
         {
             let mut state = self.state.lock().await;
             if state.shutdown_generation != generation_at_entry {
@@ -504,3 +526,7 @@ impl SessionAgent {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "launch.test.rs"]
+mod tests;
