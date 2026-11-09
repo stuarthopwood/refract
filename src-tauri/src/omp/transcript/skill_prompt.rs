@@ -57,29 +57,51 @@ pub(super) fn try_build_skill_prompt(
 /// The skill's own description: front-matter `description` when the text still carries the
 /// front matter (older OMP), else the first prose paragraph of the body.
 fn summarize_skill_text(text: &str) -> Option<String> {
-    // The text opens with an `[IMPORTANT: ...]` line, then a blank line, then the skill file.
-    let skill = text.split_once("\n\n").map_or("", |(_, rest)| rest);
-    let skill = skill.trim_start_matches(['\r', '\n']);
+    // The text opens with an `[IMPORTANT: ...]` line, then a blank line (CRLF or LF), then the skill file.
+    let skill = split_blank_line(text).map_or("", |(_, rest)| rest);
     let summary = match front_matter_split(skill) {
         Some((front, body)) => front_matter_description(front).or_else(|| first_paragraph(body)),
+        // An unclosed fence is neither front matter nor prose.
+        None if skill.starts_with("---\n") || skill.starts_with("---\r\n") => None,
         None => first_paragraph(skill),
     }?;
     Some(truncate_chars(&summary, SUMMARY_MAX_CHARS))
 }
 
-/// `(front matter, body)` when `skill` opens with a `---` fenced block.
+/// Splits at the first blank line, tolerating CRLF line endings.
+fn split_blank_line(text: &str) -> Option<(&str, &str)> {
+    let mut start = 0;
+    while let Some(offset) = text[start..].find('\n') {
+        let end = start + offset;
+        let rest = &text[end + 1..];
+        if let Some(blank) = rest
+            .strip_prefix("\r\n")
+            .or_else(|| rest.strip_prefix('\n'))
+        {
+            return Some((&text[..end], blank.trim_start_matches(['\r', '\n'])));
+        }
+        start = end + 1;
+    }
+    None
+}
+
+/// `(front matter, body)` when `skill` opens with a `---` fence closed by a line that is exactly
+/// `---`; an unclosed fence is not front matter.
 fn front_matter_split(skill: &str) -> Option<(&str, &str)> {
     let rest = skill
         .strip_prefix("---\r\n")
         .or_else(|| skill.strip_prefix("---\n"))?;
-    let end = rest
-        .match_indices("---")
-        .map(|(i, _)| i)
-        .find(|&i| i == 0 || rest[..i].ends_with('\n'))?;
-    Some((
-        &rest[..end],
-        rest[end + 3..].trim_start_matches(['\r', '\n']),
-    ))
+    let mut offset = 0;
+    for line in rest.split_inclusive('\n') {
+        if line.trim() == "---" {
+            return Some((
+                &rest[..offset],
+                rest[offset + line.len()..].trim_start_matches(['\r', '\n']),
+            ));
+        }
+        offset += line.len();
+    }
+    None
 }
 
 /// A one-line `description: ...` (optionally quoted) or a `>`/`|` block scalar.
@@ -187,7 +209,7 @@ mod tests {
         assert!(wire["description"]
             .as_str()
             .unwrap()
-            .starts_with("Compact the current session into a short handoff note"));
+            .starts_with("Write a short note that lets the next session resume"));
     }
 
     #[test]
@@ -205,6 +227,36 @@ mod tests {
         let mut message = fixture()["replay"].clone();
         message["display"] = json!(false);
         assert!(TranscriptState::from_history(&[message]).items().is_empty());
+    }
+
+    #[test]
+    fn agent_attributed_prompt_is_a_notice_and_missing_attribution_still_a_skill_prompt() {
+        let mut message = fixture()["replay"].clone();
+        message["attribution"] = json!("agent");
+        let wire = only_wire(&TranscriptState::from_history(&[message.clone()]));
+        assert_eq!(wire["kind"], "notice");
+        message.as_object_mut().unwrap().remove("attribution");
+        let wire = only_wire(&TranscriptState::from_history(&[message]));
+        assert_eq!(wire["kind"], "skill-prompt");
+    }
+
+    #[test]
+    fn crlf_text_still_yields_the_summary() {
+        let text = "[IMPORTANT: x]\r\n\r\n---\r\nname: a\r\ndescription: Crlf one\r\n---\r\n\r\n# A\r\n\r\nBody.";
+        assert_eq!(summarize_skill_text(text).as_deref(), Some("Crlf one"));
+        let no_front = "[IMPORTANT: x]\r\n\r\n# A\r\n\r\nBody line.\r\n";
+        assert_eq!(
+            summarize_skill_text(no_front).as_deref(),
+            Some("Body line.")
+        );
+    }
+
+    #[test]
+    fn only_an_exact_closing_fence_ends_front_matter() {
+        let body_dashes = "[IMPORTANT: x]\n\n---\ndescription: D\n---foo\nmore\n---\n\nBody.";
+        assert_eq!(summarize_skill_text(body_dashes).as_deref(), Some("D"));
+        let unclosed = "[IMPORTANT: x]\n\n---\nname: x\n\nBody.";
+        assert_eq!(summarize_skill_text(unclosed), None);
     }
 
     #[test]

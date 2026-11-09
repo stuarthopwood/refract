@@ -1,16 +1,16 @@
 {
-  "_note": "Real OMP skill-prompt messages with the middle of the skill text trimmed. `liveFrame.message` is a 18.x session-log custom_message (C:/Users/shopwood/.omp/agent/sessions, 2026-11-04) re-keyed to the CustomMessage wire shape; `replay` is a `get_messages` reply from `omp --mode rpc --resume` (OMP 18.17.0) on a copy of a 2026-08 session. Both carry details {name, path, args?, prompt?, lineCount}; neither carries a description.",
+  "_note": "Real OMP skill-prompt messages with the middle of the skill text trimmed. `liveFrame.message` is a 18.x session-log custom_message (C:/Users/dev/.omp/agent/sessions, 2026-11-04) re-keyed to the CustomMessage wire shape; `replay` is a `get_messages` reply from `omp --mode rpc --resume` (OMP 18.17.0) on a copy of a 2026-08 session. Both carry details {name, path, args?, prompt?, lineCount}; neither carries a description.",
   "liveFrame": {
     "type": "message_end",
     "messageId": "msg-skill-live",
     "message": {
       "role": "custom",
       "customType": "skill-prompt",
-      "content": "[IMPORTANT: User invoked the \"check-build\" skill; follow its instructions. Full skill below.]\n\n# Check Build (Azure DevOps)\n\nFetch a single Azure DevOps build by id and report whether it's running, green, or red — and on red, surface the failing stage/job and error message.\n\n[... middle of the skill text trimmed for the fixture ...]\n\n[Skill directory: C:\\Repos\\Work\\pinion-worktrees\\fdb.patient.activation\\rustic-kestrel\\.agents\\skills\\check-build]\nResolve relative paths in this skill (e.g. `scripts/foo.js`, `templates/config.yaml`) against this absolute directory; read referenced assets and templates; run scripts with the terminal tool when skill instructions call for it.\nUser: monitor build 9681",
+      "content": "[IMPORTANT: User invoked the \"check-build\" skill; follow its instructions. Full skill below.]\n\n# Check Build (Azure DevOps)\n\nFetch a single Azure DevOps build by id and report whether it's running, green, or red — and on red, surface the failing stage/job and error message.\n\n[... middle of the skill text trimmed for the fixture ...]\n\n[Skill directory: C:\\Users\\dev\\skills\\check-build]\nResolve relative paths in this skill (e.g. `scripts/foo.js`, `templates/config.yaml`) against this absolute directory; read referenced assets and templates; run scripts with the terminal tool when skill instructions call for it.\nUser: monitor build 9681",
       "display": true,
       "details": {
         "name": "check-build",
-        "path": "C:\\Repos\\Work\\pinion-worktrees\\fdb.patient.activation\\rustic-kestrel\\.agents\\skills\\check-build\\SKILL.md",
+        "path": "C:\\Users\\dev\\skills\\check-build\\SKILL.md",
         "args": "monitor build 9681",
         "prompt": "/skill:check-build  monitor build 9681",
         "lineCount": 132
@@ -22,11 +22,11 @@
   "replay": {
     "role": "custom",
     "customType": "skill-prompt",
-    "content": "[IMPORTANT: The user has invoked the \"handoff\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n---\nname: handoff\ndescription: Compact the current session into a short handoff note (HANDOFF.md) so the next session resumes with minimal context and token use. Use when ending a session, switching tasks, before a context reset, or when the user says \"handoff\", \"wrap up\", \"save context\", or \"running low on tokens\".\nargument-hint: \"Optional: what the next session should focus on first\"\nuser-invocable: true\nallowed-tools: [Read, Write, Edit, Bash]\n---\n\n# Handoff\n\nProduce a tight handoff note so a fresh session can pick up **without re-reading\nthis whole conversation**. The point is token economy — capture only what the\nnext session needs to act, never a transcript.\n\n[... middle of the skill text trimmed for the fixture ...]\n\n[Skill directory: C:\\Repos\\Work\\fdb.repeatplus.sme\\.omp\\skills\\handoff]\nResolve any relative paths in this skill (e.g. `scripts/foo.js`, `templates/config.yaml`) against that directory using its absolute path: read referenced assets and templates, and run scripts with the terminal tool when the skill's instructions call for it.",
+    "content": "[IMPORTANT: The user has invoked the \"handoff\" skill, indicating they want you to follow its instructions. The full skill content is loaded below.]\n\n---\nname: handoff\ndescription: Write a short note that lets the next session resume with minimal context. Use when ending a session.\nargument-hint: \"Optional: what the next session should focus on first\"\nuser-invocable: true\nallowed-tools: [Read, Write, Edit, Bash]\n---\n\n# Handoff\n\nProduce a tight handoff note so a fresh session can pick up **without re-reading\nthis whole conversation**. The point is token economy — capture only what the\nnext session needs to act, never a transcript.\n\n[... middle of the skill text trimmed for the fixture ...]\n\n[Skill directory: C:\\Users\\dev\\skills\\handoff]\nResolve any relative paths in this skill (e.g. `scripts/foo.js`, `templates/config.yaml`) against that directory using its absolute path: read referenced assets and templates, and run scripts with the terminal tool when the skill's instructions call for it.",
     "display": true,
     "details": {
       "name": "handoff",
-      "path": "C:\\Repos\\Work\\fdb.repeatplus.sme\\.omp\\skills\\handoff\\SKILL.md",
+      "path": "C:\\Users\\dev\\skills\\handoff\\SKILL.md",
       "lineCount": 176
     },
     "attribution": "user",

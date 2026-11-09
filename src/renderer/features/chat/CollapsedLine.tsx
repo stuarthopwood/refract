@@ -216,7 +216,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           ref={ref as React.Ref<HTMLButtonElement>}
           id={id}
           aria-label={triggerAriaLabel}
-          aria-describedby={showDetail ? detailId : undefined}
+          aria-describedby={describedBy}
           {...focusHandlers}
           className={cn(
             'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm group-hover/line:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
@@ -230,6 +230,11 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           {/* Reserves the action's column in every expandable row so all chevrons share one x; the action is laid over it below. */}
           <span aria-hidden="true" className="h-5 w-6 shrink-0" />
         </CollapsibleTrigger>
+        {iconTooltip !== undefined && (
+          <span id={tooltipDescId} className="sr-only">
+            {iconTooltip}
+          </span>
+        )}
         {action !== undefined && <span className="absolute right-2 top-0 flex translate-y-0.5">{action}</span>}
       </div>
       {detailMounted && (
