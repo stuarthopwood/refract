@@ -31,11 +31,12 @@ export function listPanels(sessionId: string): AgentToolOutcome {
 }
 
 /** Opens without focus; announces only when this call changed what the developer sees. */
-function openWithoutFocus(sessionId: string, panelId: PanelId, name: string): void {
+function openWithoutFocus(sessionId: string, panelId: PanelId, name: string, prepare?: () => void): void {
   const pane = useRightPaneStore.getState()
   const alreadyShown = pane.open && pane.activePanelId === panelId
   if (panelId === 'subagents') useSubagentPanelStore.getState().openPanel(sessionId)
-  pane.openPanel(panelId, { focus: false })
+  prepare?.()
+  useRightPaneStore.getState().openPanel(panelId, { focus: false })
   if (!alreadyShown) useAgentAnnouncementStore.getState().announce(`Agent opened ${name}`)
 }
 
@@ -54,7 +55,7 @@ export async function openPanel(sessionId: string, panelId: unknown, input: Tool
   const panel = ALL_PANELS.find((candidate) => candidate.id === target.id)
   const given = input ?? {}
   if (!panel?.openInputSchema && Object.keys(given).length > 0) return fail('invalid_input', `${target.name} takes no open input.`)
-  const context: PanelActionContext = { sessionId, open: () => openWithoutFocus(sessionId, target.id, target.name) }
+  const context: PanelActionContext = { sessionId, open: (prepare) => openWithoutFocus(sessionId, target.id, target.name, prepare) }
   // Only Git changes declares an open input today: selecting a file is its open-time effect.
   if (target.id === 'git-changes' && given.path !== undefined) return showFile(context, given)
   context.open()
@@ -67,7 +68,7 @@ export async function invokePanelAction(sessionId: string, panelId: unknown, act
   const handler = PANEL_ACTION_HANDLERS[target.id]?.[String(action)]
   if (!handler) return fail('unknown_action', `${target.name} has no action ${String(action)}.`)
   try {
-    return await handler({ sessionId, open: () => openWithoutFocus(sessionId, target.id, target.name) }, input ?? {})
+    return await handler({ sessionId, open: (prepare) => openWithoutFocus(sessionId, target.id, target.name, prepare) }, input ?? {})
   } catch (err) {
     return fail('action_failed', err instanceof Error ? err.message : String(err))
   }

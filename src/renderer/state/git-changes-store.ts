@@ -258,6 +258,7 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
 
   forgetSession(sessionId) {
     loadGeneration.set(sessionId, (loadGeneration.get(sessionId) ?? 0) + 1)
+    get().clearShowFileRequest(sessionId)
     set((state) => {
       if (!(sessionId in state.bySession)) return state
       const bySession = { ...state.bySession }

@@ -9,8 +9,8 @@ export type AgentToolOutcome = { ok: true; value: Record<string, unknown> } | { 
 
 export interface PanelActionContext {
   sessionId: string
-  /** Opens the panel without moving focus; actions call it only after their input checked out, so a rejected call opens nothing. */
-  open(): void
+  /** Opens the panel without moving focus; actions call it only after their input checked out, so a rejected call opens nothing. `prepare` runs just before the pane shows the panel, for state it must not render without. */
+  open(prepare?: () => void): void
 }
 
 export type PanelActionHandler = (context: PanelActionContext, input: Record<string, unknown>) => Promise<AgentToolOutcome>
@@ -40,8 +40,8 @@ function badPath(raw: unknown): AgentToolOutcome {
 }
 
 async function changedFile(sessionId: string, path: string): Promise<GitChangesGroupKind | null> {
-  const store = useGitChangesStore.getState()
-  if (!store.bySession[sessionId]?.snapshot) await store.load(sessionId)
+  // Always reload: the git watcher only runs while the panel is mounted, so a cached snapshot may predate the agent's own edits.
+  await useGitChangesStore.getState().load(sessionId)
   const snapshot = useGitChangesStore.getState().bySession[sessionId]?.snapshot
   if (!snapshot) return null
   return GROUPS.find((group) => snapshot.groups[group].some((entry) => entry.path === path)) ?? null
@@ -104,8 +104,9 @@ async function selectAgent(context: PanelActionContext, input: Record<string, un
   const agents = (useReadoutStore.getState().bySession[context.sessionId] ?? EMPTY_READOUT_ENTRY).subagents
   if (!agents.some((agent) => agent.id === agentId)) return fail('invalid_input', `No Subagent ${agentId} in this Session.`)
   context.open()
-  // Selected after opening and without `selectSubagentId`, which would queue a row focus.
-  await useSubagentPanelStore.getState().selectSubagent(agentId)
+  // Selected after opening and without `selectSubagentId`, which would queue a row focus; silent so a failed fetch is a tool error, not a toast.
+  const error = await useSubagentPanelStore.getState().selectSubagent(agentId, undefined, { silent: true })
+  if (error) return fail('action_failed', error)
   return succeed({ agentId })
 }
 
@@ -114,7 +115,7 @@ async function openPullRequest(context: PanelActionContext, input: Record<string
   if (typeof number !== 'number' || !Number.isInteger(number) || number < 1) return fail('invalid_input', 'number must be a positive integer.')
   const repositoryId = useSessionsStore.getState().sessions.find((session) => session.id === context.sessionId)?.repositoryId
   if (!repositoryId) return fail('panel_unavailable', 'This Session has no Project, so it has no pull requests to open.')
-  usePinnedPanelsStore.getState().pin('pull-request', { repositoryId, number, sessionId: context.sessionId, focus: false })
+  context.open(() => usePinnedPanelsStore.getState().pin('pull-request', { repositoryId, number, sessionId: context.sessionId, focus: false }))
   return succeed({ number })
 }
 

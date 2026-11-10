@@ -45,8 +45,8 @@ interface SubagentPanelState {
   openPanel(sessionId: string, options?: { selectSubagentId?: string; selectSubagentKey?: string; opener?: HTMLElement | null }): void
   /** Closes the panel; `restoreFocus` (default true) refocuses the opener (else the Subagents chip) only if focus was inside, so non-user closes pass `false`. */
   closePanel(options?: { restoreFocus?: boolean }): void
-  /** Selects a subagent; `key` is its row instance, and omitting it keeps the existing `selectedKey` (`null` clears it). */
-  selectSubagent(subagentId: string, key?: string | null): Promise<void>
+  /** Selects a subagent; `key` is its row instance, and omitting it keeps the existing `selectedKey` (`null` clears it). Resolves to an error message only when `options.silent` suppressed the toast, so a tool call can return it as a tool error. */
+  selectSubagent(subagentId: string, key?: string | null, options?: { silent?: boolean }): Promise<string | null>
   applyPatch(sessionId: string, subagentId: string, ops: TranscriptOp[]): void
   reset(): void
   /** Closes the panel when a new turn starts for its Session, so a reused subagent name never inherits the previous turn's cached stream. No-op for other Sessions. */
@@ -116,9 +116,9 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
       }
     }
   },
-  selectSubagent: async (subagentId, key) => {
+  selectSubagent: async (subagentId, key, options) => {
     const { sessionId } = get()
-    if (!sessionId) return
+    if (!sessionId) return null
     const seq = fetchSeq
     // Captured before the await: a patch racing ahead can create a partial entry that would otherwise look already fetched.
     const alreadyFetched = Boolean(get().streams[subagentId])
@@ -126,18 +126,23 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     set((state) => ({ selectedId: subagentId, selectedKey: key !== undefined ? key : state.selectedKey }))
     try {
       await window.refract.chat.setVisibleSubagent(sessionId, subagentId)
-      if (alreadyFetched) return
+      if (alreadyFetched) return null
       const result = await window.refract.chat.subagentSnapshot(sessionId, subagentId)
       if (!result.ok) {
+        if (options?.silent) return result.error.message
         notify(result.error)
-        return
+        return null
       }
       // Drop a stale snapshot if a rebind, close or new turn happened mid-fetch.
-      if (fetchSeq !== seq || get().sessionId !== sessionId || get().selectedId !== subagentId) return
+      if (fetchSeq !== seq || get().sessionId !== sessionId || get().selectedId !== subagentId) return null
       set((state) => ({ streams: { ...state.streams, [subagentId]: result.value } }))
+      return null
     } catch (err) {
       // Callers fire this with `void`, so a rejected IPC call must surface here.
-      toast.error(err instanceof Error ? err.message : String(err))
+      const message = err instanceof Error ? err.message : String(err)
+      if (options?.silent) return message
+      toast.error(message)
+      return null
     }
   },
   applyPatch: (sessionId, subagentId, ops) => {

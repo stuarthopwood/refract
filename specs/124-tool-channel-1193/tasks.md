@@ -17,11 +17,11 @@ No test tasks: the prototyping rule forbids new tests; existing tests are only r
 
 ## Chunk B: Renderer panel registry and actions (files: `src/renderer/**` only)
 
-- [ ] T008 `src/renderer/features/right-pane/panel-registry.ts`: `actions` on `HostedPanelDescriptor`, derived from `contracts/panel-actions.json`. (FR-009)
-- [ ] T009 `src/renderer/features/right-pane/agent-panel-actions.ts` (new): handler map for the seven v1 actions, reusing `git-changes-store` (`stage`, `unstage`, file selection), the File Explorer, Subagent and pinned pull-request stores; add any missing select or reveal entry point to that store. Worktree-relative path validation. (FR-017)
+- [x] T008 `src/renderer/features/right-pane/panel-registry.ts`: `actions` on `HostedPanelDescriptor`, derived from `contracts/panel-actions.json`. (FR-009)
+- [x] T009 `src/renderer/features/right-pane/agent-panel-actions.ts` (new): handler map for the seven v1 actions, reusing `git-changes-store` (`stage`, `unstage`, file selection), the File Explorer, Subagent and pinned pull-request stores; add any missing select or reveal entry point to that store. Worktree-relative path validation. (FR-017) Done: `pin` gained `focus: false`; `selectSubagent` gained `{ silent }` so a failed fetch is a tool error; `git-changes-store` gained `requestShowFile`.
   - Investigation (not implemented): the #1155 open path is `usePullRequestsStore.getState().openPullRequest(repositoryId, number)` (`src/renderer/state/pull-requests-store.ts:140`) followed by `useViewStore.getState().openPullRequests()` (`view-store.ts:63`); callers: `features/chat/ItemRefLink.tsx:92-97`, `features/right-pane/pinned/PinnedPullRequestPanel.tsx:20-21`, `features/home/HomeGitHubSections.tsx:58-59`. Those switch the whole window to the Pull requests view, which is NOT a right-pane open. The right-pane `pull-request` panel is shown by `usePinnedPanelsStore.pin('pull-request', { repositoryId, number })` (`state/pinned-panels-store.ts:42`), which also does `requestAnimationFrame(... .focus())` at line 54 when the panel is already active (a swap moves focus), so `open_pull_request` needs a no-focus option on `pin` to honour FR-011/FR-015. `repositoryId` comes from the front Session's `repositoryId` (`ItemRefLink.tsx:82`).
-- [ ] T010 `src/renderer/features/right-pane/agent-tool-dispatch.ts` (new): `listPanels`, `openPanel` (`{ focus: false }`), `invokePanelAction`, front-Session check. (FR-010 to FR-012, FR-014, FR-016)
-- [ ] T011 `src/renderer/features/right-pane/AgentOpenedAnnouncer.tsx` and `src/renderer/state/agent-announcement-store.ts` (new): polite live region, announced once per open. (FR-015)
+- [x] T010 `src/renderer/features/right-pane/agent-tool-dispatch.ts` (new): `listPanels`, `openPanel` (`{ focus: false }`), `invokePanelAction`, front-Session check. (FR-010 to FR-012, FR-014, FR-016)
+- [x] T011 `src/renderer/features/right-pane/AgentOpenedAnnouncer.tsx` and `src/renderer/state/agent-announcement-store.ts` (new): polite live region, announced once per open. (FR-015)
 
 ## Chunk C: wiring and live check (after A and B; files: shared contract, bridge, entry, scripts, docs)
 

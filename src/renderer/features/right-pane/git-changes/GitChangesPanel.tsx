@@ -18,8 +18,7 @@ const watcherRefCounts = new Map<string, number>()
 interface DiffSelection {
   entry: GitChangesFileEntry
   group: GitChangesGroupKind
-  /** Set when an agent opened the diff: the Back button must not take focus. */
-  quiet?: boolean
+  agentOpened?: boolean
 }
 
 const DEFAULT_GROUP_OPEN: Record<GitChangesGroupKind, boolean> = {
@@ -108,7 +107,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
     for (const group of GROUP_ORDER) {
       const entry = requestSnapshot.groups[group].find((candidate) => candidate.path === showFileRequest)
       if (!entry) continue
-      setSelected({ entry, group, quiet: true })
+      setSelected({ entry, group, agentOpened: true })
       break
     }
     useGitChangesStore.getState().clearShowFileRequest(sessionId)
@@ -224,8 +223,8 @@ function GitChangesDiffPane({
   const identityRef = useRef<{ path: string; staged: boolean } | null>(null)
 
   useEffect(() => {
-    if (!selection.quiet) backButtonRef.current?.focus()
-  }, [selection.quiet])
+    if (!selection.agentOpened) backButtonRef.current?.focus()
+  }, [selection.agentOpened])
 
   useEffect(() => {
     let cancelled = false
