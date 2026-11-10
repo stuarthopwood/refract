@@ -5471,25 +5471,42 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T422 [US1] Live check `scripts/verify-tauri-758.mjs`, update `docs/PLAN.md`, then
   `node scripts/ci-local.mjs` per FR-123 (missing)
 
-## Phase 87: Convergence (#1159 Delete flow hardening, FR-124, FR-029)
+## Phase 87: Convergence (#1157 every Refract git/gh reader holds a worktree read guard, FR-029/FR-030)
 
-- [x] T423 [US6] `fs/leftover_summary.rs`: move the read guard into the `spawn_blocking` closure, so a
-  dropped IPC future cannot release it while the walk runs, per FR-124(d) (missing)
-- [x] T424 [US6] `fs/remove_tree.rs`: pin the attempt-1 canonical path across retries, refuse when a
+- [x] T423 [US1] Take `worktree_access::read_guard_bounded` per git/gh call in the explorer status,
+  `sessions.diffStat`, readout `diff_stat`/`compute_branch`, HEAD watch, PR lookup and touched-item
+  lookups; a refusal reads as `None`/unavailable, per FR-029 and FR-030 (missing)
+- [x] T424 [US1] Record the one-guard-per-call rule at `worktree_access.rs`, then `node scripts/ci-local.mjs`
+  per FR-030 (missing)
+
+## Phase 88: Convergence (#1741 linked images in PR descriptions, FR-124)
+
+- [x] T425 [US1] `Markdown.tsx`: an image inside a link renders `ResolvedImage` (alt text as fallback)
+  when `resolveImage` is set; the chat branch is unchanged, per FR-124 (missing)
+- [x] T426 `github/images.rs`: allow `dependabot-badges.githubapp.com` and accept SVG from that host only
+  (signature checked), with Rust tests, per FR-124 (missing)
+- [x] T427 Live check a Dependabot PR description, update `docs/PLAN.md`, then `cargo` and
+  `node scripts/ci-local.mjs` per FR-124
+
+## Phase 89: Convergence (#1159 Delete flow hardening, FR-125, FR-029)
+
+- [x] T428 [US6] `fs/leftover_summary.rs`: move the read guard into the `spawn_blocking` closure, so a
+  dropped IPC future cannot release it while the walk runs, per FR-125(d) (missing)
+- [x] T429 [US6] `fs/remove_tree.rs`: pin the attempt-1 canonical path across retries, refuse when a
   later attempt resolves elsewhere, and `log::debug!` each retry; keep the #1158 behaviour, per
-  FR-124(b) (missing)
-- [x] T425 [US6] `git/worktree_holders.rs`: give `Unreadable` its own message and use
-  `normalize_git_path` for the displayed path, per FR-124(a), (b) (missing)
-- [x] T426 [US6] `git/worktree_delete.rs`: reword `registration_unknown_message` and normalise its
-  path, per FR-124(a) (partial)
-- [x] T427 [US6] `git/worktree_delete_check.rs`: leave `D` and ` D` porcelain lines out of
-  `uncommitted_files`, per FR-124(c) (missing)
-- [x] T428 [US6] `components/DialogError.tsx`: the shared always-mounted error live region; use it in
-  `ConfirmAlertDialog.tsx` and `ReviewDialog.tsx`, per FR-124(f) (missing)
-- [x] T429 [US6] `DeleteDialog.tsx`: bump the generation in the open effect, keep "Retry" while
+  FR-125(b) (missing)
+- [x] T430 [US6] `git/worktree_holders.rs`: give `Unreadable` its own message and use
+  `normalize_git_path` for the displayed path, per FR-125(a), (b) (missing)
+- [x] T431 [US6] `git/worktree_delete.rs`: reword `registration_unknown_message` and normalise its
+  path, per FR-125(a) (partial)
+- [x] T432 [US6] `git/worktree_delete_check.rs`: leave `D` and ` D` porcelain lines out of
+  `uncommitted_files`, per FR-125(c) (missing)
+- [x] T433 [US6] `components/DialogError.tsx`: the shared always-mounted error live region; use it in
+  `ConfirmAlertDialog.tsx` and `ReviewDialog.tsx`, per FR-125(f) (missing)
+- [x] T434 [US6] `DeleteDialog.tsx`: bump the generation in the open effect, keep "Retry" while
   deleting, spinner and "Rechecking…" for loading and re-check, drop the dead `outline-offset`
-  class, reword the unreadable-list copy, per FR-124(e), US6/AC8 (missing)
-- [x] T430 [US6] Update `docs/PLAN.md` and `docs/design/components.md`, then run the TS checks;
-  `cargo`, `ci:local` and the live check stay pending per FR-124 (missing)
-- [x] T431 [US6] `ConfirmAlertDialog.tsx`/`DeleteDialog.tsx`: confirm button `min-w-24`, move focus to it
-  before the file list is replaced; trim the `fs/remove_tree.rs` header comment, per FR-124(e) (missing)
+  class, reword the unreadable-list copy, per FR-125(e), US6/AC8 (missing)
+- [x] T435 [US6] Update `docs/PLAN.md` and `docs/design/components.md`, then run the TS checks;
+  `cargo`, `ci:local` and the live check stay pending per FR-125 (missing)
+- [x] T436 [US6] `ConfirmAlertDialog.tsx`/`DeleteDialog.tsx`: confirm button `min-w-24`, move focus to it
+  before the file list is replaced; trim the `fs/remove_tree.rs` header comment, per FR-125(e) (missing)

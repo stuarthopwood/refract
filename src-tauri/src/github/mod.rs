@@ -14,6 +14,7 @@ pub mod gh_pr_search_across;
 pub mod gh_pull_requests;
 pub mod gh_viewer;
 pub mod images;
+pub mod item_ref;
 pub mod profile;
 pub mod repo_clone;
 pub mod repo_list;

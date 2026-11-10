@@ -17,7 +17,7 @@ struct Issue {
 }
 
 const ISSUES: &[Issue] = &[
-    Issue { repo: "octocat/hello-world", number: 12, title: "Crash when saving a draft", state: "OPEN", labels: &["bug"], assignee: true, author_me: true, mention: false, comments: 3 },
+    Issue { repo: "octocat/hello-world", number: 12, title: "Crash when saving a draft", state: "OPEN", labels: &["bug", "enhancement", "docs", "p1"], assignee: true, author_me: true, mention: false, comments: 3 },
     Issue { repo: "octocat/hello-world", number: 7, title: "Saving fails on Windows", state: "CLOSED", labels: &["bug"], assignee: false, author_me: false, mention: false, comments: 1 },
     Issue { repo: "octocat/hello-world", number: 20, title: "Docs mention the old flag", state: "OPEN", labels: &["docs"], assignee: false, author_me: false, mention: true, comments: 0 },
     Issue { repo: "octocat/spoon-knife", number: 3, title: "Spoon bends under load", state: "OPEN", labels: &["enhancement"], assignee: false, author_me: true, mention: false, comments: 2 },

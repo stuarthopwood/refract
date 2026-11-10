@@ -92,6 +92,7 @@ export function FindBar({ sessionId }: { sessionId: string }) {
           label="Find in chat"
           placeholder="Find in chat"
           clearLabel="Clear search"
+          instant
           tooltipSide="bottom"
           onEscape={close}
           onSubmit={(shift) => void find.submit(shift)}

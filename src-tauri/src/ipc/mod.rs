@@ -11,7 +11,8 @@ use serde_json::Value;
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::git::git::GitError;
-use crate::store::registry::{RegistryStore, RegistryStoreError};
+use crate::git::remote::{repository_remote, RepositoryRemoteKind};
+use crate::store::registry::{RegistryStore, RegistryStoreError, Repository};
 use crate::store::settings::SettingsStore;
 
 pub mod accounts;
@@ -32,6 +33,7 @@ pub mod home;
 pub mod image_save;
 pub mod images;
 pub mod issues;
+pub mod item_refs;
 pub mod model;
 pub mod model_roles;
 pub mod pull_requests;
@@ -170,6 +172,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     sessions_visibility::register(dispatcher);
     home::register(dispatcher);
     issues::register(dispatcher);
+    item_refs::register(dispatcher);
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
     chat::register(dispatcher);
@@ -278,6 +281,31 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
 /// Reads a string argument. Missing and non-string values both return `None`.
 pub fn arg_str(args: &[Value], index: usize) -> Option<&str> {
     args.get(index).and_then(Value::as_str)
+}
+
+/// Reads a required string argument, or fails with an `invalid-argument` carrying `message`.
+pub fn required_str(args: &[Value], index: usize, message: &str) -> Result<String, IpcError> {
+    arg_str(args, index)
+        .map(str::to_string)
+        .ok_or_else(|| invalid_argument(message))
+}
+
+/// Looks up a repository by id, cloned out so the registry lock is not held.
+pub async fn find_repository(state: &AppState, id: &str) -> Result<Repository, IpcError> {
+    let registry = state.registry.lock().await;
+    registry
+        .get_repository(id)
+        .cloned()
+        .ok_or_else(|| not_found(format!("Project not found: {id}")))
+}
+
+/// Repository JSON with its remote recomputed inline; `repository_remote` caps itself at 3s and
+/// `None` falls back to `unknown`.
+pub async fn with_resolved_remote(repository: &Repository) -> Value {
+    let remote = repository_remote(std::path::Path::new(&repository.path))
+        .await
+        .unwrap_or(RepositoryRemoteKind::Unknown);
+    repositories::with_remote(repository, &remote)
 }
 
 /// UTC ISO-8601 timestamp. Uses a manual civil-date conversion, since the crate has no date dependency.

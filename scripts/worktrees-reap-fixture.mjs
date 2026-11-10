@@ -62,6 +62,13 @@ const prFile = path.join(base, 'prs.json')
 fs.writeFileSync(prFile, JSON.stringify(prs, null, 2))
 const regFile = path.join(base, 'registry.json')
 fs.writeFileSync(regFile, JSON.stringify({ version: 1, repositories: [], sessions: [{ id: 's1', worktreePath: wtPath('d-registry') }] }))
+// A scratch cargo target whose build-script output names a worktree that does not exist (#1734).
+const staleTarget = path.join(base, 'cargo-target')
+fs.mkdirSync(path.join(staleTarget, 'debug', 'build', 'refract-tauri-1'), { recursive: true })
+fs.writeFileSync(
+  path.join(staleTarget, 'debug', 'build', 'refract-tauri-1', 'output'),
+  `cargo:rustc-link-arg=/MANIFESTINPUT:${path.join(root, 'gone-worktree', 'src-tauri', 'windows-app-manifest.xml')}\n`,
+)
 
 const busy = spawn(process.execPath, ['-e', 'setInterval(()=>{},1e9)', wtPath('f-busy')], {
   cwd: wtPath('f-busy'),
@@ -78,11 +85,12 @@ const snapshot = (label) => {
   console.log(`--- ${label}: branches`)
   console.log(git(repo, 'branch', '--format=%(refname:short)'))
 }
+// CARGO_TARGET_DIR is blanked by default so `--apply` never runs a real `cargo clean` from the fixture.
 const reapRun = (extra, env = {}) => {
   const r = spawnSync(process.execPath, [reap, '--repo', repo, '--root', root, '--registry', regFile, '--pr-fixture', prFile, ...extra], {
     cwd: os.tmpdir(),
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, CARGO_TARGET_DIR: '', ...env },
   })
   console.log(r.stdout + r.stderr + `exit ${r.status}`)
 }
@@ -90,7 +98,7 @@ const reapRun = (extra, env = {}) => {
 try {
   snapshot('before')
   console.log('=== dry run')
-  reapRun([])
+  reapRun([], { CARGO_TARGET_DIR: staleTarget })
   snapshot('after dry run')
   console.log('=== apply')
   reapRun(['--apply'])
@@ -105,7 +113,7 @@ try {
     if (!ok) process.exitCode = 1
   }
   console.log('=== check')
-  reapRun(['--check'])
+  reapRun(['--check'], { CARGO_TARGET_DIR: staleTarget })
   console.log('=== negative: ambient REAP_PR_FIXTURE has no effect (no --pr-fixture; gh is used, branches are not real PRs)')
   const ambient = spawnSync(process.execPath, [reap, '--repo', repo, '--root', root, '--registry', regFile], {
     cwd: os.tmpdir(),

@@ -43,12 +43,12 @@ The issue-triage workflow's comment is read by whichever agent picks a GitHub is
 
 On 2026-10-08 the user decided that Refract is in a rapid-prototyping phase. Tests come later, once the app's features have stabilised.
 
-- Do not write new tests, and do not add test files, cases, mocks, or fixtures. This applies to the main agent, sub-agents, and workers, including the `test-developer` agent.
+- Scope: the ban covers TypeScript tests (`src/renderer`, `src/shared`, and `scripts`). Do not write new tests, and do not add test files, cases, mocks, or fixtures there. This applies to the main agent, sub-agents, and workers, including the `test-developer` agent.
 - Existing tests stay. Do not delete or rewrite them to dodge a failure, and keep them passing where a change breaks them.
-- Reviewers (including `test-reviewer`) must not ask for new tests, and a missing test is not a reason to block a merge in this phase.
+- Reviewers (including `test-reviewer`) must not ask for new TypeScript tests, and a missing TypeScript test is not a reason to block a merge in this phase.
 - Verify behaviour by running the app and exercising the changed path.
 - The phase ends only when the user says so. Until then, put this rule in every delegation brief.
-- Exception (epic #797, Rust promotion, 2026-10-13 to 2026-10-15): each Rust lane PR ports the TypeScript tests named in its lane issue as Rust tests (`cargo test`); the rule above still applies to `src/renderer` and `src/shared` (`src/main` and `src/preload` no longer exist, deleted at the cutover, #796).
+- New Rust tests (`cargo test`, in `src-tauri`) are allowed and encouraged for new Rust behaviour (Stuart, 2026-11-09).
 - #795's gate suite may keep the contract replay as a CI test (Stuart, 2026-10-14).
 
 ## Docs-only PRs are always merged (HARD RULE)
@@ -66,7 +66,7 @@ Lane worktrees are created per lane and were never removed (49 worktrees, about 
 - After every `gh pr merge`, the controller runs `pnpm worktrees:reap` (dry run), reviews the plan, then runs `pnpm worktrees:reap --apply`.
 - Lanes never delete their own worktree, folder, or branch.
 - Before each multi-lane wave, run `pnpm worktrees:reap --check`. It exits 1 when the worktrees folder holds more than 8 worktrees or its drive has under 20 GB free.
-- The script removes a worktree only when its PR is merged, the tree is clean, the branch tip equals the PR head, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process names its path, and `git worktree remove` (never `--force`) succeeds. It then clears `node_modules` husks and deletes the verified branch. Everything else is skipped and reported (including open-PR worktrees and ignored files beyond rebuildable output). Exit codes: 0 success, 1 `--check` problem or `--apply` with at least one failure, 2 usage error or refusal (for example `--apply` with no registry file; `--no-registry` overrides).
+- The script removes a worktree only when its PR is merged, the tree is clean, the branch tip equals the PR head, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process names its path, and `git worktree remove` (never `--force`) succeeds. It then clears `node_modules` husks and deletes the verified branch. Last, if the shared cargo target's build-script output (`<CARGO_TARGET_DIR>/debug/build/refract-tauri-*/output`) names a reaped or deleted worktree, `--apply` runs `cargo clean -p refract-tauri` there (skipped with a message while `cargo.exe`/`rustc.exe` runs; `--check` exits 1 while such a path remains). Everything else is skipped and reported (including open-PR worktrees and ignored files beyond rebuildable output). Exit codes: 0 success, 1 `--check` problem or `--apply` with at least one failure, 2 usage error or refusal (for example `--apply` with no registry file; `--no-registry` overrides).
 - Lane lifecycle: `.omp/skills/worktree-reap/SKILL.md`. Put this rule in every lane brief.
 
 ## Rust build is the main build (Stuart, 2026-10-13, epic #797)
@@ -126,7 +126,7 @@ requests view had drifted into two different filters, search fields and headers 
 
 ## Verifying the Rust (Tauri) build (epic #797)
 
-- Point `CARGO_TARGET_DIR` at the shared build cache for every `cargo`/`tauri` command; never let `src-tauri/target` appear in a worktree. Wait for a build in flight rather than starting a second one. Never delete under the shared cache except `cargo clean -p <crate>` for a confirmed stale-path error, or `pnpm cache:sweep` (age-based, refuses while a build holds the lock; run it when `pnpm ci:local` warns the cache is over 10 GB).
+- Point `CARGO_TARGET_DIR` at the shared build cache for every `cargo`/`tauri` command; never let `src-tauri/target` appear in a worktree. Wait for a build in flight rather than starting a second one. Never delete under the shared cache except `cargo clean -p <crate>` for a confirmed stale-path error (`pnpm worktrees:reap --apply` runs `cargo clean -p refract-tauri` itself when needed), or `pnpm cache:sweep` (age-based, refuses while a build holds the lock; run it when `pnpm ci:local` warns the cache is over 10 GB).
 - Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to a scratch dir, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR`, never `%APPDATA%\refract-tauri`. `pnpm verify:tauri` does this with a recorded-frame fake `omp` for no model cost.
 - Details: `docs/rust-build.md`.
 
