@@ -1229,3 +1229,5 @@ Also filed 2026-11-10 (Stuart): **#1878** (`p1`, `bug`, `chat`), Bug: Composer: 
 Also filed 2026-11-10 (Stuart): **#1879** (`p1`, `design`, `settings`), UI Polish: Model roles: rename Subagent to Task.
 
 Also filed 2026-11-10 (Stuart): **#1880** (`p1`, `feature`, `pull-requests`), Feat: Pull requests: merge card at the top of the PR view, modeled on GitHub's.
+
+Also filed 2026-11-10 (Stuart): **#1882** (`p1`, `design`), UI Polish: Charts: tooltips show each point's value.
