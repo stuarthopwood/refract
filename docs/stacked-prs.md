@@ -19,7 +19,7 @@ Always pass branch names as positional arguments, use `submit --auto`, and use `
 
 1. `gh stack init` branches from your local `main`, so first run `git fetch -q origin` and `git merge --ff-only origin/main` in the main checkout. Then create the stack with `gh stack init --base main <branch>`. This creates and checks out `<branch>`.
 2. Commit with plain `git add` and `git commit`.
-3. Run `gh stack submit --auto --open`. This pushes the branch, opens the PR, and links it into a stack on GitHub.
+3. Run `gh stack submit --auto --open`. This pushes the branch, opens the PR as a draft, and links it into a stack on GitHub. Run `gh pr ready <pr>` before you merge.
 4. Check the result with `gh stack view --json`.
 
 Put dependent work in one stack, from the bottom layer to the top layer: run `gh stack add <branch>` for each next layer, and commit in it. Give independent work its own stack.
