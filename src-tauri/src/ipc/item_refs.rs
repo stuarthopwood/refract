@@ -57,21 +57,26 @@ fn item_refs_search(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
         let query = arg_str(&args, 1)
             .filter(|q| q.chars().count() <= MAX_SEARCH_ARG_CHARS)
             .ok_or_else(|| invalid_argument(USAGE))?;
-        let (repo_path, _) = repo_path_for(&state, repository_id).await?;
-        // Cached per clone, so only the first search of a Project runs `git remote`.
-        let (owner, repo) = owner_repo_for(&repo_path).await.map_err(map_gh_error)?;
-        let slug = RepoSlug::parse(&owner, &repo).map_err(map_gh_error)?;
-        let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
+        // Registered before any await so a slower older request cannot cancel a newer one.
+        let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
         *SEARCH_CANCEL.lock().expect("search cancel mutex poisoned") = Some(cancel_tx);
+        let superseded = || {
+            map_gh_error(GhError::new(
+                GhErrorCode::GithubFailed,
+                "Search superseded by a newer one.",
+            ))
+        };
         // Dropping the losing future kills its `gh` child (kill_on_drop), so typing never stacks searches.
+        let work = async {
+            let (repo_path, _) = repo_path_for(&state, repository_id).await?;
+            // Cached per clone, so only the first search of a Project runs `git remote`.
+            let (owner, repo) = owner_repo_for(&repo_path).await.map_err(map_gh_error)?;
+            let slug = RepoSlug::parse(&owner, &repo).map_err(map_gh_error)?;
+            search_items(&repo_path, &slug, query).await.map_err(map_gh_error)
+        };
         let rows = tokio::select! {
-            found = search_items(&repo_path, &slug, query) => found.map_err(map_gh_error)?,
-            _ = cancel_rx => {
-                return Err(map_gh_error(GhError::new(
-                    GhErrorCode::GithubFailed,
-                    "Search superseded by a newer one.",
-                )))
-            }
+            found = work => found?,
+            _ = &mut cancel_rx => return Err(superseded()),
         };
         Ok(serde_json::to_value(rows).expect("item summaries are always JSON-serialisable"))
     })

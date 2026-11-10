@@ -48,7 +48,11 @@ export function useHashPicker({ sessionId, text, textareaRef, suppressed, disabl
   // The trigger is decided from the text before the caret, so the caret is tracked alongside the text.
   useEffect(() => {
     const target = textareaRef.current
-    if (!target || !tracking) return
+    if (!target) return
+    if (!tracking) {
+      setCaret(null)
+      return
+    }
     const sync = (): void => {
       if (document.activeElement === target) setCaretIfChanged(target)
     }
