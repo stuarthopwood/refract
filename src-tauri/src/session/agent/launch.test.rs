@@ -5,12 +5,23 @@ use crate::ipc::sessions_lifecycle::delete_in_flight;
 use crate::session::agent::SessionAgent;
 use crate::store::registry::Session;
 
-/// No repository is registered, so a start that passes the guard stops at `worktree-missing`
-/// and never spawns a process.
+/// The worktree directory is never created, so a start that passes the guard stops at
+/// `worktree-missing` and never spawns a process.
 async fn agent_for(session_id: &str) -> Arc<SessionAgent> {
     let dir = crate::test_scratch::path(format!("refract-launch-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let mut registry_store = crate::store::registry::RegistryStore::open(&dir)
+        .await
+        .unwrap();
+    registry_store
+        .add_repository(crate::store::registry::Repository {
+            id: "repo-missing".to_string(),
+            path: dir.join("repo").to_string_lossy().into_owned(),
+            name: "repo".to_string(),
+            default_branch: "main".to_string(),
+            added_at: "2026-10-14T00:00:00.000Z".to_string(),
+            color: None,
+        })
         .await
         .unwrap();
     registry_store
