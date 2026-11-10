@@ -1180,3 +1180,15 @@ Also filed 2026-11-09 (Stuart): **#1840** (`p1`, `design`, `right-pane`), UI Pol
 Also filed 2026-11-09 (Stuart): **#1842** (`p1`, `feature`, `right-pane`), Feat: File Explorer: stage, unstage and discard changes for a file or a folder with changes.
 
 Also filed 2026-11-10 (Stuart): **#1845** (`p1`, `bug`), Bug: Usage view: Tools Cost share shows dollars as a percentage (12071%).
+
+Also filed 2026-11-10 (Stuart): **#1847** (`p1`, `feature`), Feat: Usage: add 14 days, Month to date and Year to date preset ranges.
+
+Also filed 2026-11-10 (Stuart): **#1848** (`p1`, `design`), UI Polish: App wide: skeleton blocks instead of dashed boxes while loading, and one centred blurred loading indicator.
+
+Also filed 2026-11-10 (Stuart): **#1849** (`p1`, `design`), UI Polish: Usage: centred loading indicator over blurred stats while loading or filtering.
+
+Also filed 2026-11-10 (Stuart): **#1850** (`p1`, `design`), UI Polish: App wide: changed filters and toggle states persist until the app closes.
+
+Also filed 2026-11-10 (Stuart): **#1851** (`p1`, `design`), UI Polish: App wide: spell check and dictionary menu in every text input.
+
+Also filed 2026-11-10 (Stuart): **#1852** (`p1`, `design`), UI Polish: App wide: Slider uses the Material Design 3 style with a vertical bar handle.
