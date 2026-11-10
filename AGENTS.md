@@ -56,14 +56,14 @@ On 2026-10-08 the user decided that Refract is in a rapid-prototyping phase. Tes
 On 2026-10-09 the user decided that a docs-only PR merges without asking, so the docs in this repository never drift from the code they describe.
 
 - A PR is docs-only when every file it touches is a doc (`*.md`, `docs/`, `AGENTS.md`, `CONTEXT.md`, `README.md` and the like) — no source, test, or config file changed.
-- Open the PR, confirm `git diff origin/main...HEAD --stat` touches docs only, confirm `gh pr view` reports it as mergeable and clean, then merge it (`gh pr merge --squash --delete-branch`) and report the PR number, merge commit, and a one-paragraph summary of what changed. Do not wait for a human to say "merge it."
+- Open the PR, confirm `git diff origin/main...HEAD --stat` touches docs only, confirm `gh pr view` reports it as mergeable and clean, then merge it (see `docs/stacked-prs.md`) and report the PR number, merge commit, and a one-paragraph summary of what changed. Do not wait for a human to say "merge it."
 - This does not relax any other rule: still no new tests while prototyping (above), still ground every factual claim before writing it, and still run the post-merge worktree reap (next section) after the merge.
 
 ## Reap worktrees after every merge (HARD RULE, issue #658)
 
-Lane worktrees are created per lane and were never removed (49 worktrees, about 14 GB, measured 2026-10-11). The controller (whoever runs `gh pr merge`) owns the removal.
+Lane worktrees are created per lane and were never removed (49 worktrees, about 14 GB, measured 2026-10-11). The controller (whoever merges the PR) owns the removal.
 
-- After every `gh pr merge`, the controller runs `pnpm worktrees:reap` (dry run), reviews the plan, then runs `pnpm worktrees:reap --apply`.
+- After every merge, the controller runs `pnpm worktrees:reap` (dry run), reviews the plan, then runs `pnpm worktrees:reap --apply`.
 - Lanes never delete their own worktree, folder, or branch.
 - Before each multi-lane wave, run `pnpm worktrees:reap --check`. It exits 1 when the worktrees folder holds more than 8 worktrees or its drive has under 20 GB free.
 - The script removes a worktree only when its PR is merged, the tree is clean, the branch tip equals the PR head, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process names its path, and `git worktree remove` (never `--force`) succeeds. It then clears `node_modules` husks and deletes the verified branch. Last, if the shared cargo target's build-script output (`<CARGO_TARGET_DIR>/debug/build/refract-tauri-*/output`) names a reaped or deleted worktree, `--apply` runs `cargo clean -p refract-tauri` there (skipped with a message while `cargo.exe`/`rustc.exe` runs; `--check` exits 1 while such a path remains). Everything else is skipped and reported (including open-PR worktrees and ignored files beyond rebuildable output). Exit codes: 0 success, 1 `--check` problem or `--apply` with at least one failure, 2 usage error or refusal (for example `--apply` with no registry file; `--no-registry` overrides).
@@ -137,6 +137,7 @@ Squash merges use the PR title as the commit subject, and `pnpm release` reads i
 - Format: `type(scope): subject`. Types: feat, fix, perf, refactor, docs, chore, test, build, ci, style. Scope = the lane in lower case.
 - `feat` bumps minor; `fix`/`perf` bump patch; other types do not bump.
 - A breaking change adds `!` before the colon (`feat(scope)!: subject`). Always put the `!` in the title, because the changelog's "Breaking changes" section reads titles only.
+- Every PR opens through `gh stack`, including single-PR lanes; merge by stack size: `docs/stacked-prs.md`.
 - Details: `docs/pr-titles.md`.
 
 ## Grill first, then the full Spec Kit plan (HARD RULE)

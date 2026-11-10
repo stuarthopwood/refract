@@ -1208,3 +1208,5 @@ Also filed 2026-11-10 (Stuart): **#1856** (`p1`, `bug`), Bug: Keyboard shortcuts
 Also filed 2026-11-10 (Stuart): **#1864** (`p1`, `feature`, `chat`), Feat: App wide: every issue and PR reference is a link with a hover card.
 
 Also filed 2026-11-10 (Stuart): **#1865** (`p1`, `feature`, `chat`), Feat: Composer: mode picker and slash commands for Vibe, Pre-walk, Goal and Loop.
+
+Also filed 2026-11-10 (Stuart): **#1867** (`p1`, `feature`), Feat: Stacked pull requests via gh stack, toggled in Settings (default on).
