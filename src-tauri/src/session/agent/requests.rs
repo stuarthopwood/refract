@@ -15,6 +15,8 @@ impl SessionAgent {
         request_id: String,
         answer: Value,
     ) -> Result<(), AgentError> {
+        // A Refract-owned card (agent tool channel) completes in-process; omp never saw its id.
+        let owned = crate::agent_tools::approval::is_owned(&request_id);
         let (request, proc) = {
             let state = self.state.lock().await;
             let request = state
@@ -31,22 +33,28 @@ impl SessionAgent {
                         ),
                     )
                 })?;
-            let proc = state.process.clone().ok_or_else(|| {
-                AgentError::new(
+            let proc = state.process.clone();
+            if proc.is_none() && !owned {
+                return Err(AgentError::new(
                     "agent-not-running",
                     format!(
                         "SessionAgent {}: cannot answer, no live process",
                         self.session_id
                     ),
-                )
-            })?;
+                ));
+            }
             (request, proc)
         };
-        let response = build_dialog_response(&request_id, &request, &answer)
-            .map_err(|err| AgentError::new("invalid-argument", err))?;
-        proc.send_raw(response)
-            .await
-            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        if owned {
+            let decision = crate::agent_tools::approval::decision(&answer);
+            self.agent_tools.answer_approval(&request_id, decision);
+        } else if let Some(proc) = proc {
+            let response = build_dialog_response(&request_id, &request, &answer)
+                .map_err(|err| AgentError::new("invalid-argument", err))?;
+            proc.send_raw(response)
+                .await
+                .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        }
 
         // `cancelled` wins, then `approve`, otherwise a question answer.
         let resolved = if answer.get("cancelled").is_some() {

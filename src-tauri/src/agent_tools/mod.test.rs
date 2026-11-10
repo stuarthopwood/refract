@@ -1,0 +1,41 @@
+use super::*;
+
+#[test]
+fn root_sessions_get_the_three_prefixed_tools() {
+    let names = tools_for(ToolAccess::root());
+    assert_eq!(
+        names,
+        vec![
+            "refract_list_panels",
+            "refract_open_panel",
+            "refract_invoke_panel_action"
+        ]
+    );
+    assert!(names.iter().all(|n| n.starts_with(TOOL_PREFIX)));
+}
+
+#[test]
+fn child_sessions_get_no_tools() {
+    let access = ToolAccess {
+        role: Role::Child,
+        depth: 2,
+    };
+    assert!(tools_for(access).is_empty());
+    assert!(host_tool_defs(access).is_empty());
+}
+
+#[test]
+fn definitions_match_the_rpc_host_tool_shape() {
+    for def in host_tool_defs(ToolAccess::root()) {
+        assert_eq!(def["loadMode"], "essential");
+        assert!(def["name"].is_string());
+        assert!(!def["description"].as_str().unwrap().is_empty());
+        assert_eq!(def["parameters"]["type"], "object");
+    }
+}
+
+#[test]
+fn only_the_stream_owner_owns_a_call() {
+    assert!(owns("s1", "s1"));
+    assert!(!owns("s2", "s1"));
+}
