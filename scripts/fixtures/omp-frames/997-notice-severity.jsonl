@@ -55,9 +55,9 @@
 {"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}}
 {"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}
 {"type":"notice","level":"warning","message":"Issue #997 live check: short warning notice (NoticeRow colour)."}
-{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning."}
-{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning."}
-{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning."}
+{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning with a deliberately long message so the notice renders as an expandable long row and the count must stay visible beside its ellipsis."}
+{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning with a deliberately long message so the notice renders as an expandable long row and the count must stay visible beside its ellipsis."}
+{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning with a deliberately long message so the notice renders as an expandable long row and the count must stay visible beside its ellipsis."}
 {"type":"notice","level":"error","message":"Issue #997 live check: short error notice (NoticeRow colour)."}
 {"type":"command_output","text":"## Tools report 1648\n\nIssue #1648 live check: commands render as Markdown.\n\n- first item\n- second item\n\n| Tool | State |\n| --- | --- |\n| read | ready |\n| write | ready |\n\n```bash\necho hello-1648\n```\n"}
 {"type":"command_output","text":"Usage (4m ago)\nGitHub Copilot - Premium Requests (business) - Monthly\n  alpha-1648: 120 requests used (60.0% left)\n  beta-1648: 270 requests used (10.0% left)\n  gamma-1648: 300 requests used (0.0% left)\n"}
