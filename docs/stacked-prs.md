@@ -1,6 +1,6 @@
 # Stacked PRs
 
-On 2026-11-10 the user decided that every Refract PR opens and merges through GitHub stacked PRs, using the `gh stack` extension (v0.1.0). This applies to single-PR lanes and docs-only plan PRs too: a single PR is a stack of one. AGENTS.md keeps the summary rule.
+On 2026-11-10 the user decided that every Refract PR opens through GitHub stacked PRs, using the `gh stack` extension (v0.3.0 or later; v0.1.0 reports a false exit code 9). This applies to single-PR lanes and docs-only plan PRs too. GitHub treats only two or more linked PRs as a stack, so the merge command depends on the stack's size. AGENTS.md keeps the summary rule.
 
 ## Set up once
 
@@ -17,7 +17,7 @@ Always pass branch names as positional arguments, use `submit --auto`, and use `
 
 ## Open a PR
 
-1. Create the stack with `gh stack init --base main <branch>`. This creates and checks out `<branch>`.
+1. `gh stack init` branches from your local `main`, so first run `git fetch -q origin` and `git merge --ff-only origin/main` in the main checkout. Then create the stack with `gh stack init --base main <branch>`. This creates and checks out `<branch>`.
 2. Commit with plain `git add` and `git commit`.
 3. Run `gh stack submit --auto --open`. This pushes the branch, opens the PR, and links it into a stack on GitHub.
 4. Check the result with `gh stack view --json`.
@@ -33,7 +33,10 @@ Put dependent work in one stack, from the bottom layer to the top layer: run `gh
 
 ## Merge
 
-Run `gh stack merge <pr> --yes --squash`. The command merges every PR from the bottom of the stack up to and including `<pr>`, all or nothing. Never run `gh pr merge` on a stacked PR; it does not work. The repository deletes the head branch on merge.
+- **Stack of two or more PRs:** run `gh stack merge <pr> --yes --squash`. The command merges every PR from the bottom of the stack up to and including `<pr>`, all or nothing. Never run `gh pr merge` on a stacked PR; it does not work.
+- **Stack of one PR:** GitHub does not treat it as a stack, and `gh stack merge` refuses it. Run `gh pr merge <pr> --squash --delete-branch`.
+
+The repository deletes the head branch on merge.
 
 After the merge, the controller reaps the worktree (see `.omp/skills/worktree-reap/SKILL.md`).
 
@@ -47,6 +50,6 @@ When review feedback or a bug needs a change in a lower layer:
 
 ## Handle failures
 
-- Exit code 9 means the repository has stacks disabled. Stop and tell the user. Do not fall back to `gh pr create`.
+- Exit code 9 says the repository has stacks disabled. On GitHub, stacks need no enablement, so first check that `gh extension list` shows `gh-stack` v0.3.0 or later and that the active `gh` account can read the repository. If both hold, stop and tell the user. Do not fall back to `gh pr create`.
 - Exit code 3 means a rebase conflict. Resolve the files, run `git add`, then `gh stack rebase --continue`. To give up, run `gh stack rebase --abort`.
 - Exit code 6 means a branch belongs to more than one stack. Check out a branch that is in only one stack.
