@@ -39,6 +39,18 @@ interface NoticeRowProps {
   commandOutput?: boolean
 }
 
+// The `×N` repeat count gets its own span so the base text's ellipsis never clips it.
+function LongSummary({ text }: { text: string }) {
+  const match = /^(.*) (\u00d7\d+)$/s.exec(text)
+  if (!match) return <>{text}</>
+  return (
+    <span className="flex min-w-0">
+      <span className="truncate">{match[1]}</span>
+      <span className="shrink-0 whitespace-pre"> {match[2]}</span>
+    </span>
+  )
+}
+
 // A muted one-line notice; a long one expands to the full text, capped at about 12 lines.
 export function NoticeRow({ level, text: rawText, commandOutput = false }: NoticeRowProps) {
   // Guards against a malformed producer sending a non-string, which would crash the pane on `.length`.
@@ -84,7 +96,7 @@ export function NoticeRow({ level, text: rawText, commandOutput = false }: Notic
   return (
     <CollapsedLine
       icon={icon}
-      summary={text}
+      summary={<LongSummary text={text} />}
       summaryClassName={NOTICE_CLASS[level]}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >

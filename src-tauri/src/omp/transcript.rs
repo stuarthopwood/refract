@@ -1339,10 +1339,8 @@ fn apply_frame_items(
                 .unwrap_or("")
                 .to_string();
             let mut items = items;
-            if level == NoticeLevel::Warning {
-                if let Some(merged) = collapse_repeated_warning(&items, &message) {
-                    return merged;
-                }
+            if level == NoticeLevel::Warning && collapse_repeated_warning(&mut items, &message) {
+                return items;
             }
             let id = if has_user_acted {
                 format!("notice-{}", items.len())
