@@ -18,6 +18,8 @@ const watcherRefCounts = new Map<string, number>()
 interface DiffSelection {
   entry: GitChangesFileEntry
   group: GitChangesGroupKind
+  /** Set when an agent opened the diff: the Back button must not take focus. */
+  quiet?: boolean
 }
 
 const DEFAULT_GROUP_OPEN: Record<GitChangesGroupKind, boolean> = {
@@ -98,6 +100,19 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
     if (!focusGitRowInGroup(sessionId, group, entry.path) && !focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
     lastSelectionRef.current = null
   }, [selected, sessionId])
+
+  const showFileRequest = useGitChangesStore((s) => (sessionId ? s.showFileRequestBySession[sessionId] : undefined))
+  const requestSnapshot = sessionEntry?.snapshot ?? null
+  useEffect(() => {
+    if (!sessionId || !showFileRequest || !requestSnapshot) return
+    for (const group of GROUP_ORDER) {
+      const entry = requestSnapshot.groups[group].find((candidate) => candidate.path === showFileRequest)
+      if (!entry) continue
+      setSelected({ entry, group, quiet: true })
+      break
+    }
+    useGitChangesStore.getState().clearShowFileRequest(sessionId)
+  }, [sessionId, showFileRequest, requestSnapshot])
 
   const snapshot = sessionEntry?.snapshot ?? null
 
@@ -209,8 +224,8 @@ function GitChangesDiffPane({
   const identityRef = useRef<{ path: string; staged: boolean } | null>(null)
 
   useEffect(() => {
-    backButtonRef.current?.focus()
-  }, [])
+    if (!selection.quiet) backButtonRef.current?.focus()
+  }, [selection.quiet])
 
   useEffect(() => {
     let cancelled = false
