@@ -744,7 +744,12 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   entirely non-focusable, non-announced inert text; the Agents card's own link to the Subagent
   panel (FR-032) is its one pointer-only exception -- a keyboard user's own equivalent route is
   the readout itself, already keyboard-operable (FR-017). Activating or keyboard-operating
-  either readout is unaffected by the card's own open state.
+  either readout is unaffected by the card's own open state. Amended 2026-11-09 (issue #1735):
+  while the card is open its readout MUST carry `aria-expanded="true"` and an `aria-describedby`
+  naming the card's own id, so a screen reader announces the card's content when keyboard focus
+  opens it; closed, the readout MUST carry `aria-expanded="false"` and no `aria-describedby`
+  (the card is only mounted while open, so the reference never dangles). The card MUST NOT be a
+  live region.
 - **FR-032** (new, 2026-10-21, issue #700 slice (b); amended same day, gate round 1 finding 6):
   The Agents card MUST show a "<n> running" header, then one row per currently running
   subagent (capped at six, with a quiet "and N more" line past that), each leading with a status

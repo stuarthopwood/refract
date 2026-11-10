@@ -1,0 +1,4 @@
+# Incremental data was about 6.5 GB of the shared target's 14.8 GB (#1736). Cargo reads this file from
+# any cwd under the repo root, so it covers both `--manifest-path src-tauri/Cargo.toml` and the Tauri CLI.
+[build]
+incremental = false

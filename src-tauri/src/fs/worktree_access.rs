@@ -23,7 +23,8 @@ fn lock_for(session_id: &str) -> Arc<RwLock<()>> {
         .clone()
 }
 
-/// Read guard held by a worktree reader for its whole duration.
+/// Read guard for ONE git/gh call. Never nest guards or wrap a composition: a queued writer
+/// blocks a second read taken under a held one until the timeout (#1157).
 pub async fn read_guard(session_id: &str) -> OwnedRwLockReadGuard<()> {
     lock_for(session_id).read_owned().await
 }

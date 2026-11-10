@@ -15,6 +15,8 @@ import { CodeBlock } from './CodeBlock'
 import { MermaidBlock } from './MermaidBlock'
 import { linkClassName, mutedLinkClassName } from './linkStyles'
 import { LinkActions } from './LinkActions'
+import { ItemRefLink } from './ItemRefLink'
+import { ITEM_REF_TAG, rehypeItemRefs } from './itemRefs'
 import {
   MarkdownBlockquote,
   MarkdownOptionsContext,
@@ -216,7 +218,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
   )
 }
 
-const components: Components = {
+const components: Components & Record<typeof ITEM_REF_TAG, (props: { children?: React.ReactNode }) => React.ReactNode> = {
   // `markdownUrlTransform` has already reduced `href` to an absolute http(s) URL, a footnote
   // fragment or `''` (blocked: relative/`file:`/`javascript:` hrefs must never reach `openExternal`).
   a: ({ node: _node, href, children, className, ...props }) => {
@@ -251,12 +253,23 @@ const components: Components = {
     const { resolveImage } = React.useContext(MarkdownOptionsContext)
     const safe = safeUrl(typeof src === 'string' ? src : undefined)
     if (!safe) return <>{alt || 'image'}</>
-    if (insideLink) return <>{alt || safe}</>
+    // Only the Pull requests caller resolves images: render the picture inside the outer link so a click still opens it,
+    // with the alt text (never a second anchor) as the loading/failure fallback.
+    if (insideLink) {
+      const text = alt || safe
+      if (resolveImage && !streaming) return <ResolvedImage src={safe} alt={text} resolveImage={resolveImage} fallback={text} />
+      return <>{text}</>
+    }
     if (streaming) return <span className={inertLinkClassName}>{alt || safe}</span>
     const link = <ExternalLink href={safe} className={linkClassName}>{alt || safe}</ExternalLink>
     // Only a caller that passes `resolveImage` (the Pull requests view) ever fetches an image; the link above is also its loading/failure fallback.
     if (resolveImage) return <ResolvedImage src={safe} alt={alt ?? ''} resolveImage={resolveImage} fallback={link} />
     return link
+  },
+  [ITEM_REF_TAG]: ({ children }) => {
+    const streaming = React.useContext(StreamingContext)
+    const sessionId = React.useContext(LinkContext)
+    return <ItemRefLink text={String(children)} sessionId={sessionId} streaming={streaming} />
   },
   p: Paragraph,
   ul: UnorderedList,
@@ -376,7 +389,7 @@ function MarkdownImpl({ text, id, streaming = false, className, githubStyle = fa
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             remarkRehypeOptions={remarkRehypeOptions}
-            rehypePlugins={[rehypeSanitize]}
+            rehypePlugins={[rehypeSanitize, rehypeItemRefs]}
             components={components}
             urlTransform={markdownUrlTransform}
           >

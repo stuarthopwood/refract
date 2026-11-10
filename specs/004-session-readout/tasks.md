@@ -853,3 +853,7 @@ driven this round: `cargo test`, `pnpm build`, and the live CDP verify script
 ## Phase 51: Convergence for issue #1151 (Todo card self-reopen)
 
 - [x] T246 Disable the Todo readout card while the session has no todo plan as well as while pinned (`useReadoutCard({ disabled: pinned || !hasTodoPlan(todoTree) })` in `Readouts.tsx`), per FR-031
+
+## Phase 52: Convergence for issue #1735 (readout card announced on keyboard focus)
+
+- [x] T247 Add `aria-expanded` and an open-only `aria-describedby` (the card's `useId` id, set on `PopoverContent`) to the Todo and Agents readout chips via `useReadoutCard`'s `anchorAria`/`cardId` (`useReadoutCard.ts`, `Readouts.tsx`), per FR-031; no live region

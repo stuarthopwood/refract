@@ -5,6 +5,7 @@
 // count" slice (issue #569) feeds the sidebar badge and is independent of the list.
 import { create } from 'zustand'
 import { selectionAfterRefresh } from './selection-handoff'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import type { IpcError, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
@@ -151,7 +152,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
     // "Show more" keeps the applied search and takes the next page; it only commits the new limit
     // once the rows arrive, so the button stays mounted (and focused) while loading.
-    const query = more ? get().appliedQuery : get().query
+    const query = more ? get().appliedQuery : effectiveFilterQuery(get().query)
     const changedSearch = !more && query.trim() !== get().appliedQuery.trim()
     const limit = more
       ? Math.min(get().limit + PAGE_SIZE, MAX_ROWS)

@@ -2,6 +2,9 @@
 
 export type InstallableDependency = 'git' | 'omp' | 'github-cli';
 
+/** The three launch checks in run order; the keys of the `Readiness` fields `allPass` depends on. */
+export type ReadinessStepKey = 'git' | 'omp' | 'ompSignedIn';
+
 /** `readiness:install-progress` payload; `restartRequired` means the new binary is only found after a relaunch. */
 export interface DependencyInstallProgress {
   dependency: InstallableDependency;
@@ -29,6 +32,8 @@ import type { Check, Readiness, Result, Unsubscribe } from './ipc';
 export interface UpdatesApi {
   readiness: {
     check(): Promise<Result<Readiness>>;
+    /** One check by key, so the launch screen can run and show the three steps one at a time. */
+    checkStep(step: ReadinessStepKey): Promise<Result<Check>>;
     installDependency(dependency: InstallableDependency): Promise<Result<void>>;
   };
   updates: {
