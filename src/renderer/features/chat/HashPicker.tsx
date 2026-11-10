@@ -63,7 +63,7 @@ export function HashPicker({ id, rows, status, errorMessage, activeIndex, onSele
   }
   if (status === 'error') {
     return (
-      <div className={COMPOSER_MENU_NOTICE_CLASS}>
+      <div aria-hidden="true" className={COMPOSER_MENU_NOTICE_CLASS}>
         <InlineStatus tone="error" density="compact" className="p-0">
           {errorMessage ?? 'Could not search this repository.'}
         </InlineStatus>

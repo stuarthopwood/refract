@@ -8,9 +8,7 @@ import { applyHashPick, parseHashTrigger } from './hashTrigger'
 // Composer glue for the `#` picker (#1789). Self-contained so the composer only mounts it, routes
 // keys to it and reads its combobox attributes.
 
-const DEBOUNCE_MS = 150
-/** Mirrors the backend's cap; a longer query is not a title worth searching for. */
-const MAX_QUERY_CHARS = 64
+const DEBOUNCE_MS = 250
 const EMPTY_ROWS: readonly ItemSummary[] = []
 
 type SearchState =
@@ -36,6 +34,11 @@ export function useHashPicker({ sessionId, text, textareaRef, suppressed, disabl
     return remote?.kind === 'has' && Boolean(remote.owner) && Boolean(remote.repo)
   })
   const [caret, setCaret] = useState<{ start: number; end: number } | null>(null)
+  const tracking = hasGithubRepo && !disabled
+  const setCaretIfChanged = useCallback((target: HTMLTextAreaElement): void => {
+    const { selectionStart: start, selectionEnd: end } = target
+    setCaret((previous) => (previous && previous.start === start && previous.end === end ? previous : { start, end }))
+  }, [])
   const [dismissedFor, setDismissedFor] = useState<string | null>(null)
   const [activeIndex, setActiveIndex] = useState(0)
   const [search, setSearch] = useState<SearchState | null>(null)
@@ -45,9 +48,9 @@ export function useHashPicker({ sessionId, text, textareaRef, suppressed, disabl
   // The trigger is decided from the text before the caret, so the caret is tracked alongside the text.
   useEffect(() => {
     const target = textareaRef.current
-    if (!target) return
+    if (!target || !tracking) return
     const sync = (): void => {
-      if (document.activeElement === target) setCaret({ start: target.selectionStart, end: target.selectionEnd })
+      if (document.activeElement === target) setCaretIfChanged(target)
     }
     const clear = (): void => setCaret(null)
     document.addEventListener('selectionchange', sync)
@@ -59,18 +62,18 @@ export function useHashPicker({ sessionId, text, textareaRef, suppressed, disabl
       target.removeEventListener('blur', clear)
       target.removeEventListener('focus', sync)
     }
-  }, [textareaRef])
+  }, [textareaRef, tracking, setCaretIfChanged])
   // Chromium does not always fire `selectionchange` for a typed character, so re-read after each text change.
   useEffect(() => {
     const target = textareaRef.current
-    if (target && document.activeElement === target) setCaret({ start: target.selectionStart, end: target.selectionEnd })
-  }, [text, textareaRef])
+    if (!tracking) return
+    if (target && document.activeElement === target) setCaretIfChanged(target)
+  }, [text, textareaRef, tracking, setCaretIfChanged])
 
   const trigger = useMemo(() => {
-    if (!caret || !hasGithubRepo || suppressed || disabled) return null
-    const found = parseHashTrigger(text, caret.start, caret.end)
-    return found && found.query.length <= MAX_QUERY_CHARS ? found : null
-  }, [caret, hasGithubRepo, suppressed, disabled, text])
+    if (!caret || !tracking || suppressed) return null
+    return parseHashTrigger(text, caret.start, caret.end)
+  }, [caret, tracking, suppressed, text])
   const open = trigger !== null && dismissedFor !== text
   const query = trigger?.query ?? ''
   const searchKey = `${repositoryId ?? ''}\u0000${query}`
@@ -111,9 +114,11 @@ export function useHashPicker({ sessionId, text, textareaRef, suppressed, disabl
   }, [searchKey])
 
   useEffect(() => {
-    if (!open || status !== 'ready') return
-    announce(rows.length === 0 ? 'No matching items' : `${rows.length} ${rows.length === 1 ? 'result' : 'results'}`)
-  }, [open, status, rows, announce])
+    if (!open) return
+    // Loading is deliberately not announced: the empty-query list resolves at once and typing re-searches often.
+    if (status === 'error' && errorMessage) announce(errorMessage)
+    else if (status === 'ready') announce(rows.length === 0 ? 'No matching items' : `${rows.length} ${rows.length === 1 ? 'result' : 'results'}`)
+  }, [open, status, rows, errorMessage, announce])
 
   const select = useCallback(
     (item: ItemSummary): void => {
@@ -144,9 +149,11 @@ export function useHashPicker({ sessionId, text, textareaRef, suppressed, disabl
     }
     const picks = (event.key === 'Enter' || (event.key === 'Tab' && !event.shiftKey)) && !event.ctrlKey && !event.altKey && !event.metaKey
     if (!picks || event.nativeEvent.isComposing) return false
-    // Enter while the list is still loading must not send the half-typed `#query`.
-    if (status === 'loading' && event.key === 'Enter') {
+    // Enter with nothing to pick must not send the half-typed `#query`: loading just waits, while a
+    // failed or empty list is dismissed by this Enter so the next one sends the text as typed.
+    if (event.key === 'Enter' && rows.length === 0) {
       event.preventDefault()
+      if (status !== 'loading') setDismissedFor(text)
       return true
     }
     const item = rows[clampedIndex]

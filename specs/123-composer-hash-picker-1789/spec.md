@@ -45,6 +45,8 @@ To reference a pull request or issue the developer must know its number or leave
 2. With no match, it shows "No matching items".
 3. If the search fails (offline, `gh` signed out), it shows an inline error and the typed `#` text is untouched.
 4. A response for an older query never replaces the results of a newer one.
+5. The loading row is not announced (intentional: the empty-query list resolves at once and typing re-searches often); errors, the result count and "No matching items" are.
+6. When the list is empty or failed, the first Enter dismisses the picker and a second Enter sends the typed text; Enter while loading is swallowed.
 
 ## Requirements
 
@@ -60,6 +62,9 @@ To reference a pull request or issue the developer must know its number or leave
 
 ## Out of Scope
 Cross-repository search, paging, Markdown-link inserts, any #1837 change, a picker in other inputs.
+
+## Known gaps
+Indented (4+ space) code blocks are not detected as code, so `#` there still opens the picker.
 
 ## Success Criteria
 - **SC-001**: In a live Refract, typing `#` in a Session of a GitHub Project opens the picker, typing narrows it, Enter inserts `#N `, and the sent message shows the #1155 link.

@@ -57,14 +57,21 @@ function endsInsideCode(before: string): boolean {
   return endsInsideInlineCode(paragraph.endsWith('\n') ? paragraph.slice(0, -1) : paragraph)
 }
 
+/** Mirrors the backend's cap; a longer query is not a title worth searching for. */
+export const MAX_QUERY_CHARS = 64
+
 /** The `#query` the caret is at the end of, or null when no picker should be open. */
 export function parseHashTrigger(text: string, selectionStart: number, selectionEnd: number): HashTrigger | null {
   if (selectionStart !== selectionEnd || selectionStart > text.length) return null
   const before = text.slice(0, selectionStart)
+  // Bounded so a pasted wall of text with the caret at its end is not walked on every keystroke.
+  const floor = Math.max(0, before.length - (MAX_QUERY_CHARS + 1))
   let start = before.length
-  while (start > 0 && !/\s/.test(before[start - 1]!)) start--
+  while (start > floor && !/\s/.test(before[start - 1]!)) start--
+  if (start > 0 && !/\s/.test(before[start - 1]!)) return null
   const token = before.slice(start)
   if (!token.startsWith('#') || token.indexOf('#', 1) !== -1) return null
+  if (token.length - 1 > MAX_QUERY_CHARS) return null
   if (endsInsideCode(before.slice(0, start) + '#')) return null
   return { start, query: token.slice(1) }
 }

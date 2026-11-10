@@ -283,6 +283,31 @@ fn merge_results(
     rows
 }
 
+/// `gh api` arguments for one search; only an empty term asks for the most recently updated open items.
+fn search_args(slug: &RepoSlug, term: &str) -> Vec<String> {
+    let mut args: Vec<String> = [
+        "api",
+        "--method",
+        "GET",
+        "search/issues",
+        "-f",
+    ]
+    .map(String::from)
+    .into();
+    args.push(format!("q={}", search_query(slug, term)));
+    args.push("-f".to_string());
+    args.push(format!("per_page={MAX_SEARCH_RESULTS}"));
+    if term.is_empty() {
+        args.extend(["-f", "sort=updated", "-f", "order=desc"].map(String::from));
+    }
+    args
+}
+
+/// A digits-only term names an item directly; GitHub's search cannot match a number prefix.
+fn exact_number(term: &str) -> Option<u64> {
+    term.parse::<u64>().ok().filter(|&n| valid_item_number(n))
+}
+
 /// Searches issues and pull requests of `slug` only. `cwd` is any local clone, for `gh`'s auth context.
 pub async fn search_items(
     cwd: &Path,
@@ -290,27 +315,17 @@ pub async fn search_items(
     text: &str,
 ) -> Result<Vec<ItemSummary>, GhError> {
     let term = sanitize_query(text);
-    let q = format!("q={}", search_query(slug, &term));
-    let per_page = format!("per_page={MAX_SEARCH_RESULTS}");
-    let mut args: Vec<&str> = vec![
-        "api", "--method", "GET", "search/issues", "-f", q.as_str(), "-f", per_page.as_str(),
-    ];
-    if term.is_empty() {
-        args.extend(["-f", "sort=updated", "-f", "order=desc"]);
-    }
+    let args = search_args(slug, &term);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     // The exact item is best effort: a number that is not an item (404) just means no pinned row.
-    let exact_number = term
-        .parse::<u64>()
-        .ok()
-        .filter(|&n| valid_item_number(n));
-    let exact_path = exact_number.map(|n| slug.api_path("issues", n));
+    let exact_path = exact_number(&term).map(|n| slug.api_path("issues", n));
     let exact_future = async {
         match &exact_path {
             Some(path) => gh_json::<RawSearchItem>(cwd, &["api", path.as_str()]).await.ok(),
             None => None,
         }
     };
-    let (page, exact) = tokio::join!(gh_json::<RawSearchPage>(cwd, &args), exact_future);
+    let (page, exact) = tokio::join!(gh_json::<RawSearchPage>(cwd, &arg_refs), exact_future);
     let found = page?.items.into_iter().map(summarise).collect();
     Ok(merge_results(exact.map(summarise), found))
 }
@@ -470,5 +485,114 @@ mod search_tests {
         assert_eq!(rows[0].number, 5);
         assert_eq!(rows.iter().filter(|r| r.number == 5).count(), 1);
         assert!(merge_results(None, Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn merge_keeps_full_order_with_exact_first() {
+        let found: Vec<ItemSummary> = (1..=12).map(row).collect();
+        let numbers: Vec<u64> = merge_results(Some(row(5)), found)
+            .iter()
+            .map(|r| r.number)
+            .collect();
+        assert_eq!(numbers, vec![5, 1, 2, 3, 4, 6, 7, 8, 9, 10]);
+    }
+
+    #[test]
+    fn merge_pins_an_exact_item_the_search_did_not_find() {
+        let found: Vec<ItemSummary> = (1..=12).map(row).collect();
+        let numbers: Vec<u64> = merge_results(Some(row(50)), found)
+            .iter()
+            .map(|r| r.number)
+            .collect();
+        assert_eq!(numbers, vec![50, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    }
+
+    #[test]
+    fn merge_prefers_the_pinned_rows_data_over_the_search_copy() {
+        let mut pinned = row(5);
+        pinned.title = "pinned".to_string();
+        let rows = merge_results(Some(pinned), (1..=6).map(row).collect());
+        assert_eq!(rows[0].title, "pinned");
+        assert_eq!(rows.iter().filter(|r| r.number == 5).count(), 1);
+        assert!(merge_results(None, Vec::new()).is_empty());
+    }
+
+    #[test]
+    fn sanitize_keeps_title_characters_and_drops_hostile_ones() {
+        assert_eq!(sanitize_query("fix-login.v2_x"), "fix-login.v2_x");
+        assert_eq!(sanitize_query("  repo:evil/x"), "repoevilx");
+        assert_eq!(sanitize_query("--x"), "x");
+        assert_eq!(sanitize_query("---"), "");
+        assert_eq!(sanitize_query("héllo"), "hllo");
+        assert_eq!(sanitize_query("日本"), "");
+    }
+
+    #[test]
+    fn sanitize_cut_may_end_on_a_hyphen() {
+        let text = format!("{}-bcd", "a".repeat(MAX_QUERY_CHARS - 1));
+        let term = sanitize_query(&text);
+        assert_eq!(term.len(), MAX_QUERY_CHARS);
+        assert!(term.ends_with('-'));
+    }
+
+    #[test]
+    fn search_args_for_an_empty_term_sort_by_recent_update() {
+        assert_eq!(
+            search_args(&slug(), ""),
+            [
+                "api", "--method", "GET", "search/issues", "-f", "q=repo:a/b is:open", "-f",
+                "per_page=10", "-f", "sort=updated", "-f", "order=desc"
+            ]
+        );
+    }
+
+    #[test]
+    fn search_args_for_a_term_have_no_sort_or_order() {
+        assert_eq!(
+            search_args(&slug(), "login"),
+            [
+                "api", "--method", "GET", "search/issues", "-f", "q=repo:a/b in:title login",
+                "-f", "per_page=10"
+            ]
+        );
+    }
+
+    #[test]
+    fn exact_number_accepts_only_real_item_numbers() {
+        assert_eq!(exact_number("0"), None);
+        assert_eq!(exact_number("007"), Some(7));
+        assert_eq!(exact_number("12abc"), None);
+        assert_eq!(exact_number("1.5"), None);
+        assert_eq!(exact_number("99999999999999999999999"), None);
+        assert_eq!(exact_number("2147483647"), Some(i32::MAX as u64));
+        assert_eq!(exact_number("2147483648"), None);
+    }
+
+    #[test]
+    fn closed_unmerged_pull_request_is_closed_not_merged() {
+        let page: RawSearchPage = serde_json::from_str(
+            r#"{"items":[{"number":4,"title":"x","state":"closed","draft":false,"pull_request":{"merged_at":null}}]}"#,
+        )
+        .unwrap();
+        let row = summarise(page.items.into_iter().next().unwrap());
+        assert_eq!(row.kind, ItemKind::PullRequest);
+        assert_eq!(row.state, ItemState::Closed);
+    }
+
+    #[test]
+    fn item_summary_serialises_camel_case_with_kebab_kind() {
+        let summary = ItemSummary {
+            number: 7,
+            kind: ItemKind::PullRequest,
+            title: "t".to_string(),
+            state: ItemState::Open,
+            draft: true,
+        };
+        assert_eq!(
+            serde_json::to_value(summary).unwrap(),
+            serde_json::json!({
+                "number": 7, "kind": "pull-request", "title": "t", "state": "open", "draft": true
+            })
+        );
     }
 }

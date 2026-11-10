@@ -86,7 +86,7 @@ function isGhostTextEligible(text: string, cursor: number): boolean {
   if (!/[A-Za-z]+$/.test(line)) return false // cursor doesn't end a prose word
 
   const token = /\S+$/.exec(line)?.[0] ?? ''
-  if (token.includes('/') || token.includes('\\')) return false // a file-path-shaped token
+  if (token.includes('/') || token.includes('\\') || token.startsWith('#')) return false // a file path or an open `#` picker query
 
   return true
 }
