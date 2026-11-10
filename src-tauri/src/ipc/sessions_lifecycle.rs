@@ -398,7 +398,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             let mut message = err.message;
             if was_running {
                 let agent = state.session_manager.get_or_create_agent(&id);
-                let _ = agent.start().await;
+                let _ = agent.start_unchecked().await;
                 if agent.status().await == SessionStatus::Stopped {
                     message = format!(
                         "{message} Also, Refract could not restart this Session's agent automatically -- reopen it yourself."

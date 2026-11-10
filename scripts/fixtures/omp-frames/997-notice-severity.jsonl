@@ -35,6 +35,7 @@
 // `scripts/verify-tauri-1648.mjs` can assert Markdown rendering and the usage card. Synthesized; earlier consumers are unaffected.
 // EXTENDED AGAIN (#758): four `write` calls (a relative path, `xd://`, `~/` and a UNC path) after the steers, so
 // `scripts/verify-tauri-758.mjs` can assert only the relative one is drawn as a file link. Synthesized.
+// EXTENDED AGAIN (#1702): three identical warning `notice` frames after the first warning, so `scripts/verify-tauri-1702.mjs` can assert they collapse into one row with a `×3` count. Synthesized.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -54,6 +55,9 @@
 {"type":"message_update","messageId":"msg-a1","assistantMessageEvent":{"type":"text_delta","contentIndex":0,"partial":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}}
 {"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"text","text":"Here is a diagram:\n\n```mermaid\nflowchart TD\n  A[Start] --> B[End]\n```\n\nAnd a journey:\n\n```mermaid\njourney\n  title My day\n  section Go to work\n    Make tea: 5: Me\n    Go upstairs: 3: Me\n  section Go home\n    Go downstairs: 5: Me\n```\n"}],"timestamp":0}}
 {"type":"notice","level":"warning","message":"Issue #997 live check: short warning notice (NoticeRow colour)."}
+{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning with a deliberately long message so the notice renders as an expandable long row and the count must stay visible beside its ellipsis."}
+{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning with a deliberately long message so the notice renders as an expandable long row and the count must stay visible beside its ellipsis."}
+{"type":"notice","level":"warning","message":"Issue #1702 live check: repeated token-guard warning with a deliberately long message so the notice renders as an expandable long row and the count must stay visible beside its ellipsis."}
 {"type":"notice","level":"error","message":"Issue #997 live check: short error notice (NoticeRow colour)."}
 {"type":"command_output","text":"## Tools report 1648\n\nIssue #1648 live check: commands render as Markdown.\n\n- first item\n- second item\n\n| Tool | State |\n| --- | --- |\n| read | ready |\n| write | ready |\n\n```bash\necho hello-1648\n```\n"}
 {"type":"command_output","text":"Usage (4m ago)\nGitHub Copilot - Premium Requests (business) - Monthly\n  alpha-1648: 120 requests used (60.0% left)\n  beta-1648: 270 requests used (10.0% left)\n  gamma-1648: 300 requests used (0.0% left)\n"}

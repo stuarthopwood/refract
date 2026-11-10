@@ -1,5 +1,6 @@
 import { BotIcon, CircleDotIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, GitPullRequestIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/state'
+import panelContract from '../../../../specs/124-tool-channel-1193/contracts/panel-actions.json'
 
 export type PanelId =
   | 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline' | 'session-usage'
@@ -11,29 +12,58 @@ export function isPinnedPanelId(id: string): id is PinnedPanelId {
   return id === 'pull-request' || id === 'issue'
 }
 
+/** JSON Schema fragment; Rust checks the same declaration, so it stays plain data. */
+export type PanelJsonSchema = Record<string, unknown>
+
+export interface PanelActionDescriptor {
+  name: string
+  description: string
+  inputSchema: PanelJsonSchema
+  mutates: boolean
+}
+
 export interface HostedPanelDescriptor {
   id: PanelId
   name: string
   icon: LucideIcon
   hasCount: boolean
+  /** What an agent may drive here, read from the shared contract so `mutates` cannot drift from Rust's approval gate. */
+  actions: PanelActionDescriptor[]
+  openInputSchema?: PanelJsonSchema
+}
+
+interface ContractPanel {
+  id: string
+  actions: PanelActionDescriptor[]
+  openInputSchema?: PanelJsonSchema
+}
+
+const CONTRACT_PANELS = new Map<string, ContractPanel>((panelContract.panels as ContractPanel[]).map((panel) => [panel.id, panel]))
+
+function declared(id: PanelId): Pick<HostedPanelDescriptor, 'actions' | 'openInputSchema'> {
+  const panel = CONTRACT_PANELS.get(id)
+  return { actions: panel?.actions ?? [], ...(panel?.openInputSchema ? { openInputSchema: panel.openInputSchema } : {}) }
 }
 
 export const HOSTED_PANELS: HostedPanelDescriptor[] = [
-  { id: 'git-changes', name: 'Git changes', icon: GitBranchIcon, hasCount: true },
-  { id: 'file-explorer', name: 'File explorer', icon: FolderTreeIcon, hasCount: false },
-  { id: 'subagents', name: 'Subagents', icon: BotIcon, hasCount: true },
-  { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false },
-  { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false },
-  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false },
-  { id: 'outline', name: 'Outline', icon: ListTreeIcon, hasCount: false },
-  { id: 'session-usage', name: 'Session usage', icon: GaugeIcon, hasCount: false }
+  { id: 'git-changes', name: 'Git changes', icon: GitBranchIcon, hasCount: true, ...declared('git-changes') },
+  { id: 'file-explorer', name: 'File explorer', icon: FolderTreeIcon, hasCount: false, ...declared('file-explorer') },
+  { id: 'subagents', name: 'Subagents', icon: BotIcon, hasCount: true, ...declared('subagents') },
+  { id: 'side-chat', name: 'Side chat', icon: MessageCircleIcon, hasCount: false, ...declared('side-chat') },
+  { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false, ...declared('fdb-knowledge') },
+  { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false, ...declared('agent-builder') },
+  { id: 'outline', name: 'Outline', icon: ListTreeIcon, hasCount: false, ...declared('outline') },
+  { id: 'session-usage', name: 'Session usage', icon: GaugeIcon, hasCount: false, ...declared('session-usage') }
 ]
 
 // Opened only from the chat header, so they stay out of the rail, launcher and saved layout.
 const PINNED_PANELS: HostedPanelDescriptor[] = [
-  { id: 'pull-request', name: 'Pull request', icon: GitPullRequestIcon, hasCount: false },
-  { id: 'issue', name: 'Issue', icon: CircleDotIcon, hasCount: false }
+  { id: 'pull-request', name: 'Pull request', icon: GitPullRequestIcon, hasCount: false, ...declared('pull-request') },
+  { id: 'issue', name: 'Issue', icon: CircleDotIcon, hasCount: false, ...declared('issue') }
 ]
+
+/** Every panel an agent can see, rail panels first. */
+export const ALL_PANELS: readonly HostedPanelDescriptor[] = [...HOSTED_PANELS, ...PINNED_PANELS]
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {
   return HOSTED_PANELS.find((panel) => panel.id === id) ?? PINNED_PANELS.find((panel) => panel.id === id)
