@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "panels": [
+    {
+      "id": "git-changes",
+      "name": "Git changes",
+      "openInputSchema": {
+        "type": "object",
+        "properties": { "path": { "type": "string", "description": "Worktree-relative path of a changed file to select." } },
+        "additionalProperties": false
+      },
+      "actions": [
+        {
+          "name": "show_file",
+          "description": "Select a changed file and show its diff.",
+          "mutates": false,
+          "inputSchema": {
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "Worktree-relative path." } },
+            "required": ["path"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "stage_file",
+          "description": "Stage one file.",
+          "mutates": true,
+          "inputSchema": {
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "Worktree-relative path." } },
+            "required": ["path"],
+            "additionalProperties": false
+          }
+        },
+        {
+          "name": "unstage_file",
+          "description": "Unstage one file.",
+          "mutates": true,
+          "inputSchema": {
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "Worktree-relative path." } },
+            "required": ["path"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "file-explorer",
+      "name": "File explorer",
+      "actions": [
+        {
+          "name": "reveal",
+          "description": "Reveal a path in the file tree: expand to it and select it.",
+          "mutates": false,
+          "inputSchema": {
+            "type": "object",
+            "properties": { "path": { "type": "string", "description": "Worktree-relative path." } },
+            "required": ["path"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "subagents",
+      "name": "Subagents",
+      "actions": [
+        {
+          "name": "select_agent",
+          "description": "Select a Subagent in the panel.",
+          "mutates": false,
+          "inputSchema": {
+            "type": "object",
+            "properties": { "agentId": { "type": "string", "description": "Id of the Subagent." } },
+            "required": ["agentId"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "pull-request",
+      "name": "Pull request",
+      "actions": [
+        {
+          "name": "open_pull_request",
+          "description": "Open a pull request of this Session's Project.",
+          "mutates": false,
+          "inputSchema": {
+            "type": "object",
+            "properties": { "number": { "type": "integer", "minimum": 1, "description": "Pull request number." } },
+            "required": ["number"],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "id": "side-chat",
+      "name": "Side chat",
+      "actions": [
+        {
+          "name": "open",
+          "description": "Open Side chat without focusing its input.",
+          "mutates": false,
+          "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+        }
+      ]
+    },
+    { "id": "outline", "name": "Outline", "actions": [] },
+    { "id": "session-usage", "name": "Session usage", "actions": [] },
+    { "id": "issue", "name": "Issue", "actions": [] },
+    { "id": "fdb-knowledge", "name": "FDB Knowledge", "actions": [] },
+    { "id": "agent-builder", "name": "Agent Builder", "actions": [] }
+  ]
+}

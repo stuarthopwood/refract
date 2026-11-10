@@ -22,7 +22,7 @@ Refract registers three host tools with omp on every launch and serves them over
 
 ### Single source of truth for actions
 
-`contracts/panel-actions.json` (new) lists, per panel id, each action's `name`, `description`, `inputSchema` (JSON Schema) and `mutates`, plus per-panel optional `openInputSchema`. Rust embeds it with `include_str!`; the renderer imports it (`resolveJsonModule`). `panel-registry.ts` joins it with a handler map, so `mutates` cannot drift between the process that gates approval and the process that runs the action. Both sides validate `input` against the same schema (Rust: `jsonschema` crate if already in `Cargo.lock`, else a small hand check of `type/required/properties/additionalProperties`; renderer: the same hand check). The first worker confirms which in T001.
+`contracts/panel-actions.json` (new) lists, per panel id, each action's `name`, `description`, `inputSchema` (JSON Schema) and `mutates`, plus per-panel optional `openInputSchema`. Rust embeds it with `include_str!`; the renderer imports it (`resolveJsonModule`). `panel-registry.ts` joins it with a handler map, so `mutates` cannot drift between the process that gates approval and the process that runs the action. Both sides validate `input` against the same schema with a small hand check of `type/required/properties/additionalProperties` (plus `minimum` for integers): the `jsonschema` crate is not in `Cargo.lock` (confirmed in T001), so no new dependency is added.
 
 ### Rust: `src-tauri/src/agent_tools/` (new module)
 
