@@ -1220,12 +1220,12 @@ Also filed 2026-11-10 (Stuart): **#1874** (`p1`, `design`, `settings`), UI Polis
 
 Also filed 2026-11-10 (Stuart): **#1875** (`p1`, `design`, `chat`), UI Polish: Chat: rows that fit on one line show no expand chevron.
 
-Also filed 2026-11-10 (Stuart): **#1876** (`p1`, `bug`, `chat`), Bug: Chat: Advisor card's left bar runs through the header.
+Also filed 2026-11-10 (Stuart): **#1876** (`p1`, `bug`, `design`, `chat`), Bug: Chat: Advisor card's left bar runs through the header.
 
-Also filed 2026-11-10 (Stuart): **#1877** (`p1`, `bug`, `chat`), Bug: Chat: agent-to-agent rows do not use the accent colour.
+Also filed 2026-11-10 (Stuart): **#1877** (`p1`, `bug`, `design`, `chat`), Bug: Chat: agent-to-agent rows do not use the accent colour.
 
-Also filed 2026-11-10 (Stuart): **#1878** (`p1`, `bug`), Bug: Composer: model picker does not show the role on Session start or resume.
+Also filed 2026-11-10 (Stuart): **#1878** (`p1`, `bug`, `chat`), Bug: Composer: model picker does not show the role on Session start or resume.
 
-Also filed 2026-11-10 (Stuart): **#1879** (`p1`, `design`), UI Polish: Model roles: rename Subagent to Task.
+Also filed 2026-11-10 (Stuart): **#1879** (`p1`, `design`, `settings`), UI Polish: Model roles: rename Subagent to Task.
 
 Also filed 2026-11-10 (Stuart): **#1880** (`p1`, `feature`, `pull-requests`), Feat: Pull requests: merge card at the top of the PR view, modeled on GitHub's.
