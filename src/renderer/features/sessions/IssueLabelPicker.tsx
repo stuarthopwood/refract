@@ -10,6 +10,7 @@ import { CHECKBOX_BOX_CLASS, CHECKBOX_LIST_ITEM_CLASS, CheckboxIndicator, Checkb
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { SearchField } from '@/components/SearchField'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { ColourDot } from '@/components/ColourDot'
 import type { IssueLabel } from '../../../shared/ipc-issues'
 
@@ -23,7 +24,7 @@ interface IssueLabelPickerProps {
 
 export function IssueLabelPicker({ labels, selected, onChange, disabled, unavailable }: IssueLabelPickerProps) {
   const [filter, setFilter] = useState('')
-  const needle = filter.trim().toLowerCase()
+  const needle = effectiveFilterQuery(filter).toLowerCase()
   const visible = labels.filter((label) => label.name.toLowerCase().includes(needle))
   const toggle = (name: string) =>
     onChange(selected.includes(name) ? selected.filter((entry) => entry !== name) : [...selected, name])
@@ -63,7 +64,7 @@ export function IssueLabelPicker({ labels, selected, onChange, disabled, unavail
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="flex w-72 flex-col gap-2 p-2">
-            <SearchField label="Filter labels" placeholder="Filter labels…" value={filter} onValueChange={setFilter} />
+            <SearchField label="Filter labels" placeholder="Filter labels…" value={filter} onValueChange={setFilter} resultCount={visible.length} />
             <div role="group" aria-label="Labels" className="flex max-h-56 flex-col gap-1 overflow-y-auto">
               {visible.length === 0 && <InlineStatus density="compact">No matching labels</InlineStatus>}
               {visible.map((label) => (

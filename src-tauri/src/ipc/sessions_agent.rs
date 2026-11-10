@@ -59,6 +59,9 @@ fn can_resume_session(
     stop_reason == Some("agent-exited") || terminated_unexpectedly
 }
 
+/// Refusal code shared by resume and attach; an archived Session is never started.
+const REFUSED_ARCHIVED: &str = "archived";
+
 /// Session-state half of the resume check; the busy half is `try_lock_resuming`.
 fn check_resume_eligible(
     status: SessionStatus,
@@ -69,6 +72,9 @@ fn check_resume_eligible(
     if status != SessionStatus::Stopped {
         return Some("not-stopped");
     }
+    if archived {
+        return Some(REFUSED_ARCHIVED);
+    }
     if !can_resume_session(status, stop_reason, terminated_unexpectedly, archived) {
         return Some("not-eligible");
     }
@@ -78,11 +84,13 @@ fn check_resume_eligible(
 const RESUME_REFUSAL_MESSAGE_BUSY: &str = "Another action is already in progress for this Session.";
 const RESUME_REFUSAL_MESSAGE_NOT_STOPPED: &str = "Session is not stopped.";
 const RESUME_REFUSAL_MESSAGE_NOT_ELIGIBLE: &str = "Session is not eligible to resume.";
+const REFUSAL_MESSAGE_ARCHIVED: &str = "Session is archived.";
 
 fn resume_refusal_message(code: &str) -> &'static str {
     match code {
         "busy" => RESUME_REFUSAL_MESSAGE_BUSY,
         "not-stopped" => RESUME_REFUSAL_MESSAGE_NOT_STOPPED,
+        REFUSED_ARCHIVED => REFUSAL_MESSAGE_ARCHIVED,
         _ => RESUME_REFUSAL_MESSAGE_NOT_ELIGIBLE,
     }
 }
@@ -158,14 +166,14 @@ pub(crate) async fn resume_session_core<A: ResumableAgent>(
     };
     // Refuses archived Sessions before the tail read, which is expensive.
     if archived {
-        return Err(ResumeCoreError::Refused("not-eligible"));
+        return Err(ResumeCoreError::Refused(REFUSED_ARCHIVED));
     }
     let status = agent.status().await;
     let stop_reason = agent.stop_reason().await;
     let detection = agent.resolve_termination().await;
     // Fresh archive re-check: a concurrent archive can land during the tail read above.
     if agent.is_archived().await {
-        return Err(ResumeCoreError::Refused("not-eligible"));
+        return Err(ResumeCoreError::Refused(REFUSED_ARCHIVED));
     }
     if let Some(code) = check_resume_eligible(
         status,
@@ -240,10 +248,7 @@ impl ResumableAgent for ResumeAgentAdapter<'_> {
             Some(session) if session.archived_at.is_none() => {}
             _ => {
                 self.agent.shutdown().await;
-                return Err(AgentError::new(
-                    "not-eligible",
-                    "Session is not eligible to resume.",
-                ));
+                return Err(AgentError::new(REFUSED_ARCHIVED, REFUSAL_MESSAGE_ARCHIVED));
             }
         }
         self.agent
@@ -265,7 +270,7 @@ pub fn sessions_resume(state: AppState, args: Vec<Value>) -> HandlerFuture {
         };
         // Refuse archived Sessions before the tail read; `agent-exited` would otherwise pass.
         if session.archived_at.is_some() {
-            return Err(invalid_argument(resume_refusal_message("not-eligible")));
+            return Err(invalid_argument(resume_refusal_message(REFUSED_ARCHIVED)));
         }
         let agent = state.session_manager.get_or_create_agent(&id);
         let adapter = ResumeAgentAdapter {
@@ -301,26 +306,33 @@ pub fn sessions_resume(state: AppState, args: Vec<Value>) -> HandlerFuture {
 pub(crate) trait AttachableAgent {
     async fn status(&self) -> SessionStatus;
     async fn resolve_termination(&self) -> TerminationDetectionResult;
+    /// Fresh archive state; a missing registry row counts as archived.
+    async fn is_archived(&self) -> bool;
     async fn start(&self) -> Result<(), AgentError>;
     async fn notify_list_changed(&self);
 }
 
-/// `force_start` restarts regardless of reason; a passive open never starts the agent.
+/// `force_start` restarts regardless of reason, except for archived Sessions (refused);
+/// a passive open never starts the agent, so archived Sessions can still be viewed.
 /// Returns a fresh termination result only when the Session is `Stopped`.
 pub(crate) async fn attach_snapshot_decision<A: AttachableAgent>(
     agent: &A,
     force_start: bool,
-) -> Option<TerminationDetectionResult> {
+) -> Result<Option<TerminationDetectionResult>, &'static str> {
     if agent.status().await != SessionStatus::Stopped {
-        return None;
+        return Ok(None);
     }
     // A requested stop is read from memory or the persisted marker, never the tail.
     let detection = agent.resolve_termination().await;
     if force_start {
+        // Fresh check right before start(): an archive can land during the tail read.
+        if agent.is_archived().await {
+            return Err(REFUSED_ARCHIVED);
+        }
         let _ = agent.start().await;
         agent.notify_list_changed().await;
     }
-    Some(detection)
+    Ok(Some(detection))
 }
 
 struct AttachAgentAdapter<'a> {
@@ -336,6 +348,15 @@ impl AttachableAgent for AttachAgentAdapter<'_> {
 
     async fn resolve_termination(&self) -> TerminationDetectionResult {
         self.agent.resolve_termination().await
+    }
+
+    async fn is_archived(&self) -> bool {
+        self.state
+            .registry
+            .lock()
+            .await
+            .get_session(self.id)
+            .is_none_or(|session| session.archived_at.is_some())
     }
 
     async fn start(&self) -> Result<(), AgentError> {
@@ -369,7 +390,9 @@ async fn attach_snapshot_core(
         id,
         agent: agent.clone(),
     };
-    let detection = attach_snapshot_decision(&adapter, force_start).await;
+    let detection = attach_snapshot_decision(&adapter, force_start)
+        .await
+        .map_err(|code| invalid_argument(resume_refusal_message(code)))?;
     let refreshed = state
         .registry
         .lock()

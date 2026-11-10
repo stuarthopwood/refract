@@ -448,6 +448,10 @@ _Avoid_: label count, more-labels badge
 The single `CARGO_TARGET_DIR` every worktree builds into (`docs/rust-build.md`), so a lane never creates its own `src-tauri/target`.
 _Avoid_: target folder, per-worktree target
 
+**Sweep**:
+Running `pnpm cache:sweep` (`scripts/cache-sweep.mjs`, #1736): removes **Shared build cache** artefacts unused for N days (default 7, `--days N`; `--dry-run` previews) through the pinned cargo-sweep 0.8.0. It refuses while a cargo build holds the target lock (enforced on Windows only; see `docs/rust-build.md`).
+_Avoid_: cargo clean, cache wipe
+
 **Token guard**:
 Refract's Settings > OMP launch-overlay values (`src-tauri/src/session/token_guard.rs`, `src/shared/tokenGuard.ts`) that cap what the agent spends. App-wide, applied to new **Sessions** at launch, not set per **Session**.
 _Avoid_: spend limit, cost cap

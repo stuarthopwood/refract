@@ -255,8 +255,11 @@ pub fn file_explorer_get_status(state: AppState, args: Vec<Value>) -> HandlerFut
             "fileExplorer.getStatus rejected an oversized sessionId",
         )?;
         let (worktree_path, _repo_path, _archived) = session_context(&state, &session_id).await?;
-        // `None` is a normal result, never an IPC error.
-        let status = read_git_status(&worktree_path).await;
+        // `None` is a normal result, never an IPC error; a refused guard reads as `None` too (#1157).
+        let status = match crate::fs::worktree_access::read_guard_bounded(&session_id).await {
+            Ok(_guard) => read_git_status(&worktree_path).await,
+            Err(_) => None,
+        };
         Ok(json!({ "status": status }))
     })
 }

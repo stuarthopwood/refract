@@ -7,3 +7,5 @@ Rules: only `https`; only hosts on an allow-list (GitHub's own image hosts (user
 This relaxes Principle V for one surface: the app now makes outbound requests for URLs written by third parties. We accept that because the allow-list bounds the hosts, the response is inlined without the renderer ever contacting the host, and a hostile image can leak at most the developer's IP address to a GitHub-owned host.
 
 **Consequences:** The follow-up Settings host list will make each new image host an explicit developer decision. Chat images are unaffected.
+
+**Amendment (2026-11-09, #1741):** the Dependabot compatibility badge (`dependabot-badges.githubapp.com`, a GitHub-owned host) is on the allow-list, and it serves `image/svg+xml`. SVG is therefore accepted from that one host only (`SVG_HOSTS` in `github/images.rs`), after the response starts with an `<svg` element. It still reaches the renderer as a `data:` URL shown through an inert `<img>` (no script runs, nothing is inlined into the page), so the CSP and the "never SVG" rule for every other host are unchanged.

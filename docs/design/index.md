@@ -43,6 +43,7 @@ All icon, button, and tooltip rules live in `docs/design/` (mainly [components.m
 - Every action has a visible button; shortcuts are a second way, never the only way.
 - Destructive actions name what will be lost before they happen.
 - The agent does the work; Refract is the place to watch, steer, and approve it.
+- Refract is the driver and OMP is the engine. Refract owns every OMP setting it exposes and writes it to OMP's global config. A user's existing OMP config is not authoritative: most users never edit it, and a stale or misread entry (for example, a bare `compaction.modelThresholds` number, which OMP scales as a window base rather than using as a trigger) silently breaks Refract. When Refract takes over a key, it backs up the file, overwrites the key, and shows the effective value in Settings. See #691 and #1767.
 
 ## Keyboard
 
