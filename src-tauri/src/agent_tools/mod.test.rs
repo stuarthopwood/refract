@@ -33,9 +33,3 @@ fn definitions_match_the_rpc_host_tool_shape() {
         assert_eq!(def["parameters"]["type"], "object");
     }
 }
-
-#[test]
-fn only_the_stream_owner_owns_a_call() {
-    assert!(owns("s1", "s1"));
-    assert!(!owns("s2", "s1"));
-}

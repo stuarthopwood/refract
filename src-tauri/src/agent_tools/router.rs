@@ -234,12 +234,19 @@ impl ToolRouter {
         self.inner.lock().expect("tool router mutex poisoned")
     }
 
-    fn begin(&self, call_id: &str) -> Arc<Notify> {
+    /// `None` when the id is already pending, so the live call's entry is never overwritten.
+    fn begin(&self, call_id: &str) -> Option<Arc<Notify>> {
+        let mut inner = self.lock();
+        if inner.cancels.contains_key(call_id) {
+            return None;
+        }
         let cancel = Arc::new(Notify::new());
-        self.lock()
-            .cancels
-            .insert(call_id.to_string(), cancel.clone());
-        cancel
+        inner.cancels.insert(call_id.to_string(), cancel.clone());
+        Some(cancel)
+    }
+
+    fn forget(&self, key: &str) {
+        self.lock().waits.remove(key);
     }
 
     fn wait_for(&self, key: &str) -> oneshot::Receiver<Reply> {
@@ -260,8 +267,19 @@ impl ToolRouter {
         let Some(call) = parse_call(frame) else {
             return;
         };
+        // Registered before the spawn so a cancel arriving right behind the call is not lost.
+        let cancel = self.begin(&call.id);
         let agent = agent.clone();
-        tokio::spawn(async move { serve(agent, call).await });
+        tokio::spawn(async move {
+            let Some(cancel) = cancel else {
+                let err = ToolError::new(INVALID_INPUT, "a call with this id is already pending");
+                if let Some(proc) = agent.tool_process().await {
+                    let _ = proc.send_raw(error_frame(&call.id, &err)).await;
+                }
+                return;
+            };
+            serve(agent, call, cancel).await
+        });
     }
 
     /// `host_tool_cancel`: omp abandoned the call; no result is sent.
@@ -301,9 +319,8 @@ impl ToolRouter {
     }
 }
 
-async fn serve(agent: Arc<SessionAgent>, call: Call) {
+async fn serve(agent: Arc<SessionAgent>, call: Call, cancel: Arc<Notify>) {
     let router = agent.tool_router();
-    let cancel = router.begin(&call.id);
     let outcome = tokio::select! {
         result = run(&agent, &call) => Some(result),
         _ = cancel.notified() => None,
@@ -354,9 +371,13 @@ async fn ask_developer(
     agent
         .tool_raise_approval(approval::card(&call.id, panel_id, action, input))
         .await;
-    match rx.await {
-        Ok(Reply::Approval(Decision::Approved)) => Ok(()),
-        Ok(Reply::Approval(Decision::Denied)) => {
+    approval_outcome(rx.await.ok())
+}
+
+fn approval_outcome(reply: Option<Reply>) -> Result<(), ToolError> {
+    match reply {
+        Some(Reply::Approval(Decision::Approved)) => Ok(()),
+        Some(Reply::Approval(Decision::Denied)) => {
             Err(ToolError::new(DENIED, "the developer denied this action"))
         }
         _ => Err(ToolError::new(CANCELLED, "the approval was cancelled")),
@@ -375,12 +396,16 @@ async fn ask_renderer(
         &call.tool,
         &plan.event_args(),
     ) {
-        agent.tool_router().lock().waits.remove(&call.id);
+        agent.tool_router().forget(&call.id);
         return Err(ToolError::new(
             RENDERER_UNAVAILABLE,
             "Refract has no window to show this panel in",
         ));
     }
+    wait_renderer(rx).await
+}
+
+async fn wait_renderer(rx: oneshot::Receiver<Reply>) -> Result<Value, ToolError> {
     match tokio::time::timeout(Duration::from_millis(RENDERER_TIMEOUT_MS), rx).await {
         Ok(Ok(Reply::Renderer(result))) => result,
         Ok(_) => Err(ToolError::new(CANCELLED, "the call was cancelled")),

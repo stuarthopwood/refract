@@ -61,11 +61,6 @@ pub fn host_tool_defs(access: ToolAccess) -> Vec<Value> {
         .collect()
 }
 
-/// A call is served only on the stream of the Session that owns it; arguments never name a Session.
-pub fn owns(call_session_id: &str, stream_session_id: &str) -> bool {
-    call_session_id == stream_session_id
-}
-
 /// Registers the tools for this launch. A later call replaces the set, so a relaunch never doubles.
 /// A failure leaves the Session without Refract tools; it still works as a plain agent.
 pub async fn register_host_tools(proc: &crate::omp::process::OmpProcess, access: ToolAccess) {

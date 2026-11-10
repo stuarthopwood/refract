@@ -252,7 +252,6 @@ impl SessionAgent {
         code: Option<i32>,
         requested: bool,
     ) -> (bool, bool, bool, u64) {
-        self.agent_tools.drop_all();
         let (
             is_current,
             stop_requested,
@@ -281,6 +280,7 @@ impl SessionAgent {
             )
         };
         if is_current {
+            self.agent_tools.drop_all();
             // Awaited so this write lands after the matching spawn record, avoiding a phantom orphan.
             if let Some(pid) = exited_pid {
                 crate::process::pid_records::remove_process_record(pid).await;

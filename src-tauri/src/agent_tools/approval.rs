@@ -45,8 +45,19 @@ pub fn card(call_id: &str, panel_id: &str, action: &str, input: &Value) -> Pendi
         request_id: request_id(call_id),
         tool: "refract_invoke_panel_action".to_string(),
         target: format!("{panel_id}: {action}"),
-        details: vec![format!("Arguments: {input}")],
+        details: vec![format!("Arguments: {}", truncated(input))],
         options: OPTIONS.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+const MAX_ARGS_CHARS: usize = 200;
+
+/// A padded path must not push the action off the card.
+fn truncated(input: &Value) -> String {
+    let text = input.to_string();
+    match text.char_indices().nth(MAX_ARGS_CHARS) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text,
     }
 }
 

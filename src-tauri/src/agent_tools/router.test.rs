@@ -162,7 +162,7 @@ async fn approval_answers_route_by_request_id() {
 #[tokio::test]
 async fn drop_all_frees_waits_and_wakes_cancels() {
     let router = ToolRouter::default();
-    let cancel = router.begin("c1");
+    let cancel = router.begin("c1").unwrap();
     let rx = router.wait_for("c1");
     router.drop_all();
     assert!(rx.await.is_err());
@@ -173,10 +173,52 @@ async fn drop_all_frees_waits_and_wakes_cancels() {
 #[tokio::test]
 async fn cancel_frame_wakes_only_the_target() {
     let router = ToolRouter::default();
-    let target = router.begin("c1");
-    let other = router.begin("c2");
+    let target = router.begin("c1").unwrap();
+    let other = router.begin("c2").unwrap();
     router.handle_cancel(&json!({ "type": "host_tool_cancel", "id": "x", "targetId": "c1" }));
     target.notified().await;
     let woke = tokio::time::timeout(Duration::from_millis(20), other.notified()).await;
     assert!(woke.is_err());
+}
+
+#[test]
+fn a_pending_call_id_is_not_begun_twice() {
+    let router = ToolRouter::default();
+    assert!(router.begin("c1").is_some());
+    assert!(router.begin("c1").is_none());
+}
+
+#[test]
+fn an_answer_through_another_router_is_not_accepted() {
+    let a = ToolRouter::default();
+    let b = ToolRouter::default();
+    let _rx = a.wait_for("c1");
+    assert!(!b.answer("c1", &json!({ "ok": true, "value": 1 })));
+    assert!(a.answer("c1", &json!({ "ok": true, "value": 1 })));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_silent_renderer_times_out_with_the_timeout_code() {
+    let router = ToolRouter::default();
+    let rx = router.wait_for("c1");
+    let wait = tokio::spawn(wait_renderer(rx));
+    tokio::time::advance(Duration::from_millis(RENDERER_TIMEOUT_MS + 1)).await;
+    assert_eq!(wait.await.unwrap().unwrap_err().code, TIMEOUT);
+}
+
+#[tokio::test]
+async fn a_cancel_during_a_renderer_wait_returns_cancelled() {
+    let router = ToolRouter::default();
+    let _cancel = router.begin("c1").unwrap();
+    let rx = router.wait_for("c1");
+    router.drop_all();
+    assert_eq!(wait_renderer(rx).await.unwrap_err().code, CANCELLED);
+}
+
+#[test]
+fn a_cancelled_approval_becomes_an_error_frame() {
+    let err = approval_outcome(Some(Reply::Approval(Decision::Cancelled))).unwrap_err();
+    let frame = error_frame("c1", &err);
+    assert_eq!(frame["isError"], true);
+    assert_eq!(err.code, CANCELLED);
 }
