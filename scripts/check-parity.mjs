@@ -220,6 +220,7 @@ function rustEventConstNameForValue(value) {
 
 const REQUEST_LANES = {
   READINESS_CHECK: 'R1', // #784, scaffold; no later lane claims readiness.rs
+  READINESS_CHECK_STEP: 'R1', // same handler file as READINESS_CHECK
   REPOSITORIES_LIST: 'R2', // #785, store/registry.rs
   REPOSITORIES_ADD: 'R2',
   REPOSITORIES_REMOVE: 'R2',

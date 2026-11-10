@@ -246,6 +246,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![refract_request])
         .setup(move |app| {
             let managed = app.state::<ManagedState>();
+            // Retries every launch until the global config holds the token guard set.
+            tauri::async_runtime::spawn(async {
+                crate::omp::token_guard::migrate::ensure(&crate::data_dir()).await;
+            });
             *managed
                 .app_state
                 .app_handle

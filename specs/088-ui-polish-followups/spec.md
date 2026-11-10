@@ -14,7 +14,7 @@ The spec 071 and 067 gates left Medium and Low findings: an empty 40px row above
 - US-4 As a PR reader, the header actions stay on the title row in every state, and a draft says why New session is unavailable.
 - US-5 As an Issue or PR reader, Open on GitHub and Copy link look and behave the same in both headers, and the Issue header has no divider.
 - US-6 As a user answering a text Request card, Cancel sits beside Send.
-- US-7 As a maintainer, docs match the code (Merge outline, quiet-field departure names select triggers, spacing steps) and dead code is gone.
+- US-7 As a maintainer, docs match the code (Merge filled primary, quiet-field departure names select triggers, spacing steps) and dead code is gone.
 
 ## Functional requirements
 
@@ -24,7 +24,7 @@ The spec 071 and 067 gates left Medium and Low findings: an empty 40px row above
 - FR-004 `components/OpenOnGitHubButton.tsx` (ghost `icon-sm` anchor + tooltip) is used by `IssueDetail` and `PullRequestDetail`; both headers show `CopyButton` labelled "Copy link".
 - FR-005 The PR header title is `flex-1 min-w-0` (`line-clamp-2`); actions are `shrink-0` without wrap, in place in `PullRequestDetail.tsx` (extraction skipped). The state pill and check status sit under the title so the actions fit a narrow pane.
 - FR-006 `IssueDetail` drops `border-b` from its header.
-- FR-007 The PR Merge button is `variant="outline"`.
+- FR-007 The PR Merge button is `variant="default"`, the only filled button in the header (the primary-button rule; amended by #1742, which supersedes the earlier `outline` decision).
 - FR-008 A draft pull request shows "Draft pull requests cannot start a Session." under the header; New session drops its `title`; only one reason line shows at a time.
 - FR-009 `CopyButton`'s tooltip trigger sets `aria-describedby={undefined}`.
 - FR-010 `RequestCard` (text input) puts a ghost Cancel beside Send and drops the footer for that kind; choice requests keep the footer.

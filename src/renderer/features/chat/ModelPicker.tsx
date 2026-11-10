@@ -8,6 +8,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { CpuIcon, Loader2Icon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { FILTER_MIN_CHARS, effectiveFilterQuery } from '@/components/filterQueryRule'
+import { FilterResultStatus } from '@/components/FilterResultStatus'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { notify, useModelRolesStore, useSessionsStore } from '@/state'
@@ -83,7 +85,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   )
 
   const filteredCatalog = useMemo(() => {
-    const needle = filter.trim().toLowerCase()
+    const needle = effectiveFilterQuery(filter).toLowerCase()
     const entries = catalog ?? []
     return needle ? entries.filter((entry) => `${entry.provider} ${entry.name}`.toLowerCase().includes(needle)) : entries
   }, [catalog, filter])
@@ -92,7 +94,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
   const keepAvailable = hasPendingChoice && Boolean(session?.lastModel || session?.currentRole)
   const followRole = session?.pinned ? (session.currentRole ?? 'default') : null
   const followModel = followRole ? resolveRoleModelName(followRole, roles, catalog) : null
-  const specials: Array<'keep' | 'follow'> = filter.trim() ? [] : [...(keepAvailable ? (['keep'] as const) : []), ...(followRole ? (['follow'] as const) : [])]
+  const specials: Array<'keep' | 'follow'> = effectiveFilterQuery(filter) ? [] : [...(keepAvailable ? (['keep'] as const) : []), ...(followRole ? (['follow'] as const) : [])]
   const specialCount = specials.length
   const totalModelRows = specialCount + (catalogError ? 1 : filteredCatalog.length)
   const activeModel = totalModelRows === 0 ? null : Math.min(modelActive, totalModelRows - 1)
@@ -289,10 +291,11 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
             value={filter}
             onChange={(event) => setFilter(event.target.value)}
             onKeyDown={handleFilterKeyDown}
-            placeholder="Filter models…"
+            placeholder={`Filter models… (${FILTER_MIN_CHARS}+ characters)`}
             aria-label="Filter models"
             className="h-6 rounded-[max(0px,calc(var(--radius-lg)-0.25rem))]"
           />
+          <FilterResultStatus query={filter} count={catalog && !catalogError ? filteredCatalog.length : undefined} />
         </div>
         <div ref={listRef} id={listboxId} role="listbox" aria-label="Models" className="min-h-0 flex-1 overflow-y-auto" onMouseDown={(event) => event.preventDefault()}>
           {specialCount > 0 && (

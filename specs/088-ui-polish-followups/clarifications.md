@@ -10,7 +10,7 @@ Resolved by the delegated grill (Skippy for Stuart, 2026-10-31); full text on #1
 - Q4: Open on GitHub and Copy link? A: shared `OpenOnGitHubButton` plus `CopyButton` "Copy link" in both headers; `IssueCreatedPanel` footer unchanged.
 - Q5: PR header wrapping? A: one title row, title `line-clamp-2`, actions `shrink-0`.
 - Q6: Draft reason? A: visible line, drop `title`.
-- Q7: Merge button vs docs? A: button becomes `outline`.
+- Q7: Merge button vs docs? A: button became `outline` here; superseded by #1742 (2026-11-06): Merge is `variant="default"`, the primary-button rule in `components.md`.
 - Q8: Request card Cancel? A: beside Send for text input.
 - Q9: IconRail top inset? A: none.
 - Q10: Empty spacer row? A: remove.

@@ -14,11 +14,13 @@ import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '..
 import type { ClosedBranchesResult } from '../shared/ipc-home'
 import type { GithubChangedPayload } from '../shared/ipc-github-changed'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch, SessionWithKickoff } from '../shared/ipc-issues'
+import type { ItemCard } from '../shared/ipc-item-refs'
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
   IpcErrorCode,
   BranchEntry,
+  Check,
   ChatAnswer,
   DiffStat,
   FilePreview,
@@ -130,6 +132,7 @@ function onFileDrop(handler: (event: { paths: string[]; position: { x: number; y
 const refract: RefractApi = {
   readiness: {
     check: () => request<Readiness>(IPC_REQUESTS.READINESS_CHECK),
+    checkStep: (step) => request<Check>(IPC_REQUESTS.READINESS_CHECK_STEP, step),
     installDependency: (dependency) => request<void>(IPC_REQUESTS.READINESS_INSTALL_DEPENDENCY, dependency)
   },
 
@@ -359,6 +362,9 @@ const refract: RefractApi = {
     newSession: (repositoryId, number) =>
       request<SessionWithKickoff>(IPC_REQUESTS.ISSUES_NEW_SESSION, repositoryId, number)
   },
+  itemRefs: {
+    lookup: (repositoryId, owner, repo, number) => request<ItemCard>(IPC_REQUESTS.ITEM_REFS_LOOKUP, repositoryId, owner, repo, number)
+  },
 
   home: {
     lastMessages: (sessionIds) => request<Record<string, string | null>>(IPC_REQUESTS.HOME_LAST_MESSAGES, sessionIds),
@@ -400,11 +406,11 @@ const refract: RefractApi = {
   },
 
   tokenGuard: {
-    get: () => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_GET),
-    set: (key, value) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_SET, { key, value }),
-    reset: (key) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET, { key }),
-    resetAll: () => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET_ALL),
-    dismissThresholdsReset: () => request<null>(IPC_REQUESTS.TOKEN_GUARD_DISMISS_THRESHOLDS_RESET),
+    get: (repositoryId) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_GET, { repositoryId }),
+    set: (key, value, repositoryId) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_SET, { key, value, repositoryId }),
+    reset: (key, repositoryId) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET, { key, repositoryId }),
+    resetAll: (repositoryId) => request<TokenGuardSnapshot>(IPC_REQUESTS.TOKEN_GUARD_RESET_ALL, { repositoryId }),
+    dismissMigrationNotice: () => request<null>(IPC_REQUESTS.TOKEN_GUARD_DISMISS_THRESHOLDS_RESET),
     handoff: (sessionId) =>
       request<TokenGuardHandoffResult>(IPC_REQUESTS.TOKEN_GUARD_HANDOFF, sessionId)
   },

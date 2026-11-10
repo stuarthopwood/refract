@@ -3,6 +3,7 @@ import { BellRingIcon, CircleCheckIcon, CircleStopIcon, MessageSquareTextIcon, P
 import type { Repository } from '../../../shared/model'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/state'
 import { StatusDot } from './StatusDot'
@@ -68,7 +69,7 @@ export interface SearchedSessions {
 /** `query` is raw (not yet trimmed/lower-cased) -- this does that once, internally. */
 export function searchSessions(sessions: SessionSummary[], repositories: Repository[], query: string, showHidden = false): SearchedSessions {
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
-  const trimmed = query.trim().toLowerCase()
+  const trimmed = effectiveFilterQuery(query).toLowerCase()
   const matches = (session: SessionSummary): boolean =>
     matchesSessionSearch(session, repositoriesById.get(session.repositoryId)?.name ?? '', trimmed)
   // Issue #748: a hidden Session is listed while Show hidden is on, and ALWAYS matches a search.
