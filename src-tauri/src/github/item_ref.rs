@@ -1,6 +1,7 @@
 // Item card lookup for `#123` / `owner/repo#123` references (#1155). One bounded `gh api` call per
-// issue or pull request; a pull request adds one more for its branches. A search by number or
-// text (#1789) is another `pub async fn` beside `lookup_item`, reusing `RepoSlug` and `ItemCard`.
+// issue or pull request; a pull request adds one more for its branches. `search_items` (#1789)
+// backs the composer `#` picker: one bounded search of a single repository, plus an exact-number
+// lookup when the query is digits, because GitHub's search cannot match a number prefix.
 
 use std::path::Path;
 
@@ -187,6 +188,133 @@ pub async fn lookup_item(cwd: &Path, slug: &RepoSlug, number: u64) -> Result<Ite
     })
 }
 
+/// The picker lists at most this many rows (grill outcome: top 10, no paging).
+pub const MAX_SEARCH_RESULTS: usize = 10;
+/// Longer than any title word worth typing; bounds what reaches `gh`.
+const MAX_QUERY_CHARS: usize = 64;
+
+/// One picker row: just enough to choose an item and insert `#<number> `.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemSummary {
+    pub number: u64,
+    pub kind: ItemKind,
+    pub title: String,
+    pub state: ItemState,
+    pub draft: bool,
+}
+
+#[derive(Deserialize)]
+struct RawMergeMarker {
+    merged_at: Option<String>,
+}
+
+/// Shared by `search/issues` rows and the single `issues/<n>` payload; both carry `pull_request.merged_at`.
+#[derive(Deserialize)]
+struct RawSearchItem {
+    number: u64,
+    title: String,
+    state: String,
+    draft: Option<bool>,
+    pull_request: Option<RawMergeMarker>,
+}
+
+#[derive(Deserialize)]
+struct RawSearchPage {
+    items: Vec<RawSearchItem>,
+}
+
+/// Reduces typed text to one plain term. Anything that could be a search qualifier, operator or a
+/// second repository (`repo:`, `is:`, `-term`, quotes, spaces) is dropped, so the search can only
+/// ever look at `slug`.
+fn sanitize_query(text: &str) -> String {
+    let word = text.split_whitespace().next().unwrap_or("");
+    let kept: String = word
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .take(MAX_QUERY_CHARS)
+        .collect();
+    // A leading `-` negates a term, and lower case keeps `AND`/`OR`/`NOT` from acting as operators.
+    kept.trim_start_matches('-').to_ascii_lowercase()
+}
+
+/// The `q` for `search/issues`: titles of open and closed items for a term, open items otherwise.
+fn search_query(slug: &RepoSlug, term: &str) -> String {
+    if term.is_empty() {
+        format!("repo:{} is:open", slug.display())
+    } else {
+        format!("repo:{} in:title {term}", slug.display())
+    }
+}
+
+fn summarise(raw: RawSearchItem) -> ItemSummary {
+    let merged = raw
+        .pull_request
+        .as_ref()
+        .is_some_and(|p| p.merged_at.is_some());
+    ItemSummary {
+        number: raw.number,
+        kind: if raw.pull_request.is_some() {
+            ItemKind::PullRequest
+        } else {
+            ItemKind::Issue
+        },
+        title: raw.title,
+        state: state_of(&raw.state, merged),
+        draft: raw.draft.unwrap_or(false),
+    }
+}
+
+/// Puts the exact-number match first, drops its duplicate from the search rows, and caps the list.
+fn merge_results(
+    exact: Option<ItemSummary>,
+    found: Vec<ItemSummary>,
+) -> Vec<ItemSummary> {
+    let mut rows: Vec<ItemSummary> = Vec::with_capacity(MAX_SEARCH_RESULTS);
+    if let Some(item) = exact {
+        rows.push(item);
+    }
+    for item in found {
+        if rows.iter().all(|row| row.number != item.number) {
+            rows.push(item);
+        }
+    }
+    rows.truncate(MAX_SEARCH_RESULTS);
+    rows
+}
+
+/// Searches issues and pull requests of `slug` only. `cwd` is any local clone, for `gh`'s auth context.
+pub async fn search_items(
+    cwd: &Path,
+    slug: &RepoSlug,
+    text: &str,
+) -> Result<Vec<ItemSummary>, GhError> {
+    let term = sanitize_query(text);
+    let q = format!("q={}", search_query(slug, &term));
+    let per_page = format!("per_page={MAX_SEARCH_RESULTS}");
+    let mut args: Vec<&str> = vec![
+        "api", "--method", "GET", "search/issues", "-f", q.as_str(), "-f", per_page.as_str(),
+    ];
+    if term.is_empty() {
+        args.extend(["-f", "sort=updated", "-f", "order=desc"]);
+    }
+    // The exact item is best effort: a number that is not an item (404) just means no pinned row.
+    let exact_number = term
+        .parse::<u64>()
+        .ok()
+        .filter(|&n| valid_item_number(n));
+    let exact_path = exact_number.map(|n| slug.api_path("issues", n));
+    let exact_future = async {
+        match &exact_path {
+            Some(path) => gh_json::<RawSearchItem>(cwd, &["api", path.as_str()]).await.ok(),
+            None => None,
+        }
+    };
+    let (page, exact) = tokio::join!(gh_json::<RawSearchPage>(cwd, &args), exact_future);
+    let found = page?.items.into_iter().map(summarise).collect();
+    Ok(merge_results(exact.map(summarise), found))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -269,5 +397,78 @@ mod tests {
         .unwrap();
         assert!(raw.pull_request.is_some());
         assert_eq!(raw.user.unwrap().login, "u");
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+
+    fn slug() -> RepoSlug {
+        RepoSlug::parse("a", "b").unwrap()
+    }
+
+    fn row(number: u64) -> ItemSummary {
+        ItemSummary {
+            number,
+            kind: ItemKind::Issue,
+            title: format!("t{number}"),
+            state: ItemState::Open,
+            draft: false,
+        }
+    }
+
+    #[test]
+    fn query_is_one_plain_lowercase_term() {
+        assert_eq!(sanitize_query("Login"), "login");
+        assert_eq!(sanitize_query("fix login"), "fix");
+        assert_eq!(sanitize_query("repo:other/x"), "repootherx");
+        assert_eq!(sanitize_query("-label:bug"), "labelbug");
+        assert_eq!(sanitize_query("\"quoted\""), "quoted");
+        assert_eq!(sanitize_query("AND"), "and");
+        assert_eq!(sanitize_query(""), "");
+        assert_eq!(sanitize_query("   "), "");
+    }
+
+    #[test]
+    fn query_length_is_bounded() {
+        assert_eq!(sanitize_query(&"a".repeat(500)).len(), MAX_QUERY_CHARS);
+    }
+
+    #[test]
+    fn search_is_always_scoped_to_the_repository() {
+        assert_eq!(search_query(&slug(), ""), "repo:a/b is:open");
+        assert_eq!(search_query(&slug(), "login"), "repo:a/b in:title login");
+        // Whatever was typed, the only qualifier colon pair left is the repo one.
+        let hostile = search_query(&slug(), &sanitize_query("repo:evil/x is:closed"));
+        assert_eq!(hostile.matches(':').count(), 2);
+        assert!(hostile.starts_with("repo:a/b "));
+    }
+
+    #[test]
+    fn search_page_parses_issues_and_pull_requests() {
+        let page: RawSearchPage = serde_json::from_str(
+            r#"{"total_count":3,"items":[
+            {"number":1,"title":"an issue","state":"open","draft":null},
+            {"number":2,"title":"a draft","state":"open","draft":true,"pull_request":{"merged_at":null}},
+            {"number":3,"title":"merged","state":"closed","draft":false,"pull_request":{"merged_at":"2026-01-01T00:00:00Z"}}]}"#,
+        )
+        .unwrap();
+        let rows: Vec<ItemSummary> = page.items.into_iter().map(summarise).collect();
+        assert_eq!(rows[0].kind, ItemKind::Issue);
+        assert!(!rows[0].draft);
+        assert_eq!(rows[1].kind, ItemKind::PullRequest);
+        assert!(rows[1].draft);
+        assert_eq!(rows[2].state, ItemState::Merged);
+    }
+
+    #[test]
+    fn exact_match_is_pinned_first_without_duplicates_and_capped() {
+        let found: Vec<ItemSummary> = (1..=12).map(row).collect();
+        let rows = merge_results(Some(row(5)), found);
+        assert_eq!(rows.len(), MAX_SEARCH_RESULTS);
+        assert_eq!(rows[0].number, 5);
+        assert_eq!(rows.iter().filter(|r| r.number == 5).count(), 1);
+        assert!(merge_results(None, Vec::new()).is_empty());
     }
 }

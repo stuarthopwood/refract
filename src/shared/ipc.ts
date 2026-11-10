@@ -365,6 +365,7 @@ export const IPC_REQUESTS = {
   ISSUES_VIEW: 'issues.view',
   ISSUES_NEW_SESSION: 'issues.newSession',
   ITEM_REFS_LOOKUP: 'itemRefs.lookup',
+  ITEM_REFS_SEARCH: 'itemRefs.search',
   HOME_LAST_MESSAGES: 'home.lastMessages',
   HOME_CLOSED_BRANCHES: 'home.closedBranches',
   THEME_SET: 'theme.set',
