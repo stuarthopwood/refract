@@ -17,7 +17,7 @@ Always pass branch names as positional arguments, use `submit --auto`, and use `
 
 ## Open a PR
 
-1. `gh stack init` branches from your local `main`, so first run `git fetch -q origin` and `git merge --ff-only origin/main` in the main checkout. Then create the stack with `gh stack init --base main <branch>`. This creates and checks out `<branch>`.
+1. `gh stack init` branches from your local `main`, so first run `git fetch -q origin` and `git merge --ff-only origin/main` in the main checkout. Then create the stack with `gh stack init --base main <branch>`. This creates and checks out `<branch>`. In a worktree created with `--detach`, run `git switch -c <branch>` first: `gh stack init` fails on a detached HEAD with "not on any branch", and on an existing branch it adopts it. If it already failed, the branch exists, so run `git switch <branch>` and run `gh stack init` again.
 2. Commit with plain `git add` and `git commit`.
 3. Run `gh stack submit --auto --open`. This pushes the branch, opens the PR as a draft, and links it into a stack on GitHub. Run `gh pr ready <pr>` before you merge.
 4. Check the result with `gh stack view --json`.
