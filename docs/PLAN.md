@@ -1178,3 +1178,5 @@ Also filed 2026-11-09 (Stuart): **#1839** (`p1`, `feature`, `right-pane`), Feat:
 Also filed 2026-11-09 (Stuart): **#1840** (`p1`, `design`, `right-pane`), UI Polish: Right rail: Git icon shows the change-count badge before the panel is opened.
 
 Also filed 2026-11-09 (Stuart): **#1842** (`p1`, `feature`, `right-pane`), Feat: File Explorer: stage, unstage and discard changes for a file or a folder with changes.
+
+Also filed 2026-11-10 (Stuart): **#1845** (`p1`, `bug`), Bug: Usage view: Tools Cost share shows dollars as a percentage (12071%).
