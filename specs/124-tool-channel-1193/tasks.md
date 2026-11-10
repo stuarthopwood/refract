@@ -27,9 +27,9 @@ No test tasks: the prototyping rule forbids new tests; existing tests are only r
 
 - [x] T012 `src/shared/ipc.ts`, `src/tauri-bridge/index.ts`, `contracts/ipc.md`, typings: event and command. (wire contract)
 - [x] T013 `src/renderer/features/right-pane/agent-tools-bridge.ts` (new) and `src/renderer/App.tsx`: subscribe, dispatch, reply, mount the announcer; no toast path. (FR-005, FR-007)
-- [ ] T014 `scripts/verify-tauri-1193.mjs` and a tape for `scripts/verify-tauri-fake-omp.mjs`: each tool, each error code, cancel, timeout, focus stays in the composer. (SC-001, SC-002)
+- [x] T014 `scripts/verify-tauri-1193.mjs` and host-tool support in `scripts/verify-tauri-fake-omp.mjs`: registration, overlay, list/open/invoke, Deny/Approve, unknown panel, cross-Session refusal, focus stays in the composer. (SC-001, SC-002) Done: run DONE with no failures. Not covered live: timeout and cancel (Rust unit tests only).
 - [ ] T015 Real omp 18.17.0, ask mode, screenshots: read call shows no `Allow tool:` prompt, mutating call shows one card, Deny gives a tool error. If it fails, apply the plan's fallback and update ADR 0007. (SC-003)
-- [ ] T016 `CHANGELOG.md`; set `docs/PLAN.md` row 1c.1 to in review with the PR number; `pnpm ci:local`. (FR-018, SC-004)
+- [ ] T016 `CHANGELOG.md` is release-generated, so no hand entry; `docs/PLAN.md` row 1c.1 set to in review (#1871); `pnpm ci:local` pending.
 
 ## Dependencies
 
