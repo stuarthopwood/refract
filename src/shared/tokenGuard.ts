@@ -1,15 +1,39 @@
-/** Token guard (#1212, spec 021): the keys Refract sets in the `omp` launch overlay, their
- * grilled defaults (mirrored by `src-tauri/src/omp/token_guard/values.rs`), and the IPC payloads. */
+/** Token guard (#1212, #1767): the keys Settings > Advanced writes to OMP's global config
+ * (`~/.omp/agent/config.yml`), their grilled defaults (mirrored by `src-tauri/src/omp/token_guard/values.rs`),
+ * and the IPC payloads. */
 
-export type TokenGuardValue = number | boolean | string | string[] | Record<string, string>;
+/** A `modelThresholds` entry is a number (`120000` tokens; 1-99 reads as a percent) or a string (`"f200000"`, `"80%"`). */
+export type TokenGuardValue = number | boolean | string | string[] | Record<string, string | number>;
 
 export type TokenGuardValues = Record<string, TokenGuardValue>;
+
+/** The one-time move of the old `token-guard.json` into the global config. `backupPath` is present
+ * until the notice is dismissed; `error` while `failed` (retried every launch). `skipped` is a debug
+ * launch with a scratch `REFRACT_DATA_DIR` but no `PI_CODING_AGENT_DIR`: the real global config is
+ * never touched, `error` says why, and the old values stay in effect. */
+export interface TokenGuardMigration {
+  status: 'pending' | 'done' | 'failed' | 'skipped';
+  error?: string;
+  backupPath?: string;
+}
+
+/** Where compaction fires for one model, resolved by the backend. */
+export interface TokenGuardTrigger {
+  model: string;
+  contextWindow: number;
+  thresholdPercent: number;
+  modelThreshold?: string | number;
+  triggerTokens: number;
+}
 
 export interface TokenGuardSnapshot {
   values: TokenGuardValues;
   defaults: TokenGuardValues;
-  /** Set after an upgrade dropped stored token thresholds, until `tokenGuard.dismissThresholdsReset` (#1553). */
-  thresholdsReset?: boolean;
+  migration: TokenGuardMigration;
+  /** The default model plus the models of open Sessions. */
+  effectiveTriggers: TokenGuardTrigger[];
+  /** Dotted keys the open Project's `.omp/config.yml` sets; empty without a Project. */
+  projectOverrides: string[];
 }
 
 export interface TokenGuardLaunchWarning {
@@ -33,7 +57,7 @@ export const LONG_CONVERSATION_BANNER_CALLS = 500;
 export const LONG_CONVERSATION_BANNER_REPEAT = 100;
 
 /** `count`: whole number with a unit; `enum`: one of `options`; `order`: the compaction methods in
- * trial order; `record`: per-model thresholds as `"N%"` strings. */
+ * trial order; `record`: per-model thresholds (percent, tokens or fixed tokens). */
 export type TokenGuardKind = 'count' | 'toggle' | 'enum' | 'order' | 'record';
 
 export type TokenGuardGroup =
@@ -77,9 +101,59 @@ const COMPACTS_LATER_IMPACT = 'The conversation grows longer before it is shorte
 /** Reads the leading whole number of a stored `"N%"` entry (a bare number works too); 0 when it is missing or not numeric. */
 export const parsePercent = (entry: unknown): number => Number.parseInt(String(entry ?? ''), 10) || 0
 
+export type ThresholdMode = 'percent' | 'tokens' | 'fixed'
+
+export interface ThresholdEntry {
+  mode: ThresholdMode
+  amount: number
+}
+
+/** Reads a stored entry the way OMP does: `"f<n>"` fixed, `"<n>%"` or a bare number up to 99 a percent, any larger number tokens. */
+export function parseThreshold(entry: unknown): ThresholdEntry {
+  if (typeof entry === 'number') return entry <= 99 ? { mode: 'percent', amount: entry } : { mode: 'tokens', amount: entry }
+  const text = String(entry ?? '')
+  if (text.startsWith('f')) return { mode: 'fixed', amount: Number.parseInt(text.slice(1), 10) || 0 }
+  return { mode: 'percent', amount: parsePercent(text) }
+}
+
+export const formatThreshold = ({ mode, amount }: ThresholdEntry): string | number =>
+  mode === 'percent' ? `${amount}%` : mode === 'fixed' ? `f${amount}` : amount
+
+/** The entry as a percent of `window`; 0 when it is tokens or fixed and the window is unknown. */
+export function thresholdAsPercent(entry: unknown, window: number | null): number {
+  const { mode, amount } = parseThreshold(entry)
+  if (mode === 'percent') return amount
+  return window ? (amount * 100) / window : 0
+}
+
+/** Largest per-model token trigger the backend accepts. */
+export const MODEL_THRESHOLD_MAX_TOKENS = 100_000_000
+
+/** Parses what the user typed in a per-model threshold field: `80%`, `120000` or `f200000`. Undefined when invalid. */
+export function parseThresholdInput(text: string): string | number | undefined {
+  const t = text.trim().toLowerCase()
+  const percent = /^(\d{1,3})\s*%$/.exec(t)
+  if (percent) {
+    const n = Number(percent[1])
+    return n >= 1 && n <= 99 ? `${n}%` : undefined
+  }
+  const fixed = /^f(\d+)$/.exec(t)
+  if (fixed) {
+    const n = Number(fixed[1])
+    return n >= 1 && n <= MODEL_THRESHOLD_MAX_TOKENS ? `f${n}` : undefined
+  }
+  if (/^\d+$/.test(t)) {
+    const n = Number(t)
+    return n >= 1 && n <= MODEL_THRESHOLD_MAX_TOKENS ? n : undefined
+  }
+  return undefined
+}
+
 export interface TokenGuardKeyInfo {
   key: string;
   label: string;
+  /** True when OMP reloads the key into a running Session. Absent means it applies to new Conversations only (#1767 probe). */
+  live?: boolean
   kind: TokenGuardKind;
   group: TokenGuardGroup;
   /** Hand-written plain English; never OMP's own description text. */
@@ -135,6 +209,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     key: 'compaction.thresholdPercent',
     label: 'Compaction threshold',
     kind: 'count',
+    live: true,
     unit: '%',
     group: 'Context compaction',
     impact: { costlierWhen: above, text: COMPACTS_LATER_IMPACT },
@@ -145,17 +220,22 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     key: 'compaction.modelThresholds',
     label: 'Compaction threshold per model',
     kind: 'record',
+    live: true,
     group: 'Context compaction',
     impact: {
-      costlierWhen: (value, globalPercent) => parsePercent(value) > parsePercent(globalPercent),
+      costlierWhen: (value, globalPercent) => {
+        const entry = parseThreshold(value)
+        return entry.mode === 'percent' && entry.amount > parsePercent(globalPercent)
+      },
       text: COMPACTS_LATER_IMPACT
     },
-    description: "Per-model override of the threshold above, as a percent of that model's own context window."
+    description: "Per-model override of the threshold above: a percent of that model's context window, a token count, or a fixed token trigger."
   },
   {
     key: 'compaction.methodOrder',
     label: 'Compaction method order',
     kind: 'order',
+    live: true,
     group: 'Context compaction',
     description:
       "How the agent shortens a long conversation. It tries the ticked methods from top to bottom and moves to the next one if a method can't run."
@@ -325,6 +405,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     key: 'tools.xdev',
     label: 'Load rare tools on demand',
     kind: 'toggle',
+    live: true,
     group: 'Tool output',
     impact: {
       costlierWhen: setTo(false),

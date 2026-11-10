@@ -21,6 +21,11 @@ export const IPC_USAGE_EVENTS = {
 
 export type UsageRange = 'today' | '7d' | '30d' | 'all' | 'custom'
 
+/** The Session usage panel's scope toggle: the whole Session directory, or the focused Conversation. */
+export type UsageSessionScope = 'session' | 'conversation'
+/** The Session usage panel's range toggle. */
+export type UsageSessionRange = 'all' | 'today'
+
 export interface UsageFilters {
   range: UsageRange
   /** Milliseconds since the epoch; `custom` only. */
@@ -32,6 +37,8 @@ export interface UsageFilters {
   agentType?: 'main' | 'subagent' | 'advisor' | null
   /** A Refract Session directory; counts every conversation file at or below it. */
   sessionDir?: string | null
+  /** One conversation file (a stored `session_file`); counts that file only. */
+  sessionFile?: string | null
 }
 
 export interface UsageStatus {
@@ -148,6 +155,8 @@ export interface UsageBudget {
 export interface UsagePrefs {
   jokes: boolean
   filters: UsageFilters
+  sessionScope: UsageSessionScope
+  sessionRange: UsageSessionRange
 }
 
 /**
@@ -181,7 +190,12 @@ export interface UsageApi {
   frustration(filters: UsageFilters, tzOffsetMinutes?: number): Promise<Result<UsageFrustration>>
   budget(): Promise<Result<UsageBudget>>
   getPrefs(): Promise<Result<UsagePrefs>>
-  setPrefs(patch: { jokes?: boolean; filters?: UsageFilters }): Promise<Result<UsagePrefs>>
+  setPrefs(patch: {
+    jokes?: boolean
+    filters?: UsageFilters
+    sessionScope?: UsageSessionScope
+    sessionRange?: UsageSessionRange
+  }): Promise<Result<UsagePrefs>>
   onProgress(handler: (status: UsageStatus) => void): () => void
 }
 

@@ -108,6 +108,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
       <PopoverAnchor asChild>
         <ReadoutItem
           ref={card.anchorRef}
+          {...card.anchorAria}
           icon={READOUT_KIND_ICONS.subagents}
           onActivate={onActivate}
           accessibleName={`Open subagents panel (${phrase})`}
@@ -123,6 +124,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
         </ReadoutItem>
       </PopoverAnchor>
       <PopoverContent
+        id={card.cardId}
         data-slot="agents-card"
         side="top"
         align="start"
@@ -132,6 +134,8 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // The chip's own focus event is still bubbling when the card mounts, so Radix's document focusin listener sees it as focus leaving the card and dismisses a keyboard-opened card at once; the chip's onBlur already closes it.
+        onFocusOutside={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <AgentsCard subagents={subagents} counts={subagentCount} onOpenPanel={onOpenPanelFromCard} />
@@ -164,6 +168,7 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
       <PopoverAnchor asChild>
         <ReadoutItem
           ref={card.anchorRef}
+          {...card.anchorAria}
           icon={pinned ? PinIcon : READOUT_KIND_ICONS['todo-progress']}
           onActivate={onActivate}
           accessibleName={`Pin todo list (Todo ${totals.done}/${totals.total})`}
@@ -185,6 +190,7 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
         </ReadoutItem>
       </PopoverAnchor>
       <PopoverContent
+        id={card.cardId}
         data-slot="todo-card"
         side="top"
         align="start"
@@ -194,6 +200,8 @@ export function TodoProgressReadout({ sessionId }: { sessionId: string }) {
         onPointerEnter={card.contentHandlers.onPointerEnter}
         onPointerLeave={card.contentHandlers.onPointerLeave}
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // The chip's own focus event is still bubbling when the card mounts, so Radix's document focusin listener sees it as focus leaving the card and dismisses a keyboard-opened card at once; the chip's onBlur already closes it.
+        onFocusOutside={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => event.preventDefault()}
       >
         <TodoCard todoTree={todoTree} />

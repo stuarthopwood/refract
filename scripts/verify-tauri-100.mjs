@@ -118,7 +118,7 @@ async function checkPullRequests(cdp) {
   const openPr = await shape();
   log(`open PR header: ${JSON.stringify(openPr)}`);
   await shot(cdp, '01-pr-open-header.png');
-  assert(openPr.mergeClass && /border-button-outline-border/.test(openPr.mergeClass) && !/bg-primary/.test(openPr.mergeClass), 'Merge carries border-button-outline-border and is not filled');
+  assert(openPr.mergeClass && /bg-primary/.test(openPr.mergeClass), 'Merge is the filled primary button (#1742)');
   assert(openPr.titleGrows === '1' && openPr.titleMinWidth === '200px' && openPr.actionsWrap === 'wrap', 'PR title grows with a 200px minimum and the action row wraps');
 
   const anchor = await cdp.evaluate(`(() => { const a = ${headerOf}.querySelector('a[data-open-on-github]'); return { type: a.getAttribute('type'), tag: a.tagName }; })()`);

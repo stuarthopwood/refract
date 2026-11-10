@@ -2,6 +2,7 @@
   "src/renderer/components/ClampedContent.tsx": 1,
   "src/renderer/components/ImageThumbnail.tsx": 1,
   "src/renderer/components/InlineDisclosure.tsx": 1,
+  "src/renderer/components/LabelOverflow.tsx": 1,
   "src/renderer/components/ListCardButton.tsx": 1,
   "src/renderer/components/MultiSelectChecklist.tsx": 1,
   "src/renderer/components/ProjectListPane.tsx": 1,

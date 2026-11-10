@@ -69,8 +69,22 @@ enum Applied {
 }
 
 async fn default_mode() -> WorkingMode {
-    let values = crate::omp::token_guard::values::load(&crate::data_dir()).await;
-    if values.get("plan.defaultOnStartup").and_then(Value::as_bool) == Some(true) {
+    use crate::omp::token_guard::{legacy, migrate};
+    let dir = crate::data_dir();
+    let on = if migrate::is_done(&dir).await {
+        crate::omp::config::get_config("plan.defaultOnStartup", &[])
+            .await
+            .ok()
+            .and_then(|entry| entry.get("value").and_then(Value::as_bool))
+            == Some(true)
+    } else {
+        legacy::effective(&dir)
+            .await
+            .get("plan.defaultOnStartup")
+            .and_then(Value::as_bool)
+            == Some(true)
+    };
+    if on {
         WorkingMode::Plan
     } else {
         WorkingMode::Interactive

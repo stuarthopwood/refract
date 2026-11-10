@@ -1,6 +1,6 @@
 [package]
 name = "refract-tauri"
-version = "0.29.0"
+version = "0.31.0"
 description = "Rust (Tauri v2) backend of Refract (spec 016, issue #780, the architecture spec\nsince the parity gate and cutover, issue #796). The only desktop shell: the Electron build\n(src/main, src/preload) was deleted at the cutover."
 edition = "2021"
 rust-version = "1.90"
@@ -86,6 +86,11 @@ rusqlite = { version = "0.41.1", default-features = false, features = ["bundled"
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+# Line tables keep file and line numbers in backtraces while dropping variable-level debug info,
+# which is most of a dev build's size (shared target growth, #1736). `[profile.test]` inherits it.
+[profile.dev]
+debug = "line-tables-only"
 
 # `windows-rs`: the Windows Job Object kill-on-close replacement for the Electron build's `koffi`
 # FFI (`src/main/process/jobObject.ts`). Scoped to the Windows target only -- this crate is

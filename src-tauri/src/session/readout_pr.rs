@@ -203,12 +203,16 @@ fn to_state(node: &PrNode) -> Option<PullRequestState> {
 }
 
 /// The open PR for `branch`, else the most recently updated one; every error is `Unavailable`.
-pub(super) async fn pull_request_for_branch(repo_path: &Path, branch: &str) -> PullRequestLookup {
+pub(super) async fn pull_request_for_branch(
+    session_id: &str,
+    repo_path: &Path,
+    branch: &str,
+) -> PullRequestLookup {
     let key = (repo_path.to_string_lossy().into_owned(), branch.to_string());
     if backed_off(&key) {
         return PullRequestLookup::Unavailable;
     }
-    let lookup = lookup_uncached(repo_path, branch).await;
+    let lookup = lookup_uncached(session_id, repo_path, branch).await;
     if matches!(lookup, PullRequestLookup::Unavailable) {
         back_off(key);
     }
@@ -221,8 +225,14 @@ fn log_detail(message: &str) -> String {
     redacted.chars().take(300).collect()
 }
 
-async fn lookup_uncached(repo_path: &Path, branch: &str) -> PullRequestLookup {
-    let (owner, name) = match owner_repo_for(repo_path).await {
+async fn lookup_uncached(session_id: &str, repo_path: &Path, branch: &str) -> PullRequestLookup {
+    // One guard per call, not around both: a refusal is `Unavailable`, keeping the old chip (#1157).
+    let Ok(guard) = crate::fs::worktree_access::read_guard_bounded(session_id).await else {
+        return PullRequestLookup::Unavailable;
+    };
+    let owner_repo = owner_repo_for(repo_path).await;
+    drop(guard);
+    let (owner, name) = match owner_repo {
         Ok(pair) => pair,
         Err(err) => {
             log::warn!(
@@ -232,6 +242,9 @@ async fn lookup_uncached(repo_path: &Path, branch: &str) -> PullRequestLookup {
             );
             return PullRequestLookup::Unavailable;
         }
+    };
+    let Ok(_guard) = crate::fs::worktree_access::read_guard_bounded(session_id).await else {
+        return PullRequestLookup::Unavailable;
     };
     let data: Data = match gh_graphql(
         repo_path,
