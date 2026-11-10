@@ -1211,3 +1211,21 @@ Also filed 2026-11-10 (Stuart): **#1864** (`p1`, `feature`, `chat`), Feat: App w
 Also filed 2026-11-10 (Stuart): **#1865** (`p1`, `feature`, `chat`), Feat: Composer: mode picker and slash commands for Vibe, Pre-walk, Goal and Loop.
 
 Also filed 2026-11-10 (Stuart): **#1867** (`p1`, `feature`), Feat: Stacked pull requests via gh stack, toggled in Settings (default on).
+
+Also filed 2026-11-10 (Stuart): **#1872** (`p1`, `bug`, `settings`), Bug: Settings: Advanced repeats the line about where compaction starts.
+
+Also filed 2026-11-10 (Stuart): **#1873** (`p1`, `design`), UI Polish: Issue log: tag overflow chip looks like a button.
+
+Also filed 2026-11-10 (Stuart): **#1874** (`p1`, `design`, `settings`), UI Polish: Settings: put each option group on its own card.
+
+Also filed 2026-11-10 (Stuart): **#1875** (`p1`, `design`, `chat`), UI Polish: Chat: rows that fit on one line show no expand chevron.
+
+Also filed 2026-11-10 (Stuart): **#1876** (`p1`, `bug`, `chat`), Bug: Chat: Advisor card's left bar runs through the header.
+
+Also filed 2026-11-10 (Stuart): **#1877** (`p1`, `bug`, `chat`), Bug: Chat: agent-to-agent rows do not use the accent colour.
+
+Also filed 2026-11-10 (Stuart): **#1878** (`p1`, `bug`), Bug: Composer: model picker does not show the role on Session start or resume.
+
+Also filed 2026-11-10 (Stuart): **#1879** (`p1`, `design`), UI Polish: Model roles: rename Subagent to Task.
+
+Also filed 2026-11-10 (Stuart): **#1880** (`p1`, `feature`, `pull-requests`), Feat: Pull requests: merge card at the top of the PR view, modeled on GitHub's.
