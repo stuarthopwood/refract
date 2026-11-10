@@ -82,6 +82,8 @@ impl SessionAgent {
             "tool_execution_start" | "tool_execution_end" => {
                 self.apply_transcript_frame(&frame).await;
             }
+            "host_tool_call" => self.agent_tools.handle_call(&self.arc(), &frame),
+            "host_tool_cancel" => self.agent_tools.handle_cancel(&frame),
             // tool_execution_update is ignored: only subagent progress uses it, and that is not ported.
             // Other frames, including agent_end and side-chat deltas, are no-ops here.
             _ => {}
@@ -250,6 +252,7 @@ impl SessionAgent {
         code: Option<i32>,
         requested: bool,
     ) -> (bool, bool, bool, u64) {
+        self.agent_tools.drop_all();
         let (
             is_current,
             stop_requested,

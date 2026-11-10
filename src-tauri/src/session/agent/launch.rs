@@ -161,6 +161,11 @@ impl SessionAgent {
         );
         // Always set, so a Session out of Plan overrides a global plan.defaultOnStartup.
         opts.plan_mode = Some(crate::session::working_mode::plan_for_launch(self).await);
+        opts.extra_config = crate::agent_tools::overlay_config(
+            &crate::data_dir(),
+            crate::agent_tools::ToolAccess::root(),
+        )
+        .await;
 
         // Process-wide start slot and low-memory defer.
         let slot_guard = crate::session::start_queue::acquire_slot(self).await?;
@@ -263,6 +268,7 @@ impl SessionAgent {
             }
         };
         let ask_dialog_enabled = send_set_ask_dialog(self, &proc).await;
+        crate::agent_tools::register_host_tools(&proc, crate::agent_tools::ToolAccess::root()).await;
         // Compares the pre-launch count with the observed state before `sync_from_state` re-baselines it.
         let rebaseline_notice = session
             .current_conversation

@@ -16,6 +16,7 @@ use crate::store::registry::{RegistryStore, RegistryStoreError, Repository};
 use crate::store::settings::SettingsStore;
 
 pub mod accounts;
+pub mod agent_tools;
 pub mod advisor_roster;
 pub mod app;
 pub mod attachments;
@@ -194,6 +195,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     themes::register(dispatcher);
     app::register(dispatcher);
     token_guard::register(dispatcher);
+    agent_tools::register(dispatcher);
     advisor_roster::register(dispatcher);
     copilot_plan::register(dispatcher);
     usage::register(dispatcher);
