@@ -16,4 +16,4 @@ Event `agent-tools:call` `{ sessionId, callId, tool, args }` is emitted when the
 
 Approval: an action with `mutates: true` raises a card through `chat.answer` with id `refract-tool-<callId>` (Approve/Deny). Deny replies `{ ok: false, error: { code: 'denied' } }`. Yolo Sessions skip the card.
 
-Errors (tool error codes returned to the agent): `unknown_tool`, `unknown_panel`, `unknown_action`, `invalid_input`, `denied`, `timeout`, `cancelled`, `result_too_large`, `renderer_unavailable`; the renderer may add panel-specific codes such as `panel_unavailable`.
+Errors (tool error codes returned to the agent). Rust router: `unknown_tool`, `unknown_panel`, `unknown_action`, `invalid_input`, `denied`, `timeout`, `cancelled`, `result_too_large`, `renderer_unavailable`. Renderer replies: `unknown_panel`, `unknown_action`, `invalid_input`, `panel_unavailable` (panel not available, or the caller is not the front Session), `action_failed` (the action ran and failed).
