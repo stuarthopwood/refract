@@ -5,6 +5,7 @@
 // `REFRACT_FAKE_OMP_READY_DELAY_MS` delays the first frame (Session-shaped processes only) for slow-start checks.
 // `--no-session` always selects `readiness`, so a per-launch SCENARIO can't redirect the probe onto a tape it wasn't scripted for.
 // Otherwise `REFRACT_FAKE_OMP_SCENARIO` names a fixture under omp-frames/, defaulting to `session`.
+
 // Host tools (#1193): `REFRACT_FAKE_OMP_HOST_TOOL_RECORD` (scratch file) turns on `set_host_tools` acking and appends
 // every `set_host_tools`/`host_tool_result` frame as `{pid,frame}` JSONL. `REFRACT_FAKE_OMP_HOST_TOOL_CALLS` (scratch
 // file of `host_tool_call` frames, one per line; an optional `__pid` limits a line to that fake process) is polled and each line appended after launch is emitted; the count
