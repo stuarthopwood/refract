@@ -80,7 +80,10 @@ pub async fn register_host_tools(proc: &crate::omp::process::OmpProcess, access:
 }
 
 /// The approval overlay as `--config` args, or a warning when it cannot be written.
-pub async fn overlay_config(dir: &std::path::Path, access: ToolAccess) -> Option<std::path::PathBuf> {
+pub async fn overlay_config(
+    dir: &std::path::Path,
+    access: ToolAccess,
+) -> Option<std::path::PathBuf> {
     match overlay::write(dir, access).await {
         Ok(path) => Some(path),
         Err(err) => {

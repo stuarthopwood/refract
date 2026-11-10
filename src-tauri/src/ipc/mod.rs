@@ -16,8 +16,8 @@ use crate::store::registry::{RegistryStore, RegistryStoreError, Repository};
 use crate::store::settings::SettingsStore;
 
 pub mod accounts;
-pub mod agent_tools;
 pub mod advisor_roster;
+pub mod agent_tools;
 pub mod app;
 pub mod attachments;
 pub mod chat;

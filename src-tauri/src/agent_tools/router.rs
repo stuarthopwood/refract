@@ -76,9 +76,12 @@ impl Plan {
 }
 
 fn str_arg<'a>(args: &'a Value, key: &str) -> Result<&'a str, ToolError> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| ToolError::new(INVALID_INPUT, format!("{key} is required and must be a string")))
+    args.get(key).and_then(Value::as_str).ok_or_else(|| {
+        ToolError::new(
+            INVALID_INPUT,
+            format!("{key} is required and must be a string"),
+        )
+    })
 }
 
 fn input_arg(args: &Value) -> Value {
@@ -129,7 +132,10 @@ pub fn plan(tool: &str, args: &Value) -> Result<Plan, ToolError> {
                 mutates: action.mutates,
             })
         }
-        other => Err(ToolError::new(UNKNOWN_TOOL, format!("{other} is not a Refract tool"))),
+        other => Err(ToolError::new(
+            UNKNOWN_TOOL,
+            format!("{other} is not a Refract tool"),
+        )),
     }
 }
 
@@ -145,7 +151,10 @@ pub fn ok_frame(id: &str, value: &Value) -> Value {
             id,
             &ToolError::new(
                 RESULT_TOO_LARGE,
-                format!("the result is {} bytes; the limit is {MAX_RESULT_BYTES}", text.len()),
+                format!(
+                    "the result is {} bytes; the limit is {MAX_RESULT_BYTES}",
+                    text.len()
+                ),
             ),
         );
     }
@@ -182,7 +191,10 @@ pub fn parse_reply(reply: &Value) -> Result<Value, ToolError> {
                 .unwrap_or("the panel reported an error");
             Err(ToolError::new(code, message))
         }
-        None => Err(ToolError::new(INVALID_INPUT, "the renderer reply has no ok flag")),
+        None => Err(ToolError::new(
+            INVALID_INPUT,
+            "the renderer reply has no ok flag",
+        )),
     }
 }
 
@@ -224,7 +236,9 @@ impl ToolRouter {
 
     fn begin(&self, call_id: &str) -> Arc<Notify> {
         let cancel = Arc::new(Notify::new());
-        self.lock().cancels.insert(call_id.to_string(), cancel.clone());
+        self.lock()
+            .cancels
+            .insert(call_id.to_string(), cancel.clone());
         cancel
     }
 
@@ -297,7 +311,10 @@ async fn serve(agent: Arc<SessionAgent>, call: Call) {
     router.finish(&call.id);
     let Some(outcome) = outcome else {
         agent
-            .tool_resolve_approval(&approval::request_id(&call.id), RequestResolution::Cancelled)
+            .tool_resolve_approval(
+                &approval::request_id(&call.id),
+                RequestResolution::Cancelled,
+            )
             .await;
         return;
     };
@@ -318,7 +335,11 @@ async fn run(agent: &Arc<SessionAgent>, call: &Call) -> Result<Value, ToolError>
     ask_renderer(agent, call, &plan).await
 }
 
-async fn ask_developer(agent: &Arc<SessionAgent>, call: &Call, plan: &Plan) -> Result<(), ToolError> {
+async fn ask_developer(
+    agent: &Arc<SessionAgent>,
+    call: &Call,
+    plan: &Plan,
+) -> Result<(), ToolError> {
     let Plan::Invoke {
         panel_id,
         action,
@@ -342,12 +363,18 @@ async fn ask_developer(agent: &Arc<SessionAgent>, call: &Call, plan: &Plan) -> R
     }
 }
 
-async fn ask_renderer(agent: &Arc<SessionAgent>, call: &Call, plan: &Plan) -> Result<Value, ToolError> {
+async fn ask_renderer(
+    agent: &Arc<SessionAgent>,
+    call: &Call,
+    plan: &Plan,
+) -> Result<Value, ToolError> {
     let rx = agent.tool_router().wait_for(&call.id);
-    if !agent
-        .tool_events()
-        .emit_agent_tools_call(agent.tool_session_id(), &call.id, &call.tool, &plan.event_args())
-    {
+    if !agent.tool_events().emit_agent_tools_call(
+        agent.tool_session_id(),
+        &call.id,
+        &call.tool,
+        &plan.event_args(),
+    ) {
         agent.tool_router().lock().waits.remove(&call.id);
         return Err(ToolError::new(
             RENDERER_UNAVAILABLE,
@@ -359,7 +386,10 @@ async fn ask_renderer(agent: &Arc<SessionAgent>, call: &Call, plan: &Plan) -> Re
         Ok(_) => Err(ToolError::new(CANCELLED, "the call was cancelled")),
         Err(_) => Err(ToolError::new(
             TIMEOUT,
-            format!("the panel did not answer within {} seconds", RENDERER_TIMEOUT_MS / 1000),
+            format!(
+                "the panel did not answer within {} seconds",
+                RENDERER_TIMEOUT_MS / 1000
+            ),
         )),
     }
 }

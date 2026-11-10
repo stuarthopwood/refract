@@ -90,7 +90,12 @@ mod tests {
             details,
             options,
             ..
-        } = card("c1", "git-changes", "stage_file", &json!({ "path": "a.ts" }))
+        } = card(
+            "c1",
+            "git-changes",
+            "stage_file",
+            &json!({ "path": "a.ts" }),
+        )
         else {
             panic!("expected an approval card");
         };

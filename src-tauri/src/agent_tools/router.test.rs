@@ -120,8 +120,10 @@ fn replies_parse_to_value_or_error() {
         parse_reply(&json!({ "ok": true, "value": { "a": 1 } })),
         Ok(json!({ "a": 1 }))
     );
-    let err = parse_reply(&json!({ "ok": false, "error": { "code": "panel_unavailable", "message": "m" } }))
-        .unwrap_err();
+    let err = parse_reply(
+        &json!({ "ok": false, "error": { "code": "panel_unavailable", "message": "m" } }),
+    )
+    .unwrap_err();
     assert_eq!(err, ToolError::new("panel_unavailable", "m"));
     assert!(parse_reply(&json!({})).is_err());
 }
@@ -133,7 +135,10 @@ fn calls_parse_from_the_wire_frame() {
         "toolName": "refract_list_panels", "arguments": {}
     }))
     .unwrap();
-    assert_eq!((call.id.as_str(), call.tool.as_str()), ("h1", "refract_list_panels"));
+    assert_eq!(
+        (call.id.as_str(), call.tool.as_str()),
+        ("h1", "refract_list_panels")
+    );
     assert!(parse_call(&json!({ "type": "host_tool_call" })).is_none());
 }
 

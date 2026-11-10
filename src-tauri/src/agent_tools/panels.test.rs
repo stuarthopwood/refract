@@ -42,7 +42,14 @@ fn validate_rejects_missing_unknown_and_mistyped_keys() {
 #[test]
 fn validate_rejects_paths_outside_the_worktree() {
     let schema = &action("git-changes", "stage_file").unwrap().input_schema;
-    for bad in ["../x", "a/../../x", "/etc/passwd", "C:\\x", "\\\\host\\share", ""] {
+    for bad in [
+        "../x",
+        "a/../../x",
+        "/etc/passwd",
+        "C:\\x",
+        "\\\\host\\share",
+        "",
+    ] {
         assert!(
             validate(schema, &json!({ "path": bad }), "input").is_err(),
             "{bad}"
