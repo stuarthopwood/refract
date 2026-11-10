@@ -5,8 +5,12 @@
 // `REFRACT_FAKE_OMP_READY_DELAY_MS` delays the first frame (Session-shaped processes only) for slow-start checks.
 // `--no-session` always selects `readiness`, so a per-launch SCENARIO can't redirect the probe onto a tape it wasn't scripted for.
 // Otherwise `REFRACT_FAKE_OMP_SCENARIO` names a fixture under omp-frames/, defaulting to `session`.
+// Host tools (#1193): `REFRACT_FAKE_OMP_HOST_TOOL_RECORD` (scratch file) turns on `set_host_tools` acking and appends
+// every `set_host_tools`/`host_tool_result` frame as `{pid,frame}` JSONL. `REFRACT_FAKE_OMP_HOST_TOOL_CALLS` (scratch
+// file of `host_tool_call` frames, one per line; an optional `__pid` limits a line to that fake process) is polled and each line appended after launch is emitted; the count
+// at launch seeds `seen`, so a later Session never replays earlier calls.
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync as appendFileSyncTop, existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
@@ -202,6 +206,11 @@ async function main() {
 
   async function handleCommand(cmd) {
     debugLog(`pid=${process.pid} RECV ${JSON.stringify(cmd)} (waitingFor=${JSON.stringify(waitingFor)})`);
+    if (hostToolRecord && (cmd.type === 'set_host_tools' || cmd.type === 'host_tool_result')) {
+      appendFileSyncTop(hostToolRecord, `${JSON.stringify({ pid: process.pid, frame: cmd })}\n`);
+      if (cmd.type === 'set_host_tools') emit({ id: cmd.id, type: 'response', command: 'set_host_tools', success: true });
+      return;
+    }
     // The `set_ask_dialog{enabled:true}` probe (#572) is sent once per process, but most tapes never list it
     // in a `__wait__`; unanswered, Refract blocks for its 60s request timeout and stalls later steps. Only
     // intercept when the tape isn't waiting for it, or tapes that script their own reply would never advance.
@@ -243,6 +252,19 @@ async function main() {
     }
     void handleCommand(cmd);
   });
+  const hostToolRecord = process.env.REFRACT_FAKE_OMP_HOST_TOOL_RECORD;
+  const hostToolCalls = process.env.REFRACT_FAKE_OMP_HOST_TOOL_CALLS;
+  const callLines = () => (hostToolCalls && existsSync(hostToolCalls) ? readFileSync(hostToolCalls, 'utf8').split('\n').filter((l) => l.trim()) : []);
+  if (hostToolCalls && !argv.noSession) {
+    let seen = callLines().length;
+    setInterval(() => {
+      const lines = callLines();
+      for (; seen < lines.length; seen++) {
+        const { __pid: target, ...frame } = JSON.parse(lines[seen]);
+        if (target === undefined || target === process.pid) emit(frame);
+      }
+    }, 100);
+  }
   rl.on('close', () => process.exit(0));
 }
 
