@@ -19,7 +19,7 @@ Each lane gets one worktree under the sibling folder `<repo>-worktrees`. The con
 
 ## Merge
 
-The controller merges the PR (`gh pr merge --squash --delete-branch`). Do not clean up from inside the lane.
+The controller merges the PR with `gh stack merge <pr> --yes --squash` (see `docs/stacked-prs.md`). Do not clean up from inside the lane.
 
 ## Reap
 
