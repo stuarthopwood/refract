@@ -28,3 +28,4 @@ there). A malformed title silently breaks both the version bump and the changelo
   "Breaking changes" `CHANGELOG.md` section is built from PR titles only, so a major release can
   ship with no Breaking changes section listed if the breaking PR's own title didn't also use
   `!`. Use `!` in the title too whenever a change is actually breaking.
+- `gh stack submit --auto` titles a one-commit PR from the commit subject and a multi-commit PR from the humanized branch name. See `docs/stacked-prs.md` for how to fix a title.
