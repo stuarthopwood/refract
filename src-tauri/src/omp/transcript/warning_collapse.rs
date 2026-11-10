@@ -26,7 +26,10 @@ pub(super) fn collapse_repeated_warning(items: &mut [Arc<TranscriptItem>], messa
     let merged = TranscriptItem::Notice {
         id: id.clone(),
         level: *level,
-        text: format!("{message} \u{d7}{}", split_repeat_count(text).1.saturating_add(1)),
+        text: format!(
+            "{message} \u{d7}{}",
+            split_repeat_count(text).1.saturating_add(1)
+        ),
     };
     items[index] = Arc::new(merged);
     true
