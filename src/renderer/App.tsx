@@ -40,6 +40,8 @@ import { DeleteDetailsHost } from '@/features/sessions/DeleteDetailsHost'
 import { usePaletteShortcut } from '@/features/palette/usePaletteShortcut'
 import { useChordDispatcher } from '@/features/palette/useChordDispatcher'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { AgentOpenedAnnouncer } from '@/features/right-pane/AgentOpenedAnnouncer'
+import { startAgentToolsBridge } from '@/features/right-pane/agent-tools-bridge'
 
 const MIN_SPLIT_WIDTH_PX = 360 * 2
 
@@ -75,6 +77,7 @@ export function App() {
     isSplit ? state.sessions.find((session) => session.id === paneSessionIds[focusedIndex])?.name : undefined
   )
   const chatAreaAnnouncement = useChatAreaAnnouncer((s) => s.text)
+  useEffect(() => startAgentToolsBridge(), [])
   useEffect(() => {
     function onPointerDownCapture(event: PointerEvent) {
       if (focusMoveButtonRef.current?.contains(event.target as Node)) event.preventDefault()
@@ -314,6 +317,7 @@ export function App() {
           drag-region header it can visually sit on top of (the permanent strip above, the left-nav
           header, and the chat header). */}
       <AppMenuBar />
+      <AgentOpenedAnnouncer />
     </div>
   )
 }
