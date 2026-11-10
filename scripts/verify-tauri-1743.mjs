@@ -180,8 +180,13 @@ async function main() {
 
     const prefs = await cdp.evaluate(`window.refract.usage.getPrefs().then((r) => r.value)`);
     record('Prefs store sessionScope=conversation and sessionRange=today', prefs?.sessionScope === 'conversation' && prefs?.sessionRange === 'today', prefs);
-    const rejects = await cdp.evaluate(`window.refract.usage.setPrefs({ sessionScope: 'bogus' }).then((r) => r.ok)`);
-    record('setPrefs rejects an out-of-allowlist sessionScope', rejects === false, { rejects });
+    const bad = await cdp.evaluate(`window.refract.usage.setPrefs({ sessionScope: 'bogus' })`);
+    const after = await cdp.evaluate(`window.refract.usage.getPrefs().then((r) => r.value)`);
+    record(
+      'setPrefs rejects an out-of-allowlist sessionScope with invalid-argument and keeps the stored scope',
+      bad?.ok === false && bad?.error?.code === 'invalid-argument' && after?.sessionScope === 'conversation',
+      { bad, storedScope: after?.sessionScope },
+    );
 
     // Restart with the same data dir: both choices persist.
     await stopLauncher(child);
