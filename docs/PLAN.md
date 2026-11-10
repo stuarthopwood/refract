@@ -1143,7 +1143,7 @@ Also filed 2026-11-06 (Stuart): **#1776** (`p3`, `idea`, `worktree`, `build`), I
 
 Also filed 2026-11-06 (Stuart): **#1778** (`p1`, `design`), UI Polish: Usage icon: use the gauge icon in the left rail and command palette to match the right rail.
 
-Also filed 2026-11-09 (Stuart): **#1789** (`p1`, `feature`, `chat`), Composer: # picker to search and insert a pull request or issue reference; pairs with #1155.
+Also filed 2026-11-09 (Stuart): **#1789** (`p1`, `feature`, `chat`), Composer: # picker to search and insert a pull request or issue reference; pairs with #1155. In progress (PR draft, `feat/1789-hash-picker`, spec 123; grilled 2026-11-10): `#` at text start or after whitespace (never mid-word, in inline code or in a code fence) opens a picker of the top 10 issues and pull requests of the Session's Project GitHub repository only, no picker without one; typing narrows, Enter or Tab inserts `#N `; new `itemRefs.search` backend command; `ci:local`, the Rust compile and the live check are pending.
 
 Also filed 2026-11-09 (Stuart): **#1804** (`p2`, `feature`, `right-pane`), Epic: Built-in browser (element selection, devtools, API tool hand-off); children #1795 to #1803 (#1795 is the Tauri embedding spike and comes first; #1803 depends on #1793).
 

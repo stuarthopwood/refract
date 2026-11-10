@@ -24,6 +24,8 @@ import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
 import { useSlashMenuCompletion } from './useSlashMenuCompletion'
+import { HashPicker } from './HashPicker'
+import { useHashPicker } from './useHashPicker'
 import { ComposerModePills } from './ComposerModePills'
 import { ComposerStatusLine } from './ComposerStatusLine'
 import { AttachButton, ReasoningPicker } from './ComposerPickers'
@@ -209,6 +211,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     textChips: attachments.textChips,
     announceChipRemoval
   })
+  const hashPicker = useHashPicker({ sessionId, text, textareaRef, suppressed: showSlashMenu, disabled, onInserted: clearGhostState })
   // Clamp at render: until the reset effect runs, the index can point past a shorter filtered list.
   const clampedSlashActiveIndex = slashMatches.length > 0 ? Math.min(slashActiveIndex, slashMatches.length - 1) : 0
 
@@ -453,6 +456,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         return
       }
     }
+    if (hashPicker.handleKeyDown(event)) return
     // Tab accepts a shown suggestion; modified Tab or IME composition keeps normal focus movement.
     // `ghost.text === text` rejects a suggestion computed against a draft changed outside onChange (#358).
     if (
@@ -707,6 +711,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       <div data-slot="slash-menu-announcement" role="status" aria-live="polite" className="sr-only">
         {slashAnnouncement}
       </div>
+      <div data-slot="hash-picker-announcement" role="status" aria-live="polite" className="sr-only">
+        {hashPicker.announcement}
+      </div>
       <div id={attachmentsStatusId} role="status" aria-live="polite" className="sr-only">
         <span key={attachmentAnnouncement?.seq ?? 0}>{attachmentAnnouncement?.message ?? ''}</span>
       </div>
@@ -743,16 +750,17 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
               onActiveIndexChange={setSlashActiveIndex}
             />
           )}
+          {hashPicker.open && <HashPicker {...hashPicker.pickerProps} />}
           <CommandPillOverlay text={text} token={commandToken} overlayRef={commandPillOverlayRef} markdownSegments={markdownSegments} />
           <ComposerTextarea
             ref={textareaRef}
             role="combobox"
             aria-label="Message"
             aria-autocomplete="list"
-            aria-expanded={showSlashMenu && slashMatches.length > 0}
-            aria-controls={showSlashMenu && slashMatches.length > 0 ? slashMenuId : undefined}
+            aria-expanded={(showSlashMenu && slashMatches.length > 0) || hashPicker.expanded}
+            aria-controls={showSlashMenu && slashMatches.length > 0 ? slashMenuId : hashPicker.controls}
             aria-activedescendant={
-              showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashRowKey(slashMatches[clampedSlashActiveIndex]!)) : undefined
+              showSlashMenu && slashMatches.length > 0 ? slashOptionId(slashMenuId, slashRowKey(slashMatches[clampedSlashActiveIndex]!)) : hashPicker.activeDescendant
             }
             aria-describedby={describedByIds}
             spellCheck={!commandToken} // FR-092, #1050: off while the draft starts with a recognised command
