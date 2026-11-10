@@ -1192,3 +1192,9 @@ Also filed 2026-11-10 (Stuart): **#1850** (`p1`, `design`), UI Polish: App wide:
 Also filed 2026-11-10 (Stuart): **#1851** (`p1`, `design`), UI Polish: App wide: spell check and dictionary menu in every text input.
 
 Also filed 2026-11-10 (Stuart): **#1852** (`p1`, `design`), UI Polish: App wide: Slider uses the Material Design 3 style with a vertical bar handle.
+
+Also filed 2026-11-10 (Stuart): **#1854** (`p1`, `design`), UI Polish: Session list: collapsed Project header shows an active Sessions badge with a status tooltip.
+
+Also filed 2026-11-10 (Stuart): **#1855** (`p1`, `design`, `chat`), UI Polish: Chat: attached images never draw larger than their pixel size, so they stay sharp.
+
+Also filed 2026-11-10 (Stuart): **#1856** (`p1`, `bug`), Bug: Keyboard shortcuts dialog: list overflows the dialog instead of scrolling.
