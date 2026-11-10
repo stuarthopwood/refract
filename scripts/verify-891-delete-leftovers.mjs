@@ -17,7 +17,8 @@ import {
   safeRmSync,
   citeScreenshots,
   requireSharedCargoTarget,
-  buildAndCopyExeFresh
+  buildAndCopyExeFresh,
+  switchTheme
 } from './verify-tauri-scratch-helpers.mjs';
 import { createSessionViaQuickCreate, addRepository } from './verify-tauri-session-list-helpers.mjs';
 import { launchBuiltExe, latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
@@ -117,6 +118,7 @@ async function main() {
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
     await addRepository(cdp, repoDir);
+    await switchTheme(cdp, 'dark', 'Dark');
 
     const seenIds = [];
     async function newSession(label) {
@@ -186,9 +188,20 @@ async function main() {
     await new Promise((r) => setTimeout(r, 300)); // let Windows finish establishing the child's own cwd
     await openDeleteDialogFor(cdp, nameC, SHOT_DIR);
     await waitForLeftoverSummary(cdp);
+    // #1159: records every status-line state so the transient "Rechecking…" + spinner after a refusal is provable.
+    await cdp.evaluate(
+      `(() => { window.__statusLog = []; const root = document.querySelector('[role="alertdialog"]'); const rec = () => { const s = root.querySelector('[role="status"]'); window.__statusLog.push({ text: s?.textContent || '', spinner: !!s?.querySelector('svg.animate-spin') }); }; new MutationObserver(rec).observe(root, { subtree: true, childList: true, characterData: true, attributes: true }); })()`
+    );
     await clickDeleteButton(cdp);
     const errC = await readDialogError(cdp, { timeoutMs: 30_000 });
     await cdp.screenshot(path.join(SHOT_DIR, '02-dialog-refusal-cwd-holder.png'));
+    const statusLogC = await cdp.evaluate(`window.__statusLog`);
+    if (statusLogC.some((s) => s.text === 'Rechecking…' && s.spinner)) ok('(c, #1159) after the refusal the status line shows a spinner with "Rechecking…"');
+    else fail('(c, #1159) Rechecking… with spinner after refusal', new Error(`status log: ${JSON.stringify(statusLogC)}`));
+    const retryLabelC = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="alertdialog"] button')).map((b) => b.textContent.trim()).includes('Retry')`);
+    const errClassC = await cdp.evaluate(`document.querySelector('[role="alertdialog"] [role="alert"]')?.className || ''`);
+    if (retryLabelC && !/sr-only/.test(errClassC)) ok('(c, #1159) confirm reads Retry and the shared DialogError renders visibly (not sr-only)');
+    else fail('(c, #1159) Retry label + visible DialogError', new Error(`retry=${retryLabelC} class=${errClassC}`));
     const cFileCountAfter = countFilesRecursive(sessionC.worktreePath);
     const cRefusedCorrectly =
       !!errC &&
