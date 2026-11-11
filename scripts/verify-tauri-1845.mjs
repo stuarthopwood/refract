@@ -83,7 +83,7 @@ function seedOldDb(dbPath) {
   // The view treats a window with no model call as empty, so the unpriced project needs one free call.
   db.exec(
     `INSERT INTO message_rollup (hour, project_label, model, reasoning, agent_type, calls, input, output, total_tokens)
-     VALUES (${SEED_HOUR}, 'free', 'github-copilot/free-model', '', 'main', 1, 10, 5, 15)`
+    VALUES (${SEED_HOUR}, 'free', 'github-copilot/free-model', '', 'main', 1, 10, 5, 15)`
   );
   db.close();
 }

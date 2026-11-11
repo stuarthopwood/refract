@@ -72,5 +72,5 @@ Findings: the spec Tool rows and Schema version decisions (amended 2026-11-11), 
 - [X] C-11 `src-tauri/src/usage/schema.rs`: `user_version` 4, in-place rename of `cost_share` to `cost_usd` on `tool_calls` and `tool_rollup` from versions 2 and 3, with a test that history survives per the Schema version decision (met)
 - [X] C-12 `queries_tables.rs`, `queries.rs`, `ipc-usage.ts`: by-tool `costShare` is a fraction of the window's tool spend, absent when nothing was priced, per the Tool rows decision and `contracts/ipc.md` (met)
 - [X] C-13 `format.ts`, `UsageTables.tsx`: percentage, em dash when absent, with `format.test.ts` coverage per the Tool rows decision (met)
-- [X] C-14 `scripts/verify-tauri-1845.mjs` live driver: seeds a version 3 `usage.db` holding `cost_share` rows, proves the migration and screenshots the tools table with percentages and the em dash (missing)
-- C-15 Verify: `pnpm ci:local`, the C-14 driver; PR `fix(usage): tool Cost share shows a percentage`, `Refs #1845`. Depends on C-11 to C-14.
+- [X] C-14 `scripts/verify-tauri-1845.mjs` live driver: seeds a version 3 `usage.db` holding `cost_share` rows, proves the migration and screenshots the tools table with percentages and the em dash (met)
+- [X] C-15 Verify: `pnpm ci:local`, the C-14 driver; PR `fix(usage): tool Cost share shows a percentage`, `Refs #1845`. Depends on C-11 to C-14. (met)
