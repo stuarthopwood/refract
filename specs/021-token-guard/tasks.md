@@ -138,3 +138,4 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 - [x] T060 Change the label to "Applies to new Sessions" in `AdvancedRow.tsx` and `AdvancedSection.tsx`; no restart button
 - [ ] T061 Co-located tests for the new logic, `pnpm ci:local`
 - [ ] T062 Live check saving a value in Settings while a Session runs (`scripts/verify-tauri-1765.mjs`)
+- [x] T063 Reword the Optimise token usage confirm dialog (`OptimiseTokenUsage.tsx`) and mark FR-008 superseded by FR-036; the live check screenshots the dialog
