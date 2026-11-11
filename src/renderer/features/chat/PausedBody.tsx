@@ -11,8 +11,9 @@ import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Kbd } from '@/components/ui/kbd'
 import { focusSessionPane } from '@/lib/focus'
-import { useSessionsStore, useSplitStore } from '@/state'
+import { EMPTY_TRANSCRIPT, useSessionsStore, useSplitStore, useTranscriptStore } from '@/state'
 import { setSessionPaused } from './pauseActions'
+import { pausedNoticeAnnouncement } from './pausedNotices'
 
 // Space must keep its meaning in text fields, buttons, menus, dialogs and anything focusable.
 const SPACE_OWNERS =
@@ -26,6 +27,20 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
   const rootRef = useRef<HTMLDivElement>(null)
   const previous = useRef(pause)
   const [announcement, setAnnouncement] = useState('')
+  const items = useTranscriptStore((s) => s.bySession[sessionId]?.items ?? EMPTY_TRANSCRIPT.items)
+  const seenNotices = useRef<Set<string> | null>(null)
+
+  // Notices already in the transcript on mount are history, not news.
+  useEffect(() => {
+    const known = seenNotices.current
+    if (!known) {
+      seenNotices.current = new Set(items.filter((i) => i.kind === 'notice').map((i) => i.id))
+      return
+    }
+    const { text, ids } = pausedNoticeAnnouncement(items, known)
+    for (const id of ids) known.add(id)
+    if (text) setAnnouncement(text)
+  }, [items])
 
   useEffect(() => {
     if (previous.current === pause) return
