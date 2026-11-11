@@ -1,0 +1,85 @@
+// Stands in for `omp` (via verify-tauri-omp-shim.exe): runs the REAL omp binary against a scratch HOME and profile,
+// passing frames through line by line while teeing each to a wire log.
+// It also lets the driver ask omp a question Refract does not: every `inject-*.json` file dropped in
+// REFRACT_1835_INJECT_DIR is sent to omp as one command (id must start "verify-"); the response is logged and never
+// forwarded, so Refract's own request/response pairing is undisturbed.
+// Env: REFRACT_1835_OMP_EXE, REFRACT_1835_OMP_HOME, REFRACT_1835_WIRE_LOG, REFRACT_1835_MODEL, REFRACT_1835_PROFILE, REFRACT_1835_INJECT_DIR.
+import { spawn } from 'node:child_process';
+import { appendFileSync, readdirSync, readFileSync, unlinkSync } from 'node:fs';
+import path from 'node:path';
+
+const { REFRACT_1835_OMP_EXE: exe, REFRACT_1835_OMP_HOME: home, REFRACT_1835_WIRE_LOG: wireLog, REFRACT_1835_MODEL: model, REFRACT_1835_PROFILE: profile, REFRACT_1835_INJECT_DIR: injectDir } = process.env;
+if (!exe || !home || !wireLog || !model || !profile || !injectDir) {
+  console.error('verify-tauri-1835-omp-wrapper: missing REFRACT_1835_* environment');
+  process.exit(1);
+}
+
+const args = process.argv.slice(2);
+if (args.includes('rpc-ui')) args.push('--model', model);
+
+const child = spawn(exe, args, {
+  windowsHide: true,
+  stdio: ['pipe', 'pipe', 'inherit'],
+  env: { ...process.env, HOME: home, USERPROFILE: home, OMP_PROFILE: profile }
+});
+
+function wire(dir, frame, extra = {}) {
+  appendFileSync(wireLog, JSON.stringify({ at: Date.now(), pid: child.pid, dir, frame, ...extra }) + '\n');
+}
+
+/** Calls `onLine(line)` for each complete line; the partial tail waits for its newline so a frame is never split. */
+function lines(source, onLine) {
+  source.setEncoding('utf8');
+  let pending = '';
+  source.on('data', (data) => {
+    pending += data;
+    let at;
+    while ((at = pending.indexOf('\n')) >= 0) {
+      const line = pending.slice(0, at);
+      pending = pending.slice(at + 1);
+      if (line.trim()) onLine(line);
+    }
+  });
+}
+
+const parse = (line) => {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return line;
+  }
+};
+
+lines(child.stdout, (line) => {
+  const frame = parse(line);
+  const injected = typeof frame?.id === 'string' && frame.id.startsWith('verify-');
+  wire('omp->refract', frame, injected ? { injected: true } : {});
+  if (!injected) process.stdout.write(line + '\n');
+});
+lines(process.stdin, (line) => {
+  wire('refract->omp', parse(line));
+  child.stdin.write(line + '\n');
+});
+process.stdin.on('end', () => child.stdin.end());
+
+setInterval(() => {
+  let names = [];
+  try {
+    names = readdirSync(injectDir).filter((n) => /^inject-.*\.json$/.test(n));
+  } catch {}
+  for (const name of names) {
+    const file = path.join(injectDir, name);
+    try {
+      const command = JSON.parse(readFileSync(file, 'utf8'));
+      unlinkSync(file);
+      wire('refract->omp', command, { injected: true });
+      child.stdin.write(JSON.stringify(command) + '\n');
+    } catch {}
+  }
+}, 150);
+
+child.on('error', (err) => {
+  console.error(`verify-tauri-1835-omp-wrapper: ${err.message}`);
+  process.exit(1);
+});
+child.on('exit', (code) => process.exit(code ?? 1));
