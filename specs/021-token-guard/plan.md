@@ -63,6 +63,7 @@ Scripts/specs: `scripts/check-parity.mjs` (`OMP_GUARD_RESET` entry), `scripts/ve
 
 1. **Values store** (`values.rs`): `TokenGuardValues` with the 17 grilled keys plus snapcompact keys, seeded from `src/shared`-mirrored defaults; atomic JSON via `atomic_json`; `version` field.
 2. **Overlay** (`overlay.rs`): render nested YAML from the values, write to a temp file then rename; header comment with `refractOverlayVersion`; rewritten on every launch (cheap) so edits apply to the next launch.
+   **Amended (#1765)**: since #1767 Settings writes the global config (`omp config set`), and a running omp re-reads config between turns for the keys proven live (research.md sections 9, 10); the launch overlay remains only for the per-Session plan variant and the legacy migration fallback, and must be written through `overlay::write_legacy` or proven unreachable.
 3. **Rules** (`rules.rs`): copy embedded rules to the data dir on launch, return the path.
 4. **Args** (`args.rs`): `token_guard_args() -> Vec<OsString>`; on write failure return empty plus a one-shot toast event.
 5. **Shake** (`shake.rs`): called from the settle hook; reads context tokens, if above 60_000 sends `/shake` via `proc.request`, marks the response silent, logs result; one attempt per settle; the next user prompt waits for the in-flight shake (bounded by a timeout) so it cannot race.
