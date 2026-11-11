@@ -74,7 +74,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
           <DialogDescription>The shortcuts Refract supports today.</DialogDescription>
         </DialogHeader>
         {/* Middle grid row is `minmax(0,1fr)`: the list shrinks to the window and scrolls; header and Done stay visible. */}
-        <ScrollArea className="min-h-0" viewportProps={{ tabIndex: 0, 'aria-label': 'Keyboard shortcuts list' }}>
+        <ScrollArea className="min-h-0" viewportProps={{ tabIndex: 0, role: 'region', 'aria-label': 'Keyboard shortcuts list' }}>
           <div className="flex min-w-0 flex-col gap-4 p-1 pr-2">
             {groups.map((group) => (
               <div key={group.heading} className="flex min-w-0 flex-col gap-2">
