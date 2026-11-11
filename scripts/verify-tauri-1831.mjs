@@ -43,7 +43,7 @@ const checkbox = (q, label) =>
 const control = (q, tag) => `${field(q)}?.querySelector('${tag}')`;
 const SUBMIT = `Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim().startsWith('Submit'))`;
 const LIVE_TITLES = `Array.from(document.querySelectorAll('*')).filter((el) => el.children.length === 0 && el.textContent.trim() === 'Questions from the agent' && !el.closest('[role="group"]'))`;
-const HISTORY_CARDS = `Array.from(document.querySelectorAll('[role="group"][aria-label="Questions from the agent"]'))`;
+const HISTORY_CARDS = `Array.from(document.querySelectorAll('[role="group"][aria-label^="Questions from the agent"]'))`;
 const FOCUS = `(() => { const a = document.activeElement; return { tag: a?.tagName ?? null, role: a?.getAttribute?.('role') ?? null, label: a?.getAttribute?.('aria-label') ?? null, isBody: !a || a === document.body }; })()`;
 
 async function shoot(cdp, name) {
@@ -259,9 +259,7 @@ async function main() {
     await cdp.waitFor(`!!(${OPEN_FIRST_SESSION})`, { timeoutMs: 60_000, label: 'session list after reload' });
     const sawCard = await cdp.waitFor(`${HISTORY_CARDS}.length > 0`, { timeoutMs: 8_000 }).catch(() => false);
     if (!sawCard) await cdp.click(OPEN_FIRST_SESSION);
-    // A long session virtualises the oldest rows, so each poll scrolls the transcript to the top before looking for the first ask.
-    const SCROLL_TOP = `Array.from(document.querySelectorAll('*')).filter((el) => el.scrollHeight > el.clientHeight + 50 && /auto|scroll/.test(getComputedStyle(el).overflowY) && el.querySelector('[role="group"]')).forEach((el) => { el.scrollTop = 0; })`;
-    await cdp.waitFor(`(() => { ${SCROLL_TOP}; return ${HISTORY_CARDS}.some((c) => c.textContent.includes('Which database?')); })()`, { timeoutMs: 60_000, label: 'history card for the first ask' });
+    await cdp.waitFor(`${HISTORY_CARDS}.some((c) => c.textContent.includes('Which database?'))`, { timeoutMs: 60_000, label: 'history card for the first ask' });
     const FIRST_CARD = `${HISTORY_CARDS}.find((c) => c.textContent.includes('Which database?'))`;
     // With a dozen asks in the session the first card sits in a deferred-render region where innerText is empty, so read the DOM text.
     const historyText = await cdp.evaluate(`${FIRST_CARD}.textContent`);
