@@ -372,6 +372,11 @@ impl SessionAgent {
 
     async fn apply_transcript_frame(&self, frame: &Value) {
         let mut state = self.state.lock().await;
+        self.apply_frame_locked(&mut state, frame);
+    }
+
+    /// For a caller that checks state and writes the transcript in one lock hold.
+    fn apply_frame_locked(&self, state: &mut AgentState, frame: &Value) {
         let before = state.transcript.snapshot();
         let turn_abort_requested = state.turn_abort_requested;
         state.transcript.apply_frame(frame, turn_abort_requested);

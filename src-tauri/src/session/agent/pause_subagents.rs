@@ -16,6 +16,14 @@ enum Outcome {
     Failed(String),
 }
 
+fn rpc_error(response: &Value) -> String {
+    response
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown error")
+        .to_string()
+}
+
 fn classify(response: &Value) -> Outcome {
     if response.get("success").and_then(Value::as_bool) == Some(true) {
         let cancelled = response.pointer("/data/cancelled").and_then(Value::as_bool);
@@ -25,24 +33,17 @@ fn classify(response: &Value) -> Outcome {
             Outcome::NothingToCancel
         };
     }
-    let error = response
-        .get("error")
-        .and_then(Value::as_str)
-        .unwrap_or("unknown error");
+    let error = rpc_error(response);
     if error.contains("not running") {
         Outcome::NothingToCancel
     } else {
-        Outcome::Failed(error.to_string())
+        Outcome::Failed(error)
     }
 }
 
 fn listed_ids(response: &Value) -> Result<Vec<String>, String> {
     if response.get("success").and_then(Value::as_bool) != Some(true) {
-        let error = response
-            .get("error")
-            .and_then(Value::as_str)
-            .unwrap_or("unknown error");
-        return Err(error.to_string());
+        return Err(rpc_error(response));
     }
     let listed = response
         .pointer("/data/subagents")
@@ -81,10 +82,25 @@ impl SessionAgent {
         }
     }
 
-    async fn record_cancelled(&self, id: &str) {
+    async fn is_gating(&self) -> bool {
+        self.state.lock().await.pause.is_gating()
+    }
+
+    /// Records cancelled ids and posts notices in one lock hold, and only while the Session still
+    /// gates: after Resume they are stale and would read after its "Resumed" notice.
+    async fn record_and_note(&self, cancelled: &[String], notices: &[(String, &str)]) {
         let mut state = self.state.lock().await;
-        if !state.pause.cancelled.iter().any(|known| known == id) {
-            state.pause.cancelled.push(id.to_string());
+        if !state.pause.is_gating() {
+            return;
+        }
+        for id in cancelled {
+            if !state.pause.cancelled.contains(id) {
+                state.pause.cancelled.push(id.clone());
+            }
+        }
+        for (text, level) in notices {
+            let frame = json!({ "type": "notice", "level": level, "message": text });
+            self.apply_frame_locked(&mut state, &frame);
         }
     }
 
@@ -101,14 +117,15 @@ impl SessionAgent {
                     "pause: could not list subagents for {}: {reason}",
                     self.session_id
                 );
-                self.append_notice(
-                    format!("Pause could not list the running subagents: {reason}"),
-                    "error",
-                )
-                .await;
+                let notice = format!("Pause could not list the running subagents: {reason}");
+                self.record_and_note(&[], &[(notice, "error")]).await;
                 return;
             }
         };
+        // A Resume that landed during the listing wins: nothing is cancelled.
+        if !self.is_gating().await {
+            return;
+        }
         let mut requests = JoinSet::new();
         for id in ids {
             let agent = self.arc();
@@ -131,20 +148,17 @@ impl SessionAgent {
         }
         cancelled.sort();
         failed.sort();
-        for id in &cancelled {
-            self.record_cancelled(id).await;
-        }
+        let mut notices = Vec::new();
         if !cancelled.is_empty() {
-            self.append_notice(format!("Pause cancelled {}.", describe(&cancelled)), "info")
-                .await;
+            notices.push((format!("Pause cancelled {}.", describe(&cancelled)), "info"));
         }
         if !failed.is_empty() {
-            self.append_notice(
+            notices.push((
                 format!("Pause could not cancel {}.", describe(&failed)),
                 "error",
-            )
-            .await;
+            ));
         }
+        self.record_and_note(&cancelled, &notices).await;
     }
 
     /// OMP has no pause gate, so a subagent that starts mid-pause is cancelled from its
@@ -157,12 +171,8 @@ impl SessionAgent {
             return;
         };
         self.ensure_pause_loaded().await;
-        {
-            let state = self.state.lock().await;
-            // A resuming Session is already draining held messages; what they spawn must run.
-            if state.pause.held.is_none() || state.pause.resuming {
-                return;
-            }
+        if !self.is_gating().await {
+            return;
         }
         let agent = self.arc();
         let id = id.to_string();
@@ -170,23 +180,25 @@ impl SessionAgent {
     }
 
     async fn auto_cancel(&self, id: &str) {
+        // Resume may have landed between the frame and this task starting.
+        if !self.is_gating().await {
+            return;
+        }
         match self.cancel_subagent(id).await {
             Outcome::Cancelled => {
-                self.record_cancelled(id).await;
-                self.append_notice(
-                    format!("Pause cancelled subagent {id}, which started while this Session was paused."),
-                    "info",
-                )
-                .await;
+                let notice = format!(
+                    "Pause cancelled subagent {id}, which started while this Session was paused."
+                );
+                self.record_and_note(&[id.to_string()], &[(notice, "info")])
+                    .await;
             }
             Outcome::NothingToCancel => {}
             Outcome::Failed(reason) => {
                 log::warn!("pause: could not cancel new subagent {id}: {reason}");
-                self.append_notice(
-                    format!("Pause could not cancel subagent {id}, which started while this Session was paused: {reason}"),
-                    "error",
-                )
-                .await;
+                let notice = format!(
+                    "Pause could not cancel subagent {id}, which started while this Session was paused: {reason}"
+                );
+                self.record_and_note(&[], &[(notice, "error")]).await;
             }
         }
     }
@@ -208,5 +220,11 @@ impl SessionAgent {
 }
 
 #[cfg(test)]
+#[path = "pause_subagents_fixture.test.rs"]
+mod fixture;
+#[cfg(test)]
 #[path = "pause_subagents.test.rs"]
 mod tests;
+#[cfg(test)]
+#[path = "pause_subagents_races.test.rs"]
+mod races;

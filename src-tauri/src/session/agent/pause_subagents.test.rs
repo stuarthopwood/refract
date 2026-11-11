@@ -1,192 +1,90 @@
-// Unit tests for `pause_subagents.rs`, loaded via `#[path]`. A node stub stands in for OMP and
-// logs every RPC it receives, so each test asserts the exact wire traffic.
-use std::path::PathBuf;
-use std::sync::Arc;
+// Unit tests for `pause_subagents.rs`, loaded via `#[path]`. The stub OMP lives in `fixture`.
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::json;
 
-use crate::omp::process::OmpProcess;
-use crate::omp::transcript::TranscriptItem;
-use crate::session::agent::SessionAgent;
-use crate::store::registry::Session;
+use super::fixture::{fixture, fixture_with, lifecycle, Stub};
+use super::{classify, listed_ids, rpc_error, Outcome};
+use crate::session::agent::pause::State;
 
-const STUB: &str = r#"
-const fs = require('fs');
-const [log, running, stuck] = process.argv.slice(2);
-const live = new Set(running ? running.split(',') : []);
-const uncancellable = new Set(stuck ? stuck.split(',') : []);
-let buf = '';
-process.stdin.on('data', (chunk) => {
-  buf += chunk;
-  let at;
-  while ((at = buf.indexOf('\n')) >= 0) {
-    const line = buf.slice(0, at);
-    buf = buf.slice(at + 1);
-    if (!line.trim()) continue;
-    fs.appendFileSync(log, line + '\n');
-    const cmd = JSON.parse(line);
-    let data = {};
-    if (cmd.type === 'get_subagents') {
-      data = { subagents: [...live].map((id) => ({ id })) };
-    } else if (cmd.type === 'cancel_subagent') {
-      const cancelled = (live.has(cmd.subagentId) || cmd.subagentId.startsWith('late-')) && !uncancellable.has(cmd.subagentId);
-      if (cancelled) live.delete(cmd.subagentId);
-      data = { cancelled };
-    }
-    process.stdout.write(
-      JSON.stringify({ id: cmd.id, type: 'response', command: cmd.type, success: true, data }) + '\n',
+#[test]
+fn classify_reads_a_successful_cancel() {
+    let cancelled = json!({ "success": true, "data": { "cancelled": true } });
+    let settled = json!({ "success": true, "data": { "cancelled": false } });
+    let bare = json!({ "success": true });
+
+    assert_eq!(classify(&cancelled), Outcome::Cancelled);
+    assert_eq!(classify(&settled), Outcome::NothingToCancel);
+    assert_eq!(classify(&bare), Outcome::NothingToCancel);
+}
+
+#[test]
+fn classify_treats_not_running_as_nothing_to_cancel() {
+    let response = json!({ "success": false, "error": "Subagent alpha is not running" });
+
+    assert_eq!(classify(&response), Outcome::NothingToCancel);
+}
+
+#[test]
+fn classify_fails_on_any_other_rejection() {
+    let named = json!({ "success": false, "error": "boom" });
+    let unnamed = json!({ "success": false });
+
+    assert_eq!(classify(&named), Outcome::Failed("boom".to_string()));
+    assert_eq!(
+        classify(&unnamed),
+        Outcome::Failed("unknown error".to_string())
     );
-  }
-});
-"#;
-
-struct Fixture {
-    agent: Arc<SessionAgent>,
-    log: PathBuf,
 }
 
-/// `running` ids are live in the stub; `stuck` ids answer `cancelled:false`.
-async fn fixture(running: &[&str], stuck: &[&str]) -> Fixture {
-    let session_id = format!("session-pause-subagents-{}", uuid::Uuid::new_v4());
-    let dir =
-        crate::test_scratch::path(format!("refract-pause-subagents-{}", uuid::Uuid::new_v4()));
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let mut registry_store = crate::store::registry::RegistryStore::open(&dir)
-        .await
-        .unwrap();
-    registry_store
-        .add_repository(crate::store::registry::Repository {
-            id: "repo".to_string(),
-            path: dir.join("repo").to_string_lossy().into_owned(),
-            name: "repo".to_string(),
-            default_branch: "main".to_string(),
-            added_at: "2026-11-11T00:00:00.000Z".to_string(),
-            color: None,
-        })
-        .await
-        .unwrap();
-    registry_store
-        .add_session(Session {
-            id: session_id.clone(),
-            repository_id: "repo".to_string(),
-            name: "test".to_string(),
-            branch: "feat/test".to_string(),
-            base_branch: "main".to_string(),
-            worktree_path: dir.join("worktree").to_string_lossy().into_owned(),
-            session_dir: None,
-            current_conversation: None,
-            last_message_count: None,
-            last_model: None,
-            last_thinking_level: None,
-            created_at: "2026-11-11T00:00:00.000Z".to_string(),
-            last_activity_at: "2026-11-11T00:00:00.000Z".to_string(),
-            archived_at: None,
-            hidden_at: None,
-            paused_held: None,
-            current_turn_subagents: None,
-            stopped_on_request_conversation: None,
-            stopped_on_request_at_size: None,
-            pinned_model: false,
-            origin_issue: None,
-        })
-        .await
-        .unwrap();
-    let registry = Arc::new(tokio::sync::Mutex::new(registry_store));
-    let settings = Arc::new(tokio::sync::Mutex::new(
-        crate::store::settings::SettingsStore::open(&dir)
-            .await
-            .unwrap(),
-    ));
-    let events =
-        crate::events::EventSink::new(Arc::new(std::sync::Mutex::new(None)), registry.clone());
-    let manager = crate::session::manager::SessionManager::new(registry, settings, events);
-    let agent = manager.get_or_create_agent(&session_id);
-
-    let script = dir.join("stub.js");
-    let log = dir.join("rpc.jsonl");
-    tokio::fs::write(&script, STUB).await.unwrap();
-    let mut command = tokio::process::Command::new("node");
-    command
-        .arg(&script)
-        .arg(&log)
-        .arg(running.join(","))
-        .arg(stuck.join(","))
-        .current_dir(&dir);
-    let process = OmpProcess::from_command(command).unwrap();
-    agent.state.lock().await.process = Some(Arc::new(process));
-    Fixture { agent, log }
+#[test]
+fn rpc_error_names_the_error_or_falls_back() {
+    assert_eq!(rpc_error(&json!({ "error": "boom" })), "boom");
+    assert_eq!(rpc_error(&json!({ "error": 7 })), "unknown error");
+    assert_eq!(rpc_error(&json!({})), "unknown error");
 }
 
-impl Fixture {
-    /// Every command the stub received, in order.
-    async fn rpcs(&self) -> Vec<Value> {
-        let text = tokio::fs::read_to_string(&self.log)
-            .await
-            .unwrap_or_default();
-        text.lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect()
-    }
+#[test]
+fn listed_ids_keeps_every_entry_that_has_an_id() {
+    let response = json!({
+        "success": true,
+        "data": { "subagents": [{ "id": "alpha" }, { "name": "no id" }, { "id": "bravo" }] }
+    });
 
-    async fn rpc_types(&self) -> Vec<String> {
-        self.rpcs()
-            .await
-            .iter()
-            .map(|cmd| cmd["type"].as_str().unwrap().to_string())
-            .collect()
-    }
-
-    async fn cancel_targets(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self
-            .rpcs()
-            .await
-            .iter()
-            .filter(|cmd| cmd["type"] == "cancel_subagent")
-            .map(|cmd| cmd["subagentId"].as_str().unwrap().to_string())
-            .collect();
-        ids.sort();
-        ids
-    }
-
-    async fn cancelled(&self) -> Vec<String> {
-        let mut ids = self.agent.state.lock().await.pause.cancelled.clone();
-        ids.sort();
-        ids
-    }
-
-    async fn notices(&self) -> Vec<String> {
-        let state = self.agent.state.lock().await;
-        state
-            .transcript
-            .items()
-            .iter()
-            .filter_map(|item| match &**item {
-                TranscriptItem::Notice { text, .. } => Some(text.clone()),
-                _ => None,
-            })
-            .collect()
-    }
-
-    /// The auto-cancel runs off the frame handler, so poll for its effect.
-    async fn until_cancel_sent(&self) {
-        for _ in 0..200 {
-            if !self.cancel_targets().await.is_empty() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-        }
-        panic!("no cancel_subagent arrived");
-    }
-
-    async fn finish(self) {
-        let process = self.agent.state.lock().await.process.take().unwrap();
-        process.stop().await;
-    }
+    assert_eq!(listed_ids(&response), Ok(vec!["alpha".into(), "bravo".into()]));
 }
 
-fn lifecycle(id: &str, status: &str) -> Value {
-    json!({ "type": "subagent_lifecycle", "payload": { "id": id, "status": status, "index": 0 } })
+#[test]
+fn listed_ids_is_empty_when_the_data_has_no_list() {
+    assert_eq!(listed_ids(&json!({ "success": true })), Ok(Vec::new()));
+    assert_eq!(
+        listed_ids(&json!({ "success": true, "data": { "subagents": "none" } })),
+        Ok(Vec::new())
+    );
+}
+
+#[test]
+fn listed_ids_returns_the_rpc_error_on_failure() {
+    assert_eq!(
+        listed_ids(&json!({ "success": false, "error": "boom" })),
+        Err("boom".to_string())
+    );
+    assert_eq!(
+        listed_ids(&json!({ "success": false })),
+        Err("unknown error".to_string())
+    );
+}
+
+#[test]
+fn a_session_gates_only_while_held_and_not_resuming() {
+    let mut state = State::default();
+    assert!(!state.is_gating(), "a Session that never paused");
+
+    state.hold_for_test(Vec::new());
+    assert!(state.is_gating(), "paused");
+
+    state.mark_resuming_for_test();
+    assert!(!state.is_gating(), "a resume drain is running");
 }
 
 #[tokio::test]
@@ -232,6 +130,67 @@ async fn a_subagent_that_answers_cancelled_false_is_not_recorded() {
 }
 
 #[tokio::test]
+async fn a_failed_listing_is_noted_and_cancels_nothing_but_the_session_still_pauses() {
+    let fx = fixture_with(Stub {
+        running: &["alpha"],
+        list_error: Some("boom"),
+        ..Stub::default()
+    })
+    .await;
+
+    fx.agent.pause().await.unwrap();
+
+    assert_eq!(fx.rpc_types().await, ["get_subagents"]);
+    assert!(fx.cancelled().await.is_empty());
+    assert_eq!(
+        fx.notices().await,
+        ["Pause could not list the running subagents: boom"]
+    );
+    assert!(fx.agent.is_paused().await);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_cancel_that_fails_is_noted_and_not_recorded() {
+    let fx = fixture_with(Stub {
+        running: &["alpha", "bravo"],
+        cancel_errors: &[("bravo", "boom")],
+        ..Stub::default()
+    })
+    .await;
+
+    fx.agent.pause().await.unwrap();
+
+    assert_eq!(fx.cancel_targets().await, ["alpha", "bravo"]);
+    assert_eq!(fx.cancelled().await, ["alpha"]);
+    assert_eq!(
+        fx.notices().await,
+        [
+            "Pause cancelled 1 subagent: alpha.",
+            "Pause could not cancel 1 subagent: bravo (boom)."
+        ]
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_cancel_answering_not_running_is_neither_recorded_nor_reported() {
+    let fx = fixture_with(Stub {
+        running: &["alpha"],
+        cancel_errors: &[("alpha", "Subagent alpha is not running")],
+        ..Stub::default()
+    })
+    .await;
+
+    fx.agent.pause().await.unwrap();
+
+    assert_eq!(fx.cancel_targets().await, ["alpha"]);
+    assert!(fx.cancelled().await.is_empty());
+    assert!(fx.notices().await.is_empty());
+    fx.finish().await;
+}
+
+#[tokio::test]
 async fn a_second_pause_does_not_cancel_again() {
     let fx = fixture(&["alpha"], &[]).await;
 
@@ -248,19 +207,34 @@ async fn a_subagent_started_while_paused_is_cancelled_and_noted() {
     fx.agent.pause().await.unwrap();
 
     fx.agent.handle_frame(lifecycle("late-1", "started")).await;
-    fx.until_cancel_sent().await;
+    fx.until_rpc("cancel_subagent").await;
+    fx.until_notices(1).await;
 
     assert_eq!(fx.cancel_targets().await, ["late-1"]);
-    for _ in 0..200 {
-        if !fx.notices().await.is_empty() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
     assert_eq!(fx.cancelled().await, ["late-1"]);
     assert_eq!(
         fx.notices().await,
         ["Pause cancelled subagent late-1, which started while this Session was paused."]
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn an_auto_cancel_that_fails_is_noted_and_not_recorded() {
+    let fx = fixture_with(Stub {
+        cancel_errors: &[("late-1", "boom")],
+        ..Stub::default()
+    })
+    .await;
+    fx.agent.pause().await.unwrap();
+
+    fx.agent.handle_frame(lifecycle("late-1", "started")).await;
+    fx.until_notices(1).await;
+
+    assert!(fx.cancelled().await.is_empty());
+    assert_eq!(
+        fx.notices().await,
+        ["Pause could not cancel subagent late-1, which started while this Session was paused: boom"]
     );
     fx.finish().await;
 }
@@ -332,7 +306,7 @@ async fn resume_after_a_pause_that_cancelled_nothing_posts_no_notice() {
 async fn a_subagent_started_by_a_resume_drain_is_not_cancelled() {
     let fx = fixture(&[], &[]).await;
     fx.agent.pause().await.unwrap();
-    fx.agent.state.lock().await.pause.resuming = true;
+    fx.agent.state.lock().await.pause.mark_resuming_for_test();
     let before = fx.rpcs().await.len();
 
     fx.agent.handle_frame(lifecycle("late-1", "started")).await;
@@ -346,7 +320,12 @@ async fn a_subagent_started_by_a_resume_drain_is_not_cancelled() {
 async fn a_failed_drain_keeps_the_cancelled_list_and_posts_no_notice() {
     let fx = fixture(&["alpha", "bravo"], &[]).await;
     fx.agent.pause().await.unwrap();
-    fx.agent.state.lock().await.pause.held = Some(vec!["held text".to_string()]);
+    fx.agent
+        .state
+        .lock()
+        .await
+        .pause
+        .hold_for_test(vec!["held text".to_string()]);
     // A stopped process still counts as attached, so the drain's send fails and the Session stays paused.
     let process = fx.agent.state.lock().await.process.clone().unwrap();
     process.stop().await;
@@ -360,6 +339,7 @@ async fn a_failed_drain_keeps_the_cancelled_list_and_posts_no_notice() {
         .await
         .iter()
         .any(|text| text.starts_with("Resumed.")));
+    fx.finish().await;
 }
 
 #[tokio::test]
@@ -379,6 +359,7 @@ async fn a_process_exit_clears_the_cancelled_list_so_resume_posts_no_notice() {
         .await
         .iter()
         .any(|text| text.starts_with("Resumed.")));
+    fx.finish().await;
 }
 
 #[tokio::test]
