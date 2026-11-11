@@ -51,7 +51,10 @@ fn listed_ids_keeps_every_entry_that_has_an_id() {
         "data": { "subagents": [{ "id": "alpha" }, { "name": "no id" }, { "id": "bravo" }] }
     });
 
-    assert_eq!(listed_ids(&response), Ok(vec!["alpha".into(), "bravo".into()]));
+    assert_eq!(
+        listed_ids(&response),
+        Ok(vec!["alpha".into(), "bravo".into()])
+    );
 }
 
 #[test]

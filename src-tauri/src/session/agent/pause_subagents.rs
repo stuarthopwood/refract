@@ -223,8 +223,8 @@ impl SessionAgent {
 #[path = "pause_subagents_fixture.test.rs"]
 mod fixture;
 #[cfg(test)]
-#[path = "pause_subagents.test.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "pause_subagents_races.test.rs"]
 mod races;
+#[cfg(test)]
+#[path = "pause_subagents.test.rs"]
+mod tests;
