@@ -177,9 +177,9 @@ async fn apply_change(
 ) -> Result<Applied, String> {
     if !migrate::ensure_with(executor, dir, config).await {
         let status = migrate::status(dir).await;
-        return Err(status.error.unwrap_or_else(|| {
-            "The token guard migration has not finished".to_string()
-        }));
+        return Err(status
+            .error
+            .unwrap_or_else(|| "The token guard migration has not finished".to_string()));
     }
     let updated = match change {
         Change::Set(key, value) => values::set(executor, &key, value).await,

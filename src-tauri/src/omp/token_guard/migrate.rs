@@ -221,9 +221,7 @@ pub async fn ensure_with(executor: &dyn OmpExecutor, dir: &Path, config: Option<
     // A retry in flight reads as `pending`, not as the previous attempt's failure.
     *LAST_ERROR.lock().expect("poisoned") = None;
     // A failed read only costs the skipped-write saving: the writes then report omp's own error.
-    let current = list_config_with(executor, &[])
-        .await
-        .unwrap_or(Value::Null);
+    let current = list_config_with(executor, &[]).await.unwrap_or(Value::Null);
     let write = |key, value| write_to_omp(executor, key, value);
     match attempt(dir, &current, config, &today(), write).await {
         Ok(()) => {

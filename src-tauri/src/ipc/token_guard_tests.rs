@@ -151,7 +151,10 @@ async fn the_write_runs_after_the_migrate_check_and_before_the_overlay_refresh()
     assert_eq!(omp.calls.lock().unwrap()[0][1], "list");
     // When the user's key was written the legacy overlay was still the old one; the refresh came after.
     let seen = omp.seen_at_set.lock().unwrap();
-    assert!(seen[last].as_ref().unwrap().contains("softRequestBudget: 60\n"));
+    assert!(seen[last]
+        .as_ref()
+        .unwrap()
+        .contains("softRequestBudget: 60\n"));
     let refreshed = std::fs::read_to_string(overlay_path(&dir)).unwrap();
     assert!(refreshed.contains("softRequestBudget: 30\n"));
     assert!(applied.warnings.is_empty());
@@ -168,7 +171,7 @@ async fn a_pending_migration_is_retried_inside_the_write_and_then_succeeds() {
     let change = || Change::Set("compaction.thresholdPercent".to_string(), json!(55));
 
     let refused = apply_change(&omp, &dir, None, false, change()).await;
-    assert!(refused.unwrap_err().contains("omp is unavailable"));
+    assert!(refused.err().unwrap().contains("omp is unavailable"));
     assert!(!dir.join("token-guard-migration.json").exists());
     assert!(
         !omp.sets()

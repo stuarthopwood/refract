@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use serde_json::{json, Map, Value};
 
 use crate::ipc::model_roles::set_model_role_with;
-use crate::omp::config::{list_config_with, set_config_with, OmpConfigError, OmpExecutor, RealOmpExecutor};
+use crate::omp::config::{
+    list_config_with, set_config_with, OmpConfigError, OmpExecutor, RealOmpExecutor,
+};
 
 pub const STORE_VERSION: u32 = 2;
 
