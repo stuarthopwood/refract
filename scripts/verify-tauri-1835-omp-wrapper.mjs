@@ -15,7 +15,8 @@ if (!exe || !home || !wireLog || !model || !profile || !injectDir) {
 }
 
 const args = process.argv.slice(2);
-if (args.includes('rpc-ui')) args.push('--model', model);
+const isRpc = args.includes('rpc-ui');
+if (isRpc) args.push('--model', model);
 
 const child = spawn(exe, args, {
   windowsHide: true,
@@ -24,6 +25,8 @@ const child = spawn(exe, args, {
 });
 
 function wire(dir, frame, extra = {}) {
+  // Why: Refract also runs short `omp config get` children through this wrapper; only the RPC process is evidence.
+  if (!isRpc) return;
   appendFileSync(wireLog, JSON.stringify({ at: Date.now(), pid: child.pid, dir, frame, ...extra }) + '\n');
 }
 
@@ -71,7 +74,7 @@ lines(process.stdin, (line) => {
 });
 process.stdin.on('end', () => child.stdin.end());
 
-setInterval(() => {
+if (isRpc) setInterval(() => {
   let names = [];
   try {
     names = readdirSync(injectDir).filter((n) => /^inject-.*\.json$/.test(n));
