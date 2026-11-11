@@ -20,6 +20,7 @@ pub async fn launch_args(dir: &Path, plan_mode: Option<bool>) -> (Vec<String>, V
             None => None,
         }
     } else {
+        overlay::note_legacy_launch();
         let mut legacy = legacy::effective(dir).await;
         Some(match plan_mode {
             Some(plan) => {

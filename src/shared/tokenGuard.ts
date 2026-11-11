@@ -439,3 +439,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   }
 ];
 
+/** True when a saved change to `key` reaches only Sessions started afterwards; the few `live` keys reload into a running one. */
+export const appliesToNewSessionsOnly = (key: string): boolean =>
+  TOKEN_GUARD_KEYS.find((info) => info.key === key)?.live !== true
+
