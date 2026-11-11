@@ -5510,3 +5510,14 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `cargo`, `ci:local` and the live check stay pending per FR-125 (missing)
 - [x] T436 [US6] `ConfirmAlertDialog.tsx`/`DeleteDialog.tsx`: confirm button `min-w-24`, move focus to it
   before the file list is replaced; trim the `fs/remove_tree.rs` header comment, per FR-125(e) (missing)
+
+## Phase 90: Convergence (#1817 skill-prompt row never built in Rust, FR-063)
+
+- [x] T437 [US1] `transcript/skill_prompt.rs`: build the `skill-prompt` item (name, args, line count, summary) from
+  OMP's custom message, called once from the live `message_*` path and once from the history path in
+  `transcript.rs`, with a `SkillPrompt` variant and the `description` field in `model.ts`, per FR-063 (missing)
+- [x] T438 Rust tests from the captured live and replay messages (`tests/fixtures/skill-prompt.json`) and the
+  malformed (no name) Notice fallback, per FR-063
+- [x] T439 [US1] `SkillPromptRow.tsx`: pass the summary as `iconTooltip` (hover and keyboard focus), per FR-063 (missing)
+- [ ] T440 Live check a `/skill:<name>` send on a built app (live and after a Session reopen), update `docs/PLAN.md`,
+  then `cargo` and `node scripts/ci-local.mjs` per FR-063
