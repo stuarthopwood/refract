@@ -1,6 +1,6 @@
 # Tasks: Agent tool channel and panel tools (#1193)
 
-No test tasks: the prototyping rule forbids new tests; existing tests are only run. Chunks A and B touch disjoint files and can run in parallel after T001. Chunk C needs both.
+No test tasks in Phases 0 to C (the prototyping rule forbade new tests); Phase 2 carries tests (AGENTS.md Testing rule, 2026-11-11). Chunks A and B touch disjoint files and can run in parallel after T001. Chunk C needs both.
 
 ## Wave 0: contract (one worker, first)
 
@@ -34,3 +34,11 @@ No test tasks: the prototyping rule forbids new tests; existing tests are only r
 ## Dependencies
 
 T001 before A and B. A and B run in parallel (disjoint trees). C after A and B. Within A: T002 before T003 to T007; T003 before T004.
+
+## Phase 2: Convergence (#1888, unknown outcome and mutation window; FR-006, FR-019 to FR-021, SC-004, SC-005)
+
+- [ ] T017 `src-tauri/src/agent_tools/router.rs`, `mod.rs`: `MUTATION_TIMEOUT_MS` (30 s), the `outcome_unknown` code, and `wait_renderer` split into a read wait and a mutation wait (pre-start, then post-start). A `started` that arrives after Rust gave up is refused. Co-located tests in `router.test.rs`. (FR-006, FR-020)
+- [ ] T018 `src-tauri/src/ipc/agent_tools.rs`, `src/shared/ipc.ts`, `src/tauri-bridge/index.ts`, `contracts/ipc.md`: the `agentTools.started` command and the `outcome_unknown` error code. (FR-019)
+- [ ] T019 `src/renderer/features/right-pane/agent-panel-actions.ts`, `agent-tool-dispatch.ts`, `agent-tools-bridge.ts`, `src/renderer/state/git-changes-store.ts`: `stage_file` and `unstage_file` call `started` after their checks and before changing files, proceed only on `accepted: true`, and do not await the reload that follows. Co-located tests in `agent-panel-actions.test.ts`. (FR-019, FR-021)
+- [ ] T020 `scripts/verify-tauri-1888.mjs`: cold-start live check, including `agentTools.result` held back (`outcome_unknown`) and `agentTools.started` held back (`timeout`, nothing staged, released `started` refused). (SC-005)
+- [ ] T021 `pnpm ci:local`; `docs/PLAN.md` row 1c.1 note.
