@@ -219,7 +219,7 @@ export function DeleteDialog({
       open={open}
       busy={deleting}
       confirmRef={confirmRef}
-      confirmDisabled={loading}
+      confirmDisabled={loading || refreshing}
       size="md"
       tone="destructive"
       title={`Delete Session ${session.name}?`}

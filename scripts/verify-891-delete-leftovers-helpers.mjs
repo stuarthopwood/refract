@@ -299,8 +299,9 @@ export async function waitForSessionRemoved(cdp, name, worktreePath, { timeoutMs
 export async function retryDeleteLogged(cdp, { label, name, worktreePath, exitedAt, maxAttempts = 8, lagMs = 3000 }) {
   const attempts = [];
   for (let n = 1; n <= maxAttempts; n++) {
-    const startMs = Date.now() - exitedAt;
-    await clickDeleteButton(cdp);
+    let startMs = 0;
+    // The button is aria-disabled while the post-refusal recheck runs; time the attempt from the click, not the wait.
+    await clickDeleteButton(cdp, { onReadyToClick: () => { startMs = Date.now() - exitedAt; } });
     const outcome = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (outcome.closed) {
       await waitForSessionRemoved(cdp, name, worktreePath);
