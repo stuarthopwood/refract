@@ -1237,3 +1237,5 @@ Also filed 2026-11-10 (Stuart): **#1882** (`p1`, `design`), UI Polish: Charts: t
 Also filed 2026-11-10 (Stuart): **#1885** (`p1`, `design`, `settings`), UI Polish: Settings: Appearance: theme files get a JSON Schema and a format help page.
 
 Also filed 2026-11-11 (Stuart): **#1890** (`p1`, `bug`), Bug: Pause: resuming a stopped, paused Session leaves it stopped; Stop idle stops paused Sessions.
+
+Also filed 2026-11-11 (Stuart): **#1892** (`p1`, `design`, `chat`), UI Polish: Chat: the Starting agent notice blurs the history behind it.
