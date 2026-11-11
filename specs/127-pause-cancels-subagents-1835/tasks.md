@@ -11,5 +11,5 @@
 - [ ] T007 DROPPED 2026-11-11 (DC-1: Resume does not revive; no reviving code).
 - [x] T008 Unit tests green; assert spec 056 behaviour unchanged (held order, `pauseAll`) (FR-007, SC-004)
 - [ ] T009 Live check with real OMP and evidence file (SC-001, SC-002); verify the Subagents panel shows Cancelled (FR-009)
-- [ ] T010 Docs: `CONTEXT.md:51` glossary line, pointer in `specs/056-pause-mode/spec.md`, `docs/PLAN.md` row for #1835
+- [x] T010 Docs: `CONTEXT.md:51` glossary line, pointer in `specs/056-pause-mode/spec.md`, `docs/PLAN.md` row for #1835
 - [ ] T011 `cargo test`, `pnpm ci:local`, file-size check in the Rust build slot
