@@ -172,7 +172,8 @@ async function main() {
     await shoot(cdp, '02-paused-both-subagents-cancelled-notice.png');
 
     // The Subagents panel shows them as Cancelled (FR-009).
-    await cdp.clickByLabel('Open subagents panel', { prefix: true }).catch(() => {});
+    // The Paused overlay covers the readout chip, so open the panel from the right rail.
+    await cdp.click(`document.querySelector('[data-rail-button="subagents"]')`);
     const panelOpen = await cdp.waitFor(`!!document.querySelector('[role="tree"][aria-label="Subagents"]')`, { timeoutMs: 15_000, label: 'Subagents panel' }).catch(() => false);
     const panelText = panelOpen ? await cdp.evaluate(`document.querySelector('[role="tree"][aria-label="Subagents"]').innerText`) : null;
     check(!!panelText && /cancel/i.test(panelText), '1h. The Subagents panel shows the subagents as Cancelled', panelText);
@@ -212,7 +213,9 @@ async function main() {
     check(lateCancels.length === 1 && lateCancels[0] === lateId, '2c. Refract sent cancel_subagent for that id', { lateCancels, lateId });
     await waitForPause(cdp, sessionId, 'paused');
     const lateAfter = await ompSubagents(injectDir);
-    check(listedIds(lateAfter).length === 0 && !!mock.subagents[2]?.abortedAt, '2d. Afterwards omp reports no running subagent and its model request was aborted; the Session reaches Paused', { lateAfter, subagent: mock.subagents[2] });
+    // The late subagent is cancelled before it reaches its model call, so a model request is optional; one that did arrive must be aborted.
+    const lateAborted = lifecycle('aborted', latePausedAt).some((l) => (l.frame.payload?.id ?? l.frame.id) === lateId);
+    check(listedIds(lateAfter).length === 0 && lateAborted && mock.subagents.slice(2).every((s) => s.abortedAt), '2d. Afterwards omp reports no running subagent and marks it aborted (any model request it made was aborted); the Session reaches Paused', { lateAfter, lateAborted, lateModelRequests: mock.subagents.slice(2) });
     await shoot(cdp, '06-paused-late-subagent-auto-cancelled-notice.png');
 
     // Resume once more: the notice names the auto-cancelled subagent.
