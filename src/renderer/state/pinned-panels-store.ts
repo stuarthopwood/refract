@@ -27,7 +27,8 @@ interface PinnedPanelsState {
   livePullRequest: LivePullRequestState | null
   /** Bumped whenever the live state is cleared; a load that began before the bump must not publish. */
   liveEpoch: number
-  pin(kind: PinnedPanelKind, target: { repositoryId: string; number: number; sessionId?: string | null; opener?: HTMLElement | null }): void
+  /** `focus: false` is for agent-opened panels: opening must never move keyboard focus. */
+  pin(kind: PinnedPanelKind, target: { repositoryId: string; number: number; sessionId?: string | null; opener?: HTMLElement | null; focus?: boolean }): void
   unpin(kind: PinnedPanelKind, options?: { restoreFocus?: boolean }): void
   publishPullRequestState(repositoryId: string, number: number, state: PullRequestState, epoch?: number): void
   clearLivePullRequest(): void
@@ -39,7 +40,7 @@ export const usePinnedPanelsStore = create<PinnedPanelsState>((set, get) => ({
   issue: null,
   livePullRequest: null,
   liveEpoch: 0,
-  pin: (kind, { repositoryId, number, sessionId = null, opener = null }) => {
+  pin: (kind, { repositoryId, number, sessionId = null, opener = null, focus = true }) => {
     const key = kind === 'pull-request' ? 'pullRequest' : 'issue'
     const pane = useRightPaneStore.getState()
     const alreadyActive = pane.open && pane.activePanelId === kind
@@ -49,9 +50,9 @@ export const usePinnedPanelsStore = create<PinnedPanelsState>((set, get) => ({
       [key]: { repositoryId, number, sessionId, opener },
       ...(swapped ? { livePullRequest: null, liveEpoch: get().liveEpoch + 1 } : {})
     } as Partial<PinnedPanelsState>)
-    pane.openPanel(kind)
+    pane.openPanel(kind, { focus })
     // The shell only moves focus on a fresh open; a swap of the pinned item must still move it in.
-    if (alreadyActive) requestAnimationFrame(() => document.querySelector<HTMLElement>(RIGHT_PANE_CONTENT_SELECTOR)?.focus())
+    if (alreadyActive && focus) requestAnimationFrame(() => document.querySelector<HTMLElement>(RIGHT_PANE_CONTENT_SELECTOR)?.focus())
   },
   unpin: (kind, options) => {
     const key = kind === 'pull-request' ? 'pullRequest' : 'issue'

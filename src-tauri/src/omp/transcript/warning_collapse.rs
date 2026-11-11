@@ -12,24 +12,25 @@ fn split_repeat_count(text: &str) -> (&str, u64) {
 }
 
 /// Warnings recur after every tool step, so an identical earlier warning anywhere in the log is
-/// bumped to `text ×N` instead of adding another row; `None` when there is no earlier match.
-pub(super) fn collapse_repeated_warning(
-    items: &[Arc<TranscriptItem>],
-    message: &str,
-) -> Option<Vec<Arc<TranscriptItem>>> {
-    let index = items.iter().rposition(|item| {
+/// bumped in place to `text ×N` instead of adding another row; `false` when there is no earlier match.
+pub(super) fn collapse_repeated_warning(items: &mut [Arc<TranscriptItem>], message: &str) -> bool {
+    let Some(index) = items.iter().rposition(|item| {
         matches!(&**item, TranscriptItem::Notice { level: NoticeLevel::Warning, text, .. }
             if split_repeat_count(text).0 == message)
-    })?;
-    let TranscriptItem::Notice { id, level, text } = &*items[index] else {
-        return None;
+    }) else {
+        return false;
     };
-    let count = split_repeat_count(text).1 + 1;
-    let mut merged = items.to_vec();
-    merged[index] = Arc::new(TranscriptItem::Notice {
+    let TranscriptItem::Notice { id, level, text } = &*items[index] else {
+        return false;
+    };
+    let merged = TranscriptItem::Notice {
         id: id.clone(),
         level: *level,
-        text: format!("{message} \u{d7}{count}"),
-    });
-    Some(merged)
+        text: format!(
+            "{message} \u{d7}{}",
+            split_repeat_count(text).1.saturating_add(1)
+        ),
+    };
+    items[index] = Arc::new(merged);
+    true
 }

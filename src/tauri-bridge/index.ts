@@ -30,6 +30,7 @@ import type {
   LeftoverSummary,
   LowMemoryWarning,
   TokenGuardCalls,
+  AgentToolCall,
   TokenGuardHandoffResult,
   TokenGuardLaunchWarning,
   TokenGuardSnapshot,
@@ -276,6 +277,9 @@ const refract: RefractApi = {
     stopWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_STOP_WATCHING, sessionId),
     ensureWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_ENSURE_WATCHING, sessionId)
   },
+  agentTools: {
+    result: (sessionId, callId, reply) => request<void>(IPC_REQUESTS.AGENT_TOOLS_RESULT, sessionId, callId, reply)
+  },
 
   settings: {
     get: () => request<Settings>(IPC_REQUESTS.SETTINGS_GET),
@@ -477,6 +481,7 @@ const refract: RefractApi = {
   onTokenGuardLaunchWarning: (handler) =>
     on<TokenGuardLaunchWarning>(IPC_EVENTS.TOKEN_GUARD_LAUNCH_WARNING, handler),
   onTokenGuardCalls: (handler) => on<TokenGuardCalls>(IPC_EVENTS.TOKEN_GUARD_CALLS, handler),
+  onAgentToolsCall: (handler) => on<AgentToolCall>(IPC_EVENTS.AGENT_TOOLS_CALL, handler),
   onAdvisorRosterDetected: (handler) => on<AdvisorRosterDetected>(IPC_EVENTS.ADVISOR_ROSTER_DETECTED, handler),
   onReadoutUpdate: (handler) => on<{ sessionId: string; readout: SessionReadout }>(IPC_EVENTS.READOUT_UPDATE, handler),
   onSubagentsUpdate: (handler) =>

@@ -12,6 +12,10 @@ pub(super) async fn build_args(opts: &OmpProcessOptions) -> (Vec<String>, Vec<St
     let (guard_args, warnings) =
         super::token_guard::args::launch_args(&crate::data_dir(), opts.plan_mode).await;
     args.extend(guard_args);
+    if let Some(path) = &opts.extra_config {
+        args.push("--config".to_string());
+        args.push(path.to_string_lossy().into_owned());
+    }
     (args, warnings)
 }
 

@@ -66,6 +66,8 @@ pub struct OmpProcessOptions {
     pub no_session: bool,
     /// Forces `plan.defaultOnStartup` for this process; `None` keeps the shared overlay (#433).
     pub plan_mode: Option<bool>,
+    /// An extra `--config` overlay for this launch (omp accepts the flag repeatedly).
+    pub extra_config: Option<PathBuf>,
     pub ready_prompt_after_ms: u64,
     pub ready_ceiling_ms: u64,
 }
@@ -78,6 +80,7 @@ impl OmpProcessOptions {
             omp_path: None,
             no_session: false,
             plan_mode: None,
+            extra_config: None,
             ready_prompt_after_ms: READY_PROMPT_AFTER_MS,
             ready_ceiling_ms: READY_CEILING_MS,
         }

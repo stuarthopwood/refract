@@ -35,6 +35,8 @@ pub struct ShakeState {
     suppress_next: bool,
     /// `/shake` was missing from omp's command list and that was already logged.
     pub missing_logged: bool,
+    /// omp paused its automatic maintenance; a shake would only fight it.
+    paused: bool,
 }
 
 impl ShakeState {
@@ -67,24 +69,27 @@ impl ShakeState {
         self.suppress_next = false;
     }
 
-    /// A new Conversation starts without a post-shake baseline.
+    /// A new Conversation starts without a post-shake baseline or pause.
     pub fn reset_baseline(&mut self) {
         self.post_shake_tokens = None;
+        self.paused = false;
     }
 
     pub fn record_post_shake(&mut self, tokens: u64) {
         self.post_shake_tokens = Some(tokens);
+        self.paused = false;
     }
 
-    /// The shared pause: omp stopped automatic maintenance at `tokens`, so no shake is attempted
-    /// until the context regrows by the margin.
-    pub fn pause_maintenance(&mut self, tokens: u64) {
-        self.post_shake_tokens = Some(tokens);
+    /// omp stopped automatic maintenance: no shake is attempted until a shake completes
+    /// (`record_post_shake`) or the Conversation resets. Holds no baseline.
+    pub fn set_paused(&mut self) {
+        self.paused = true;
     }
 
-    /// Above the threshold, and (after a previous shake) grown enough since it.
+    /// Above the threshold, not paused, and (after a previous shake) grown enough since it.
     pub fn needs_shake(&self, tokens: Option<u64>) -> bool {
-        exceeds_threshold(tokens)
+        !self.paused
+            && exceeds_threshold(tokens)
             && match (tokens, self.post_shake_tokens) {
                 (Some(t), Some(post)) => t >= post.saturating_add(SHAKE_REGROWTH_TOKENS),
                 _ => true,
@@ -200,6 +205,23 @@ mod tests {
         state.record_post_shake(65_000);
         assert!(!state.needs_shake(Some(70_000)));
         assert!(state.needs_shake(Some(80_000)));
+        state.reset_baseline();
+        assert!(state.needs_shake(Some(70_000)));
+    }
+
+    #[test]
+    fn pause_blocks_needs_shake_until_a_shake_is_recorded() {
+        let mut state = ShakeState::default();
+        state.set_paused();
+        assert!(!state.needs_shake(Some(200_000)));
+        state.record_post_shake(65_000);
+        assert!(state.needs_shake(Some(80_000)));
+    }
+
+    #[test]
+    fn reset_clears_the_pause() {
+        let mut state = ShakeState::default();
+        state.set_paused();
         state.reset_baseline();
         assert!(state.needs_shake(Some(70_000)));
     }

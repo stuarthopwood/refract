@@ -17,6 +17,7 @@ use crate::store::settings::SettingsStore;
 
 pub mod accounts;
 pub mod advisor_roster;
+pub mod agent_tools;
 pub mod app;
 pub mod attachments;
 pub mod chat;
@@ -194,6 +195,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     themes::register(dispatcher);
     app::register(dispatcher);
     token_guard::register(dispatcher);
+    agent_tools::register(dispatcher);
     advisor_roster::register(dispatcher);
     copilot_plan::register(dispatcher);
     usage::register(dispatcher);

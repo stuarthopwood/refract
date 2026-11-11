@@ -20,6 +20,16 @@ pub(super) struct State {
     counter: CallCounter,
 }
 
+impl State {
+    /// Applies omp's maintenance pause only if no Conversation reset landed since `generation`
+    /// was read, so a reset that races the pause wins.
+    fn pause_if_current(&mut self, generation: u64) {
+        if self.counter.conversation == generation {
+            self.shake.set_paused();
+        }
+    }
+}
+
 async fn emit_calls(agent: &SessionAgent) {
     let (conversation, calls) = agent
         .with_token_guard_state(|s| (s.counter.conversation, s.counter.calls))
@@ -33,14 +43,15 @@ async fn emit_calls(agent: &SessionAgent) {
 /// shake when omp reports it paused automatic maintenance.
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
     if frame_type == "notice" && shake::is_maintenance_paused_notice(frame) {
-        // Spawned: the stats RPC reply is read by the loop that delivers this frame.
+        let generation = agent
+            .with_token_guard_state(|s| s.counter.conversation)
+            .await;
+        // Spawned: the pause must not hold up the loop that delivers this frame.
         let agent = agent.arc();
         tokio::spawn(async move {
-            if let Some(tokens) = context_tokens(&agent).await {
-                agent
-                    .with_token_guard_state(|s| s.shake.pause_maintenance(tokens))
-                    .await;
-            }
+            agent
+                .with_token_guard_state(|s| s.pause_if_current(generation))
+                .await;
         });
         return;
     }
@@ -222,4 +233,27 @@ async fn run_shake(agent: &SessionAgent) {
         tokens,
         if accepted { "sent" } else { "skipped" }
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pause_applies_within_the_same_conversation() {
+        let mut state = State::default();
+        let generation = state.counter.conversation;
+        state.pause_if_current(generation);
+        assert!(!state.shake.needs_shake(Some(70_000)));
+    }
+
+    #[test]
+    fn pause_from_before_a_reset_is_dropped() {
+        let mut state = State::default();
+        let stale = state.counter.conversation;
+        state.counter.reset(0);
+        state.shake.reset_baseline();
+        state.pause_if_current(stale);
+        assert!(state.shake.needs_shake(Some(70_000)));
+    }
 }

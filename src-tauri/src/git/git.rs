@@ -305,3 +305,23 @@ pub fn normalize_git_path(p: &str) -> String {
         with_platform_seps
     }
 }
+
+/// Display-only path with `..` collapsed (Session paths carry `..`); never use it to touch the filesystem.
+pub fn shown_path(path: &Path) -> String {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+                    out.pop();
+                } else {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    normalize_git_path(&out.to_string_lossy())
+}
