@@ -1,12 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1812: slash commands before the agent starts.
-// Three launches share one REFRACT_DATA_DIR (fake omp, recorded tapes slash-1812-*.jsonl):
-//  1 new Session, no commands reported -> the persisted last-commands list stays empty
-//  2 reopened (not started), cold cache: `/` reads "Starting agent…"; a non-native command starts the agent,
-//    waits for the delayed commands report and runs once
-//  3 reopened, warm cache: `/` lists cached commands; /new and /pause leave the agent stopped; /role planner
-//    starts it and applies the role; a started Session shows the list and sends once.
-// The fake omp's debug log (REFRACT_FAKE_OMP_DEBUG_LOG) is the proof of "started" and "sent once".
+// Live CDP check for #1812 (slash commands before the agent starts), three launches on one data dir:
+// 1 new Session, no commands reported; 2 reopened cold cache, `/` shows "Starting agent…" and a
+// non-native command starts the agent, waits for the report, runs once; 3 warm cache, /new and /pause
+// stay stopped, /role starts it. The fake omp debug log proves "started" and "sent once".
 
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
