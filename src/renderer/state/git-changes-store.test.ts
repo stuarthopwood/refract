@@ -23,14 +23,16 @@ describe('useGitChangesStore.stage', () => {
   })
 
   it('waits for the reload by default', async () => {
-    list.mockResolvedValue({ ok: true, value: { snapshot: null } })
+    let release: (value: unknown) => void = () => {}
+    list.mockReturnValue(new Promise((resolve) => (release = resolve)))
     let settled = false
     const pending = useGitChangesStore.getState().stage('waits', ['a.txt']).then(() => {
       settled = true
     })
-    await Promise.resolve()
+    await vi.waitFor(() => expect(list).toHaveBeenCalledTimes(1))
     expect(settled).toBe(false)
+    release({ ok: true, value: { snapshot: null } })
     await pending
-    expect(list).toHaveBeenCalledTimes(1)
+    expect(settled).toBe(true)
   })
 })

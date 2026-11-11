@@ -324,10 +324,13 @@ impl ToolRouter {
     /// The renderer is about to change files. False means Rust already gave up on the call (or it
     /// is not a pending mutation), so the renderer must change nothing.
     pub fn started(&self, call_id: &str) -> bool {
-        let Some(tx) = self.lock().starts.remove(call_id) else {
-            return false;
-        };
-        tx.send(()).is_ok()
+        // Sending under the lock serialises this with `forget_start`, so a value is either in
+        // the channel before the deadline path looks, or the sender is gone and this refuses.
+        let mut inner = self.lock();
+        inner
+            .starts
+            .remove(call_id)
+            .is_some_and(|tx| tx.send(()).is_ok())
     }
 
     /// Process exit or Session stop: cancels every call and frees every wait.
@@ -481,8 +484,8 @@ async fn wait_mutation(
         Early::Started(Ok(())) => {}
         Early::Started(Err(_)) => return Err(ToolError::new(CANCELLED, "the call was cancelled")),
         Early::Silent => {
-            // Taking the sender under the router's lock decides a started racing the deadline:
-            // either its value is already in the channel, or it is refused.
+            // `started` sends while holding the router's lock, so once `forget_start` returns
+            // either its value is already in the channel or it will be refused.
             router.forget_start(call_id);
             if started.try_recv().is_err() {
                 return Err(ToolError::new(

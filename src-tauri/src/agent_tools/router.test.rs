@@ -241,12 +241,14 @@ fn code_of(result: Result<Value, ToolError>) -> String {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_mutation_that_never_starts_times_out_and_refuses_a_late_started() {
+async fn a_mutation_that_never_starts_times_out_at_exactly_its_window() {
     let router = Arc::new(ToolRouter::default());
     let wait = pending_mutation(&router);
     tokio::task::yield_now().await;
-    advance_ms(RENDERER_TIMEOUT_MS + 1).await;
+    advance_ms(MUTATION_TIMEOUT_MS - 1).await;
+    tokio::task::yield_now().await;
     assert!(!wait.is_finished());
+    advance_ms(1).await;
     let err = wait.await.unwrap().unwrap_err();
     assert_eq!(err.code, TIMEOUT);
     assert!(err.message.contains("nothing changed"));
@@ -254,14 +256,39 @@ async fn a_mutation_that_never_starts_times_out_and_refuses_a_late_started() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_started_mutation_that_goes_silent_is_outcome_unknown() {
+async fn a_started_mutation_that_goes_silent_is_outcome_unknown_at_exactly_its_window() {
     let router = Arc::new(ToolRouter::default());
     let wait = pending_mutation(&router);
     tokio::task::yield_now().await;
     assert!(router.started("c1"));
+    tokio::task::yield_now().await;
+    advance_ms(MUTATION_TIMEOUT_MS - 1).await;
+    tokio::task::yield_now().await;
+    assert!(!wait.is_finished());
+    advance_ms(1).await;
     let err = wait.await.unwrap().unwrap_err();
     assert_eq!(err.code, OUTCOME_UNKNOWN);
     assert!(err.message.contains("check the panel before you retry"));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_started_racing_the_deadline_never_reports_timeout_after_being_accepted() {
+    let router = Arc::new(ToolRouter::default());
+    let wait = pending_mutation(&router);
+    tokio::task::yield_now().await;
+    advance_ms(MUTATION_TIMEOUT_MS).await;
+    let accepted = router.started("c1");
+    if accepted {
+        tokio::task::yield_now().await;
+        assert!(
+            !wait.is_finished(),
+            "an accepted started must keep waiting for the reply"
+        );
+        assert!(router.answer("c1", &json!({ "ok": true, "value": { "staged": true } })));
+        assert_eq!(wait.await.unwrap(), Ok(json!({ "staged": true })));
+    } else {
+        assert_eq!(code_of(wait.await.unwrap()), TIMEOUT);
+    }
 }
 
 #[tokio::test(start_paused = true)]
