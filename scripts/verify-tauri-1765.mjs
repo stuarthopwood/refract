@@ -1,10 +1,11 @@
 #!/usr/bin/env node
-// Live CDP check (two scenarios on scratch launches): A, a live key changed in Settings with a Session running reaches the global
-// config.yml; B, a failed launch migration leaves a legacy overlay that the Settings write must rewrite.
+// Live CDP check (three scenarios on scratch launches): A, a live key changed in Settings with a Session running reaches the global
+// config.yml; B, a failed launch migration leaves a legacy overlay that the Settings write must rewrite; C, as B but the overlay
+// refresh fails, so Settings must show the write's warning while the value is still saved.
 // No model calls: the real `omp` runs against a scratch PI_CODING_AGENT_DIR and REFRACT_DATA_DIR.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1765.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, rmSync, statSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, rmSync, statSync, readdirSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -25,6 +26,7 @@ const MODEL = 'probe-fake/probe-fake-model';
 const KEY = 'compaction.thresholdPercent';
 const NEW_VALUE = 55;
 const LEGACY_VALUE = 65;
+const WARNING_TEXT = 'Saved, but a Session started before the migration may keep the old values';
 const ORIGINAL_CONFIG = ['modelRoles:', `  default: ${MODEL}`, 'compaction:', '  thresholdPercent: 60', ''].join('\n');
 const MODELS_YML = ['providers:', '  probe-fake:', '    baseUrl: http://127.0.0.1:1', '    auth: none', '    api: openai-completions', '    models:', '      - id: probe-fake-model', '        name: Probe Fake Model', '        api: openai-completions', '        contextWindow: 200000', '        maxTokens: 1000', ''].join('\n');
 const LEGACY_STORE = { version: 2, overrides: { [KEY]: LEGACY_VALUE }, read_limit_migrated: true, thresholds_reset_pending: false };
@@ -172,36 +174,50 @@ async function scenarioA() {
   });
 }
 
-async function scenarioB() {
-  await withApp('B', ({ dataDir }) => {
+async function scenarioB(name, blockOverlay) {
+  await withApp(name, ({ dataDir }) => {
     writeFileSync(path.join(dataDir, 'token-guard.json'), JSON.stringify(LEGACY_STORE, null, 2));
     // The migration records a backup pointer here before it writes anything; a directory makes that atomic rename fail.
     mkdirSync(path.join(dataDir, 'token-guard-migration-backup.json'));
   }, async ({ cdp, dataDir, agentDir }) => {
     const overlayFile = path.join(dataDir, 'token-guard-overlay.yml');
     const marker = path.join(dataDir, 'token-guard-migration.json');
-    await shoot(cdp, 'B-session-on-legacy-overlay.png');
+    await shoot(cdp, `${name}-session-on-legacy-overlay.png`);
     check(!existsSync(marker), 'Migration failed at launch: no success marker, app booted and a Session is running', null);
     const overlayBefore = existsSync(overlayFile) ? readFileSync(overlayFile, 'utf8') : '';
     check(thresholdIs(overlayBefore, LEGACY_VALUE), `Running Session launched on the legacy overlay (seeded threshold ${LEGACY_VALUE})`, overlayBefore);
-    keepFile(overlayFile, 'B-overlay-before.yml');
+    keepFile(overlayFile, `${name}-overlay-before.yml`);
     const mtimeBefore = statSync(overlayFile).mtimeMs;
 
     rmSync(path.join(dataDir, 'token-guard-migration-backup.json'), { recursive: true });
+    // A read-only overlay is still readable (so Refract knows it generated it) but the atomic rename over it fails.
+    if (blockOverlay) chmodSync(overlayFile, 0o444);
     await changeThreshold(cdp);
-    const overlayAfter = await waitForFile(overlayFile, (t) => thresholdIs(t, NEW_VALUE));
-    check(thresholdIs(overlayAfter, NEW_VALUE) && statSync(overlayFile).mtimeMs > mtimeBefore, `Settings change rewrote the running Session's legacy overlay (threshold ${NEW_VALUE})`, overlayAfter);
-    keepFile(overlayFile, 'B-overlay-after.yml');
+    const warningShown = (timeoutMs) => cdp.waitFor(`Array.from(document.querySelectorAll('[data-slot="alert"]')).some((a) => a.textContent.includes(${JSON.stringify(WARNING_TEXT)}))`, { timeoutMs, label: 'write warning' }).then(() => true, () => false);
+    if (blockOverlay) {
+      const warned = await warningShown(30_000);
+      const overlayAfter = readFileSync(overlayFile, 'utf8');
+      check(warned, 'Settings shows the legacy-overlay refresh failure as a warning', await cdp.evaluate(`Array.from(document.querySelectorAll('[data-slot="alert"]')).map((a) => a.textContent)`));
+      check(thresholdIs(overlayAfter, LEGACY_VALUE) && !thresholdIs(overlayAfter, NEW_VALUE), 'The blocked legacy overlay kept the old threshold', overlayAfter);
+      await shoot(cdp, `${name}-warning-shown.png`);
+      chmodSync(overlayFile, 0o666);
+    } else {
+      const overlayAfter = await waitForFile(overlayFile, (t) => thresholdIs(t, NEW_VALUE));
+      check(thresholdIs(overlayAfter, NEW_VALUE) && statSync(overlayFile).mtimeMs > mtimeBefore, `Settings change rewrote the running Session's legacy overlay (threshold ${NEW_VALUE})`, overlayAfter);
+      check(!(await warningShown(3_000)), 'No warning shows when the overlay refresh succeeds', null);
+      keepFile(overlayFile, `${name}-overlay-after.yml`);
+    }
     check(existsSync(marker), 'Migration succeeded on the retry inside the Settings write (marker written)', null);
     check(omp(agentDir, 'config', 'get', KEY, '--json') === NEW_VALUE, `Global config holds ${NEW_VALUE} too`, null);
-    await shoot(cdp, 'B-after-settings-write.png');
+    await shoot(cdp, `${name}-after-settings-write.png`);
   });
 }
 
 async function main() {
   mkdirSync(SHOTS_DIR, { recursive: true });
   await scenarioA();
-  await scenarioB();
+  await scenarioB('B', false);
+  await scenarioB('C', true);
   const hashes = Object.fromEntries(evidenceFiles.filter((n) => existsSync(path.join(SHOTS_DIR, n))).map((n) => [n, sha256OfFile(path.join(SHOTS_DIR, n))]));
   writeFileSync(path.join(SHOTS_DIR, 'sha256.json'), JSON.stringify(hashes, null, 2));
   report.push({ scenario: '', step: 'evidence files (sha256)', ok: true, evidence: hashes });
