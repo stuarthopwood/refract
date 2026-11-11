@@ -20,10 +20,12 @@ Pausing a Session today (`src-tauri/src/session/agent/pause.rs:123-164`) only ho
 - Q: What happens to the earlier "Pausing: waiting for N subagents" design (2026-11-10 11:19)? -> A: Dropped. The wait-for-subagents Pausing state and the 2-minute cancel are not built.
 - Q: What if the parent spawns a subagent while the Session is Paused? -> A: Refract auto-cancels it. OMP has no RPC gate, so Refract enforces it: every `subagent_lifecycle` frame that reports a subagent starting while the Session is paused is answered with `cancel_subagent`.
 
-### Session 2026-11-11 (clarify; deferred with interim behaviour, not guessed)
+### Session 2026-11-11 (clarify; decided by Stuart)
 
-- Q (DC-1): How does Resume revive a subagent that Pause cancelled? -> Deferred. Stuart's 2026-11-10 13:57 decision says Resume "sends the subagent a continue message". The RPC docs say `steer_subagent` answers `Subagent not running` for a cancelled subagent (it is not listed by `get_subagents`), and in the probe the revive happened through the parent's `write agent://<id>` tool (`outcome: "revived"`), not an RPC command. Interim: task T001 proves what works before any code is built (steer a cancelled subagent over RPC; if rejected, prompt the parent to message it). Until the lane reports, Resume does not revive: it clears the pause, delivers held messages as today, and adds one notice naming the subagents Pause cancelled.
-- Q (DC-2): Does the shipped "Pausing" label for a Session whose own turn is still running (spec 056 FR-001, FR-008) also go? -> Deferred. The grill removed only the wait-for-subagents Pausing. Interim: the turn-boundary Pausing from spec 056 is unchanged; subagents never extend it.
+- Q (DC-1, decided): How does Resume treat subagents that Pause cancelled? -> A: Resume only clears the pause and posts one chat notice listing the subagents the pause cancelled. Nothing is respawned or revived automatically; the parent can re-run them. No `steer_subagent` or `write agent://<id>` revive is built.
+- Q (DC-2, decided): Does the shipped "Pausing" label for a Session whose own turn is still running go? -> A: No. The turn-boundary Pausing label (`pause.rs:25-36`) stays. Pause cancels subagents at once, but the label stays while the parent's turn finishes.
+
+### Session 2026-11-11 (clarify; deferred with interim behaviour, not guessed)
 - Q (DC-3): Does Pause or auto-cancel add a chat note? -> Deferred. Interim: one notice per Pause naming each subagent Pause cancelled, and one notice per auto-cancel (this carries forward the 11:19 decision's "chat note naming each cancelled subagent").
 - Q (DC-4): Messages from other agents to a paused subagent (13:57 decision, point 2: hold them, and block them after a #1672 watchdog cancel). -> Deferred. Refract does not see agent-to-agent messages (they travel inside OMP) and there is no #1672 watchdog code on `main`. Interim: not built; out of scope.
 - Q (DC-5): Can the parent re-spawn or revive subagents in a loop while Paused, since Pause does not abort its turn? -> Deferred. Interim: each one is auto-cancelled; no loop limit and no abort of the parent turn.
@@ -56,11 +58,11 @@ A Session has a turn waiting on subagents. Stuart presses Pause.
 2. **Given** the Session is not paused, **When** a subagent starts, **Then** nothing is cancelled.
 3. **Given** the user resumes, **When** the parent spawns a subagent afterwards, **Then** it runs normally.
 
-### User Story 3 - Resume (Priority: P2, blocked on DC-1)
+### User Story 3 - Resume (Priority: P2)
 
 **Acceptance Scenarios**:
 
-1. **Given** Pause cancelled two subagents, **When** the user resumes, **Then** held messages are delivered as today and a notice names the cancelled subagents (interim). Reviving them is added only once T001 proves a mechanism and keeps the subagent's context.
+1. **Given** Pause cancelled two subagents, **When** the user resumes, **Then** held messages are delivered as today and a notice names the cancelled subagents. Nothing is revived or respawned; the parent can re-run them.
 
 ### Edge Cases
 
@@ -79,7 +81,7 @@ A Session has a turn waiting on subagents. Stuart presses Pause.
 - **FR-003**: `cancelled: false` and `Subagent not running: <id>` MUST be treated as "nothing to cancel", not errors. Any other failure MUST NOT prevent the pause or the message hold.
 - **FR-004**: While `pause.held` is set, a `subagent_lifecycle` frame reporting a starting subagent MUST trigger `cancel_subagent` for its id.
 - **FR-005**: Refract MUST record the ids it cancelled during the current pause (in memory) and clear them on Resume.
-- **FR-006**: Resume MUST clear the pause and deliver held messages exactly as today; it MUST NOT revive subagents until DC-1 is resolved (interim notice only).
+- **FR-006**: Resume MUST clear the pause and deliver held messages exactly as today, and MUST post one notice naming the subagents Pause cancelled (DC-1 decided 2026-11-11). It MUST NOT revive or respawn subagents.
 - **FR-007**: A Session with no running subagents MUST behave exactly as spec 056.
 - **FR-008**: Each Pause that cancels at least one subagent MUST add one chat notice naming the cancelled subagents (DC-3 interim); each auto-cancel adds one notice.
 - **FR-009**: Cancelled subagents MUST show as Cancelled in the Subagents panel via the existing lifecycle (`aborted`) handling; no new renderer state.

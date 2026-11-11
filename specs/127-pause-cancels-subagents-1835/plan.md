@@ -11,7 +11,7 @@ Rust only; no renderer or IPC-contract change. Pause asks OMP which subagents ru
 - `src-tauri/src/session/agent/pause.rs`
   - `:15-22` `State`: add `cancelled: Vec<String>` (in-memory, ids Pause cancelled).
   - `:123-164` `pause()`: after the held list is set and queued messages withdrawn (`:138-160`), before `emit_status()` (`:161`), call `self.cancel_running_subagents().await` (FR-001..003, FR-008). Early return at `:128-130` keeps double-Pause a no-op.
-  - `:166-192` `resume()`: clear `pause.cancelled` next to `held = None` (in `drain_held`, `:202`); interim notice naming the cancelled subagents (FR-006, DC-1). No reviving code until T001.
+  - `:166-192` `resume()`: clear `pause.cancelled` next to `held = None` (in `drain_held`, `:202`); one notice naming the cancelled subagents (FR-006, DC-1 decided 2026-11-11: no revive, nothing respawned).
   - `:24-36` `wire_value`: unchanged (DC-2).
 - `src-tauri/src/session/agent/pause_subagents.rs` (new, `mod pause_subagents;` in `agent/mod.rs:17-32`):
   - `cancel_running_subagents(&self)`: `request_rpc({"type":"get_subagents"})` -> `data.subagents[].id`, then `cancel_subagent` per id; `cancelled:false` / `Subagent not running` ignored; failures logged (`log::warn!`) and surfaced as one notice.
@@ -21,18 +21,16 @@ Rust only; no renderer or IPC-contract change. Pause asks OMP which subagents ru
 - `src-tauri/src/session/agent/lane_support.rs:9-29` `request_rpc`: reused as is (no idle check, timeout arg). `lane_support.rs:34-63` `request_rpc_if_idle` is not suitable: Pause must work while a turn runs.
 - `src-tauri/src/session/agent/mod.rs`: `append_notice` (`:384-385`) reused for notices; `arc()` (`:194`) only if a spawned task is needed (not planned: Pause awaits the cancels, auto-cancel runs inside the frame handler without blocking its reader; check at T004 that awaiting an RPC inside `handle_frame` cannot deadlock the frame pump, otherwise `tokio::spawn` with `self.arc()` as `subagents_progress.rs:179-190` does).
 - Reused unchanged: `session/subagents_progress.rs:195-275` `apply_subagent_frame` settles `aborted` as Cancelled via `classify_progress_status` (`omp/transcript/subagent_items.rs:135`); `subscribe_to_subagent_frames` (`subagents_progress.rs:177-191`) already requests `level: "progress"`; `ipc/chat_pause.rs:44-45,64` call `pause()` for `chat.pause` / `chat.pauseAll`.
-- Not touched: renderer (`ChatHeader.tsx`, `PausedBody.tsx`, `sessionDisplay.tsx`, `ipc-pause.ts`): Pausing stays (DC-2).
+- Not touched: renderer (`ChatHeader.tsx`, `PausedBody.tsx`, `sessionDisplay.tsx`, `ipc-pause.ts`): Pausing label stays (DC-2 decided 2026-11-11).
 - Docs at implement: `CONTEXT.md:51` Session status glossary (add that Pause cancels subagents), `specs/056-pause-mode/spec.md` pointer line, `docs/PLAN.md` row.
 
 ## Checks
 
 - `cargo test` for the new test file; `pnpm ci:local` (Rust build slot, per lane brief); file-size check on touched files.
 - Live check against real OMP with a scratch profile (reuse the structure of `C:/Users/shopwood/AppData/Local/Temp/Probe1835/drive.mjs`): spawn a long detached subagent, Pause, confirm `cancelled:true` and a `subagent_lifecycle` `aborted` frame, then have the parent spawn another and confirm auto-cancel. Evidence saved under the lane's evidence path.
-- T001 (revive proof) is a gate before the Resume work; it does not gate FR-001..005.
 
 ## Risks
 
 - A frame-handler RPC could block the frame pump (see the `mod.rs` item); mitigated by spawning.
 - Pause does not abort the parent's turn, so the parent may loop re-spawning; each is cancelled (DC-5).
-- Resume ordering (T007): a revive must be sent after `held` is cleared in `drain_held` (`pause.rs:202`), otherwise the revived subagent's own `started` frame would be auto-cancelled by FR-004.
 - Test doubles: `scripts/verify-tauri-fake-omp.mjs` does not model `get_subagents` / `cancel_subagent` (the RPC schema lists them at `scripts/fixtures/omp-schema/rpc-wire.schema.json:279,301`); unit tests use a stub process and the live check uses real OMP.
