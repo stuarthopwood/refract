@@ -52,6 +52,15 @@ const parse = (line) => {
 
 lines(child.stdout, (line) => {
   const frame = parse(line);
+  // Why: the `task` tool asks permission before spawning; the check is about Pause, not the permission UI, so the
+  // wrapper answers it (and hides it from Refract) instead of leaving the turn parked on a dialog.
+  if (frame?.type === 'extension_ui_request' && frame.method === 'select' && String(frame.title).startsWith('Allow tool: task')) {
+    wire('omp->refract', frame, { autoApproved: true });
+    const answer = { type: 'extension_ui_response', id: frame.id, value: 'Approve task for this session' };
+    wire('refract->omp', answer, { injected: true });
+    child.stdin.write(JSON.stringify(answer) + '\n');
+    return;
+  }
   const injected = typeof frame?.id === 'string' && frame.id.startsWith('verify-');
   wire('omp->refract', frame, injected ? { injected: true } : {});
   if (!injected) process.stdout.write(line + '\n');
