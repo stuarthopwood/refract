@@ -385,6 +385,7 @@ export const IPC_REQUESTS = {
   TOKEN_GUARD_DISMISS_THRESHOLDS_RESET: 'tokenGuard.dismissThresholdsReset',
   TOKEN_GUARD_HANDOFF: 'tokenGuard.handoff',
   AGENT_TOOLS_RESULT: 'agentTools.result',
+  AGENT_TOOLS_STARTED: 'agentTools.started',
   ADVISOR_ROSTER_DETECT: 'advisorRoster.detect',
   ADVISOR_ROSTER_OPEN: 'advisorRoster.open',
   COPILOT_PLAN_USAGE: 'copilot.planUsage',
@@ -534,6 +535,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   gitChanges: GitChangesApi;
   agentTools: {
     result(sessionId: string, callId: string, reply: AgentToolReply): Promise<Result<void>>;
+    /** Tells Rust a mutating action is about to change files; only `accepted: true` allows it to proceed. */
+    started(sessionId: string, callId: string): Promise<Result<{ accepted: boolean }>>;
   };
   issues: IssuesApi; itemRefs: ItemRefsApi; home: HomeApi;
 

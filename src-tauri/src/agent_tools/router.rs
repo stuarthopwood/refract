@@ -10,7 +10,7 @@ use tokio::sync::{oneshot, Notify};
 
 use super::approval::{self, Decision};
 use super::panels::{self, INVOKE_PANEL_ACTION, LIST_PANELS, OPEN_PANEL};
-use super::{MAX_RESULT_BYTES, RENDERER_TIMEOUT_MS};
+use super::{MAX_RESULT_BYTES, MUTATION_TIMEOUT_MS, RENDERER_TIMEOUT_MS};
 use crate::omp::transcript::RequestResolution;
 use crate::session::agent::SessionAgent;
 
@@ -20,6 +20,7 @@ pub const UNKNOWN_ACTION: &str = "unknown_action";
 pub const INVALID_INPUT: &str = "invalid_input";
 pub const DENIED: &str = "denied";
 pub const TIMEOUT: &str = "timeout";
+pub const OUTCOME_UNKNOWN: &str = "outcome_unknown";
 pub const CANCELLED: &str = "cancelled";
 pub const RESULT_TOO_LARGE: &str = "result_too_large";
 pub const RENDERER_UNAVAILABLE: &str = "renderer_unavailable";
@@ -221,6 +222,7 @@ enum Reply {
 struct Inner {
     cancels: HashMap<String, Arc<Notify>>,
     waits: HashMap<String, oneshot::Sender<Reply>>,
+    starts: HashMap<String, oneshot::Sender<()>>,
 }
 
 /// One per Session. Dropping a sender while a call awaits it reads as `cancelled`.
@@ -255,10 +257,21 @@ impl ToolRouter {
         rx
     }
 
+    fn wait_started(&self, call_id: &str) -> oneshot::Receiver<()> {
+        let (tx, rx) = oneshot::channel();
+        self.lock().starts.insert(call_id.to_string(), tx);
+        rx
+    }
+
+    fn forget_start(&self, call_id: &str) {
+        self.lock().starts.remove(call_id);
+    }
+
     fn finish(&self, call_id: &str) {
         let mut inner = self.lock();
         inner.cancels.remove(call_id);
         inner.waits.remove(call_id);
+        inner.starts.remove(call_id);
         inner.waits.remove(&approval::request_id(call_id));
     }
 
@@ -308,10 +321,23 @@ impl ToolRouter {
         tx.send(Reply::Approval(decision)).is_ok()
     }
 
+    /// The renderer is about to change files. False means Rust already gave up on the call (or it
+    /// is not a pending mutation), so the renderer must change nothing.
+    pub fn started(&self, call_id: &str) -> bool {
+        // Sending under the lock serialises this with `forget_start`, so a value is either in
+        // the channel before the deadline path looks, or the sender is gone and this refuses.
+        let mut inner = self.lock();
+        inner
+            .starts
+            .remove(call_id)
+            .is_some_and(|tx| tx.send(()).is_ok())
+    }
+
     /// Process exit or Session stop: cancels every call and frees every wait.
     pub fn drop_all(&self) {
         let mut inner = self.lock();
         inner.waits.clear();
+        inner.starts.clear();
         for cancel in inner.cancels.values() {
             cancel.notify_one();
         }
@@ -389,32 +415,105 @@ async fn ask_renderer(
     call: &Call,
     plan: &Plan,
 ) -> Result<Value, ToolError> {
-    let rx = agent.tool_router().wait_for(&call.id);
+    let router = agent.tool_router();
+    let rx = router.wait_for(&call.id);
+    let started = plan.mutates().then(|| router.wait_started(&call.id));
     if !agent.tool_events().emit_agent_tools_call(
         agent.tool_session_id(),
         &call.id,
         &call.tool,
         &plan.event_args(),
     ) {
-        agent.tool_router().forget(&call.id);
+        router.forget(&call.id);
+        router.forget_start(&call.id);
         return Err(ToolError::new(
             RENDERER_UNAVAILABLE,
             "Refract has no window to show this panel in",
         ));
     }
-    wait_renderer(rx).await
+    match started {
+        Some(started) => wait_mutation(router, &call.id, started, rx).await,
+        None => wait_renderer(rx).await,
+    }
 }
 
+fn renderer_result(reply: Result<Reply, oneshot::error::RecvError>) -> Result<Value, ToolError> {
+    match reply {
+        Ok(Reply::Renderer(result)) => result,
+        _ => Err(ToolError::new(CANCELLED, "the call was cancelled")),
+    }
+}
+
+/// A read or navigation action: one window from emit to the renderer's reply.
 async fn wait_renderer(rx: oneshot::Receiver<Reply>) -> Result<Value, ToolError> {
     match tokio::time::timeout(Duration::from_millis(RENDERER_TIMEOUT_MS), rx).await {
-        Ok(Ok(Reply::Renderer(result))) => result,
-        Ok(_) => Err(ToolError::new(CANCELLED, "the call was cancelled")),
+        Ok(reply) => renderer_result(reply),
         Err(_) => Err(ToolError::new(
             TIMEOUT,
             format!(
                 "the panel did not answer within {} seconds",
                 RENDERER_TIMEOUT_MS / 1000
             ),
+        )),
+    }
+}
+
+enum Early {
+    Reply(Result<Reply, oneshot::error::RecvError>),
+    Started(Result<(), oneshot::error::RecvError>),
+    Silent,
+}
+
+/// A file-changing action. Before `started` a silence is `timeout` (nothing changed, a retry is
+/// safe); after it, a silence is `outcome_unknown`, because the files may already have changed.
+async fn wait_mutation(
+    router: &ToolRouter,
+    call_id: &str,
+    started: oneshot::Receiver<()>,
+    reply: oneshot::Receiver<Reply>,
+) -> Result<Value, ToolError> {
+    let window = Duration::from_millis(MUTATION_TIMEOUT_MS);
+    wait_mutation_within(window, router, call_id, started, reply).await
+}
+
+/// Split out so the race test can use a window of a few milliseconds on a real clock.
+async fn wait_mutation_within(
+    window: Duration,
+    router: &ToolRouter,
+    call_id: &str,
+    mut started: oneshot::Receiver<()>,
+    mut reply: oneshot::Receiver<Reply>,
+) -> Result<Value, ToolError> {
+    let early = tokio::select! {
+        biased;
+        r = &mut reply => Early::Reply(r),
+        s = &mut started => Early::Started(s),
+        _ = tokio::time::sleep(window) => Early::Silent,
+    };
+    match early {
+        Early::Reply(reply) => return renderer_result(reply),
+        Early::Started(Ok(())) => {}
+        Early::Started(Err(_)) => return Err(ToolError::new(CANCELLED, "the call was cancelled")),
+        Early::Silent => {
+            // `started` sends while holding the router's lock, so once `forget_start` returns
+            // either its value is already in the channel or it will be refused.
+            router.forget_start(call_id);
+            if started.try_recv().is_err() {
+                return Err(ToolError::new(
+                    TIMEOUT,
+                    format!(
+                        "the panel did not start the action within {} seconds; nothing changed, so a retry is safe",
+                        MUTATION_TIMEOUT_MS / 1000
+                    ),
+                ));
+            }
+        }
+    }
+    match tokio::time::timeout(window, reply).await {
+        Ok(reply) => renderer_result(reply),
+        Err(_) => Err(ToolError::new(
+            OUTCOME_UNKNOWN,
+            "the action started and its outcome is unknown, so check the panel before you retry",
         )),
     }
 }

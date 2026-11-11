@@ -12,6 +12,8 @@ use panels::{tool_description, tool_parameters, INVOKE_PANEL_ACTION, LIST_PANELS
 
 pub const TOOL_PREFIX: &str = "refract_";
 pub const RENDERER_TIMEOUT_MS: u64 = 10_000;
+/// A file-changing action's window, for the renderer's `started` and again for its reply.
+pub const MUTATION_TIMEOUT_MS: u64 = 30_000;
 pub const MAX_RESULT_BYTES: usize = 8192;
 const REGISTER_TIMEOUT_MS: u64 = 10_000;
 
