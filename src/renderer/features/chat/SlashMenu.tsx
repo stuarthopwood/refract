@@ -52,6 +52,17 @@ export function rankSlashMenuCommands(state: SlashMenuState, commands: readonly 
   return [runBare, ...ranked]
 }
 
+export const COMPOSER_MENU_NOTICE_CLASS =
+  'absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg bg-popover p-2 text-sm text-muted-foreground shadow-md ring-1 ring-elevated-edge'
+export const COMPOSER_MENU_LIST_CLASS =
+  'absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto overflow-x-hidden rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-elevated-edge'
+export function composerMenuRowClass(active: boolean): string {
+  return cn(
+    'flex cursor-default items-center justify-between gap-2 border-l-2 border-transparent px-2 py-1',
+    active && 'border-l-active-indicator bg-accent text-accent-foreground'
+  )
+}
+
 export interface SlashMenuProps {
   id: string
   commands: SlashMenuRow[]
@@ -103,10 +114,7 @@ export function SlashMenu({
 
   if (commands.length === 0) {
     return (
-      <div
-        aria-hidden="true"
-        className="absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg bg-popover p-2 text-sm text-muted-foreground shadow-md ring-1 ring-elevated-edge"
-      >
+      <div aria-hidden="true" className={COMPOSER_MENU_NOTICE_CLASS}>
         {noMatchesText}
       </div>
     )
@@ -118,7 +126,7 @@ export function SlashMenu({
       id={id}
       role="listbox"
       aria-label={ariaLabel}
-      className="absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto overflow-x-hidden rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-elevated-edge"
+      className={COMPOSER_MENU_LIST_CLASS}
     >
       {commands.map((match, index) => (
         <li
@@ -132,10 +140,7 @@ export function SlashMenu({
             event.preventDefault()
             onSelect(match.command, match.isRunBare)
           }}
-          className={cn(
-            'flex cursor-default items-center justify-between gap-2 border-l-2 border-transparent px-2 py-1',
-            index === activeIndex && 'border-l-active-indicator bg-accent text-accent-foreground'
-          )}
+          className={composerMenuRowClass(index === activeIndex)}
         >
           {match.isRunBare ? (
             <>

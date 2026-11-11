@@ -1,6 +1,7 @@
 // Item card lookup for `#123` / `owner/repo#123` references (#1155). One bounded `gh api` call per
-// issue or pull request; a pull request adds one more for its branches. A search by number or
-// text (#1789) is another `pub async fn` beside `lookup_item`, reusing `RepoSlug` and `ItemCard`.
+// issue or pull request; a pull request adds one more for its branches. `search_items` (#1789)
+// backs the composer `#` picker: one bounded search of a single repository, plus an exact-number
+// lookup when the query is digits, because GitHub's search cannot match a number prefix.
 
 use std::path::Path;
 
@@ -187,87 +188,141 @@ pub async fn lookup_item(cwd: &Path, slug: &RepoSlug, number: u64) -> Result<Ite
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// The picker lists at most this many rows (grill outcome: top 10, no paging).
+pub const MAX_SEARCH_RESULTS: usize = 10;
+/// Longer than any title word worth typing; bounds what reaches `gh`.
+const MAX_QUERY_CHARS: usize = 64;
 
-    #[test]
-    fn slug_rejects_traversal_and_odd_characters() {
-        assert!(RepoSlug::parse("owner", "repo.name-1_x").is_ok());
-        assert!(RepoSlug::parse("..", "repo").is_err());
-        assert!(RepoSlug::parse("owner", "re/po").is_err());
-        assert!(RepoSlug::parse("", "repo").is_err());
-        assert!(RepoSlug::parse("my-org", "a.b_c-d").is_ok());
-        assert!(RepoSlug::parse("-owner", "repo").is_err());
-        assert!(RepoSlug::parse("owner", "-repo").is_err());
-        assert!(RepoSlug::parse("owner", "..").is_err());
-        assert!(RepoSlug::parse("own er", "repo").is_err());
-        assert!(RepoSlug::parse("owner", "re po").is_err());
-        assert!(RepoSlug::parse("ow/ner", "repo").is_err());
-    }
+/// One picker row: just enough to choose an item and insert `#<number> `.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ItemSummary {
+    pub number: u64,
+    pub kind: ItemKind,
+    pub title: String,
+    pub state: ItemState,
+    pub draft: bool,
+}
 
-    #[test]
-    fn reference_must_match_number_and_github_url() {
-        assert!(reference_matches(
-            12,
-            "https://github.com/a/b/issues/12",
-            12
-        ));
-        assert!(!reference_matches(
-            13,
-            "https://github.com/a/b/issues/12",
-            12
-        ));
-        assert!(!reference_matches(
-            12,
-            "https://github.com/a/b/issues/13",
-            12
-        ));
-        assert!(!reference_matches(
-            12,
-            "https://evil.example/a/b/issues/12",
-            12
-        ));
-    }
+#[derive(Deserialize)]
+struct RawMergeMarker {
+    merged_at: Option<String>,
+}
 
-    #[test]
-    fn api_path_is_built_from_validated_parts() {
-        let slug = RepoSlug::parse("a", "b").unwrap();
-        assert_eq!(slug.api_path("pulls", 7), "repos/a/b/pulls/7");
-        assert_eq!(slug.display(), "a/b");
-    }
+/// Shared by `search/issues` rows and the single `issues/<n>` payload; both carry `pull_request.merged_at`.
+#[derive(Deserialize)]
+struct RawSearchItem {
+    number: u64,
+    title: String,
+    state: String,
+    draft: Option<bool>,
+    pull_request: Option<RawMergeMarker>,
+}
 
-    #[test]
-    fn merged_wins_over_closed() {
-        assert_eq!(state_of("closed", true), ItemState::Merged);
-        assert_eq!(state_of("closed", false), ItemState::Closed);
-        assert_eq!(state_of("open", false), ItemState::Open);
-    }
+#[derive(Deserialize)]
+struct RawSearchPage {
+    items: Vec<RawSearchItem>,
+}
 
-    #[test]
-    fn item_number_is_bounded() {
-        assert!(!valid_item_number(0));
-        assert!(valid_item_number(1));
-        assert!(valid_item_number(i32::MAX as u64));
-        assert!(!valid_item_number(i32::MAX as u64 + 1));
-    }
+/// Reduces typed text to one plain term. Anything that could be a search qualifier, operator or a
+/// second repository (`repo:`, `is:`, `-term`, quotes, spaces) is dropped, so the search can only
+/// ever look at `slug`.
+fn sanitize_query(text: &str) -> String {
+    let word = text.split_whitespace().next().unwrap_or("");
+    let kept: String = word
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .take(MAX_QUERY_CHARS)
+        .collect();
+    // A leading `-` negates a term, and lower case keeps `AND`/`OR`/`NOT` from acting as operators.
+    kept.trim_start_matches('-').to_ascii_lowercase()
+}
 
-    #[test]
-    fn item_url_must_be_github_and_end_with_the_number() {
-        assert!(is_github_item_url("https://github.com/a/b/pull/12", 12));
-        assert!(!is_github_item_url("https://evil.example/a/b/pull/12", 12));
-        assert!(!is_github_item_url("https://github.com/a/b/pull/123", 12));
-    }
-
-    #[test]
-    fn raw_item_parses_a_pull_request_payload() {
-        let raw: RawItem = serde_json::from_str(
-            r#"{"number":3,"title":"t","state":"open","html_url":"https://github.com/a/b/pull/3",
-                "created_at":"2026-01-01T00:00:00Z","user":{"login":"u","avatar_url":null},
-                "pull_request":{"url":"x"}}"#,
-        )
-        .unwrap();
-        assert!(raw.pull_request.is_some());
-        assert_eq!(raw.user.unwrap().login, "u");
+/// The `q` for `search/issues`: titles of open and closed items for a term, open items otherwise.
+fn search_query(slug: &RepoSlug, term: &str) -> String {
+    if term.is_empty() {
+        format!("repo:{} is:open", slug.display())
+    } else {
+        format!("repo:{} in:title {term}", slug.display())
     }
 }
+
+fn summarise(raw: RawSearchItem) -> ItemSummary {
+    let merged = raw
+        .pull_request
+        .as_ref()
+        .is_some_and(|p| p.merged_at.is_some());
+    ItemSummary {
+        number: raw.number,
+        kind: if raw.pull_request.is_some() {
+            ItemKind::PullRequest
+        } else {
+            ItemKind::Issue
+        },
+        title: raw.title,
+        state: state_of(&raw.state, merged),
+        draft: raw.draft.unwrap_or(false),
+    }
+}
+
+/// Puts the exact-number match first, drops its duplicate from the search rows, and caps the list.
+fn merge_results(exact: Option<ItemSummary>, found: Vec<ItemSummary>) -> Vec<ItemSummary> {
+    let mut rows: Vec<ItemSummary> = Vec::with_capacity(MAX_SEARCH_RESULTS);
+    if let Some(item) = exact {
+        rows.push(item);
+    }
+    for item in found {
+        if rows.iter().all(|row| row.number != item.number) {
+            rows.push(item);
+        }
+    }
+    rows.truncate(MAX_SEARCH_RESULTS);
+    rows
+}
+
+/// `gh api` arguments for one search; only an empty term asks for the most recently updated open items.
+fn search_args(slug: &RepoSlug, term: &str) -> Vec<String> {
+    let mut args: Vec<String> = ["api", "--method", "GET", "search/issues", "-f"]
+        .map(String::from)
+        .into();
+    args.push(format!("q={}", search_query(slug, term)));
+    args.push("-f".to_string());
+    args.push(format!("per_page={MAX_SEARCH_RESULTS}"));
+    if term.is_empty() {
+        args.extend(["-f", "sort=updated", "-f", "order=desc"].map(String::from));
+    }
+    args
+}
+
+/// A digits-only term names an item directly; GitHub's search cannot match a number prefix.
+fn exact_number(term: &str) -> Option<u64> {
+    term.parse::<u64>().ok().filter(|&n| valid_item_number(n))
+}
+
+/// Searches issues and pull requests of `slug` only. `cwd` is any local clone, for `gh`'s auth context.
+pub async fn search_items(
+    cwd: &Path,
+    slug: &RepoSlug,
+    text: &str,
+) -> Result<Vec<ItemSummary>, GhError> {
+    let term = sanitize_query(text);
+    let args = search_args(slug, &term);
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    // The exact item is best effort: a number that is not an item (404) just means no pinned row.
+    let exact_path = exact_number(&term).map(|n| slug.api_path("issues", n));
+    let exact_future = async {
+        match &exact_path {
+            Some(path) => gh_json::<RawSearchItem>(cwd, &["api", path.as_str()])
+                .await
+                .ok(),
+            None => None,
+        }
+    };
+    let (page, exact) = tokio::join!(gh_json::<RawSearchPage>(cwd, &arg_refs), exact_future);
+    let found = page?.items.into_iter().map(summarise).collect();
+    Ok(merge_results(exact.map(summarise), found))
+}
+
+#[cfg(test)]
+#[path = "item_ref_tests.rs"]
+mod tests;

@@ -1,4 +1,5 @@
-// The `itemRefs.*` IPC contract (#1155): the data behind the hover Item card for `#123` / `owner/repo#123`.
+// The `itemRefs.*` IPC contract: the data behind the hover Item card for `#123` / `owner/repo#123` (#1155)
+// and the rows of the composer `#` picker (#1789).
 
 import type { Result } from './ipc';
 
@@ -21,7 +22,21 @@ export interface ItemCard {
   headRef: string | null;
 }
 
+/** One row of the `#` picker. The title comes from GitHub and is untrusted: render it as text. */
+export interface ItemSummary {
+  number: number;
+  kind: 'issue' | 'pull-request';
+  title: string;
+  state: 'open' | 'closed' | 'merged';
+  draft: boolean;
+}
+
 export interface ItemRefsApi {
   /** One item's card. `owner`/`repo` both null means the Project's own GitHub repository. Called only on hover or click. */
   lookup(repositoryId: string, owner: string | null, repo: string | null, number: number): Promise<Result<ItemCard>>;
+  /**
+   * At most 10 issues and pull requests of the Project's own GitHub repository. An empty query lists
+   * recent open items; a digits-only query also pins that exact number first.
+   */
+  search(repositoryId: string, query: string): Promise<Result<ItemSummary[]>>;
 }

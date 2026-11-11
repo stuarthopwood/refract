@@ -14,7 +14,7 @@ import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '..
 import type { ClosedBranchesResult } from '../shared/ipc-home'
 import type { GithubChangedPayload } from '../shared/ipc-github-changed'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch, SessionWithKickoff } from '../shared/ipc-issues'
-import type { ItemCard } from '../shared/ipc-item-refs'
+import type { ItemCard, ItemSummary } from '../shared/ipc-item-refs'
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
@@ -367,7 +367,8 @@ const refract: RefractApi = {
       request<SessionWithKickoff>(IPC_REQUESTS.ISSUES_NEW_SESSION, repositoryId, number)
   },
   itemRefs: {
-    lookup: (repositoryId, owner, repo, number) => request<ItemCard>(IPC_REQUESTS.ITEM_REFS_LOOKUP, repositoryId, owner, repo, number)
+    lookup: (repositoryId, owner, repo, number) => request<ItemCard>(IPC_REQUESTS.ITEM_REFS_LOOKUP, repositoryId, owner, repo, number),
+    search: (repositoryId, query) => request<ItemSummary[]>(IPC_REQUESTS.ITEM_REFS_SEARCH, repositoryId, query)
   },
 
   home: {
