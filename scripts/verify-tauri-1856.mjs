@@ -104,6 +104,7 @@ async function runChecks(cdp, { repoDir }) {
   const top = await readEdges(cdp, VIEWPORT);
   log(`edge clearance at the top of the list: ${JSON.stringify(top)}`);
   for (const edge of ['top', 'right', 'bottom', 'left']) assert(top.clear[edge], `nothing sits over the ring on the ${edge} inside edge`);
+  assert(Object.values(top.gaps).every(Number.isFinite), `painted content was measured on every edge ${JSON.stringify(top.gaps)}`);
   assert(top.gaps.top >= RING_PX && top.gaps.left >= RING_PX && top.gaps.right >= RING_PX, `first-row content clears the ${RING_PX}px ring on the top, left and right edges ${JSON.stringify(top.gaps)}`);
   await shot(cdp, 'focus-ring-visible-all-edges.png');
   const { left, top: boxTop } = top.box;
@@ -121,6 +122,7 @@ async function runChecks(cdp, { repoDir }) {
   assert(await cdp.evaluate(`document.activeElement === ${VIEWPORT}`), 'focus stays on the scroll viewport while it scrolls');
   assert(end.done.bottom <= end.dialog.bottom + 0.5, 'Done stays visible after scrolling');
   const bottom = await readEdges(cdp, VIEWPORT);
+  assert(Object.values(bottom.gaps).every(Number.isFinite), `painted content was measured on every edge ${JSON.stringify(bottom.gaps)}`);
   assert(bottom.gaps.bottom >= RING_PX && bottom.gaps.left >= RING_PX && bottom.gaps.right >= RING_PX, `last-row content clears the ${RING_PX}px ring on the bottom, left and right edges ${JSON.stringify(bottom.gaps)}`);
   await shot(cdp, `shortcuts-dialog-${SHORT_HEIGHT}px-scrolled-end.png`);
 
@@ -141,6 +143,7 @@ async function checkOtherConsumer(cdp) {
   assert(focusedList && listRing.spreadPx >= RING_PX, `the session list's ScrollArea viewport shows the same >=${RING_PX}px ring when focus-visible ${JSON.stringify(listRing)}`);
   const listContrast = await measureRingContrast(cdp, LIST_VIEWPORT, listRing.color);
   log(`session list ring contrast: ${JSON.stringify(listContrast.after)}`);
+  assert(listContrast.after.ratio >= MIN_RING_CONTRAST, `the session list ring reaches ${MIN_RING_CONTRAST}:1 contrast (${listContrast.after.ratio.toFixed(2)}:1)`);
   await shot(cdp, 'focus-ring-session-list.png');
 }
 
@@ -204,7 +207,8 @@ async function main() {
       await shot(cdp, 'failure.png').catch(() => {});
       log(`page text at failure: ${JSON.stringify(await cdp.evaluate(`document.body?.innerText?.slice(0, 600) ?? null`).catch(() => null))}`);
     }
-    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, ok, checks: passed, log: REPORT }, null, 2));
+    const sinceBuild = spawnSync('git', ['diff', '00507b34..HEAD', '--stat'], { cwd: REPO_ROOT, encoding: 'utf8', windowsHide: true }).stdout.trim().split('\n');
+    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, ok, checks: passed, diffSinceExeBuild00507b34: sinceBuild, log: REPORT }, null, 2));
     writeFileSync(path.join(SHOTS_DIR, 'sha256.json'), JSON.stringify(SHOTS, null, 2));
     cdp?.close();
     if (child) await stopLauncher(child);

@@ -2268,7 +2268,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
   inside the dialog's border and scrolls there, through the shared `ScrollArea`, and never draws outside
   it. The list is a tab stop, a named `region`, and scrolls with the arrow, Page, Home, and End keys, with
   its focus ring visible. The shared `ScrollArea` viewport's focus ring is the full-strength `--ring` (3px,
-  inset) for every consumer, so it reaches 3:1 against the dialog backdrop; the shared `DialogContent` is untouched.
+  inset) whenever any `ScrollArea` viewport is focused, so it reaches 3:1 against the dialog backdrop; the shared `DialogContent` is untouched.
 
 ### Key Entities
 
