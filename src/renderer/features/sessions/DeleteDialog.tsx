@@ -43,6 +43,7 @@ function summarizeLeftovers(summary: LeftoverSummary): string {
 
 function leftoverStatusText(
   deleting: boolean,
+  rechecking: boolean,
   loading: boolean,
   leftoverLoading: boolean,
   leftoverError: boolean,
@@ -58,9 +59,10 @@ function leftoverStatusText(
     }
     return 'Deleting…'
   }
+  if (rechecking) return 'Rechecking…'
   if (loading) return 'Checking for uncommitted or unpushed work…'
   if (leftoverLoading) return 'Checking files…'
-  if (leftoverError || leftoverSummary?.unavailable) return "Couldn't list the folder's files."
+  if (leftoverError || leftoverSummary?.unavailable) return "Couldn't list the folder's files. Delete still removes everything in it."
   if (leftoverSummary) return summarizeLeftovers(leftoverSummary)
   return ''
 }
@@ -98,12 +100,16 @@ export function DeleteDialog({
   // a failed post-refusal re-check says so, instead of silently hiding the bullets.
   const [recheckFailed, setRecheckFailed] = useState(false)
   const deleteGenerationRef = useRef(0)
+  const leftoverListRef = useRef<HTMLUListElement>(null)
+  const confirmRef = useRef<HTMLButtonElement>(null)
   const deletedRef = useRef(false)
   const sessionIdRef = useRef(session.id)
   sessionIdRef.current = session.id
 
   useEffect(() => {
     if (!open) return
+    // A refresh or delete still in flight from an earlier open must not write into this one.
+    deleteGenerationRef.current++
     deletedRef.current = false
     setDeleting(false)
     setError(initialError ?? null)
@@ -156,8 +162,6 @@ export function DeleteDialog({
     const myGeneration = ++deleteGenerationRef.current
     setDeleting(true)
     setError(null)
-    // cleared here too, not just on dialog open -- a NEW attempt starting must never leave a PREVIOUS attempt's "Retry" label state lying around.
-    setRefused(false)
     // Marked before the IPC so a fast result event can't be re-added after it clears the row; cleared on refusal.
     useSessionsStore.getState().markDeleting(deletingId)
     const response = await window.refract.sessions.delete(deletingId, { confirmed: true })
@@ -180,9 +184,13 @@ export function DeleteDialog({
         })
       }
       if (!leftoverSummaryOverride) {
+        // The list is replaced below; keep focus off the outline-less dialog container.
+        if (leftoverListRef.current?.contains(document.activeElement)) confirmRef.current?.focus()
         setLeftoverLoading(true)
         void window.refract.sessions.deleteLeftoverSummary(deletingId).then((refreshed) => {
           if (sessionIdRef.current !== deletingId || deleteGenerationRef.current !== myGeneration) return
+          // The refreshed result may unmount the list (error or empty); move focus off it first.
+          if (leftoverListRef.current?.contains(document.activeElement)) confirmRef.current?.focus()
           setLeftoverLoading(false)
           if (!refreshed.ok) {
             setLeftoverError(true)
@@ -201,14 +209,17 @@ export function DeleteDialog({
     onOpenChange(false)
   }
 
-  const statusText = leftoverStatusText(deleting, loading || refreshing, leftoverLoading, leftoverError, leftoverSummary)
+  const rechecking = refused && (loading || refreshing || leftoverLoading)
+  const statusBusy = deleting || loading || refreshing || leftoverLoading
+  const statusText = leftoverStatusText(deleting, rechecking, loading || refreshing, leftoverLoading, leftoverError, leftoverSummary)
   const hasLeftoverList = !!leftoverSummary && (leftoverSummary.generatedFolders.length > 0 || leftoverSummary.otherFiles.length > 0)
 
   return (
     <ConfirmAlertDialog
       open={open}
       busy={deleting}
-      confirmDisabled={loading}
+      confirmRef={confirmRef}
+      confirmDisabled={loading || refreshing}
       size="md"
       tone="destructive"
       title={`Delete Session ${session.name}?`}
@@ -244,7 +255,7 @@ export function DeleteDialog({
       )}
       {recheckFailed && <InlineStatus className="p-0">Couldn't re-check what Delete would lose.</InlineStatus>}
       <InlineStatus tone="loading" className="flex min-h-5 items-center gap-2 p-0">
-        {deleting && <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />}
+        {statusBusy && <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />}
         {statusText}
       </InlineStatus>
       {hasLeftoverList && leftoverSummary && (
@@ -253,9 +264,10 @@ export function DeleteDialog({
             Files left in the worktree
           </p>
           <ul
+            ref={leftoverListRef}
             aria-labelledby="leftover-files-label"
             tabIndex={0}
-            className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
           >
             {leftoverSummary.generatedFolders.map((folder) => (
               <li key={folder.name} className="flex min-w-0 items-start gap-2">

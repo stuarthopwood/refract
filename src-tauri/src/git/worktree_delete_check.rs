@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::git::{git, git_raw, GitError, GitErrorCode};
+use super::git::{git, git_raw, shown_path, GitError, GitErrorCode};
 use super::worktree_delete::is_repo_readable;
 use super::worktree_validity::is_worktree_registered;
 use super::worktrees::branch_exists;
@@ -25,10 +25,19 @@ fn zero_risk() -> DeleteCheck {
     }
 }
 
+// Porcelain v1 `XY path`: `D ` (staged delete) and ` D` (worktree delete) are the deletions.
+fn is_deleted_status_line(line: &str) -> bool {
+    matches!(line.get(..2), Some("D ") | Some(" D"))
+}
+
 /// Feeds the delete confirmation text.
 pub async fn delete_check(worktree_path: &Path) -> Result<DeleteCheck, GitError> {
     let status = git(worktree_path, &["status", "--porcelain"]).await?;
-    let uncommitted_files = status.lines().filter(|l| !l.trim().is_empty()).count() as i64;
+    // A retry after a partial delete would otherwise count files Refract itself already removed.
+    let uncommitted_files = status
+        .lines()
+        .filter(|l| !l.trim().is_empty() && !is_deleted_status_line(l))
+        .count() as i64;
 
     let upstream = git_raw(
         worktree_path,
@@ -76,7 +85,7 @@ pub async fn delete_check_for_missing_worktree(
         .map_err(|_| {
             GitError::new(
                 GitErrorCode::GitFailed,
-                format!("Refract could not check branch {branch} for unpushed commits, so it cannot say what Delete would lose. Check the branch in your project at {} before choosing Delete.", repo.display()),
+                format!("Refract could not check branch {branch} for unpushed commits, so it cannot say what Delete would lose. Check the branch in your project at {} before choosing Delete.", shown_path(repo)),
             )
         })?;
     let unpushed_commits = count_output.trim().parse::<i64>().unwrap_or(0);
@@ -102,7 +111,7 @@ pub async fn delete_check_for_session(
     .unwrap_or_else(|_| {
         Err(GitError::new(
             GitErrorCode::GitFailed,
-            format!("Refract could not check {} in time, so it cannot say what Delete would lose. Close any program that might be slowing git down, then try again.", worktree_path.display()),
+            format!("Refract could not check {} in time, so it cannot say what Delete would lose. Close any program that might be slowing git down, then try again.", shown_path(worktree_path)),
         ))
     })
 }
@@ -142,7 +151,7 @@ async fn delete_check_for_session_unbounded(
     let count_output = git(worktree_path, &args).await.map_err(|_| {
         GitError::new(
             GitErrorCode::GitFailed,
-            format!("Refract could not check the worktree's detached HEAD for unpushed commits, so it cannot say what Delete would lose. Check {} before choosing Delete.", worktree_path.display()),
+            format!("Refract could not check the worktree's detached HEAD for unpushed commits, so it cannot say what Delete would lose. Check {} before choosing Delete.", shown_path(worktree_path)),
         )
     })?;
     let unpushed_commits = count_output.trim().parse::<i64>().unwrap_or(0);
@@ -180,6 +189,36 @@ mod tests {
         // With no remote, `--not --remotes` excludes nothing, so the seed commit counts as unpushed.
         assert_eq!(check.unpushed_commits, 1);
         assert!(!check.has_upstream);
+    }
+
+    #[tokio::test]
+    async fn delete_check_excludes_staged_and_worktree_delete_lines_from_uncommitted_files() {
+        let repo = init_repo().await;
+        let added = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create worktree");
+        tokio::fs::remove_file(added.worktree_path.join("README.md"))
+            .await
+            .unwrap();
+        assert_eq!(
+            delete_check(&added.worktree_path)
+                .await
+                .unwrap()
+                .uncommitted_files,
+            0
+        );
+        crate::git::test_support::run_git(
+            &added.worktree_path,
+            &["rm", "-q", "--cached", "README.md"],
+        )
+        .await;
+        assert_eq!(
+            delete_check(&added.worktree_path)
+                .await
+                .unwrap()
+                .uncommitted_files,
+            0
+        );
     }
 
     #[tokio::test]
