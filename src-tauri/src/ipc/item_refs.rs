@@ -72,7 +72,9 @@ fn item_refs_search(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
             // Cached per clone, so only the first search of a Project runs `git remote`.
             let (owner, repo) = owner_repo_for(&repo_path).await.map_err(map_gh_error)?;
             let slug = RepoSlug::parse(&owner, &repo).map_err(map_gh_error)?;
-            search_items(&repo_path, &slug, query).await.map_err(map_gh_error)
+            search_items(&repo_path, &slug, query)
+                .await
+                .map_err(map_gh_error)
         };
         let rows = tokio::select! {
             found = work => found?,

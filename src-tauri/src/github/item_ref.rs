@@ -266,10 +266,7 @@ fn summarise(raw: RawSearchItem) -> ItemSummary {
 }
 
 /// Puts the exact-number match first, drops its duplicate from the search rows, and caps the list.
-fn merge_results(
-    exact: Option<ItemSummary>,
-    found: Vec<ItemSummary>,
-) -> Vec<ItemSummary> {
+fn merge_results(exact: Option<ItemSummary>, found: Vec<ItemSummary>) -> Vec<ItemSummary> {
     let mut rows: Vec<ItemSummary> = Vec::with_capacity(MAX_SEARCH_RESULTS);
     if let Some(item) = exact {
         rows.push(item);
@@ -285,15 +282,9 @@ fn merge_results(
 
 /// `gh api` arguments for one search; only an empty term asks for the most recently updated open items.
 fn search_args(slug: &RepoSlug, term: &str) -> Vec<String> {
-    let mut args: Vec<String> = [
-        "api",
-        "--method",
-        "GET",
-        "search/issues",
-        "-f",
-    ]
-    .map(String::from)
-    .into();
+    let mut args: Vec<String> = ["api", "--method", "GET", "search/issues", "-f"]
+        .map(String::from)
+        .into();
     args.push(format!("q={}", search_query(slug, term)));
     args.push("-f".to_string());
     args.push(format!("per_page={MAX_SEARCH_RESULTS}"));
@@ -321,7 +312,9 @@ pub async fn search_items(
     let exact_path = exact_number(&term).map(|n| slug.api_path("issues", n));
     let exact_future = async {
         match &exact_path {
-            Some(path) => gh_json::<RawSearchItem>(cwd, &["api", path.as_str()]).await.ok(),
+            Some(path) => gh_json::<RawSearchItem>(cwd, &["api", path.as_str()])
+                .await
+                .ok(),
             None => None,
         }
     };
@@ -540,8 +533,18 @@ mod search_tests {
         assert_eq!(
             search_args(&slug(), ""),
             [
-                "api", "--method", "GET", "search/issues", "-f", "q=repo:a/b is:open", "-f",
-                "per_page=10", "-f", "sort=updated", "-f", "order=desc"
+                "api",
+                "--method",
+                "GET",
+                "search/issues",
+                "-f",
+                "q=repo:a/b is:open",
+                "-f",
+                "per_page=10",
+                "-f",
+                "sort=updated",
+                "-f",
+                "order=desc"
             ]
         );
     }
@@ -551,8 +554,14 @@ mod search_tests {
         assert_eq!(
             search_args(&slug(), "login"),
             [
-                "api", "--method", "GET", "search/issues", "-f", "q=repo:a/b in:title login",
-                "-f", "per_page=10"
+                "api",
+                "--method",
+                "GET",
+                "search/issues",
+                "-f",
+                "q=repo:a/b in:title login",
+                "-f",
+                "per_page=10"
             ]
         );
     }
