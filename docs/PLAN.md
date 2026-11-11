@@ -1206,7 +1206,7 @@ Also filed 2026-11-10 (Stuart): **#1854** (`p1`, `design`), UI Polish: Session l
 
 Also filed 2026-11-10 (Stuart): **#1855** (`p1`, `design`, `chat`), UI Polish: Chat: attached images never draw larger than their pixel size, so they stay sharp.
 
-Also filed 2026-11-10 (Stuart): **#1856** (`p1`, `bug`), Bug: Keyboard shortcuts dialog: list overflows the dialog instead of scrolling.
+Also filed 2026-11-10 (Stuart): **#1856** (`p1`, `bug`), Bug: Keyboard shortcuts dialog: list overflows the dialog instead of scrolling. Fix in review (spec 001 FR-126, T441).
 
 Also filed 2026-11-10 (Stuart): **#1864** (`p1`, `feature`, `chat`), Feat: App wide: every issue and PR reference is a link with a hover card.
 

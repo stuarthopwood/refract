@@ -18,6 +18,7 @@
     "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs",
     "verify:tauri": "node scripts/verify-tauri.mjs",
     "verify:tauri-008": "node scripts/verify-tauri-008.mjs",
+    "verify:tauri-1856": "node scripts/verify-tauri-1856.mjs",
     "verify:tauri-081": "node scripts/verify-tauri-081.mjs",
     "verify:tauri-084": "node scripts/verify-tauri-084.mjs",
     "verify:tauri-086": "node scripts/verify-tauri-086.mjs",
