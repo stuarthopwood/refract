@@ -60,7 +60,8 @@ const PROBES = String.raw`(() => {
     for (const n of v.querySelectorAll('*')) {
       if (!paints(n)) continue;
       const b = n.getBoundingClientRect();
-      if (!b.width || !b.height) continue;
+      // Only what is on screen can sit under the ring; rows scrolled out of the viewport say nothing about its edges.
+      if (!b.width || !b.height || b.bottom <= vb.top || b.top >= vb.bottom) continue;
       gaps.top = Math.min(gaps.top, b.top - vb.top);
       gaps.left = Math.min(gaps.left, b.left - vb.left);
       gaps.right = Math.min(gaps.right, vb.right - b.right);

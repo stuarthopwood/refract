@@ -26,7 +26,7 @@ const SHORT_HEIGHT = 360;
 const MIN_RING_CONTRAST = 3;
 const RING_PX = 3;
 // The app gets only what it needs to run, so no ambient secret or session variable reaches it or its log.
-const ENV_ALLOWLIST = ['PATH', 'SystemRoot', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA'];
+const ENV_ALLOWLIST = ['PATH', 'PATHEXT', 'ComSpec', 'SystemRoot', 'windir', 'ProgramFiles', 'ProgramFiles(x86)', 'ProgramW6432', 'ProgramData', 'TEMP', 'TMP', 'USERPROFILE', 'USERNAME', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA'];
 const BASE_ENV = Object.fromEntries(ENV_ALLOWLIST.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
 const REPORT = [];
 const SHOTS = [];
