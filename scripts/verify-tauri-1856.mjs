@@ -199,6 +199,11 @@ async function main() {
     log(`verify-tauri-1856: ALL PASS (${passed} checks) at head ${head}`);
     ok = true;
   } finally {
+    if (!ok && cdp) {
+      // A failed run leaves what the window showed, so a blank or errored screen is diagnosable without a rerun.
+      await shot(cdp, 'failure.png').catch(() => {});
+      log(`page text at failure: ${JSON.stringify(await cdp.evaluate(`document.body?.innerText?.slice(0, 600) ?? null`).catch(() => null))}`);
+    }
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, ok, checks: passed, log: REPORT }, null, 2));
     writeFileSync(path.join(SHOTS_DIR, 'sha256.json'), JSON.stringify(SHOTS, null, 2));
     cdp?.close();
