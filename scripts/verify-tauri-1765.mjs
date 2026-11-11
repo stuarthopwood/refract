@@ -1,13 +1,8 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1765 (T062), two scenarios, each on its own scratch launch of the built exe:
-//  A (main path): migration runs normally. With a Session running, a live key changed in Settings lands in the global config.yml,
-//    a startup-only key says "Applies to new Sessions", and the Optimise token usage dialog is the reworded one.
-//  B (legacy overlay path): a seeded token-guard.json and no migration marker; a directory at token-guard-migration-backup.json makes the
-//    migration fail at launch (the app still boots), so the Session reads the legacy overlay. Removing that directory lets the migration
-//    retry inside the Settings write, and the overlay on disk must be rewritten with the new value.
-// Uses the real `omp` against a scratch PI_CODING_AGENT_DIR (provider points at a dead port, no prompt is sent: no model calls) and a scratch REFRACT_DATA_DIR.
+// Live CDP check (two scenarios on scratch launches): A, a live key changed in Settings with a Session running reaches the global
+// config.yml; B, a failed launch migration leaves a legacy overlay that the Settings write must rewrite.
+// No model calls: the real `omp` runs against a scratch PI_CODING_AGENT_DIR and REFRACT_DATA_DIR.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1765.mjs
-// Env: REFRACT_1765_SHOTS_DIR overrides the screenshot/report directory.
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, rmSync, statSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
