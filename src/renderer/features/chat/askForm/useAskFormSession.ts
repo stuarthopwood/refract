@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { usePendingRequestsStore } from '@/state/pending-requests-store'
 import type { PendingRequest } from '../../../../shared/model'
 import { type AskFieldValue, canSubmit } from './answerPlan'
-import { afterAnswered, type AskFormSession, initialSession, nextAction } from './askFormSession'
+import { afterAnswered, afterSendFailed, type AskFormSession, cancelSession, initialSession, nextAction, submitSession } from './askFormSession'
 import type { AskFormField } from './parseAskHtml'
 
 const NO_PENDING: PendingRequest[] = []
@@ -55,9 +55,7 @@ export function useAskFormSession(sessionId: string, askItemId: string, fields: 
     const { requestId, answer } = action
     update(key, init, (current) => ({ ...current, inflight: requestId }))
     void window.refract.chat.answer(sessionId, requestId, answer).then((result) => {
-      update(key, init, (current) =>
-        result.ok ? afterAnswered(current, fields, requestId, answer) : { ...current, inflight: null, phase: 'editing', error: result.error.message }
-      )
+      update(key, init, (current) => (result.ok ? afterAnswered(current, fields, requestId, answer) : afterSendFailed(current, result.error.message)))
     })
   }, [session, pending, key, init, fields, sessionId, update])
 
@@ -66,15 +64,9 @@ export function useAskFormSession(sessionId: string, askItemId: string, fields: 
       update(key, init, (current) => ({ ...current, values: current.values.map((existing, at) => (at === index ? value : existing)) })),
     [key, init, update]
   )
-  const submit = React.useCallback(
-    () => update(key, init, (current) => (current.phase === 'editing' ? { ...current, phase: 'answering', error: null } : current)),
-    [key, init, update]
-  )
-  // Cancels every frame pending now and any that arrives later, as the per-field Cancel does for one.
-  const cancel = React.useCallback(
-    () => update(key, init, (current) => (current.phase === 'editing' || current.phase === 'answering' ? { ...current, phase: 'cancelling', error: null } : current)),
-    [key, init, update]
-  )
+  const submit = React.useCallback(() => update(key, init, (current) => submitSession(current, fields)), [key, init, fields, update])
+  // Cancels this form's frames pending now and any that arrive later, as the per-field Cancel does for one.
+  const cancel = React.useCallback(() => update(key, init, cancelSession), [key, init, update])
 
   return { session, submittable: canSubmit(fields, session.values), setValue, submit, cancel }
 }

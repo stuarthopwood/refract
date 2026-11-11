@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { isAskTimedOut, readAskForm, readAskFormAnswers } from './readAskForm'
+import { askCardLabel, isAskTimedOut, readAskForm, readAskFormAnswers } from './readAskForm'
 
 describe('readAskForm', () => {
   test('Given ask args carrying html, When read, Then the parsed fields come back', () => {
@@ -52,5 +52,25 @@ describe('readAskFormAnswers', () => {
     expect(readAskFormAnswers({ results: [] })).toBeNull()
     expect(readAskFormAnswers({ answers: [] })).toBeNull()
     expect(readAskFormAnswers({ answers: 'x' })).toBeNull()
+  })
+})
+
+describe('askCardLabel', () => {
+  test('Given finished cards with different first questions, When named, Then each name carries its own first question', () => {
+    const a = askCardLabel([{ name: 'a', question: 'Which database?', answer: 'pg' }])
+    const b = askCardLabel([{ name: 'b', question: 'Why?', answer: 'x' }])
+    expect(a).toBe('Questions from the agent: Which database?')
+    expect(a).not.toBe(b)
+  })
+
+  test('Given a long multi-line first question, When named, Then whitespace collapses and the name is truncated', () => {
+    const label = askCardLabel([{ name: 'a', question: `line one\n${'x'.repeat(200)}`, answer: 'y' }])
+    expect(label.startsWith('Questions from the agent: line one xxx')).toBe(true)
+    expect(label.endsWith('…')).toBe(true)
+    expect(label.length).toBeLessThan(120)
+  })
+
+  test('Given no usable question, When named, Then the generic name stands in', () => {
+    expect(askCardLabel([])).toBe('Questions from the agent')
   })
 })

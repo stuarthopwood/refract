@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { PendingRequest } from '../../../../shared/model'
-import { isDoneRow, isOtherRow, matchFrame } from './matchFrame'
+import { frameBelongsToForm, isDoneRow, isOtherRow, matchFrame } from './matchFrame'
 import type { AskFormField } from './parseAskHtml'
 
 const FIELDS: AskFormField[] = [
@@ -81,4 +81,16 @@ describe('wire row detection', () => {
   test('isOtherRow rejects an ordinary option', () => expect(isOtherRow('Other')).toBe(false))
   test.each(['Done selecting', '[OK] Done selecting', '✔ Done selecting'])('isDoneRow accepts %j', (row) => expect(isDoneRow(row)).toBe(true))
   test('isDoneRow rejects an ordinary option', () => expect(isDoneRow('Done')).toBe(false))
+})
+
+describe('frameBelongsToForm', () => {
+  test('Given a frame for a later field, When checked, Then it belongs to the form whatever the cursor', () => {
+    expect(frameBelongsToForm(FIELDS, text('Why?'))).toBe(true)
+    expect(frameBelongsToForm(FIELDS, choice('(1 selected) Which features?', ['Auth', 'Billing', 'Other (type your own)', 'Done selecting']))).toBe(true)
+  })
+
+  test('Given another tool\'s question, When checked, Then it does not belong to the form', () => {
+    expect(frameBelongsToForm(FIELDS, choice('Deploy to production?', ['Yes', 'No']))).toBe(false)
+    expect(frameBelongsToForm(FIELDS, text('Which database?', { secret: true }))).toBe(false)
+  })
 })

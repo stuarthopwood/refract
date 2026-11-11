@@ -22,6 +22,15 @@ export interface AskFormAnswer {
   answer: string
 }
 
+const LABEL_QUESTION_MAX = 80
+
+/** The accessible name of a finished card, from its first question so history cards tell apart. */
+export function askCardLabel(answers: readonly AskFormAnswer[]): string {
+  const first = answers[0]?.question.replace(/\s+/g, ' ').trim()
+  if (!first) return 'Questions from the agent'
+  return `Questions from the agent: ${first.length > LABEL_QUESTION_MAX ? `${first.slice(0, LABEL_QUESTION_MAX - 1)}…` : first}`
+}
+
 export const NO_SELECTION = 'No selection'
 
 /** The finished ask's `details.answers` as read-only rows, or `null` when it carries none. */

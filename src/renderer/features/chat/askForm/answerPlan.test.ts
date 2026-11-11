@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { type AskFieldValue, canSubmit, initialValue, isAnswered, planSteps, resolveStep } from './answerPlan'
+import { type AskFieldValue, canSubmit, firstMissingField, initialValue, isAnswered, missingFieldMessage, planSteps, resolveStep } from './answerPlan'
 import { matchFrame } from './matchFrame'
 import type { AskFormField } from './parseAskHtml'
 
@@ -63,12 +63,36 @@ describe('isAnswered and canSubmit', () => {
     expect(canSubmit(fields, [choice(['pg']), { kind: 'text', text: 'y' }, choice([])])).toBe(true)
   })
 
-  test('Given fields not marked required, When all are blank, Then Submit is allowed', () => {
-    expect(canSubmit([radio, checkbox, text], [radio, checkbox, text].map(initialValue))).toBe(true)
+  test('Given optional checkbox and text fields, When blank, Then Submit is allowed', () => {
+    expect(canSubmit([checkbox, text], [checkbox, text].map(initialValue))).toBe(true)
+  })
+
+  test('Given a radio group that is not marked required, When it has no answer, Then Submit is still blocked because OMP has no "none" row', () => {
+    expect(canSubmit([radio, checkbox, text], [radio, checkbox, text].map(initialValue))).toBe(false)
+    expect(canSubmit([radio], [choice(['pg'])])).toBe(true)
+    expect(canSubmit([radio], [choice([], true, 'Mongo')])).toBe(true)
   })
 
   test('Given a required Other-only radio with empty text, When checked, Then Submit stays blocked', () => {
     expect(canSubmit([{ ...radio, required: true }], [choice([], true, '')])).toBe(false)
+  })
+})
+
+describe('firstMissingField and missingFieldMessage', () => {
+  test('Given several unanswered fields, When asked, Then the first in form order is reported', () => {
+    const fields: AskFormField[] = [text, radio, { ...checkbox, required: true }]
+    const values = [{ kind: 'text', text: '' } as const, choice([]), choice([])]
+    expect(firstMissingField(fields, values)).toBe(1)
+    expect(missingFieldMessage(fields, values)).toBe('Which database? is required')
+  })
+
+  test('Given nothing missing, When asked, Then the index is -1 and there is no message', () => {
+    expect(firstMissingField([text], [{ kind: 'text', text: '' }])).toBe(-1)
+    expect(missingFieldMessage([text], [{ kind: 'text', text: '' }])).toBeNull()
+  })
+
+  test('Given a multi-line question, When reported, Then whitespace collapses to one line', () => {
+    expect(missingFieldMessage([{ ...radio, question: 'Which\n  database?' }], [choice([])])).toBe('Which database? is required')
   })
 })
 

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 import type { PendingRequest } from '../../../../shared/model'
-import { afterAnswered, type AskFormSession, initialSession, nextAction } from './askFormSession'
+import { afterAnswered, afterSendFailed, canCancel, cancelSession, type AskFormSession, initialSession, nextAction, submitSession } from './askFormSession'
 import type { AskFormField } from './parseAskHtml'
 
 const FIELDS: AskFormField[] = [
@@ -81,7 +81,7 @@ describe('in-order answering after Submit', () => {
       stepIndex: 1,
       values: [{ kind: 'choice', selected: [], otherSelected: true, otherText: 'Mongo' }, ...base.values.slice(1)]
     }
-    expect(nextAction(session, FIELDS, [frame('r2', 'Enter your answer', [], 'text')])).toEqual({ type: 'send', requestId: 'r2', answer: { value: 'Mongo' } })
+    expect(nextAction(session, FIELDS, [frame('r2', 'Which database?', [], 'text')])).toEqual({ type: 'send', requestId: 'r2', answer: { value: 'Mongo' } })
   })
 
   test('Given a frame for the wrong field mid-sequence, When it arrives, Then the remaining fields fall back', () => {
@@ -93,8 +93,15 @@ describe('in-order answering after Submit', () => {
     expect(nextAction({ ...filled(), phase: 'done' }, FIELDS, [whyFrame()])).toEqual({ type: 'fallback' })
   })
 
-  test('Given a radio group with nothing chosen, When its frame arrives after Submit, Then it falls back rather than guessing', () => {
-    expect(nextAction({ ...initialSession(FIELDS), phase: 'answering' }, FIELDS, [dbFrame()])).toEqual({ type: 'fallback' })
+  test('Given Other text pending, When a non-text frame arrives instead, Then the remaining frames fall back', () => {
+    const base = filled()
+    const session: AskFormSession = {
+      ...base,
+      phase: 'answering',
+      stepIndex: 1,
+      values: [{ kind: 'choice', selected: [], otherSelected: true, otherText: 'Mongo' }, ...base.values.slice(1)]
+    }
+    expect(nextAction(session, FIELDS, [dbFrame('r2')])).toEqual({ type: 'fallback' })
   })
 
   test('Given a fallback phase, When frames arrive, Then the card sends nothing', () => {
@@ -113,8 +120,24 @@ describe('Cancel', () => {
     expect(nextAction(session, FIELDS, pending)).toEqual({ type: 'send', requestId: 'r2', answer: { cancelled: true } })
   })
 
-  test('Given Cancel, When a frame matches nothing in the form, Then it is still cancelled, not shown as a card', () => {
-    expect(nextAction({ ...filled(), phase: 'cancelling' }, FIELDS, [frame('x', 'Unrelated', ['a'])])).toMatchObject({ type: 'send', answer: { cancelled: true } })
+  test('Given Cancel, When another tool\'s question is pending, Then it is left alone', () => {
+    expect(nextAction({ ...filled(), phase: 'cancelling' }, FIELDS, [frame('x', 'Deploy to production?', ['Yes', 'No'])])).toEqual({ type: 'none' })
+  })
+
+  test('Given Cancel, When another tool\'s question precedes this form\'s frame, Then only this form\'s frame is cancelled', () => {
+    const pending = [frame('x', 'Deploy to production?', ['Yes', 'No']), dbFrame('r1')]
+    expect(nextAction({ ...filled(), phase: 'cancelling' }, FIELDS, pending)).toEqual({ type: 'send', requestId: 'r1', answer: { cancelled: true } })
+  })
+
+  test('Given Cancel after Other was chosen, When OMP asks for the Other text, Then that free-text frame is cancelled too', () => {
+    const base = filled()
+    const session: AskFormSession = {
+      ...base,
+      phase: 'cancelling',
+      stepIndex: 1,
+      values: [{ kind: 'choice', selected: [], otherSelected: true, otherText: 'Mongo' }, ...base.values.slice(1)]
+    }
+    expect(nextAction(session, FIELDS, [frame('r2', 'Which database?', [], 'text')])).toEqual({ type: 'send', requestId: 'r2', answer: { cancelled: true } })
   })
 })
 
@@ -122,5 +145,80 @@ describe('afterAnswered', () => {
   test('Given an accepted answer, When recorded, Then the frame is handled and the step advances', () => {
     const next = afterAnswered({ ...filled(), phase: 'answering', cursor: 1 }, FIELDS, 'r2', { value: 'Auth' })
     expect(next).toMatchObject({ cursor: 1, stepIndex: 1, handled: ['r2'], inflight: null })
+  })
+
+  test('Given a cancelled answer accepted while answering, When recorded, Then the frame is handled but the step does not advance', () => {
+    const next = afterAnswered({ ...filled(), phase: 'answering', cursor: 1, stepIndex: 1 }, FIELDS, 'r2', { cancelled: true })
+    expect(next).toMatchObject({ phase: 'answering', cursor: 1, stepIndex: 1, handled: ['r2'], inflight: null })
+  })
+})
+
+describe('Other on a checkbox group', () => {
+  test('Given a pick plus Other text, When each frame arrives in order, Then option, Other, its text and Done are sent and the cursor moves on', () => {
+    const base = filled()
+    let session: AskFormSession = {
+      ...base,
+      phase: 'answering',
+      cursor: 1,
+      values: [base.values[0]!, { kind: 'choice', selected: ['a'], otherSelected: true, otherText: 'Tax' }, base.values[2]!]
+    }
+    const sent: unknown[] = []
+    const run = (request: Question) => {
+      const action = nextAction(session, FIELDS, [request])
+      if (action.type !== 'send') throw new Error(`expected send, got ${action.type}`)
+      sent.push(action.answer)
+      session = afterAnswered(session, FIELDS, action.requestId, action.answer)
+    }
+    const rows = ['Auth', 'Billing', 'Other (type your own)', '✔ Done selecting']
+
+    run(frame('r1', 'Which features?', rows))
+    run(frame('r2', '(1 selected) Which features?', rows))
+    run(frame('r3', 'Which features?', [], 'text'))
+    run(frame('r4', '(2 selected) Which features?', rows))
+
+    expect(sent).toEqual([{ value: 'Auth' }, { value: 'Other (type your own)' }, { value: 'Tax' }, { value: '✔ Done selecting' }])
+    expect(session).toMatchObject({ phase: 'answering', cursor: 2, stepIndex: 0 })
+  })
+})
+
+describe('Submit rule', () => {
+  test('Given a radio group with nothing chosen, When Submit is pressed, Then the session stays editing', () => {
+    const blank = initialSession(FIELDS)
+    expect(submitSession(blank, FIELDS)).toBe(blank)
+  })
+
+  test('Given every radio group answered, When Submit is pressed, Then the session starts answering', () => {
+    expect(submitSession(initialSession(FIELDS), FIELDS).phase).toBe('editing')
+    expect(submitSession(filled(), FIELDS)).toMatchObject({ phase: 'answering', error: null })
+  })
+
+  test('Given a session that is already answering, When Submit is pressed again, Then nothing changes', () => {
+    const answering: AskFormSession = { ...filled(), phase: 'answering' }
+    expect(submitSession(answering, FIELDS)).toBe(answering)
+  })
+})
+
+describe('failed sends', () => {
+  test('Given a failed answer while answering, When recorded, Then the form is editable again with the error', () => {
+    expect(afterSendFailed({ ...filled(), phase: 'answering', inflight: 'r1' }, 'offline')).toMatchObject({ phase: 'editing', inflight: null, error: 'offline' })
+  })
+
+  test('Given a failed cancel, When recorded, Then the session stays cancelling and does not resend on its own', () => {
+    const failed = afterSendFailed({ ...filled(), phase: 'cancelling', inflight: 'r1' }, 'offline')
+    expect(failed).toMatchObject({ phase: 'cancelling', inflight: null, error: 'offline' })
+    expect(nextAction(failed, FIELDS, [dbFrame('r1')])).toEqual({ type: 'none' })
+  })
+
+  test('Given a failed cancel, When the user cancels again, Then the retry clears the error and cancels the frame', () => {
+    const failed = afterSendFailed({ ...filled(), phase: 'cancelling', inflight: 'r1' }, 'offline')
+    expect(canCancel(failed)).toBe(true)
+    const retry = cancelSession(failed)
+    expect(retry).toMatchObject({ phase: 'cancelling', error: null })
+    expect(nextAction(retry, FIELDS, [dbFrame('r1')])).toMatchObject({ type: 'send', answer: { cancelled: true } })
+  })
+
+  test('Given a cancel that succeeded, When asked again, Then Cancel is not offered', () => {
+    expect(canCancel({ ...filled(), phase: 'cancelling' })).toBe(false)
+    expect(canCancel({ ...filled(), phase: 'done' })).toBe(false)
   })
 })

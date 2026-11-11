@@ -30,18 +30,32 @@ export function isAnswered(value: AskFieldValue): boolean {
   return value.selected.length > 0 || hasOther(value)
 }
 
-/** Submit stays disabled while a field the HTML marks `required` is unanswered. */
-export function canSubmit(fields: readonly AskFormField[], values: readonly AskFieldValue[]): boolean {
-  return fields.every((field, index) => {
+/**
+ * The first field Submit is waiting on, or -1. A field the HTML marks `required` must be answered,
+ * and so must every radio group: OMP has no "none" row to send for an unanswered one.
+ */
+export function firstMissingField(fields: readonly AskFormField[], values: readonly AskFieldValue[]): number {
+  return fields.findIndex((field, index) => {
     const value = values[index]
-    return !field.required || (value !== undefined && isAnswered(value))
+    const mustAnswer = field.required || field.kind === 'radio'
+    return mustAnswer && (value === undefined || !isAnswered(value))
   })
+}
+
+export function canSubmit(fields: readonly AskFormField[], values: readonly AskFieldValue[]): boolean {
+  return firstMissingField(fields, values) === -1
+}
+
+/** What a blocked Submit tells the user, naming the field it is waiting on, or `null` when nothing is missing. */
+export function missingFieldMessage(fields: readonly AskFormField[], values: readonly AskFieldValue[]): string | null {
+  const missing = fields[firstMissingField(fields, values)]
+  return missing ? `${missing.question.replace(/\s+/g, ' ').trim()} is required` : null
 }
 
 /**
  * The ordered wire answers for a field. Checkbox groups toggle each chosen row and always end with
- * `Done selecting`. A radio group with nothing chosen has no wire answer (OMP has no "none" row),
- * so it plans no steps and the caller falls back to that frame's own card.
+ * `Done selecting`. A radio group with nothing chosen plans no steps; Submit is blocked until
+ * every radio group is answered, so that case never reaches the wire.
  */
 export function planSteps(field: AskFormField, value: AskFieldValue): AnswerStep[] {
   if (!('options' in field) || value.kind !== 'choice') {

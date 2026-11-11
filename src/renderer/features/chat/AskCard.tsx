@@ -5,11 +5,8 @@ import type { AskQuestion, PendingRequest } from '../../../shared/model'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
-import { Input } from '@/components/ui/input'
-import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
+import { AskChoiceGroup } from '@/components/AskChoiceGroup'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { type AskDraftQuestion, EMPTY_ASK_QUESTION_DRAFT, useAskPicksStore } from '@/state/ask-picks-store'
@@ -27,8 +24,6 @@ interface AskCardProps {
   sessionId: string
   request: AskRequest
 }
-
-const ASK_CHECKED_MARK_CLASS = 'group-data-[state=checked]/checkbox-item:border-foreground forced-colors:group-data-[state=checked]/checkbox-item:border-[Highlight]'
 
 function isQuestionComplete(question: AskQuestion, draft: AskDraftQuestion): boolean {
   if (question.multi) return draft.viewed
@@ -70,13 +65,6 @@ function focusFirstOrCheckedOption(container: HTMLElement | null): void {
   ;(checked ?? first)?.focus()
 }
 
-function otherSentinelFor(options: { label: string }[]): string {
-  let candidate = '__other__'
-  while (options.some((option) => option.label === candidate)) candidate = `_${candidate}`
-  return candidate
-}
-
-const ASK_CUSTOM_INPUT_MAX_LENGTH = 4096
 function friendlyAskError(message: string): string {
   if (/customInput exceeds \d+ characters/.test(message)) return 'Your answer is too long. Shorten it and try again.'
   return message
@@ -329,13 +317,17 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
   { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther },
   ref
 ) {
-  const arrowKeyRef = React.useRef(false)
   const { heading, body } = splitQuestionHeading(question.question)
   const safeId = `${groupIdPrefix}-${question.id}`.replace(/[^a-zA-Z0-9_-]/g, '-')
   const headingId = `${safeId}-heading`
   const noteId = `${safeId}-incomplete-note`
   const describedBy = showIncompleteNote ? noteId : undefined
-  const otherValue = otherSentinelFor(question.options)
+  const options = question.options.map((option, index) => ({
+    value: option.label,
+    label: option.label,
+    description: option.description,
+    suffix: hasRecommended(question) && question.recommended === index ? ', Recommended' : undefined
+  }))
 
   function handleOtherKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (event.key === 'Enter' && !event.nativeEvent.isComposing && !event.repeat && !busy) onEnterInOther()
@@ -364,123 +356,23 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
         </CardContent>
       )}
       <CardContent className="space-y-2">
-        {question.multi ? (
-          <div role="group" aria-labelledby={heading ? headingId : undefined} aria-label={heading ? undefined : question.question} aria-describedby={describedBy} className="flex flex-col gap-2">
-            {question.options.map((option, index) => {
-              const checked = draft.selectedOptions.includes(option.label)
-              const labelId = `${safeId}-opt-${index}-label`
-              const descId = `${safeId}-opt-${index}-desc`
-              return (
-                <CheckboxItem
-                  key={option.label}
-                  checked={checked}
-                  aria-disabled={busy}
-                  onCheckedChange={() => !busy && onToggleMulti(option.label)}
-                  aria-labelledby={labelId}
-                  aria-describedby={option.description ? descId : undefined}
-                  className={OPTION_ROW_CLASS}
-                >
-                  <span aria-hidden className={cn(OPTION_MARK_CLASS, CHECKBOX_BOX_CLASS, ASK_CHECKED_MARK_CLASS)}>
-                    <CheckboxIndicator />
-                  </span>
-                  <span id={labelId} className="col-start-2 min-w-0 break-words">
-                    {option.label}
-                    {hasRecommended(question) && question.recommended === index && <span className="font-normal text-muted-foreground">, Recommended</span>}
-                  </span>
-                  {option.description && (
-                    <span id={descId} className="col-start-2 w-full min-w-0 break-words text-xs text-muted-foreground">
-                      {option.description}
-                    </span>
-                  )}
-                </CheckboxItem>
-              )
-            })}
-            <CheckboxItem
-              checked={draft.otherTicked}
-              aria-disabled={busy}
-              onCheckedChange={() => !busy && onToggleOtherTicked()}
-              aria-label="Other"
-              className={OPTION_ROW_CLASS}
-            >
-              <span aria-hidden className={cn(OPTION_MARK_CLASS, CHECKBOX_BOX_CLASS, ASK_CHECKED_MARK_CLASS)}>
-                <CheckboxIndicator />
-              </span>
-              <span className="col-start-2 min-w-0 break-words">Other</span>
-            </CheckboxItem>
-            <Input
-              value={draft.customInput}
-              readOnly={busy}
-              aria-disabled={busy}
-              maxLength={ASK_CUSTOM_INPUT_MAX_LENGTH}
-              placeholder="Type your own answer"
-              className="ml-10 w-[calc(100%-2.5rem)]"
-              aria-label="Other answer"
-              onChange={(event) => onCustomInput(event.target.value)}
-              onKeyDown={handleOtherKeyDown}
-            />
-          </div>
-        ) : (
-          <>
-            <RadioGroup
-              aria-labelledby={heading ? headingId : undefined}
-              aria-label={heading ? undefined : question.question}
-              aria-describedby={describedBy}
-              className="gap-2"
-              onKeyDownCapture={(event) => { arrowKeyRef.current = /^(Arrow|Home$|End$)/.test(event.key) }}
-              onKeyUpCapture={() => { arrowKeyRef.current = false }}
-              onBlurCapture={() => { arrowKeyRef.current = false }}
-              onPointerDownCapture={() => { arrowKeyRef.current = false }}
-              value={draft.otherSelected ? otherValue : (draft.selectedOptions[0] ?? '')}
-              onValueChange={(value) => { if (busy) return; if (value === otherValue) onSelectOther(); else onSelectSingle(value) }}
-            >
-              {question.options.map((option, index) => {
-                const labelId = `${safeId}-opt-${index}-label`
-                const descId = `${safeId}-opt-${index}-desc`
-                return (
-                  <RadioGroupItem
-                    key={option.label}
-                    value={option.label}
-                    aria-disabled={busy}
-                    aria-labelledby={labelId}
-                    aria-describedby={option.description ? descId : undefined}
-                    onClick={(event) => !arrowKeyRef.current && event.detail < 2 && onPickSingle(option.label)} // a double-click's 2nd click would pick the same slot in the next question
-                    className={OPTION_ROW_CLASS}
-                  >
-                    <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
-                      <RadioGroupIndicator />
-                    </span>
-                    <span id={labelId} className="col-start-2 min-w-0 break-words">
-                      {option.label}
-                      {hasRecommended(question) && question.recommended === index && <span className="font-normal text-muted-foreground">, Recommended</span>}
-                    </span>
-                    {option.description && (
-                      <span id={descId} className="col-start-2 w-full min-w-0 break-words text-xs text-muted-foreground">
-                        {option.description}
-                      </span>
-                    )}
-                  </RadioGroupItem>
-                )
-              })}
-              <RadioGroupItem value={otherValue} aria-disabled={busy} aria-label="Other" className={OPTION_ROW_CLASS}>
-                <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
-                  <RadioGroupIndicator />
-                </span>
-                <span className="col-start-2 min-w-0 break-words">Other</span>
-              </RadioGroupItem>
-            </RadioGroup>
-            <Input
-              value={draft.customInput}
-              readOnly={busy}
-              aria-disabled={busy}
-              maxLength={ASK_CUSTOM_INPUT_MAX_LENGTH}
-              placeholder="Type your own answer"
-              className="ml-10 w-[calc(100%-2.5rem)]"
-              aria-label="Other answer"
-              onChange={(event) => onCustomInput(event.target.value)}
-              onKeyDown={handleOtherKeyDown}
-            />
-          </>
-        )}
+        <AskChoiceGroup
+          multi={question.multi}
+          options={options}
+          selected={draft.selectedOptions}
+          otherSelected={question.multi ? draft.otherTicked : draft.otherSelected}
+          disabled={busy}
+          idPrefix={safeId}
+          groupLabelledBy={heading ? headingId : undefined}
+          groupLabel={heading ? undefined : question.question}
+          groupDescribedBy={describedBy}
+          other={{ visible: true, text: draft.customInput, ariaLabel: 'Other answer', onTextChange: onCustomInput, onKeyDown: handleOtherKeyDown }}
+          onSelect={onSelectSingle}
+          onToggle={onToggleMulti}
+          onSelectOther={onSelectOther}
+          onToggleOther={onToggleOtherTicked}
+          onPick={onPickSingle}
+        />
         {showIncompleteNote && (
           <p id={noteId} role="alert" className="text-sm text-destructive">
             Choose an option or type your own.

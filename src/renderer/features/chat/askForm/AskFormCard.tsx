@@ -1,17 +1,17 @@
 import * as React from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { AskChoiceGroup } from '@/components/AskChoiceGroup'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import type { AskFieldValue } from './answerPlan'
-import type { AskFormPhase } from './askFormSession'
+import { firstMissingField, missingFieldMessage, type AskFieldValue } from './answerPlan'
+import { canCancel, type AskFormPhase } from './askFormSession'
+import { escapeCancelsForm } from './askFormKeys'
 import type { AskFormChoiceField, AskFormField } from './parseAskHtml'
-import { NO_SELECTION, type AskFormAnswer } from './readAskForm'
+import { askCardLabel, NO_SELECTION, type AskFormAnswer } from './readAskForm'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { askFormIntentKey } from './askFormIntentKey'
 import { useClaimAskFormFocus } from './askFormFocus'
@@ -19,117 +19,53 @@ import { useAskFormSession } from './useAskFormSession'
 
 type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
 
-const OTHER_MAX_LENGTH = 4096
-const CHECKED_MARK_CLASS =
-  'group-data-[state=checked]/checkbox-item:border-foreground forced-colors:group-data-[state=checked]/checkbox-item:border-[Highlight]'
-
-/** A radio value no option can collide with, so "Other" is one more row of the same group. */
-function otherSentinel(field: AskFormChoiceField): string {
-  let candidate = '__other__'
-  while (field.options.some((option) => option.value === candidate)) candidate = `_${candidate}`
-  return candidate
-}
-
 interface ChoiceFieldProps {
   field: AskFormChoiceField
   value: ChoiceValue
   disabled: boolean
   idPrefix: string
+  /** Whether an empty Other box reads as invalid: only after a blocked Submit or leaving the box. */
+  showInvalid: boolean
   onChange: (value: ChoiceValue) => void
+  onOtherBlur: () => void
 }
 
-function ChoiceField({ field, value, disabled, idPrefix, onChange }: ChoiceFieldProps) {
+function ChoiceField({ field, value, disabled, idPrefix, showInvalid, onChange, onOtherBlur }: ChoiceFieldProps) {
   const headingId = `${idPrefix}-heading`
-  const otherValue = otherSentinel(field)
-  const optionMark = field.kind === 'radio' ? RADIO_RING_CLASS : cn(CHECKBOX_BOX_CLASS, CHECKED_MARK_CLASS)
-
-  const rows = field.options.map((option, index) => ({ key: option.value, label: option.label, labelId: `${idPrefix}-opt-${index}`, option }))
   const toggle = (optionValue: string) => {
     const selected = value.selected.includes(optionValue) ? value.selected.filter((entry) => entry !== optionValue) : [...value.selected, optionValue]
     onChange({ ...value, selected })
   }
 
   return (
-    <CardContent className="space-y-2">
+    <CardContent data-ask-field={idPrefix} className="space-y-2">
       <p id={headingId} className="whitespace-pre-line text-sm font-medium">
         {field.question}
         {field.required && <span className="font-normal text-muted-foreground">, required</span>}
       </p>
-      {field.kind === 'radio' ? (
-        <RadioGroup
-          aria-labelledby={headingId}
-          aria-required={field.required}
-          className="gap-2"
-          value={value.otherSelected ? otherValue : (value.selected[0] ?? '')}
-          onValueChange={(next) => {
-            if (disabled) return
-            if (next === otherValue) onChange({ ...value, selected: [], otherSelected: true })
-            else onChange({ ...value, selected: [next], otherSelected: false })
-          }}
-        >
-          {rows.map((row) => (
-            <RadioGroupItem key={row.key} value={row.key} aria-disabled={disabled} aria-labelledby={row.labelId} className={OPTION_ROW_CLASS}>
-              <span aria-hidden className={cn(OPTION_MARK_CLASS, optionMark)}>
-                <RadioGroupIndicator />
-              </span>
-              <span id={row.labelId} className="col-start-2 min-w-0 break-words">
-                {row.label}
-              </span>
-            </RadioGroupItem>
-          ))}
-          <RadioGroupItem value={otherValue} aria-disabled={disabled} aria-label="Other" className={OPTION_ROW_CLASS}>
-            <span aria-hidden className={cn(OPTION_MARK_CLASS, optionMark)}>
-              <RadioGroupIndicator />
-            </span>
-            <span className="col-start-2 min-w-0 break-words">Other</span>
-          </RadioGroupItem>
-        </RadioGroup>
-      ) : (
-        <div role="group" aria-labelledby={headingId} className="flex flex-col gap-2">
-          {rows.map((row) => (
-            <CheckboxItem
-              key={row.key}
-              checked={value.selected.includes(row.key)}
-              aria-disabled={disabled}
-              onCheckedChange={() => !disabled && toggle(row.key)}
-              aria-labelledby={row.labelId}
-              className={OPTION_ROW_CLASS}
-            >
-              <span aria-hidden className={cn(OPTION_MARK_CLASS, optionMark)}>
-                <CheckboxIndicator />
-              </span>
-              <span id={row.labelId} className="col-start-2 min-w-0 break-words">
-                {row.label}
-              </span>
-            </CheckboxItem>
-          ))}
-          <CheckboxItem
-            checked={value.otherSelected}
-            aria-disabled={disabled}
-            onCheckedChange={() => !disabled && onChange({ ...value, otherSelected: !value.otherSelected })}
-            aria-label="Other"
-            className={OPTION_ROW_CLASS}
-          >
-            <span aria-hidden className={cn(OPTION_MARK_CLASS, optionMark)}>
-              <CheckboxIndicator />
-            </span>
-            <span className="col-start-2 min-w-0 break-words">Other</span>
-          </CheckboxItem>
-        </div>
-      )}
-      {value.otherSelected && (
-        <Input
-          value={value.otherText}
-          readOnly={disabled}
-          aria-disabled={disabled}
-          maxLength={OTHER_MAX_LENGTH}
-          placeholder="Type your own answer"
-          className="ml-10 w-[calc(100%-2.5rem)]"
-          aria-label={`Other answer for ${field.question}`}
-          aria-invalid={value.otherText.trim().length === 0}
-          onChange={(event) => onChange({ ...value, otherText: event.target.value })}
-        />
-      )}
+      <AskChoiceGroup
+        multi={field.kind === 'checkbox'}
+        options={field.options}
+        selected={value.selected}
+        otherSelected={value.otherSelected}
+        disabled={disabled}
+        idPrefix={idPrefix}
+        groupLabelledBy={headingId}
+        groupRequired={field.required}
+        other={{
+          visible: value.otherSelected,
+          text: value.otherText,
+          ariaLabel: `Other answer for ${field.question}`,
+          invalid: showInvalid && value.otherText.trim().length === 0,
+          focusOnShow: true,
+          onTextChange: (otherText) => onChange({ ...value, otherText }),
+          onBlur: onOtherBlur
+        }}
+        onSelect={(next) => onChange({ ...value, selected: [next], otherSelected: false })}
+        onToggle={toggle}
+        onSelectOther={() => onChange({ ...value, selected: [], otherSelected: true })}
+        onToggleOther={() => onChange({ ...value, otherSelected: !value.otherSelected })}
+      />
     </CardContent>
   )
 }
@@ -153,7 +89,7 @@ function TextField({ field, value, disabled, idPrefix, onChange }: TextFieldProp
     onChange: (event: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => onChange(event.target.value)
   }
   return (
-    <CardContent className="space-y-2">
+    <CardContent data-ask-field={idPrefix} className="space-y-2">
       <p id={labelId} className="whitespace-pre-line text-sm font-medium">
         {field.question}
         {field.required && <span className="font-normal text-muted-foreground">, required</span>}
@@ -177,10 +113,10 @@ const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
   done: 'Answers submitted'
 }
 
-/** The card chrome the live form and the read-only history share. */
-function AskFormShell({ children, ref, resting }: { children: React.ReactNode; ref?: React.Ref<HTMLDivElement>; resting?: boolean }) {
+/** The card chrome the live form and the read-only history share; `label` names a finished card. */
+function AskFormShell({ children, ref, label }: { children: React.ReactNode; ref?: React.Ref<HTMLDivElement>; label?: string }) {
   return (
-    <Card ref={ref} size="sm" {...(resting ? { tabIndex: -1, role: 'group', 'aria-label': 'Questions from the agent', className: RESTING_FOCUS_CLASS } : {})}>
+    <Card ref={ref} size="sm" {...(label ? { tabIndex: -1, role: 'group', 'aria-label': label, className: RESTING_FOCUS_CLASS } : {})}>
       <CardHeader>
         <CardTitle>Questions from the agent</CardTitle>
       </CardHeader>
@@ -195,18 +131,22 @@ interface AskFormLiveCardProps {
   fields: readonly AskFormField[]
 }
 
-/** Read-only rows for a finished ask, so history shows the same card the user answered in. */
+/** Read-only question and answer pairs for a finished ask, so history shows the same card the user answered in. */
 function AskFormAnswersCard({ answers, sessionId, askItemId }: { answers: readonly AskFormAnswer[] } & ClaimFocusProps) {
   const rootRef = React.useRef<HTMLDivElement>(null)
   useClaimAskFormFocus(rootRef, sessionId, askItemId)
   return (
-    <AskFormShell ref={rootRef} resting>
-      {answers.map((row, index) => (
-        <CardContent key={`${row.name}-${index}`} className="space-y-1">
-          <p className="whitespace-pre-line text-sm font-medium">{row.question}</p>
-          <p className={cn('whitespace-pre-line break-words text-sm', row.answer === NO_SELECTION && 'text-muted-foreground')}>{row.answer}</p>
-        </CardContent>
-      ))}
+    <AskFormShell ref={rootRef} label={askCardLabel(answers)}>
+      <CardContent>
+        <dl className="space-y-2">
+          {answers.map((row, index) => (
+            <div key={`${row.name}-${index}`} className="space-y-1">
+              <dt className="whitespace-pre-line text-sm font-medium">{row.question}</dt>
+              <dd className={cn('whitespace-pre-line break-words text-sm', row.answer === NO_SELECTION && 'text-muted-foreground')}>{row.answer}</dd>
+            </div>
+          ))}
+        </dl>
+      </CardContent>
     </AskFormShell>
   )
 }
@@ -234,15 +174,37 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
   const editing = session.phase === 'editing'
   const note = PHASE_NOTE[session.phase]
   const idBase = `ask-form-${askItemId}`.replace(/[^a-zA-Z0-9_-]/g, '-')
+  // A blocked Submit names what is missing and marks empty Other boxes; blurring an Other box marks just that one.
+  const [attempted, setAttempted] = React.useState(false)
+  const [blurredOther, setBlurredOther] = React.useState<ReadonlySet<number>>(new Set())
+  const missing = attempted ? missingFieldMessage(fields, session.values) : null
+  const cancellable = canCancel(session)
+
+  function focusField(index: number) {
+    const target = rootRef.current?.querySelector<HTMLElement>(
+      `[data-ask-field="${idBase}-${index}"] :is(input, textarea, [role="radio"], [role="checkbox"])`
+    )
+    target?.focus()
+  }
+
+  function trySubmit() {
+    if (!editing) return
+    if (submittable) {
+      submit()
+      return
+    }
+    setAttempted(true)
+    focusField(firstMissingField(fields, session.values))
+  }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (event.key !== 'Escape' || event.nativeEvent.isComposing || !(editing || session.phase === 'answering')) return
+    if (!cancellable || !escapeCancelsForm(event.key, event.nativeEvent.isComposing, event.target as HTMLElement)) return
     event.stopPropagation()
     cancel()
   }
 
   return (
-    // Esc is the Cancel shortcut for the whole card (FR-010); the buttons below stay the operable controls.
+    // Esc is the Cancel shortcut for the whole card (FR-010) except while typing; the buttons below stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={rootRef} onKeyDown={handleKeyDown}>
       <AskFormShell>
@@ -250,17 +212,27 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
           const value = session.values[index]
           if (!value) return null
           const idPrefix = `${idBase}-${index}`
+          const key = `${field.name}-${index}`
           return value.kind === 'choice' && 'options' in field ? (
-            <ChoiceField key={field.name} field={field} value={value} disabled={!editing} idPrefix={idPrefix} onChange={(next) => setValue(index, next)} />
+            <ChoiceField
+              key={key}
+              field={field}
+              value={value}
+              disabled={!editing}
+              idPrefix={idPrefix}
+              showInvalid={attempted || blurredOther.has(index)}
+              onChange={(next) => setValue(index, next)}
+              onOtherBlur={() => setBlurredOther((current) => new Set(current).add(index))}
+            />
           ) : value.kind === 'text' && !('options' in field) ? (
-            <TextField key={field.name} field={field} value={value.text} disabled={!editing} idPrefix={idPrefix} onChange={(text) => setValue(index, { kind: 'text', text })} />
+            <TextField key={key} field={field} value={value.text} disabled={!editing} idPrefix={idPrefix} onChange={(text) => setValue(index, { kind: 'text', text })} />
           ) : null
         })}
-        {session.error && (
+        {(session.error ?? missing) && (
           <CardContent>
             <Alert variant="destructive" box="inline">
               <OctagonXIcon aria-hidden />
-              <AlertDescription>{session.error}</AlertDescription>
+              <AlertDescription>{session.error ?? missing}</AlertDescription>
             </Alert>
           </CardContent>
         )}
@@ -269,17 +241,11 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
         </CardContent>
         {/* Stays mounted with the card so the focused button is still in the DOM when the card unmounts. */}
         <CardFooter>
-          <Button size="sm" variant="ghost" aria-disabled={!editing} className="aria-disabled:opacity-50" onClick={() => editing && cancel()}>
+          <Button size="sm" variant="ghost" aria-disabled={!cancellable} className="aria-disabled:opacity-50" onClick={() => cancellable && cancel()}>
             Cancel
           </Button>
-          <Button
-            size="sm"
-            aria-disabled={!editing || !submittable}
-            aria-busy={session.phase === 'answering'}
-            className="aria-disabled:opacity-50"
-            onClick={() => editing && submittable && submit()}
-          >
-            {session.phase === 'answering' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
+          <Button size="sm" aria-disabled={!editing || !submittable} aria-busy={session.phase === 'answering'} className="aria-disabled:opacity-50" onClick={trySubmit}>
+            {session.phase === 'answering' && <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
             {session.phase === 'answering' ? 'Submitting...' : 'Submit'}
           </Button>
         </CardFooter>

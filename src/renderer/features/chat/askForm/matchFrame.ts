@@ -54,3 +54,8 @@ export function matchFrame(fields: readonly AskFormField[], cursor: number, requ
   if ((field.kind === 'checkbox') !== (doneRow !== null)) return null
   return { fieldIndex: cursor, field, optionRows, otherRow, doneRow }
 }
+
+/** Whether a frame is one of this form's own fields, at any position; Cancel touches only those. */
+export function frameBelongsToForm(fields: readonly AskFormField[], request: PendingRequest): boolean {
+  return fields.some((_, index) => matchFrame(fields, index, request) !== null)
+}

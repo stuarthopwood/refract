@@ -135,4 +135,29 @@ line two</textarea></label>
     const deep = `${'<div>'.repeat(5000)}<input name="d" aria-label="Deep"><input name="x" aria-label="Open`
     expect(parseAskHtml(deep)?.[0]?.name).toBe('d')
   })
+
+  const manyFields = (count: number) => Array.from({ length: count }, (_, i) => `<input name="f${i}" aria-label="F${i}">`).join('')
+  const manyOptions = (count: number) => `<fieldset><legend>Pick</legend>${Array.from({ length: count }, (_, i) => `<label><input type="radio" name="p" value="v${i}"> V${i}</label>`).join('')}</fieldset>`
+
+  test('Given exactly the field cap and one past it, When parsed, Then the cap is accepted and one more falls back to per-field cards', () => {
+    expect(parseAskHtml(manyFields(100))).toHaveLength(100)
+    expect(parseAskHtml(manyFields(101))).toBeNull()
+  })
+
+  test('Given exactly the option cap and one past it, When parsed, Then the cap is accepted and one more falls back to per-field cards', () => {
+    expect((parseAskHtml(manyOptions(200))?.[0] as AskFormChoiceField).options).toHaveLength(200)
+    expect(parseAskHtml(manyOptions(201))).toBeNull()
+  })
+
+  test('Given the same html twice, When parsed, Then the second read reuses the first result', () => {
+    expect(parseAskHtml(PROBE_FORM)).toBe(parseAskHtml(PROBE_FORM))
+  })
+
+  test('Given more distinct forms than the cache holds, When the oldest is read again, Then it is parsed afresh but equal', () => {
+    const first = parseAskHtml('<input name="lru0" aria-label="L0">')
+    for (let i = 1; i <= 16; i++) parseAskHtml(`<input name="lru${i}" aria-label="L${i}">`)
+    const again = parseAskHtml('<input name="lru0" aria-label="L0">')
+    expect(again).toEqual(first)
+    expect(again).not.toBe(first)
+  })
 })

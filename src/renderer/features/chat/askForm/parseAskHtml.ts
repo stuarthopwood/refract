@@ -115,13 +115,38 @@ function addOption(draft: ChoiceDraft, el: HtmlElement, forLabels: ReadonlyMap<s
   else draft.defaults.push(value)
 }
 
+/** Past these the form is no longer a card a person can fill, so the caller shows per-field cards. */
+const MAX_FIELDS = 100
+const MAX_OPTIONS = 200
+const CACHE_SIZE = 16
+
+// Both transcript rows and the live card read the same `html`; the parse is the costly part.
+const parseCache = new Map<string, AskFormField[] | null>()
+
 /**
  * Reads the agent's `ask` HTML into allow-listed fields. The markup is tokenised into plain
- * objects and never rendered. `null` means nothing usable or a field type the combined card
- * does not support, so the caller shows today's per-field cards.
+ * objects and never rendered. `null` means nothing usable, a field type the combined card
+ * does not support, or more fields or options than the card caps, so the caller shows today's
+ * per-field cards. Results are memoised on the string in a small LRU.
  */
 export function parseAskHtml(html: unknown): AskFormField[] | null {
   if (typeof html !== 'string' || html.length === 0 || html.length > MAX_HTML_LENGTH) return null
+  if (parseCache.has(html)) {
+    const hit = parseCache.get(html) ?? null
+    parseCache.delete(html)
+    parseCache.set(html, hit)
+    return hit
+  }
+  const parsed = parseUncached(html)
+  parseCache.set(html, parsed)
+  if (parseCache.size > CACHE_SIZE) {
+    const oldest = parseCache.keys().next()
+    if (!oldest.done) parseCache.delete(oldest.value)
+  }
+  return parsed
+}
+
+function parseUncached(html: string): AskFormField[] | null {
   const root = parseHtmlTree(html)
   const forLabels = new Map<string, HtmlElement>()
   for (const el of descendantElements(root)) {
@@ -147,9 +172,11 @@ export function parseAskHtml(html: unknown): AskFormField[] | null {
         draft = { kind: type, name: rawName || `field-${slots.length + 1}`, rawName, first: el, options: [], defaults: [], required: false }
         groups.set(key, draft)
         slots.push(draft)
+        if (slots.length > MAX_FIELDS) return null
       }
       draft.required ||= required
       addOption(draft, el, forLabels)
+      if (draft.options.length > MAX_OPTIONS) return null
       continue
     }
     if (type !== 'text' && type !== 'textarea') return null
@@ -158,6 +185,7 @@ export function parseAskHtml(html: unknown): AskFormField[] | null {
     const question = controlLabel(el, forLabels) || precedingText(el) || clean(el.attrs.get('placeholder')) || name
     const defaultValue = isTextarea ? el.children.map((child) => (child.type === 'text' ? child.text : '')).join('') : (el.attrs.get('value') ?? '')
     slots.push({ kind: type, name, question, required, defaultValue })
+    if (slots.length > MAX_FIELDS) return null
   }
 
   const fields: AskFormField[] = []

@@ -1,7 +1,7 @@
 import type { ChatAnswer } from '../../../../shared/ipc'
 import type { PendingRequest } from '../../../../shared/model'
-import { type AskFieldValue, initialValue, planSteps, resolveStep } from './answerPlan'
-import { matchFrame } from './matchFrame'
+import { type AskFieldValue, canSubmit, initialValue, planSteps, resolveStep } from './answerPlan'
+import { frameBelongsToForm, matchFrame } from './matchFrame'
 import type { AskFormField } from './parseAskHtml'
 
 /**
@@ -45,10 +45,17 @@ const isFreeTextFrame = (frame: QuestionFrame): boolean => frame.inputKind === '
 /** What to do with the next unanswered frame. Pure: the hook performs the answer and records the outcome. */
 export function nextAction(session: AskFormSession, fields: readonly AskFormField[], pending: readonly PendingRequest[]): AskFormAction {
   if (session.inflight !== null || session.phase === 'fallback') return { type: 'none' }
+
+  if (session.phase === 'cancelling') {
+    // A failed cancel waits for the user's retry rather than spinning on the same frame.
+    if (session.error !== null) return { type: 'none' }
+    // Only this form's own frames are cancelled; another tool's question is left to its own card.
+    const own = pending.find((request): request is QuestionFrame => request.kind === 'question' && !session.handled.includes(request.requestId) && belongsToCancel(session, fields, request))
+    return own ? { type: 'send', requestId: own.requestId, answer: { cancelled: true } } : { type: 'none' }
+  }
+
   const frame = nextFrame(session, pending)
   if (!frame) return { type: 'none' }
-
-  if (session.phase === 'cancelling') return { type: 'send', requestId: frame.requestId, answer: { cancelled: true } }
   // A frame arriving after the last field was answered is not part of the form.
   if (session.phase === 'done') return { type: 'fallback' }
   if (session.phase === 'editing') {
@@ -58,6 +65,7 @@ export function nextAction(session: AskFormSession, fields: readonly AskFormFiel
 
   const field = fields[session.cursor]
   const value = session.values[session.cursor]
+  // Submit is blocked until every radio group is answered, so a field always has a step here.
   const step = field && value ? planSteps(field, value)[session.stepIndex] : undefined
   if (!step) return { type: 'fallback' }
   if (step.kind === 'otherText') return isFreeTextFrame(frame) ? { type: 'send', requestId: frame.requestId, answer: { value: step.text } } : { type: 'fallback' }
@@ -65,6 +73,34 @@ export function nextAction(session: AskFormSession, fields: readonly AskFormFiel
   const match = matchFrame(fields, session.cursor, frame)
   const answer = match ? resolveStep(step, match) : null
   return answer ? { type: 'send', requestId: frame.requestId, answer } : { type: 'fallback' }
+}
+
+/** The free-text frame OMP sends after "Other" is this form's, though its title is OMP's own prompt. */
+function belongsToCancel(session: AskFormSession, fields: readonly AskFormField[], frame: QuestionFrame): boolean {
+  if (frameBelongsToForm(fields, frame)) return true
+  const field = fields[session.cursor]
+  const value = session.values[session.cursor]
+  const step = field && value ? planSteps(field, value)[session.stepIndex] : undefined
+  return step?.kind === 'otherText' && isFreeTextFrame(frame)
+}
+
+/** Submit starts answering only when nothing the form needs is missing. */
+export function submitSession(session: AskFormSession, fields: readonly AskFormField[]): AskFormSession {
+  return session.phase === 'editing' && canSubmit(fields, session.values) ? { ...session, phase: 'answering', error: null } : session
+}
+
+/** Cancel is available while editing or answering, and again after a failed cancel so the user can retry it. */
+export function canCancel(session: AskFormSession): boolean {
+  return session.phase === 'editing' || session.phase === 'answering' || (session.phase === 'cancelling' && session.error !== null)
+}
+
+export function cancelSession(session: AskFormSession): AskFormSession {
+  return canCancel(session) ? { ...session, phase: 'cancelling', error: null } : session
+}
+
+/** A refused answer: a failed cancel stays cancelling, so the card never reverts to a form the user already cancelled. */
+export function afterSendFailed(session: AskFormSession, message: string): AskFormSession {
+  return { ...session, inflight: null, phase: session.phase === 'cancelling' ? 'cancelling' : 'editing', error: message }
 }
 
 /** The session after `answer` to `requestId` was accepted by OMP. */
