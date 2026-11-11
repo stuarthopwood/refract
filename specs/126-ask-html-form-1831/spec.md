@@ -75,7 +75,7 @@ No question reached Stuart in this step; every answer below was decided before i
 - **FR-008**: Asks that carry no `html` keep today's behaviour unchanged.
 - **FR-009**: The card is keyboard-operable, every field has an accessible name from its question, and state changes (submitted, timed out) are announced politely.
 - **FR-010**: The combined card has a Cancel button, which works from anywhere. Esc does the same only while focus is inside the card and not inside a text input or textarea. It cancels every frame still pending, as today's per-field Cancel does.
-- **FR-011**: Submit is disabled while any radio group, or any field marked `required` in the HTML, is unanswered; a radio group can never be blank, so there is no mid-form fallback. An Other choice with an empty text box counts as unanswered. Other fields may be blank. A required checkbox group is not enforced.
+- **FR-011**: Submit is disabled while any radio group, or any field marked `required` in the HTML (of every kind, including a checkbox group), is unanswered; a radio group can never be blank, so there is no mid-form fallback. An Other choice with an empty text box counts as unanswered. Other fields may be blank.
 - **FR-012**: The parser accepts at most 100 fields and 200 options per field; beyond either cap it returns no form and the ask falls back to per-field cards. Parses are cached (16 entries).
 
 ## Success Criteria

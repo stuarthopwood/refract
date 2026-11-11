@@ -67,6 +67,12 @@ describe('isAnswered and canSubmit', () => {
     expect(canSubmit([checkbox, text], [checkbox, text].map(initialValue))).toBe(true)
   })
 
+  test('Given a required checkbox group, When nothing is ticked, Then Submit is blocked until one box is ticked', () => {
+    const required = { ...checkbox, required: true }
+    expect(canSubmit([required], [choice([])])).toBe(false)
+    expect(canSubmit([required], [choice(['a'])])).toBe(true)
+  })
+
   test('Given a radio group that is not marked required, When it has no answer, Then Submit is still blocked because OMP has no "none" row', () => {
     expect(canSubmit([radio, checkbox, text], [radio, checkbox, text].map(initialValue))).toBe(false)
     expect(canSubmit([radio], [choice(['pg'])])).toBe(true)
