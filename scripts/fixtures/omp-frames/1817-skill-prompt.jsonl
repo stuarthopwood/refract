@@ -15,3 +15,5 @@
 {"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
 {"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
 {"type":"session_settled"}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"$conversationFile","sessionId":"sess-0001","messageCount":2,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium"}}
