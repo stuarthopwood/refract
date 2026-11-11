@@ -1174,7 +1174,7 @@ Also filed 2026-11-09 (Stuart): **#1827** (`p1`, `enhancement`, `chat`), Enhance
 
 Also filed 2026-11-09 (Stuart): **#1829** (`p1`, `design`, `accessibility`), UI Polish: Loading page: horizontal three-step stepper on every launch (follows #1794). In progress (PR draft, `feat/1829-horizontal-stepper`): the stepper replaces the vertical one and shows on every launch; steps run one by one through the new `readiness.checkStep` channel and stop at the first failure; each step is a button showing its detail; `ci:local`, the Rust compile and the live check are pending.
 
-Also filed 2026-11-09 (Stuart): **#1831** (`p0`, `bug`, `chat`), Bug: Ask: support OMP 18.18.3's HTML-form ask (ui.formDialog) so the Ask card works again.
+Also filed 2026-11-09 (Stuart): **#1831** (`p0`, `bug`, `chat`), Bug: Ask: support OMP 18.18.3's HTML-form ask (ui.formDialog) so the Ask card works again. In progress (branch `feat/1831-ask-form`, spec `126-ask-html-form-1831`; specify, clarify, plan, tasks and analyze done, grilled 2026-11-10 and 2026-11-11): the renderer parses `args.html` into one card and answers the per-field frames in order, no Rust change; cancel, required-field validation and extra field types are deferred clarifications; not implemented yet.
 
 Also filed 2026-11-09 (Stuart): **#1832** (`p2`, `feature`, `chat`), Feat: Run a shell command without adding it to the model's context (OMP RPC bash excludeFromContext).
 
