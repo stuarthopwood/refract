@@ -247,7 +247,10 @@ fn per_call_tool_breakdown_prices_and_shares_only_the_filtered_model() {
     assert!(f.needs_tool_calls());
     let rows = breakdown(&conn, &f, BreakdownBy::Tool, &ctx()).unwrap();
     assert_eq!(rows.len(), 2);
-    assert_eq!((rows[0].label.as_str(), rows[0].cost_share), ("bash", Some(0.75)));
+    assert_eq!(
+        (rows[0].label.as_str(), rows[0].cost_share),
+        ("bash", Some(0.75))
+    );
     assert!((rows[0].usd - 3.0).abs() < 1e-9);
     assert_eq!(rows[1].cost_share, Some(0.25));
 }
