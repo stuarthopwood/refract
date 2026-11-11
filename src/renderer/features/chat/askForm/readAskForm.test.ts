@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { isAskTimedOut, readAskForm } from './readAskForm'
+import { isAskTimedOut, readAskForm, readAskFormAnswers } from './readAskForm'
 
 describe('readAskForm', () => {
   test('Given ask args carrying html, When read, Then the parsed fields come back', () => {
@@ -25,5 +25,32 @@ describe('isAskTimedOut', () => {
     expect(isAskTimedOut({ results: [{ id: 'a', timedOut: false }] })).toBe(false)
     expect(isAskTimedOut(undefined)).toBe(false)
     expect(isAskTimedOut({ timedOut: 'yes' })).toBe(false)
+  })
+})
+
+describe('readAskFormAnswers', () => {
+  test('Given details.answers, When read, Then each {name, question, answer} becomes a row', () => {
+    const rows = readAskFormAnswers({ answers: [{ name: 'lang', question: 'Which language?', answer: 'TypeScript' }] })
+    expect(rows).toEqual([{ name: 'lang', question: 'Which language?', answer: 'TypeScript' }])
+  })
+
+  test('Given an empty or blank answer, When read, Then it reads "No selection"', () => {
+    const rows = readAskFormAnswers({ answers: [{ name: 'a', question: 'Q1', answer: '' }, { name: 'b', question: 'Q2', answer: '  ' }, { name: 'c', question: 'Q3' }] })
+    expect(rows?.map((row) => row.answer)).toEqual(['No selection', 'No selection', 'No selection'])
+  })
+
+  test('Given a missing question, When read, Then the field name stands in for it', () => {
+    expect(readAskFormAnswers({ answers: [{ name: 'lang', answer: 'x' }] })?.[0]?.question).toBe('lang')
+  })
+
+  test('Given entries that are not answer records, When read, Then they are skipped', () => {
+    expect(readAskFormAnswers({ answers: [null, 'x', {}, { name: 'a', question: 'Q', answer: 'y' }] })).toHaveLength(1)
+  })
+
+  test('Given details without a usable answers list, When read, Then null', () => {
+    expect(readAskFormAnswers(undefined)).toBeNull()
+    expect(readAskFormAnswers({ results: [] })).toBeNull()
+    expect(readAskFormAnswers({ answers: [] })).toBeNull()
+    expect(readAskFormAnswers({ answers: 'x' })).toBeNull()
   })
 })

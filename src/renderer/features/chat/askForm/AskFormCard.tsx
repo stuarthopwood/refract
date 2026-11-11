@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import type { AskFieldValue } from './answerPlan'
 import type { AskFormPhase } from './askFormSession'
 import type { AskFormChoiceField, AskFormField } from './parseAskHtml'
+import { NO_SELECTION, type AskFormAnswer } from './readAskForm'
 import { useAskFormSession } from './useAskFormSession'
 
 type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
@@ -165,14 +166,48 @@ const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
   done: 'Answers submitted'
 }
 
-interface AskFormCardProps {
+/** The card chrome the live form and the read-only history share. */
+function AskFormShell({ children }: { children: React.ReactNode }) {
+  return (
+    <Card size="sm">
+      <CardHeader>
+        <CardTitle>Questions from the agent</CardTitle>
+      </CardHeader>
+      {children}
+    </Card>
+  )
+}
+
+interface AskFormLiveCardProps {
   sessionId: string
   askItemId: string
   fields: readonly AskFormField[]
 }
 
+/** Read-only rows for a finished ask, so history shows the same card the user answered in. */
+function AskFormAnswersCard({ answers }: { answers: readonly AskFormAnswer[] }) {
+  return (
+    <AskFormShell>
+      {answers.map((row, index) => (
+        <CardContent key={`${row.name}-${index}`} className="space-y-1">
+          <p className="whitespace-pre-line text-sm font-medium">{row.question}</p>
+          <p className={cn('whitespace-pre-line break-words text-sm', row.answer === NO_SELECTION && 'text-muted-foreground')}>{row.answer}</p>
+        </CardContent>
+      ))}
+    </AskFormShell>
+  )
+}
+
+type AskFormCardProps = ({ answers?: undefined } & AskFormLiveCardProps) | { answers: readonly AskFormAnswer[] }
+
+/** The ask form card: editable and live, or read-only from `answers` once the ask has finished. */
+export function AskFormCard(props: AskFormCardProps) {
+  if (props.answers) return <AskFormAnswersCard answers={props.answers} />
+  return <AskFormLiveCard sessionId={props.sessionId} askItemId={props.askItemId} fields={props.fields} />
+}
+
 /** One card for the whole parsed HTML form; Submit answers OMP's per-field frames in order. */
-export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) {
+function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps) {
   const { session, submittable, setValue, submit, cancel } = useAskFormSession(sessionId, askItemId, fields)
   const editing = session.phase === 'editing'
   const note = PHASE_NOTE[session.phase]
@@ -188,10 +223,7 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
     // Esc is the Cancel shortcut for the whole card (FR-010); the buttons below stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div onKeyDown={handleKeyDown}>
-      <Card size="sm">
-        <CardHeader>
-          <CardTitle>Questions from the agent</CardTitle>
-        </CardHeader>
+      <AskFormShell>
         {fields.map((field, index) => {
           const value = session.values[index]
           if (!value) return null
@@ -230,7 +262,7 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
             </Button>
           </CardFooter>
         )}
-      </Card>
+      </AskFormShell>
     </div>
   )
 }

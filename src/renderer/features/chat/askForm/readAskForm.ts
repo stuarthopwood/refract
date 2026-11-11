@@ -14,3 +14,27 @@ export function isAskTimedOut(details: unknown): boolean {
   if (!details || typeof details !== 'object' || !('results' in details) || !Array.isArray(details.results)) return false
   return details.results.some(isTimedOutFlag)
 }
+
+export interface AskFormAnswer {
+  name: string
+  question: string
+  /** Display text; an empty saved answer reads "No selection". */
+  answer: string
+}
+
+export const NO_SELECTION = 'No selection'
+
+/** The finished ask's `details.answers` as read-only rows, or `null` when it carries none. */
+export function readAskFormAnswers(details: unknown): AskFormAnswer[] | null {
+  if (!details || typeof details !== 'object' || !('answers' in details) || !Array.isArray(details.answers)) return null
+  const rows: AskFormAnswer[] = []
+  for (const entry of details.answers as unknown[]) {
+    if (!entry || typeof entry !== 'object') continue
+    const { name, question, answer } = entry as Record<string, unknown>
+    const text = typeof answer === 'string' ? answer.trim() : ''
+    const label = typeof question === 'string' && question.trim() ? question : typeof name === 'string' ? name : ''
+    if (!label) continue
+    rows.push({ name: typeof name === 'string' ? name : label, question: label, answer: text || NO_SELECTION })
+  }
+  return rows.length > 0 ? rows : null
+}
