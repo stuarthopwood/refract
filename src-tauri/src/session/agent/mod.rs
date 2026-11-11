@@ -25,6 +25,7 @@ mod lane_support;
 mod launch;
 mod launch_support;
 pub mod pause;
+mod pause_subagents;
 mod requests;
 mod status;
 mod sync_from_state;

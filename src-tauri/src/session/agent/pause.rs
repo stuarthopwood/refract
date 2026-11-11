@@ -15,10 +15,12 @@ const MAX_HELD_BYTES: usize = 256 * 1024;
 #[derive(Default)]
 pub(super) struct State {
     loaded: bool,
-    held: Option<Vec<String>>,
-    resuming: bool,
+    pub(super) held: Option<Vec<String>>,
+    pub(super) resuming: bool,
     seq: u64,
     written: Arc<AtomicU64>,
+    /// Ids Pause cancelled; cleared on Resume and never persisted, since a restart loses the subagents anyway.
+    pub(super) cancelled: Vec<String>,
 }
 
 /// Derived from status, never stored, so `pausing` vs `paused` cannot drift.
@@ -158,6 +160,7 @@ impl SessionAgent {
                 }
             }
         }
+        self.cancel_running_subagents().await;
         self.emit_status().await;
         self.emit_pause_queue().await;
         Ok(json!({ "paused": true }))
@@ -166,7 +169,7 @@ impl SessionAgent {
     /// `chat.resume`: drains held messages in order, then clears the pause. A failed send leaves the rest held.
     pub async fn resume(&self) -> Result<Value, AgentError> {
         self.ensure_pause_loaded().await;
-        {
+        let cancelled = {
             let mut state = self.state.lock().await;
             let Some(held) = state.pause.held.as_ref() else {
                 return Ok(json!({ "paused": false }));
@@ -181,7 +184,9 @@ impl SessionAgent {
                 ));
             }
             state.pause.resuming = true;
-        }
+            std::mem::take(&mut state.pause.cancelled)
+        };
+        self.notify_resumed(cancelled).await;
         let outcome = self.drain_held().await;
         self.state.lock().await.pause.resuming = false;
         self.persist_pause().await;
