@@ -5,7 +5,7 @@
 // No model calls: the real `omp` runs against a scratch PI_CODING_AGENT_DIR and REFRACT_DATA_DIR.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1765.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, rmSync, statSync, readdirSync, chmodSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, statSync, readdirSync, chmodSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -189,7 +189,7 @@ async function scenarioB(name, blockOverlay) {
     keepFile(overlayFile, `${name}-overlay-before.yml`);
     const mtimeBefore = statSync(overlayFile).mtimeMs;
 
-    rmSync(path.join(dataDir, 'token-guard-migration-backup.json'), { recursive: true });
+    await safeRmSync(path.join(dataDir, 'token-guard-migration-backup.json'), LOG);
     // A read-only overlay is still readable (so Refract knows it generated it) but the atomic rename over it fails.
     if (blockOverlay) chmodSync(overlayFile, 0o444);
     await changeThreshold(cdp);
