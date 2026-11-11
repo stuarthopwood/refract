@@ -101,8 +101,8 @@ async function main() {
     console.log(`${LOG}: ${ok ? 'PASS' : 'FAIL'} ${label}${ok || extra === undefined ? '' : ` ${JSON.stringify(extra)}`}`);
   };
 
-  const dirs = ['data', 'sessions', 'import', 'exe', 'launcher', 'shim', 'repo'].map((n) => mkdtempSync(path.join(tmpdir(), `refract-1845-${n}-`)));
-  const [dataDir, sessionsDir, importSourceDir, exeDir, launcherDir, shimDir, repoDir] = dirs;
+  const dirs = ['data', 'sessions', 'import', 'exe', 'launcher', 'shim', 'repo', 'copilot'].map((n) => mkdtempSync(path.join(tmpdir(), `refract-1845-${n}-`)));
+  const [dataDir, sessionsDir, importSourceDir, exeDir, launcherDir, shimDir, repoDir, copilotHome] = dirs;
 
   let child;
   let cdp;
@@ -132,7 +132,8 @@ async function main() {
       dataDir,
       pathPrepend: shimDir,
       logFile: path.join(exeDir, 'app.log'),
-      extraEnv: { REFRACT_IMPORT_SOURCE_DIR: importSourceDir, REFRACT_OMP_SESSIONS_DIR: sessionsDir }
+      // COPILOT_HOME keeps the scan off the real ~/.copilot/session-state.
+      extraEnv: { REFRACT_IMPORT_SOURCE_DIR: importSourceDir, REFRACT_OMP_SESSIONS_DIR: sessionsDir, COPILOT_HOME: copilotHome }
     });
     child = launched.child;
     cdp = await CdpSession.connect(await waitForCdpTarget(port, { timeoutMs: 60_000 }));
@@ -179,14 +180,23 @@ async function main() {
       await sleep(800);
     };
 
+    const scrollToolsIntoView = async () => {
+      await cdp.evaluate(
+        `(() => { const cell = [...document.querySelectorAll('section[aria-label="Usage"] th')].find((e) => /cost share/i.test(e.textContent)); (cell?.closest('table') ?? cell)?.scrollIntoView({ block: 'center' }); return !!cell; })()`
+      );
+      await sleep(300);
+    };
+
     await openUsageWith({ range: 'all' });
     let page = await cdp.evaluate(toolText);
     check(/75(\.\d+)?%/.test(page) && /25(\.\d+)?%/.test(page), 'the tools table shows percentages', page.length);
+    await scrollToolsIntoView();
     await cdp.screenshot(path.join(SHOTS_DIR, '1-tools-cost-share-percentages.png'));
 
     await openUsageWith({ range: 'all', project: 'free' });
     page = await cdp.evaluate(toolText);
     check(page.includes('edit') && page.includes('\u2014'), 'an unpriced window shows an em dash');
+    await scrollToolsIntoView();
     await cdp.screenshot(path.join(SHOTS_DIR, '2-tools-cost-share-em-dash.png'));
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
@@ -194,7 +204,10 @@ async function main() {
     console.error(`${LOG}: FAIL run crashed`, err);
   } finally {
     try {
-      writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: head, failures, results: report }, null, 2));
+      writeFileSync(
+        path.join(SHOTS_DIR, 'report.json'),
+        JSON.stringify({ gitHead: head, note: 'Earlier failed run did not set COPILOT_HOME and read the real Copilot data folder (read-only, nothing written).', failures, results: report }, null, 2)
+      );
     } catch (writeErr) {
       console.error(`${LOG}: failed to write evidence: ${writeErr}`);
     }
