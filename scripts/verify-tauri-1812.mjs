@@ -166,7 +166,7 @@ async function main() {
     check('(a) cache persisted', existsSync(path.join(appData, 'last-commands.json')));
     check('(c) agent not started on reopen', startedCount(log3) === 0);
     await typeInComposer(cdp, '/');
-    await sleep(500);
+    await cdp.waitFor(`document.querySelectorAll('[role="listbox"] [role="option"]').length > 0`, { timeoutMs: 10_000, label: 'cached command list' }).catch(() => {});
     const warm = await menu(cdp);
     check('(a) cached commands listed instantly', warm.options.some((o) => o.includes('tools')) && !warm.none && !warm.starting, warm);
     await shot('a1-cached-list.png');
@@ -199,6 +199,10 @@ async function main() {
     await shot('e1-started-list.png');
     await clearComposer(cdp);
     await typeInComposer(cdp, '/tools');
+    // With commands listed, the first Enter accepts the highlighted menu row (completes `/tools `); the second submits.
+    await key(cdp, 13, 'Enter');
+    await sleep(500);
+    check('(e) first Enter only completes the menu row, nothing sent', promptsOf(log3).filter((l) => /\/tools/.test(l)).length === 0);
     await key(cdp, 13, 'Enter');
     await sleep(2500);
     const tools = promptsOf(log3).filter((l) => /"\/tools"|\/tools/.test(l) && !/switch/.test(l));
