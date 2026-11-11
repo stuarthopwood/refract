@@ -18,10 +18,12 @@ const args = process.argv.slice(2);
 const isRpc = args.includes('rpc-ui');
 if (isRpc) args.push('--model', model);
 
+// Why: scratch HOME alone leaves COPILOT_HOME/APPDATA pointing at real data, and real credentials must not reach the child.
+const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/TOKEN|KEY/i.test(k)));
 const child = spawn(exe, args, {
   windowsHide: true,
   stdio: ['pipe', 'pipe', 'inherit'],
-  env: { ...process.env, HOME: home, USERPROFILE: home, OMP_PROFILE: profile }
+  env: { ...env, HOME: home, USERPROFILE: home, APPDATA: path.join(home, 'AppData', 'Roaming'), COPILOT_HOME: path.join(home, 'copilot'), OMP_PROFILE: profile }
 });
 
 function wire(dir, frame, extra = {}) {
@@ -84,6 +86,7 @@ if (isRpc) setInterval(() => {
     try {
       const command = JSON.parse(readFileSync(file, 'utf8'));
       unlinkSync(file);
+      if (command?.type !== 'get_subagents') continue;
       wire('refract->omp', command, { injected: true });
       child.stdin.write(JSON.stringify(command) + '\n');
     } catch {}

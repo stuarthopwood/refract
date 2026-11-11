@@ -18,7 +18,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const LOG = 'verify-1835';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
-const SHOTS_DIR = process.env.REFRACT_1835_SHOTS_DIR || 'C:/Users/shopwood/refract-live-check-1835';
+const SHOTS_DIR = process.env.REFRACT_1835_SHOTS_DIR;
+if (!SHOTS_DIR) throw new Error('verify-1835: set REFRACT_1835_SHOTS_DIR to a scratch directory');
 const OMP_EXE = process.env.REFRACT_1835_OMP_EXE || 'C:/Users/shopwood/AppData/Local/Temp/Probe520/bin/omp-windows-x64.exe';
 const PROFILE = 'probe520';
 const MODEL = 'probe-mock/probe-model';
@@ -215,7 +216,8 @@ async function main() {
     const lateAfter = await ompSubagents(injectDir);
     // The late subagent is cancelled before it reaches its model call, so a model request is optional; one that did arrive must be aborted.
     const lateAborted = lifecycle('aborted', latePausedAt).some((l) => (l.frame.payload?.id ?? l.frame.id) === lateId);
-    check(listedIds(lateAfter).length === 0 && lateAborted && mock.subagents.slice(2).every((s) => s.abortedAt), '2d. Afterwards omp reports no running subagent and marks it aborted (any model request it made was aborted); the Session reaches Paused', { lateAfter, lateAborted, lateModelRequests: mock.subagents.slice(2) });
+    // The "any model request was aborted" clause is vacuous when the subagent made no request.
+    check(listedIds(lateAfter).length === 0 && lateAborted && mock.subagents.slice(2).every((s) => s.abortedAt), '2d. Afterwards omp lists no running subagent and an aborted frame arrived for it (any model request it made was aborted; vacuous if none)', { lateAfter, lateAborted, lateModelRequests: mock.subagents.slice(2) });
     await shoot(cdp, '06-paused-late-subagent-auto-cancelled-notice.png');
 
     // Resume once more: the notice names the auto-cancelled subagent.

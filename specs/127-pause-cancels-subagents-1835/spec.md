@@ -70,6 +70,7 @@ A Session has a turn waiting on subagents. Stuart presses Pause.
 - `pauseAll` pauses every live Session; each cancels its own subagents (`ipc/chat_pause.rs:64`).
 - App restart while paused: the OMP process and its subagents are gone; the recorded cancelled list is in memory only and is not persisted.
 - Pause pressed twice: the second call returns early (`pause.rs:128-130`) and cancels nothing more.
+- While Paused the Subagents chip is unreachable (the Paused body is inert), so the right-rail Subagents button is the Paused entry point for inspecting subagents.
 - Subscription missing (older OMP answers `success:false` to `set_subagent_subscription`): `get_subagents` still works for Pause; auto-cancel of new subagents needs the lifecycle frames, so it degrades to "not enforced" and is noted in the Assumptions.
 
 ## Requirements
