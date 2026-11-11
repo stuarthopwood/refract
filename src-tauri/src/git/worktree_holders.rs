@@ -500,3 +500,17 @@ mod imp {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unreadable_containment_refusal_names_the_cause_and_is_not_the_outside_wording() {
+        let source = std::io::Error::from_raw_os_error(5);
+        let msg = unreadable_containment_refusal(Path::new("C:/w/s1"), &source).message;
+        assert!(msg.contains("could not check"), "{msg}");
+        assert!(msg.contains("choose Retry"), "{msg}");
+        assert!(!msg.contains("outside"), "{msg}");
+    }
+}

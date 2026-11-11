@@ -192,6 +192,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn delete_check_excludes_staged_and_worktree_delete_lines_from_uncommitted_files() {
+        let repo = init_repo().await;
+        let added = add_worktree_with_generated_name(&repo, "main")
+            .await
+            .expect("create worktree");
+        tokio::fs::remove_file(added.worktree_path.join("README.md"))
+            .await
+            .unwrap();
+        assert_eq!(
+            delete_check(&added.worktree_path)
+                .await
+                .unwrap()
+                .uncommitted_files,
+            0
+        );
+        crate::git::test_support::run_git(
+            &added.worktree_path,
+            &["rm", "-q", "--cached", "README.md"],
+        )
+        .await;
+        assert_eq!(
+            delete_check(&added.worktree_path)
+                .await
+                .unwrap()
+                .uncommitted_files,
+            0
+        );
+    }
+
+    #[tokio::test]
     async fn delete_check_for_missing_worktree_is_zero_risk_when_branch_is_already_gone() {
         let repo = init_repo().await;
         let check = delete_check_for_missing_worktree(&repo, "never-existed")
