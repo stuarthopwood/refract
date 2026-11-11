@@ -80,6 +80,11 @@ function seedOldDb(dbPath) {
     rollup.run(SEED_HOUR, project, tool, count, usd);
     for (let i = 0; i < count; i++) calls.run(`c${n++}`, SEED_HOUR + i, tool, usd / count, project);
   }
+  // The view treats a window with no model call as empty, so the unpriced project needs one free call.
+  db.exec(
+    `INSERT INTO message_rollup (hour, project_label, model, reasoning, agent_type, calls, input, output, total_tokens)
+     VALUES (${SEED_HOUR}, 'free', 'github-copilot/free-model', '', 'main', 1, 10, 5, 15)`
+  );
   db.close();
 }
 
@@ -165,8 +170,12 @@ async function main() {
       await call('setPrefs', { filters });
       await cdp.evaluate(`location.reload()`).catch(() => {});
       await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'reloaded' });
-      await cdp.clickByText('Usage');
-      await cdp.waitFor(`${toolText}.includes('Tool error rate')`, { label: 'Usage view renders' });
+      const rendered = await cdp.evaluate(`${toolText}.includes('Tool error rate')`).catch(() => false);
+      if (!rendered) await cdp.clickByText('Usage');
+      await cdp.waitFor(`${toolText}.includes('Tool error rate')`, { label: 'Usage view renders' }).catch(async (err) => {
+        await cdp.screenshot(path.join(SHOTS_DIR, 'failure-usage-view.png')).catch(() => {});
+        throw err;
+      });
       await sleep(800);
     };
 
