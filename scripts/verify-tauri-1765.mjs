@@ -195,7 +195,8 @@ async function scenarioB(name, blockOverlay) {
     await changeThreshold(cdp);
     const warningShown = (timeoutMs) => cdp.waitFor(`Array.from(document.querySelectorAll('[data-slot="alert"]')).some((a) => a.textContent.includes(${JSON.stringify(WARNING_TEXT)}))`, { timeoutMs, label: 'write warning' }).then(() => true, () => false);
     if (blockOverlay) {
-      const warned = await warningShown(30_000);
+      // The write first re-runs the whole migration (one `omp config set` per key, over 30 s), so the warning arrives as late as the config does in B.
+      const warned = await warningShown(120_000);
       const overlayAfter = readFileSync(overlayFile, 'utf8');
       check(warned, 'Settings shows the legacy-overlay refresh failure as a warning', await cdp.evaluate(`Array.from(document.querySelectorAll('[data-slot="alert"]')).map((a) => a.textContent)`));
       check(thresholdIs(overlayAfter, LEGACY_VALUE) && !thresholdIs(overlayAfter, NEW_VALUE), 'The blocked legacy overlay kept the old threshold', overlayAfter);
