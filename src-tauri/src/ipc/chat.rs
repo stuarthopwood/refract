@@ -13,6 +13,20 @@ use crate::session::{model, SessionManager};
 
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
+const UNKNOWN_COMMAND_HINT: &str = "Type / to see the available commands.";
+
+fn unknown_command_error(original_name: &str, rest: &str) -> IpcError {
+    let suffix = if rest.is_empty() {
+        String::new()
+    } else {
+        format!(" {rest}")
+    };
+    IpcError::new(
+        "unknown-command",
+        format!("Unknown command: /{original_name}{suffix}. {UNKNOWN_COMMAND_HINT}"),
+    )
+}
+
 pub fn register(d: &mut Dispatcher) {
     d.register("chat.send", chat_send);
     d.register("chat.stop", chat_stop);
@@ -186,28 +200,12 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
             }
             // Refused locally, never forwarded to OMP, even if OMP later adds one of these.
             if is_native_reserved(name.as_str()) {
-                let suffix = if rest.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {rest}")
-                };
-                return Err(IpcError::new(
-                    "unknown-command",
-                    format!("Unknown command: /{original_name}{suffix}. Type / to see the available commands."),
-                ));
+                return Err(unknown_command_error(&original_name, &rest));
             }
             let commands = agent.available_commands().await;
             match classify_slash_invocation(&name, &rest, &commands) {
                 SlashInvocationClassification::UnknownCommand => {
-                    let suffix = if rest.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" {rest}")
-                    };
-                    return Err(IpcError::new(
-                        "unknown-command",
-                        format!("Unknown command: /{original_name}{suffix}. Type / to see the available commands."),
-                    ));
+                    return Err(unknown_command_error(&original_name, &rest));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {
                     let message = match classify_unsupported_arguments(&name, &rest, &commands) {

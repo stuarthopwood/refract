@@ -49,3 +49,16 @@ T001 -> T005 -> T006, T007, T008, T010 -> T011, T012. T002 -> T003, T004 -> T013
 ## Story coverage
 
 US1: T005, T006, T017, T019-T022. US2: T006 (checks stay before return). US3: T009, T015-T018. US4: T005, T007, T013. US5: T010-T012.
+
+## Phase 6: Convergence
+
+Assessed 2026-11-06 against the amended spec (FR-006, FR-014 to FR-016, US3/AC1). Phases 1 to 5 are delivered in #1609 (`delete_in_flight.rs`, `quit_guard.rs`, `deleteFailureToast.ts`, `DeleteDetailsHost.tsx` exist); the findings below are the remaining gaps, all from #1722.
+
+- [x] T025 [US3] Make `notifyPersistentError` in `src/renderer/state/notify.ts` the single persistent-error path: a text-derived toast id so an identical message replaces the open toast in place, re-announced assertively; optional `{ id, description, action, cancel }` so callers with actions can use it per FR-014 (contradicts)
+- [x] T026 [US3] Route `notify()`'s default error path (`notify.ts:29`, no id today) through `notifyPersistentError` per FR-014 (contradicts)
+- [x] T027 [P] [US3] Move the direct `toast.error(..., { duration: Infinity, closeButton: true })` callers to `notifyPersistentError`: `features/chat/Markdown.tsx`, `features/palette/usePaletteConversations.ts`, `features/sessions/newSessionInFocusedPane.ts` (two sites), `features/sessions/startSessionRequest.ts`, `features/sessions/useSessionRowActions.ts`, and `notifyProgress.fail` per FR-014 (partial)
+- [x] T028 [US3] `features/sessions/deleteFailureToast.ts` uses `notifyPersistentError` (keeps id `delete-failed:<id>`, Retry, Details) and `state/init-stores.ts:98` drops the polite chat-area announcement so the failure is announced once, assertively, per FR-006 and US3/AC1 (contradicts)
+- [x] T029 [P] Add `aria-hidden="true"` to the loading icon in `src/renderer/components/ui/sonner.tsx` per FR-015 (missing)
+- [x] T030 [P] Add `closeButton: true` to `notifyProgress.info` in `src/renderer/state/notify.ts` per FR-015 (missing)
+- [x] T031 [P] Replace the two duplicated "Type / to see the available commands." suffixes in `src-tauri/src/ipc/chat.rs` (lines 196, 209) with one shared constant per FR-016 (partial)
+- [ ] T032 Update the #1722 row in `docs/PLAN.md`; gate: `pnpm ci:local`, then a live check that a repeated persistent error shows one toast and is announced assertively per FR-014
