@@ -114,7 +114,7 @@ async function main() {
     });
 
     // Readiness checks can take up to a minute on a brand-new scratch profile.
-    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 90_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 60_000, label: 'Readiness green' }
