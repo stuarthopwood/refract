@@ -1,19 +1,21 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1765 (T062): a Settings write reaches a RUNNING Session's legacy overlay as well as the global config,
-// and a startup-only key says "Applies to new Sessions".
-// A directory at config.yml makes every `omp config set` fail, so the migration fails and the Session launches on the legacy
-// overlay; the directory is then replaced by the real file, the migration retries inside the Settings write, and the overlay must be rewritten.
-// Uses the real `omp` against a scratch PI_CODING_AGENT_DIR (fake provider, no model calls) and a scratch REFRACT_DATA_DIR.
+// Live CDP check for issue #1765 (T062), two scenarios, each on its own scratch launch of the built exe:
+//  A (main path): migration runs normally. With a Session running, a live key changed in Settings lands in the global config.yml,
+//    a startup-only key says "Applies to new Sessions", and the Optimise token usage dialog is the reworded one.
+//  B (legacy overlay path): a seeded token-guard.json and no migration marker; a directory at token-guard-migration-backup.json makes the
+//    migration fail at launch (the app still boots), so the Session reads the legacy overlay. Removing that directory lets the migration
+//    retry inside the Settings write, and the overlay on disk must be rewritten with the new value.
+// Uses the real `omp` against a scratch PI_CODING_AGENT_DIR (provider points at a dead port, no prompt is sent: no model calls) and a scratch REFRACT_DATA_DIR.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1765.mjs
 // Env: REFRACT_1765_SHOTS_DIR overrides the screenshot/report directory.
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, rmSync, statSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
-import { buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget, gitHead, computeDirty, sha256OfFile, citeScreenshots } from './verify-tauri-scratch-helpers.mjs';
+import { buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget, gitHead, computeDirty, sha256OfFile } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-tauri-560-helpers.mjs';
 import { addRepository, createSessionViaQuickCreate } from './verify-tauri-session-list-helpers.mjs';
 
@@ -21,18 +23,24 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const LOG = 'verify-1765';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
+// The shared target holds whichever lane built last; REFRACT_1765_EXE pins the copy taken right after this lane's own build.
+const EXE_SOURCE = process.env.REFRACT_1765_EXE || path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
 const SHOTS_DIR = process.env.REFRACT_1765_SHOTS_DIR || 'C:/Users/shopwood/refract-live-check-1765';
 const MODEL = 'probe-fake/probe-fake-model';
 const KEY = 'compaction.thresholdPercent';
+const NEW_VALUE = 55;
+const LEGACY_VALUE = 65;
 const ORIGINAL_CONFIG = ['modelRoles:', `  default: ${MODEL}`, 'compaction:', '  thresholdPercent: 60', ''].join('\n');
 const MODELS_YML = ['providers:', '  probe-fake:', '    baseUrl: http://127.0.0.1:1', '    auth: none', '    api: openai-completions', '    models:', '      - id: probe-fake-model', '        name: Probe Fake Model', '        api: openai-completions', '        contextWindow: 200000', '        maxTokens: 1000', ''].join('\n');
-const LEGACY_STORE = { version: 2, overrides: { [KEY]: 70 }, read_limit_migrated: true, thresholds_reset_pending: false };
+const LEGACY_STORE = { version: 2, overrides: { [KEY]: LEGACY_VALUE }, read_limit_migrated: true, thresholds_reset_pending: false };
+const thresholdIs = (text, n) => new RegExp(`thresholdPercent:\\s*${n}\\b`).test(text);
 
 const report = [];
-const shotNames = [];
+const evidenceFiles = [];
+let scenario = '';
 function check(ok, label, evidence) {
-  report.push({ step: label, ok: ok === true, evidence });
-  console.log(`${LOG}: ${ok ? 'PASS' : 'FAIL'} ${label} ${evidence === undefined ? '' : JSON.stringify(evidence)}`);
+  report.push({ scenario, step: label, ok: ok === true, evidence });
+  console.log(`${LOG}: ${scenario} ${ok ? 'PASS' : 'FAIL'} ${label} ${evidence === undefined ? '' : JSON.stringify(evidence)}`);
   if (ok !== true) process.exitCode = 1;
 }
 
@@ -47,7 +55,12 @@ function omp(agentDir, ...args) {
 async function shoot(cdp, name) {
   await sleep(500);
   await cdp.screenshot(path.join(SHOTS_DIR, name));
-  shotNames.push(name);
+  evidenceFiles.push(name);
+}
+
+function keepFile(source, name) {
+  copyFileSync(source, path.join(SHOTS_DIR, name));
+  evidenceFiles.push(name);
 }
 
 async function openAdvanced(cdp) {
@@ -57,68 +70,93 @@ async function openAdvanced(cdp) {
   await cdp.waitFor(`document.body.textContent.includes('File read line limit')`, { timeoutMs: 15_000, label: 'Advanced rendered' });
 }
 
-async function main() {
-  mkdirSync(SHOTS_DIR, { recursive: true });
-  const dataDir = mkdtempSync(path.join(tmpdir(), 'refract-1765-data-'));
-  const agentDir = mkdtempSync(path.join(tmpdir(), 'refract-1765-agent-'));
-  const importSourceDir = mkdtempSync(path.join(tmpdir(), 'refract-1765-import-'));
-  const repoDirBase = mkdtempSync(path.join(tmpdir(), 'refract-1765-repo-'));
-  const repoDir = makeScratchRepo(repoDirBase, 'verify-1765-live');
+async function changeThreshold(cdp) {
+  await openAdvanced(cdp);
+  const input = `document.getElementById(${JSON.stringify(`advanced-${KEY}`)})`;
+  await cdp.waitFor(`!!${input}`, { timeoutMs: 30_000, label: 'threshold input' });
+  await cdp.click(input);
+  await cdp.evaluate(`${input}.select()`);
+  await cdp.send('Input.insertText', { text: String(NEW_VALUE) });
+  await cdp.pressEnter();
+  return input;
+}
+
+async function waitForFile(file, predicate) {
+  let text = '';
+  for (let i = 0; i < 360; i++) {
+    text = existsSync(file) && statSync(file).isFile() ? readFileSync(file, 'utf8') : '';
+    if (predicate(text)) break;
+    await sleep(250);
+  }
+  return text;
+}
+
+/** Runs `body` on one scratch launch of the exe; `seed` prepares the scratch dirs before it starts. */
+async function withApp(name, seed, body) {
+  scenario = name;
+  const dataDir = mkdtempSync(path.join(tmpdir(), `refract-1765${name}-data-`));
+  const agentDir = mkdtempSync(path.join(tmpdir(), `refract-1765${name}-agent-`));
+  const importSourceDir = mkdtempSync(path.join(tmpdir(), `refract-1765${name}-import-`));
+  const repoDirBase = mkdtempSync(path.join(tmpdir(), `refract-1765${name}-repo-`));
+  const repoDir = makeScratchRepo(repoDirBase, `verify-1765-${name}`);
   const worktreesRoot = path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
-  const exeDir = mkdtempSync(path.join(tmpdir(), 'refract-1765-exe-'));
-  const launcherDir = mkdtempSync(path.join(tmpdir(), 'refract-1765-launcher-'));
+  const exeDir = mkdtempSync(path.join(tmpdir(), `refract-1765${name}-exe-`));
+  const launcherDir = mkdtempSync(path.join(tmpdir(), `refract-1765${name}-launcher-`));
   const exe = path.join(exeDir, 'refract-tauri.exe');
   const dirs = [dataDir, agentDir, importSourceDir, repoDirBase, worktreesRoot, exeDir, launcherDir];
-  const configFile = path.join(agentDir, 'config.yml');
-  const overlayFile = path.join(dataDir, 'token-guard-overlay.yml');
   let session;
   try {
     const launcherExe = buildLauncher(launcherDir);
-    copyFileSync(path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe'), exe);
-    report.push({ step: 'build identity', ok: true, evidence: { head: gitHead(REPO_ROOT), dirty: computeDirty(REPO_ROOT), exeSha256: sha256OfFile(exe) } });
+    copyFileSync(EXE_SOURCE, exe);
+    report.push({ scenario, step: 'build identity', ok: true, evidence: { head: gitHead(REPO_ROOT), dirty: computeDirty(REPO_ROOT), exeSha256: sha256OfFile(exe) } });
     check([exeDir, dataDir, agentDir].every((d) => d.startsWith(tmpdir())), 'Isolation: exe, data dir and OMP agent dir are scratch dirs', { exeDir, dataDir, agentDir });
-
     writeFileSync(path.join(agentDir, 'models.yml'), MODELS_YML);
-    writeFileSync(path.join(dataDir, 'token-guard.json'), JSON.stringify(LEGACY_STORE, null, 2));
-    mkdirSync(configFile);
+    writeFileSync(path.join(agentDir, 'config.yml'), ORIGINAL_CONFIG);
+    seed({ dataDir, agentDir });
 
     const port = await getFreePort();
-    const launched = await launchBuiltExe(launcherExe, exe, { port, dataDir, importSourceDir, logFile: path.join(SHOTS_DIR, 'app.log'), extraEnv: { PI_CODING_AGENT_DIR: agentDir } });
+    const logName = `app-${name}.log`;
+    const launched = await launchBuiltExe(launcherExe, exe, { port, dataDir, importSourceDir, logFile: path.join(SHOTS_DIR, logName), extraEnv: { PI_CODING_AGENT_DIR: agentDir } });
+    evidenceFiles.push(logName);
     session = { cdp: await CdpSession.connect(await waitForCdpTarget(port, { timeoutMs: 60_000 })), child: launched.child };
     if (!isTargetOwningPort(port, launched.targetPid)) throw new Error('CDP target not owned by launched pid');
     const { cdp } = session;
-
     await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]') || !!document.querySelector('[aria-label="Settings"]')`, { timeoutMs: 60_000, label: 'Readiness or main screen' });
     if (await cdp.evaluate(`!document.querySelector('[aria-label="Settings"]') && !!document.querySelector('[data-readiness-primary]')`)) {
       await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
       await addRepository(cdp, repoDir);
     }
     await createSessionViaQuickCreate(cdp, path.basename(repoDir));
-    await shoot(cdp, 'session-running.png');
-
-    const overlayBefore = existsSync(overlayFile) ? readFileSync(overlayFile, 'utf8') : '';
-    check(/thresholdPercent:\s*70\b/.test(overlayBefore), 'Running Session launched on the legacy overlay (migration pending, threshold 70)', overlayBefore);
-    const mtimeBefore = existsSync(overlayFile) ? statSync(overlayFile).mtimeMs : 0;
-
-    rmSync(configFile, { recursive: true });
-    writeFileSync(configFile, ORIGINAL_CONFIG);
-    await openAdvanced(cdp);
-    const input = `document.getElementById(${JSON.stringify(`advanced-${KEY}`)})`;
-    await cdp.waitFor(`!!${input}`, { timeoutMs: 30_000, label: 'threshold input' });
-    await cdp.click(input);
-    await cdp.evaluate(`${input}.select()`);
-    await cdp.send('Input.insertText', { text: '55' });
-    await cdp.pressEnter();
-
-    let overlayAfter = '';
-    for (let i = 0; i < 60; i++) {
-      overlayAfter = readFileSync(overlayFile, 'utf8');
-      if (/thresholdPercent:\s*55\b/.test(overlayAfter)) break;
-      await sleep(250);
+    await body({ cdp, dataDir, agentDir });
+  } catch (err) {
+    report.push({ scenario, step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
+    console.error(err);
+    try { if (session) await session.cdp.screenshot(path.join(SHOTS_DIR, `crash-${name}.png`)); } catch {}
+    process.exitCode = 1;
+  } finally {
+    if (session) {
+      session.cdp.close();
+      await stopLauncher(session.child).catch(() => {});
     }
-    check(/thresholdPercent:\s*55\b/.test(overlayAfter) && statSync(overlayFile).mtimeMs > mtimeBefore, 'Settings change rewrote the running Session\'s legacy overlay (threshold 55)', overlayAfter);
-    check(omp(agentDir, 'config', 'get', KEY, '--json') === 55, 'Settings change landed in the global config (threshold 55)', null);
+    for (const dir of dirs) await safeRmSync(dir, LOG);
+  }
+}
+
+async function scenarioA() {
+  await withApp('A', () => {}, async ({ cdp, dataDir, agentDir }) => {
+    const configFile = path.join(agentDir, 'config.yml');
+    await shoot(cdp, 'A-session-running.png');
+    check((await waitForFile(path.join(dataDir, 'token-guard-migration.json'), (t) => t !== '')) !== '', 'Migration finished normally (marker written, no legacy file seeded)', null);
+    check(!existsSync(path.join(dataDir, 'token-guard-overlay.yml')), 'Running Session launched without a legacy overlay', null);
+    const before = omp(agentDir, 'config', 'get', KEY, '--json');
+    check(before !== NEW_VALUE, `Global config holds ${before} before the change (not ${NEW_VALUE})`, before);
+
+    const input = await changeThreshold(cdp);
+    const configText = await waitForFile(configFile, (t) => thresholdIs(t, NEW_VALUE));
+    check(thresholdIs(configText, NEW_VALUE), `Settings change with a Session running wrote thresholdPercent ${NEW_VALUE} to the scratch global config.yml`, configText);
+    check(omp(agentDir, 'config', 'get', KEY, '--json') === NEW_VALUE, `omp config get ${KEY} reads ${NEW_VALUE}`, null);
     check(await cdp.evaluate(`!!document.querySelector('[aria-label="Back to chat"]')`), 'Settings still open and the app alive after the write', null);
+    keepFile(configFile, 'A-config.yml');
 
     const labels = await cdp.evaluate(`(() => ({
       liveRowHasLabel: document.getElementById('advanced-${KEY}-status') !== null,
@@ -126,32 +164,55 @@ async function main() {
     }))()`);
     check(labels.startupRowHasLabel && !labels.liveRowHasLabel, '"Applies to new Sessions" shows on startup-only task.maxConcurrency and not on live compaction.thresholdPercent', labels);
     await cdp.evaluate(`document.getElementById('advanced-task.maxConcurrency-status')?.scrollIntoView({ block: 'center' })`);
-    await shoot(cdp, 'applies-to-new-sessions-label.png');
+    await shoot(cdp, 'A-applies-to-new-sessions-label.png');
     await cdp.evaluate(`${input}.scrollIntoView({ block: 'center' })`);
-    await shoot(cdp, 'live-key-after-change.png');
+    await shoot(cdp, 'A-live-key-after-change.png');
     await cdp.evaluate(`window.scrollTo(0, 0); document.querySelector('main, [role="main"]')?.scrollTo?.(0, 0)`);
     await cdp.click(`Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Optimise token usage')`);
     await cdp.waitFor(`!!document.querySelector('[role="alertdialog"]')`, { timeoutMs: 10_000, label: 'Optimise dialog' });
     const dialogText = await cdp.evaluate(`document.querySelector('[role="alertdialog"]').textContent`);
     check(dialogText.includes('Running Sessions pick up the ones that apply live; the rest apply to new Sessions.') && !dialogText.includes('running Sessions and all other settings are unchanged'), 'Optimise dialog states live keys reach running Sessions and the rest apply to new Sessions', dialogText);
-    await shoot(cdp, 'optimise-dialog.png');
+    await shoot(cdp, 'A-optimise-dialog.png');
     await cdp.click(`Array.from(document.querySelectorAll('[role="alertdialog"] button')).find((b) => b.textContent.trim() === 'Cancel')`);
-    report.push({ step: 'screenshots (sha256)', ok: true, evidence: citeScreenshots(SHOTS_DIR, shotNames) });
-  } catch (err) {
-    report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
-    console.error(err);
-    try { if (session) await session.cdp.screenshot(path.join(SHOTS_DIR, 'crash.png')); } catch {}
-    process.exitCode = 1;
-  } finally {
-    writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
-    if (session) {
-      session.cdp.close();
-      await stopLauncher(session.child).catch(() => {});
-    }
-    for (const dir of dirs) await safeRmSync(dir, LOG);
-  }
+  });
+}
+
+async function scenarioB() {
+  await withApp('B', ({ dataDir }) => {
+    writeFileSync(path.join(dataDir, 'token-guard.json'), JSON.stringify(LEGACY_STORE, null, 2));
+    // The migration records a backup pointer here before it writes anything; a directory makes that atomic rename fail.
+    mkdirSync(path.join(dataDir, 'token-guard-migration-backup.json'));
+  }, async ({ cdp, dataDir, agentDir }) => {
+    const overlayFile = path.join(dataDir, 'token-guard-overlay.yml');
+    const marker = path.join(dataDir, 'token-guard-migration.json');
+    await shoot(cdp, 'B-session-on-legacy-overlay.png');
+    check(!existsSync(marker), 'Migration failed at launch: no success marker, app booted and a Session is running', null);
+    const overlayBefore = existsSync(overlayFile) ? readFileSync(overlayFile, 'utf8') : '';
+    check(thresholdIs(overlayBefore, LEGACY_VALUE), `Running Session launched on the legacy overlay (seeded threshold ${LEGACY_VALUE})`, overlayBefore);
+    keepFile(overlayFile, 'B-overlay-before.yml');
+    const mtimeBefore = statSync(overlayFile).mtimeMs;
+
+    rmSync(path.join(dataDir, 'token-guard-migration-backup.json'), { recursive: true });
+    await changeThreshold(cdp);
+    const overlayAfter = await waitForFile(overlayFile, (t) => thresholdIs(t, NEW_VALUE));
+    check(thresholdIs(overlayAfter, NEW_VALUE) && statSync(overlayFile).mtimeMs > mtimeBefore, `Settings change rewrote the running Session's legacy overlay (threshold ${NEW_VALUE})`, overlayAfter);
+    keepFile(overlayFile, 'B-overlay-after.yml');
+    check(existsSync(marker), 'Migration succeeded on the retry inside the Settings write (marker written)', null);
+    check(omp(agentDir, 'config', 'get', KEY, '--json') === NEW_VALUE, `Global config holds ${NEW_VALUE} too`, null);
+    await shoot(cdp, 'B-after-settings-write.png');
+  });
+}
+
+async function main() {
+  mkdirSync(SHOTS_DIR, { recursive: true });
+  await scenarioA();
+  await scenarioB();
+  const hashes = Object.fromEntries(evidenceFiles.filter((n) => existsSync(path.join(SHOTS_DIR, n))).map((n) => [n, sha256OfFile(path.join(SHOTS_DIR, n))]));
+  writeFileSync(path.join(SHOTS_DIR, 'sha256.json'), JSON.stringify(hashes, null, 2));
+  report.push({ scenario: '', step: 'evidence files (sha256)', ok: true, evidence: hashes });
+  writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify(report, null, 2));
   if (report.some((r) => !r.ok)) process.exitCode = 1;
-  console.log(`${LOG}: done; evidence in ${SHOTS_DIR}`);
+  console.log(`${LOG}: done; evidence in ${SHOTS_DIR}; files: ${readdirSync(SHOTS_DIR).length}`);
 }
 
 main();
