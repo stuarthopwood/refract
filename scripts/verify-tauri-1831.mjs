@@ -208,6 +208,25 @@ async function main() {
     const cancelResult = await waitForToolResult(mock, 2).catch((err) => `no second tool result reached the model: ${err.message}`);
     report.push({ step: 'Esc: tool result the agent received for the cancelled ask', ok: true, evidence: cancelResult });
 
+    // 6a/6b repeated: the first runs above plus four more of each, so five of each in one session with focus recorded per run.
+    const repeats = { '6a': [{ run: 1, samples: afterSubmit }], '6b': [{ run: 1, samples: afterEsc }] };
+    for (let run = 2; run <= 5; run++) {
+      await sendPrompt(cdp, `SECOND ask please, submit run ${run}.`);
+      await cdp.waitFor(`!!${field('Proceed with the rollout?')}`, { timeoutMs: 90_000, label: `submit run ${run} card rendered` });
+      await clickVisible(cdp, `Array.from(${field('Proceed with the rollout?')}?.querySelectorAll('[role="radio"]') ?? []).find((el) => document.getElementById(el.getAttribute('aria-labelledby'))?.textContent.trim() === 'Yes')`);
+      await cdp.waitFor(`(${SUBMIT})?.getAttribute('aria-disabled') === 'false'`, { timeoutMs: 10_000, label: 'Submit enabled' });
+      await clickVisible(cdp, SUBMIT);
+      repeats['6a'].push({ run, samples: await focusAfterCardLeaves(cdp) });
+      await sendPrompt(cdp, `SECOND ask please, esc run ${run}.`);
+      await cdp.waitFor(`!!${field('Proceed with the rollout?')}`, { timeoutMs: 90_000, label: `esc run ${run} card rendered` });
+      await clickVisible(cdp, control('Note', 'input'));
+      await pressEscape(cdp);
+      repeats['6b'].push({ run, samples: await focusAfterCardLeaves(cdp) });
+    }
+    for (const key of ['6a', '6b']) {
+      check(repeats[key].length === 5 && repeats[key].every((r) => r.samples.every((s) => !s.isBody)), `${key} x5. document.activeElement is never body across five runs in one session`, repeats[key].map((r) => ({ run: r.run, activeElement: r.samples.map((s) => `${s.tag}${s.label ? `[${s.label}]` : ''}`) })));
+    }
+
     // 7. After a reload the read-only history card shows the answers.
     await cdp.send('Page.reload');
     const OPEN_FIRST_SESSION = `Array.from(document.querySelectorAll('[data-repository-id] li')).map((li) => Array.from(li.querySelectorAll('button')).find((b) => !(b.getAttribute('aria-label') || '').startsWith('More actions')))[0]`;
@@ -215,9 +234,10 @@ async function main() {
     const sawCard = await cdp.waitFor(`${HISTORY_CARDS}.length > 0`, { timeoutMs: 8_000 }).catch(() => false);
     if (!sawCard) await cdp.click(OPEN_FIRST_SESSION);
     await cdp.waitFor(`${HISTORY_CARDS}.some((c) => c.textContent.includes('Which database?'))`, { timeoutMs: 60_000, label: 'history card for the first ask' });
-    const historyText = await cdp.evaluate(`${HISTORY_CARDS}.find((c) => c.textContent.includes('Which database?')).innerText`);
-    check(needles.every((n) => historyText.includes(n)), '7. After a reload, the read-only history card shows the answers', { historyText });
-    await cdp.evaluate(`${HISTORY_CARDS}.find((c) => c.textContent.includes('Which database?')).scrollIntoView({ block: 'center' })`);
+    const FIRST_CARD = `${HISTORY_CARDS}.find((c) => c.textContent.includes('Which database?'))`;
+    // With a dozen asks in the session the first card sits in a deferred-render region where innerText is empty, so read the DOM text.
+    const historyText = await cdp.evaluate(`${FIRST_CARD}.textContent`);
+    check(needles.every((n) => historyText.includes(n)), '7. After a reload, the read-only history card shows the answers (DOM text of the first ask card)', { historyText });
     await shoot(cdp, '08-history-card-after-reload.png');
 
     report.push({ step: 'wire observations (omp 18.18.3)', ok: true, evidence: wire });

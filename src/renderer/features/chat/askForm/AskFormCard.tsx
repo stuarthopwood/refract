@@ -267,23 +267,22 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
         <CardContent role="status" className="text-sm text-muted-foreground empty:hidden">
           {note}
         </CardContent>
-        {(editing || session.phase === 'answering') && (
-          <CardFooter>
-            <Button size="sm" variant="ghost" aria-disabled={!editing} className="aria-disabled:opacity-50" onClick={() => editing && cancel()}>
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              aria-disabled={!editing || !submittable}
-              aria-busy={session.phase === 'answering'}
-              className="aria-disabled:opacity-50"
-              onClick={() => editing && submittable && submit()}
-            >
-              {session.phase === 'answering' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
-              {session.phase === 'answering' ? 'Submitting...' : 'Submit'}
-            </Button>
-          </CardFooter>
-        )}
+        {/* Stays mounted with the card so the focused button is still in the DOM when the card unmounts. */}
+        <CardFooter>
+          <Button size="sm" variant="ghost" aria-disabled={!editing} className="aria-disabled:opacity-50" onClick={() => editing && cancel()}>
+            Cancel
+          </Button>
+          <Button
+            size="sm"
+            aria-disabled={!editing || !submittable}
+            aria-busy={session.phase === 'answering'}
+            className="aria-disabled:opacity-50"
+            onClick={() => editing && submittable && submit()}
+          >
+            {session.phase === 'answering' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
+            {session.phase === 'answering' ? 'Submitting...' : 'Submit'}
+          </Button>
+        </CardFooter>
       </AskFormShell>
     </div>
   )
