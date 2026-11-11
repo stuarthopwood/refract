@@ -1,7 +1,7 @@
 // Helpers for verify-891-delete-leftovers.mjs (split for the file-size cap): fixture generation,
 // holder processes, registry reads, and driving the real Delete dialog over CDP.
 
-import { mkdirSync, writeFileSync, chmodSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, chmodSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -283,4 +283,13 @@ export async function isSessionListed(cdp, name) {
   return cdp.evaluate(
     `!!Array.from(document.querySelectorAll('[data-session-open]')).find((el) => el.getAttribute('aria-label')?.startsWith(${JSON.stringify(name)}))`
   );
+}
+
+/** `sessions.delete` acks once its checks pass and removal finishes afterwards, so a closed dialog is not proof the
+ * Session is gone: poll the row and the folder before reading either. */
+export async function waitForSessionRemoved(cdp, name, worktreePath, { timeoutMs = 120_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && ((await isSessionListed(cdp, name)) || existsSync(worktreePath))) {
+    await new Promise((r) => setTimeout(r, 500));
+  }
 }

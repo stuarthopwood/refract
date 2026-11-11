@@ -41,7 +41,8 @@ import {
   readDialogError,
   waitForDeleteOutcome,
   waitForSessionAgentRunning,
-  isSessionListed
+  isSessionListed,
+  waitForSessionRemoved
 } from './verify-891-delete-leftovers-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -238,6 +239,7 @@ async function main() {
     const outcomeC = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeC.closed) fail('(c) Retry succeeds after the holder is killed', new Error(`attempts=1 delete failed: ${outcomeC.error}`));
     else {
+      await waitForSessionRemoved(cdp, nameC, sessionC.worktreePath);
       const cRetryGone = !(await isSessionListed(cdp, nameC)) && !existsSync(sessionC.worktreePath);
       if (cRetryGone) ok('(c) Retry succeeds once the cwd-holding process is gone (single attempt)');
       else fail('(c) Retry succeeds after the holder is killed', new Error(`attempts=1 listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)}`));
@@ -284,6 +286,7 @@ async function main() {
     const outcomeD = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeD.closed) fail('(d) Retry succeeds after the holder is killed', new Error(`attempts=1 delete failed: ${outcomeD.error}`));
     else {
+      await waitForSessionRemoved(cdp, nameD, sessionD.worktreePath);
       const dRetryGone = !(await isSessionListed(cdp, nameD)) && !existsSync(sessionD.worktreePath);
       if (dRetryGone) ok('(d) Retry succeeds once the file-holding process is gone (single attempt)');
       else fail('(d) Retry succeeds after the holder is killed', new Error(`attempts=1 listed=${await isSessionListed(cdp, nameD)} exists=${existsSync(sessionD.worktreePath)}`));
