@@ -14,7 +14,7 @@ A Session that has not started its agent has no command list, so the composer `/
 Answers come from the issue's stated behaviour; no grill outcomes were recorded beyond the issue and no question reached Stuart.
 
 - Q: What does the `/` menu show before start? -> A: The last-known command list, instantly. On a new install with no saved list it shows "Starting agent…" instead of "No matching commands".
-- Q: Do Refract-native commands start the agent? -> A: No. `/new`, `/pause` and `/role <role>` run locally without a start. `/models` and bare `/role` already open Settings or the switcher without a start.
+- Q: Do Refract-native commands start the agent? -> A: `/new` and `/pause` run locally without a start. `/role <role>` starts the agent, because applying a role needs a running RPC. `/models` and bare `/role` already open Settings or the switcher without a start.
 - Q: What about any other command? -> A: It starts the agent, waits up to 10 s for OMP's first commands report, validates, and runs exactly once.
 - Q: A started Session? -> A: Unchanged.
 - Q: Double sends? -> A: One in-flight send per Session in the composer, covering the start and the `chat.send` call (not a `/btw` side question's reply); a second submit is ignored until the first resolves, and Send shows `aria-busy` plus a polite "Sending…" status meanwhile.
@@ -29,7 +29,7 @@ Answers come from the issue's stated behaviour; no grill outcomes were recorded 
 
 ### User Story 2 - Native commands do not start the agent (Priority: P1)
 **Acceptance Scenarios**:
-1. **Given** a not-started Session, **When** I send `/pause`, `/new` or `/role <role>` with no attachments, **Then** it runs locally and the agent stays stopped.
+1. **Given** a not-started Session, **When** I send `/pause` or `/new` with no attachments, **Then** it runs locally and the agent stays stopped.
 2. **Given** `/new` on a never-started Session, **Then** it is a no-op, not an error.
 
 ### User Story 3 - Other commands run exactly once (Priority: P1)
@@ -49,7 +49,7 @@ Answers come from the issue's stated behaviour; no grill outcomes were recorded 
 - **FR-001**: One global last-known command list (the most recent non-empty report from any Session's agent, capped at 1 MiB and 500 entries on load) is persisted and served while an agent is not started.
 - **FR-002**: Before a queued command is validated, the backend waits up to 10 s for OMP's first commands report.
 - **FR-003**: With no commands and a not-started or starting Session, the menu's empty state reads "Starting agent…", and a polite live region announces "Starting agent, commands will appear shortly" and then the command count once the list arrives.
-- **FR-004**: `/new`, `/pause` and `/role <role>` skip the forced agent start; `/new` on a never-started Session succeeds without effect.
+- **FR-004**: `/new` and `/pause` skip the forced agent start; `/new` on a never-started Session succeeds without effect.
 - **FR-005**: The composer allows one in-flight start-and-send per Session; it is released before a `/btw` side question's ask, so the side-chat's own running toast guards a second `/btw`.
 - **FR-006**: Started Sessions behave as before.
 

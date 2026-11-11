@@ -19,8 +19,9 @@ describe('isLocalNativeCommand', () => {
     expect(local('/pause now')).toBe(false);
   });
 
-  it('runs /role with a role without the agent, but not bare /role', () => {
-    expect(local('/role planner')).toBe(true);
+  it('starts the agent for /role, bare or with a role', () => {
+    expect(local('/role planner')).toBe(false);
+    expect(local('/role   planner')).toBe(false);
     expect(local('/role')).toBe(false);
   });
 

@@ -102,8 +102,7 @@ export function parseSlashCommand(text: string): ParsedSlashCommand | undefined 
 
 /** Refract-native commands `chat.send` handles itself, so they need no running agent (#1812). */
 export function isLocalNativeCommand({ name, rest }: ParsedSlashCommand): boolean {
-  if (name === 'new' || name === 'pause') return rest === '';
-  return name === 'role' && rest !== '';
+  return (name === 'new' || name === 'pause') && rest === '';
 }
 
 export type SlashInvocationClassification = 'supported' | 'unknown-command' | 'unsupported-arguments';

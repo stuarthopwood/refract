@@ -8,7 +8,7 @@
 - Added: `conversations.rs` `start_new_conversation` returns `Ok(())` for a never-started (Stopped, no process) agent.
 
 ## Frontend (added)
-- `shared/slash-commands.ts`: `isLocalNativeCommand` (`/new`, `/pause` bare; `/role <role>`).
+- `shared/slash-commands.ts`: `isLocalNativeCommand` (`/new`, `/pause` bare).
 - `MessageInput.tsx`: skip `sessions.open(id, true)` for those commands; `sendInFlightRef` wraps `handleSend`; pass `awaitingCommands` to the menu hook.
 - `useSlashMenuCompletion.ts`: `awaitingCommands` turns the empty text into "Starting agent…".
 
