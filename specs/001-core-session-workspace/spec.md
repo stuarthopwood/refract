@@ -2263,6 +2263,12 @@ The developer types a slash command and finds the ones the agent offers. If a se
   "Rechecking…" after a refusal; and an unreadable file list reads "Couldn't list the folder's files.
   Delete still removes everything in it." (f) The dialog's error line is the shared `DialogError`
   component in `src/renderer/components`, used by `ConfirmAlertDialog` and `ReviewDialog`.
+- **FR-126** (new, 2026-11-11, issue #1856; amends spec 008 FR-020): The Keyboard shortcuts dialog MUST keep
+  its header and **Done** button visible at any window height: the shortcut list shrinks to the room left
+  inside the dialog's border and scrolls there, through the shared `ScrollArea`, and never draws outside
+  it. The list is a tab stop, a named `region`, and scrolls with the arrow, Page, Home, and End keys, with
+  its focus ring visible. The shared `ScrollArea` viewport's focus ring is the full-strength `--ring` (3px,
+  inset) whenever any `ScrollArea` viewport is focused, so it reaches 3:1 against the dialog backdrop; the shared `DialogContent` is untouched.
 
 ### Key Entities
 

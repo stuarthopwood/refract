@@ -5521,3 +5521,10 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T439 [US1] `SkillPromptRow.tsx`: pass the summary as `iconTooltip` (hover and keyboard focus), per FR-063 (missing)
 - [ ] T440 Live check a `/skill:<name>` send on a built app (live and after a Session reopen), update `docs/PLAN.md`,
   then `cargo` and `node scripts/ci-local.mjs` per FR-063
+
+## Phase 91: Convergence (#1856 Keyboard shortcuts list overflows the dialog, FR-126)
+
+- [x] T441 [US4] `KeyboardShortcutsDialog.tsx`: give the dialog a `minmax(0,1fr)` middle grid row and put the list in the
+  shared `ScrollArea`, per FR-126 (missing)
+- [x] T442 Live check the dialog at a short window height (list scrolls by keyboard, Done visible), update
+  `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-126

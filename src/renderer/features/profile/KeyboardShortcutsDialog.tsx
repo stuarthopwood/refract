@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { getActions, spokenChord, type Chord } from '@/features/palette/actionRegistry'
 
@@ -58,7 +59,7 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="min-w-0 max-h-[min(560px,calc(100vh-4rem))] sm:max-w-lg"
+        className="min-w-0 max-h-[min(560px,calc(100vh-4rem))] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg"
         onOpenAutoFocus={(event) => {
           event.preventDefault()
           doneRef.current?.focus()
@@ -72,33 +73,36 @@ export function KeyboardShortcutsDialog({ open, onOpenChange, onCloseFocus }: Ke
           <DialogTitle>Keyboard shortcuts</DialogTitle>
           <DialogDescription>The shortcuts Refract supports today.</DialogDescription>
         </DialogHeader>
-        <div tabIndex={0} aria-label="Keyboard shortcuts list" className="flex min-w-0 flex-col gap-4 overflow-y-auto rounded-md focus-visible:outline-2 focus-visible:outline-ring">
-          {groups.map((group) => (
-            <div key={group.heading} className="flex min-w-0 flex-col gap-2">
-              <h3 className="text-xs text-muted-foreground">{group.heading}</h3>
-              <ul className="flex flex-col gap-2">
-                {group.rows.map((row) => (
-                  <li key={row.action} className="flex min-w-0 items-center justify-between gap-2">
-                    <span className="min-w-0 text-sm">{row.action}</span>
-                    <span className="flex shrink-0 items-center gap-2">
-                      {row.chords.map((chord, index) => (
-                        <span key={chord.join('+')} className="flex items-center gap-2">
-                          {index > 0 && <span className="text-xs text-muted-foreground">or</span>}
-                          <KbdGroup aria-hidden>
-                            {chord.map((key) => (
-                              <Kbd key={key}>{key}</Kbd>
-                            ))}
-                          </KbdGroup>
-                          <span className="sr-only">{spokenChord(chord)}</span>
-                        </span>
-                      ))}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        {/* Middle grid row is `minmax(0,1fr)`: the list shrinks to the window and scrolls; header and Done stay visible. */}
+        <ScrollArea className="min-h-0" viewportProps={{ tabIndex: 0, role: 'region', 'aria-label': 'Keyboard shortcuts list' }}>
+          <div className="flex min-w-0 flex-col gap-4 p-1 pr-2">
+            {groups.map((group) => (
+              <div key={group.heading} className="flex min-w-0 flex-col gap-2">
+                <h3 className="text-xs text-muted-foreground">{group.heading}</h3>
+                <ul className="flex flex-col gap-2">
+                  {group.rows.map((row) => (
+                    <li key={row.action} className="flex min-w-0 items-center justify-between gap-2">
+                      <span className="min-w-0 text-sm">{row.action}</span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        {row.chords.map((chord, index) => (
+                          <span key={chord.join('+')} className="flex items-center gap-2">
+                            {index > 0 && <span className="text-xs text-muted-foreground">or</span>}
+                            <KbdGroup aria-hidden>
+                              {chord.map((key) => (
+                                <Kbd key={key}>{key}</Kbd>
+                              ))}
+                            </KbdGroup>
+                            <span className="sr-only">{spokenChord(chord)}</span>
+                          </span>
+                        ))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </ScrollArea>
         <DialogFooter>
           <Button ref={doneRef} variant="outline" onClick={() => onOpenChange(false)}>
             Done

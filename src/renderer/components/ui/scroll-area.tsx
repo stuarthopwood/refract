@@ -2,28 +2,33 @@ import * as React from "react"
 import { cn } from "@/lib/utils"
 import { ScrollArea as ScrollAreaPrimitive } from "radix-ui"
 
+type ScrollAreaViewportProps = Pick<
+  React.ComponentProps<typeof ScrollAreaPrimitive.Viewport>,
+  "tabIndex" | "aria-label" | "role"
+>
+
 function ScrollArea({
   className,
   children,
+  viewportProps,
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  /** Makes the scrolling viewport itself focusable and named, so its inset focus ring shows on every edge. */
+  viewportProps?: ScrollAreaViewportProps
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
       className={cn("relative", className)}
       {...props}
     >
-      {/* #492 (spec 004 FR-022): Radix's own Viewport wraps `children` in an internal
-          `<div style={{ minWidth: '100%', display: 'table' }}>` (measuring natural content
-          width for its scrollbar math); `display: table` sizes that div to its widest row
-          instead of the viewport's own width, so long rows and wrapped paragraphs never
-          actually wrap -- the panel grows sideways and the overflow is clipped instead. The
-          override lives here once so every `ScrollArea` consumer inherits the fix instead of
-          each one re-fighting Radix's internal markup; the focus ring uses `ring-inset` so it
-          stays inside a parent's `overflow-hidden` instead of being clipped. */}
+      {/* Radix wraps `children` in a `display: table` div, so long rows never wrap and the panel
+          grows sideways; the override lives here once for every consumer. The focus ring is
+          `ring-inset` so a parent's `overflow-hidden` can't clip it. */}
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-focus-glow focus-visible:outline-1 [&>div]:block! [&>div]:min-w-0!"
+        {...viewportProps}
+        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring [&>div]:block! [&>div]:min-w-0!"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>
