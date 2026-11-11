@@ -6,19 +6,20 @@ import { mkdirSync, createWriteStream } from 'node:fs';
 import path from 'node:path';
 import { launchViaJobObject } from './verify-tauri-cdp.mjs';
 
-export async function launchBuiltExe(launcherExe, exePath, { port, dataDir, pathPrepend, extraEnv = {}, logFile }) {
+// `baseEnv` replaces `process.env` as the inherited environment, so a check can launch the app with an allowlist.
+export async function launchBuiltExe(launcherExe, exePath, { port, dataDir, pathPrepend, extraEnv = {}, logFile, baseEnv = process.env }) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const webview2DataDir = path.join(path.dirname(exePath), `webview2-data-${stamp}`);
   mkdirSync(webview2DataDir, { recursive: true });
   const pidFile = path.join(path.dirname(exePath), `target-${stamp}.pid`);
   const env = {
-    ...process.env,
+    ...baseEnv,
     WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`,
     WEBVIEW2_USER_DATA_FOLDER: webview2DataDir,
     REFRACT_DATA_DIR: dataDir,
     ...extraEnv
   };
-  if (pathPrepend) env.PATH = `${pathPrepend};${process.env.PATH}`;
+  if (pathPrepend) env.PATH = `${pathPrepend};${baseEnv.PATH}`;
   const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, exePath, [], { cwd: path.dirname(exePath), env });
   if (logFile) {
     const stream = createWriteStream(logFile);
