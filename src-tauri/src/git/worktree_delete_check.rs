@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use super::git::{git, git_raw, GitError, GitErrorCode};
+use super::git::{git, git_raw, shown_path, GitError, GitErrorCode};
 use super::worktree_delete::is_repo_readable;
 use super::worktree_validity::is_worktree_registered;
 use super::worktrees::branch_exists;
@@ -85,7 +85,7 @@ pub async fn delete_check_for_missing_worktree(
         .map_err(|_| {
             GitError::new(
                 GitErrorCode::GitFailed,
-                format!("Refract could not check branch {branch} for unpushed commits, so it cannot say what Delete would lose. Check the branch in your project at {} before choosing Delete.", repo.display()),
+                format!("Refract could not check branch {branch} for unpushed commits, so it cannot say what Delete would lose. Check the branch in your project at {} before choosing Delete.", shown_path(repo)),
             )
         })?;
     let unpushed_commits = count_output.trim().parse::<i64>().unwrap_or(0);
@@ -111,7 +111,7 @@ pub async fn delete_check_for_session(
     .unwrap_or_else(|_| {
         Err(GitError::new(
             GitErrorCode::GitFailed,
-            format!("Refract could not check {} in time, so it cannot say what Delete would lose. Close any program that might be slowing git down, then try again.", worktree_path.display()),
+            format!("Refract could not check {} in time, so it cannot say what Delete would lose. Close any program that might be slowing git down, then try again.", shown_path(worktree_path)),
         ))
     })
 }
@@ -151,7 +151,7 @@ async fn delete_check_for_session_unbounded(
     let count_output = git(worktree_path, &args).await.map_err(|_| {
         GitError::new(
             GitErrorCode::GitFailed,
-            format!("Refract could not check the worktree's detached HEAD for unpushed commits, so it cannot say what Delete would lose. Check {} before choosing Delete.", worktree_path.display()),
+            format!("Refract could not check the worktree's detached HEAD for unpushed commits, so it cannot say what Delete would lose. Check {} before choosing Delete.", shown_path(worktree_path)),
         )
     })?;
     let unpushed_commits = count_output.trim().parse::<i64>().unwrap_or(0);

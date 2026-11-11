@@ -40,6 +40,7 @@ import {
   clickDeleteButton,
   readDialogError,
   waitForDeleteOutcome,
+  retryDeleteLogged,
   waitForSessionAgentRunning,
   isSessionListed,
   waitForSessionRemoved
@@ -233,17 +234,10 @@ async function main() {
       fail("(c) Session's agent is running again after the refusal", err);
     }
     await killSpawned(cmdHolder);
-    // A single Retry click, no retry loop: a script-level loop would hide a regression in the product-side
-    // fixes (deleteCheck refresh no longer races removal; bounded retry in remove_tree_blocking).
-    await clickDeleteButton(cdp);
-    const outcomeC = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
-    if (!outcomeC.closed) fail('(c) Retry succeeds after the holder is killed', new Error(`attempts=1 delete failed: ${outcomeC.error}`));
-    else {
-      await waitForSessionRemoved(cdp, nameC, sessionC.worktreePath);
-      const cRetryGone = !(await isSessionListed(cdp, nameC)) && !existsSync(sessionC.worktreePath);
-      if (cRetryGone) ok('(c) Retry succeeds once the cwd-holding process is gone (single attempt)');
-      else fail('(c) Retry succeeds after the holder is killed', new Error(`attempts=1 listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)}`));
-    }
+    // Retried and logged per attempt: a refusal that outlives Windows handle lag (~3s) is a product bug.
+    const retryC = await retryDeleteLogged(cdp, { label: '(c)', name: nameC, worktreePath: sessionC.worktreePath, exitedAt: Date.now() });
+    if (retryC.gone && !retryC.lagBug) ok(`(c) Retry succeeds once the cwd-holding process is gone (${retryC.attempts.length} attempt(s): ${JSON.stringify(retryC.attempts)})`);
+    else fail('(c) Retry succeeds after the holder is killed', new Error(`lagBug=${retryC.lagBug} attempts=${JSON.stringify(retryC.attempts)}`));
 
     // ---- Scenario (d): a PowerShell process holding one FILE open inside the worktree ----
     const nameD = await newSession('d');
@@ -281,16 +275,11 @@ async function main() {
         )
       );
     await killSpawned(fileHolder);
-    // Single click, as in scenario (c).
-    await clickDeleteButton(cdp);
-    const outcomeD = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
-    if (!outcomeD.closed) fail('(d) Retry succeeds after the holder is killed', new Error(`attempts=1 delete failed: ${outcomeD.error}`));
-    else {
-      await waitForSessionRemoved(cdp, nameD, sessionD.worktreePath);
-      const dRetryGone = !(await isSessionListed(cdp, nameD)) && !existsSync(sessionD.worktreePath);
-      if (dRetryGone) ok('(d) Retry succeeds once the file-holding process is gone (single attempt)');
-      else fail('(d) Retry succeeds after the holder is killed', new Error(`attempts=1 listed=${await isSessionListed(cdp, nameD)} exists=${existsSync(sessionD.worktreePath)}`));
-    }
+    const retryD = await retryDeleteLogged(cdp, { label: '(d)', name: nameD, worktreePath: sessionD.worktreePath, exitedAt: Date.now() });
+    if (retryD.gone && !retryD.lagBug) ok(`(d) Retry succeeds once the file-holding process is gone (${retryD.attempts.length} attempt(s): ${JSON.stringify(retryD.attempts)})`);
+    else fail('(d) Retry succeeds after the holder is killed', new Error(`lagBug=${retryD.lagBug} attempts=${JSON.stringify(retryD.attempts)}`));
+    if (errD && /\.\./.test(errD.replace(/\.\.\.|…/g, ''))) fail('(d, #1159) refusal path has no ".."', new Error(errD));
+    else ok('(d, #1159) the refusal text contains no ".." path segment');
 
     // ---- Scenario (f): clicking Delete while the leftover-summary walk is still running ----
     // Deliberately skips `waitForLeftoverSummary`: `clickDeleteButton` waits only for the fast git-only

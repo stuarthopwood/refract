@@ -293,3 +293,25 @@ export async function waitForSessionRemoved(cdp, name, worktreePath, { timeoutMs
     await new Promise((r) => setTimeout(r, 500));
   }
 }
+
+/** Clicks Retry until the Session is gone, logging every attempt's start (ms since the holder exited) and refusal text.
+ * A refusal on an attempt that STARTED more than `lagMs` after the exit is a product bug, not Windows handle lag. */
+export async function retryDeleteLogged(cdp, { label, name, worktreePath, exitedAt, maxAttempts = 8, lagMs = 3000 }) {
+  const attempts = [];
+  for (let n = 1; n <= maxAttempts; n++) {
+    const startMs = Date.now() - exitedAt;
+    await clickDeleteButton(cdp);
+    const outcome = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
+    if (outcome.closed) {
+      await waitForSessionRemoved(cdp, name, worktreePath);
+      const gone = !(await isSessionListed(cdp, name)) && !existsSync(worktreePath);
+      attempts.push({ n, startMs, endMs: Date.now() - exitedAt, result: gone ? 'removed' : 'acked-but-present' });
+      console.log(`${label} Retry attempt ${n}: start +${startMs}ms after holder exit, ${gone ? 'REMOVED' : 'ACKED BUT STILL PRESENT'}`);
+      return { attempts, gone, lagBug: attempts.some((a) => a.refusal && a.startMs > lagMs) };
+    }
+    attempts.push({ n, startMs, endMs: Date.now() - exitedAt, refusal: outcome.error });
+    console.log(`${label} Retry attempt ${n}: start +${startMs}ms after holder exit, REFUSED: ${outcome.error}`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return { attempts, gone: false, lagBug: attempts.some((a) => a.refusal && a.startMs > lagMs) };
+}
