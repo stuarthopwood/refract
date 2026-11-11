@@ -100,6 +100,17 @@ function analyseWire() {
   };
 }
 
+const CANCEL_SENTENCE = 'Ask tool was cancelled by the user';
+
+/** Finds, in the wire log, the ask `tool_execution_end` carrying the cancel sentence and whether the turn then ended with stopReason "aborted". */
+function analyseCancelWire() {
+  const lines = readJsonl(WIRE_LOG).filter((l) => l.dir === 'omp->refract');
+  const endIdx = lines.findIndex((l) => l.frame?.type === 'tool_execution_end' && l.frame.toolName === 'ask' && JSON.stringify(l.frame.result ?? '').includes(CANCEL_SENTENCE));
+  const end = endIdx < 0 ? null : lines[endIdx].frame;
+  const aborted = endIdx >= 0 && lines.slice(endIdx).some((l) => JSON.stringify(l.frame ?? '').includes('"stopReason":"aborted"'));
+  return { found: end !== null, isError: end?.isError === true, aborted, result: end?.result ?? null };
+}
+
 async function main() {
   mkdirSync(SHOTS_DIR, { recursive: true });
   writeFileSync(WIRE_LOG, '');
@@ -201,12 +212,21 @@ async function main() {
     await clickVisible(cdp, control('Note', 'input'));
     await shoot(cdp, '06-second-ask-focus-in-card-before-esc.png');
     await pressEscape(cdp);
+    // The card shows its Cancelled note only until the replacement row mounts, so it is captured before waiting for focus to settle.
+    const sawCancelled = await cdp.waitFor(`Array.from(document.querySelectorAll('[role="status"]')).some((el) => el.textContent.trim() === 'Cancelled')`, { timeoutMs: 5_000, label: 'Cancelled note on the card' }).then(() => true, () => false);
+    await shoot(cdp, '06b-cancelled-card-state.png');
+    check(sawCancelled, '6c. After Esc, the card shows its Cancelled state', { sawCancelled });
     const afterEsc = await focusAfterCardLeaves(cdp);
     check(afterEsc.every((s) => !s.isBody), '6b. After Esc on a second ask, document.activeElement is not body (sampled for 1s)', afterEsc);
     await shoot(cdp, '07-after-esc-cancel-focus.png');
     // A cancelled ask may end the turn with no further model request, so the absence is recorded rather than failed.
     const cancelResult = await waitForToolResult(mock, 2).catch((err) => `no second tool result reached the model: ${err.message}`);
     report.push({ step: 'Esc: tool result the agent received for the cancelled ask', ok: true, evidence: cancelResult });
+    // The wire log is written by the omp wrapper as frames arrive, so the aborted turn end can lag the tool result by a moment.
+    await sleep(1_500);
+    const cancelWire = analyseCancelWire();
+    check(cancelWire.found && cancelWire.isError, `6d. Wire: the ask tool_execution_end carries "${CANCEL_SENTENCE}" with isError true`, cancelWire);
+    check(cancelWire.aborted, '6e. Wire: the cancelled turn ends with stopReason "aborted"', cancelWire);
 
     // 6a/6b repeated: the first runs above plus four more of each, so five of each in one session with focus recorded per run.
     const repeats = { '6a': [{ run: 1, samples: afterSubmit }], '6b': [{ run: 1, samples: afterEsc }] };
