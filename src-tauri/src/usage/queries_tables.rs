@@ -100,25 +100,24 @@ fn tool_breakdown(
     ctx: &QueryCtx,
 ) -> QueryResult<Vec<BreakdownRow>> {
     let per_call = f.needs_tool_calls();
-    let (w, sql_body) = if per_call {
+    let (w, cols, from) = if per_call {
         (
             f.build(&TOOL_CALLS, ctx)?,
-            "SELECT tool, count(*), coalesce(sum(coalesce(is_error,0)),0), \
-             coalesce(sum(result_chars),0), coalesce(sum(cost_usd),0) FROM tool_calls"
-                .to_string(),
+            "tool, count(*), coalesce(sum(coalesce(is_error,0)),0), \
+             coalesce(sum(result_chars),0), coalesce(sum(cost_usd),0)",
+            "tool_calls".to_string(),
         )
     } else {
         let mut w = f.build_dims(&TOOL_ROLLUP, ctx)?;
         let src = f.rollup_source(&mut w, Rollup::Tools, ctx, false)?;
         (
             w,
-            format!(
-                "SELECT tool, sum(calls), sum(errors), sum(result_chars), sum(cost_usd) FROM {src}"
-            ),
+            "tool, sum(calls), sum(errors), sum(result_chars), sum(cost_usd)",
+            src,
         )
     };
     let sql = format!(
-        "{sql_body}{} GROUP BY tool ORDER BY 5 DESC, 2 DESC, tool LIMIT {BREAKDOWN_LIMIT}",
+        "SELECT {cols} FROM {from}{} GROUP BY tool ORDER BY 5 DESC, 2 DESC, tool LIMIT {BREAKDOWN_LIMIT}",
         w.sql()
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -137,13 +136,18 @@ fn tool_breakdown(
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    fill_cost_share(&mut rows);
+    // The listing is cut at BREAKDOWN_LIMIT, so the denominator is summed over the whole window.
+    let total: f64 = conn.query_row(
+        &format!("SELECT coalesce(sum(cost_usd), 0) FROM {from}{}", w.sql()),
+        rusqlite::params_from_iter(w.params()),
+        |r| r.get(0),
+    )?;
+    fill_cost_share(&mut rows, total);
     Ok(rows)
 }
 
 /// Each tool's fraction of the window's tool spend; left unset when nothing was priced.
-fn fill_cost_share(rows: &mut [BreakdownRow]) {
-    let total: f64 = rows.iter().map(|r| r.usd).sum();
+fn fill_cost_share(rows: &mut [BreakdownRow], total: f64) {
     if total > 0.0 {
         for row in rows {
             row.cost_share = Some(row.usd / total);

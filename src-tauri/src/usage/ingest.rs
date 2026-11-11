@@ -354,7 +354,7 @@ impl Pass<'_> {
                 .and_then(|u| u.get("cost"))
                 .and_then(|c| c.get("total")),
         );
-        let share = total / calls.len() as f64;
+        let per_call_usd = total / calls.len() as f64;
         let (_, cur_model) = split_model(&self.state.cur_model);
         let model = text_of(message.get("model")).unwrap_or(cur_model);
         for call in calls {
@@ -370,7 +370,7 @@ impl Pass<'_> {
                     entry_id,
                     ts,
                     tool,
-                    cost_usd: share,
+                    cost_usd: per_call_usd,
                     project_label: &self.state.project_label,
                     model,
                     reasoning: &self.state.cur_reasoning,

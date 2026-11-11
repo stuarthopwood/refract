@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Live CDP check for #1845: a version 3 usage.db whose dollar columns are still named `cost_share`
 // is migrated in place (history kept), and the by-tool table shows each tool's Cost share as a
-// percentage of the window's tool spend, or an em dash when nothing in the window was priced.
+// percentage of the window's tool spend, or a labelled dash when nothing in the window was priced.
 // Scratch REFRACT_DATA_DIR and sessions folder; never touches %APPDATA%.
 // Usage: CARGO_TARGET_DIR=<shared target dir> SHOTS_DIR=<evidence dir> node scripts/verify-tauri-1845.mjs
 
@@ -194,10 +194,16 @@ async function main() {
     await cdp.screenshot(path.join(SHOTS_DIR, '1-tools-cost-share-percentages.png'));
 
     await openUsageWith({ range: 'all', project: 'free' });
-    page = await cdp.evaluate(toolText);
-    check(page.includes('edit') && page.includes('\u2014'), 'an unpriced window shows an em dash');
+    // The Cost share cell of the unpriced `edit` row, not the page text: a dash with an accessible name.
+    const emptyCell = await cdp.evaluate(
+      `(() => { const table = [...document.querySelectorAll('section[aria-label="Usage"] table')].find((t) => /cost share/i.test(t.querySelector('thead')?.textContent ?? ''));
+        const row = [...(table?.querySelectorAll('tbody tr') ?? [])].find((r) => r.cells[0]?.textContent.trim() === 'edit');
+        const img = row?.cells[row.cells.length - 1]?.querySelector('[role="img"]');
+        return row ? { text: row.cells[row.cells.length - 1].textContent.trim(), label: img?.getAttribute('aria-label') ?? null } : null; })()`
+    );
+    check(emptyCell?.text === '-' && emptyCell?.label === 'No priced calls', 'the unpriced edit row shows a dash named "No priced calls" in its Cost share cell', emptyCell);
     await scrollToolsIntoView();
-    await cdp.screenshot(path.join(SHOTS_DIR, '2-tools-cost-share-em-dash.png'));
+    await cdp.screenshot(path.join(SHOTS_DIR, '2-tools-cost-share-no-priced-calls.png'));
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     failures.push('run crashed');
@@ -206,7 +212,7 @@ async function main() {
     try {
       writeFileSync(
         path.join(SHOTS_DIR, 'report.json'),
-        JSON.stringify({ gitHead: head, note: 'Earlier failed run did not set COPILOT_HOME and read the real Copilot data folder (read-only, nothing written).', failures, results: report }, null, 2)
+        JSON.stringify({ gitHead: head, failures, results: report }, null, 2)
       );
     } catch (writeErr) {
       console.error(`${LOG}: failed to write evidence: ${writeErr}`);

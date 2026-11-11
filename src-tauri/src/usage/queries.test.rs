@@ -231,6 +231,42 @@ fn tool_cost_share_is_absent_when_no_call_in_the_window_was_priced() {
 }
 
 #[test]
+fn per_call_tool_breakdown_prices_and_shares_only_the_filtered_model() {
+    let conn = scratch_db();
+    record_tool_call(&conn, "file", &priced_tool_call("1", "bash", 3.0)).unwrap();
+    record_tool_call(&conn, "file", &priced_tool_call("2", "read", 1.0)).unwrap();
+    let other_model = ToolCallRow {
+        model: "m2",
+        ..priced_tool_call("3", "write", 4.0)
+    };
+    record_tool_call(&conn, "file", &other_model).unwrap();
+    let f = Filters {
+        model: Some("m1".into()),
+        ..filters("7d")
+    };
+    assert!(f.needs_tool_calls());
+    let rows = breakdown(&conn, &f, BreakdownBy::Tool, &ctx()).unwrap();
+    assert_eq!(rows.len(), 2);
+    assert_eq!((rows[0].label.as_str(), rows[0].cost_share), ("bash", Some(0.75)));
+    assert!((rows[0].usd - 3.0).abs() < 1e-9);
+    assert_eq!(rows[1].cost_share, Some(0.25));
+}
+
+#[test]
+fn tool_cost_share_divides_by_the_whole_window_when_the_listing_is_cut() {
+    let conn = scratch_db();
+    let tools = 501;
+    for i in 0..tools {
+        let (id, tool) = (format!("c{i}"), format!("tool-{i:03}"));
+        record_tool_call(&conn, "file", &priced_tool_call(&id, &tool, 1.0)).unwrap();
+    }
+    let rows = breakdown(&conn, &filters("7d"), BreakdownBy::Tool, &ctx()).unwrap();
+    assert_eq!(rows.len(), 500);
+    let expected = 1.0 / tools as f64;
+    assert!(rows.iter().all(|r| r.cost_share == Some(expected)));
+}
+
+#[test]
 fn half_hour_zone_day_buckets_read_exact_rows() {
     let conn = scratch_db();
     let row = MessageRow {
