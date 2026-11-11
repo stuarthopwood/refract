@@ -278,7 +278,8 @@ const refract: RefractApi = {
     ensureWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_ENSURE_WATCHING, sessionId)
   },
   agentTools: {
-    result: (sessionId, callId, reply) => request<void>(IPC_REQUESTS.AGENT_TOOLS_RESULT, sessionId, callId, reply)
+    result: (sessionId, callId, reply) => request<void>(IPC_REQUESTS.AGENT_TOOLS_RESULT, sessionId, callId, reply),
+    started: (sessionId, callId) => request<{ accepted: boolean }>(IPC_REQUESTS.AGENT_TOOLS_STARTED, sessionId, callId)
   },
 
   settings: {

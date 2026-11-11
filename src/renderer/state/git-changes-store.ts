@@ -20,8 +20,9 @@ interface GitChangesStoreState {
   requestShowFile(sessionId: string, path: string): void
   clearShowFileRequest(sessionId: string): void
   load(sessionId: string): Promise<void>
-  stage(sessionId: string, paths: string[]): Promise<Result<void>>
-  unstage(sessionId: string, paths: string[]): Promise<Result<void>>
+  /** `awaitRefresh: false` returns once git answers; the follow-up reload still runs. */
+  stage(sessionId: string, paths: string[], options?: { awaitRefresh?: boolean }): Promise<Result<void>>
+  unstage(sessionId: string, paths: string[], options?: { awaitRefresh?: boolean }): Promise<Result<void>>
   stageAll(sessionId: string, group: 'changes' | 'untracked'): Promise<Result<void>>
   unstageAll(sessionId: string): Promise<Result<void>>
   commit(sessionId: string, message: string): Promise<Result<void>>
@@ -206,14 +207,14 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
     }
   },
 
-  async stage(sessionId, paths) {
+  async stage(sessionId, paths, options) {
     if (paths.length === 0) return { ok: true, value: undefined }
-    return runAction(sessionId, set, get, () => window.refract.gitChanges.stage(sessionId, paths))
+    return runAction(sessionId, set, get, () => window.refract.gitChanges.stage(sessionId, paths), options)
   },
 
-  async unstage(sessionId, paths) {
+  async unstage(sessionId, paths, options) {
     if (paths.length === 0) return { ok: true, value: undefined }
-    return runAction(sessionId, set, get, () => window.refract.gitChanges.unstage(sessionId, paths))
+    return runAction(sessionId, set, get, () => window.refract.gitChanges.unstage(sessionId, paths), options)
   },
 
   async stageAll(sessionId, group) {

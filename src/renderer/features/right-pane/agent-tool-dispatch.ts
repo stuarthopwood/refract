@@ -6,6 +6,9 @@ import { PANEL_ACTION_HANDLERS, fail, showFile, type AgentToolOutcome, type Pane
 
 type ToolInput = Record<string, unknown> | undefined
 
+/** Tells Rust the action is about to change files; resolves false when Rust refused. */
+export type StartedSignal = () => Promise<boolean>
+
 /** FR-016: the right pane shows the front Session only, so any other caller gets `panel_unavailable`. */
 function frontSessionCheck(sessionId: string): AgentToolOutcome | null {
   return focusedPaneSessionId() === sessionId ? null : fail('panel_unavailable', 'This Session is not the front Session, so its panels are not shown.')
@@ -49,26 +52,26 @@ function resolve(sessionId: string, panelId: unknown): { ok: true; id: PanelId; 
   return { ok: true, id: panel.id, name: panel.name }
 }
 
-export async function openPanel(sessionId: string, panelId: unknown, input: ToolInput): Promise<AgentToolOutcome> {
+export async function openPanel(sessionId: string, panelId: unknown, input: ToolInput, started: StartedSignal): Promise<AgentToolOutcome> {
   const target = resolve(sessionId, panelId)
   if (!target.ok) return target.outcome
   const panel = ALL_PANELS.find((candidate) => candidate.id === target.id)
   const given = input ?? {}
   if (!panel?.openInputSchema && Object.keys(given).length > 0) return fail('invalid_input', `${target.name} takes no open input.`)
-  const context: PanelActionContext = { sessionId, open: (prepare) => openWithoutFocus(sessionId, target.id, target.name, prepare) }
+  const context: PanelActionContext = { sessionId, open: (prepare) => openWithoutFocus(sessionId, target.id, target.name, prepare), started }
   // Only Git changes declares an open input today: selecting a file is its open-time effect.
   if (target.id === 'git-changes' && given.path !== undefined) return showFile(context, given)
   context.open()
   return { ok: true, value: { panelId: target.id } }
 }
 
-export async function invokePanelAction(sessionId: string, panelId: unknown, action: unknown, input: ToolInput): Promise<AgentToolOutcome> {
+export async function invokePanelAction(sessionId: string, panelId: unknown, action: unknown, input: ToolInput, started: StartedSignal): Promise<AgentToolOutcome> {
   const target = resolve(sessionId, panelId)
   if (!target.ok) return target.outcome
   const handler = PANEL_ACTION_HANDLERS[target.id]?.[String(action)]
   if (!handler) return fail('unknown_action', `${target.name} has no action ${String(action)}.`)
   try {
-    return await handler({ sessionId, open: (prepare) => openWithoutFocus(sessionId, target.id, target.name, prepare) }, input ?? {})
+    return await handler({ sessionId, open: (prepare) => openWithoutFocus(sessionId, target.id, target.name, prepare), started }, input ?? {})
   } catch (err) {
     return fail('action_failed', err instanceof Error ? err.message : String(err))
   }

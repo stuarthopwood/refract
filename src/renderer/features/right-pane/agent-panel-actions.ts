@@ -11,6 +11,8 @@ export interface PanelActionContext {
   sessionId: string
   /** Opens the panel without moving focus; actions call it only after their input checked out, so a rejected call opens nothing. `prepare` runs just before the pane shows the panel, for state it must not render without. */
   open(prepare?: () => void): void
+  /** A file-changing action calls this after its checks and just before it changes files; `false` means Rust gave up on the call and the action must change nothing. */
+  started(): Promise<boolean>
 }
 
 export type PanelActionHandler = (context: PanelActionContext, input: Record<string, unknown>) => Promise<AgentToolOutcome>
@@ -54,9 +56,13 @@ async function toggleStage(context: PanelActionContext, input: Record<string, un
   if (!group) return fail('invalid_input', `${path} is not a changed file in this Session.`)
   if (staging && group === 'staged') return fail('invalid_input', `${path} is already staged.`)
   if (!staging && group !== 'staged') return fail('invalid_input', `${path} is not staged.`)
+  // Last stop before the change: Rust refuses once it has given up on the call, and then nothing may change.
+  if (!(await context.started())) return fail('action_failed', 'The call had already timed out, so nothing was changed.')
   context.open()
   const store = useGitChangesStore.getState()
-  const result = staging ? await store.stage(context.sessionId, [path]) : await store.unstage(context.sessionId, [path])
+  // The reply does not depend on the follow-up reload, so it must not spend the call's window.
+  const options = { awaitRefresh: false }
+  const result = staging ? await store.stage(context.sessionId, [path], options) : await store.unstage(context.sessionId, [path], options)
   return result.ok ? succeed({ path, staged: staging }) : fail('action_failed', result.error.message)
 }
 

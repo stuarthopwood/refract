@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
 // Issue #510 (PLAN.md row A0): the repo had no TypeScript test runner before this story (noted
@@ -7,6 +8,8 @@ import { defineConfig } from 'vitest/config';
 // renderer/shared logic (`src/renderer/**`, `src/shared/**`) -- no jsdom/browser environment
 // needed either way.
 export default defineConfig({
+  // Mirrors the `@/*` path in tsconfig.web.json so renderer modules that import `@/state` resolve.
+  resolve: { alias: { '@': fileURLToPath(new URL('./src/renderer', import.meta.url)) } },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
