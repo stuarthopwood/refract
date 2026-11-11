@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feat/1831-ask-form`
 **Created**: 2026-11-11
-**Status**: Specified, clarified (all three deferred questions answered 2026-11-11), planned; parser and frame matcher implemented, card and wiring not yet built
+**Status**: Current; implemented, live-checked and under review on PR #1938
 **Input**: GitHub issue #1831 (p0, bug, chat). Trusted input is the github-actions triage comment plus the 2026-11-10 re-grill after the #520 probes, which supersedes the issue's route (a). Grill outcomes from Stuart on 2026-11-11 are recorded below. Route: specify, clarify, plan, tasks, analyze, implement.
 
 ## Problem
@@ -24,7 +24,7 @@ No question reached Stuart in this step; every answer below was decided before i
 
 ### Session 2026-11-11 (Stuart's answers to the deferred clarifications)
 - Q: Does the combined card have a Cancel? -> A: Yes. The card has Cancel, and Esc does the same. Cancel cancels every frame still pending, exactly as today's per-field Cancel does for one frame.
-- Q: Is Submit blocked while a field is empty? -> A: Only for a field the HTML marks `required`: Submit stays disabled until it is filled. For a `required` radio or checkbox group that means at least one choice; an Other choice whose text box is empty counts as unanswered. Fields not marked `required` may be blank.
+- Q: Is Submit blocked while a field is empty? -> A: A radio group can never be left blank (the agent's frame needs a choice), so Submit stays disabled until every radio group is answered; there is no mid-form fallback. A checkbox, text or textarea field blocks Submit only when the HTML marks it `required`. An Other choice whose text box is empty counts as unanswered.
 - Q: Which field types get the combined card? -> A: Radio, checkbox, text and textarea. Any other field type (dropdown, number, date, password, file, and so on) sends the whole ask to today's per-field cards.
 
 ## User Scenarios & Testing
@@ -39,7 +39,7 @@ No question reached Stuart in this step; every answer below was decided before i
 ### User Story 2 - "Other" (Priority: P1)
 **Acceptance Scenarios**:
 1. **Given** a radio or checkbox group, **When** I pick Other, **Then** a text box appears inside the card and its text is sent as my answer.
-2. **Given** Other is picked and its text box is empty, **Then** the choice counts as unanswered: if the field is `required`, Submit stays disabled; if not, the field is sent as no selection.
+2. **Given** Other is picked and its text box is empty, **Then** the choice counts as unanswered: for a radio group or a `required` field, Submit stays disabled; for an optional checkbox group, the field is sent as no selection.
 
 ### User Story 3 - Safe fallback (Priority: P1)
 **Acceptance Scenarios**:
@@ -49,7 +49,7 @@ No question reached Stuart in this step; every answer below was decided before i
 ### User Story 5 - Cancel and required fields (Priority: P1)
 **Acceptance Scenarios**:
 1. **Given** the combined card, **When** I press Cancel or Esc, **Then** every frame still pending is cancelled, as today's per-field Cancel does, and the card shows as cancelled.
-2. **Given** a field marked `required` in the HTML that is empty (or an Other choice with an empty text box), **Then** Submit is disabled until it is filled.
+2. **Given** a radio group, or a field marked `required` in the HTML, that is unanswered (or an Other choice with an empty text box), **Then** Submit is disabled until each radio group and required field is answered.
 3. **Given** a field not marked `required`, **When** it is blank, **Then** Submit is enabled and the blank field is sent as an empty answer.
 
 ### User Story 4 - Timeout and history (Priority: P2)
@@ -74,8 +74,9 @@ No question reached Stuart in this step; every answer below was decided before i
 - **FR-007**: History renders `details.answers` read-only in the same card; an empty answer reads "No selection".
 - **FR-008**: Asks that carry no `html` keep today's behaviour unchanged.
 - **FR-009**: The card is keyboard-operable, every field has an accessible name from its question, and state changes (submitted, timed out) are announced politely.
-- **FR-010**: The combined card has Cancel, and Esc does the same. It cancels every frame still pending, as today's per-field Cancel does.
-- **FR-011**: Submit is disabled while a field marked `required` in the HTML is unanswered. An Other choice with an empty text box counts as unanswered. Fields not marked `required` may be blank.
+- **FR-010**: The combined card has a Cancel button, which works from anywhere. Esc does the same only while focus is inside the card and not inside a text input or textarea. It cancels every frame still pending, as today's per-field Cancel does.
+- **FR-011**: Submit is disabled while any radio group, or any field marked `required` in the HTML, is unanswered; a radio group can never be blank, so there is no mid-form fallback. An Other choice with an empty text box counts as unanswered. Other fields may be blank. A required checkbox group is not enforced.
+- **FR-012**: The parser accepts at most 100 fields and 200 options per field; beyond either cap it returns no form and the ask falls back to per-field cards. Parses are cached (16 entries).
 
 ## Success Criteria
 - **SC-001**: On OMP 18.18.3, an ask with several fields shows exactly one card, not one card per field.
