@@ -305,3 +305,25 @@ pub fn normalize_git_path(p: &str) -> String {
         with_platform_seps
     }
 }
+
+/// A path for a user-facing message: `.`/`..` collapsed lexically (a Session worktree lives at
+/// `<repo>/../pinion-worktrees/...`, so the raw path always carries a `..`), then `normalize_git_path`.
+/// Display only; never use the result to touch the filesystem.
+pub fn shown_path(path: &Path) -> String {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if matches!(out.components().next_back(), Some(Component::Normal(_))) {
+                    out.pop();
+                } else {
+                    out.push("..");
+                }
+            }
+            other => out.push(other.as_os_str()),
+        }
+    }
+    normalize_git_path(&out.to_string_lossy())
+}

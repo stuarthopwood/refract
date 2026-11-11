@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::remove_tree::{checked_canonical_path, ContainmentCheck};
 
-use super::git::{normalize_git_path, GitError, GitErrorCode};
+use super::git::{shown_path, GitError, GitErrorCode};
 use super::worktrees::worktrees_root;
 
 mod diag;
@@ -17,9 +17,9 @@ pub struct Holder {
     pub pid: u32,
 }
 
-// Shown paths go through `normalize_git_path` so a user never sees a raw `..\` or mixed-slash path.
+// Shown paths are lexically cleaned (`..` collapsed, separators normalised) so a user never sees one.
 fn shown(path: &Path) -> String {
-    normalize_git_path(&path.to_string_lossy())
+    shown_path(path)
 }
 
 // Cheap containment guard so a bad registry entry never reaches Restart Manager or the probe.
@@ -512,5 +512,13 @@ mod tests {
         assert!(msg.contains("could not check"), "{msg}");
         assert!(msg.contains("choose Retry"), "{msg}");
         assert!(!msg.contains("outside"), "{msg}");
+    }
+
+    #[test]
+    fn shown_paths_collapse_dot_dot_so_a_session_path_never_shows_one() {
+        let raw = Path::new("C:\\r\\scratch-repo\\..\\pinion-worktrees\\scratch-repo\\brave-puffin");
+        let shown = shown(raw);
+        assert!(!shown.contains(".."), "{shown}");
+        assert!(shown.ends_with("pinion-worktrees\\scratch-repo\\brave-puffin") || shown.ends_with("pinion-worktrees/scratch-repo/brave-puffin"), "{shown}");
     }
 }
