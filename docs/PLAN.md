@@ -1235,3 +1235,5 @@ Also filed 2026-11-10 (Stuart): **#1880** (`p1`, `feature`, `pull-requests`), Fe
 Also filed 2026-11-10 (Stuart): **#1882** (`p1`, `design`), UI Polish: Charts: tooltips show each point's value.
 
 Also filed 2026-11-10 (Stuart): **#1885** (`p1`, `design`, `settings`), UI Polish: Settings: Appearance: theme files get a JSON Schema and a format help page.
+
+Also filed 2026-11-11 (Stuart): **#1890** (`p1`, `bug`), Bug: Pause: resuming a stopped, paused Session leaves it stopped; Stop idle stops paused Sessions.
