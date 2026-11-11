@@ -29,6 +29,8 @@ import {
   populateFullWorktree,
   populateOrphanWorktree,
   populateLargeGeneratedTree,
+  freeBytesOn,
+  LARGE_TREE_MIN_FREE_BYTES,
   countFilesRecursive,
   spawnCwdHolder,
   spawnFileHolder,
@@ -287,9 +289,14 @@ async function main() {
     // cancels that walk before the holder preflight (no false refusal over Refract's own handles).
     // The status line is read at `onReadyToClick`, right before the click; a run that doesn't overlap
     // is recorded notExercised, never a pass.
+    const freeF = await freeBytesOn(SCRATCH_ROOT);
+    if (freeF < LARGE_TREE_MIN_FREE_BYTES) {
+      console.log(`SKIP (f) Delete mid-walk on a large tree -- low disk (${(freeF / 1024 ** 3).toFixed(1)} GB free, need ${LARGE_TREE_MIN_FREE_BYTES / 1024 ** 3} GB)`);
+      notExercised.push('(f) skipped: low disk, not exercised this run');
+    } else {
     const nameF = await newSession('f');
     const sessionF = sessionByName(dataDir, nameF);
-    populateLargeGeneratedTree(sessionF.worktreePath);
+    await populateLargeGeneratedTree(sessionF.worktreePath);
     await openDeleteDialogFor(cdp, nameF, SHOT_DIR);
     let statusTextF = '';
     await clickDeleteButton(cdp, {
@@ -304,6 +311,7 @@ async function main() {
     } else {
       const outcomeF = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
       if (!outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`delete failed: ${outcomeF.error}`));
+      await waitForSessionRemoved(cdp, nameF, sessionF.worktreePath);
       const fGone = !(await isSessionListed(cdp, nameF));
       const fWorktreeGone = !existsSync(sessionF.worktreePath);
       if (outcomeF.closed && fGone && fWorktreeGone) ok("(f) Delete clicked while the leftover-summary walk was still running on a large tree succeeds cleanly, no false holder refusal from the walk's own open handles");
@@ -320,6 +328,7 @@ async function main() {
       }
       if (cancelLoggedF) ok("(f, H4) cancel_and_wait logged cancelling this Session's own in-flight walk before the holder preflight ran");
       else fail('(f, H4) cancel_and_wait logs cancelling the in-flight walk for this Session', new Error('no matching debug line found in app.log'));
+    }
     }
   } catch (err) {
     fail('unhandled', err);
