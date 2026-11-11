@@ -209,7 +209,13 @@ async function main() {
     // 6b. Esc on a second ask, with focus inside the card.
     await sendPrompt(cdp, 'SECOND ask please.');
     await cdp.waitFor(`!!${field('Proceed with the rollout?')}`, { timeoutMs: 90_000, label: 'second ask card rendered' });
+    const RADIO_NO = `Array.from(${field('Proceed with the rollout?')}?.querySelectorAll('[role="radio"]') ?? []).find((el) => document.getElementById(el.getAttribute('aria-labelledby'))?.textContent.trim() === 'No')`;
+    // Esc inside a text input must leave the card alone; only Esc elsewhere in the card cancels.
     await clickVisible(cdp, control('Note', 'input'));
+    await pressEscape(cdp);
+    await sleep(800);
+    check(await cdp.evaluate(`!!(${SUBMIT})`), '6f. Esc inside a text input does not cancel the card (Submit still present)', {});
+    await clickVisible(cdp, RADIO_NO);
     await shoot(cdp, '06-second-ask-focus-in-card-before-esc.png');
     await pressEscape(cdp);
     // The card shows its Cancelled note only until the replacement row mounts, so it is captured before waiting for focus to settle.
@@ -239,7 +245,7 @@ async function main() {
       repeats['6a'].push({ run, samples: await focusAfterCardLeaves(cdp) });
       await sendPrompt(cdp, `SECOND ask please, esc run ${run}.`);
       await cdp.waitFor(`!!${field('Proceed with the rollout?')}`, { timeoutMs: 90_000, label: `esc run ${run} card rendered` });
-      await clickVisible(cdp, control('Note', 'input'));
+      await clickVisible(cdp, RADIO_NO);
       await pressEscape(cdp);
       repeats['6b'].push({ run, samples: await focusAfterCardLeaves(cdp) });
     }
