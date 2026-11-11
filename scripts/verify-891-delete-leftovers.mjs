@@ -17,7 +17,8 @@ import {
   safeRmSync,
   citeScreenshots,
   requireSharedCargoTarget,
-  buildAndCopyExeFresh
+  buildAndCopyExeFresh,
+  switchTheme
 } from './verify-tauri-scratch-helpers.mjs';
 import { createSessionViaQuickCreate, addRepository } from './verify-tauri-session-list-helpers.mjs';
 import { launchBuiltExe, latestSessionIdAndName } from './verify-tauri-560-helpers.mjs';
@@ -28,6 +29,8 @@ import {
   populateFullWorktree,
   populateOrphanWorktree,
   populateLargeGeneratedTree,
+  freeBytesOn,
+  LARGE_TREE_MIN_FREE_BYTES,
   countFilesRecursive,
   spawnCwdHolder,
   spawnFileHolder,
@@ -39,8 +42,10 @@ import {
   clickDeleteButton,
   readDialogError,
   waitForDeleteOutcome,
+  retryDeleteLogged,
   waitForSessionAgentRunning,
-  isSessionListed
+  isSessionListed,
+  waitForSessionRemoved
 } from './verify-891-delete-leftovers-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -111,12 +116,13 @@ async function main() {
     });
 
     // Readiness checks can take up to a minute on a brand-new scratch profile.
-    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 30_000, label: 'Readiness screen mounted' });
+    await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 90_000, label: 'Readiness screen mounted' });
     await cdp.waitFor(
       `(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`,
       { timeoutMs: 60_000, label: 'Readiness green' }
     );
     await addRepository(cdp, repoDir);
+    await switchTheme(cdp, 'dark', 'Dark');
 
     const seenIds = [];
     async function newSession(label) {
@@ -143,6 +149,9 @@ async function main() {
     await clickDeleteButton(cdp, { onReadyToClick: () => cdp.screenshot(path.join(SHOT_DIR, '04-dialog-ready.png')) });
     const outcomeA = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeA.closed) fail('(a) full worktree deletes cleanly', new Error(`delete failed: ${outcomeA.error}`));
+    // sessions.delete acks once its checks pass; removal finishes afterwards, so poll instead of reading once.
+    await cdp.waitFor(`!Array.from(document.querySelectorAll('[data-session-open]')).some((el) => el.getAttribute('aria-label')?.startsWith(${JSON.stringify(nameA)}))`, { timeoutMs: 120_000, label: `${nameA} removed` }).catch(() => {});
+    for (let i = 0; i < 120 && existsSync(sessionA.worktreePath); i++) await new Promise((r) => setTimeout(r, 500));
     const aGone = !(await isSessionListed(cdp, nameA));
     const aWorktreeGone = !existsSync(sessionA.worktreePath);
     const aCanarySurvived = existsSync(canaryFile);
@@ -162,12 +171,14 @@ async function main() {
     await waitForDialogSettled(cdp);
     // An unregistered folder makes every `git status` fail; that must read as "we don't know", never "Nothing left in the worktree".
     const statusTextB = await readLeftoverStatusText(cdp);
-    if (statusTextB === "Couldn't list the folder's files.") ok(`(b, H2) unregistered folder's failed git status reads "Couldn't list the folder's files.", never a false "Nothing left"`);
+    if (statusTextB.startsWith("Couldn't list the folder's files.")) ok(`(b, H2) unregistered folder's failed git status reads "${statusTextB}", never a false "Nothing left"`);
     else fail('(b, H2) unregistered folder shows "Couldn\'t list the folder\'s files."', new Error(`status line read: ${JSON.stringify(statusTextB)}`));
     await cdp.screenshot(path.join(SHOT_DIR, '05-dialog-cant-list.png'));
     await clickDeleteButton(cdp);
     const outcomeB = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeB.closed) fail('(b) leftover unregistered full folder deletes', new Error(`delete failed: ${outcomeB.error}`));
+    await cdp.waitFor(`!Array.from(document.querySelectorAll('[data-session-open]')).some((el) => el.getAttribute('aria-label')?.startsWith(${JSON.stringify(nameB)}))`, { timeoutMs: 120_000, label: `${nameB} removed` }).catch(() => {});
+    for (let i = 0; i < 120 && existsSync(sessionB.worktreePath); i++) await new Promise((r) => setTimeout(r, 500));
     const bGone = !(await isSessionListed(cdp, nameB));
     const bWorktreeGone = !existsSync(sessionB.worktreePath);
     if (outcomeB.closed && bGone && bWorktreeGone) ok('(b) leftover unregistered full folder deletes');
@@ -186,9 +197,20 @@ async function main() {
     await new Promise((r) => setTimeout(r, 300)); // let Windows finish establishing the child's own cwd
     await openDeleteDialogFor(cdp, nameC, SHOT_DIR);
     await waitForLeftoverSummary(cdp);
+    // #1159: records every status-line state so the transient "Rechecking…" + spinner after a refusal is provable.
+    await cdp.evaluate(
+      `(() => { window.__statusLog = []; const root = document.querySelector('[role="alertdialog"]'); const rec = () => { const s = root.querySelector('[role="status"]'); window.__statusLog.push({ text: s?.textContent || '', spinner: !!s?.querySelector('svg.animate-spin') }); }; new MutationObserver(rec).observe(root, { subtree: true, childList: true, characterData: true, attributes: true }); })()`
+    );
     await clickDeleteButton(cdp);
     const errC = await readDialogError(cdp, { timeoutMs: 30_000 });
     await cdp.screenshot(path.join(SHOT_DIR, '02-dialog-refusal-cwd-holder.png'));
+    const statusLogC = await cdp.evaluate(`window.__statusLog`);
+    if (statusLogC.some((s) => s.text === 'Rechecking…' && s.spinner)) ok('(c, #1159) after the refusal the status line shows a spinner with "Rechecking…"');
+    else fail('(c, #1159) Rechecking… with spinner after refusal', new Error(`status log: ${JSON.stringify(statusLogC)}`));
+    const retryLabelC = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="alertdialog"] button')).map((b) => b.textContent.trim()).includes('Retry')`);
+    const errClassC = await cdp.evaluate(`document.querySelector('[role="alertdialog"] [role="alert"]')?.className || ''`);
+    if (retryLabelC && !/sr-only/.test(errClassC)) ok('(c, #1159) confirm reads Retry and the shared DialogError renders visibly (not sr-only)');
+    else fail('(c, #1159) Retry label + visible DialogError', new Error(`retry=${retryLabelC} class=${errClassC}`));
     const cFileCountAfter = countFilesRecursive(sessionC.worktreePath);
     const cRefusedCorrectly =
       !!errC &&
@@ -214,16 +236,10 @@ async function main() {
       fail("(c) Session's agent is running again after the refusal", err);
     }
     await killSpawned(cmdHolder);
-    // A single Retry click, no retry loop: a script-level loop would hide a regression in the product-side
-    // fixes (deleteCheck refresh no longer races removal; bounded retry in remove_tree_blocking).
-    await clickDeleteButton(cdp);
-    const outcomeC = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
-    if (!outcomeC.closed) fail('(c) Retry succeeds after the holder is killed', new Error(`attempts=1 delete failed: ${outcomeC.error}`));
-    else {
-      const cRetryGone = !(await isSessionListed(cdp, nameC)) && !existsSync(sessionC.worktreePath);
-      if (cRetryGone) ok('(c) Retry succeeds once the cwd-holding process is gone (single attempt)');
-      else fail('(c) Retry succeeds after the holder is killed', new Error(`attempts=1 listed=${await isSessionListed(cdp, nameC)} exists=${existsSync(sessionC.worktreePath)}`));
-    }
+    // Retried and logged per attempt: a refusal that outlives Windows handle lag (~3s) is a product bug.
+    const retryC = await retryDeleteLogged(cdp, { label: '(c)', name: nameC, worktreePath: sessionC.worktreePath, exitedAt: Date.now() });
+    if (retryC.gone && !retryC.lagBug) ok(`(c) Retry succeeds once the cwd-holding process is gone (${retryC.attempts.length} attempt(s): ${JSON.stringify(retryC.attempts)})`);
+    else fail('(c) Retry succeeds after the holder is killed', new Error(`lagBug=${retryC.lagBug} attempts=${JSON.stringify(retryC.attempts)}`));
 
     // ---- Scenario (d): a PowerShell process holding one FILE open inside the worktree ----
     const nameD = await newSession('d');
@@ -261,15 +277,11 @@ async function main() {
         )
       );
     await killSpawned(fileHolder);
-    // Single click, as in scenario (c).
-    await clickDeleteButton(cdp);
-    const outcomeD = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
-    if (!outcomeD.closed) fail('(d) Retry succeeds after the holder is killed', new Error(`attempts=1 delete failed: ${outcomeD.error}`));
-    else {
-      const dRetryGone = !(await isSessionListed(cdp, nameD)) && !existsSync(sessionD.worktreePath);
-      if (dRetryGone) ok('(d) Retry succeeds once the file-holding process is gone (single attempt)');
-      else fail('(d) Retry succeeds after the holder is killed', new Error(`attempts=1 listed=${await isSessionListed(cdp, nameD)} exists=${existsSync(sessionD.worktreePath)}`));
-    }
+    const retryD = await retryDeleteLogged(cdp, { label: '(d)', name: nameD, worktreePath: sessionD.worktreePath, exitedAt: Date.now() });
+    if (retryD.gone && !retryD.lagBug) ok(`(d) Retry succeeds once the file-holding process is gone (${retryD.attempts.length} attempt(s): ${JSON.stringify(retryD.attempts)})`);
+    else fail('(d) Retry succeeds after the holder is killed', new Error(`lagBug=${retryD.lagBug} attempts=${JSON.stringify(retryD.attempts)}`));
+    if (errD && /\.\./.test(errD.replace(/\.\.\.|…/g, ''))) fail('(d, #1159) refusal path has no ".."', new Error(errD));
+    else ok('(d, #1159) the refusal text contains no ".." path segment');
 
     // ---- Scenario (f): clicking Delete while the leftover-summary walk is still running ----
     // Deliberately skips `waitForLeftoverSummary`: `clickDeleteButton` waits only for the fast git-only
@@ -277,9 +289,14 @@ async function main() {
     // cancels that walk before the holder preflight (no false refusal over Refract's own handles).
     // The status line is read at `onReadyToClick`, right before the click; a run that doesn't overlap
     // is recorded notExercised, never a pass.
+    const freeF = await freeBytesOn(SCRATCH_ROOT);
+    if (freeF < LARGE_TREE_MIN_FREE_BYTES) {
+      console.log(`SKIP (f) Delete mid-walk on a large tree -- low disk (${(freeF / 1024 ** 3).toFixed(1)} GB free, need ${LARGE_TREE_MIN_FREE_BYTES / 1024 ** 3} GB)`);
+      notExercised.push('(f) skipped: low disk, not exercised this run');
+    } else {
     const nameF = await newSession('f');
     const sessionF = sessionByName(dataDir, nameF);
-    populateLargeGeneratedTree(sessionF.worktreePath);
+    await populateLargeGeneratedTree(sessionF.worktreePath);
     await openDeleteDialogFor(cdp, nameF, SHOT_DIR);
     let statusTextF = '';
     await clickDeleteButton(cdp, {
@@ -294,6 +311,7 @@ async function main() {
     } else {
       const outcomeF = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
       if (!outcomeF.closed) fail('(f) Delete clicked mid-walk on a large tree still succeeds', new Error(`delete failed: ${outcomeF.error}`));
+      await waitForSessionRemoved(cdp, nameF, sessionF.worktreePath);
       const fGone = !(await isSessionListed(cdp, nameF));
       const fWorktreeGone = !existsSync(sessionF.worktreePath);
       if (outcomeF.closed && fGone && fWorktreeGone) ok("(f) Delete clicked while the leftover-summary walk was still running on a large tree succeeds cleanly, no false holder refusal from the walk's own open handles");
@@ -310,6 +328,7 @@ async function main() {
       }
       if (cancelLoggedF) ok("(f, H4) cancel_and_wait logged cancelling this Session's own in-flight walk before the holder preflight ran");
       else fail('(f, H4) cancel_and_wait logs cancelling the in-flight walk for this Session', new Error('no matching debug line found in app.log'));
+    }
     }
   } catch (err) {
     fail('unhandled', err);

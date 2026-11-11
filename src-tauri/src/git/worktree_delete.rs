@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::remove_tree::{remove_tree, RemoveTreeError};
 
-use super::git::{git, git_raw, normalize_git_path, GitError, GitErrorCode};
+use super::git::{git, git_raw, normalize_git_path, shown_path, GitError, GitErrorCode};
 use super::worktree_validity::{
     canonical_comparable_path, comparable_path, worktree_registration_state, RegistrationState,
 };
@@ -21,7 +21,7 @@ enum OrphanRefusalReason {
 }
 
 fn orphan_refusal_message(worktree_path: &Path, reason: OrphanRefusalReason) -> String {
-    let wt = worktree_path.display();
+    let wt = shown_path(worktree_path);
     match reason {
         OrphanRefusalReason::IsALink => format!("Refract did not delete anything. {wt} is a link, not a worktree folder. Remove only the link itself (in File Explorer delete the link; do not delete its contents), then choose Retry."),
         OrphanRefusalReason::NotADirectory => format!("Refract did not delete anything. {wt} is a file, not a worktree folder. Remove it yourself, then choose Retry."),
@@ -34,33 +34,33 @@ fn outside_worktrees_root_message(
     repo: &Path,
     is_root_itself: bool,
 ) -> String {
-    let wt = normalize_git_path(&worktree_path.to_string_lossy());
+    let wt = shown_path(worktree_path);
     if is_root_itself {
         return format!("Refract did not delete anything. {wt} is Refract's worktree folder itself, not a single worktree. Delete the individual Session worktrees inside it instead, then choose Retry for each.");
     }
     format!(
         "Refract did not delete anything. {wt} is outside Refract's worktree folder ({}), so Refract will never remove it. To remove this Session, move or rename that folder yourself (only if you are sure it is not your own work), or run `git worktree remove` on that path yourself in the project at {}, then choose Retry. If git says it has uncommitted changes or is locked, run `git worktree unlock` on that path if it is locked, then `git worktree remove --force` (this deletes any uncommitted work in that folder).",
-        normalize_git_path(&root.to_string_lossy()),
-        normalize_git_path(&repo.to_string_lossy())
+        shown_path(root),
+        shown_path(repo)
     )
 }
 
 fn locked_worktree_message(worktree_path: &Path) -> String {
-    format!("Refract did not delete anything. Git has locked the worktree {}, so Refract will not remove it. If you no longer need it, unlock it first: run `git worktree unlock` in the project, followed by that folder's path, then choose Retry.", worktree_path.display())
+    format!("Refract did not delete anything. Git has locked the worktree {}, so Refract will not remove it. If you no longer need it, unlock it first: run `git worktree unlock` in the project, followed by that folder's path, then choose Retry.", shown_path(worktree_path))
 }
 
 fn admin_entry_refusal_message(worktree_path: &Path) -> String {
-    format!("Refract did not delete anything. It could not safely identify {}'s own git admin entry. Remove that folder yourself, then choose Retry.", worktree_path.display())
+    format!("Refract did not delete anything. It could not safely identify {}'s own git admin entry. Remove that folder yourself, then choose Retry.", shown_path(worktree_path))
 }
 
-// A slow `git worktree list` must never be read as "not registered" and misroute a destructive branch.
+// Git not answering is not the same as "not registered", so it must never misroute a destructive branch.
 fn registration_unknown_message(worktree_path: &Path) -> String {
-    format!("Refract did not delete anything. It could not confirm with git whether {} is still a registered worktree (a slow response). Nothing was touched. Try again, then choose Retry.", worktree_path.display())
+    format!("Refract did not delete anything. Git did not answer in time when Refract asked whether {} is still a registered worktree, so Refract stopped before touching it. Nothing was touched. Choose Retry.", shown_path(worktree_path))
 }
 
 // Windows sharing violation (32) and access-denied (5) get dedicated wording.
 fn wrap_fs_error(err: std::io::Error, worktree_path: &Path) -> GitError {
-    let wt = worktree_path.display();
+    let wt = shown_path(worktree_path);
     match err.raw_os_error() {
         Some(32) => GitError::new(
             GitErrorCode::WorktreeFailed,
@@ -80,7 +80,7 @@ fn wrap_fs_error(err: std::io::Error, worktree_path: &Path) -> GitError {
 // `Io.path` is the worktree root, not the failing entry; the tree was likely partly removed,
 // so `wrap_fs_error`'s "nothing touched" wording would be false here.
 fn partial_removal_message(err: &std::io::Error, worktree_path: &Path) -> String {
-    let wt = worktree_path.display();
+    let wt = shown_path(worktree_path);
     let reason = match err.raw_os_error() {
         Some(32) => "another program is using a file inside it".to_string(),
         Some(33) => "a file inside it is locked".to_string(),
@@ -97,12 +97,19 @@ fn map_remove_tree_error(err: RemoveTreeError, worktree_path: &Path) -> GitError
             GitErrorCode::WorktreeFailed,
             format!(
                 "Refract did not delete anything. {} resolves outside Refract's worktree folder (likely through a link somewhere above it), so Refract will not remove it. Check what it actually points to, then choose Retry.",
-                worktree_path.display()
+                shown_path(worktree_path)
+            ),
+        ),
+        RemoveTreeError::PathChanged { path } => GitError::new(
+            GitErrorCode::WorktreeFailed,
+            format!(
+                "Some files may already have been deleted. {} resolved to a different folder partway through, so Refract stopped removing it. Check what it points to, then choose Retry.",
+                shown_path(&path)
             ),
         ),
         RemoveTreeError::Unreadable { path, source, after_partial } => {
             let note = if after_partial { "Some files may already have been deleted. " } else { "" };
-            GitError::new(GitErrorCode::WorktreeFailed, format!("{note}Refract could not check {}: {source}. Close any terminal or editor open in that folder, then choose Retry.", path.display()))
+            GitError::new(GitErrorCode::WorktreeFailed, format!("{note}Refract could not check {}: {source}. Close any terminal or editor open in that folder, then choose Retry.", shown_path(&path)))
         }
         RemoveTreeError::Io { path, source } => GitError::new(
             GitErrorCode::WorktreeFailed,
@@ -443,8 +450,8 @@ pub async fn remove_session_worktree(
             GitErrorCode::WorktreeFailed,
             format!(
                 "Refract did not delete anything. It could not read the project at {} (moved, deleted, or no longer a git repository?), and the worktree folder {} still exists. Restore the project, or move that folder somewhere safe yourself, then choose Retry.",
-                repo.display(),
-                worktree_path.display()
+                shown_path(repo),
+                shown_path(worktree_path)
             ),
         ));
     }
@@ -462,8 +469,8 @@ pub async fn remove_session_worktree(
                     GitErrorCode::WorktreeFailed,
                     format!(
                         "Refract did not delete anything. Git still records a worktree for this Session at {}, outside Refract's worktree folder, and that folder cannot be found (a disconnected drive, or moved?). Refract never removes worktrees outside its own folder. If git says the worktree is locked, run `git worktree unlock` followed by that path first. If you no longer need it, run `git worktree remove --force` followed by that path in the project at {}, then choose Retry. If the drive is connected when you run it, this also deletes that folder and any uncommitted work in it.",
-                        worktree_path.display(),
-                        normalize_git_path(&repo.to_string_lossy())
+                        shown_path(worktree_path),
+                        shown_path(repo)
                     ),
                 ));
             }
@@ -509,7 +516,7 @@ pub async fn remove_session_worktree(
                     GitErrorCode::WorktreeFailed,
                     format!(
                         "Refract removed {}'s files and its own git admin entry, but git still lists it as a worktree. Run `git worktree list` yourself to check, then choose Retry.",
-                        worktree_path.display()
+                        shown_path(worktree_path)
                     ),
                 ));
             }

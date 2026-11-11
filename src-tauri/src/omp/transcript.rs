@@ -28,6 +28,8 @@ mod user_images;
 use user_images::ImageRef;
 mod agent_message;
 use agent_message::try_build_agent_message;
+mod skill_prompt;
+use skill_prompt::try_build_skill_prompt;
 mod turn_error;
 use turn_error::{build_turn_error_item, current_turn_has_error};
 
@@ -136,6 +138,19 @@ pub enum TranscriptItem {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reply_to: Option<String>,
     },
+    /// #1817: a `/skill:<name>` prompt (`skill_prompt.rs`); `text` is the untrusted injected skill text.
+    #[serde(rename = "skill-prompt", rename_all = "camelCase")]
+    SkillPrompt {
+        id: String,
+        name: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        args: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        line_count: Option<u32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        text: String,
+    },
     #[serde(rename_all = "camelCase")]
     Advisory {
         id: String,
@@ -174,6 +189,7 @@ impl TranscriptItem {
             | TranscriptItem::Tool { id, .. }
             | TranscriptItem::Subagent { id, .. }
             | TranscriptItem::AgentMessage { id, .. }
+            | TranscriptItem::SkillPrompt { id, .. }
             | TranscriptItem::Advisory { id, .. }
             | TranscriptItem::Request { id, .. }
             | TranscriptItem::Notice { id, .. }
@@ -1015,6 +1031,9 @@ fn apply_message_snapshot(
             if let Some(agent_message) = try_build_agent_message(message_id, custom_type, message) {
                 return replace_message_items(items, message_id, vec![Arc::new(agent_message)]);
             }
+            if let Some(skill_prompt) = try_build_skill_prompt(message_id, custom_type, message) {
+                return replace_message_items(items, message_id, vec![Arc::new(skill_prompt)]);
+            }
             if message.get("display").and_then(Value::as_bool) == Some(true) {
                 return replace_message_items(
                     items,
@@ -1339,10 +1358,8 @@ fn apply_frame_items(
                 .unwrap_or("")
                 .to_string();
             let mut items = items;
-            if level == NoticeLevel::Warning {
-                if let Some(merged) = collapse_repeated_warning(&items, &message) {
-                    return merged;
-                }
+            if level == NoticeLevel::Warning && collapse_repeated_warning(&mut items, &message) {
+                return items;
             }
             let id = if has_user_acted {
                 format!("notice-{}", items.len())
@@ -1524,6 +1541,12 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
                     try_build_agent_message(&message_id, custom_type, message)
                 {
                     items.push(Arc::new(agent_message));
+                    continue;
+                }
+                if let Some(skill_prompt) =
+                    try_build_skill_prompt(&message_id, custom_type, message)
+                {
+                    items.push(Arc::new(skill_prompt));
                     continue;
                 }
                 if message.get("display").and_then(Value::as_bool) == Some(true) {

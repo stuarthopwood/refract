@@ -1,4 +1,7 @@
 // Renderer-to-main typed IPC contract; the only file allowed to cross that boundary (constitution V).
+export type AgentToolName = 'refract_list_panels' | 'refract_open_panel' | 'refract_invoke_panel_action';
+export interface AgentToolCall { sessionId: string; callId: string; tool: AgentToolName; args: Record<string, unknown> }
+export type AgentToolReply = { ok: true; value: Record<string, unknown> } | { ok: false; error: { code: string; message: string } };
 
 import type { GithubChangedPayload } from './ipc-github-changed';
 import type { GitHubAccount, OmpProviderState, GitHubAddFlowProgress } from './accounts';
@@ -381,6 +384,7 @@ export const IPC_REQUESTS = {
   TOKEN_GUARD_RESET_ALL: 'tokenGuard.resetAll',
   TOKEN_GUARD_DISMISS_THRESHOLDS_RESET: 'tokenGuard.dismissThresholdsReset',
   TOKEN_GUARD_HANDOFF: 'tokenGuard.handoff',
+  AGENT_TOOLS_RESULT: 'agentTools.result',
   ADVISOR_ROSTER_DETECT: 'advisorRoster.detect',
   ADVISOR_ROSTER_OPEN: 'advisorRoster.open',
   COPILOT_PLAN_USAGE: 'copilot.planUsage',
@@ -419,6 +423,7 @@ export const IPC_EVENTS = {
   MEMORY_WARNING: 'memory:warning',
   TOKEN_GUARD_LAUNCH_WARNING: 'token-guard:launch-warning',
   TOKEN_GUARD_CALLS: 'token-guard:calls',
+  AGENT_TOOLS_CALL: 'agent-tools:call',
   ADVISOR_ROSTER_DETECTED: 'advisor-roster:detected',
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
@@ -527,6 +532,9 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   fileExplorer: FileExplorerApi;
 
   gitChanges: GitChangesApi;
+  agentTools: {
+    result(sessionId: string, callId: string, reply: AgentToolReply): Promise<Result<void>>;
+  };
   issues: IssuesApi; itemRefs: ItemRefsApi; home: HomeApi;
 
   settings: SettingsCloneApi & {
@@ -646,6 +654,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onMemoryWarning(handler: (payload: LowMemoryWarning) => void): Unsubscribe;
   onTokenGuardLaunchWarning(handler: (payload: TokenGuardLaunchWarning) => void): Unsubscribe;
   onTokenGuardCalls(handler: (payload: TokenGuardCalls) => void): Unsubscribe;
+  onAgentToolsCall(handler: (payload: AgentToolCall) => void): Unsubscribe;
   onAdvisorRosterDetected(handler: (payload: AdvisorRosterDetected) => void): Unsubscribe;
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;

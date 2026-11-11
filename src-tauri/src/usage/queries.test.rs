@@ -220,3 +220,52 @@ fn half_hour_zone_day_buckets_read_exact_rows() {
     let s = summary(&conn, &filters("7d"), &ist).unwrap();
     assert_eq!((s.active_days, s.month_active_days), (1, 1));
 }
+
+#[test]
+fn session_file_matches_one_conversation_and_today_matches_the_usage_view() {
+    let conn = scratch_db();
+    for (id, file, ago) in [
+        ("a", "C:/s/a/one.jsonl", 60_000),
+        ("b", "C:/s/a/two.jsonl", 60_000),
+        ("c", "C:/s/a/one.jsonl", 3 * DAY_MS),
+        ("d", "C:/s/a/one.jsonl.bak", 60_000),
+    ] {
+        let row = MessageRow {
+            entry_id: id.into(),
+            ts: NOW - ago,
+            session_id: "s".into(),
+            provider: "github-copilot".into(),
+            model: "m1".into(),
+            agent_type: "main".into(),
+            project_label: "proj".into(),
+            total_tokens: 100,
+            cost_total: 1.0,
+            ..MessageRow::default()
+        };
+        assert!(record_message(&conn, file, &row).unwrap());
+    }
+    // Backslashes and case differ from the stored value; the match folds both.
+    let one = Filters {
+        session_file: Some(r"c:\S\A\One.jsonl".into()),
+        ..filters("all")
+    };
+    assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 2);
+    let one_today = Filters {
+        session_file: Some("C:/s/a/one.jsonl".into()),
+        ..filters("today")
+    };
+    assert_eq!(summary(&conn, &one_today, &ctx()).unwrap().calls, 1);
+    let dir_today = Filters {
+        session_dir: Some("C:/s/a".into()),
+        ..filters("today")
+    };
+    assert_eq!(summary(&conn, &dir_today, &ctx()).unwrap().calls, 3);
+    let empty = Filters {
+        session_file: Some("  ".into()),
+        ..filters("all")
+    };
+    assert!(matches!(
+        summary(&conn, &empty, &ctx()),
+        Err(QueryError::InvalidArgument(_))
+    ));
+}

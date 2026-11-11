@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex, Weak};
 
 use serde_json::{json, Value};
-use tokio::sync::{watch, Mutex as AsyncMutex};
+use tokio::sync::{watch, Mutex as AsyncMutex, Notify};
 
 use crate::events::EventSink;
 use crate::omp::diff::{diff_transcript, PatchCoalescer, TranscriptOp};
@@ -16,6 +16,7 @@ use crate::store::settings::{ApprovalMode, SettingsStore};
 
 mod chat;
 mod chat_restore;
+mod command_wait;
 mod commands;
 mod conversations;
 mod frame;
@@ -27,7 +28,9 @@ pub mod pause;
 mod requests;
 mod status;
 mod sync_from_state;
+mod tool_host;
 mod types;
+pub use command_wait::COMMANDS_WAIT;
 pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
@@ -101,7 +104,10 @@ pub struct SessionAgent {
     state: AsyncMutex<AgentState>,
     status_tx: watch::Sender<SessionStatus>,
     start_lock: AsyncMutex<()>,
+    /// Woken each time OMP reports its commands, for `wait_for_commands` (#1812).
+    commands_reported: Notify,
     coalescer: PatchCoalescer,
+    agent_tools: crate::agent_tools::router::ToolRouter,
 }
 
 /// Generates one `with_<lane>_state` accessor per lane.
@@ -178,6 +184,8 @@ impl SessionAgent {
             }),
             status_tx,
             start_lock: AsyncMutex::new(()),
+            commands_reported: Notify::new(),
+            agent_tools: Default::default(),
             coalescer,
         })
     }

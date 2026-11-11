@@ -29,7 +29,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         info: <SeverityIcon icon={InfoIcon} className="text-severity-info" label="Info" />,
         warning: <SeverityIcon icon={TriangleAlertIcon} className="text-severity-warning" label="Warning" />,
         error: <SeverityIcon icon={OctagonXIcon} className="text-severity-error" label="Error" />,
-        loading: <Loader2Icon className="size-4 animate-spin" />,
+        loading: <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />,
       }}
       style={
         {

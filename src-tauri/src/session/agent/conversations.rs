@@ -9,12 +9,27 @@ use crate::store::registry::SessionPatch;
 use super::launch_support::{fetch_all_messages, verify_reattach};
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
+/// A never-started Session has no Conversation to reset, so `/new` is a no-op there (#1812).
+/// A stopped Session that once ran carries another stop reason and keeps the `not-idle` refusal.
+fn new_conversation_is_noop(
+    status: SessionStatus,
+    has_process: bool,
+    stop_reason: Option<&str>,
+) -> bool {
+    status == SessionStatus::Stopped
+        && !has_process
+        && matches!(stop_reason, None | Some("not-started"))
+}
+
 impl SessionAgent {
     /// Starts a fresh OMP session file in the same process and worktree.
     /// Only reachable while `idle` with a live process.
     pub async fn start_new_conversation(&self) -> Result<(), AgentError> {
         let proc = {
             let mut state = self.state.lock().await;
+            if new_conversation_is_noop(state.status, state.process.is_some(), state.stop_reason) {
+                return Ok(());
+            }
             if state.status != SessionStatus::Idle || state.process.is_none() {
                 return Err(AgentError::new(
                     "not-idle",
@@ -191,3 +206,7 @@ impl SessionAgent {
         Ok(())
     }
 }
+
+#[cfg(test)]
+#[path = "conversations.test.rs"]
+mod tests;

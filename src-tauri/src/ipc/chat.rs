@@ -13,6 +13,20 @@ use crate::session::{model, SessionManager};
 
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
+const UNKNOWN_COMMAND_HINT: &str = "Type / to see the available commands.";
+
+fn unknown_command_error(original_name: &str, rest: &str) -> IpcError {
+    let suffix = if rest.is_empty() {
+        String::new()
+    } else {
+        format!(" {rest}")
+    };
+    IpcError::new(
+        "unknown-command",
+        format!("Unknown command: /{original_name}{suffix}. {UNKNOWN_COMMAND_HINT}"),
+    )
+}
+
 pub fn register(d: &mut Dispatcher) {
     d.register("chat.send", chat_send);
     d.register("chat.stop", chat_stop);
@@ -186,28 +200,21 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
             }
             // Refused locally, never forwarded to OMP, even if OMP later adds one of these.
             if is_native_reserved(name.as_str()) {
-                let suffix = if rest.is_empty() {
-                    String::new()
-                } else {
-                    format!(" {rest}")
-                };
+                return Err(unknown_command_error(&original_name, &rest));
+            }
+            // Waits for the first report after a start, so a queued command is checked against OMP's real list. (#1812)
+            let commands = agent
+                .wait_for_commands(crate::session::agent::COMMANDS_WAIT)
+                .await;
+            if commands.is_empty() {
                 return Err(IpcError::new(
-                    "unknown-command",
-                    format!("Unknown command: /{original_name}{suffix}. Type / to see the available commands."),
+                    "commands-unavailable",
+                    format!("The agent has not reported its commands yet, so /{original_name} was not sent. Try again in a moment."),
                 ));
             }
-            let commands = agent.available_commands().await;
             match classify_slash_invocation(&name, &rest, &commands) {
                 SlashInvocationClassification::UnknownCommand => {
-                    let suffix = if rest.is_empty() {
-                        String::new()
-                    } else {
-                        format!(" {rest}")
-                    };
-                    return Err(IpcError::new(
-                        "unknown-command",
-                        format!("Unknown command: /{original_name}{suffix}. Type / to see the available commands."),
-                    ));
+                    return Err(unknown_command_error(&original_name, &rest));
                 }
                 SlashInvocationClassification::UnsupportedArguments => {
                     let message = match classify_unsupported_arguments(&name, &rest, &commands) {
@@ -355,10 +362,14 @@ pub fn chat_commands(state: AppState, args: Vec<Value>) -> HandlerFuture {
         {
             return Err(not_found(format!("Session not found: {session_id}")));
         }
-        let commands = manager(&state)
-            .get_or_create_agent(session_id)
-            .available_commands()
-            .await;
+        let agent = manager(&state).get_or_create_agent(session_id);
+        let mut commands = agent.available_commands().await;
+        // A Session whose agent has not reported yet serves the last list OMP reported. (#1812)
+        if commands.is_empty() {
+            commands = crate::store::last_commands::load()
+                .await
+                .unwrap_or_default();
+        }
         Ok(Value::Array(commands))
     })
 }
