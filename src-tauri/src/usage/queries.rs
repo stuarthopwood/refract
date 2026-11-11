@@ -141,9 +141,9 @@ impl Rollup {
             ),
             Self::Tools => (
                 "tool_rollup",
-                "hour, project_label, tool, agent_type, calls, errors, result_chars, cost_share",
+                "hour, project_label, tool, agent_type, calls, errors, result_chars, cost_usd",
                 "tool_calls",
-                "project_label, tool, agent_type, 1 AS calls, coalesce(is_error, 0) AS errors, result_chars, cost_share",
+                "project_label, tool, agent_type, 1 AS calls, coalesce(is_error, 0) AS errors, result_chars, cost_usd",
             ),
         }
     }

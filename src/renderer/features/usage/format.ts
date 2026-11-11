@@ -13,6 +13,8 @@ export const formatUsdPerCall = (value: number): string =>
 export const formatInt = (value: number): string => int.format(Math.round(value))
 export const formatCompact = (value: number): string => compact.format(value)
 export const formatPercent = (rate: number): string => `${(rate * 100).toFixed(rate > 0 && rate < 0.1 ? 1 : 0)}%`
+/** A share of the window's spend; an em dash when no call in the window was priced. */
+export const formatCostShare = (share: number | undefined): string => (share === undefined ? '—' : formatPercent(share))
 
 /** Shown where a denominator is zero. */
 export const dash = '-'

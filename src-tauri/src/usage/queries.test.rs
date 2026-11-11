@@ -2,8 +2,8 @@
 
 use super::*;
 use crate::usage::queries_summary::summary;
-use crate::usage::queries_tables::{calls, Page, Sort};
-use crate::usage::rollup::{record_message, MessageRow};
+use crate::usage::queries_tables::{breakdown, calls, BreakdownBy, Page, Sort};
+use crate::usage::rollup::{record_message, record_tool_call, MessageRow, ToolCallRow};
 use crate::usage::schema;
 
 const NOW: i64 = 1_790_000_000_000;
@@ -192,6 +192,42 @@ fn summary_and_calls_read_what_was_recorded() {
     .unwrap();
     assert_eq!((page.total, page.rows.len()), (3, 1));
     assert_eq!(page.rows[0].model, "m1");
+}
+
+fn priced_tool_call<'a>(id: &'a str, tool: &'a str, cost_usd: f64) -> ToolCallRow<'a> {
+    ToolCallRow {
+        tool_call_id: id,
+        entry_id: "e",
+        ts: NOW - 60_000,
+        tool,
+        cost_usd,
+        project_label: "proj",
+        model: "m1",
+        reasoning: "",
+        agent_type: "main",
+    }
+}
+
+#[test]
+fn tool_cost_share_is_each_tools_fraction_of_the_window_spend() {
+    let conn = scratch_db();
+    for (id, tool, cost) in [("1", "bash", 3.0), ("2", "read", 1.0)] {
+        record_tool_call(&conn, "file", &priced_tool_call(id, tool, cost)).unwrap();
+    }
+    let rows = breakdown(&conn, &filters("7d"), BreakdownBy::Tool, &ctx()).unwrap();
+    let share = |tool: &str| rows.iter().find(|r| r.label == tool).unwrap().cost_share;
+    assert_eq!(share("bash"), Some(0.75));
+    assert_eq!(share("read"), Some(0.25));
+    assert!((rows[0].usd - 3.0).abs() < 1e-9);
+}
+
+#[test]
+fn tool_cost_share_is_absent_when_no_call_in_the_window_was_priced() {
+    let conn = scratch_db();
+    record_tool_call(&conn, "file", &priced_tool_call("1", "bash", 0.0)).unwrap();
+    let rows = breakdown(&conn, &filters("7d"), BreakdownBy::Tool, &ctx()).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].cost_share, None);
 }
 
 #[test]

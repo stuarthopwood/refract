@@ -6,14 +6,20 @@ use std::time::Duration;
 
 use rusqlite::{Connection, ErrorCode, OptionalExtension};
 
-pub const USER_VERSION: i64 = 3;
-/// Older files are rebuilt; version 2 is migrated in place.
+pub const USER_VERSION: i64 = 4;
+/// Older files are rebuilt; versions 2 and 3 are migrated in place.
 const MIN_MIGRATABLE: i64 = 2;
 
 /// `tail_len` 0 reads as an unknown window: the next ingest pass records it without a reset.
 const MIGRATE_2_TO_3: &str = "
 ALTER TABLE file_offsets ADD COLUMN tail_len INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE file_offsets ADD COLUMN tail_hash INTEGER NOT NULL DEFAULT 0;
+";
+
+/// The column holds each tool call's dollars, not a share; renaming keeps the existing history.
+const MIGRATE_3_TO_4: &str = "
+ALTER TABLE tool_calls RENAME COLUMN cost_share TO cost_usd;
+ALTER TABLE tool_rollup RENAME COLUMN cost_share TO cost_usd;
 ";
 
 /// Unknown key parts are `''` rather than NULL so the primary keys stay unique.
@@ -70,7 +76,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   tool TEXT NOT NULL,
   is_error INTEGER,
   result_chars INTEGER NOT NULL DEFAULT 0,
-  cost_share REAL NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
   project_label TEXT NOT NULL DEFAULT '',
   model TEXT NOT NULL DEFAULT '',
   reasoning TEXT NOT NULL DEFAULT '',
@@ -116,7 +122,7 @@ CREATE TABLE IF NOT EXISTS tool_rollup (
   calls INTEGER NOT NULL DEFAULT 0,
   errors INTEGER NOT NULL DEFAULT 0,
   result_chars INTEGER NOT NULL DEFAULT 0,
-  cost_share REAL NOT NULL DEFAULT 0,
+  cost_usd REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (hour, project_label, tool, agent_type)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS session_rollup (
@@ -175,8 +181,12 @@ fn try_open(path: &Path) -> rusqlite::Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     if version < USER_VERSION {
-        // Version 2 holds rows a rewritten session file no longer has, so it is altered, not rebuilt.
-        let ddl = if version == 2 { MIGRATE_2_TO_3 } else { DDL };
+        // Older rows may be gone from a rewritten session file, so a version 2 or 3 file is altered, not rebuilt.
+        let ddl = match version {
+            2 => format!("{MIGRATE_2_TO_3}{MIGRATE_3_TO_4}"),
+            3 => MIGRATE_3_TO_4.to_string(),
+            _ => DDL.to_string(),
+        };
         conn.execute_batch(&format!(
             "BEGIN;{ddl}PRAGMA user_version = {USER_VERSION};COMMIT;"
         ))?;

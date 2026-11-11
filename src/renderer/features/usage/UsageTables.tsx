@@ -7,7 +7,7 @@ import type { SortableColumn } from '@/components/SortableTable'
 import { ScreenSection } from '@/components/ScreenSection'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { UsageBreakdownRow, UsageTopSession } from '../../../shared/ipc-usage'
-import { formatCompact, formatInt, formatPercent, formatUsd } from './format'
+import { formatCompact, formatCostShare, formatInt, formatUsd } from './format'
 
 type Sort = { key: string; dir: 'asc' | 'desc' }
 
@@ -52,7 +52,7 @@ const TOOL_COLUMNS: SortableColumn<UsageBreakdownRow>[] = [
     header: 'Cost share',
     align: 'right',
     sortValue: (r) => r.costShare ?? 0,
-    render: (r) => formatPercent(r.costShare ?? 0)
+    render: (r) => formatCostShare(r.costShare)
   }
 ]
 

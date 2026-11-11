@@ -26,6 +26,8 @@ fn version_2_database_keeps_its_rows_and_gains_the_tail_columns() {
     let conn = open_db(&path).unwrap();
     conn.execute_batch(
         "ALTER TABLE file_offsets DROP COLUMN tail_len;
+         ALTER TABLE tool_calls RENAME COLUMN cost_usd TO cost_share;
+         ALTER TABLE tool_rollup RENAME COLUMN cost_usd TO cost_share;
          ALTER TABLE file_offsets DROP COLUMN tail_hash;
          INSERT INTO file_offsets (session_file, offset, head_len, head_hash) VALUES ('f', 42, 7, 9);
          PRAGMA user_version = 2;",
@@ -46,6 +48,56 @@ fn version_2_database_keeps_its_rows_and_gains_the_tail_columns() {
     assert!(std::fs::read_dir(path.parent().unwrap())
         .unwrap()
         .all(|e| !e.unwrap().file_name().to_string_lossy().contains(".bak-")));
+}
+
+/// A file as version 3 left it: the dollar columns still named `cost_share`, holding rows.
+fn write_v3_db(path: &Path) {
+    let conn = open_db(path).unwrap();
+    conn.execute_batch(
+        "ALTER TABLE tool_calls RENAME COLUMN cost_usd TO cost_share;
+         ALTER TABLE tool_rollup RENAME COLUMN cost_usd TO cost_share;
+         INSERT INTO tool_calls (session_file, tool_call_id, ts, entry_id, tool, cost_share)
+           VALUES ('f', 'c1', 1000, 'e1', 'bash', 1.5);
+         INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, cost_share)
+           VALUES (0, 'p', 'bash', 'main', 1, 1.5);
+         PRAGMA user_version = 3;",
+    )
+    .unwrap();
+}
+
+#[test]
+fn version_3_database_keeps_its_tool_history_under_the_renamed_column() {
+    let path = scratch_db("migrate-3");
+    write_v3_db(&path);
+
+    let conn = open_db(&path).unwrap();
+
+    assert_eq!(version(&conn), USER_VERSION);
+    let call: f64 = conn
+        .query_row("SELECT cost_usd FROM tool_calls", [], |r| r.get(0))
+        .unwrap();
+    let rollup: f64 = conn
+        .query_row("SELECT cost_usd FROM tool_rollup", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!((call, rollup), (1.5, 1.5));
+    assert!(conn.prepare("SELECT cost_share FROM tool_calls").is_err());
+    assert!(std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .all(|e| !e.unwrap().file_name().to_string_lossy().contains(".bak-")));
+}
+
+#[test]
+fn reopening_a_migrated_database_leaves_it_unchanged() {
+    let path = scratch_db("migrate-3-twice");
+    write_v3_db(&path);
+    drop(open_db(&path).unwrap());
+
+    let conn = open_db(&path).unwrap();
+
+    let rows: i64 = conn
+        .query_row("SELECT count(*) FROM tool_calls", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 1);
 }
 
 #[test]

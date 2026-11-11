@@ -370,7 +370,7 @@ impl Pass<'_> {
                     entry_id,
                     ts,
                     tool,
-                    cost_share: share,
+                    cost_usd: share,
                     project_label: &self.state.project_label,
                     model,
                     reasoning: &self.state.cur_reasoning,

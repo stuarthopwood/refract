@@ -104,7 +104,7 @@ fn tool_breakdown(
         (
             f.build(&TOOL_CALLS, ctx)?,
             "SELECT tool, count(*), coalesce(sum(coalesce(is_error,0)),0), \
-             coalesce(sum(result_chars),0), coalesce(sum(cost_share),0) FROM tool_calls"
+             coalesce(sum(result_chars),0), coalesce(sum(cost_usd),0) FROM tool_calls"
                 .to_string(),
         )
     } else {
@@ -113,7 +113,7 @@ fn tool_breakdown(
         (
             w,
             format!(
-                "SELECT tool, sum(calls), sum(errors), sum(result_chars), sum(cost_share) FROM {src}"
+                "SELECT tool, sum(calls), sum(errors), sum(result_chars), sum(cost_usd) FROM {src}"
             ),
         )
     };
@@ -122,21 +122,33 @@ fn tool_breakdown(
         w.sql()
     );
     let mut stmt = conn.prepare(&sql)?;
-    let rows = stmt.query_map(rusqlite::params_from_iter(w.params()), |r| {
-        let cost_share: f64 = r.get(4)?;
-        Ok(BreakdownRow {
-            label: r.get(0)?,
-            reasoning: None,
-            calls: r.get(1)?,
-            tokens: 0,
-            usd: cost_share,
-            credits: 0.0,
-            errors: Some(r.get(2)?),
-            result_chars: Some(r.get(3)?),
-            cost_share: Some(cost_share),
-        })
-    })?;
-    Ok(rows.collect::<Result<_, _>>()?)
+    let mut rows = stmt
+        .query_map(rusqlite::params_from_iter(w.params()), |r| {
+            Ok(BreakdownRow {
+                label: r.get(0)?,
+                reasoning: None,
+                calls: r.get(1)?,
+                tokens: 0,
+                usd: r.get(4)?,
+                credits: 0.0,
+                errors: Some(r.get(2)?),
+                result_chars: Some(r.get(3)?),
+                cost_share: None,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    fill_cost_share(&mut rows);
+    Ok(rows)
+}
+
+/// Each tool's fraction of the window's tool spend; left unset when nothing was priced.
+fn fill_cost_share(rows: &mut [BreakdownRow]) {
+    let total: f64 = rows.iter().map(|r| r.usd).sum();
+    if total > 0.0 {
+        for row in rows {
+            row.cost_share = Some(row.usd / total);
+        }
+    }
 }
 
 /// A top-ten session row.

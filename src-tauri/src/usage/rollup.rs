@@ -41,7 +41,7 @@ pub struct ToolCallRow<'a> {
     pub entry_id: &'a str,
     pub ts: i64,
     pub tool: &'a str,
-    pub cost_share: f64,
+    pub cost_usd: f64,
     pub project_label: &'a str,
     pub model: &'a str,
     pub reasoning: &'a str,
@@ -82,10 +82,10 @@ first_ts = MIN(first_ts, excluded.first_ts), last_ts = MAX(last_ts, excluded.las
 calls = calls + 1, cost_total = cost_total + excluded.cost_total, credits = credits + excluded.credits, \
 project_label = excluded.project_label";
 
-const UPSERT_TOOL_ROLLUP: &str = "INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, errors, result_chars, cost_share) \
+const UPSERT_TOOL_ROLLUP: &str = "INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, errors, result_chars, cost_usd) \
 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(hour, project_label, tool, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, errors = errors + excluded.errors, \
-result_chars = result_chars + excluded.result_chars, cost_share = cost_share + excluded.cost_share";
+result_chars = result_chars + excluded.result_chars, cost_usd = cost_usd + excluded.cost_usd";
 
 /// Inserts a message; adds it to the rollups only when new. Returns whether it was new.
 pub fn record_message(
@@ -162,7 +162,7 @@ pub fn record_tool_call(
     let inserted = conn
         .prepare(
             "INSERT OR IGNORE INTO tool_calls (session_file, tool_call_id, ts, entry_id, tool, is_error, \
-             result_chars, cost_share, project_label, model, reasoning, agent_type) \
+             result_chars, cost_usd, project_label, model, reasoning, agent_type) \
              VALUES (?1, ?2, ?3, ?4, ?5, NULL, 0, ?6, ?7, ?8, ?9, ?10)",
         )?
         .execute(params![
@@ -171,7 +171,7 @@ pub fn record_tool_call(
             t.ts,
             t.entry_id,
             t.tool,
-            t.cost_share,
+            t.cost_usd,
             t.project_label,
             t.model,
             t.reasoning,
@@ -187,7 +187,7 @@ pub fn record_tool_call(
             1i64,
             0i64,
             0i64,
-            t.cost_share,
+            t.cost_usd,
         ])?;
     }
     Ok(inserted)
@@ -285,9 +285,9 @@ cost_cache_write = cost_cache_write + excluded.cost_cache_write, credits = credi
 
 fn rollup_tools_of_file(label: &str) -> String {
     format!(
-        "INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, errors, result_chars, cost_share) \
+        "INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, errors, result_chars, cost_usd) \
 SELECT ts - ts % 3600000, {label}, tool, agent_type, ?2 * count(*), ?2 * sum(coalesce(is_error, 0)), \
-?2 * sum(result_chars), ?2 * sum(cost_share) FROM tool_calls WHERE session_file = ?3 AND project_label <> ?1 \
+?2 * sum(result_chars), ?2 * sum(cost_usd) FROM tool_calls WHERE session_file = ?3 AND project_label <> ?1 \
 GROUP BY ts - ts % 3600000, project_label, tool, agent_type {ROLLUP_TOOLS_UPSERT}"
     )
 }
@@ -295,7 +295,7 @@ GROUP BY ts - ts % 3600000, project_label, tool, agent_type {ROLLUP_TOOLS_UPSERT
 const ROLLUP_TOOLS_UPSERT: &str = "\
 ON CONFLICT(hour, project_label, tool, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, errors = errors + excluded.errors, \
-result_chars = result_chars + excluded.result_chars, cost_share = cost_share + excluded.cost_share";
+result_chars = result_chars + excluded.result_chars, cost_usd = cost_usd + excluded.cost_usd";
 
 /// Moves one file's rows to `new`, subtracting each row from its own stored label's rollup first.
 /// Drops emptied rollup rows; runs inside a transaction.
@@ -334,7 +334,7 @@ pub fn relabel_file(conn: &Connection, session_file: &str, new: &str) -> rusqlit
         [],
     )?;
     conn.execute(
-        "UPDATE tool_rollup SET cost_share = max(cost_share, 0.0) WHERE cost_share < 0",
+        "UPDATE tool_rollup SET cost_usd = max(cost_usd, 0.0) WHERE cost_usd < 0",
         [],
     )?;
     Ok(())
