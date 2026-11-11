@@ -21,15 +21,17 @@ export function AskToolRow({ item, sessionId, userName, userAvatarUrl, askReques
   const running = item.status === 'running'
   const answers = React.useMemo(() => (fields && !running ? readAskFormAnswers(item.details) : null), [fields, running, item.details])
 
-  if (fields && sessionId && owns) {
+  const formOwned = fields !== null && sessionId !== null && owns
+  if (formOwned) {
     if (running) return <AskFormCard sessionId={sessionId} askItemId={item.id} fields={fields} />
-    if (isAskTimedOut(item.details)) return <AskFormTimedOut />
+    if (isAskTimedOut(item.details)) return <AskFormTimedOut sessionId={sessionId} askItemId={item.id} />
   }
   // History needs no live session, so a reloaded transcript shows the answers too.
-  if (answers && !isAskTimedOut(item.details)) return <AskFormCard answers={answers} />
+  if (answers && !isAskTimedOut(item.details)) return <AskFormCard answers={answers} sessionId={sessionId ?? undefined} askItemId={item.id} />
   // The live question is the `request` item below, or nothing while the combined card has no form to show.
   if (running) return null
-  return <AskQuestionRow item={item} userName={userName} userAvatarUrl={userAvatarUrl} requestId={askRequestId} sessionId={sessionId ?? undefined} />
+  // The live form card arms its focus intent under the ask item id, so the row that replaces it claims that key.
+  return <AskQuestionRow item={item} userName={userName} userAvatarUrl={userAvatarUrl} requestId={formOwned ? item.id : askRequestId} sessionId={sessionId ?? undefined} />
 }
 
 interface RequestItemRowProps {

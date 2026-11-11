@@ -12,6 +12,9 @@ import type { AskFieldValue } from './answerPlan'
 import type { AskFormPhase } from './askFormSession'
 import type { AskFormChoiceField, AskFormField } from './parseAskHtml'
 import { NO_SELECTION, type AskFormAnswer } from './readAskForm'
+import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
+import { askFormIntentKey } from './askFormIntentKey'
+import { useClaimAskFormFocus } from './askFormFocus'
 import { useAskFormSession } from './useAskFormSession'
 
 type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
@@ -160,6 +163,14 @@ function TextField({ field, value, disabled, idPrefix, onChange }: TextFieldProp
   )
 }
 
+/** Programmatic focus target for a finished card, so Submit or Esc never leaves focus on the page body. */
+const RESTING_FOCUS_CLASS = 'outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+interface ClaimFocusProps {
+  sessionId?: string
+  askItemId?: string
+}
+
 const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
   answering: 'Submitting your answers',
   cancelling: 'Cancelled',
@@ -167,9 +178,9 @@ const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
 }
 
 /** The card chrome the live form and the read-only history share. */
-function AskFormShell({ children }: { children: React.ReactNode }) {
+function AskFormShell({ children, ref, resting }: { children: React.ReactNode; ref?: React.Ref<HTMLDivElement>; resting?: boolean }) {
   return (
-    <Card size="sm">
+    <Card ref={ref} size="sm" {...(resting ? { tabIndex: -1, role: 'group', 'aria-label': 'Questions from the agent', className: RESTING_FOCUS_CLASS } : {})}>
       <CardHeader>
         <CardTitle>Questions from the agent</CardTitle>
       </CardHeader>
@@ -185,9 +196,11 @@ interface AskFormLiveCardProps {
 }
 
 /** Read-only rows for a finished ask, so history shows the same card the user answered in. */
-function AskFormAnswersCard({ answers }: { answers: readonly AskFormAnswer[] }) {
+function AskFormAnswersCard({ answers, sessionId, askItemId }: { answers: readonly AskFormAnswer[] } & ClaimFocusProps) {
+  const rootRef = React.useRef<HTMLDivElement>(null)
+  useClaimAskFormFocus(rootRef, sessionId, askItemId)
   return (
-    <AskFormShell>
+    <AskFormShell ref={rootRef} resting>
       {answers.map((row, index) => (
         <CardContent key={`${row.name}-${index}`} className="space-y-1">
           <p className="whitespace-pre-line text-sm font-medium">{row.question}</p>
@@ -198,17 +211,26 @@ function AskFormAnswersCard({ answers }: { answers: readonly AskFormAnswer[] }) 
   )
 }
 
-type AskFormCardProps = ({ answers?: undefined } & AskFormLiveCardProps) | { answers: readonly AskFormAnswer[] }
+type AskFormCardProps = ({ answers?: undefined } & AskFormLiveCardProps) | ({ answers: readonly AskFormAnswer[] } & ClaimFocusProps)
 
 /** The ask form card: editable and live, or read-only from `answers` once the ask has finished. */
 export function AskFormCard(props: AskFormCardProps) {
-  if (props.answers) return <AskFormAnswersCard answers={props.answers} />
+  if (props.answers) return <AskFormAnswersCard answers={props.answers} sessionId={props.sessionId} askItemId={props.askItemId} />
   return <AskFormLiveCard sessionId={props.sessionId} askItemId={props.askItemId} fields={props.fields} />
 }
 
 /** One card for the whole parsed HTML form; Submit answers OMP's per-field frames in order. */
 function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps) {
   const { session, submittable, setValue, submit, cancel } = useAskFormSession(sessionId, askItemId, fields)
+  const rootRef = React.useRef<HTMLDivElement>(null)
+  const intentKey = askFormIntentKey(sessionId, askItemId)
+  React.useLayoutEffect(() => {
+    return () => {
+      if (!rootRef.current?.contains(document.activeElement)) return
+      // The row that replaces this card claims the intent and focuses itself; otherwise focus is rescued into the chat pane.
+      markAskFocusPendingWithFallback(intentKey, sessionId)
+    }
+  }, [intentKey, sessionId])
   const editing = session.phase === 'editing'
   const note = PHASE_NOTE[session.phase]
   const idBase = `ask-form-${askItemId}`.replace(/[^a-zA-Z0-9_-]/g, '-')
@@ -222,7 +244,7 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
   return (
     // Esc is the Cancel shortcut for the whole card (FR-010); the buttons below stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-    <div onKeyDown={handleKeyDown}>
+    <div ref={rootRef} onKeyDown={handleKeyDown}>
       <AskFormShell>
         {fields.map((field, index) => {
           const value = session.values[index]
@@ -268,9 +290,11 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
 }
 
 /** FR-006: an ask that timed out reads "Timed out, no answer" and offers no retry. */
-export function AskFormTimedOut() {
+export function AskFormTimedOut({ sessionId, askItemId }: ClaimFocusProps) {
+  const rootRef = React.useRef<HTMLDivElement>(null)
+  useClaimAskFormFocus(rootRef, sessionId, askItemId)
   return (
-    <Card size="sm">
+    <Card ref={rootRef} size="sm" tabIndex={-1} role="group" aria-label="Questions from the agent" className={RESTING_FOCUS_CLASS}>
       <CardContent role="status" className="text-sm text-muted-foreground">
         Timed out, no answer
       </CardContent>
