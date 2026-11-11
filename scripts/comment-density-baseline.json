@@ -7,10 +7,6 @@
     "commentLines": 16,
     "maxBlock": 15
   },
-  "src/renderer/components/ui/scroll-area.tsx": {
-    "commentLines": 7,
-    "maxBlock": 7
-  },
   "src/renderer/features/chat/SlashMenu.tsx": {
     "commentLines": 19,
     "maxBlock": 11

@@ -40,7 +40,6 @@ async function shot(cdp, name) {
 }
 
 const NAME_BUTTON = `document.querySelector('[data-profile-name-button]')`;
-const LIST = `document.querySelector('[role="dialog"] [aria-label="Keyboard shortcuts list"]')`;
 const VIEWPORT = `document.querySelector('[role="dialog"] [data-slot="scroll-area-viewport"]')`;
 const GEOMETRY = `(() => {
   const r = (el) => { const b = el.getBoundingClientRect(); return { top: b.top, bottom: b.bottom }; };
@@ -75,11 +74,12 @@ async function runChecks(cdp, { repoDir }) {
   let focused = false;
   for (let i = 0; i < 6 && !focused; i++) {
     await pressTab(cdp);
-    focused = await cdp.evaluate(`document.activeElement === ${LIST}`);
+    focused = await cdp.evaluate(`document.activeElement === ${VIEWPORT}`);
   }
-  assert(focused, 'Tab reaches the list');
-  const ring = await cdp.evaluate(`(() => { const s = getComputedStyle(${LIST}); const b = ${LIST}.getBoundingClientRect(); const v = ${VIEWPORT}.getBoundingClientRect(); return { boxShadow: s.boxShadow, outline: s.outlineStyle, insideViewport: b.top >= v.top - 0.5 && b.bottom <= v.bottom + 0.5 && b.left >= v.left - 0.5 && b.right <= v.right + 0.5 }; })()`);
-  assert(ring.boxShadow !== 'none' && ring.boxShadow.includes('inset') && ring.insideViewport, `the focused list shows an inset focus ring inside the scroll viewport ${JSON.stringify(ring)}`);
+  assert(focused, 'Tab reaches the scroll viewport');
+  const ring = await cdp.evaluate(`(() => { const s = getComputedStyle(${VIEWPORT}); const b = ${VIEWPORT}.getBoundingClientRect(); const d = document.querySelector('[role="dialog"]').getBoundingClientRect(); return { label: ${VIEWPORT}.getAttribute('aria-label'), height: b.height, boxShadow: s.boxShadow, insideDialog: b.top >= d.top - 0.5 && b.bottom <= d.bottom + 0.5 && b.left >= d.left - 0.5 && b.right <= d.right + 0.5 }; })()`);
+  assert(ring.label === 'Keyboard shortcuts list', `the focused viewport carries the accessible name ${JSON.stringify(ring.label)}`);
+  assert(ring.boxShadow !== 'none' && ring.boxShadow.includes('inset') && ring.insideDialog, `the focused scroll viewport shows an inset focus ring inside the dialog ${JSON.stringify(ring)}`);
   await shot(cdp, 'focus-ring-visible-all-edges.png');
 
   await pressKey(cdp, 34, 'PageDown', 'PageDown');
@@ -90,7 +90,7 @@ async function runChecks(cdp, { repoDir }) {
   await sleep(400);
   const end = await cdp.evaluate(GEOMETRY);
   assert(end.viewport.scrollTop + end.viewport.clientHeight >= end.viewport.scrollHeight - 2, 'End scrolls to the last row');
-  assert(await cdp.evaluate(`document.activeElement === ${LIST}`), 'focus stays on the list while it scrolls');
+  assert(await cdp.evaluate(`document.activeElement === ${VIEWPORT}`), 'focus stays on the scroll viewport while it scrolls');
   assert(end.done.bottom <= end.dialog.bottom + 0.5, 'Done stays visible after scrolling');
   await shot(cdp, `shortcuts-dialog-${SHORT_HEIGHT}px-scrolled-end.png`);
   await cdp.send('Emulation.clearDeviceMetricsOverride');
@@ -105,7 +105,7 @@ function buildShim(dir) {
 async function main() {
   const head = gitHead(REPO_ROOT);
   log(`verify-tauri-1856: head ${head}, shots ${SHOTS_DIR}`);
-  let shimDir, dataDir, importDir, exeDir, ghCfgDir, repoA, child, cdp;
+  let shimDir, dataDir, importDir, exeDir, ghCfgDir, copilotDir, ompSessionsDir, repoA, child, cdp;
   let ok = false;
   try {
     const mk = (n) => mkdtempSync(path.join(tmpdir(), `refract-1856-${n}-`));
@@ -114,6 +114,8 @@ async function main() {
     importDir = mk('import');
     exeDir = mk('exe');
     ghCfgDir = mk('ghcfg');
+    copilotDir = mk('copilot');
+    ompSessionsDir = mk('ompsessions');
     repoA = makeScratchRepo(mk('repoA'), 'A');
     buildShim(shimDir);
     const launcherExe = buildLauncher(shimDir);
@@ -129,6 +131,8 @@ async function main() {
       logFile: path.join(SHOTS_DIR, 'app.log'),
       extraEnv: {
         REFRACT_IMPORT_SOURCE_DIR: importDir,
+        COPILOT_HOME: copilotDir,
+        REFRACT_OMP_SESSIONS_DIR: ompSessionsDir,
         GH_CONFIG_DIR: ghCfgDir,
         GH_TOKEN: '',
         GITHUB_TOKEN: '',
@@ -150,7 +154,7 @@ async function main() {
     writeFileSync(path.join(SHOTS_DIR, 'sha256.json'), JSON.stringify(SHOTS, null, 2));
     cdp?.close();
     if (child) await stopLauncher(child);
-    for (const dir of [shimDir, dataDir, importDir, exeDir, ghCfgDir, repoA]) if (dir) await safeRmSync(dir);
+    for (const dir of [shimDir, dataDir, importDir, exeDir, ghCfgDir, copilotDir, ompSessionsDir, repoA]) if (dir) await safeRmSync(dir);
   }
 }
 
