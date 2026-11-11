@@ -106,6 +106,7 @@ async function main() {
     await cdp.click(`document.querySelector('[data-session-open]')`);
     await cdp.clickByText('Start agent');
     await checkRow('handoff', 'Write a short note that lets the next session resume', 'reopen');
+    await checkRow('check-build', 'Fetch a single Azure DevOps build by id', 'reopen');
   } catch (err) {
     record('script completed without error', false, String(err?.stack ?? err));
     if (cdp) await shot('error').catch(() => null);
