@@ -77,9 +77,17 @@ async function runChecks(cdp, { repoDir }) {
     focused = await cdp.evaluate(`document.activeElement === ${VIEWPORT}`);
   }
   assert(focused, 'Tab reaches the scroll viewport');
-  const ring = await cdp.evaluate(`(() => { const s = getComputedStyle(${VIEWPORT}); const b = ${VIEWPORT}.getBoundingClientRect(); const d = document.querySelector('[role="dialog"]').getBoundingClientRect(); return { label: ${VIEWPORT}.getAttribute('aria-label'), height: b.height, boxShadow: s.boxShadow, insideDialog: b.top >= d.top - 0.5 && b.bottom <= d.bottom + 0.5 && b.left >= d.left - 0.5 && b.right <= d.right + 0.5 }; })()`);
+  await sleep(500); // the ring fades in over the box-shadow transition; read it only once settled
+  const ring = await cdp.evaluate(`(() => {
+    const el = ${VIEWPORT};
+    const b = el.getBoundingClientRect();
+    const d = document.querySelector('[role="dialog"]').getBoundingClientRect();
+    const segs = getComputedStyle(el).boxShadow.split(/,(?![^()]*\\))/).map((s) => s.trim());
+    const inset = segs.map((s) => ({ s, px: (s.match(/-?[\\d.]+px/g) || []).map(parseFloat), clear: /(\\/ 0\\)|, 0\\))/.test(s.replace(/\\s+-?[\\d.]+px/g, '')) })).find((x) => x.s.includes('inset') && x.px[3] > 0 && !x.clear);
+    return { label: el.getAttribute('aria-label'), height: b.height, ringSpreadPx: inset ? inset.px[3] : 0, ringShadow: inset ? inset.s : null, insideDialog: b.top >= d.top - 0.5 && b.bottom <= d.bottom + 0.5 && b.left >= d.left - 0.5 && b.right <= d.right + 0.5 };
+  })()`);
   assert(ring.label === 'Keyboard shortcuts list', `the focused viewport carries the accessible name ${JSON.stringify(ring.label)}`);
-  assert(ring.boxShadow !== 'none' && ring.boxShadow.includes('inset') && ring.insideDialog, `the focused scroll viewport shows an inset focus ring inside the dialog ${JSON.stringify(ring)}`);
+  assert(ring.ringSpreadPx >= 3 && ring.insideDialog, `the focused scroll viewport shows a visible (non-transparent, >=3px) inset focus ring inside the dialog ${JSON.stringify(ring)}`);
   await shot(cdp, 'focus-ring-visible-all-edges.png');
 
   await pressKey(cdp, 34, 'PageDown', 'PageDown');
