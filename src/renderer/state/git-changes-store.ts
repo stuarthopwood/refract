@@ -15,6 +15,10 @@ interface GitChangesSessionState {
 interface GitChangesStoreState {
   bySession: Record<string, GitChangesSessionState>
   commitDraftsBySession: Record<string, { subject: string; body: string }>
+  /** An agent's request to show one file's diff; the mounted panel consumes it, so it survives a closed panel. */
+  showFileRequestBySession: Record<string, string>
+  requestShowFile(sessionId: string, path: string): void
+  clearShowFileRequest(sessionId: string): void
   load(sessionId: string): Promise<void>
   stage(sessionId: string, paths: string[]): Promise<Result<void>>
   unstage(sessionId: string, paths: string[]): Promise<Result<void>>
@@ -153,6 +157,20 @@ async function performLoad(
 export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
   bySession: {},
   commitDraftsBySession: {},
+  showFileRequestBySession: {},
+
+  requestShowFile(sessionId, path) {
+    set((state) => ({ showFileRequestBySession: { ...state.showFileRequestBySession, [sessionId]: path } }))
+  },
+
+  clearShowFileRequest(sessionId) {
+    set((state) => {
+      if (!(sessionId in state.showFileRequestBySession)) return state
+      const next = { ...state.showFileRequestBySession }
+      delete next[sessionId]
+      return { showFileRequestBySession: next }
+    })
+  },
 
   async load(sessionId) {
     const queued = loadQueued.get(sessionId)
@@ -240,6 +258,7 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
 
   forgetSession(sessionId) {
     loadGeneration.set(sessionId, (loadGeneration.get(sessionId) ?? 0) + 1)
+    get().clearShowFileRequest(sessionId)
     set((state) => {
       if (!(sessionId in state.bySession)) return state
       const bySession = { ...state.bySession }

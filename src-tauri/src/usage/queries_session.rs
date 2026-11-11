@@ -30,3 +30,10 @@ pub(super) fn clause(w: &mut Where, dir: &str, column: &str) -> QueryResult<Stri
         "(substr({file}, 1, length({p})) = {p} AND substr({file}, length({p}) + 1, 1) = '\\')"
     ))
 }
+
+/// `column` equal to one conversation file, folded the same way as the directory match so a
+/// registry path and the stored `session_file` agree on separators and ASCII case.
+pub(super) fn file_clause(w: &mut Where, file: &str, column: &str) -> QueryResult<String> {
+    let p = w.bind(Value::Text(normalise(file)?));
+    Ok(format!("lower(replace({column}, '/', '\\')) = {p}"))
+}

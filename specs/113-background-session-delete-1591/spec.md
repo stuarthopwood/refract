@@ -19,10 +19,20 @@ All answers come from the issue's grill block, its "Intended behaviour" and "Tec
 - Q: What happens when the user quits during a delete? -> A: The app asks first: "A Session is still being deleted. Quit anyway?". Quitting anyway leaves a partial folder, which the existing Retry path already handles (#891).
 - Q: Does a reload restore the Deleting… rows? -> A: Yes. A backend set of in-flight deletes is exposed to the renderer.
 - Q: What can a Deleting… Session NOT do? -> A: It cannot be opened, archived, renamed, or deleted again.
-- Q: Accessibility? -> A: The row's accessible name includes "deleting"; a polite live region announces "Deleted <name>" or the failure; the toast's Retry and Details are keyboard reachable.
+- Q: Accessibility? -> A: The row's accessible name includes "deleting"; a polite live region announces "Deleted <name>"; the failure is announced assertively (amended 2026-11-06, see below); the toast's Retry and Details are keyboard reachable.
 - Q: Open questions in the issue? -> A: None.
 
 Details the grill did not fix (the plan chooses a default and flags it; Stuart can overrule): the quit prompt is a native OS message dialog (the window may already be closing); the failure toast stays until dismissed; a Retry that is refused again replaces the toast instead of stacking a second one.
+
+### Session 2026-11-06 (amendment, #1722)
+
+Decided (Skippy, delegated by Stuart 2026-11-06) from the #1722 grill, following the toast follow-ups deferred from PR #1719:
+
+- Q: How are persistent errors announced? -> A: Assertively, through an `alert` live region. FR-006 here previously said "polite", which contradicted `specs/054-add-project-clone` FR-019 ("Errors persist until dismissed ... errors announce assertively"); it now matches. Everything else stays polite.
+- Q: What happens when the same error repeats? -> A: Dedupe by message text: the open toast is replaced in place and the message is announced again.
+- Q: Which callers move to the shared helper? -> A: Every direct `toast.error(..., { duration: Infinity, closeButton: true })` caller (`Markdown.tsx`, `usePaletteConversations.ts`, `newSessionInFocusedPane.ts`, `startSessionRequest.ts`, `useSessionRowActions.ts`, the delete-failure toast) plus the `notify()` default error path, which also gets a stable id. Short transient `toast.error` calls that carry no `duration: Infinity` keep their current behaviour.
+- Q: Remaining Lows from #1719? -> A: Loading icon `aria-hidden`, one shared hint constant in `chat.rs`, close button on `notifyProgress.info`.
+
 
 ## User Scenarios & Testing
 
@@ -66,7 +76,7 @@ If the background removal fails after the dialog has closed, the user is told an
 
 **Acceptance Scenarios**:
 
-1. **Given** the background removal fails, **When** it ends, **Then** the row returns to normal and an error toast appears with **Retry** and **Details**, and a polite live region announces the failure.
+1. **Given** the background removal fails, **When** it ends, **Then** the row returns to normal and an error toast that stays until dismissed appears with **Retry** and **Details**, and the failure is announced assertively.
 2. **Given** the toast, **When** the user chooses **Retry**, **Then** the delete starts again through the same checks.
 3. **Given** the toast, **When** the user chooses **Details**, **Then** the Delete dialog reopens showing the failure message plus the existing holders and leftover summary.
 4. **Given** the toast, **When** the user uses only the keyboard, **Then** Retry and Details are reachable and operable.
@@ -112,7 +122,7 @@ If the background removal fails after the dialog has closed, the user is told an
 - **FR-003**: While removing, the Session row MUST stay in the sidebar, dimmed, with a spinner and the status text **Deleting…**, and its accessible name MUST include "deleting".
 - **FR-004**: A Deleting… Session MUST NOT be openable, archivable, renamable or deletable again, in the UI and in the backend.
 - **FR-005**: On success the row MUST be removed and a polite live region MUST announce "Deleted <name>".
-- **FR-006**: On failure the row MUST return to normal and an error toast MUST show **Retry** and **Details**, and a polite live region MUST announce the failure.
+- **FR-006**: On failure the row MUST return to normal and an error toast MUST show **Retry** and **Details**. The toast MUST stay until dismissed and MUST be announced assertively (matching 054 FR-019: errors persist until dismissed and announce assertively).
 - **FR-007**: **Retry** MUST start the delete again through the same checks. **Details** MUST reopen the Delete dialog showing the failure message plus the existing holders and leftover summary.
 - **FR-008**: Several Sessions MUST be deletable at once, each independent (one write guard per Session).
 - **FR-009**: The backend MUST keep the set of in-flight Session ids and expose it to the renderer so a reload restores Deleting… rows.
@@ -120,6 +130,9 @@ If the background removal fails after the dialog has closed, the user is told an
 - **FR-011**: Failure events MUST carry the same error payload (code, message) the dialog shows today.
 - **FR-012**: The row state MUST be built on the shared sidebar row component and the toast on the shared `ui/sonner` wrapper (ADR 0003).
 - **FR-013**: The toast Retry and Details MUST be reachable and operable by keyboard.
+- **FR-014**: Every persistent error toast, including this one, MUST be raised through the single `notifyPersistentError` helper in `state/notify.ts`, which gives it no auto-dismiss and a close button, and announces it assertively. A repeat of identical message text MUST replace the open toast in place and announce it again, never stack a second copy. Only persistent errors announce assertively; all other toasts stay polite.
+- **FR-015**: The toast loading icon MUST be `aria-hidden`; every `notifyProgress` toast, including the transient `info` one, MUST have a close button.
+- **FR-016**: The unknown-command hint "Type / to see the available commands." MUST be one shared constant in `src-tauri/src/ipc/chat.rs`, not repeated at each refusal site.
 
 ### Key Entities
 

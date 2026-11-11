@@ -174,14 +174,15 @@ function isInsidePane(rects) {
   return rects.left >= rects.pane.left && rects.right <= rects.pane.right && rects.top >= rects.pane.top && rects.bottom <= rects.pane.bottom;
 }
 
-/** Both readout pills must render with a real box wholly inside the pane (no overflow-hidden clipping at narrow width). */
+/** Both readout pills (looked up inside pane A only) must render with a real box wholly inside it, unclipped at narrow width. */
 async function pillsLegibleInPane(cdp, paneId) {
   return cdp.evaluate(`(() => {
-    const p = document.querySelector('[data-session-pane="${paneId}"]').getBoundingClientRect();
-    return [${TODO_PILL_SELECTOR}, ${AGENTS_PILL_SELECTOR}].every((el) => {
-      if (!el) return false;
-      const r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0 && r.left >= p.left && r.right <= p.right && (el.textContent ?? '').trim().length + (el.getAttribute('aria-label') ?? '').length > 0;
+    const pane = document.querySelector('[data-session-pane="${paneId}"]');
+    const p = pane.getBoundingClientRect();
+    const chip = (match) => Array.from(pane.querySelectorAll('[data-slot="readout-chip"]')).find(match);
+    return [(el) => (el.querySelector('span.sr-only')?.textContent ?? '').startsWith('Todo:'), (el) => (el.getAttribute('aria-label') ?? '').startsWith('Open subagents panel')].map(chip).every((el) => {
+      const r = el?.getBoundingClientRect();
+      return !!r && r.width > 0 && r.height > 0 && r.left >= p.left && r.right <= p.right && (el.textContent ?? '').trim().length + (el.getAttribute('aria-label') ?? '').length > 0;
     });
   })()`);
 }
@@ -512,7 +513,7 @@ async function main() {
     }
     assertTrue(paneWidth <= PANE_TARGET_PX && paneWidth >= PANE_TARGET_PX - 20, `Session A's own split pane is narrowed to 360px (actual ${Math.round(paneWidth)}px)`, { paneWidth, targetWindowWidth });
     await cdp.send('Emulation.setDeviceMetricsOverride', { width: targetWindowWidth, height: 900, deviceScaleFactor: 1, mobile: false });
-    await sleep(250);
+    await cdp.waitFor(`Math.abs(document.querySelector('[data-session-pane="${sessionIdA}"]').getBoundingClientRect().width - ${paneWidth}) < 0.5`, { timeoutMs: 5_000, label: 'Split pane settles at its narrowed width' });
 
     // The split menu returns focus to its row trigger, which keeps that button's tooltip open.
     await cdp.evaluate(`document.activeElement instanceof HTMLElement && document.activeElement.blur()`);

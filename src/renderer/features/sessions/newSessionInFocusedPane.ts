@@ -1,5 +1,4 @@
-import { toast } from 'sonner'
-import { useRepositoriesStore, useSessionsStore, useSplitStore } from '@/state'
+import { notifyPersistentError, useRepositoriesStore, useSessionsStore, useSplitStore } from '@/state'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
 import { announceQuickCreateFallback } from './quickCreateFallback'
@@ -52,7 +51,7 @@ export function newSessionInFocusedPane(): void {
     .create(repository.id, repository.defaultBranch)
     .then((result) => {
       if (!result.ok) {
-        toast.error(result.error.message, { duration: Infinity, closeButton: true })
+        notifyPersistentError(result.error.message)
         return
       }
       requestAnimationFrame(() => {
@@ -67,6 +66,6 @@ export function newSessionInFocusedPane(): void {
       })
     })
     .catch((err: unknown) => {
-      toast.error(err instanceof Error ? err.message : String(err), { duration: Infinity, closeButton: true })
+      notifyPersistentError(err instanceof Error ? err.message : String(err))
     })
 }

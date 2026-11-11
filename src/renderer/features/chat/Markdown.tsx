@@ -7,14 +7,15 @@ import rehypeSanitize from 'rehype-sanitize'
 import { cn } from '@/lib/utils'
 import { safeUrl } from '@/lib/safe-url'
 import { parseFileReference, looksWithinWorktree, isLinkableFilePath } from '@/lib/linkify'
-import { toast } from 'sonner'
-import { useSessionsStore } from '@/state'
+import { notifyPersistentError, useSessionsStore } from '@/state'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { InlineCode } from '@/components/ui/inline-code'
 import { CodeBlock } from './CodeBlock'
 import { MermaidBlock } from './MermaidBlock'
 import { linkClassName, mutedLinkClassName } from './linkStyles'
 import { LinkActions } from './LinkActions'
+import { ItemRefLink } from './ItemRefLink'
+import { ITEM_REF_TAG, rehypeItemRefs } from './itemRefs'
 import {
   MarkdownBlockquote,
   MarkdownOptionsContext,
@@ -183,7 +184,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
   const reveal = (): void => {
     void window.refract.sessions.revealFile(sessionId, path).then((result) => {
       // Dismiss-until-cleared: a stale/wrong file reference needs a moment to read (round 3).
-      if (!result.ok) toast.error(result.error.message, { duration: Infinity, closeButton: true })
+      if (!result.ok) notifyPersistentError(result.error.message)
     })
   }
   return (
@@ -216,7 +217,7 @@ export function FileLinkButton({ path, display, muted = false, streaming = false
   )
 }
 
-const components: Components = {
+const components: Components & Record<typeof ITEM_REF_TAG, (props: { children?: React.ReactNode }) => React.ReactNode> = {
   // `markdownUrlTransform` has already reduced `href` to an absolute http(s) URL, a footnote
   // fragment or `''` (blocked: relative/`file:`/`javascript:` hrefs must never reach `openExternal`).
   a: ({ node: _node, href, children, className, ...props }) => {
@@ -263,6 +264,11 @@ const components: Components = {
     // Only a caller that passes `resolveImage` (the Pull requests view) ever fetches an image; the link above is also its loading/failure fallback.
     if (resolveImage) return <ResolvedImage src={safe} alt={alt ?? ''} resolveImage={resolveImage} fallback={link} />
     return link
+  },
+  [ITEM_REF_TAG]: ({ children }) => {
+    const streaming = React.useContext(StreamingContext)
+    const sessionId = React.useContext(LinkContext)
+    return <ItemRefLink text={String(children)} sessionId={sessionId} streaming={streaming} />
   },
   p: Paragraph,
   ul: UnorderedList,
@@ -382,7 +388,7 @@ function MarkdownImpl({ text, id, streaming = false, className, githubStyle = fa
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             remarkRehypeOptions={remarkRehypeOptions}
-            rehypePlugins={[rehypeSanitize]}
+            rehypePlugins={[rehypeSanitize, rehypeItemRefs]}
             components={components}
             urlTransform={markdownUrlTransform}
           >

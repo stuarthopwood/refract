@@ -17,6 +17,7 @@ use crate::store::settings::SettingsStore;
 
 pub mod accounts;
 pub mod advisor_roster;
+pub mod agent_tools;
 pub mod app;
 pub mod attachments;
 pub mod chat;
@@ -33,6 +34,7 @@ pub mod home;
 pub mod image_save;
 pub mod images;
 pub mod issues;
+pub mod item_refs;
 pub mod model;
 pub mod model_roles;
 pub mod pull_requests;
@@ -171,6 +173,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     sessions_visibility::register(dispatcher);
     home::register(dispatcher);
     issues::register(dispatcher);
+    item_refs::register(dispatcher);
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
     chat::register(dispatcher);
@@ -192,6 +195,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     themes::register(dispatcher);
     app::register(dispatcher);
     token_guard::register(dispatcher);
+    agent_tools::register(dispatcher);
     advisor_roster::register(dispatcher);
     copilot_plan::register(dispatcher);
     usage::register(dispatcher);

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { toast } from 'sonner'
-import { notify, useSessionsStore, useSplitStore } from '@/state'
+import { notify, notifyPersistentError, useSessionsStore, useSplitStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -203,7 +202,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
     function restoreAfterCreateFailure(message: string): void {
       pendingCreateAnnouncementRef.current = null
       const finish = () => {
-        toast.error(message, { duration: Infinity, closeButton: true })
+        notifyPersistentError(message)
         if (isStillHere()) focusOrigin()
       }
       if (createRequestedRef.current) settledCreateRef.current = finish

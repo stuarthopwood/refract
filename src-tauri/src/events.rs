@@ -31,6 +31,7 @@ pub const PREWALK_UPDATE: &str = "prewalk:update";
 pub const SESSION_HEALTH: &str = "session:health";
 pub const SUBAGENTS_UPDATE: &str = "subagents:update";
 pub const SUBAGENT_PATCH: &str = "subagent:patch";
+pub const AGENT_TOOLS_CALL: &str = "agent-tools:call";
 pub const SIDE_CHAT_PATCH: &str = "side-chat:patch";
 pub const SIDE_CHAT_INTERRUPTED: &str = "side-chat:interrupted";
 pub const SIDE_CHAT_CONVERSATION_CHANGED: &str = "side-chat:conversation-changed";
@@ -327,6 +328,28 @@ impl EventSink {
             SIDE_CHAT_CONVERSATION_CHANGED,
             serde_json::json!({ "sessionId": session_id }),
         );
+    }
+
+    /// `agent-tools:call`; false when there is no window to receive it.
+    pub fn emit_agent_tools_call(
+        &self,
+        session_id: &str,
+        call_id: &str,
+        tool: &str,
+        args: &serde_json::Value,
+    ) -> bool {
+        let has_window = self
+            .app_handle
+            .lock()
+            .expect("app_handle mutex poisoned")
+            .is_some();
+        if has_window {
+            self.send(
+                AGENT_TOOLS_CALL,
+                serde_json::json!({ "sessionId": session_id, "callId": call_id, "tool": tool, "args": args }),
+            );
+        }
+        has_window
     }
 }
 

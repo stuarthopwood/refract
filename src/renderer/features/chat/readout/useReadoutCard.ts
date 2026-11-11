@@ -1,7 +1,7 @@
 // One shared hover/focus controller for the Todo and Agents readout cards. Not a Radix HoverCard/Tooltip: the
 // anchor button already has its own click behaviour and those triggers want exclusive ownership of its events.
 // The card body has no focus trap; its one link is tabIndex -1, so keyboard focus stays on the anchor. (#700)
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { FocusEvent, PointerEvent, RefObject } from 'react'
 
 const OPEN_DELAY_MS = 400
@@ -69,6 +69,11 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
   // same coordinates) when the chip remounts under a parked pointer, which must not reopen the card.
   const lastMoveRef = useRef<{ x: number; y: number } | null>(null)
   const anchorRef = useRef<HTMLButtonElement | null>(null)
+  // Resolved in a layout effect (refs are not render-safe); the portaled card would otherwise collide with the window, not its pane.
+  const [collisionBoundary, setCollisionBoundary] = useState<Element[]>([])
+  useLayoutEffect(() => {
+    setCollisionBoundary(open ? paneBoundaryOf(anchorRef.current) : [])
+  }, [open])
 
   const close = useCallback(() => {
     clearTimer(openTimerRef)
@@ -164,8 +169,7 @@ export function useReadoutCard({ disabled = false }: { disabled?: boolean } = {}
     cardId,
     anchorAria: { 'aria-expanded': open, 'aria-describedby': open ? cardId : undefined },
     anchorRef,
-    // Read at render while open (anchor is mounted by then); the portaled card would otherwise collide with the window, not its pane.
-    collisionBoundary: open ? paneBoundaryOf(anchorRef.current) : [],
+    collisionBoundary,
     anchorHandlers: { onPointerEnter, onPointerMove, onPointerLeave, onFocus, onBlur },
     contentHandlers: { onPointerEnter: onContentPointerEnter, onPointerLeave: onContentPointerLeave },
     close

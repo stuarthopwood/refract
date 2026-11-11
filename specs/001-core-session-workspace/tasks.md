@@ -5488,13 +5488,36 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T427 Live check a Dependabot PR description, update `docs/PLAN.md`, then `cargo` and
   `node scripts/ci-local.mjs` per FR-124
 
-## Phase 89: Convergence (#1817 skill-prompt row never built in Rust, FR-063)
+## Phase 89: Convergence (#1159 Delete flow hardening, FR-125, FR-029)
 
-- [x] T428 [US1] `transcript/skill_prompt.rs`: build the `skill-prompt` item (name, args, line count, summary) from
+- [x] T428 [US6] `fs/leftover_summary.rs`: move the read guard into the `spawn_blocking` closure, so a
+  dropped IPC future cannot release it while the walk runs, per FR-125(d) (missing)
+- [x] T429 [US6] `fs/remove_tree.rs`: pin the attempt-1 canonical path across retries, refuse when a
+  later attempt resolves elsewhere, and `log::debug!` each retry; keep the #1158 behaviour, per
+  FR-125(b) (missing)
+- [x] T430 [US6] `git/worktree_holders.rs`: give `Unreadable` its own message and use
+  `normalize_git_path` for the displayed path, per FR-125(a), (b) (missing)
+- [x] T431 [US6] `git/worktree_delete.rs`: reword `registration_unknown_message` and normalise its
+  path, per FR-125(a) (partial)
+- [x] T432 [US6] `git/worktree_delete_check.rs`: leave `D` and ` D` porcelain lines out of
+  `uncommitted_files`, per FR-125(c) (missing)
+- [x] T433 [US6] `components/DialogError.tsx`: the shared always-mounted error live region; use it in
+  `ConfirmAlertDialog.tsx` and `ReviewDialog.tsx`, per FR-125(f) (missing)
+- [x] T434 [US6] `DeleteDialog.tsx`: bump the generation in the open effect, keep "Retry" while
+  deleting, spinner and "Rechecking…" for loading and re-check, drop the dead `outline-offset`
+  class, reword the unreadable-list copy, per FR-125(e), US6/AC8 (missing)
+- [x] T435 [US6] Update `docs/PLAN.md` and `docs/design/components.md`, then run the TS checks;
+  `cargo`, `ci:local` and the live check stay pending per FR-125 (missing)
+- [x] T436 [US6] `ConfirmAlertDialog.tsx`/`DeleteDialog.tsx`: confirm button `min-w-24`, move focus to it
+  before the file list is replaced; trim the `fs/remove_tree.rs` header comment, per FR-125(e) (missing)
+
+## Phase 90: Convergence (#1817 skill-prompt row never built in Rust, FR-063)
+
+- [x] T437 [US1] `transcript/skill_prompt.rs`: build the `skill-prompt` item (name, args, line count, summary) from
   OMP's custom message, called once from the live `message_*` path and once from the history path in
   `transcript.rs`, with a `SkillPrompt` variant and the `description` field in `model.ts`, per FR-063 (missing)
-- [x] T429 Rust tests from the captured live and replay messages (`tests/fixtures/skill-prompt.json`) and the
+- [x] T438 Rust tests from the captured live and replay messages (`tests/fixtures/skill-prompt.json`) and the
   malformed (no name) Notice fallback, per FR-063
-- [x] T430 [US1] `SkillPromptRow.tsx`: pass the summary as `iconTooltip` (hover and keyboard focus), per FR-063 (missing)
-- [ ] T431 Live check a `/skill:<name>` send on a built app (live and after a Session reopen), update `docs/PLAN.md`,
+- [x] T439 [US1] `SkillPromptRow.tsx`: pass the summary as `iconTooltip` (hover and keyboard focus), per FR-063 (missing)
+- [ ] T440 Live check a `/skill:<name>` send on a built app (live and after a Session reopen), update `docs/PLAN.md`,
   then `cargo` and `node scripts/ci-local.mjs` per FR-063

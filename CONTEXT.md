@@ -21,8 +21,20 @@ One unit of work: a **Worktree** together with the **Conversations** held in it.
 _Avoid_: Task, thread, chat (for the whole unit)
 
 **Child Session**:
-A **Session** created by another Session's agent (#1304), linked to that parent Session and nested under it in the session list. It has its own **Worktree** and branch and is otherwise a full Session the developer can open, message, stop and archive. Only one level deep: a child Session cannot create its own. Not a **Subagent**, which runs inside its parent's Worktree through OMP's `task` tool and is not a Session.
+A **Session** created by another Session's agent (#1304), linked to that parent Session and nested under it in the session list. It has its own **Worktree** and branch and is otherwise a full Session the developer can open, message, stop and archive. Nesting goes to depth 3 (a developer-created Session is depth 1, its child depth 2, a grandchild depth 3), and a parent has at most 4 live children; a Session at depth 3 cannot create a child. Rust enforces both limits (#1859). Not a **Subagent**, which runs inside its parent's Worktree through OMP's `task` tool and is not a Session.
 _Avoid_: Sub-session, nested session, spawned session
+
+**Tool channel**:
+How Refract gives an agent its own tools (#1193, ADR 0007): each launch registers **Host tools** with OMP over the RPC stream, Refract routes each call to the renderer and back, and a failure returns to the agent as a tool error, never a toast. The tools a launch registers depend on the **Session**'s role and depth.
+_Avoid_: MCP server (the reserved fallback, not built), plugin, bridge
+
+**Host tool**:
+A tool Refract registers with OMP for one launch, named `refract_<name>` (for example `refract_open_panel`), and serves itself. OMP calls it; Refract answers.
+_Avoid_: custom tool, extension tool
+
+**Panel action**:
+A named operation a right-pane panel declares for the agent: name, description, input schema and whether it changes something. A mutating one asks the developer first through the approval card; reading and navigating ones run straight away.
+_Avoid_: panel command, panel API
 
 **Session status**:
 The one state shown for a **Session** by the shared status icon and its word: Working, Needs you, Paused, Stopped, Unread response or Idle, in that order of precedence.

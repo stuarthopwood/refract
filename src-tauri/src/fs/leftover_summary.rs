@@ -272,8 +272,9 @@ impl Drop for RegistryGuard {
 /// Background walk for a Session's worktree, registered so `cancel_and_wait` can stop it.
 /// Returns an empty summary when the worktree folder is missing.
 pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) -> LeftoverSummary {
-    // Held for the whole call so `sessions.delete` cannot race the removal.
-    let _read_guard = crate::fs::worktree_access::read_guard(session_id).await;
+    // Taken before registering, so `sessions.delete` cannot race the removal; it moves into the
+    // blocking walk below, which keeps it even if this future is dropped.
+    let read_guard = crate::fs::worktree_access::read_guard(session_id).await;
 
     // Registered before the first await so `cancel_and_wait` always sees this walk.
     let cancel = Arc::new(AtomicBool::new(false));
@@ -320,10 +321,13 @@ pub async fn compute_leftover_summary(session_id: &str, worktree_path: &Path) ->
     }
     let path = worktree_path.to_path_buf();
     let cancel_for_count = cancel.clone();
-    tokio::task::spawn_blocking(move || build_summary(&path, &raw.stdout, &cancel_for_count))
-        .await
-        .unwrap_or_else(|_| LeftoverSummary::unavailable(root_name))
-    // Guards drop on every exit path, deregistering the walk and releasing the read lock.
+    tokio::task::spawn_blocking(move || {
+        let _read_guard = read_guard;
+        build_summary(&path, &raw.stdout, &cancel_for_count)
+    })
+    .await
+    .unwrap_or_else(|_| LeftoverSummary::unavailable(root_name))
+    // The registry guard drops on every exit path; the read lock ends with the blocking walk.
 }
 
 /// Cancels every walk for `session_id` and waits for each to deregister.

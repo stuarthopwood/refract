@@ -95,7 +95,6 @@ export function initStores(): void {
     const name = store.sessions.find((s) => s.id === sessionId)?.name ?? 'Session'
     store.clearDeleting(sessionId)
     void store.refresh()
-    useChatAreaAnnouncer.getState().announce(`Could not delete ${name}. ${error.message}`)
     showDeleteFailureToast({ id: sessionId, name }, error)
   })
   window.refract.onSessionActivity(({ sessionId, activity }) => {
