@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feat/1831-ask-form`
 **Created**: 2026-11-11
-**Status**: Specified, clarified, planned; not implemented
+**Status**: Specified, clarified (all three deferred questions answered 2026-11-11), planned; parser and frame matcher implemented, card and wiring not yet built
 **Input**: GitHub issue #1831 (p0, bug, chat). Trusted input is the github-actions triage comment plus the 2026-11-10 re-grill after the #520 probes, which supersedes the issue's route (a). Grill outcomes from Stuart on 2026-11-11 are recorded below. Route: specify, clarify, plan, tasks, analyze, implement.
 
 ## Problem
@@ -20,7 +20,12 @@ No question reached Stuart in this step; every answer below was decided before i
 - Q: How does history show an ask? -> A: `details.answers` (`{name, question, answer}`) renders read-only in the same card. The saved history text is a stub and is not used.
 - Q: What does "Other" do? -> A: Picking it shows an inline text box inside the card.
 - Q: How do checkbox groups finish? -> A: Submit sends the "Done selecting" wire row automatically; there is no visible Done row.
-- Q: Anything else? -> A: See Deferred Clarifications. Nothing in that list is guessed in this spec.
+- Q: Anything else? -> A: Three questions were deferred and Stuart answered them on 2026-11-11 (below).
+
+### Session 2026-11-11 (Stuart's answers to the deferred clarifications)
+- Q: Does the combined card have a Cancel? -> A: Yes. The card has Cancel, and Esc does the same. Cancel cancels every frame still pending, exactly as today's per-field Cancel does for one frame.
+- Q: Is Submit blocked while a field is empty? -> A: Only for a field the HTML marks `required`: Submit stays disabled until it is filled. For a `required` radio or checkbox group that means at least one choice; an Other choice whose text box is empty counts as unanswered. Fields not marked `required` may be blank.
+- Q: Which field types get the combined card? -> A: Radio, checkbox, text and textarea. Any other field type (dropdown, number, date, password, file, and so on) sends the whole ask to today's per-field cards.
 
 ## User Scenarios & Testing
 
@@ -34,12 +39,18 @@ No question reached Stuart in this step; every answer below was decided before i
 ### User Story 2 - "Other" (Priority: P1)
 **Acceptance Scenarios**:
 1. **Given** a radio or checkbox group, **When** I pick Other, **Then** a text box appears inside the card and its text is sent as my answer.
-2. **Given** Other is picked and its text box is empty, **Then** what happens is a deferred clarification (required fields); no rule is built until it is decided.
+2. **Given** Other is picked and its text box is empty, **Then** the choice counts as unanswered: if the field is `required`, Submit stays disabled; if not, the field is sent as no selection.
 
 ### User Story 3 - Safe fallback (Priority: P1)
 **Acceptance Scenarios**:
-1. **Given** the form cannot be parsed, or a frame's count, type or label does not match the parsed fields, **Then** the remaining fields show as today's per-field cards and nothing is lost.
+1. **Given** the form cannot be parsed, contains a field type other than radio, checkbox, text or textarea, or a frame's count, type or label does not match the parsed fields, **Then** the remaining fields show as today's per-field cards and nothing is lost.
 2. **Given** a form with a tag or attribute outside the allow-list, **Then** it is ignored or triggers the fallback, and it is never rendered as HTML.
+
+### User Story 5 - Cancel and required fields (Priority: P1)
+**Acceptance Scenarios**:
+1. **Given** the combined card, **When** I press Cancel or Esc, **Then** every frame still pending is cancelled, as today's per-field Cancel does, and the card shows as cancelled.
+2. **Given** a field marked `required` in the HTML that is empty (or an Other choice with an empty text box), **Then** Submit is disabled until it is filled.
+3. **Given** a field not marked `required`, **When** it is blank, **Then** Submit is enabled and the blank field is sent as an empty answer.
 
 ### User Story 4 - Timeout and history (Priority: P2)
 **Acceptance Scenarios**:
@@ -54,15 +65,17 @@ No question reached Stuart in this step; every answer below was decided before i
 - Old OMP versions that send a structured `questions` ask keep working through the existing path.
 
 ## Requirements
-- **FR-001**: The renderer parses `args.html` of the ask tool into a field list (radio group, checkbox group, single-line text, multi-line text) with each field's question, options and any default. Unknown markup is ignored. Nothing from the HTML is inserted into the page.
+- **FR-001**: The renderer parses `args.html` of the ask tool into a field list (radio group, checkbox group, single-line text, multi-line text) with each field's question, options, any default and whether it is `required`. Unknown markup is ignored; a field of any other type makes the parse return no form (per-field fallback). Nothing from the HTML is inserted into the page.
 - **FR-002**: A parsed form renders as one Ask card using shared components, with one Submit.
 - **FR-003**: Picking "Other" in a radio or checkbox group shows an inline text box in the card; its text is sent as the answer for that field.
 - **FR-004**: On submit, Refract answers each per-field frame in the order received from the card's values. For a checkbox group it sends the chosen rows then the "Done selecting" wire row automatically.
-- **FR-005**: A frame whose count, type or label does not match the parsed fields switches the remaining fields to the existing per-field cards.
+- **FR-005**: A frame whose count, type or label does not match the parsed fields switches the remaining fields to the existing per-field cards. The match ignores the `(N selected) ` title prefix, skips the `Other (type your own)` and `Done selecting` wire rows, and treats `input` and `editor` frames as the same text request.
 - **FR-006**: A timed-out ask shows "Timed out, no answer" and has no retry control.
 - **FR-007**: History renders `details.answers` read-only in the same card; an empty answer reads "No selection".
 - **FR-008**: Asks that carry no `html` keep today's behaviour unchanged.
 - **FR-009**: The card is keyboard-operable, every field has an accessible name from its question, and state changes (submitted, timed out) are announced politely.
+- **FR-010**: The combined card has Cancel, and Esc does the same. It cancels every frame still pending, as today's per-field Cancel does.
+- **FR-011**: Submit is disabled while a field marked `required` in the HTML is unanswered. An Other choice with an empty text box counts as unanswered. Fields not marked `required` may be blank.
 
 ## Success Criteria
 - **SC-001**: On OMP 18.18.3, an ask with several fields shows exactly one card, not one card per field.
@@ -70,11 +83,8 @@ No question reached Stuart in this step; every answer below was decided before i
 - **SC-003**: No HTML from the agent is ever rendered as markup.
 - **SC-004**: A mismatched or unparsable form never blocks answering: the user can always answer through per-field cards.
 
-## Deferred Clarifications
-Not decided by the grill or the issue; the plan and tasks must not guess them. Each needs Stuart before the named task.
-1. **Cancel or dismiss**: whether the combined card has a Cancel and what it sends for the frames still pending. Until decided, the combined card has Submit only, and per-field cards keep their present controls.
-2. **Required fields and validation**: whether Submit is blocked while a radio group or text field is empty, and whether an empty "Other" is rejected.
-3. **Field types beyond radio, checkbox and text**: a dropdown, number or date field in the HTML. Until decided, any such field triggers the fallback.
+## Resolved Clarifications
+All three questions deferred earlier are answered; see Session 2026-11-11 (Stuart's answers). Nothing remains open.
 
 ## Assumptions
 - The probe files in `C:/Users/shopwood/AppData/Local/Temp/Probe520/` (`frames-save.jsonl`, `mock-model.mjs`, `probe1-driver.mjs`) are the reference for frame shapes on OMP 18.18.3.
