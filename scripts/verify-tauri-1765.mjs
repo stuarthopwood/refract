@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Live CDP check for issue #1765 (T062): a Settings write reaches a RUNNING Session's legacy overlay as well as the global config,
 // and a startup-only key says "Applies to new Sessions".
-// A read-only scratch config.yml makes the first migration fail, so the Session launches on the legacy overlay; the file is
-// then made writable, the migration retries inside the Settings write, and the overlay must be rewritten.
+// A directory at config.yml makes every `omp config set` fail, so the migration fails and the Session launches on the legacy
+// overlay; the directory is then replaced by the real file, the migration retries inside the Settings write, and the overlay must be rewritten.
 // Uses the real `omp` against a scratch PI_CODING_AGENT_DIR (fake provider, no model calls) and a scratch REFRACT_DATA_DIR.
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1765.mjs
 // Env: REFRACT_1765_SHOTS_DIR overrides the screenshot/report directory.
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, chmodSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, rmSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -78,10 +78,9 @@ async function main() {
     report.push({ step: 'build identity', ok: true, evidence: { head: gitHead(REPO_ROOT), dirty: computeDirty(REPO_ROOT), exeSha256: sha256OfFile(exe) } });
     check([exeDir, dataDir, agentDir].every((d) => d.startsWith(tmpdir())), 'Isolation: exe, data dir and OMP agent dir are scratch dirs', { exeDir, dataDir, agentDir });
 
-    writeFileSync(configFile, ORIGINAL_CONFIG);
     writeFileSync(path.join(agentDir, 'models.yml'), MODELS_YML);
     writeFileSync(path.join(dataDir, 'token-guard.json'), JSON.stringify(LEGACY_STORE, null, 2));
-    chmodSync(configFile, 0o444);
+    mkdirSync(configFile);
 
     const port = await getFreePort();
     const launched = await launchBuiltExe(launcherExe, exe, { port, dataDir, importSourceDir, logFile: path.join(SHOTS_DIR, 'app.log'), extraEnv: { PI_CODING_AGENT_DIR: agentDir } });
@@ -101,7 +100,8 @@ async function main() {
     check(/thresholdPercent:\s*70\b/.test(overlayBefore), 'Running Session launched on the legacy overlay (migration pending, threshold 70)', overlayBefore);
     const mtimeBefore = existsSync(overlayFile) ? statSync(overlayFile).mtimeMs : 0;
 
-    chmodSync(configFile, 0o644);
+    rmSync(configFile, { recursive: true });
+    writeFileSync(configFile, ORIGINAL_CONFIG);
     await openAdvanced(cdp);
     const input = `document.getElementById(${JSON.stringify(`advanced-${KEY}`)})`;
     await cdp.waitFor(`!!${input}`, { timeoutMs: 30_000, label: 'threshold input' });
