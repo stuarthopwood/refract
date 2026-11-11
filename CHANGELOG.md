@@ -1,5 +1,46 @@
 # Changelog
 
+## v0.32.0 (2026-11-11)
+
+### Features
+
+- feat(chat): link GitHub issue and PR references with a hover card (https://github.com/stuarthopwood/refract/pull/1826)
+- feat(usage): scope and range toggles in the Session usage panel (https://github.com/stuarthopwood/refract/pull/1786)
+- feat(agent-sessions): OMP host tool channel and panel tools (https://github.com/stuarthopwood/refract/pull/1871)
+
+### Fixes
+
+- fix(token-guard): guard maintenance pause against resets and collapse warnings in place (https://github.com/stuarthopwood/refract/pull/1787)
+- fix(sessions): refuse agent start while its worktree is being deleted (https://github.com/stuarthopwood/refract/pull/1785)
+- fix(deps): bump vulnerable dependencies for Dependabot alerts (https://github.com/stuarthopwood/refract/pull/1902)
+- fix(worktree): harden the worktree delete flow (https://github.com/stuarthopwood/refract/pull/1788)
+- fix(sessions): route persistent error toasts through one assertive helper (https://github.com/stuarthopwood/refract/pull/1773)
+
+### Other
+
+- docs(plan): add #1839 and #1840 git panel issues (https://github.com/stuarthopwood/refract/pull/1841)
+- docs(plan): add #1842 file explorer git actions (https://github.com/stuarthopwood/refract/pull/1843)
+- docs(plan): add #1845 usage cost share bug (https://github.com/stuarthopwood/refract/pull/1846)
+- docs(plan): add #1847 to #1852 usage and app-wide polish (https://github.com/stuarthopwood/refract/pull/1853)
+- docs(plan): add #1854 to #1856 session list, chat image, and shortcuts fixes (https://github.com/stuarthopwood/refract/pull/1857)
+- chore(readout): resolve card collision boundary in a layout effect; harden verify-700 script (https://github.com/stuarthopwood/refract/pull/1821)
+- docs(plan): split #1304 into child issues (https://github.com/stuarthopwood/refract/pull/1863)
+- docs(plan): add #1864 and #1865, fold #698 and #479 (https://github.com/stuarthopwood/refract/pull/1866)
+- docs(agents): open and merge every PR through gh stack (https://github.com/stuarthopwood/refract/pull/1869)
+- docs(plan): file #1867 stacked pull requests setting (https://github.com/stuarthopwood/refract/pull/1870)
+- chore(deps-dev): bump vite from 7.3.6 to 7.3.7 in the npm_and_yarn group across 1 directory (https://github.com/stuarthopwood/refract/pull/1868)
+- docs(plan): file #1872 to #1880 UI feedback (https://github.com/stuarthopwood/refract/pull/1881)
+- docs(plan): file #1882 chart tooltips (https://github.com/stuarthopwood/refract/pull/1883)
+- docs(agents): run git switch -c before gh stack init in a detached worktree (https://github.com/stuarthopwood/refract/pull/1884)
+- docs(plan): file #1885 theme file schema (https://github.com/stuarthopwood/refract/pull/1886)
+- docs(agent-sessions): record the real omp check for #1193 (https://github.com/stuarthopwood/refract/pull/1887)
+- docs(plan): mark #1193 done and add #1888 (https://github.com/stuarthopwood/refract/pull/1889)
+- docs(plan): file #1890 pause and stopped Sessions (https://github.com/stuarthopwood/refract/pull/1891)
+- docs(plan): file #1892 starting notice blur (https://github.com/stuarthopwood/refract/pull/1893)
+- docs(plan): file #1901 performance epic and children (https://github.com/stuarthopwood/refract/pull/1903)
+- docs(plan): file #1918 Road to V1 epic (https://github.com/stuarthopwood/refract/pull/1919)
+- docs(agents): lift the no-new-tests prototyping rule for V1 (https://github.com/stuarthopwood/refract/pull/1920)
+
 ## v0.31.0 (2026-11-09)
 
 ### Features
