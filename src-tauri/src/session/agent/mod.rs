@@ -16,8 +16,8 @@ use crate::store::settings::{ApprovalMode, SettingsStore};
 
 mod chat;
 mod chat_restore;
-mod commands;
 mod command_wait;
+mod commands;
 mod conversations;
 mod frame;
 mod handoff;
@@ -30,12 +30,12 @@ mod status;
 mod sync_from_state;
 mod tool_host;
 mod types;
+pub use command_wait::COMMANDS_WAIT;
 pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
 pub use requests::is_chat_answer;
-pub use command_wait::COMMANDS_WAIT;
 use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 

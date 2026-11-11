@@ -10,7 +10,9 @@ use tokio::sync::{Mutex, Notify};
 
 use super::wait_until_reported;
 
-fn reader(list: Arc<Mutex<Vec<Value>>>) -> impl FnMut() -> Pin<Box<dyn Future<Output = Vec<Value>> + Send>> {
+fn reader(
+    list: Arc<Mutex<Vec<Value>>>,
+) -> impl FnMut() -> Pin<Box<dyn Future<Output = Vec<Value>> + Send>> {
     move || {
         let list = list.clone();
         Box::pin(async move { list.lock().await.clone() })

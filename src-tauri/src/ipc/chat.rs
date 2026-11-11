@@ -366,7 +366,9 @@ pub fn chat_commands(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let mut commands = agent.available_commands().await;
         // A Session whose agent has not reported yet serves the last list OMP reported. (#1812)
         if commands.is_empty() {
-            commands = crate::store::last_commands::load().await.unwrap_or_default();
+            commands = crate::store::last_commands::load()
+                .await
+                .unwrap_or_default();
         }
         Ok(Value::Array(commands))
     })
