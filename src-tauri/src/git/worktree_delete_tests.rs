@@ -259,3 +259,26 @@ fn comparable_path_is_case_insensitive_for_a_differently_cased_drive_letter() {
         comparable_path("c:/repos/EXAMPLE/Worktree")
     );
 }
+
+#[test]
+fn path_changed_on_retry_maps_to_a_refusal_naming_the_pinned_path() {
+    let err = map_remove_tree_error(
+        RemoveTreeError::PathChanged {
+            path: std::path::PathBuf::from("C:/w/pinned"),
+        },
+        Path::new("C:/w/s1"),
+    );
+    assert!(
+        err.message.contains("resolved to a different folder"),
+        "{}",
+        err.message
+    );
+    assert!(err.message.contains("choose Retry"), "{}", err.message);
+}
+
+#[test]
+fn registration_unknown_message_says_git_did_not_answer_and_nothing_was_touched() {
+    let msg = registration_unknown_message(Path::new("C:/w/s1"));
+    assert!(msg.contains("Git did not answer in time"), "{msg}");
+    assert!(msg.contains("Nothing was touched"), "{msg}");
+}

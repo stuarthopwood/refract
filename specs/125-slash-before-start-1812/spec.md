@@ -2,8 +2,8 @@
 
 **Feature Branch**: `feat/1812-slash-before-start`
 **Created**: 2026-11-09
-**Status**: Draft
-**Input**: GitHub issue #1812, grilled with Stuart 2026-11-09. Route: specify. Describes the code already on the branch plus what this change adds.
+**Status**: Implemented; pending Rust build, ci:local and live check
+**Input**: GitHub issue #1812. The issue has no github-actions triage comment, so the route is the one this PR's artifacts already follow: specify, clarify, plan, tasks, analyze, implement. Renumbered 123 to 125 after merging `origin/main`, where 123 and 124 are taken.
 
 ## Problem
 A Session that has not started its agent has no command list, so the composer `/` menu is empty ("No matching commands") and a typed `/command` cannot be validated. Every send also forces the agent to start (`sessions.open(id, true)`), even for commands Refract handles itself.
@@ -11,7 +11,7 @@ A Session that has not started its agent has no command list, so the composer `/
 ## Clarifications
 
 ### Session 2026-11-09 (from grill)
-Answers come from Stuart's grill outcomes; no questions were put to him.
+Answers come from the issue's stated behaviour; no grill outcomes were recorded beyond the issue and no question reached Stuart.
 
 - Q: What does the `/` menu show before start? -> A: The last-known command list, instantly. On a new install with no saved list it shows "Starting agent…" instead of "No matching commands".
 - Q: Do Refract-native commands start the agent? -> A: No. `/new`, `/pause` and `/role <role>` run locally without a start. `/models` and bare `/role` already open Settings or the switcher without a start.
@@ -60,4 +60,4 @@ Answers come from Stuart's grill outcomes; no questions were put to him.
 
 ## Assumptions
 - `COMMANDS_WAIT` (10 s) is exported from `session::agent`.
-- No new TypeScript tests (Stuart's rule); Rust tests cover the persisted list and the wait.
+- Unit tests: `src/shared/slash-commands.test.ts` covers `isLocalNativeCommand`; Rust tests cover the persisted list and the wait. The menu and composer state changes in `useSlashMenuCompletion.ts` and `MessageInput.tsx` have no unit test (no component test harness exists in the repo) and rely on the live check.

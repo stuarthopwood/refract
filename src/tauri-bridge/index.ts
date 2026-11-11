@@ -14,6 +14,7 @@ import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '..
 import type { ClosedBranchesResult } from '../shared/ipc-home'
 import type { GithubChangedPayload } from '../shared/ipc-github-changed'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch, SessionWithKickoff } from '../shared/ipc-issues'
+import type { ItemCard } from '../shared/ipc-item-refs'
 import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
@@ -29,6 +30,7 @@ import type {
   LeftoverSummary,
   LowMemoryWarning,
   TokenGuardCalls,
+  AgentToolCall,
   TokenGuardHandoffResult,
   TokenGuardLaunchWarning,
   TokenGuardSnapshot,
@@ -275,6 +277,9 @@ const refract: RefractApi = {
     stopWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_STOP_WATCHING, sessionId),
     ensureWatching: (sessionId) => request<void>(IPC_REQUESTS.GIT_CHANGES_ENSURE_WATCHING, sessionId)
   },
+  agentTools: {
+    result: (sessionId, callId, reply) => request<void>(IPC_REQUESTS.AGENT_TOOLS_RESULT, sessionId, callId, reply)
+  },
 
   settings: {
     get: () => request<Settings>(IPC_REQUESTS.SETTINGS_GET),
@@ -360,6 +365,9 @@ const refract: RefractApi = {
     view: (repositoryId, number) => request<IssueDetail>(IPC_REQUESTS.ISSUES_VIEW, repositoryId, number),
     newSession: (repositoryId, number) =>
       request<SessionWithKickoff>(IPC_REQUESTS.ISSUES_NEW_SESSION, repositoryId, number)
+  },
+  itemRefs: {
+    lookup: (repositoryId, owner, repo, number) => request<ItemCard>(IPC_REQUESTS.ITEM_REFS_LOOKUP, repositoryId, owner, repo, number)
   },
 
   home: {
@@ -473,6 +481,7 @@ const refract: RefractApi = {
   onTokenGuardLaunchWarning: (handler) =>
     on<TokenGuardLaunchWarning>(IPC_EVENTS.TOKEN_GUARD_LAUNCH_WARNING, handler),
   onTokenGuardCalls: (handler) => on<TokenGuardCalls>(IPC_EVENTS.TOKEN_GUARD_CALLS, handler),
+  onAgentToolsCall: (handler) => on<AgentToolCall>(IPC_EVENTS.AGENT_TOOLS_CALL, handler),
   onAdvisorRosterDetected: (handler) => on<AdvisorRosterDetected>(IPC_EVENTS.ADVISOR_ROSTER_DETECTED, handler),
   onReadoutUpdate: (handler) => on<{ sessionId: string; readout: SessionReadout }>(IPC_EVENTS.READOUT_UPDATE, handler),
   onSubagentsUpdate: (handler) =>

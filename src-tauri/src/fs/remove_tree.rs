@@ -1,5 +1,5 @@
-// Uses `std::fs::remove_dir_all`, which does not follow links mid-walk. Refusal of a link at the
-// root and the strict-descendant check run first, in one blocking task, to avoid a TOCTOU gap.
+// `remove_dir_all` does not follow links mid-walk; the link and descendant checks share its
+// blocking task so no TOCTOU gap opens between them.
 
 use std::path::{Path, PathBuf};
 
@@ -14,6 +14,9 @@ pub enum RemoveTreeError {
         path: PathBuf,
         source: std::io::Error,
     },
+    /// A retry resolved the path somewhere other than where attempt 1 did; earlier attempts may
+    /// have deleted files, so this is never worded "did not delete anything".
+    PathChanged { path: PathBuf },
     /// The path could not be checked. `after_partial` means an earlier attempt may have deleted files.
     Unreadable {
         path: PathBuf,
@@ -26,6 +29,9 @@ impl std::fmt::Display for RemoveTreeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::OutsideBoundary => write!(f, "refused: outside the worktrees root"),
+            Self::PathChanged { path } => {
+                write!(f, "{}: resolved somewhere else on a retry", path.display())
+            }
             Self::Io { path, source } | Self::Unreadable { path, source, .. } => {
                 write!(f, "{}: {source}", path.display())
             }
@@ -92,9 +98,26 @@ fn is_retryable_remove_error(err: &std::io::Error) -> bool {
 }
 
 fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveTreeError> {
+    // Attempt 1's canonical path; a retry that resolves elsewhere means a link was swapped in
+    // during the retry window, so it is refused rather than followed.
+    let mut pinned: Option<PathBuf> = None;
     for attempt in 1..=REMOVE_RETRY_ATTEMPTS {
         let canonical_path = match checked_canonical_path(path, boundary_root) {
-            ContainmentCheck::Ok(p) => p,
+            ContainmentCheck::Ok(p) => match &pinned {
+                Some(first)
+                    if comparable_path(&first.to_string_lossy())
+                        != comparable_path(&p.to_string_lossy()) =>
+                {
+                    return Err(RemoveTreeError::PathChanged {
+                        path: first.clone(),
+                    });
+                }
+                Some(_) => p,
+                None => {
+                    pinned = Some(p.clone());
+                    p
+                }
+            },
             // After attempt 1, a vanished root means an earlier pass finished the job (#1158).
             ContainmentCheck::Missing if attempt > 1 => return Ok(()),
             ContainmentCheck::Missing | ContainmentCheck::OutsideBoundary => {
@@ -102,6 +125,7 @@ fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveT
             }
             ContainmentCheck::Unreadable(source) => {
                 if is_retryable_remove_error(&source) && attempt < REMOVE_RETRY_ATTEMPTS {
+                    log_retry(attempt, path, &source);
                     std::thread::sleep(REMOVE_RETRY_DELAY);
                     continue;
                 }
@@ -117,6 +141,7 @@ fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveT
             Ok(()) => return Ok(()),
             Err(source) => {
                 if is_retryable_remove_error(&source) && attempt < REMOVE_RETRY_ATTEMPTS {
+                    log_retry(attempt, &canonical_path, &source);
                     std::thread::sleep(REMOVE_RETRY_DELAY);
                     continue;
                 }
@@ -128,4 +153,13 @@ fn remove_tree_blocking(path: &Path, boundary_root: &Path) -> Result<(), RemoveT
         }
     }
     unreachable!("the loop above always returns on its final iteration")
+}
+
+// Live evidence needs to tell a first-try success from one a retry quietly absorbed.
+fn log_retry(attempt: u32, path: &Path, source: &std::io::Error) {
+    log::debug!(
+        "remove_tree: attempt {attempt} of {REMOVE_RETRY_ATTEMPTS} failed for {} (os error {:?}): {source}; retrying",
+        path.display(),
+        source.raw_os_error()
+    );
 }

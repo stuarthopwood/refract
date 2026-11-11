@@ -1,4 +1,4 @@
-import { toast } from 'sonner'
+import { toast, type ExternalToast } from 'sonner'
 import type { IpcError } from '../../shared/ipc'
 
 // A fresh id per refusal stops sonner conflating it with a toast mid-exit; dismiss callbacks clear
@@ -26,7 +26,7 @@ export function notify(error: IpcError, sessionId?: string): void {
     })
     return
   }
-  toast.error(error.message, { duration: Infinity, closeButton: true })
+  notifyPersistentError(error.message)
 }
 
 /** Dismisses the open slash-command-refusal toast, but ONLY when one is tracked for THIS Session. */
@@ -56,10 +56,15 @@ function announceAssertive(text: string): void {
   }, 0)
 }
 
-/** A persistent error toast (no auto-dismiss, close button), also announced assertively. */
-export function notifyPersistentError(text: string): void {
-  toast.error(text, { duration: Infinity, closeButton: true })
-  announceAssertive(text)
+export type PersistentErrorOptions = Omit<ExternalToast, 'duration' | 'closeButton' | 'description'> & { description?: string }
+
+/**
+ * The one persistent error toast (no auto-dismiss, close button), announced assertively. The id comes
+ * from the text, so a repeat replaces the open toast in place and is announced again.
+ */
+export function notifyPersistentError(text: string, options: PersistentErrorOptions = {}): void {
+  toast.error(text, { duration: Infinity, closeButton: true, ...options, id: options.id ?? `persistent-error:${text}` })
+  announceAssertive(options.description ? `${text}. ${options.description}` : text)
 }
 
 let alarmListOpen = false
@@ -132,10 +137,7 @@ export function notifyProgress(id: string, text: string, onCancel?: () => void):
         closeButton: true,
         action: action ?? undefined
       }),
-    fail: (next) => {
-      toast.error(next, { id: toastId, duration: Infinity, dismissible: true, closeButton: true, action: undefined })
-      announceAssertive(next)
-    },
-    info: (next) => toast.message(next, { id: toastId, duration: 5000, dismissible: true, action: undefined })
+    fail: (next) => notifyPersistentError(next, { id: toastId, dismissible: true, action: undefined }),
+    info: (next) => toast.message(next, { id: toastId, duration: 5000, dismissible: true, closeButton: true, action: undefined })
   }
 }

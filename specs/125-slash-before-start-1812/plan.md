@@ -1,5 +1,7 @@
 # Plan: Slash commands before the agent starts (#1812)
 
+**Spec**: `specs/125-slash-before-start-1812/spec.md` | **Issue**: #1812
+
 ## Backend (already on branch)
 - `store/last_commands.rs`: persisted last-known list, served for a not-started Session.
 - `session/agent/command_wait.rs`: `wait_for_commands(COMMANDS_WAIT)`, re-exported from `session/agent/mod.rs`; `ipc/chat.rs` awaits it before validating.

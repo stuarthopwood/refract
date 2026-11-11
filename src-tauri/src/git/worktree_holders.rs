@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::remove_tree::{checked_canonical_path, ContainmentCheck};
 
-use super::git::{GitError, GitErrorCode};
+use super::git::{shown_path, GitError, GitErrorCode};
 use super::worktrees::worktrees_root;
 
 mod diag;
@@ -17,13 +17,29 @@ pub struct Holder {
     pub pid: u32,
 }
 
+// Shown paths are lexically cleaned (`..` collapsed, separators normalised) so a user never sees one.
+fn shown(path: &Path) -> String {
+    shown_path(path)
+}
+
 // Cheap containment guard so a bad registry entry never reaches Restart Manager or the probe.
 fn outside_worktrees_root_refusal(worktree_path: &Path) -> GitError {
     GitError::new(
         GitErrorCode::WorktreeFailed,
         format!(
             "Refract did not delete anything. {} is outside Refract's worktree folder, so Refract will not check it for holders or remove it. Nothing was touched.",
-            worktree_path.display()
+            shown(worktree_path)
+        ),
+    )
+}
+
+// A failed lstat/canonicalise is not evidence of a link, so it must not read as "outside".
+fn unreadable_containment_refusal(worktree_path: &Path, source: &std::io::Error) -> GitError {
+    GitError::new(
+        GitErrorCode::WorktreeFailed,
+        format!(
+            "Refract did not delete anything. It could not check {} ({source}), so it cannot tell whether a program has it open. Nothing was touched. Close any terminal or editor open in that folder, then choose Retry.",
+            shown(worktree_path)
         ),
     )
 }
@@ -54,7 +70,7 @@ fn named_holders_message(worktree_path: &Path, holders: &[Holder]) -> String {
         .join(", ");
     format!(
         "Refract did not delete anything. {who} still has {} open. Close it, then choose Retry.",
-        worktree_path.display()
+        shown(worktree_path)
     )
 }
 
@@ -65,9 +81,9 @@ const FOLDER_IN_USE_MESSAGE: &str =
 fn rename_back_failed_message(worktree_path: &Path, probe_path: &Path) -> String {
     format!(
         "Refract did not delete anything, but could not rename {} back after checking whether it was in use. Nothing was lost: your files are currently at {}. Move that folder back to {} yourself, then choose Retry.",
-        worktree_path.display(),
-        probe_path.display(),
-        worktree_path.display()
+        shown(worktree_path),
+        shown(probe_path),
+        shown(worktree_path)
     )
 }
 
@@ -86,8 +102,11 @@ pub async fn check_named_holders(
         .unwrap_or(ContainmentCheck::OutsideBoundary);
     let canonical_path = match check {
         ContainmentCheck::Missing => return Ok(()),
-        ContainmentCheck::OutsideBoundary | ContainmentCheck::Unreadable(_) => {
+        ContainmentCheck::OutsideBoundary => {
             return Err(outside_worktrees_root_refusal(worktree_path))
+        }
+        ContainmentCheck::Unreadable(source) => {
+            return Err(unreadable_containment_refusal(worktree_path, &source))
         }
         ContainmentCheck::Ok(p) => p,
     };
@@ -135,8 +154,11 @@ pub async fn check_folder_in_use(
             }
             return Ok(());
         }
-        ContainmentCheck::OutsideBoundary | ContainmentCheck::Unreadable(_) => {
+        ContainmentCheck::OutsideBoundary => {
             return Err(outside_worktrees_root_refusal(worktree_path))
+        }
+        ContainmentCheck::Unreadable(source) => {
+            return Err(unreadable_containment_refusal(worktree_path, &source))
         }
         ContainmentCheck::Ok(p) => p,
     };
@@ -148,7 +170,7 @@ pub async fn check_folder_in_use(
 fn stale_probe_message(probe_path: &Path) -> String {
     format!(
         "Refract did not delete anything. A leftover probe folder from an earlier attempt still exists at {}. Remove it yourself, then choose Retry.",
-        probe_path.display()
+        shown(probe_path)
     )
 }
 
@@ -476,5 +498,32 @@ mod imp {
 
     pub(super) fn is_pid_alive(_pid: u32) -> bool {
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unreadable_containment_refusal_names_the_cause_and_is_not_the_outside_wording() {
+        let source = std::io::Error::from_raw_os_error(5);
+        let msg = unreadable_containment_refusal(Path::new("C:/w/s1"), &source).message;
+        assert!(msg.contains("could not check"), "{msg}");
+        assert!(msg.contains("choose Retry"), "{msg}");
+        assert!(!msg.contains("outside"), "{msg}");
+    }
+
+    #[test]
+    fn shown_paths_collapse_dot_dot_so_a_session_path_never_shows_one() {
+        let raw =
+            Path::new("C:\\r\\scratch-repo\\..\\pinion-worktrees\\scratch-repo\\brave-puffin");
+        let shown = shown(raw);
+        assert!(!shown.contains(".."), "{shown}");
+        assert!(
+            shown.ends_with("pinion-worktrees\\scratch-repo\\brave-puffin")
+                || shown.ends_with("pinion-worktrees/scratch-repo/brave-puffin"),
+            "{shown}"
+        );
     }
 }

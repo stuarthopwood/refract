@@ -1359,6 +1359,20 @@
   Markdown all get it, and `isPathShaped` calls the same predicate so the two routes cannot drift.
 - Q: Tests? -> A: None; the prototyping rule wins. Verified live by a fake-omp run instead.
 
+### Session 2026-11-09 (Delete flow hardening, #1159)
+
+- Q: Issue #1159 (grilled with Stuart 2026-11-09): which of its checklist ships? -> A: Pinned
+  canonical path with per-retry `log::debug!`, `Unreadable` holder message, `normalize_git_path` in
+  holder and refusal paths, the retry wording, `D`/` D` excluded from the uncommitted count, the
+  guard moved into `spawn_blocking`, the dialog generation bump, a steady Retry label, the
+  re-check spinner and "Rechecking…", the dead `outline-offset` class and the unreadable-list copy.
+- Q: The dialog's error style? -> A: One shared `DialogError` in `src/renderer/components`
+  (ADR 0003), used by `ConfirmAlertDialog` and `ReviewDialog`, instead of a `patterns.md` note.
+- Q: #1158's behaviour? -> A: Kept: `Missing` after attempt 1 is success; lstat failures keep their
+  own wording.
+- Q: Not in this change (footer anchoring and button width, focus before list removal, new
+  evidence shots)? -> A: Left open on the issue, so the PR uses `Refs #1159`.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1489,6 +1503,7 @@ A developer is done with a session for now, or permanently. Archiving gets it ou
 5. **Given** the Delete confirmation dialog opens for a session whose worktree contains generated folders such as `node_modules`, **When** the background filesystem walk finishes, **Then** the dialog shows those folders by name with their file counts and any other leftover files by path, capped with "and N more", having shown "Checking files…" while the walk ran, with Delete enabled throughout.
 6. **Given** a program has a file open inside the session's worktree, **When** the developer confirms delete, **Then** Refract's preflight refuses before stopping the agent, naming the holding program when Restart Manager finds one or else showing the generic "A program has this folder open, for example a terminal or File Explorer window. Close it, then Retry." message, nothing is removed, the session keeps running, and Retry is the same Delete action once the holder closes the file or folder.
 7. **Given** a delete pass removed some files and a later bounded retry finds the worktree folder already gone, **Then** the delete counts as a success; **Given** a retry cannot check the folder (an lstat error other than "not found"), **Then** the refusal says Refract could not check it and, after a partial pass, that some files may already have been deleted, never "did not delete anything"; "resolves outside Refract's worktree folder (likely through a link)" appears only for a folder that really is a link or outside the root (issue #1158).
+8. **Given** a Delete attempt was refused or only partly done, **When** the dialog re-checks, **Then** the status line shows a spinner and "Rechecking…", the confirm button keeps reading "Retry" while the retry runs, the uncommitted-file count leaves out files already deleted, and every path in the message is a normalized Windows path (issue #1159).
 
 ---
 
@@ -2232,6 +2247,22 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `resolveImage` (chat) and while streaming, a linked image stays its alt text. The backend allow-list
   adds `dependabot-badges.githubapp.com` and accepts `image/svg+xml` from that host only (ADR 0004
   amendment); the CSP does not change.
+- **FR-125** (new, 2026-11-09, issue #1159; amends FR-029): The Delete flow's refusal and recheck
+  behaviour is hardened. (a) Every path in a refusal or holder message is shown through
+  `normalize_git_path`, never as a raw `..\` or forward-slash path. (b) A containment lstat failure
+  that is not "not found" (`ContainmentCheck::Unreadable`) has its own "could not check" message in
+  the holder preflight, never the "resolves outside Refract's worktree folder (likely through a
+  link)" wording, and `remove_tree` pins the canonical path resolved on attempt 1 and refuses if a
+  later attempt resolves elsewhere, logging each retry with `log::debug!`. (c) The `delete_check`
+  uncommitted-file count excludes files git reports as deleted (`D` or ` D`), so a retry after a
+  partial delete does not count what Refract itself removed. (d) The leftover-summary walk keeps its
+  read guard inside its blocking task, so a dropped IPC future cannot release the guard while the
+  walk still runs. (e) In the Delete dialog the open effect starts a new generation, so a stale
+  refresh from an earlier open cannot write into a reopened dialog; the confirm label stays "Retry"
+  while a retried attempt is deleting; the status line shows a spinner for every busy state and reads
+  "Rechecking…" after a refusal; and an unreadable file list reads "Couldn't list the folder's files.
+  Delete still removes everything in it." (f) The dialog's error line is the shared `DialogError`
+  component in `src/renderer/components`, used by `ConfirmAlertDialog` and `ReviewDialog`.
 
 ### Key Entities
 

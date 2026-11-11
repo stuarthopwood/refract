@@ -90,6 +90,8 @@ impl SessionAgent {
             "tool_execution_start" | "tool_execution_end" => {
                 self.apply_transcript_frame(&frame).await;
             }
+            "host_tool_call" => self.agent_tools.handle_call(&self.arc(), &frame),
+            "host_tool_cancel" => self.agent_tools.handle_cancel(&frame),
             // tool_execution_update is ignored: only subagent progress uses it, and that is not ported.
             // Other frames, including agent_end and side-chat deltas, are no-ops here.
             _ => {}
@@ -286,6 +288,7 @@ impl SessionAgent {
             )
         };
         if is_current {
+            self.agent_tools.drop_all();
             // Awaited so this write lands after the matching spawn record, avoiding a phantom orphan.
             if let Some(pid) = exited_pid {
                 crate::process::pid_records::remove_process_record(pid).await;

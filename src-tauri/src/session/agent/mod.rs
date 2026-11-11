@@ -28,6 +28,7 @@ pub mod pause;
 mod requests;
 mod status;
 mod sync_from_state;
+mod tool_host;
 mod types;
 pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
@@ -106,6 +107,7 @@ pub struct SessionAgent {
     /// Woken each time OMP reports its commands, for `wait_for_commands` (#1812).
     commands_reported: Notify,
     coalescer: PatchCoalescer,
+    agent_tools: crate::agent_tools::router::ToolRouter,
 }
 
 /// Generates one `with_<lane>_state` accessor per lane.
@@ -183,6 +185,7 @@ impl SessionAgent {
             status_tx,
             start_lock: AsyncMutex::new(()),
             commands_reported: Notify::new(),
+            agent_tools: Default::default(),
             coalescer,
         })
     }

@@ -1,7 +1,8 @@
 // Helpers for verify-891-delete-leftovers.mjs (split for the file-size cap): fixture generation,
 // holder processes, registry reads, and driving the real Delete dialog over CDP.
 
-import { mkdirSync, writeFileSync, chmodSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, writeFileSync, chmodSync, readFileSync, readdirSync, rmSync, existsSync } from 'node:fs';
+import { mkdir, writeFile, statfs } from 'node:fs/promises';
 import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -123,23 +124,41 @@ export function populateOrphanWorktree(worktreePath) {
   }
 }
 
-/** Scenario (f): a large generated tree so the leftover-summary walk is still running ("Checking files…") when Delete is
- * clicked. 400,000 files: at 50,000 the walk finished ~4s before the click and never overlapped, so `main()` also asserts
- * the status line right before the click. */
-export function populateLargeGeneratedTree(worktreePath, fileCount = 400_000) {
+/** Scenario (f): a generated tree large enough that the leftover-summary walk is still running ("Checking files…") when
+ * Delete is clicked; `main()` also asserts the status line right before the click. Written asynchronously in bounded
+ * chunks: a synchronous 400,000-file write blocked the event loop for ~30 min and killed the CDP socket. The walk only
+ * has to outlive the fast git-only `deleteCheck` (~1-2 s on NTFS), so the count is modest and env-overridable. */
+export const LARGE_TREE_FILE_COUNT = Number(process.env.VERIFY_891_LARGE_TREE_FILES) || 30_000;
+export const LARGE_TREE_MIN_FREE_BYTES = 3 * 1024 ** 3;
+const WRITE_CHUNK = 500;
+
+/** Free bytes on the drive holding `dir` (Node 18.15+ statfs). */
+export async function freeBytesOn(dir) {
+  const s = await statfs(dir);
+  return Number(s.bavail) * Number(s.bsize);
+}
+
+export async function populateLargeGeneratedTree(worktreePath, fileCount = LARGE_TREE_FILE_COUNT) {
   const nodeModules = path.join(worktreePath, 'node_modules');
-  mkdirSync(nodeModules, { recursive: true });
-  const perPkg = 200;
+  await mkdir(nodeModules, { recursive: true });
+  const perPkg = 100;
   const pkgCount = Math.ceil(fileCount / perPkg);
   let written = 0;
+  let batch = [];
   for (let pkg = 0; pkg < pkgCount && written < fileCount; pkg++) {
-    const pkgDir = path.join(nodeModules, `pkg-${pkg}`);
-    mkdirSync(pkgDir, { recursive: true });
+    // Nested two levels (group/pkg) so directory count is realistic and no single directory is huge.
+    const pkgDir = path.join(nodeModules, `group-${pkg % 50}`, `pkg-${pkg}`, 'lib');
+    await mkdir(pkgDir, { recursive: true });
     for (let f = 0; f < perPkg && written < fileCount; f++) {
-      writeFileSync(path.join(pkgDir, `file-${f}.js`), 'x');
+      batch.push(writeFile(path.join(pkgDir, `file-${f}.js`), 'x'));
       written++;
+      if (batch.length >= WRITE_CHUNK) {
+        await Promise.all(batch);
+        batch = [];
+      }
     }
   }
+  await Promise.all(batch);
   return { fileCount: written };
 }
 
@@ -283,4 +302,36 @@ export async function isSessionListed(cdp, name) {
   return cdp.evaluate(
     `!!Array.from(document.querySelectorAll('[data-session-open]')).find((el) => el.getAttribute('aria-label')?.startsWith(${JSON.stringify(name)}))`
   );
+}
+
+/** `sessions.delete` acks once its checks pass and removal finishes afterwards, so a closed dialog is not proof the
+ * Session is gone: poll the row and the folder before reading either. */
+export async function waitForSessionRemoved(cdp, name, worktreePath, { timeoutMs = 120_000 } = {}) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline && ((await isSessionListed(cdp, name)) || existsSync(worktreePath))) {
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
+/** Clicks Retry until the Session is gone, logging every attempt's start (ms since the holder exited) and refusal text.
+ * A refusal on an attempt that STARTED more than `lagMs` after the exit is a product bug, not Windows handle lag. */
+export async function retryDeleteLogged(cdp, { label, name, worktreePath, exitedAt, maxAttempts = 8, lagMs = 3000 }) {
+  const attempts = [];
+  for (let n = 1; n <= maxAttempts; n++) {
+    let startMs = 0;
+    // The button is aria-disabled while the post-refusal recheck runs; time the attempt from the click, not the wait.
+    await clickDeleteButton(cdp, { onReadyToClick: () => { startMs = Date.now() - exitedAt; } });
+    const outcome = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
+    if (outcome.closed) {
+      await waitForSessionRemoved(cdp, name, worktreePath);
+      const gone = !(await isSessionListed(cdp, name)) && !existsSync(worktreePath);
+      attempts.push({ n, startMs, endMs: Date.now() - exitedAt, result: gone ? 'removed' : 'acked-but-present' });
+      console.log(`${label} Retry attempt ${n}: start +${startMs}ms after holder exit, ${gone ? 'REMOVED' : 'ACKED BUT STILL PRESENT'}`);
+      return { attempts, gone, lagBug: attempts.some((a) => a.refusal && a.startMs > lagMs) };
+    }
+    attempts.push({ n, startMs, endMs: Date.now() - exitedAt, refusal: outcome.error });
+    console.log(`${label} Retry attempt ${n}: start +${startMs}ms after holder exit, REFUSED: ${outcome.error}`);
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  return { attempts, gone: false, lagBug: attempts.some((a) => a.refusal && a.startMs > lagMs) };
 }

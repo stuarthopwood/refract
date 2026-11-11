@@ -8,4 +8,5 @@
 - [x] T006 `/new` no-op on a never-started agent (`conversations.rs`) (FR-004)
 - [x] T007 One in-flight send per Session (`MessageInput.tsx`) (FR-005)
 - [x] T008 PLAN.md row
-- [ ] T009 Typecheck and node checks; Rust build in the shared slot
+- [x] T009 `slash-commands.test.ts` for `isLocalNativeCommand`
+- [ ] T010 Typecheck and node checks done in this lane; Rust build, ci:local and live check pending in the shared build slot

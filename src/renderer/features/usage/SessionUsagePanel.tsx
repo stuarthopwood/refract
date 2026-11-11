@@ -1,19 +1,27 @@
 // The Session usage right-pane panel (spec 070 FR-4): usage for the focused Session only, from the
 // per-Session store. Mounted only while the panel is active, so mount starts the rescan and
 // unmount stops it, like the Usage view.
-import { useEffect } from 'react'
+import { useEffect, useMemo } from 'react'
 import { CompactList } from '@/components/CompactList'
 import type { CompactListItem } from '@/components/CompactList'
 import { ProgressStrip } from '@/components/ProgressStrip'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
-import { MAX_CALLS, SESSION_CALLS_STEP, useSessionUsageStore } from '@/state/session-usage-store'
+import {
+  MAX_CALLS,
+  SESSION_CALLS_STEP,
+  effectiveScope,
+  entryKey,
+  useSessionUsageStore,
+  type SessionUsageTarget
+} from '@/state/session-usage-store'
 import { useSessionsStore, useViewStore } from '@/state'
 import type { UsageBreakdownRow } from '../../../shared/ipc-usage'
 import { callToListItem } from './callLogRow'
 import { formatCompact, formatInt, formatPercent, formatUsd } from './format'
 import { HeadlineCards } from './HeadlineCards'
+import { SessionUsageToggles } from './SessionUsageToggles'
 import { SpendChart } from './SpendChart'
 import { TokenMixChart } from './TokenMixChart'
 
@@ -27,7 +35,11 @@ const breakdownItems = (rows: UsageBreakdownRow[], value: (row: UsageBreakdownRo
 
 export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
   const sessionDir = useSessionsStore((s) => (sessionId ? (s.sessions.find((x) => x.id === sessionId)?.sessionDir ?? null) : null))
-  const entry = useSessionUsageStore((s) => (sessionDir ? s.entries[sessionDir] : undefined))
+  const sessionFile = useSessionsStore((s) => (sessionId ? (s.sessions.find((x) => x.id === sessionId)?.currentConversation ?? null) : null))
+  const scope = useSessionUsageStore((s) => s.scope)
+  const range = useSessionUsageStore((s) => s.range)
+  const target = useMemo<SessionUsageTarget>(() => ({ sessionDir: sessionDir ?? '', sessionFile }), [sessionDir, sessionFile])
+  const entry = useSessionUsageStore((s) => (sessionDir ? s.entries[entryKey(target, scope, range)] : undefined))
   const status = useSessionUsageStore((s) => s.status)
   const budget = useSessionUsageStore((s) => s.budget)
   const openUsage = useViewStore((s) => s.openUsage)
@@ -37,8 +49,8 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
     return () => useSessionUsageStore.getState().stop()
   }, [])
   useEffect(() => {
-    if (sessionDir) void useSessionUsageStore.getState().refresh(sessionDir)
-  }, [sessionDir])
+    if (sessionDir) void useSessionUsageStore.getState().refresh(target)
+  }, [sessionDir, target])
 
   if (!sessionId || !sessionDir) {
     return (
@@ -68,7 +80,9 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
     body = (
       <Empty>
         <EmptyHeader>
-          <EmptyTitle>No usage yet in this session</EmptyTitle>
+          <EmptyTitle>
+            No usage {range === 'today' ? 'today' : 'yet'} in this {effectiveScope(scope, target) === 'conversation' ? 'conversation' : 'session'}
+          </EmptyTitle>
         </EmptyHeader>
       </Empty>
     )
@@ -85,7 +99,7 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
             ? `${formatPercent(share)} of this month's AI credit budget (${formatInt(entry.periodCredits ?? 0)} of ${formatInt(copilot?.entitlement ?? 0)})`
             : `Budget share hidden: ${budget?.unavailable ?? (copilot ? 'the reset date or entitlement is unknown' : 'no Copilot budget is available')}.`}
         </p>
-        <SpendChart compact buckets={entry.timeseries} />
+        <SpendChart compact buckets={entry.timeseries} bucket={range === 'today' ? 'hour' : 'day'} />
         {hasCache && <TokenMixChart rows={entry.tokenMix} />}
         <ScreenSection title="By model" empty={entry.byModel.length === 0 ? 'No models yet.' : null}>
           <CompactList label="Spend by model" items={breakdownItems(entry.byModel, (r) => formatUsd(r.usd))} />
@@ -99,7 +113,7 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
             items={entry.calls.map((row) => callToListItem(row))}
             footer={
               entry.calls.length < entry.callsTotal && entry.callsLimit < MAX_CALLS ? (
-                <Button variant="link" className="self-start px-0" onClick={() => useSessionUsageStore.getState().showMore(sessionDir)}>
+                <Button variant="link" className="self-start px-0" onClick={() => useSessionUsageStore.getState().showMore(target)}>
                   Show more ({SESSION_CALLS_STEP} more)
                 </Button>
               ) : undefined
@@ -122,6 +136,13 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
             label={`Reading sessions: ${status.sessionsDone} of ${status.sessionsSeen}`}
           />
         )}
+        <SessionUsageToggles
+          scope={scope}
+          range={range}
+          hasConversation={sessionFile !== null}
+          onScopeChange={useSessionUsageStore.getState().setScope}
+          onRangeChange={useSessionUsageStore.getState().setRange}
+        />
         {body}
       </div>
       <div className="border-t border-border px-2 py-2">

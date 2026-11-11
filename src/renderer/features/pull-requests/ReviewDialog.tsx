@@ -6,12 +6,11 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
-import { InlineStatus } from '@/components/InlineStatus'
+import { DialogError } from '@/components/DialogError'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { cn } from '@/lib/utils'
 import type { ReviewVerdict } from '../../../shared/github'
 
 export interface ReviewDialogProps {
@@ -189,9 +188,7 @@ export function ReviewDialog({
             readOnly={submitting}
             aria-disabled={submitting}
           />
-          <InlineStatus tone="error" id={bodyErrorId} className={cn('p-0', !error && 'sr-only')}>
-            {error ?? ''}
-          </InlineStatus>
+          <DialogError id={bodyErrorId} message={error} />
           <DialogFooter>
             <Button
               variant="ghost"

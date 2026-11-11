@@ -1,6 +1,5 @@
 import { create } from 'zustand'
-import { toast } from 'sonner'
-import { useSplitStore, useViewStore } from '@/state'
+import { notifyPersistentError, useSplitStore, useViewStore } from '@/state'
 import { createSessionFromItem, findExistingSession, type ItemRef } from './startSessionFromItem'
 import type { Session } from '../../../shared/model'
 
@@ -19,7 +18,7 @@ export const useStartSessionRequestStore = create<StartSessionRequestState>((set
 /** Creates the Session and reports a failure as a toast. */
 export async function startSessionNow(ref: ItemRef): Promise<void> {
   const message = await createSessionFromItem(ref)
-  if (message) toast.error(message, { duration: Infinity, closeButton: true })
+  if (message) notifyPersistentError(message)
 }
 
 /** Entry point for every surface: asks first when an open Session already covers the item or the pull request is from a fork, else creates one. */
