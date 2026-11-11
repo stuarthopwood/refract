@@ -15,6 +15,8 @@ interface TokenGuardState {
   migration: TokenGuardMigration | null
   effectiveTriggers: TokenGuardTrigger[]
   projectOverrides: string[]
+  /** The last Settings write's best-effort failures (the value was saved); a read leaves them alone. */
+  warnings: string[]
   error: string | null
   /** Loads the snapshot; `repositoryId` is the open Project whose `.omp/config.yml` is checked for overrides. */
   load(repositoryId?: string): Promise<void>
@@ -29,7 +31,7 @@ export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
   let repositoryId: string | undefined
   // Several Settings rows call `load` on mount; one poll chain serves them all.
   let pollScheduled = false
-  const apply = (result: Result<TokenGuardSnapshot>): boolean => {
+  const apply = (result: Result<TokenGuardSnapshot>, write = false): boolean => {
     if (result.ok) {
       set({
         values: result.value.values,
@@ -37,11 +39,12 @@ export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
         migration: result.value.migration,
         effectiveTriggers: result.value.effectiveTriggers,
         projectOverrides: result.value.projectOverrides,
+        ...(write ? { warnings: result.value.warnings } : {}),
         loaded: true,
         error: null
       })
     } else {
-      set({ error: result.error.message })
+      set({ error: result.error.message, ...(write ? { warnings: [] } : {}) })
     }
     return result.ok
   }
@@ -52,6 +55,7 @@ export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
     migration: null,
     effectiveTriggers: [],
     projectOverrides: [],
+    warnings: [],
     error: null,
     load: async (id) => {
       repositoryId = id
@@ -66,9 +70,9 @@ export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
         }, MIGRATION_POLL_MS)
       }
     },
-    set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value, repositoryId)),
-    reset: async (key) => void apply(await window.refract.tokenGuard.reset(key, repositoryId)),
-    resetAll: async () => void apply(await window.refract.tokenGuard.resetAll(repositoryId)),
+    set: async (key, value) => apply(await window.refract.tokenGuard.set(key, value, repositoryId), true),
+    reset: async (key) => void apply(await window.refract.tokenGuard.reset(key, repositoryId), true),
+    resetAll: async () => void apply(await window.refract.tokenGuard.resetAll(repositoryId), true),
     dismissMigrationNotice: () => {
       const { migration } = get()
       if (migration) set({ migration: { ...migration, backupPath: undefined } })

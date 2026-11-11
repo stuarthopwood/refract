@@ -34,6 +34,8 @@ export interface TokenGuardSnapshot {
   effectiveTriggers: TokenGuardTrigger[];
   /** Dotted keys the open Project's `.omp/config.yml` sets; empty without a Project. */
   projectOverrides: string[];
+  /** Best-effort steps that failed after a write succeeded; always empty on a read. */
+  warnings: string[];
 }
 
 export interface TokenGuardLaunchWarning {
