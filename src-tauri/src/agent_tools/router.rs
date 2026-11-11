@@ -469,10 +469,21 @@ enum Early {
 async fn wait_mutation(
     router: &ToolRouter,
     call_id: &str,
+    started: oneshot::Receiver<()>,
+    reply: oneshot::Receiver<Reply>,
+) -> Result<Value, ToolError> {
+    let window = Duration::from_millis(MUTATION_TIMEOUT_MS);
+    wait_mutation_within(window, router, call_id, started, reply).await
+}
+
+/// Split out so the race test can use a window of a few milliseconds on a real clock.
+async fn wait_mutation_within(
+    window: Duration,
+    router: &ToolRouter,
+    call_id: &str,
     mut started: oneshot::Receiver<()>,
     mut reply: oneshot::Receiver<Reply>,
 ) -> Result<Value, ToolError> {
-    let window = Duration::from_millis(MUTATION_TIMEOUT_MS);
     let early = tokio::select! {
         biased;
         r = &mut reply => Early::Reply(r),

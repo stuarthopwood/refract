@@ -358,3 +358,56 @@ fn started_resolves_only_inside_its_own_router() {
     assert!(a.started("c1"));
     assert!(!a.started("c1"));
 }
+
+/// Real threads and a real clock: `started` lands anywhere from just before the window ends to
+/// just after the deadline path has begun, which a paused single-thread clock cannot reach.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn started_racing_the_deadline_on_real_threads_never_loses_an_accepted_start() {
+    const ROUNDS: usize = 60;
+    const CALLS: usize = 48;
+    let window = Duration::from_millis(2);
+    let router = Arc::new(ToolRouter::default());
+    let (mut accepted_total, mut refused_total) = (0, 0);
+    for round in 0..ROUNDS {
+        let base = std::time::Instant::now();
+        let mut calls = Vec::with_capacity(CALLS);
+        for i in 0..CALLS {
+            let id = format!("r{round}-{i}");
+            let started = router.wait_started(&id);
+            let reply = router.wait_for(&id);
+            let wait_router = router.clone();
+            let wait_id = id.clone();
+            let wait = tokio::spawn(async move {
+                wait_mutation_within(window, &wait_router, &wait_id, started, reply).await
+            });
+            let start_router = router.clone();
+            // Staggered across the timer tick so some starts land on each side of the deadline.
+            let at = base + window + Duration::from_micros(25 * i as u64);
+            let start = tokio::task::spawn_blocking(move || {
+                while std::time::Instant::now() < at {
+                    std::hint::spin_loop();
+                }
+                start_router.started(&id)
+            });
+            calls.push((wait, start));
+        }
+        for (wait, start) in calls {
+            let accepted = start.await.unwrap();
+            let code = code_of(wait.await.unwrap());
+            if accepted {
+                accepted_total += 1;
+                assert_ne!(
+                    code, TIMEOUT,
+                    "an accepted start was reported as a safe timeout"
+                );
+            } else {
+                refused_total += 1;
+                assert_eq!(code, TIMEOUT);
+            }
+        }
+    }
+    assert!(
+        accepted_total > 0 && refused_total > 0,
+        "the stagger must land starts on both sides of the deadline"
+    );
+}
