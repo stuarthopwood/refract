@@ -5,6 +5,7 @@ pub mod atomic_json;
 pub mod chat_width;
 pub mod holiday_touches;
 pub mod import;
+pub mod last_commands;
 pub mod profile_cache;
 pub mod registry;
 pub mod settings;

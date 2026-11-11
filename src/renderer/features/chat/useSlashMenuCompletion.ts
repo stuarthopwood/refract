@@ -23,6 +23,8 @@ export interface UseSlashMenuCompletionArgs {
   clearGhostState: () => void
   textChips: readonly PendingTextChip[]
   announceChipRemoval: (removed: readonly PendingTextChip[]) => void
+  /** True while no command list exists yet because the agent has not started (#1812). */
+  awaitingCommands?: boolean
 }
 
 export interface SlashMenuSelectOptions {
@@ -54,7 +56,8 @@ export function useSlashMenuCompletion({
   setSlashDismissed,
   clearGhostState,
   textChips,
-  announceChipRemoval
+  announceChipRemoval,
+  awaitingCommands = false
 }: UseSlashMenuCompletionArgs): UseSlashMenuCompletionResult {
   const slashMenuState = parseSlashMenuState(text, commands)
   const slashMatches = slashMenuState !== null ? rankSlashMenuCommands(slashMenuState, commands) : EMPTY_MATCHES
@@ -64,7 +67,12 @@ export function useSlashMenuCompletion({
   const slashMenuViewProps = {
     labelPrefix: slashMenuState?.step === 'subcommand' ? '' : '/',
     ariaLabel: slashMenuState?.step === 'subcommand' ? `/${slashMenuState.parent.name} subcommands` : 'Slash commands',
-    noMatchesText: slashMenuState?.step === 'subcommand' ? 'No matching subcommands' : 'No matching commands',
+    noMatchesText:
+      slashMenuState?.step === 'subcommand'
+        ? 'No matching subcommands'
+        : awaitingCommands && commands.length === 0
+          ? 'Starting agent…'
+          : 'No matching commands',
     hasQuery: (slashMenuState?.query ?? '') !== ''
   }
 
@@ -88,6 +96,9 @@ export function useSlashMenuCompletion({
           subcommandCount === 0
             ? 'No matching subcommands'
             : `/${liveState.parent.name}: ${subcommandCount} subcommand${subcommandCount === 1 ? '' : 's'}`
+      } else if (awaitingCommands && liveCommands.length === 0) {
+        // The empty menu is aria-hidden, so this live message is the only cue that commands are still on their way.
+        message = 'Starting agent, commands will appear shortly'
       } else {
         const shownCount = liveMatches.length
         message = `${shownCount} of ${liveCommands.length} command${liveCommands.length === 1 ? '' : 's'}`
@@ -97,7 +108,8 @@ export function useSlashMenuCompletion({
       announceSlashResultCount(message)
     }, 500)
     return () => clearTimeout(timer)
-  }, [slashMenuKey, showSlashMenu, sessionId, announceSlashResultCount])
+    // `commands.length` re-arms the announcement when the list arrives while the menu is open.
+  }, [slashMenuKey, showSlashMenu, sessionId, announceSlashResultCount, awaitingCommands, commands.length])
 
   function completeSlashText(nextText: string) {
     clearGhostState()

@@ -57,9 +57,17 @@ impl SessionAgent {
                     let mut state = self.state.lock().await;
                     state.commands = filtered.clone();
                 }
+                // After the store write, so a waiter that wakes reads this life's own list.
+                self.commands_reported.notify_waiters();
                 let commands_value = Value::Array(filtered);
                 self.events
                     .emit_commands_update(&self.session_id, &commands_value);
+                // Kept for Sessions that have not started. An empty report would erase a usable list;
+                // the native entries `filtered` always carries do not make it usable. (#1812)
+                // After the emit, so the fsync never delays the UI event.
+                if let (false, Value::Array(list)) = (raw.is_empty(), &commands_value) {
+                    crate::store::last_commands::save(list).await;
+                }
             }
             "extension_ui_request" => self.handle_extension_ui_request(&frame).await,
             "message_start" | "message_update" | "message_end" => {

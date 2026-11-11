@@ -91,6 +91,8 @@ interface ComposerSendButtonProps {
   blocked: boolean
   /** Applies the shared dimmed look while blocked; false when the field block already dims. */
   dimWhenBlocked?: boolean
+  /** Sets `aria-busy` while a send is being started or awaited. */
+  busy?: boolean
   onSend: () => void
   tooltip: ReactNode
   keyShortcuts?: string
@@ -100,7 +102,7 @@ interface ComposerSendButtonProps {
 
 /** Round icon Send. Its `--send` fill overrides the default variant's `--primary`, which is
  * near-white in Dark and would read the same as Stop's inverted fill. */
-export function ComposerSendButton({ blocked, dimWhenBlocked = true, onSend, tooltip, keyShortcuts, describedBy }: ComposerSendButtonProps) {
+export function ComposerSendButton({ blocked, busy, dimWhenBlocked = true, onSend, tooltip, keyShortcuts, describedBy }: ComposerSendButtonProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -116,6 +118,7 @@ export function ComposerSendButton({ blocked, dimWhenBlocked = true, onSend, too
           aria-label="Send message"
           aria-keyshortcuts={keyShortcuts}
           aria-disabled={blocked}
+          aria-busy={busy || undefined}
           // Only when set: Radix wires the open tooltip into aria-describedby otherwise.
           {...(describedBy ? { 'aria-describedby': describedBy } : {})}
           onClick={() => {
