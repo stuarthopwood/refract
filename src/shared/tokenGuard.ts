@@ -152,7 +152,7 @@ export function parseThresholdInput(text: string): string | number | undefined {
 export interface TokenGuardKeyInfo {
   key: string;
   label: string;
-  /** True when OMP reloads the key into a running Session. Absent means it applies to new Conversations only (#1767 probe). */
+  /** True when OMP reloads the key into a running Session. Absent means it applies to new Sessions only (#1767, #1765 probes). */
   live?: boolean
   kind: TokenGuardKind;
   group: TokenGuardGroup;

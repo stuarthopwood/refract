@@ -134,7 +134,7 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 
 - [x] T057 Probe the token guard keys against a running omp 18.17.0 with the scripted provider; record per-key results and unverified keys in research.md section 10
 - [x] T058 Amend FR-036, plan.md and quickstart.md for live apply
-- [ ] T059 Route legacy launch overlay writes through `overlay::write_legacy` in `src-tauri/src/ipc/token_guard.rs`, or prove the legacy path unreachable; check the `working_mode/mod.rs:72` plan variant; fix the `overlay.rs:1` comment
-- [ ] T060 Change the label to "Applies to new Sessions" in `AdvancedRow.tsx` and `AdvancedSection.tsx`; no restart button
+- [x] T059 Legacy overlays: `ipc/token_guard.rs` set/reset/resetAll call `overlay::refresh_legacy`, which rewrites the legacy overlay and full legacy plan variants a Session launched before the migration still reads; the one-key plan variant and `working_mode/mod.rs` `default_mode` need no change (startup-only key, read at Session load); `overlay.rs:1` comment fixed
+- [x] T060 Change the label to "Applies to new Sessions" in `AdvancedRow.tsx` and `AdvancedSection.tsx`; no restart button
 - [ ] T061 Co-located tests for the new logic, `pnpm ci:local`
 - [ ] T062 Live check saving a value in Settings while a Session runs (`scripts/verify-tauri-1765.mjs`)

@@ -1,6 +1,6 @@
 // #1212 (spec 021), #1767: Settings > Advanced. The token guard values Refract owns, grouped by area.
 // They are written to OMP's global config (`~/.omp/agent/config.yml`), so Refract is the source of
-// truth. Only keys marked `live` reach a running Session; the rest apply to new Conversations.
+// truth. Only keys marked `live` reach a running Session; the rest apply to new Sessions.
 // The Advisor model is edited under Models > Advisor.
 import { useEffect, useRef } from 'react'
 import { InfoIcon } from 'lucide-react'
@@ -55,7 +55,7 @@ export function AdvancedSection() {
       title="Advanced"
       headingRef={headingRef}
       actions={loaded ? <OptimiseTokenUsage rows={changedRows(values, defaults, defaultWindow)} /> : undefined}
-      intro="Refract writes these values to OMP's global config, so they apply to every Session you start from Refract. Keys marked 'Applies to new Conversations' do not change a running Conversation."
+      intro="Refract writes these values to OMP's global config, so they apply to every Session you start from Refract. Keys marked 'Applies to new Sessions' do not change a running Session."
     >
       {migration?.status === 'failed' && (
         <p role="alert" className="mb-2 text-sm text-destructive">

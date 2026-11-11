@@ -83,7 +83,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
     <>
       {!info.live && (
         <span id={noteId} className="text-xs text-muted-foreground">
-          Applies to new Conversations
+          Applies to new Sessions
         </span>
       )}
       {projectOverride && (

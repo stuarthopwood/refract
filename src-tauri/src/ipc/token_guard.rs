@@ -1,5 +1,5 @@
 // `tokenGuard.get/set/reset/resetAll/dismissThresholdsReset`. No path or file content comes from the renderer.
-// A change applies to the next launched Session.
+// A change reaches running Sessions for `live` keys; the rest apply to the next launched Session.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 
 use crate::ipc::model_roles::list_catalog_models;
 use crate::omp::token_guard::values::{self, Global};
-use crate::omp::token_guard::{legacy, migrate, triggers};
+use crate::omp::token_guard::{legacy, migrate, overlay, triggers};
 
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -158,6 +158,13 @@ async fn require_migrated(state: &AppState) -> Result<(), IpcError> {
     })))
 }
 
+/// Sessions launched before the migration read the legacy overlay, which beats the global config.
+async fn refresh_legacy_overlays(state: &AppState, updated: &Global) {
+    if let Err(err) = overlay::refresh_legacy(&state.data_dir, &updated.values).await {
+        log::warn!("token guard: could not refresh the legacy overlay ({err})");
+    }
+}
+
 /// Only reports the migration notice: screens other than Settings > Advanced also load, and must
 /// not spend it. A migration still running is not awaited: the old values and `pending` come back
 /// at once, and the migration runs in the background.
@@ -198,6 +205,7 @@ fn token_guard_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .ok_or_else(|| invalid_argument("tokenGuard.set expects { key, value }"))?;
         require_migrated(&state).await?;
         let updated = values::set(&key, value).await.map_err(invalid_argument)?;
+        refresh_legacy_overlays(&state, &updated).await;
         let windows = context_windows(false).await;
         Ok(full_snapshot(&state, &args, &updated, &windows).await)
     })
@@ -208,6 +216,7 @@ fn token_guard_reset(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let key = key_arg(&args, "tokenGuard.reset")?;
         require_migrated(&state).await?;
         let updated = values::reset(&key).await.map_err(invalid_argument)?;
+        refresh_legacy_overlays(&state, &updated).await;
         let windows = context_windows(false).await;
         Ok(full_snapshot(&state, &args, &updated, &windows).await)
     })
@@ -217,6 +226,7 @@ fn token_guard_reset_all(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         require_migrated(&state).await?;
         let updated = values::reset_all().await.map_err(invalid_argument)?;
+        refresh_legacy_overlays(&state, &updated).await;
         let windows = context_windows(false).await;
         Ok(full_snapshot(&state, &args, &updated, &windows).await)
     })
