@@ -5526,5 +5526,5 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 
 - [x] T441 [US4] `KeyboardShortcutsDialog.tsx`: give the dialog a `minmax(0,1fr)` middle grid row and put the list in the
   shared `ScrollArea`, per FR-126 (missing)
-- [ ] T442 Live check the dialog at a short window height (list scrolls by keyboard, Done visible), update
+- [x] T442 Live check the dialog at a short window height (list scrolls by keyboard, Done visible), update
   `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-126
