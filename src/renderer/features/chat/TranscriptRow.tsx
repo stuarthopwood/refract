@@ -12,7 +12,7 @@ import { isMidTurnProse } from './groupMidTurnProse'
 import { isStageGroup } from './groupSubagentStages'
 import { StageGroupRow } from './SubagentChainRow'
 import { ToolGroupRow } from './ToolRow'
-import { AskQuestionRow, RequestCard, ResolvedRequestSummary } from './RequestCard'
+import { AskToolRow, RequestItemRow } from './AskFormRows'
 import { UserMessageRow } from './UserMessageRow'
 import { MessageMenu } from './MessageMenu'
 import { NoticeRow } from './NoticeRow'
@@ -126,8 +126,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
 
     case 'tool':
       if (item.tool === 'ask') {
-        if (item.status === 'running') return null // the live question is the `request` item/RequestCard below.
-        return <AskQuestionRow item={item} userName={userName} userAvatarUrl={userAvatarUrl} requestId={askRequestId} sessionId={sessionId ?? undefined} />
+        return <AskToolRow item={item} sessionId={sessionId} userName={userName} userAvatarUrl={userAvatarUrl} askRequestId={askRequestId} />
       }
       // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
       // normally occur: `groupToolItems` wraps every run, including a run of one, in a
@@ -141,19 +140,8 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
     case 'advisory':
       return <AdvisoryRow item={item} sessionId={sessionId ?? undefined} onQueuedAnnounce={onQueuedAnnounce} />
 
-    case 'request': {
-      const live = sessionId ? pending.find((request) => request.requestId === item.requestId) : undefined
-      if (live && !item.resolved) {
-        return <RequestCard sessionId={sessionId as string} request={live} />
-      }
-      if (item.resolved === 'answered' || item.resolved === 'cancelled') {
-        // Superseded by the matching `ask` tool item once it resolves (T072); until then (a brief
-        // race between the answer landing and that item's own `tool_execution_end`), fall back to
-        // the plain one-line summary so the question is never shown as still pending.
-        if (resolvedAsk && resolvedAsk.status !== 'running') return null
-      }
-      return <ResolvedRequestSummary resolved={item.resolved} requestId={item.requestId} sessionId={sessionId ?? undefined} />
-    }
+    case 'request':
+      return <RequestItemRow item={item} sessionId={sessionId} pending={pending} resolvedAsk={resolvedAsk} />
 
     case 'notice':
       return <NoticeRow level={item.level} text={item.text} commandOutput={item.id.startsWith(COMMAND_OUTPUT_NOTICE_PREFIX)} />
