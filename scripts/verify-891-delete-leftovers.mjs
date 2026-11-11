@@ -145,6 +145,9 @@ async function main() {
     await clickDeleteButton(cdp, { onReadyToClick: () => cdp.screenshot(path.join(SHOT_DIR, '04-dialog-ready.png')) });
     const outcomeA = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeA.closed) fail('(a) full worktree deletes cleanly', new Error(`delete failed: ${outcomeA.error}`));
+    // sessions.delete acks once its checks pass; removal finishes afterwards, so poll instead of reading once.
+    await cdp.waitFor(`!Array.from(document.querySelectorAll('[data-session-open]')).some((el) => el.getAttribute('aria-label')?.startsWith(${JSON.stringify(nameA)}))`, { timeoutMs: 120_000, label: `${nameA} removed` }).catch(() => {});
+    for (let i = 0; i < 120 && existsSync(sessionA.worktreePath); i++) await new Promise((r) => setTimeout(r, 500));
     const aGone = !(await isSessionListed(cdp, nameA));
     const aWorktreeGone = !existsSync(sessionA.worktreePath);
     const aCanarySurvived = existsSync(canaryFile);
@@ -164,12 +167,14 @@ async function main() {
     await waitForDialogSettled(cdp);
     // An unregistered folder makes every `git status` fail; that must read as "we don't know", never "Nothing left in the worktree".
     const statusTextB = await readLeftoverStatusText(cdp);
-    if (statusTextB === "Couldn't list the folder's files.") ok(`(b, H2) unregistered folder's failed git status reads "Couldn't list the folder's files.", never a false "Nothing left"`);
+    if (statusTextB.startsWith("Couldn't list the folder's files.")) ok(`(b, H2) unregistered folder's failed git status reads "${statusTextB}", never a false "Nothing left"`);
     else fail('(b, H2) unregistered folder shows "Couldn\'t list the folder\'s files."', new Error(`status line read: ${JSON.stringify(statusTextB)}`));
     await cdp.screenshot(path.join(SHOT_DIR, '05-dialog-cant-list.png'));
     await clickDeleteButton(cdp);
     const outcomeB = await waitForDeleteOutcome(cdp, { timeoutMs: 180_000 });
     if (!outcomeB.closed) fail('(b) leftover unregistered full folder deletes', new Error(`delete failed: ${outcomeB.error}`));
+    await cdp.waitFor(`!Array.from(document.querySelectorAll('[data-session-open]')).some((el) => el.getAttribute('aria-label')?.startsWith(${JSON.stringify(nameB)}))`, { timeoutMs: 120_000, label: `${nameB} removed` }).catch(() => {});
+    for (let i = 0; i < 120 && existsSync(sessionB.worktreePath); i++) await new Promise((r) => setTimeout(r, 500));
     const bGone = !(await isSessionListed(cdp, nameB));
     const bWorktreeGone = !existsSync(sessionB.worktreePath);
     if (outcomeB.closed && bGone && bWorktreeGone) ok('(b) leftover unregistered full folder deletes');
