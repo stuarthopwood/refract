@@ -10,4 +10,4 @@
 | FR-007 shared look | `SlashMenu.tsx` exported classes | typecheck |
 | FR-008 slash menu unchanged | `suppressed: showSlashMenu` | live check pending |
 
-No contradictions between spec, plan and tasks. Gaps: Rust compile, `ci:local`, live check (build slot busy). No TypeScript tests are added (prototyping rule).
+No contradictions between spec, plan and tasks. Gaps: Rust compile, `ci:local`, live check (build slot busy). Unit tests for `parseHashTrigger` and `applyHashPick` exist in `src/renderer/features/chat/hashTrigger.test.ts`.
