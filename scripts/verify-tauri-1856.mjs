@@ -78,8 +78,9 @@ async function runChecks(cdp, { repoDir }) {
     focused = await cdp.evaluate(`document.activeElement === ${LIST}`);
   }
   assert(focused, 'Tab reaches the list');
-  const ring = await cdp.evaluate(`(() => { const s = getComputedStyle(${LIST}); return { outline: s.outlineStyle, width: s.outlineWidth }; })()`);
-  assert(ring.outline !== 'none' && ring.width !== '0px', `the focused list shows a focus ring ${JSON.stringify(ring)}`);
+  const ring = await cdp.evaluate(`(() => { const s = getComputedStyle(${LIST}); const b = ${LIST}.getBoundingClientRect(); const v = ${VIEWPORT}.getBoundingClientRect(); return { boxShadow: s.boxShadow, outline: s.outlineStyle, insideViewport: b.top >= v.top - 0.5 && b.bottom <= v.bottom + 0.5 && b.left >= v.left - 0.5 && b.right <= v.right + 0.5 }; })()`);
+  assert(ring.boxShadow !== 'none' && ring.boxShadow.includes('inset') && ring.insideViewport, `the focused list shows an inset focus ring inside the scroll viewport ${JSON.stringify(ring)}`);
+  await shot(cdp, 'focus-ring-visible-all-edges.png');
 
   await pressKey(cdp, 34, 'PageDown', 'PageDown');
   await sleep(400);
