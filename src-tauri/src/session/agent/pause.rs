@@ -169,7 +169,7 @@ impl SessionAgent {
     /// `chat.resume`: drains held messages in order, then clears the pause. A failed send leaves the rest held.
     pub async fn resume(&self) -> Result<Value, AgentError> {
         self.ensure_pause_loaded().await;
-        let cancelled = {
+        {
             let mut state = self.state.lock().await;
             let Some(held) = state.pause.held.as_ref() else {
                 return Ok(json!({ "paused": false }));
@@ -184,11 +184,21 @@ impl SessionAgent {
                 ));
             }
             state.pause.resuming = true;
-            std::mem::take(&mut state.pause.cancelled)
-        };
-        self.notify_resumed(cancelled).await;
+        }
         let outcome = self.drain_held().await;
-        self.state.lock().await.pause.resuming = false;
+        // The list is taken only once the drain succeeded: a failed drain leaves the Session paused and the list intact.
+        let cancelled = {
+            let mut state = self.state.lock().await;
+            state.pause.resuming = false;
+            if outcome.is_ok() {
+                std::mem::take(&mut state.pause.cancelled)
+            } else {
+                Vec::new()
+            }
+        };
+        if outcome.is_ok() {
+            self.notify_resumed(cancelled).await;
+        }
         self.persist_pause().await;
         self.emit_status().await;
         self.emit_pause_queue().await;

@@ -341,3 +341,61 @@ async fn a_subagent_started_by_a_resume_drain_is_not_cancelled() {
     assert_eq!(fx.rpcs().await.len(), before);
     fx.finish().await;
 }
+
+#[tokio::test]
+async fn a_failed_drain_keeps_the_cancelled_list_and_posts_no_notice() {
+    let fx = fixture(&["alpha", "bravo"], &[]).await;
+    fx.agent.pause().await.unwrap();
+    fx.agent.state.lock().await.pause.held = Some(vec!["held text".to_string()]);
+    // A stopped process still counts as attached, so the drain's send fails and the Session stays paused.
+    let process = fx.agent.state.lock().await.process.clone().unwrap();
+    process.stop().await;
+
+    assert!(fx.agent.resume().await.is_err());
+
+    assert!(fx.agent.is_paused().await);
+    assert_eq!(fx.cancelled().await, ["alpha", "bravo"]);
+    assert!(!fx
+        .notices()
+        .await
+        .iter()
+        .any(|text| text.starts_with("Resumed.")));
+}
+
+#[tokio::test]
+async fn a_process_exit_clears_the_cancelled_list_so_resume_posts_no_notice() {
+    let fx = fixture(&["alpha"], &[]).await;
+    fx.agent.pause().await.unwrap();
+    assert_eq!(fx.cancelled().await, ["alpha"]);
+    let process = fx.agent.state.lock().await.process.clone().unwrap();
+    process.stop().await;
+
+    fx.agent.handle_exit(&process, Some(1), false).await;
+
+    assert!(fx.cancelled().await.is_empty());
+    fx.agent.resume().await.unwrap();
+    assert!(!fx
+        .notices()
+        .await
+        .iter()
+        .any(|text| text.starts_with("Resumed.")));
+}
+
+#[tokio::test]
+async fn a_conversation_reset_clears_the_cancelled_list_so_resume_posts_no_notice() {
+    let fx = fixture(&["alpha"], &[]).await;
+    fx.agent.pause().await.unwrap();
+    assert_eq!(fx.cancelled().await, ["alpha"]);
+    fx.agent.state.lock().await.status = crate::session::agent::SessionStatus::Idle;
+
+    fx.agent.start_new_conversation().await.unwrap();
+
+    assert!(fx.cancelled().await.is_empty());
+    fx.agent.resume().await.unwrap();
+    assert!(!fx
+        .notices()
+        .await
+        .iter()
+        .any(|text| text.starts_with("Resumed.")));
+    fx.finish().await;
+}

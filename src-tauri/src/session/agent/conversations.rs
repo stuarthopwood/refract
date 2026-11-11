@@ -74,6 +74,7 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.transcript = TranscriptState::new();
+            state.pause.cancelled.clear();
         }
         self.emit_patch_reset().await;
         // Clear the old readout first so a failed `get_state` never shows stale data (#577).
@@ -180,6 +181,7 @@ impl SessionAgent {
         };
         {
             let mut state = self.state.lock().await;
+            state.pause.cancelled.clear();
             state.transcript = if complete {
                 let mut fresh = TranscriptState::from_history(&messages);
                 fresh.set_terminated_unexpectedly(terminated_unexpectedly);

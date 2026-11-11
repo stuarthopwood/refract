@@ -281,6 +281,8 @@ impl SessionAgent {
                 state.process = None;
                 // Clears the abort flag so it cannot leak into a later launch. (#911)
                 state.turn_abort_requested = false;
+                // Cancelled ids name subagents of the dead process; a later Resume must not report them.
+                state.pause.cancelled.clear();
             }
             (
                 is_current,
