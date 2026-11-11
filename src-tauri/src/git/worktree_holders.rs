@@ -516,9 +516,14 @@ mod tests {
 
     #[test]
     fn shown_paths_collapse_dot_dot_so_a_session_path_never_shows_one() {
-        let raw = Path::new("C:\\r\\scratch-repo\\..\\pinion-worktrees\\scratch-repo\\brave-puffin");
+        let raw =
+            Path::new("C:\\r\\scratch-repo\\..\\pinion-worktrees\\scratch-repo\\brave-puffin");
         let shown = shown(raw);
         assert!(!shown.contains(".."), "{shown}");
-        assert!(shown.ends_with("pinion-worktrees\\scratch-repo\\brave-puffin") || shown.ends_with("pinion-worktrees/scratch-repo/brave-puffin"), "{shown}");
+        assert!(
+            shown.ends_with("pinion-worktrees\\scratch-repo\\brave-puffin")
+                || shown.ends_with("pinion-worktrees/scratch-repo/brave-puffin"),
+            "{shown}"
+        );
     }
 }
