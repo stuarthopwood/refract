@@ -23,10 +23,8 @@ fn agent_tools_result(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "agentTools.result expects (sessionId, callId, reply)",
             ));
         };
-        let accepted = with_router(&state, session_id, |router| {
-            router.answer(call_id, reply)
-        })
-        .await?;
+        let accepted =
+            with_router(&state, session_id, |router| router.answer(call_id, reply)).await?;
         Ok(json!({ "accepted": accepted }))
     })
 }
