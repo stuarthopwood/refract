@@ -1239,3 +1239,5 @@ Also filed 2026-11-10 (Stuart): **#1885** (`p1`, `design`, `settings`), UI Polis
 Also filed 2026-11-11 (Stuart): **#1890** (`p1`, `bug`), Bug: Pause: resuming a stopped, paused Session leaves it stopped; Stop idle stops paused Sessions.
 
 Also filed 2026-11-11 (Stuart): **#1892** (`p1`, `design`, `chat`), UI Polish: Chat: the Starting agent notice blurs the history behind it.
+
+Also filed 2026-11-11 (Stuart): **#1901** (`p1`, `enhancement`), Epic: Performance: make the PR and Issue views feel instant and cut real work. Children: **#1894** (PR/Issue lists skip the mount refetch when fresh), **#1895** (instant lists via idle prefetch plus a disk cache; grilled), **#1896** (cache the gh rate-limit probe), **#1897** (derive the sidebar PR count from the list), **#1898** (defer non-visual startup work until after first paint), **#1899** (skeleton rows while lists load), **#1900** (spike: measure the unconfirmed hot paths).
