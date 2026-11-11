@@ -40,6 +40,10 @@ export function useHashPicker({ sessionId, text, textareaRef, suppressed, disabl
     setCaret((previous) => (previous && previous.start === start && previous.end === end ? previous : { start, end }))
   }, [])
   const [dismissedFor, setDismissedFor] = useState<string | null>(null)
+  // A dismissal belongs to one exact draft: once the text changes, retyping the same query must reopen the picker.
+  useEffect(() => {
+    setDismissedFor((previous) => (previous !== null && previous !== text ? null : previous))
+  }, [text])
   const [activeIndex, setActiveIndex] = useState(0)
   const [search, setSearch] = useState<SearchState | null>(null)
   const [announcement, announce] = useClearedAnnouncement()

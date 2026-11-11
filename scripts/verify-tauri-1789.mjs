@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1789: the composer `#` picker. Fake omp (tape slash-1812-cached, which answers prompts)
+// Live CDP check for issue #1789: the composer `#` picker. Fake omp (tape hash-1789, which accepts a prompt)
 // and a fake `gh` on PATH (verify-tauri-1789-fake-gh.rs) keep it off GitHub; its argv log is the proof of what was searched.
 // Launch 1: Project with a github.com origin. Launch 2: Project with no remote.
 
@@ -43,9 +43,7 @@ const options = (cdp) => cdp.evaluate(OPTIONS);
 const hasListbox = (cdp) => cdp.evaluate(`!!document.querySelector('[role="listbox"]')`);
 async function clear(cdp) {
   await cdp.evaluate(`${COMPOSER}.focus()`);
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 65, key: 'a', code: 'KeyA', modifiers: 2 });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 65, key: 'a', code: 'KeyA', modifiers: 2 });
-  await key(cdp, 8, 'Backspace');
+  await cdp.evaluate(`document.execCommand('selectAll'); document.execCommand('delete')`);
   await sleep(300);
 }
 const ghCalls = (file) => (existsSync(file) ? readFileSync(file, 'utf8').split('\n').filter((l) => l.includes('search/issues')) : []);
@@ -102,7 +100,7 @@ async function main() {
       extraEnv: {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
-        REFRACT_FAKE_OMP_SCENARIO: 'slash-1812-cached',
+        REFRACT_FAKE_OMP_SCENARIO: 'hash-1789',
         REFRACT_FAKE_OMP_CONFIG_STORE: configStorePath,
         REFRACT_FAKE_OMP_MODEL_CATALOG: CATALOG_FIXTURE,
         REFRACT_FAKE_OMP_DEBUG_LOG: debugLog,
@@ -154,13 +152,13 @@ async function main() {
     await type(cdp, '#sav');
     await cdp.waitFor(`${OPTIONS}.length === 3`, { timeoutMs: 15_000, label: 'title rows' }).catch(() => {});
     const byTitle = await options(cdp);
-    check('text after `#` filters by title and includes closed and merged items', byTitle.length === 3 && byTitle.some((r) => /#7\b/.test(r) && /Closed/.test(r)) && byTitle.some((r) => /#5\b/.test(r) && /Merged/.test(r)), byTitle);
+    check('text after `#` filters by title and includes closed and merged items', byTitle.length === 3 && byTitle.some((r) => /#7(?!\d)/.test(r) && /Closed/.test(r)) && byTitle.some((r) => /#5(?!\d)/.test(r) && /Merged/.test(r)), byTitle);
     await shot('02-filtered-by-title.png');
     await clear(cdp);
     await type(cdp, '#12');
-    await cdp.waitFor(`${OPTIONS}.some((r) => /#12\\b/.test(r))`, { timeoutMs: 15_000, label: 'number rows' }).catch(() => {});
+    await cdp.waitFor(`${OPTIONS}.some((r) => /#12(?!\\d)/.test(r))`, { timeoutMs: 15_000, label: 'number rows' }).catch(() => {});
     const byNumber = await options(cdp);
-    check('digits find the item by number', /#12\b/.test(byNumber[0] ?? ''), byNumber);
+    check('digits find the item by number', /#12(?!\d)/.test(byNumber[0] ?? ''), byNumber);
     const calls = ghCalls(ghLog);
     check('only `gh api search/issues` scoped to the Project repository (repo: qualifier) is called', calls.length > 0 && calls.every((l) => /repo:octocat\/hello-world/.test(l)), calls.length);
 
@@ -222,8 +220,8 @@ async function main() {
     rmSync(path.join(ghDir, 'delay-ms'));
     writeFileSync(path.join(ghDir, 'fail'), '');
     await type(cdp, '#zzz');
-    await cdp.waitFor(`document.body.textContent.includes('Could not') || document.body.textContent.includes('gh')`, { timeoutMs: 15_000, label: 'error row' }).catch(() => {});
-    const errText = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="alert"],[data-tone="error"],div')).filter((e) => e.children.length === 0 && /could not|gh|offline|sign/i.test(e.textContent)).map((e) => e.textContent.trim()).slice(0, 3)`);
+    await cdp.waitFor(`!document.body.textContent.includes('Searching')`, { timeoutMs: 15_000, label: 'error row' }).catch(() => {});
+    const errText = await cdp.evaluate(`Array.from(document.querySelectorAll('div,span,p')).filter((e) => e.children.length === 0 && /could not|failed|error|unavailable|offline|sign in/i.test(e.textContent)).map((e) => e.textContent.trim()).slice(0, 3)`);
     check('a failed search shows an inline error and the typed text stays', errText.length > 0 && (await draft(cdp)) === '#zzz' && !(await options(cdp)).length, { errText, draft: await draft(cdp) });
     await shot('06-error.png');
     rmSync(path.join(ghDir, 'fail'));
