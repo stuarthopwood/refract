@@ -54,11 +54,12 @@ fn stopped_target_is_refused_with_its_status() {
 }
 
 #[test]
-fn a_stopped_target_that_kept_its_pause_is_refused_as_paused() {
+fn a_stopped_target_that_kept_its_pause_is_refused_as_stopped() {
     let paused = [json!({"id": "t", "status": "stopped", "pause": "paused", "archivedAt": null})];
     let err = check_target(&paused, "me", "t").unwrap_err();
     assert_eq!(err.code, SESSION_NOT_RUNNING);
-    assert!(err.message.contains("paused"));
+    assert!(err.message.contains("stopped"));
+    assert!(!err.message.contains("paused"));
 }
 
 #[test]
@@ -112,7 +113,7 @@ fn rows() -> Vec<Value> {
 fn plan_with<'a>(
     args: &'a Value,
     rows: &'a [Value],
-    limiter: &SendLimiter,
+    limiter: &'a SendLimiter,
 ) -> Result<SendPlan<'a>, ToolError> {
     plan_send(args, rows, "me", limiter, Instant::now())
 }
@@ -135,7 +136,7 @@ fn the_planner_checks_in_the_contract_order() {
     let ok = json!({"id": "t", "text": "hi"});
     let now = Instant::now();
     for _ in 0..MAX_SENDS {
-        plan_send(&ok, &rows, "me", &limiter, now).unwrap();
+        std::mem::forget(plan_send(&ok, &rows, "me", &limiter, now).unwrap());
     }
     // The limit is spent for every target below, so only the check order decides each result.
     for to in ["gone", "me", "dead"] {
@@ -188,18 +189,30 @@ fn a_failed_delivery_gives_its_slot_back_and_a_delivered_one_keeps_it() {
     let rows = rows();
     let args = json!({"id": "t", "text": "hi"});
     let plan = plan_with(&args, &rows, &limiter).unwrap();
-    let failed = settle(
-        &limiter,
-        &plan,
-        Err(AgentError::new("prompt-failed", "boom")),
-    );
+    let slot = plan.slot;
+    let failed = settle(&plan, Err(AgentError::new("prompt-failed", "boom")));
     assert_eq!(code(failed), "prompt-failed");
-    assert_eq!(used(&limiter, "t", plan.slot), 0);
+    assert_eq!(used(&limiter, "t", slot), 0);
 
     let plan = plan_with(&args, &rows, &limiter).unwrap();
-    let sent = settle(&limiter, &plan, Ok(MessageDelivery::Queued)).unwrap();
+    let slot = plan.slot;
+    let sent = settle(&plan, Ok(MessageDelivery::Queued)).unwrap();
     assert_eq!(sent["outcome"], "queued");
-    assert_eq!(used(&limiter, "t", plan.slot), 1);
+    assert_eq!(used(&limiter, "t", slot), 1);
+    drop(plan);
+    assert_eq!(used(&limiter, "t", slot), 1, "a settled send keeps its slot after the plan drops");
+}
+
+#[test]
+fn dropping_an_unsettled_plan_releases_its_slot() {
+    let limiter = SendLimiter::default();
+    let rows = rows();
+    let args = json!({"id": "t", "text": "hi"});
+    let plan = plan_with(&args, &rows, &limiter).unwrap();
+    let slot = plan.slot;
+    assert_eq!(used(&limiter, "t", slot), 1);
+    drop(plan);
+    assert_eq!(used(&limiter, "t", slot), 0);
 }
 
 #[test]
@@ -208,12 +221,7 @@ fn a_target_that_stopped_mid_send_is_session_not_running() {
     let rows = rows();
     let args = json!({"id": "t", "text": "hi"});
     let plan = plan_with(&args, &rows, &limiter).unwrap();
-    let err = settle(
-        &limiter,
-        &plan,
-        Err(AgentError::new("agent-not-running", "no process")),
-    )
-    .unwrap_err();
+    let err = settle(&plan, Err(AgentError::new("agent-not-running", "no process"))).unwrap_err();
     assert_eq!(err.code, SESSION_NOT_RUNNING);
     assert!(err.message.contains("stopped"));
 }

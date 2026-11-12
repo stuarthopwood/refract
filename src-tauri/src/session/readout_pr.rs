@@ -22,10 +22,15 @@ const UNAVAILABLE_BACKOFF: Duration = Duration::from_secs(60);
 static UNAVAILABLE_UNTIL: Mutex<Option<HashMap<(String, String), Instant>>> = Mutex::new(None);
 
 fn backed_off(key: &(String, String)) -> bool {
+    backed_off_at(key, Instant::now())
+}
+
+/// `now` is injected so the 60 s edge is testable without sleeping.
+fn backed_off_at(key: &(String, String), now: Instant) -> bool {
     let mut guard = UNAVAILABLE_UNTIL.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
     match map.get(key) {
-        Some(until) if *until > Instant::now() => true,
+        Some(until) if *until > now => true,
         Some(_) => {
             map.remove(key);
             false
@@ -35,9 +40,12 @@ fn backed_off(key: &(String, String)) -> bool {
 }
 
 fn back_off(key: (String, String)) {
+    back_off_at(key, Instant::now());
+}
+
+fn back_off_at(key: (String, String), now: Instant) {
     let mut guard = UNAVAILABLE_UNTIL.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
-    let now = Instant::now();
     map.retain(|_, until| *until > now);
     map.insert(key, now + UNAVAILABLE_BACKOFF);
 }

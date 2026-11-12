@@ -1,6 +1,7 @@
 // `refract_send_session_message` (#1858): the checks run in the contract's order, then the text
 // goes to the target wrapped in an envelope. A stopped Session is refused and never started.
 
+use std::cell::Cell;
 use std::time::Instant;
 
 use serde_json::{json, Value};
@@ -68,7 +69,7 @@ pub fn check_target<'a>(
     // A stopped Session that kept its pause reads as `paused` but has no process to deliver to.
     let stopped = status == "stopped" || target["status"].as_str() == Some("stopped");
     if stopped || archived {
-        let shown = if archived { "archived" } else { status };
+        let shown = if archived { "archived" } else { "stopped" };
         return Err(ToolError::new(
             SESSION_NOT_RUNNING,
             format!("the target Session is {shown}; Session messages never start a Session"),
@@ -77,7 +78,8 @@ pub fn check_target<'a>(
     Ok(target)
 }
 
-/// A send that passed every check and holds one rate-limit slot until `settle` resolves it.
+/// A send that passed every check and holds one rate-limit slot until `settle` resolves it; a plan
+/// dropped unsettled (the tool call was cancelled mid-send) gives the slot back.
 #[derive(Debug)]
 pub struct SendPlan<'a> {
     pub from: &'a str,
@@ -85,6 +87,22 @@ pub struct SendPlan<'a> {
     pub text: &'a str,
     pub sender: &'a str,
     slot: Instant,
+    limiter: &'a SendLimiter,
+    holds_slot: Cell<bool>,
+}
+
+impl SendPlan<'_> {
+    fn release_slot(&self) {
+        if self.holds_slot.replace(false) {
+            self.limiter.release(self.from, self.id, self.slot);
+        }
+    }
+}
+
+impl Drop for SendPlan<'_> {
+    fn drop(&mut self) {
+        self.release_slot();
+    }
 }
 
 /// Runs the contract's checks in order: arguments, existence, self, running, then the rate limit.
@@ -93,7 +111,7 @@ pub fn plan_send<'a>(
     args: &'a Value,
     summaries: &'a [Value],
     self_id: &'a str,
-    limiter: &SendLimiter,
+    limiter: &'a SendLimiter,
     now: Instant,
 ) -> Result<SendPlan<'a>, ToolError> {
     let (id, text) = parse_args(args)?;
@@ -115,19 +133,23 @@ pub fn plan_send<'a>(
         text,
         sender,
         slot: now,
+        limiter,
+        holds_slot: Cell::new(true),
     })
 }
 
 /// The tool result for a delivery attempt; a failed one gives its rate-limit slot back.
 pub fn settle(
-    limiter: &SendLimiter,
     plan: &SendPlan<'_>,
     delivery: Result<MessageDelivery, AgentError>,
 ) -> Result<Value, ToolError> {
     match delivery {
-        Ok(delivery) => Ok(json!({ "outcome": outcome_name(delivery) })),
+        Ok(delivery) => {
+            plan.holds_slot.set(false);
+            Ok(json!({ "outcome": outcome_name(delivery) }))
+        }
         Err(err) => {
-            limiter.release(plan.from, plan.id, plan.slot);
+            plan.release_slot();
             Err(match err.code {
                 "agent-not-running" => ToolError::new(
                     SESSION_NOT_RUNNING,
@@ -160,7 +182,7 @@ pub async fn send(agent: &SessionAgent, args: &Value) -> Result<Value, ToolError
             "the target Session has no live agent",
         )),
     };
-    settle(&LIMITER, &plan, delivery)
+    settle(&plan, delivery)
 }
 
 #[cfg(test)]

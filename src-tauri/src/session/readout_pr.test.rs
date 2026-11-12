@@ -33,3 +33,12 @@ fn a_none_answer_for_the_link_is_remembered_without_blocking_the_readout_poll() 
     assert!(backed_off(&link));
     assert!(!backed_off(&poll));
 }
+
+#[test]
+fn the_link_backoff_holds_until_exactly_sixty_seconds_then_clears() {
+    let link = link_key(Path::new("link-backoff-edge-repo"), "feat/y");
+    let t0 = Instant::now();
+    back_off_at(link.clone(), t0);
+    assert!(backed_off_at(&link, t0 + Duration::from_secs(59)));
+    assert!(!backed_off_at(&link, t0 + Duration::from_secs(60)));
+}

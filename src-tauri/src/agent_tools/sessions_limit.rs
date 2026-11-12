@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 pub const MAX_SENDS: usize = 10;
 pub const WINDOW: Duration = Duration::from_secs(600);
 
-#[derive(Default)]
+#[derive(Debug, Default)]
 pub struct SendLimiter {
     sends: Mutex<HashMap<(String, String), VecDeque<Instant>>>,
 }
