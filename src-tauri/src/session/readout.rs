@@ -252,6 +252,32 @@ pub async fn current_readout_value(agent: &SessionAgent) -> Value {
         .unwrap_or_else(empty_readout)
 }
 
+/// `{ number, url }` of the Session's PR for the Session tools (#1858): the readout cache when the
+/// agent already has one, else one backed-off lookup. `Null` for no PR or an unavailable lookup.
+pub async fn pull_request_link(
+    agent: Option<&SessionAgent>,
+    session_id: &str,
+    worktree_path: &str,
+    branch: &str,
+) -> Value {
+    let cached = match agent {
+        Some(agent) => current_readout_value(agent).await["pullRequest"].clone(),
+        None => Value::Null,
+    };
+    let pr = if cached.is_null() {
+        match pull_request_for_branch(session_id, Path::new(worktree_path), branch).await {
+            PullRequestLookup::Found(state) => state.to_json(),
+            _ => Value::Null,
+        }
+    } else {
+        cached
+    };
+    match (pr.get("number"), pr.get("url")) {
+        (Some(number), Some(url)) => json!({ "number": number, "url": url }),
+        _ => Value::Null,
+    }
+}
+
 fn empty_readout() -> Value {
     let mut readout = json!({
         "changes": Value::Null,

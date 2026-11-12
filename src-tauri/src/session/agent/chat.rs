@@ -7,6 +7,14 @@ use super::{
     AgentError, SessionAgent, SessionStatus, ABORT_SETTLE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS,
 };
 
+/// How a Session message reached its target (#1858).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageDelivery {
+    Sent,
+    Queued,
+    Held,
+}
+
 impl SessionAgent {
     /// Sends a prompt, or holds it while the session is paused.
     /// OMP expects `message`, not `text`.
@@ -21,6 +29,21 @@ impl SessionAgent {
         self.send_unheld(text, images, false).await
     }
 
+    /// Delivers another Session's envelope (#1858): held while paused, queued while busy, never
+    /// decorated, since the envelope text must reach the target verbatim.
+    pub async fn send_session_message(&self, text: String) -> Result<MessageDelivery, AgentError> {
+        if self.hold_if_paused(&text, &None).await?.is_some() {
+            return Ok(MessageDelivery::Held);
+        }
+        let res = self.send_unheld_with(text, None, false, false).await?;
+        let queued = res.get("queued").and_then(Value::as_bool) == Some(true);
+        Ok(if queued {
+            MessageDelivery::Queued
+        } else {
+            MessageDelivery::Sent
+        })
+    }
+
     /// Sends without the pause gate, so `resume` can drain held messages.
     /// `force_follow_up` avoids racing the status update of the first message in a drain.
     pub(super) async fn send_unheld(
@@ -28,6 +51,18 @@ impl SessionAgent {
         text: String,
         images: Option<Vec<Value>>,
         force_follow_up: bool,
+    ) -> Result<Value, AgentError> {
+        self.send_unheld_with(text, images, force_follow_up, true)
+            .await
+    }
+
+    /// `decorate` adds the working-mode wrapper to an idle send; Session messages pass `false`.
+    async fn send_unheld_with(
+        &self,
+        text: String,
+        images: Option<Vec<Value>>,
+        force_follow_up: bool,
+        decorate: bool,
     ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
         let (proc, working) = {
@@ -57,7 +92,7 @@ impl SessionAgent {
             );
             (proc, working)
         };
-        let text = if working || force_follow_up {
+        let text = if working || force_follow_up || !decorate {
             text
         } else {
             crate::session::working_mode::decorate_prompt(self, text).await

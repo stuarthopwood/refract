@@ -6,6 +6,9 @@ pub mod envelope;
 pub mod overlay;
 pub mod panels;
 pub mod router;
+pub mod sessions;
+mod sessions_limit;
+pub mod sessions_send;
 
 use serde_json::{json, Value};
 
@@ -43,7 +46,11 @@ impl ToolAccess {
 /// Tool names visible to a Session. The panel tools are available to every root Session.
 pub fn tools_for(access: ToolAccess) -> Vec<&'static str> {
     match access.role {
-        Role::Root => vec![LIST_PANELS, OPEN_PANEL, INVOKE_PANEL_ACTION],
+        Role::Root => {
+            let mut names = vec![LIST_PANELS, OPEN_PANEL, INVOKE_PANEL_ACTION];
+            names.extend(sessions::SESSION_TOOLS);
+            names
+        }
         Role::Child => Vec::new(),
     }
 }
@@ -53,11 +60,16 @@ pub fn host_tool_defs(access: ToolAccess) -> Vec<Value> {
     tools_for(access)
         .into_iter()
         .map(|name| {
+            let (description, parameters) = if sessions::is_session_tool(name) {
+                (sessions::description(name), sessions::parameters(name))
+            } else {
+                (tool_description(name), tool_parameters(name))
+            };
             json!({
                 "name": name,
                 "label": name,
-                "description": tool_description(name),
-                "parameters": tool_parameters(name),
+                "description": description,
+                "parameters": parameters,
                 "loadMode": "essential",
             })
         })

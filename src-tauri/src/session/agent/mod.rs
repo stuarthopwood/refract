@@ -36,6 +36,7 @@ pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
+pub use chat::MessageDelivery;
 pub use requests::is_chat_answer;
 use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
@@ -109,6 +110,8 @@ pub struct SessionAgent {
     commands_reported: Notify,
     coalescer: PatchCoalescer,
     agent_tools: crate::agent_tools::router::ToolRouter,
+    /// Set once by the owning `SessionManager`, so Session tools can reach other Sessions.
+    manager: std::sync::OnceLock<Weak<crate::session::SessionManager>>,
 }
 
 /// Generates one `with_<lane>_state` accessor per lane.
@@ -187,6 +190,7 @@ impl SessionAgent {
             start_lock: AsyncMutex::new(()),
             commands_reported: Notify::new(),
             agent_tools: Default::default(),
+            manager: Default::default(),
             coalescer,
         })
     }

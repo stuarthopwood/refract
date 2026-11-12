@@ -8,7 +8,10 @@ fn root_sessions_get_the_three_prefixed_tools() {
         vec![
             "refract_list_panels",
             "refract_open_panel",
-            "refract_invoke_panel_action"
+            "refract_invoke_panel_action",
+            "refract_list_sessions",
+            "refract_get_session_status",
+            "refract_send_session_message"
         ]
     );
     assert!(names.iter().all(|n| n.starts_with(TOOL_PREFIX)));

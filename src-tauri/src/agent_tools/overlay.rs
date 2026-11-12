@@ -37,7 +37,7 @@ mod tests {
     fn overlay_allows_exactly_the_three_tools() {
         assert_eq!(
             render(ToolAccess::root()),
-            "tools:\n  approval:\n    refract_list_panels: allow\n    refract_open_panel: allow\n    refract_invoke_panel_action: allow\n"
+            "tools:\n  approval:\n    refract_list_panels: allow\n    refract_open_panel: allow\n    refract_invoke_panel_action: allow\n    refract_list_sessions: allow\n    refract_get_session_status: allow\n    refract_send_session_message: allow\n"
         );
     }
 }
