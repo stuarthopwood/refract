@@ -103,21 +103,25 @@ fn reopening_a_migrated_database_leaves_it_unchanged() {
 #[test]
 fn migrating_a_file_another_process_already_upgraded_is_a_no_op() {
     let path = scratch_db("migrate-already-4");
-    let mut conn = open_db(&path).unwrap();
-    conn.execute(
-        "INSERT INTO tool_calls (session_file, tool_call_id, ts, entry_id, tool, cost_usd)
-         VALUES ('f', 'c1', 1000, 'e1', 'bash', 1.5)",
-        [],
-    )
-    .unwrap();
+    write_v3_db(&path);
+    // A is the slower process: it holds a handle on the v3 file while B upgrades it.
+    let mut a = Connection::open(&path).unwrap();
+    assert_eq!(version(&a), 3);
+    let mut b = Connection::open(&path).unwrap();
+    migrate(&mut b).unwrap();
+    assert_eq!(version(&b), USER_VERSION);
 
-    migrate(&mut conn).unwrap();
+    // Without the in-transaction re-read, A would rerun RENAME COLUMN cost_share, which no longer exists.
+    migrate(&mut a).unwrap();
 
-    assert_eq!(version(&conn), USER_VERSION);
-    let cost: f64 = conn
-        .query_row("SELECT cost_usd FROM tool_calls", [], |r| r.get(0))
+    assert_eq!(version(&a), USER_VERSION);
+    let (cost, rows): (f64, i64) = a
+        .query_row("SELECT cost_usd, count(*) FROM tool_calls", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
         .unwrap();
-    assert_eq!(cost, 1.5);
+    assert_eq!((cost, rows), (1.5, 1));
+    assert!(a.prepare("SELECT cost_share FROM tool_calls").is_err());
 }
 
 #[test]
