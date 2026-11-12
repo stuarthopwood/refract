@@ -96,6 +96,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | next W2.5 | #1935 | **Token guard (p2, feature, settings):** verify which of the 18 remaining keys apply live to running Sessions | **Wave 2, item 5 (`next`, Stuart 2026-11-12)**; `todo`; sibling of #1940, which needs #1765 closed |
 | p0 later | #518 | **Perf (p0 on GitHub, `idea`, `spike`, `transport`, `needs-triage`):** ask OMP for `message_update` deltas (`set_event_filter messageUpdates`) so long answers do not resend the whole message each frame | GitHub priority p0; previously only in the Phase B probe row; `todo`, measure first (spike) |
 | p1 later | #1864 | **Feat, Chat (p1):** every issue and PR reference is a link with a hover card | `todo`; `ready-for-agent`; #1947 (p2) is its performance follow-up |
+| p1 later | #1950 | **Feat, Chat (p1, design):** issue and PR ref links open in the right pane (not the browser or full view) and show a type icon plus a hover-card type label | `todo`; #1864 depends on this; foreign and non-Project refs still open on GitHub |
 | p1 later | #1865 | **Feat, Composer (p1, `transport`):** mode picker and slash commands for Vibe, Pre-walk, Goal and Loop | `todo`; `ready-for-agent` |
 | p1 later | #1867 | **Feat, Pull requests (p1):** stacked pull requests via `gh stack`, toggled in Settings (default on) | `todo`; `ready-for-agent` |
 | p1 later | #1880 | **Feat, Pull requests (p1):** merge card at the top of the PR view, modeled on GitHub's | `todo`; `ready-for-agent` |
@@ -1317,3 +1318,5 @@ Status 2026-11-12 (#1942): done. Merged in PR #1943 (`21a7fc1c`); row 1c.1b is d
 Also filed 2026-11-12 (Stuart): **#1946** (`p1`, `bug`, `chat`), Bug: Plan mode does not switch the model role to Plan (enter plan mode selects the Plan role and overrides a pinned model, restoring the prior selection on exit).
 
 Also filed 2026-11-12 (Stuart): **#1947** (`p2`, `enhancement`, `chat`), Perf: PR/Issue reference hover cards: idle prefetch (batched) plus refresh on open. Child of the performance epic #1901.
+
+Also filed 2026-11-12 (Stuart): **#1950** (`p1`, `enhancement`, `chat`, `design`), Feat: Chat issue and PR ref links open in the right pane and show a type icon. Decided: in-project refs open the right-pane Issue/PR panel so the chat stays visible, foreign or non-Project refs keep opening on GitHub; p1; standalone issue with #1864 depending on it (the app-wide rollout reuses this core `ItemRefLink` behaviour).
