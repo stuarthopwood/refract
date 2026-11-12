@@ -198,6 +198,36 @@ impl Fixture {
         registry.lock().await.add_session(row).await.unwrap();
     }
 
+    /// Another paused Session whose agent already has a live process, so a Resume of it succeeds.
+    pub async fn add_live_session(&self, id: &str) {
+        self.add_session(id, &[], false).await;
+        let mut command = tokio::process::Command::new("node");
+        command
+            .arg(self.dir.join("stub.js"))
+            .arg(self.dir.join(format!("rpc-{id}.jsonl")))
+            .arg(self.dir.join(format!("gate-{id}")))
+            .arg(json!({ "cancelErrors": {} }).to_string())
+            .current_dir(&self.dir);
+        let process = OmpProcess::from_command(command).unwrap();
+        let agent = self.manager.get_or_create_agent(id);
+        agent.state.lock().await.process = Some(Arc::new(process));
+    }
+
+    /// Stops the process `add_live_session` gave a Session.
+    pub async fn stop_live_session(&self, id: &str) {
+        let process = self
+            .manager
+            .get_or_create_agent(id)
+            .state
+            .lock()
+            .await
+            .process
+            .take();
+        if let Some(process) = process {
+            process.stop().await;
+        }
+    }
+
     /// Every command the stub received, in order.
     pub async fn rpcs(&self) -> Vec<Value> {
         let text = tokio::fs::read_to_string(&self.log)

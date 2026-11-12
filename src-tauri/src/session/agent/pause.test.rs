@@ -127,11 +127,15 @@ async fn resume_all_counts_resumed_and_failed_and_leaves_archived_sessions_alone
     let fx = fixture_with(Stub::default()).await;
     paused_live(&fx).await;
     fx.add_session("failing", &["kept"], false).await;
+    // After the failing one, so stopping at the first failure would leave it paused.
+    fx.add_live_session("later").await;
     fx.add_session("archived", &["held"], true).await;
 
     let (resumed, failed) = super::resume_all(fx.agent.registry(), &fx.manager).await;
 
-    assert_eq!((resumed, failed), (1, 1));
+    assert_eq!((resumed, failed), (2, 1));
+    assert!(!fx.manager.get_or_create_agent("later").is_paused().await);
+    fx.stop_live_session("later").await;
     let registry = fx.agent.registry().lock().await;
     let archived = registry.get_session("archived").unwrap();
     assert_eq!(archived.paused_held, Some(vec!["held".to_string()]));
