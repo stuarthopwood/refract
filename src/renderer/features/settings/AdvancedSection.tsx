@@ -84,7 +84,7 @@ export function AdvancedSection() {
         <ul aria-label="Where compaction starts" className="mb-6 flex flex-col gap-1 text-xs text-muted-foreground">
           {effectiveTriggers.map((t) => (
             <li key={t.model}>
-              {t.model}: {t.modelThreshold === undefined ? `${t.thresholdPercent}% (global)` : `${t.modelThreshold} (per-model)`} of {formatCount(t.contextWindow)} tokens, so compaction starts at {formatCount(t.triggerTokens)} tokens.
+              {t.model}: {formatCount(t.triggerTokens)} tokens ({t.modelThreshold === undefined ? `${t.thresholdPercent}% global` : `${t.modelThreshold} per-model`} of {formatCount(t.contextWindow)})
             </li>
           ))}
         </ul>

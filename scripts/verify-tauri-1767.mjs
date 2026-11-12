@@ -133,7 +133,7 @@ async function main() {
     check(existsSync(path.join(dataDir, 'token-guard-migration.json')), 'Migration marker written after the full set succeeded', null);
 
     const triggerLines = await cdp.evaluate(`Array.from(document.querySelectorAll('[aria-label="Where compaction starts"] li')).map((e) => e.textContent)`);
-    check(triggerLines.length >= 1 && triggerLines.some((l) => l.startsWith(`${MODEL}: 80% (per-model)`) && /compaction starts at 160[,.]?000 tokens/.test(l)), 'Settings > Advanced: trigger line shows the per-model 80% of the 200000 window = 160000', triggerLines);
+    check(triggerLines.length >= 1 && triggerLines.some((l) => l.startsWith(`${MODEL}: `) && /160[,.]?000 tokens \(.*per-model of 200[,.]?000\)/.test(l)), 'Settings > Advanced: trigger line shows 160000 tokens for the per-model threshold of the 200000 window', triggerLines);
     const labels = await cdp.evaluate(`(() => { const t = document.body.textContent; return { appliesToNew: t.includes('Applies to new Sessions'), projectNote: t.includes("This Project's .omp/config.yml sets this too, so it wins here. Refract does not edit that file."), intro: t.includes("Refract writes these values to OMP's global config") }; })()`);
     check(labels.appliesToNew && labels.projectNote && labels.intro, 'Settings > Advanced: intro, "Applies to new Sessions" and the project-override note render', labels);
     await shoot(cdp, 'advanced-top.png');
