@@ -2,6 +2,7 @@
 // Routing lives in `router`, approval in `approval`, the OMP approval overlay in `overlay`.
 
 pub mod approval;
+pub mod envelope;
 pub mod overlay;
 pub mod panels;
 pub mod router;

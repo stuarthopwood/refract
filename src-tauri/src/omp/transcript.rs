@@ -26,6 +26,8 @@ pub mod file_attachment_markers;
 use file_attachment_markers::FileAttachmentRef;
 mod user_images;
 use user_images::ImageRef;
+mod message_source;
+pub use message_source::MessageSource;
 mod agent_message;
 use agent_message::try_build_agent_message;
 mod skill_prompt;
@@ -51,6 +53,9 @@ pub enum TranscriptItem {
         // Image ids only, never bytes (#513).
         #[serde(default, skip_serializing_if = "Vec::is_empty")]
         images: Vec<ImageRef>,
+        // Set when another Session sent the turn (#1858).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<MessageSource>,
     },
     #[serde(rename_all = "camelCase")]
     AssistantText {
