@@ -32,6 +32,15 @@ describe('extractChangelogSection', () => {
     expect(extractChangelogSection('## v1.0.0 (2026-01-01)\n\n- a\n', '1.0.0')).toBe('## v1.0.0 (2026-01-01)\n\n- a\n');
   });
 
+  it('extracts the last section through end of file', () => {
+    expect(extractChangelogSection(LOG, '1.2.2')).toBe('## v1.2.2 (2025-12-01)\n\n- two\n');
+  });
+
+  it('keeps a following `## Unreleased` heading inside the section', () => {
+    const text = '## v1.0.0 (2026-01-01)\n\n- a\n\n## Unreleased\n\n- b\n';
+    expect(extractChangelogSection(text, '1.0.0')).toBe(text);
+  });
+
   it('rejects an invalid version', () => {
     expect(() => extractChangelogSection(LOG, '1.2.*')).toThrow();
   });
