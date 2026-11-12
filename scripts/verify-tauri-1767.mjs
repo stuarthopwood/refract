@@ -22,9 +22,10 @@ const LOG = 'verify-1767';
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_1767_SHOTS_DIR || path.join(tmpdir(), 'refract-1767-shots');
 const MODEL = 'probe-fake/probe-fake-model';
+const MODEL2 = 'probe-fake/probe-fake-model-2';
 const ORIGINAL_CONFIG = ['task:', '  maxConcurrency: 2', 'modelRoles:', `  default: ${MODEL}`, 'compaction:', '  thresholdPercent: 60', '  thresholdTokens: 50000', ''].join('\n');
-const MODELS_YML = ['providers:', '  probe-fake:', '    baseUrl: http://127.0.0.1:1', '    auth: none', '    api: openai-completions', '    models:', '      - id: probe-fake-model', '        name: Probe Fake Model', '        api: openai-completions', '        contextWindow: 200000', '        maxTokens: 1000', ''].join('\n');
-const LEGACY_STORE = { version: 2, overrides: { 'task.maxConcurrency': 3, 'compaction.thresholdPercent': 70, 'compaction.modelThresholds': { [MODEL]: '80%' } }, read_limit_migrated: true, thresholds_reset_pending: false };
+const MODELS_YML = ['providers:', '  probe-fake:', '    baseUrl: http://127.0.0.1:1', '    auth: none', '    api: openai-completions', '    models:', '      - id: probe-fake-model', '        name: Probe Fake Model', '        api: openai-completions', '        contextWindow: 200000', '        maxTokens: 1000', '      - id: probe-fake-model-2', '        name: Probe Fake Model 2', '        api: openai-completions', '        contextWindow: 100000', '        maxTokens: 1000', ''].join('\n');
+const LEGACY_STORE = { version: 2, overrides: { 'task.maxConcurrency': 3, 'compaction.thresholdPercent': 70, 'compaction.modelThresholds': { [MODEL]: '80%', [MODEL2]: '50%' } }, read_limit_migrated: true, thresholds_reset_pending: false };
 
 const report = [];
 const shotNames = [];
@@ -72,6 +73,24 @@ async function openAdvanced(cdp, repoDir, { registered = false } = {}) {
   await cdp.waitFor(`!!document.querySelector('[aria-label="Back to chat"]')`, { timeoutMs: 15_000, label: 'Settings opened' });
   await cdp.click(navButton('Advanced'));
   await cdp.waitFor(`document.body.textContent.includes('File read line limit')`, { timeoutMs: 15_000, label: 'Advanced rendered' });
+}
+
+/** The trigger list also covers models of open Sessions: a Session on the second model gives it two rows. */
+async function openSessionOnSecondModel(cdp) {
+  const repos = await cdp.evaluate(`window.refract.repositories.list()`);
+  const created = await cdp.evaluate(`window.refract.sessions.create({ repositoryId: ${JSON.stringify(repos.value[0].id)}, baseBranch: 'main' })`);
+  if (!created.ok) throw new Error(`sessions.create failed: ${JSON.stringify(created)}`);
+  const id = JSON.stringify(created.value.id);
+  await cdp.evaluate(`window.refract.sessions.open(${id})`);
+  await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${id})?.status === 'idle')`, { timeoutMs: 60_000, label: 'Session idle' });
+  const [provider, modelId] = MODEL2.split('/');
+  const set = await cdp.evaluate(`window.refract.model.setModel(${id}, ${JSON.stringify(provider)}, ${JSON.stringify(modelId)})`);
+  if (!set.ok) throw new Error(`model.setModel failed: ${JSON.stringify(set)}`);
+  await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${id})?.lastModel?.id === ${JSON.stringify(modelId)})`, { timeoutMs: 15_000, label: 'Session reports the second model' });
+  await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
+  await cdp.click(`document.querySelector('[aria-label="Settings"]')`);
+  await cdp.click(navButton('Advanced'));
+  await cdp.waitFor(`document.querySelectorAll('ul[aria-labelledby="compaction-triggers-heading"] li').length === 2`, { timeoutMs: 15_000, label: 'two trigger rows' });
 }
 
 async function shoot(cdp, name) {
@@ -132,8 +151,14 @@ async function main() {
     check(!existsSync(path.join(dataDir, 'token-guard.json')) && existsSync(path.join(dataDir, 'token-guard.json.migrated')), 'token-guard.json is retired (renamed to .migrated)', readdirSync(dataDir));
     check(existsSync(path.join(dataDir, 'token-guard-migration.json')), 'Migration marker written after the full set succeeded', null);
 
-    const triggerLines = await cdp.evaluate(`Array.from(document.querySelectorAll('[aria-label="Where compaction starts"] li')).map((e) => e.textContent)`);
-    check(triggerLines.length >= 1 && triggerLines.some((l) => l.startsWith(`${MODEL}: `) && /160[,.]?000 tokens \(.*per-model of 200[,.]?000\)/.test(l)), 'Settings > Advanced: trigger line shows 160000 tokens for the per-model threshold of the 200000 window', triggerLines);
+    await openSessionOnSecondModel(cdp);
+    const triggerLines = await cdp.evaluate(`Array.from(document.querySelectorAll('ul[aria-labelledby="compaction-triggers-heading"] li')).map((e) => e.textContent)`);
+    check(triggerLines.some((l) => l.startsWith(`${MODEL}: `) && /160[,.]?000 tokens \(.*per-model of 200[,.]?000\)/.test(l)), 'Settings > Advanced: trigger line shows 160000 tokens for the per-model threshold of the 200000 window', triggerLines);
+    check(triggerLines.length === 2 && triggerLines.some((l) => l.startsWith(`${MODEL2}: `) && /50[,.]?000 tokens \(.*per-model of 100[,.]?000\)/.test(l)), 'Settings > Advanced: a Session on the second model adds its own trigger row (50000 of 100000)', triggerLines);
+    const captions = await cdp.evaluate(`Array.from(document.querySelectorAll('h3')).filter((h) => h.textContent === 'Compaction starts at').length`);
+    check(captions === 1, 'Settings > Advanced: one visible "Compaction starts at" caption above the trigger rows', captions);
+    await cdp.evaluate(`Array.from(document.querySelectorAll('h3')).find((h) => h.textContent === 'Compaction starts at')?.scrollIntoView({ block: 'start' })`);
+    await shoot(cdp, 'advanced-two-models.png');
     const labels = await cdp.evaluate(`(() => { const t = document.body.textContent; return { appliesToNew: t.includes('Applies to new Sessions'), projectNote: t.includes("This Project's .omp/config.yml sets this too, so it wins here. Refract does not edit that file."), intro: t.includes("Refract writes these values to OMP's global config") }; })()`);
     check(labels.appliesToNew && labels.projectNote && labels.intro, 'Settings > Advanced: intro, "Applies to new Sessions" and the project-override note render', labels);
     await shoot(cdp, 'advanced-top.png');
@@ -154,7 +179,7 @@ async function main() {
 
     session = await launch(env);
     await openAdvanced(session.cdp, repoDir, { registered: true });
-    await session.cdp.waitFor(`!!document.querySelector('[aria-label="Where compaction starts"]')`, { timeoutMs: 30_000, label: 'trigger list on relaunch' });
+    await session.cdp.waitFor(`!!document.querySelector('ul[aria-labelledby="compaction-triggers-heading"]')`, { timeoutMs: 30_000, label: 'trigger list on relaunch' });
     check(backupsIn(agentDir).length === 1, 'Relaunch: no second backup and no second migration', backupsIn(agentDir));
     check(await session.cdp.evaluate(`!document.body.textContent.includes('was backed up to')`), 'Relaunch: the dismissed backup notice stays gone', null);
     check(omp(agentDir, 'config', 'get', 'task.maxConcurrency', '--json') === 5, 'Relaunch: the global config is not rewritten from the retired file', null);
