@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::store::registry::SessionPatch;
+use crate::store::registry::{RegistryStoreError, SessionPatch};
 
 use super::{AgentError, AgentState, SessionAgent, SessionStatus};
 
@@ -124,7 +124,15 @@ impl SessionAgent {
             .await;
         written.store(seq, Ordering::SeqCst);
         if let Err(err) = result {
-            log::warn!("pause: could not persist the held queue: {err:?}");
+            // Log only the code/kind: the registry message can embed the session id.
+            match err {
+                RegistryStoreError::Registry(e) => {
+                    log::warn!("pause: could not persist the held queue: {}", e.code.as_str());
+                }
+                RegistryStoreError::Io(e) => {
+                    log::warn!("pause: could not persist the held queue: io {:?}", e.kind());
+                }
+            }
         }
     }
 
