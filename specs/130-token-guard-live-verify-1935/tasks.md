@@ -1,6 +1,6 @@
 # Tasks: Live-verify the token guard Settings keys (#1935)
 
-**Spec**: `specs/129-token-guard-live-verify-1935/spec.md` | **Plan**: `plan.md`
+**Spec**: `specs/130-token-guard-live-verify-1935/spec.md` | **Plan**: `plan.md`
 
 Slices: A (harness, T001-T006) is the base; B (probes, T007-T013) needs A; C (apply, T014-T018) needs B's results. `[P]` marks a task that can run alongside others in its slice. No UI, no Rust.
 

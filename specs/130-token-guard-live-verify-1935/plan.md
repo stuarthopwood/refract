@@ -1,6 +1,6 @@
 # Plan: Live-verify the token guard Settings keys (#1935)
 
-**Branch**: `chore/1935-token-guard-live-verify` | **Date**: 2026-11-12 | **Spec**: `specs/129-token-guard-live-verify-1935/spec.md`
+**Branch**: `chore/1935-token-guard-live-verify` | **Date**: 2026-11-12 | **Spec**: `specs/130-token-guard-live-verify-1935/spec.md`
 
 **Input**: amends `specs/021-token-guard` (FR-036, research section 10).
 
@@ -80,7 +80,7 @@ Rewrite the lost #1765 probes as committed scripts that run a real `omp --mode r
 ## Project Structure
 
 ```text
-specs/129-token-guard-live-verify-1935/
+specs/130-token-guard-live-verify-1935/
 ├── spec.md
 ├── plan.md
 ├── research.md      # OMP facts per key, used by the probes
