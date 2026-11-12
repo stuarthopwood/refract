@@ -18,10 +18,10 @@ Slices: A (harness, T001-T006) is the base; B (probes, T007-T013) needs A; C (ap
 - [x] T007 [P] Tool-result group: `grep.contextBefore`, `grep.contextAfter`, `read.defaultLimit`, `read.summarize.enabled` on a fixture file; observable = turn-two tool-result text
 - [x] T008 [P] `tools.artifactSpillThreshold`: tool output between old and new threshold; observable = `artifact://` spill marker
 - [x] T009 [P] `snapcompact.toolResults`, `snapcompact.systemPrompt`: observable = image parts in the turn-two request, system prompt as image frames
-- [ ] T010 [P] Subagent group: `task.maxConcurrency` (peak in-flight held subagent requests), `task.softRequestBudget` (requests before wrap-up notice and force-stop)
-- [ ] T011 [P] Prompt group: `plan.defaultOnStartup`, `prewalk.enabled`, `todo.eager`; observable = per-key marker or request model id, no prompt hash; control shows zero natural variance (OQ-2 definition)
-- [ ] T012 [P] `autolearn.autoContinue` (extra capture request, `autolearn.minToolCalls` lowered) and `advisor.reviewMode` (advisor requests per turn via `modelRoles.advisor` in the scratch config only; if not deterministic, `inconclusive-startup-only`)
-- [ ] T013 Idle group: `compaction.idleEnabled`, `idleThresholdTokens`, `idleTimeoutSeconds`; wait past the 60 s minimum with the keys set low; expect no idle compaction frame in either run (verdict `startup-only`, reason: RPC sessions run no idle maintenance). `tools.xdev` is not run (FR-006)
+- [x] T010 [P] Subagent group: `task.maxConcurrency` (peak in-flight held subagent requests), `task.softRequestBudget` (requests before wrap-up notice and force-stop)
+- [x] T011 [P] Prompt group: `plan.defaultOnStartup`, `prewalk.enabled`, `todo.eager`; observable = per-key marker or request model id, no prompt hash; control shows zero natural variance (OQ-2 definition)
+- [x] T012 [P] `autolearn.autoContinue` (extra capture request, `autolearn.minToolCalls` lowered) and `advisor.reviewMode` (advisor requests per turn via `modelRoles.advisor` in the scratch config only; if not deterministic, `inconclusive-startup-only`)
+- [x] T013 Idle group: `compaction.idleEnabled`, `idleThresholdTokens`, `idleTimeoutSeconds`; wait past the 60 s minimum with the keys set low; expect no idle compaction frame in either run (verdict `startup-only`, reason: RPC sessions run no idle maintenance). `tools.xdev` is not run (FR-006)
 
 ## C. Apply and record (FR-004, FR-005, FR-008)
 
