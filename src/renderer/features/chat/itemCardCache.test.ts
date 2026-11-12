@@ -63,3 +63,49 @@ describe('peekCard', () => {
     }
   })
 })
+
+describe('lookupCard', () => {
+  it('serves a repeat lookup inside the window from the cache, one IPC call', async () => {
+    lookup.mockResolvedValue({ ok: true, value: CARD })
+    await lookupCard(TARGET)
+    await lookupCard(TARGET)
+    expect(lookup).toHaveBeenCalledTimes(1)
+  })
+
+  it('looks up again once the five-minute window has passed', async () => {
+    vi.useFakeTimers()
+    try {
+      lookup.mockResolvedValue({ ok: true, value: CARD })
+      await lookupCard(TARGET)
+      vi.advanceTimersByTime(5 * 60 * 1000 + 1)
+      await lookupCard(TARGET)
+      expect(lookup).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('evicts the oldest entry past 200 so the cache cannot grow without bound', async () => {
+    lookup.mockResolvedValue({ ok: true, value: CARD })
+    for (let number = 1; number <= 201; number++) await lookupCard({ ...TARGET, number })
+    expect(peekCard({ ...TARGET, number: 1 })).toBeUndefined()
+    expect(peekCard({ ...TARGET, number: 201 })).toEqual(CARD)
+  })
+
+  it('lets a slow failure not delete the entry that replaced it', async () => {
+    vi.useFakeTimers()
+    try {
+      const slow = Promise.withResolvers<{ ok: false; error: string }>()
+      lookup.mockReturnValueOnce(slow.promise)
+      const first = lookupCard(TARGET)
+      vi.advanceTimersByTime(5 * 60 * 1000 + 1)
+      lookup.mockResolvedValueOnce({ ok: true, value: CARD })
+      await lookupCard(TARGET)
+      slow.resolve({ ok: false, error: 'late' })
+      await first
+      expect(peekCard(TARGET)).toEqual(CARD)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

@@ -63,9 +63,9 @@ describe('openItemRef', () => {
   })
 
   it('opens GitHub, not the pane, for a repository that is not the Project', async () => {
-    const d = deps({ ...CARD, ownerRepo: 'other/lib', url: 'https://github.com/other/lib/issues/12' })
+    const d = deps({ ...CARD, ownerRepo: 'other/lib', url: 'https://github.com/other/lib/pull/12' })
     await openItemRef({ ...base, target: { ...TARGET, owner: 'other', repo: 'lib', inProject: false }, ownerRepo: 'other/lib' }, d)
-    expect(d.openUrl).toHaveBeenCalledWith('https://github.com/other/lib/issues/12')
+    expect(d.openUrl).toHaveBeenCalledWith('https://github.com/other/lib/pull/12')
     expect(d.pin).not.toHaveBeenCalled()
   })
 
