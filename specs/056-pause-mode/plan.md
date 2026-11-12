@@ -14,3 +14,7 @@ Rust: `session/pause.rs`, `session/agent/{mod,chat,frame,status}.rs`, `store/reg
 ## Analysis (cross-check)
 
 Every FR maps to a task in tasks.md. No FR needs a new test (prototyping phase). Principle V: no new capability or permission; four registered channels with argument validation.
+
+## Amendment 2026-11-12 (#1890)
+
+Backend: `SessionAgent::resume` starts a stopped Session before draining held messages (`start_then_drain`); `chat_resume_all` skips archived Sessions and returns `{count, failed}`. Renderer: `pauseActions.ts` reports the failure notice, `PausedBody.tsx` shows one Resume, `triageSessions.ts` filters paused Sessions out of Stop idle for `MemoryTriageDialog.tsx`. Tests sit beside each unit (`pause.test.rs`, `triageSessions.test.ts`, `pauseActions.test.ts`).
