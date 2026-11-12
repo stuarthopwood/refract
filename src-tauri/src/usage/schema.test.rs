@@ -101,27 +101,53 @@ fn reopening_a_migrated_database_leaves_it_unchanged() {
 }
 
 #[test]
-fn migrating_a_file_another_process_already_upgraded_is_a_no_op() {
+fn migrating_an_already_current_file_is_a_no_op_that_keeps_its_data() {
     let path = scratch_db("migrate-already-4");
     write_v3_db(&path);
-    // A is the slower process: it holds a handle on the v3 file while B upgrades it.
-    let mut a = Connection::open(&path).unwrap();
-    assert_eq!(version(&a), 3);
     let mut b = Connection::open(&path).unwrap();
     migrate(&mut b).unwrap();
     assert_eq!(version(&b), USER_VERSION);
 
-    // Without the in-transaction re-read, A would rerun RENAME COLUMN cost_share, which no longer exists.
-    migrate(&mut a).unwrap();
+    migrate(&mut b).unwrap();
 
-    assert_eq!(version(&a), USER_VERSION);
-    let (cost, rows): (f64, i64) = a
+    assert_eq!(version(&b), USER_VERSION);
+    let (cost, rows): (f64, i64) = b
         .query_row("SELECT cost_usd, count(*) FROM tool_calls", [], |r| {
             Ok((r.get(0)?, r.get(1)?))
         })
         .unwrap();
     assert_eq!((cost, rows), (1.5, 1));
-    assert!(a.prepare("SELECT cost_share FROM tool_calls").is_err());
+    assert!(b.prepare("SELECT cost_share FROM tool_calls").is_err());
+}
+
+// Probabilistic: correct code passes every interleaving, but a non-atomic pre-check with a deferred BEGIN only fails when the threads happen to collide.
+#[test]
+fn two_openers_racing_to_migrate_a_version_3_file_both_succeed() {
+    for round in 0..20 {
+        let path = scratch_db(&format!("migrate-race-{round}"));
+        write_v3_db(&path);
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let (path, barrier) = (path.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    try_open(&path).map(drop)
+                })
+            })
+            .collect();
+        for handle in handles {
+            handle.join().unwrap().unwrap();
+        }
+
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(version(&conn), USER_VERSION);
+        let cost: f64 = conn
+            .query_row("SELECT cost_usd FROM tool_calls", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(cost, 1.5);
+        assert!(conn.prepare("SELECT cost_share FROM tool_calls").is_err());
+    }
 }
 
 #[test]
