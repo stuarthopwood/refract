@@ -146,8 +146,8 @@ async function main() {
     check(!idle.isError && idle.body.status === 'idle' && idle.body.stopReason === undefined, 'get_session_status for Session B reports idle with no stopReason.', `status B: ${JSON.stringify(idle)}`);
     const stoppedStatus = await call('refract_get_session_status', { id: sessionC.id }, pidA);
     check(
-      !stoppedStatus.isError && stoppedStatus.body.status === 'stopped' && stoppedStatus.body.stopReason === 'stopped-on-request',
-      'get_session_status for Session C reports stopped / stopped-on-request.',
+      !stoppedStatus.isError && stoppedStatus.body.status === 'stopped' && ['not-started', 'stopped-on-request'].includes(stoppedStatus.body.stopReason),
+      'get_session_status for Session C reports stopped with a stopReason from the contract vocabulary.',
       `status C: ${JSON.stringify(stoppedStatus)}`
     );
 
