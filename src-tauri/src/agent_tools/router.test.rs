@@ -13,6 +13,43 @@ fn list_takes_no_arguments() {
 }
 
 #[test]
+fn session_tools_plan_as_native_and_never_mutate() {
+    let calls = [
+        (sessions::LIST_SESSIONS, json!({})),
+        (sessions::GET_SESSION_STATUS, json!({ "id": "s1" })),
+        (
+            sessions::SEND_SESSION_MESSAGE,
+            json!({ "id": "s1", "text": "hi" }),
+        ),
+    ];
+    for (tool, args) in calls {
+        let planned = plan(tool, &args).unwrap();
+        assert_eq!(
+            planned,
+            Plan::Native {
+                tool: tool.to_string(),
+                args: args.clone()
+            }
+        );
+        assert!(!planned.mutates(), "{tool}");
+        assert_eq!(planned.event_args(), args);
+    }
+}
+
+#[test]
+fn session_tools_reject_bad_arguments_as_invalid_input() {
+    let calls = [
+        (sessions::LIST_SESSIONS, json!({ "project": 5 })),
+        (sessions::LIST_SESSIONS, json!({ "bogus": true })),
+        (sessions::GET_SESSION_STATUS, json!({})),
+        (sessions::SEND_SESSION_MESSAGE, json!({ "id": "s1" })),
+    ];
+    for (tool, args) in calls {
+        assert_eq!(code(plan(tool, &args)), INVALID_INPUT, "{tool}");
+    }
+}
+
+#[test]
 fn unknown_tool_panel_and_action_get_their_codes() {
     assert_eq!(code(plan("refract_nope", &json!({}))), UNKNOWN_TOOL);
     assert_eq!(

@@ -309,9 +309,16 @@ export interface FileAttachmentRef {
   isDirectory: boolean;
 }
 
+/** Who sent a user turn when it was not Stuart: another Session's message (#1858). Absent for ordinary turns. */
+export interface MessageSource {
+  kind: 'session';
+  sessionId: string;
+  name: string;
+}
+
 /** Built in the main process from OMP frames; the renderer only renders items. */
 export type TranscriptItem =
-  | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[]; images?: TranscriptImageRef[] }
+  | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[]; images?: TranscriptImageRef[]; source?: MessageSource }
   | { kind: 'assistant-text'; id: string; text: string; streaming: boolean }
   | {
       kind: 'thinking';

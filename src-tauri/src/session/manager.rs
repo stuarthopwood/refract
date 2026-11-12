@@ -19,6 +19,7 @@ pub struct SessionManager {
     events: EventSink,
     agents: StdMutex<HashMap<String, Arc<SessionAgent>>>,
     visible_ids: Arc<StdMutex<HashSet<String>>>,
+    self_ref: std::sync::Weak<SessionManager>,
 }
 
 /// Caps concurrent `git worktree list` calls across repositories.
@@ -60,12 +61,13 @@ async fn fetch_worktree_lists(
 
 impl SessionManager {
     pub fn new(registry: SharedRegistry, settings: SharedSettings, events: EventSink) -> Arc<Self> {
-        Arc::new(Self {
+        Arc::new_cyclic(|self_ref| Self {
             registry,
             settings,
             events,
             agents: StdMutex::new(HashMap::new()),
             visible_ids: Arc::new(StdMutex::new(HashSet::new())),
+            self_ref: self_ref.clone(),
         })
     }
 
@@ -210,6 +212,7 @@ impl SessionManager {
             self.events.clone(),
             self.visible_ids.clone(),
         );
+        agent.attach_manager(self.self_ref.clone());
         agents.insert(session_id.to_string(), agent.clone());
         agent
     }
@@ -242,6 +245,11 @@ impl SessionManager {
 
     pub fn emit_updates_state_changed(&self, state: &Value) {
         self.events.emit_updates_state_changed(state);
+    }
+
+    /// The registry's repositories and Sessions, for the Session tools.
+    pub async fn registry_snapshot(&self) -> crate::store::registry::Registry {
+        self.registry.lock().await.snapshot()
     }
 
     /// Merges live-runtime fields over the registry row. `stopped` rows get fresh termination info.

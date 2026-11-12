@@ -22,10 +22,15 @@ const UNAVAILABLE_BACKOFF: Duration = Duration::from_secs(60);
 static UNAVAILABLE_UNTIL: Mutex<Option<HashMap<(String, String), Instant>>> = Mutex::new(None);
 
 fn backed_off(key: &(String, String)) -> bool {
+    backed_off_at(key, Instant::now())
+}
+
+/// `now` is injected so the 60 s edge is testable without sleeping.
+fn backed_off_at(key: &(String, String), now: Instant) -> bool {
     let mut guard = UNAVAILABLE_UNTIL.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
     match map.get(key) {
-        Some(until) if *until > Instant::now() => true,
+        Some(until) if *until > now => true,
         Some(_) => {
             map.remove(key);
             false
@@ -35,11 +40,41 @@ fn backed_off(key: &(String, String)) -> bool {
 }
 
 fn back_off(key: (String, String)) {
+    back_off_at(key, Instant::now());
+}
+
+fn back_off_at(key: (String, String), now: Instant) {
     let mut guard = UNAVAILABLE_UNTIL.lock().unwrap_or_else(|e| e.into_inner());
     let map = guard.get_or_insert_with(HashMap::new);
-    let now = Instant::now();
     map.retain(|_, until| *until > now);
     map.insert(key, now + UNAVAILABLE_BACKOFF);
+}
+
+/// The Session tools look up a PR rarely and a branch without one stays that way for a while, so a
+/// `None` answer is also remembered. `:` cannot appear in a git ref, so this key never collides
+/// with the readout poll's own entry for the branch, and a PR opened later still shows up there.
+fn link_key(repo_path: &Path, branch: &str) -> (String, String) {
+    (
+        repo_path.to_string_lossy().into_owned(),
+        format!("link:{branch}"),
+    )
+}
+
+/// Like `pull_request_for_branch`, but a `None` answer is not re-asked for 60 s.
+pub(super) async fn pull_request_for_link(
+    session_id: &str,
+    repo_path: &Path,
+    branch: &str,
+) -> PullRequestLookup {
+    let key = link_key(repo_path, branch);
+    if backed_off(&key) {
+        return PullRequestLookup::None;
+    }
+    let lookup = pull_request_for_branch(session_id, repo_path, branch).await;
+    if matches!(lookup, PullRequestLookup::None) {
+        back_off(key);
+    }
+    lookup
 }
 
 const QUERY: &str = "query($owner: String!, $name: String!, $branch: String!) { \
@@ -79,6 +114,16 @@ impl PullRequestState {
             "checks": self.checks,
             "linkedIssues": issues,
         })
+    }
+}
+
+impl PullRequestLookup {
+    /// Only a found PR has a value; no PR and an unavailable lookup both read as `Null`.
+    pub(super) fn into_json(self) -> Value {
+        match self {
+            PullRequestLookup::Found(state) => state.to_json(),
+            _ => Value::Null,
+        }
     }
 }
 
@@ -372,3 +417,7 @@ pub(super) async fn item_by_number(
         state,
     })
 }
+
+#[cfg(test)]
+#[path = "readout_pr.test.rs"]
+mod tests;

@@ -17,7 +17,9 @@ use crate::fs::worktree_access::read_guard_bounded;
 
 #[path = "readout_pr.rs"]
 mod readout_pr;
-use readout_pr::{pull_request_for_branch, PullRequestLookup, PullRequestState};
+use readout_pr::{
+    pull_request_for_branch, pull_request_for_link, PullRequestLookup, PullRequestState,
+};
 
 #[path = "readout_touched.rs"]
 mod readout_touched;
@@ -250,6 +252,50 @@ pub async fn current_readout_value(agent: &SessionAgent) -> Value {
         .with_readout_state(|s| s.last_readout.clone())
         .await
         .unwrap_or_else(empty_readout)
+}
+
+/// Where a Session's PR value comes from: the readout the agent already holds, else a lookup.
+#[derive(Debug, PartialEq)]
+enum PrSource {
+    Cached(Value),
+    Lookup,
+}
+
+fn pr_source(cached: Value) -> PrSource {
+    if cached.is_null() {
+        PrSource::Lookup
+    } else {
+        PrSource::Cached(cached)
+    }
+}
+
+/// Only the number and the url leave the readout; anything else reads as no PR.
+fn link_of(pr: &Value) -> Value {
+    match (pr.get("number"), pr.get("url")) {
+        (Some(number), Some(url)) => json!({ "number": number, "url": url }),
+        _ => Value::Null,
+    }
+}
+
+/// `{ number, url }` of the Session's PR for the Session tools (#1858): the readout cache when the
+/// agent already has one, else one backed-off lookup. `Null` for no PR or an unavailable lookup.
+pub async fn pull_request_link(
+    agent: Option<&SessionAgent>,
+    session_id: &str,
+    worktree_path: &str,
+    branch: &str,
+) -> Value {
+    let cached = match agent {
+        Some(agent) => current_readout_value(agent).await["pullRequest"].clone(),
+        None => Value::Null,
+    };
+    let pr = match pr_source(cached) {
+        PrSource::Cached(pr) => pr,
+        PrSource::Lookup => pull_request_for_link(session_id, Path::new(worktree_path), branch)
+            .await
+            .into_json(),
+    };
+    link_of(&pr)
 }
 
 fn empty_readout() -> Value {
@@ -501,3 +547,7 @@ fn build_readout_value(
     s.activity.write_into(&mut readout);
     readout
 }
+
+#[cfg(test)]
+#[path = "readout.test.rs"]
+mod tests;
