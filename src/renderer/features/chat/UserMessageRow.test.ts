@@ -109,7 +109,9 @@ describe('UserMessageRow session source', () => {
     expect(lineId).toBeDefined()
     expect(html).toContain(`role="group" aria-labelledby="${lineId}"`)
     const line = new RegExp(`<div id="${lineId}"[^>]*>(.*?)</div>`).exec(html)?.[1] ?? ''
-    expect(line.replace(/<[^>]*>/g, '')).toBe('From Session Alpha')
+    let text = line
+    for (let prev = ''; prev !== text; ) [prev, text] = [text, text.replace(/<[^>]*>/g, '')]
+    expect(text).toBe('From Session Alpha')
   })
 
   it('authors a sourced turn as the Session: its name and glyph, never the user name or initials', () => {
