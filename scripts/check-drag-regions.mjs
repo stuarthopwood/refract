@@ -7,6 +7,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { escapeRegExp } from './check-drag-regions-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -106,7 +107,7 @@ for (const file of isDirectory(root) ? walk(root) : []) {
       const allowed = ALLOW_MARKER.test(line) || (i > 0 && ALLOW_MARKER.test(lines[i - 1]));
       // Always push (unless self-closing) and pop after the opener scan: a same-line child needs its parent's drag-region/header shape on the stack
       // (`<div className="drag-region h-10 shrink-0"><Button onClick={...}>Close</Button></div>`).
-      const tagName = openMatch[2].replace(/[.]/g, '\\.');
+      const tagName = escapeRegExp(openMatch[2]);
       const rest = line.slice(openMatch[0].length);
       // Count opens vs closes of this tag name: a same-named child's `</div>` would otherwise drop the outer frame.
       const opens = (rest.match(new RegExp('<' + tagName + '(?=[\\s/>]|$)', 'g')) || []).length;

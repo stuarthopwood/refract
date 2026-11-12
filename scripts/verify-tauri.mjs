@@ -91,6 +91,13 @@ function worktreesDirFor(repoDir) {
   return path.join(path.dirname(repoDir), 'pinion-worktrees', path.basename(repoDir));
 }
 
+// Windows cannot spawn the `pnpm.cmd` shim without a shell, so run the pnpm that launched this script via `npm_execpath`.
+function pnpmInvocation() {
+  const execPath = process.env.npm_execpath;
+  if (!execPath) return ['pnpm'];
+  return /\.[cm]?js$/i.test(execPath) ? [process.execPath, execPath] : [execPath];
+}
+
 // `tauri build --debug --no-bundle`, never `cargo run`, so Vite's shared port 5174 is untouched (#946).
 function buildTauriDebugNoBundle() {
   // Another lane's running exe can hold `debug/refract-tauri.exe`, making cargo's rename fail with
@@ -99,7 +106,8 @@ function buildTauriDebugNoBundle() {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     // The shared target dir's disk hit 100% once; CARGO_INCREMENTAL=0 keeps incremental artifacts small.
     const env = { ...process.env, CARGO_TARGET_DIR: process.env.CARGO_TARGET_DIR, CARGO_INCREMENTAL: '0' };
-    const result = spawnSync_('cmd.exe', ['/c', 'pnpm', 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
+    const [pnpmCmd, ...pnpmPrefix] = pnpmInvocation();
+    const result = spawnSync_(pnpmCmd, [...pnpmPrefix, 'exec', 'tauri', 'build', '--debug', '--no-bundle'], {
       cwd: REPO_ROOT,
       env,
       timeout: 20 * 60 * 1000,
