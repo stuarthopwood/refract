@@ -94,6 +94,7 @@ export interface UsageBreakdownRow {
   /** Tool rows only. */
   errors?: number
   resultChars?: number
+  /** Share of the window's tool spend (0 to 1); absent when no tool call was priced. */
   costShare?: number
 }
 

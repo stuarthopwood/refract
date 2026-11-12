@@ -7,7 +7,8 @@ import type { SortableColumn } from '@/components/SortableTable'
 import { ScreenSection } from '@/components/ScreenSection'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { UsageBreakdownRow, UsageTopSession } from '../../../shared/ipc-usage'
-import { formatCompact, formatInt, formatPercent, formatUsd } from './format'
+import { formatCompact, formatInt, formatUsd } from './format'
+import { TOOL_COLUMNS } from './toolColumns'
 
 type Sort = { key: string; dir: 'asc' | 'desc' }
 
@@ -34,26 +35,6 @@ const MODEL_COLUMNS: SortableColumn<UsageBreakdownRow>[] = [
   { key: 'label', header: 'Model', sortValue: (r) => r.label, render: (r) => r.label },
   { key: 'reasoning', header: 'Reasoning', sortValue: (r) => r.reasoning ?? '', render: (r) => r.reasoning || 'none' },
   ...COMMON_COLUMNS
-]
-
-const TOOL_COLUMNS: SortableColumn<UsageBreakdownRow>[] = [
-  { key: 'label', header: 'Tool', sortValue: (r) => r.label, render: (r) => r.label },
-  { key: 'calls', header: 'Calls', align: 'right', sortValue: (r) => r.calls, render: (r) => formatInt(r.calls) },
-  { key: 'errors', header: 'Errors', align: 'right', sortValue: (r) => r.errors ?? 0, render: (r) => formatInt(r.errors ?? 0) },
-  {
-    key: 'chars',
-    header: 'Result size (characters)',
-    align: 'right',
-    sortValue: (r) => r.resultChars ?? 0,
-    render: (r) => formatCompact(r.resultChars ?? 0)
-  },
-  {
-    key: 'share',
-    header: 'Cost share',
-    align: 'right',
-    sortValue: (r) => r.costShare ?? 0,
-    render: (r) => formatPercent(r.costShare ?? 0)
-  }
 ]
 
 interface BreakdownProps {

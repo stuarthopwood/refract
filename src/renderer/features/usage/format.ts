@@ -13,6 +13,10 @@ export const formatUsdPerCall = (value: number): string =>
 export const formatInt = (value: number): string => int.format(Math.round(value))
 export const formatCompact = (value: number): string => compact.format(value)
 export const formatPercent = (rate: number): string => `${(rate * 100).toFixed(rate > 0 && rate < 0.1 ? 1 : 0)}%`
+/** Sorts below every real share, including 0%, so unpriced rows land last descending. */
+export const UNPRICED_RANK = -1
+/** Sort key for a Cost share cell: unpriced rows (no share) rank below a priced 0%. */
+export const costShareSortValue = (share: number | undefined): number => share ?? UNPRICED_RANK
 
 /** Shown where a denominator is zero. */
 export const dash = '-'
