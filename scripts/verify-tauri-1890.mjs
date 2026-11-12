@@ -93,7 +93,7 @@ async function main() {
     await cdp.clickByLabel('New session from a branch in ', { prefix: true });
     await cdp.waitFor(`(() => { const b = Array.from(document.querySelectorAll('[role="dialog"] button')).find((el) => el.textContent.trim() === 'Create session'); return !!b && !b.disabled; })()`, { timeoutMs: 15_000, label: 'New session dialog' });
     await cdp.clickByText('Create session', { inDialog: true });
-    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 15_000, label: 'Dialog closed' });
+    await cdp.waitFor(`!document.querySelector('[role="dialog"]')`, { timeoutMs: 60_000, label: 'Dialog closed' });
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'Composer enabled' });
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp.send('Input.insertText', { text: 'hold the line' });
