@@ -127,7 +127,10 @@ impl SessionAgent {
             // Log only the code/kind: the registry message can embed the session id.
             match err {
                 RegistryStoreError::Registry(e) => {
-                    log::warn!("pause: could not persist the held queue: {}", e.code.as_str());
+                    log::warn!(
+                        "pause: could not persist the held queue: {}",
+                        e.code.as_str()
+                    );
                 }
                 RegistryStoreError::Io(e) => {
                     log::warn!("pause: could not persist the held queue: io {:?}", e.kind());
