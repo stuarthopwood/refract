@@ -81,7 +81,7 @@ async function openSessionOnSecondModel(cdp) {
   const created = await cdp.evaluate(`window.refract.sessions.create({ repositoryId: ${JSON.stringify(repos.value[0].id)}, baseBranch: 'main' })`);
   if (!created.ok) throw new Error(`sessions.create failed: ${JSON.stringify(created)}`);
   const id = JSON.stringify(created.value.id);
-  await cdp.evaluate(`window.refract.sessions.open(${id})`);
+  await cdp.evaluate(`(() => { window.__1767Recover = window.refract.sessions.recover(${id}); return true; })()`);
   await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${id})?.status === 'idle')`, { timeoutMs: 60_000, label: 'Session idle' });
   const [provider, modelId] = MODEL2.split('/');
   const set = await cdp.evaluate(`window.refract.model.setModel(${id}, ${JSON.stringify(provider)}, ${JSON.stringify(modelId)})`);
