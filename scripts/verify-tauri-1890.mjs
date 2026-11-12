@@ -100,9 +100,16 @@ async function main() {
     await cdp.clickByLabel('Send message');
     await cdp.waitFor(STATUS_TEXT('Working on it'), { timeoutMs: 30_000, label: 'Turn streaming' });
 
-    // Pause mid-turn, let the turn end: the Session is idle and paused.
+    // Pause mid-turn and queue a message while "Pausing…" (the composer is inert once Paused), then let the turn end.
     await cdp.click(HEADER_BTN);
-    let ok = await yes(cdp.waitFor(`!!(${PAUSED_GROUP})`, { timeoutMs: 40_000, label: 'Paused overlay' }));
+    let ok = await yes(cdp.waitFor(STATUS_TEXT('Pausing…'), { timeoutMs: 10_000, label: 'Pausing shown' }));
+    check(ok, 'mid-turn Pause shows "Pausing…"');
+    await cdp.click(`document.querySelector('[aria-label="Message"]')`);
+    await cdp.send('Input.insertText', { text: 'held message' });
+    await cdp.clickByLabel('Send message');
+    ok = await yes(cdp.waitFor(STATUS_TEXT('held message'), { timeoutMs: 10_000, label: 'Held chip' }));
+    check(ok, 'a message sent while pausing shows as held');
+    ok = await yes(cdp.waitFor(`!!(${PAUSED_GROUP})`, { timeoutMs: 40_000, label: 'Paused overlay' }));
     check(ok, 'turn end -> Paused overlay');
     await settle(cdp);
     await shot(cdp, '1890-01-paused-idle.png');
@@ -117,14 +124,6 @@ async function main() {
     await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
     await sleep(500);
-
-    // Queue a message while paused: it is held, not sent.
-    await cdp.click(`document.querySelector('[aria-label="Message"]')`);
-    await cdp.send('Input.insertText', { text: 'held message' });
-    await cdp.clickByLabel('Send message');
-    ok = await yes(cdp.waitFor(STATUS_TEXT('held message'), { timeoutMs: 10_000, label: 'Held chip' }));
-    check(ok, 'a message sent while paused shows as held');
-    await settle(cdp);
     await shot(cdp, '1890-03-held-message.png');
 
     // Restart: the agent is gone, the Session is stopped and still paused.
@@ -142,7 +141,7 @@ async function main() {
     await cdp2.click(`document.querySelector('[data-session-open]')`);
     ok = await yes(cdp2.waitFor(`!!(${PAUSED_GROUP})`, { timeoutMs: 30_000, label: 'Relaunch: Paused overlay' }));
     const resumeBtn = `Array.from(document.querySelectorAll('[role="group"][aria-label="Session paused"] button')).filter((b) => b.textContent.trim() === 'Resume')`;
-    const counts = await cdp2.evaluate(`({ resume: ${resumeBtn}.length, startAgent: document.body.innerText.includes('Start agent') })`);
+    const counts = await cdp2.evaluate(`({ resume: ${resumeBtn}.length, startAgent: !!${PAUSED_GROUP}.innerText.includes('Start agent') })`);
     check(ok && counts.resume === 1 && !counts.startAgent, 'stopped paused Session shows one Resume and no Start agent', counts);
     await settle(cdp2);
     await shot(cdp2, '1890-04-stopped-paused.png');
