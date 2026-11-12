@@ -6,18 +6,18 @@ import { TOOL_COLUMNS } from './toolColumns'
 
 const row = (label: string, costShare?: number): UsageBreakdownRow => ({ label, calls: 1, tokens: 0, usd: 0, credits: 0, costShare })
 const shareColumn = TOOL_COLUMNS.find((c) => c.key === 'share')!
+const sortKey = (r: UsageBreakdownRow) => shareColumn.sortValue!(r) as number
 
 describe('tool table Cost share column', () => {
   it('ranks an unpriced row below a priced 0%', () => {
-    expect(shareColumn.sortValue(row('edit'))).toBeLessThan(shareColumn.sortValue(row('read', 0)) as number)
+    expect(sortKey(row('edit'))).toBeLessThan(sortKey(row('read', 0)))
   })
 
   it('sorts unpriced rows last descending and first ascending', () => {
     const rows = [row('a', 0.5), row('b'), row('c', 0)]
-    const key = (r: UsageBreakdownRow) => shareColumn.sortValue(r) as number
-    const asc = [...rows].sort((x, y) => key(x) - key(y))
+    const asc = [...rows].sort((x, y) => sortKey(x) - sortKey(y))
     expect(asc.map((r) => r.label)).toEqual(['b', 'c', 'a'])
-    const desc = [...rows].sort((x, y) => key(y) - key(x))
+    const desc = [...rows].sort((x, y) => sortKey(y) - sortKey(x))
     expect(desc.map((r) => r.label)).toEqual(['a', 'c', 'b'])
   })
 
