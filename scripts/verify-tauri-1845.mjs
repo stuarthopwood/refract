@@ -88,6 +88,40 @@ function seedOldDb(dbPath) {
   db.close();
 }
 
+// JS run in the page: the Cost share cell of every row in the by-tool table, keyed by tool name.
+const COST_CELLS_JS = `(() => {
+  const table = [...document.querySelectorAll('section[aria-label="Usage"] table')].find((t) => /cost share/i.test(t.querySelector('thead')?.textContent ?? ''));
+  const rows = [...(table?.querySelectorAll('tbody tr') ?? [])];
+  return Object.fromEntries(rows.map((r) => {
+    const cell = r.cells[r.cells.length - 1];
+    return [r.cells[0].textContent.trim(), {
+      text: cell.textContent.trim(),
+      dash: cell.querySelector('[aria-hidden="true"]')?.textContent ?? null,
+      label: cell.querySelector('.sr-only')?.textContent ?? null,
+      title: cell.querySelector('[title]')?.getAttribute('title') ?? null
+    }];
+  }));
+})()`;
+
+const SEEDED_TOOL_CALLS = SEED_ROLLUP.reduce((sum, [, , count]) => sum + count, 0);
+
+// The ingest adds no tool calls (the session fixture has none), so every seeded row must survive.
+function verifyMigratedDb(dbPath, check) {
+  const db = new DatabaseSync(dbPath, { readOnly: true });
+  try {
+    const version = db.prepare('PRAGMA user_version').get().user_version;
+    check(version === 4, 'usage.db is at schema version 4', { version });
+    for (const table of ['tool_calls', 'tool_rollup']) {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+      check(cols.includes('cost_usd') && !cols.includes('cost_share'), `${table} carries cost_usd and no cost_share`, cols);
+    }
+    const { n } = db.prepare('SELECT count(*) AS n FROM tool_calls').get();
+    check(n === SEEDED_TOOL_CALLS, 'the migration kept every seeded tool_calls row', { expected: SEEDED_TOOL_CALLS, actual: n });
+  } finally {
+    db.close();
+  }
+}
+
 async function main() {
   const head = gitHead(REPO_ROOT);
   console.log(`${LOG}: git HEAD ${head}`);
@@ -140,11 +174,13 @@ async function main() {
     if (!isTargetOwningPort(port, launched.targetPid)) throw new Error(`${LOG}: CDP target is not owned by the launched pid ${launched.targetPid}`);
     await cdp.waitFor(`!!(window.refract && window.refract.usage)`, { timeoutMs: 30_000, label: 'window.refract.usage present' });
     await call('start');
-    for (let i = 0; i < 100; i++) {
+    let ingested = false;
+    for (let i = 0; i < 100 && !ingested; i++) {
       const s = await call('status');
-      if (!s.running && s.sessionsDone >= s.sessionsSeen && s.sessionsSeen > 0) break;
-      await sleep(300);
+      ingested = !s.running && s.sessionsDone >= s.sessionsSeen && s.sessionsSeen > 0;
+      if (!ingested) await sleep(300);
     }
+    if (!ingested) throw new Error(`${LOG}: the usage ingest did not finish within 30 s`);
 
     // IPC: shares come back as fractions of the window's tool spend; the unpriced window has none.
     const share = (rows, label) => rows.find((r) => r.label === label)?.costShare;
@@ -188,20 +224,25 @@ async function main() {
     };
 
     await openUsageWith({ range: 'all' });
-    let page = await cdp.evaluate(toolText);
-    check(/75(\.\d+)?%/.test(page) && /25(\.\d+)?%/.test(page), 'the tools table shows percentages', page.length);
+    // Read the Cost share cells of the tool table only, so a percentage elsewhere on the page cannot satisfy the check.
+    const allCells = await cdp.evaluate(COST_CELLS_JS);
+    check(
+      allCells?.bash?.text === '75%' && allCells?.read?.text === '25%' && allCells?.edit?.text === '0%',
+      'the tools table Cost share cells read bash 75%, read 25%, and 0% for the free edit tool next to priced ones',
+      allCells
+    );
     await scrollToolsIntoView();
     await cdp.screenshot(path.join(SHOTS_DIR, '1-tools-cost-share-percentages.png'));
 
     await openUsageWith({ range: 'all', project: 'free' });
-    // The Cost share cell of the unpriced `edit` row, not the page text: a dash with an accessible name.
-    const emptyCell = await cdp.evaluate(
-      `(() => { const table = [...document.querySelectorAll('section[aria-label="Usage"] table')].find((t) => /cost share/i.test(t.querySelector('thead')?.textContent ?? ''));
-        const row = [...(table?.querySelectorAll('tbody tr') ?? [])].find((r) => r.cells[0]?.textContent.trim() === 'edit');
-        const img = row?.cells[row.cells.length - 1]?.querySelector('[role="img"]');
-        return row ? { text: row.cells[row.cells.length - 1].textContent.trim(), label: img?.getAttribute('aria-label') ?? null } : null; })()`
+    // The unpriced `edit` row shows a visible dash whose label is exposed as sr-only text and a title.
+    const freeCells = await cdp.evaluate(COST_CELLS_JS);
+    const empty = freeCells?.edit;
+    check(
+      empty?.dash === '-' && empty?.label === 'No priced calls' && empty?.title === 'No priced calls',
+      'the unpriced edit row shows a dash labelled "No priced calls" in its Cost share cell',
+      empty
     );
-    check(emptyCell?.text === '-' && emptyCell?.label === 'No priced calls', 'the unpriced edit row shows a dash named "No priced calls" in its Cost share cell', emptyCell);
     await scrollToolsIntoView();
     await cdp.screenshot(path.join(SHOTS_DIR, '2-tools-cost-share-no-priced-calls.png'));
   } catch (err) {
@@ -209,6 +250,16 @@ async function main() {
     failures.push('run crashed');
     console.error(`${LOG}: FAIL run crashed`, err);
   } finally {
+    if (cdp) cdp.close();
+    if (child) await stopLauncher(child).catch(() => {});
+    // The app has exited, so the file is quiescent and a read-only open sees what it committed.
+    if (child) {
+      try {
+        verifyMigratedDb(path.join(dataDir, 'usage.db'), check);
+      } catch (dbErr) {
+        check(false, 'usage.db could be inspected after the app stopped', String(dbErr));
+      }
+    }
     try {
       writeFileSync(
         path.join(SHOTS_DIR, 'report.json'),
@@ -217,8 +268,6 @@ async function main() {
     } catch (writeErr) {
       console.error(`${LOG}: failed to write evidence: ${writeErr}`);
     }
-    if (cdp) cdp.close();
-    if (child) await stopLauncher(child).catch(() => {});
     for (const dir of dirs) await safeRmSync(dir, LOG);
   }
 
