@@ -5528,3 +5528,14 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   shared `ScrollArea`, per FR-126 (missing)
 - [x] T442 Live check the dialog at a short window height (list scrolls by keyboard, Done visible), update
   `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-126
+
+## Phase 92: Convergence (#1876 advisory stripe beside the body only, #1877 agent-to-agent accent colour, FR-051, FR-101; retroactive: code 6278aedd, b0cdfb41 came first)
+
+- [x] T443 [US1] `AdvisoryRow.tsx`: move `STRIPE_CLASS` from the `data-advisory-severity` wrapper to the expanded body's
+  `contentClassName`, so a collapsed card of any severity draws no bar, with `AdvisoryRow.test.ts` and
+  `scripts/verify-558-blocker-callout.mjs` reading the body's `::before`, per FR-051 (partial)
+- [x] T444 [US1] Point `--agent-message` at `--accent-text` in `globals.css` and the six theme files (a one-step
+  lightened accent in Dark/Obsidian where plain accent misses 4.5:1 on the row hover), teach
+  `scripts/theme-tokens.mjs` to parse `color-mix`, per FR-101 (contradicts)
+- [ ] T445 Live check the collapsed and expanded advisory card and an agent-to-agent row in one dark and one light theme
+  (and after an accent change), update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-051, FR-101
