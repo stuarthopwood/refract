@@ -32,6 +32,10 @@ _Avoid_: MCP server (the reserved fallback, not built), plugin, bridge
 A tool Refract registers with OMP for one launch, named `refract_<name>` (for example `refract_open_panel`), and serves itself. OMP calls it; Refract answers.
 _Avoid_: custom tool, extension tool
 
+**Session message**:
+A user turn that one **Session**'s agent sends to another **Session** through `send_session_message`, labelled with the sending **Session**. It is never the developer's instruction and never an approval (ADR 0008).
+_Avoid_: Agent message, cross-session prompt
+
 **Panel action**:
 A named operation a right-pane panel declares for the agent: name, description, input schema and whether it changes something. A mutating one asks the developer first through the approval card; reading and navigating ones run straight away.
 _Avoid_: panel command, panel API
