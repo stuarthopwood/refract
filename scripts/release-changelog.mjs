@@ -116,8 +116,9 @@ export function extractChangelogSection(changelogText, version) {
   const normalised = changelogText.replace(/\r\n/g, '\n');
   const start = findHeadingStart(normalised, `## v${version} (`);
   if (start === -1) return null;
+  // Any `## ` heading ends the section: the real CHANGELOG.md has a hand-written `## Unreleased` between versions.
   const rest = normalised.slice(start + 1);
-  const nextHeadingMatch = /\n## v\d+\.\d+\.\d+ \(/.exec(rest);
+  const nextHeadingMatch = /\n## /.exec(rest);
   const end = nextHeadingMatch ? start + 1 + nextHeadingMatch.index : normalised.length;
   return normalised.slice(start, end).replace(/\n+$/, '\n');
 }
