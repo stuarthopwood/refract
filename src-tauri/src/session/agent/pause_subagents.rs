@@ -115,10 +115,7 @@ impl SessionAgent {
         let ids = match self.running_subagent_ids().await {
             Ok(ids) => ids,
             Err(reason) => {
-                log::warn!(
-                    "pause: could not list subagents for {}: {reason}",
-                    self.session_id
-                );
+                log::warn!("pause: could not list subagents: {reason}");
                 let notice = format!("Pause could not list the running subagents: {reason}");
                 self.record_and_note(&[], &[(notice, "error")]).await;
                 return;
