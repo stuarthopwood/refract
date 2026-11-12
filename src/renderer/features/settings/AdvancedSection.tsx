@@ -16,10 +16,11 @@ import type { TokenGuardKeyInfo } from '../../../shared/tokenGuard'
 import { AdvancedRow } from './advanced/AdvancedRow'
 import { defaultRoleWindow } from './advanced/contextWindow'
 import { changedRows } from './advanced/changedRows'
-import { formatCount } from './advanced/NumberUnitField'
+import { formatTriggerLine } from './advanced/formatTriggerLine'
 import { OptimiseTokenUsage } from './advanced/OptimiseTokenUsage'
 
 const ADVISOR_GROUP_HINT = 'Applies in review mode only.'
+const TRIGGERS_HEADING_ID = 'compaction-triggers-heading'
 
 export function AdvancedSection() {
   const { values, defaults, loaded, migration, effectiveTriggers, projectOverrides, warnings, error, load, set, reset, dismissMigrationNotice } = useTokenGuardStore()
@@ -81,13 +82,13 @@ export function AdvancedSection() {
         </Alert>
       )}
       {loaded && effectiveTriggers.length > 0 && (
-        <ul aria-label="Where compaction starts" className="mb-6 flex flex-col gap-1 text-xs text-muted-foreground">
-          {effectiveTriggers.map((t) => (
-            <li key={t.model}>
-              {t.model}: {t.modelThreshold === undefined ? `${t.thresholdPercent}% (global)` : `${t.modelThreshold} (per-model)`} of {formatCount(t.contextWindow)} tokens, so compaction starts at {formatCount(t.triggerTokens)} tokens.
-            </li>
-          ))}
-        </ul>
+        <SettingsGroup title="Compaction starts at" headingId={TRIGGERS_HEADING_ID}>
+          <ul aria-labelledby={TRIGGERS_HEADING_ID} className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground">
+            {effectiveTriggers.map((t) => (
+              <li key={t.model}>{formatTriggerLine(t)}</li>
+            ))}
+          </ul>
+        </SettingsGroup>
       )}
       {error && (
         <p role="alert" className="mb-2 text-sm text-destructive">
