@@ -95,13 +95,13 @@ describe('lookupCard', () => {
   it('lets a slow failure not delete the entry that replaced it', async () => {
     vi.useFakeTimers()
     try {
-      const slow = Promise.withResolvers<{ ok: false; error: string }>()
-      lookup.mockReturnValueOnce(slow.promise)
+      let failSlow: (value: { ok: false; error: string }) => void = () => {}
+      lookup.mockReturnValueOnce(new Promise((resolve) => (failSlow = resolve)))
       const first = lookupCard(TARGET)
       vi.advanceTimersByTime(5 * 60 * 1000 + 1)
       lookup.mockResolvedValueOnce({ ok: true, value: CARD })
       await lookupCard(TARGET)
-      slow.resolve({ ok: false, error: 'late' })
+      failSlow({ ok: false, error: 'late' })
       await first
       expect(peekCard(TARGET)).toEqual(CARD)
     } finally {

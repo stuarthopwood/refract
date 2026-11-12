@@ -31,7 +31,7 @@ function openInBrowser(url: string): void {
 function ItemCardBody({ card }: { card: ItemCard }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center gap-1.5 text-xs font-medium">
+      <div className="flex items-center gap-2 text-xs font-medium">
         <ItemTypeIcon card={card} />
         {itemTypeVisual(card).label}
       </div>
@@ -109,7 +109,7 @@ export function ItemRefLink({ text, sessionId, streaming }: { text: string; sess
             if (event.button === 1) openItem(event)
           }}
         >
-          <ItemTypeIcon card={peekCard(target)} className="mr-0.5" />
+          <ItemTypeIcon card={peekCard(target)} className="mr-1" />
           {text}
         </Button>
       </HoverCardTrigger>
