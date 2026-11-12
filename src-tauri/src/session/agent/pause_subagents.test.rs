@@ -356,6 +356,8 @@ async fn a_process_exit_clears_the_cancelled_list_so_resume_posts_no_notice() {
     fx.agent.handle_exit(&process, Some(1), false).await;
 
     assert!(fx.cancelled().await.is_empty());
+    // Resume now starts a stopped agent; this test is about the notice, so pretend it is already up.
+    fx.agent.state.lock().await.status = crate::session::agent::SessionStatus::Idle;
     fx.agent.resume().await.unwrap();
     assert!(!fx
         .notices()
