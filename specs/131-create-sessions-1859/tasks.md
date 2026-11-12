@@ -12,7 +12,7 @@ Test tasks are part of each task (AGENTS.md Testing rule: new logic gets co-loca
 
 - [ ] T004 `src-tauri/src/ipc/sessions_lifecycle.rs`: extract `create_session_record` from `sessions.create` (Worktree plus registry steps), both callers use it; no behaviour change. Existing `sessions.create` tests stay green. (FR-004)
 - [ ] T005 `src-tauri/src/agent_tools/tree_gate.rs` and `approval.rs` (+ tests): process-wide async gate; Session-action approval card; own-tree decision helper. Tests: gate serialises two callers, card carries action and target, own-tree rule table. (FR-003, FR-006, FR-010)
-- [ ] T006 `src-tauri/src/agent_tools/sessions_create.rs` (+ test): tool def with the rule-of-thumb description, check order, project and parent resolution, card unless `yolo`, creation, role, start, first turn (undecorated), result. Tests: every error code in order, denial creates nothing, `yolo` skips the card, first-turn text with and without parent, role validation and no inheritance, two racing creates yield one success at 3 live children, start failure keeps the Session and names its id. (FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-013)
+- [ ] T006 `src-tauri/src/agent_tools/sessions_create.rs` (+ test): tool def with the rule-of-thumb description, check order, project and parent resolution, card unless `yolo`, creation, role, start, first turn (undecorated), result. Tests: every error code in order, denial creates nothing, `yolo` skips the card, first-turn text with and without parent, role validation and no inheritance, two racing creates yield one success at 3 live children, start failure keeps the Session and names its id, a caller deleted mid-create is answered `cancelled` and writes no link. (FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-013)
 - [ ] T007 `src-tauri/src/agent_tools/sessions_update.rs` (+ test): tool def, check order, own-tree card rule, rename, role via `choose_role`, nest and un-nest. Tests: inside tree no card, outside tree card, deny changes nothing, self and descendant `invalid_parent`, `depth_limit`, `child_limit`, stopped target role change is `session_not_running`. (FR-008, FR-009, FR-010, FR-013)
 
 ## Slice 3: access, dispatch, rules (one worker)
@@ -29,4 +29,4 @@ Test tasks are part of each task (AGENTS.md Testing rule: new logic gets co-loca
 
 ## Dependencies
 
-T001 -> T002 -> T003; T004 -> T005 -> (T006, T007); T002 + T006 + T007 -> T008 -> T009; T010 independent; slices 1 and 2 may run in parallel only if T004 lands first (both touch `sessions_lifecycle.rs`); T011 after T008 and T010; T012 -> T013.
+T001 -> T002 -> T003 -> T004 -> T005 -> (T006, T007) -> T008 -> T009; T010 independent; T011 after T008, T009 and T010; T012 -> T013. T003 and T004 both edit `sessions_lifecycle.rs`, so slices 1 and 2 run in order.
