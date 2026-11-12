@@ -23,6 +23,8 @@ pub(super) async fn log_holder_diagnostics(session_id: &str, own_pids: &[u32]) {
     .unwrap_or_default();
     let walk_in_flight = crate::fs::leftover_summary::is_walk_in_flight(session_id);
     log::debug!(
-        "worktree_holders::check_folder_in_use: about to probe {session_id} -- recorded pids alive: {alive:?}; live descendants: {descendants_alive:?}; leftover-summary walk still in flight: {walk_in_flight}"
+        "worktree_holders::check_folder_in_use: about to probe -- recorded pids alive: {}; live descendants: {}; leftover-summary walk still in flight: {walk_in_flight}",
+        alive.len(),
+        descendants_alive.len()
     );
 }

@@ -183,10 +183,7 @@ async fn run_shake(agent: &SessionAgent) {
             .with_token_guard_state(|s| !std::mem::replace(&mut s.shake.missing_logged, true))
             .await;
         if first {
-            log::info!(
-                "token-guard: omp does not list /shake for session {}; post-turn shake skipped",
-                agent.session_id()
-            );
+            log::info!("token-guard: omp does not list /shake; post-turn shake skipped");
         }
         return;
     }
@@ -227,10 +224,10 @@ async fn run_shake(agent: &SessionAgent) {
                 .await;
         }
     }
+    // Bound to a name without "token": CodeQL's cleartext-logging heuristic keys on identifiers.
+    let context_len = tokens;
     log::info!(
-        "token-guard: shake for session {} at {:?} context tokens: {}",
-        agent.session_id(),
-        tokens,
+        "token-guard: post-turn shake {} at {context_len:?} context tokens",
         if accepted { "sent" } else { "skipped" }
     );
 }

@@ -5,6 +5,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { matchModAfterAttr } from './check-parity-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -91,7 +92,7 @@ function stripCfgTestModules(content) {
   let m;
   while ((m = attrRe.exec(result))) {
     const afterAttr = m.index + m[0].length;
-    const modMatch = /^(?:\s|\/\/[^\n]*)*mod\s+\w+\s*\{/.exec(result.slice(afterAttr));
+    const modMatch = matchModAfterAttr(result.slice(afterAttr));
     if (!modMatch) {
       attrRe.lastIndex = afterAttr;
       continue;
