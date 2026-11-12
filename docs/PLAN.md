@@ -56,8 +56,8 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 1b | #695 | **P0 Prewalk and plan mode:** Settings defaults off for prewalk and "Start in plan mode" via the launch overlay; per-Session prewalk on and off (allow `/prewalk off` after a probe) | Raised p3 to P0 (Stuart 2026-11-02); Sessions inherit a global `plan.defaultOnStartup` and prewalk with no way to turn them off from Refract; gate passed, awaiting merge (lane AT, spec 110) |
 | 1c | #1304 | **P0 Agents control Sessions:** the agent creates, updates, nests (depth 3, at most 4 live children), archives, stops and deletes Sessions and Conversations, and hands over to a new Conversation in the same Session; approval for writes (delete always asks, even in `yolo`); v1 tool set of 14 tools | Raised p1 to P0 (Stuart 2026-11-04); needs #1193's tool channel (open), so take #1193 first; full row under **Child Sessions** |
 | 1c.1 | #1193 | **P0 Agent Sessions slice 1, tool channel (child of #1304):** OMP host tools over the RPC stream (probe passed on omp 18.17.0, no loopback MCP; ADR 0007), `refract_`-prefixed tools filtered per launch, Rust-owned approval for mutating actions, main-to-renderer routing with a timeout, plus the panel tools `refract_list_panels`, `refract_open_panel`, `refract_invoke_panel_action`. **done** (merged in PR #1871; spec 124 implemented and live-checked with the fake omp; real omp ask-mode check recorded in #1887) | Raised p3 to P0 (Stuart 2026-11-10, the #1304 split); grilled and decided 2026-11-10; Spec Kit route specify |
-| 1c.1a | #1888 | **Bug, Agent Sessions follow-up (p1, bug):** agent panel action reports `timeout` after a successful approved stage. The first approved `stage_file` after launch returns `timeout` though the file was staged; fix so the result matches the outcome | Filed p1 (2026-11-10); follow-up to #1193; in review (fix/1888-renderer-timeout): `agentTools.started` handshake, 30 s mutation window, `outcome_unknown` |
-| 1c.1b | #1942 | **Bug, release blocker (p1, bug):** clear the 263 open CodeQL alerts: advanced setup with `scripts/verify-*.mjs` excluded, fix the 8 `rust/cleartext-logging` log lines and the 3 script alerts, fix `verify-tauri.mjs` | Filed p1 (Stuart 2026-11-12); the release waits for it; spec 128, branch `fix/codeql-cleanup`; independent of the Agent Sessions rows |
+| 1c.1a | #1888 | **Bug, Agent Sessions follow-up (p1, bug):** agent panel action reports `timeout` after a successful approved stage. The first approved `stage_file` after launch returns `timeout` though the file was staged; fix so the result matches the outcome | **done** (merged in PR #1936, `5d62ddc2`: `agentTools.started` handshake, 30 s mutation window, `outcome_unknown`); filed p1 (2026-11-10); follow-up to #1193 |
+| 1c.1b | #1942 | **Bug, release blocker (p1, bug):** clear the 263 open CodeQL alerts: advanced setup with `scripts/verify-*.mjs` excluded, fix the 8 `rust/cleartext-logging` log lines and the 3 script alerts, fix `verify-tauri.mjs` | **done** (merged in PR #1943, `21a7fc1c`; spec 128); filed p1 (Stuart 2026-11-12); the release no longer waits on it |
 | 1c.2 | #1858 | **P0 Agent Sessions slice 2, read tools and messaging (child of #1304):** `list_sessions`, `get_session_status`, `send_session_message` across every Session, agent-labelled, no approval card | Filed P0 (Stuart 2026-11-10, the #1304 split); needs #1193; grill first |
 | 1c.3 | #1859 | **P0 Agent Sessions slice 3, create and nest Sessions (child of #1304):** `create_session`, `update_session`; registry `parent_session_id` with a serde default; depth 3 and 4 live children enforced in Rust; rule of thumb via `--append-system-prompt` | Filed P0 (Stuart 2026-11-10, the #1304 split); needs #1858; grill first |
 | 1c.4 | #1860 | **P0 Agent Sessions slice 4, archive, stop, pause and delete with approval (child of #1304):** `archive_session`, `unarchive_session`, `stop_session`, `pause_session`, `resume_session`, `delete_session` (always asks, even in `yolo`; reuses #1591's background delete) | Filed P0 (Stuart 2026-11-10, the #1304 split); needs #1859; pause and resume need #477; grill first |
@@ -1177,11 +1177,15 @@ Also filed 2026-11-09 (Stuart): **#1829** (`p1`, `design`, `accessibility`), UI 
 
 Also filed 2026-11-09 (Stuart): **#1831** (`p0`, `bug`, `chat`), Bug: Ask: support OMP 18.18.3's HTML-form ask (ui.formDialog) so the Ask card works again. Draft PR open (branch `feat/1831-ask-form`, spec `126-ask-html-form-1831`; grilled 2026-11-10 and 2026-11-11, all clarifications answered): the renderer parses `args.html` into one card (radio, checkbox, text, textarea; Cancel and Esc; `required` gates Submit; any other field type falls back to per-field cards) and answers the per-field frames in order, no Rust change. Done: parser, frame matcher, card, history from `details.answers`, timed-out state, focus kept on Submit and Esc (10 of 10 live runs off body), `ci:local` 23 of 23 and the live check against the Probe520 mock (`C:/Users/shopwood/refract-live-check-1831/`); gaps: no component tests (vitest has no DOM), Esc cancels only while focus is in the card, the Esc cancel sends the model no second tool result.
 
+Status 2026-11-12 (#1831): done. Merged in PR #1938 (`e9a3db59`).
+
 Also filed 2026-11-09 (Stuart): **#1832** (`p2`, `feature`, `chat`), Feat: Run a shell command without adding it to the model's context (OMP RPC bash excludeFromContext).
 
 Also filed 2026-11-09 (Stuart): `#1254` raised to `p1` (chat message image polish follow-ups from #1245 gate; headline item is the image viewer dialog filling the window for small images).
 
 Also filed 2026-11-09 (Stuart): **#1835** (`p1`, `bug`, `chat`), Bug: Pause: pausing does not pause running subagents, so the Session never pauses. Decided 2026-11-11: Pause cancels running subagents at once and goes straight to Paused, and a subagent spawned while Paused is auto-cancelled; Resume posts a notice and revives nothing. Spec 127, branch `feat/1835-pause-cancel`: code and unit tests landed, live check (T009) in `scripts/verify-tauri-1835.mjs`.
+
+Status 2026-11-12 (#1835): done. Merged in PR #1939 (`e543a18c`).
 
 Also filed 2026-11-09 (Stuart): **#1839** (`p1`, `feature`, `right-pane`), Feat: Git panel: stage, unstage and discard for one file, a selection, a folder, or all files.
 
@@ -1190,6 +1194,8 @@ Also filed 2026-11-09 (Stuart): **#1840** (`p1`, `design`, `right-pane`), UI Pol
 Also filed 2026-11-09 (Stuart): **#1842** (`p1`, `feature`, `right-pane`), Feat: File Explorer: stage, unstage and discard changes for a file or a folder with changes.
 
 Also filed 2026-11-10 (Stuart): **#1845** (`p1`, `bug`), Bug: Usage view: Tools Cost share shows dollars as a percentage (12071%).
+
+Status 2026-11-12 (#1845): done. Merged in PR #1933 (`e38705a0`); Tools Cost share shows a percentage.
 
 Also filed 2026-11-10 (Stuart): **#1847** (`p1`, `feature`), Feat: Usage: add 14 days, Month to date and Year to date preset ranges.
 
@@ -1208,6 +1214,8 @@ Also filed 2026-11-10 (Stuart): **#1854** (`p1`, `design`), UI Polish: Session l
 Also filed 2026-11-10 (Stuart): **#1855** (`p1`, `design`, `chat`), UI Polish: Chat: attached images never draw larger than their pixel size, so they stay sharp.
 
 Also filed 2026-11-10 (Stuart): **#1856** (`p1`, `bug`), Bug: Keyboard shortcuts dialog: list overflows the dialog instead of scrolling. Fix in review (spec 001 FR-126, T441).
+
+Status 2026-11-12 (#1856): done. Merged in PR #1934 (`33aa0c1c`).
 
 Also filed 2026-11-10 (Stuart): **#1864** (`p1`, `feature`, `chat`), Feat: App wide: every issue and PR reference is a link with a hover card.
 
@@ -1248,3 +1256,5 @@ Also filed 2026-11-11 (Stuart): **#1918** (`p2`, `enhancement`), Epic: Road to V
 Also filed 2026-11-11 (Stuart): **#1931** (`p1`, `design`, `chat`), Epic: Redesign the Subagents chat card for goal clarity and live sub-agent feedback (from Stuart's mock zip). Decided: synthesize missing fields (role, goal, triggeredBy, subSteps) client-side now, summaries from real text (no model cost), both the inline card and the right-pane panel. Children: **#1925** (shared view-model and synthesis layer), **#1926** (header, Goal strip, segmented progress), **#1927** (stage rows with outcome summary and parallel layout), **#1928** (sub-agent cards: role, provenance, files, live heartbeat), **#1929** (collapse, expand, auto-focus, transitions), **#1930** (right-pane panel parity).
 
 Also filed 2026-11-12 (Stuart): **#1942** (`p1`, `bug`), Bug: clear open CodeQL alerts before the next release. Decided: switch CodeQL to advanced setup (`.github/workflows/codeql.yml`, `.github/codeql/codeql-config.yml`, `paths-ignore: scripts/verify-*.mjs`), really fix every other alert. Spec 128, PR from `fix/codeql-cleanup`. The release waits for this PR. Row 1c.1b.
+
+Status 2026-11-12 (#1942): done. Merged in PR #1943 (`21a7fc1c`); row 1c.1b is done.
