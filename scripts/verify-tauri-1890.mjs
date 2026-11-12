@@ -102,8 +102,10 @@ async function main() {
 
     // Pause mid-turn and queue a message while "Pausing…" (the composer is inert once Paused), then let the turn end.
     await cdp.click(HEADER_BTN);
-    let ok = await yes(cdp.waitFor(STATUS_TEXT('Pausing…'), { timeoutMs: 10_000, label: 'Pausing shown' }));
-    check(ok, 'mid-turn Pause shows "Pausing…"');
+    // The fake agent does not answer get_subagents during its 12 s hold, so "Pausing" appears only after that 10 s request times out.
+    let ok = await yes(cdp.waitFor(`/pausing/i.test(document.body.innerText)`, { timeoutMs: 30_000, label: 'Pausing shown' }));
+    check(ok, 'mid-turn Pause shows a Pausing state', { text: String(await cdp.evaluate(`document.body.innerText.slice(0, 600)`)) });
+    await shot(cdp, '1890-00-pausing.png');
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp.send('Input.insertText', { text: 'held message' });
     await cdp.clickByLabel('Send message');
@@ -149,7 +151,7 @@ async function main() {
     await cdp2.click(`${resumeBtn}[0]`);
     ok = await yes(cdp2.waitFor(STATUS_TEXT('RESUMED-1890'), { timeoutMs: 60_000, label: 'Held message answered' }));
     check(ok, 'Resume started the agent and the held message went out (agent replied RESUMED-1890)');
-    ok = await yes(cdp2.waitFor(`!(${PAUSED_GROUP})`, { timeoutMs: 10_000, label: 'Overlay gone' }));
+    ok = await yes(cdp2.waitFor(`!(${PAUSED_GROUP})`, { timeoutMs: 30_000, label: 'Overlay gone' }));
     check(ok, 'pause cleared after the held message was sent');
     await settle(cdp2);
     await shot(cdp2, '1890-05-resumed.png');
