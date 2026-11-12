@@ -17,7 +17,6 @@ import { AdvancedRow } from './advanced/AdvancedRow'
 import { defaultRoleWindow } from './advanced/contextWindow'
 import { changedRows } from './advanced/changedRows'
 import { formatTriggerLine } from './advanced/formatTriggerLine'
-import { formatCount } from './advanced/NumberUnitField'
 import { OptimiseTokenUsage } from './advanced/OptimiseTokenUsage'
 
 const ADVISOR_GROUP_HINT = 'Applies in review mode only.'
