@@ -1,6 +1,6 @@
 import { MessageSquareIcon } from 'lucide-react'
 import { SourceTag } from '@/components/SourceTag'
-import { focusSessionPane } from '@/lib/focus'
+import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { useSessionsStore, useSplitStore } from '@/state'
 import type { MessageSource } from '../../../shared/model'
 
@@ -16,15 +16,17 @@ export function SessionSourceLine({ source, id }: SessionSourceLineProps) {
   const senderExists = useSessionsStore((state) => state.sessions.some((s) => s.id === source.sessionId))
   // `replaceFocused` swaps the visible pane (the sidebar row's own path); `open(id, true)` is the
   // user-initiated switch. The click leaves focus on a button that is about to unmount, so it is
-  // moved to the new pane once that has rendered.
+  // moved to the new pane once that has rendered, or to the Sessions nav if that pane is not there.
   const action = senderExists
     ? {
         label: source.name,
-        ariaLabel: `Open Session ${source.name}`,
+        // No aria-label: the visible name is the link's name, and the bubble group's name reads this line.
         onActivate: () => {
           useSplitStore.getState().replaceFocused(source.sessionId)
           void useSessionsStore.getState().open(source.sessionId, true)
-          requestAnimationFrame(() => focusSessionPane(source.sessionId))
+          requestAnimationFrame(() => {
+            if (!focusSessionPane(source.sessionId)) focusSessionsNav()
+          })
         }
       }
     : undefined

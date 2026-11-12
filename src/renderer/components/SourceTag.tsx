@@ -12,8 +12,6 @@ import { cn } from '@/lib/utils'
 export interface SourceTagAction {
   label: string
   onActivate: () => void
-  /** Overrides the button's accessible name when its visible label alone is not enough. */
-  ariaLabel?: string
 }
 
 interface SourceTagProps {
@@ -36,7 +34,7 @@ export function SourceTag({ icon: Icon, label, tooltip, action, className }: Sou
           {/* A real space so textContent and copied text read "From Session Alpha"; flex drops it visually. */}
           {' '}
           {/* A native button gives Enter and Space activation for free; no key handler, or it would fire twice. */}
-          <Button type="button" variant="text" size="xs" aria-label={action.ariaLabel} onClick={action.onActivate} className="px-1 underline">
+          <Button type="button" variant="text" size="xs" onClick={action.onActivate} className="px-1 underline">
             {action.label}
           </Button>
         </>

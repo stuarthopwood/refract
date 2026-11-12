@@ -48,15 +48,4 @@ describe('SourceTag', () => {
     ;(button!.props.onClick as () => void)()
     expect(onActivate).toHaveBeenCalledTimes(1)
   })
-
-  it('passes an explicit ariaLabel to the button and none otherwise', () => {
-    const withLabel = renderToStaticMarkup(
-      createElement(SourceTag, { icon: MessageSquareIcon, label: 'From Session', action: { label: 'Alpha', onActivate: () => {}, ariaLabel: 'Open Session Alpha' } }),
-    )
-    expect(withLabel).toContain('aria-label="Open Session Alpha"')
-    const without = renderToStaticMarkup(
-      createElement(SourceTag, { icon: MessageSquareIcon, label: 'From Session', action: { label: 'Alpha', onActivate: () => {} } }),
-    )
-    expect(without).not.toContain('aria-label')
-  })
 })

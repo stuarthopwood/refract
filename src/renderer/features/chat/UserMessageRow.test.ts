@@ -22,10 +22,10 @@ const mocks = vi.hoisted(() => {
     { getState: () => state }
   )
   const useSplitStore = { getState: () => state }
-  return { state, select, useSessionsStore, useSplitStore, focusSessionPane: vi.fn() }
+  return { state, select, useSessionsStore, useSplitStore, focusSessionPane: vi.fn(), focusSessionsNav: vi.fn() }
 })
 vi.mock('@/state', () => ({ useSessionsStore: mocks.useSessionsStore, useSplitStore: mocks.useSplitStore }))
-vi.mock('@/lib/focus', () => ({ focusSessionPane: mocks.focusSessionPane }))
+vi.mock('@/lib/focus', () => ({ focusSessionPane: mocks.focusSessionPane, focusSessionsNav: mocks.focusSessionsNav }))
 
 import { SessionSourceLine } from './SessionSourceLine'
 import { UserMessageRow, type UserItem } from './UserMessageRow'
@@ -50,7 +50,8 @@ beforeEach(() => {
   mocks.state.open = vi.fn(() => Promise.resolve(null))
   mocks.state.replaceFocused = vi.fn()
   mocks.select.mockClear()
-  mocks.focusSessionPane.mockClear()
+  mocks.focusSessionPane.mockReset().mockReturnValue(true)
+  mocks.focusSessionsNav.mockReset()
   // The focus hop waits a frame for the new pane to mount; run it synchronously here.
   vi.stubGlobal('requestAnimationFrame', (cb: () => void) => cb())
 })
@@ -61,7 +62,7 @@ describe('SessionSourceLine', () => {
     const [tag] = findAll(tree, (el) => typeof el.type !== 'string' && el.props.label !== undefined)
     expect(tag!.props.label).toBe('From Session')
     expect(tag!.props.action.label).toBe('Alpha')
-    expect(tag!.props.action.ariaLabel).toBe('Open Session Alpha')
+    expect(tag!.props.action.ariaLabel).toBeUndefined()
     tag!.props.action.onActivate()
     expect(mocks.state.open).toHaveBeenCalledTimes(1)
     expect(mocks.state.open).toHaveBeenCalledWith('sess-1', true)
@@ -73,6 +74,15 @@ describe('SessionSourceLine', () => {
     const [tag] = findAll(tree, (el) => typeof el.type !== 'string' && el.props.label !== undefined)
     tag!.props.action.onActivate()
     expect(mocks.focusSessionPane).toHaveBeenCalledWith('sess-1')
+    expect(mocks.focusSessionsNav).not.toHaveBeenCalled()
+  })
+
+  it('falls back to the Sessions nav when the sender pane is not there to take focus', () => {
+    mocks.focusSessionPane.mockReturnValue(false)
+    const tree = SessionSourceLine({ source: SOURCE, id: 'line-1' })
+    const [tag] = findAll(tree, (el) => typeof el.type !== 'string' && el.props.label !== undefined)
+    tag!.props.action.onActivate()
+    expect(mocks.focusSessionsNav).toHaveBeenCalledTimes(1)
   })
 
   it('shows the sender name marked deleted, with no action, once the sender is gone', () => {
@@ -88,7 +98,8 @@ describe('SessionSourceLine', () => {
 describe('UserMessageRow session source', () => {
   it('shows a From Session line with the sender name as a button, above the bubble', () => {
     const html = render({ ...base, source: SOURCE })
-    expect(html).toMatch(/From Session <button[^>]*type="button"[^>]*aria-label="Open Session Alpha"[^>]*>Alpha<\/button>/)
+    expect(html).toMatch(/From Session <button[^>]*type="button"[^>]*>Alpha<\/button>/)
+    expect(html).not.toContain('Open Session')
     expect(html.indexOf('From Session')).toBeLessThan(html.indexOf('hello there'))
   })
 
@@ -97,6 +108,8 @@ describe('UserMessageRow session source', () => {
     const lineId = /<div id="([^"]+)" class="mb-1 flex justify-end text-xs">/.exec(html)?.[1]
     expect(lineId).toBeDefined()
     expect(html).toContain(`role="group" aria-labelledby="${lineId}"`)
+    const line = new RegExp(`<div id="${lineId}"[^>]*>(.*?)</div>`).exec(html)?.[1] ?? ''
+    expect(line.replace(/<[^>]*>/g, '')).toBe('From Session Alpha')
   })
 
   it('authors a sourced turn as the Session: its name and glyph, never the user name or initials', () => {
