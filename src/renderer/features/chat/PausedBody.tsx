@@ -2,7 +2,7 @@
 // Session is Paused the body is blurred and inert and an overlay offers Resume; Space resumes the
 // paused pane the keyboard is in. A Pausing Session (turn still running) stays interactive: new
 // messages are held, and a slim banner above the body reads "Pausing after this turn" with Cancel.
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { PauseIcon, PlayIcon } from 'lucide-react'
 import { PaneBanner } from '@/components/PaneBanner'
@@ -26,7 +26,14 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
   const resumeRef = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const previous = useRef(pause)
-  const [announcement, setAnnouncement] = useState('')
+  // Queued, not replaced: a notice and the status change land in either order and both must be spoken.
+  const [announcements, setAnnouncements] = useState<string[]>([])
+  const timers = useRef<number[]>([])
+  useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), [])
+  const announce = useCallback((text: string) => {
+    setAnnouncements((q) => [...q, text])
+    timers.current.push(window.setTimeout(() => setAnnouncements((q) => q.slice(1)), 6000))
+  }, [])
   const items = useTranscriptStore((s) => s.bySession[sessionId]?.items ?? EMPTY_TRANSCRIPT.items)
   const seenNotices = useRef<Set<string> | null>(null)
 
@@ -39,16 +46,16 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
     }
     const { text, ids } = pausedNoticeAnnouncement(items, known)
     for (const id of ids) known.add(id)
-    if (text) setAnnouncement(text)
-  }, [items])
+    if (text) announce(text)
+  }, [items, announce])
 
   useEffect(() => {
     if (previous.current === pause) return
     const was = previous.current
     previous.current = pause
-    if (pause === 'pausing') setAnnouncement('Pausing after the current turn')
-    else if (pause === 'paused') setAnnouncement('Session paused')
-    else if (was) setAnnouncement('Session resumed')
+    if (pause === 'pausing') announce('Pausing after the current turn')
+    else if (pause === 'paused') announce('Session paused')
+    else if (was) announce('Session resumed')
     const active = document.activeElement
     const lost = !active || active === document.body || rootRef.current?.contains(active)
     if (pause === 'paused') {
@@ -57,7 +64,7 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
       // The overlay's Resume button unmounts; put focus back in the composer, not <body>.
       requestAnimationFrame(() => focusSessionPane(sessionId))
     }
-  }, [pause, sessionId])
+  }, [pause, sessionId, announce])
 
   useEffect(() => {
     if (!paused) return
@@ -128,7 +135,7 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
         {children}
       </LoadingOverlay>
       <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {announcement}
+        {announcements.join(' ')}
       </div>
     </div>
   )
