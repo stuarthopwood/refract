@@ -157,6 +157,8 @@ async function main() {
     check(triggerLines.length === 2 && triggerLines.some((l) => l.startsWith(`${MODEL2}: `) && /50[,.]?000 tokens \(.*per-model of 100[,.]?000\)/.test(l)), 'Settings > Advanced: a Session on the second model adds its own trigger row (50000 of 100000)', triggerLines);
     const captions = await cdp.evaluate(`Array.from(document.querySelectorAll('h3')).filter((h) => h.textContent === 'Compaction starts at').length`);
     check(captions === 1, 'Settings > Advanced: one visible "Compaction starts at" caption above the trigger rows', captions);
+    const ids = await cdp.evaluate(`(() => { const h = Array.from(document.querySelectorAll('h3')).find((e) => e.textContent === 'Compaction starts at'); const ul = document.querySelector('ul[aria-labelledby="compaction-triggers-heading"]'); return { id: h?.id ?? null, labelledby: ul?.getAttribute('aria-labelledby') ?? null }; })()`);
+    check(ids.id !== null && ids.id === ids.labelledby, 'Settings > Advanced: the caption h3 id equals the trigger list aria-labelledby', ids);
     await cdp.evaluate(`Array.from(document.querySelectorAll('h3')).find((h) => h.textContent === 'Compaction starts at')?.scrollIntoView({ block: 'start' })`);
     await shoot(cdp, 'advanced-two-models.png');
     const labels = await cdp.evaluate(`(() => { const t = document.body.textContent; return { appliesToNew: t.includes('Applies to new Sessions'), projectNote: t.includes("This Project's .omp/config.yml sets this too, so it wins here. Refract does not edit that file."), intro: t.includes("Refract writes these values to OMP's global config") }; })()`);

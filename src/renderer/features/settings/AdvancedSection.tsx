@@ -16,6 +16,7 @@ import type { TokenGuardKeyInfo } from '../../../shared/tokenGuard'
 import { AdvancedRow } from './advanced/AdvancedRow'
 import { defaultRoleWindow } from './advanced/contextWindow'
 import { changedRows } from './advanced/changedRows'
+import { formatTriggerLine } from './advanced/formatTriggerLine'
 import { formatCount } from './advanced/NumberUnitField'
 import { OptimiseTokenUsage } from './advanced/OptimiseTokenUsage'
 
@@ -85,9 +86,7 @@ export function AdvancedSection() {
         <SettingsGroup title="Compaction starts at" headingId={TRIGGERS_HEADING_ID}>
           <ul aria-labelledby={TRIGGERS_HEADING_ID} className="mt-1 flex flex-col gap-1 text-xs text-muted-foreground">
             {effectiveTriggers.map((t) => (
-              <li key={t.model}>
-                {t.model}: {formatCount(t.triggerTokens)} tokens ({t.modelThreshold === undefined ? `${t.thresholdPercent}% global` : `${t.modelThreshold} per-model`} of {formatCount(t.contextWindow)})
-              </li>
+              <li key={t.model}>{formatTriggerLine(t)}</li>
             ))}
           </ul>
         </SettingsGroup>
