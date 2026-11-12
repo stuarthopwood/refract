@@ -1,5 +1,5 @@
-// Shared fixture for the `pause_subagents` tests. A node stub stands in for OMP and logs every
-// RPC it receives, so each test asserts the exact wire traffic.
+// Shared fixture for the pause tests (`pause_subagents` and `pause`). A node stub stands in for OMP and
+// logs every RPC it receives, so each test asserts the exact wire traffic.
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -64,7 +64,7 @@ process.stdin.on('data', (chunk) => {
 
 /// What the stub OMP does. `running` ids are live; `stuck` ids answer `cancelled:false`.
 #[derive(Default)]
-pub(super) struct Stub<'a> {
+pub(in crate::session::agent) struct Stub<'a> {
     pub running: &'a [&'a str],
     pub stuck: &'a [&'a str],
     /// `get_subagents` answers `success:false` with this error.
@@ -73,15 +73,17 @@ pub(super) struct Stub<'a> {
     pub cancel_errors: &'a [(&'a str, &'a str)],
     /// Answers to this command type wait for `Fixture::release`.
     pub gated: Option<&'a str>,
+    /// The agent has no process, like a stopped Session.
+    pub stopped: bool,
 }
 
-pub(super) struct Fixture {
+pub(in crate::session::agent) struct Fixture {
     pub agent: Arc<SessionAgent>,
     log: PathBuf,
     gate: PathBuf,
 }
 
-pub(super) async fn fixture(running: &[&str], stuck: &[&str]) -> Fixture {
+pub(in crate::session::agent) async fn fixture(running: &[&str], stuck: &[&str]) -> Fixture {
     fixture_with(Stub {
         running,
         stuck,
@@ -90,7 +92,7 @@ pub(super) async fn fixture(running: &[&str], stuck: &[&str]) -> Fixture {
     .await
 }
 
-pub(super) async fn fixture_with(stub: Stub<'_>) -> Fixture {
+pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
     let session_id = format!("session-pause-subagents-{}", uuid::Uuid::new_v4());
     let dir =
         crate::test_scratch::path(format!("refract-pause-subagents-{}", uuid::Uuid::new_v4()));
@@ -164,8 +166,10 @@ pub(super) async fn fixture_with(stub: Stub<'_>) -> Fixture {
         .arg(&gate)
         .arg(config.to_string())
         .current_dir(&dir);
-    let process = OmpProcess::from_command(command).unwrap();
-    agent.state.lock().await.process = Some(Arc::new(process));
+    if !stub.stopped {
+        let process = OmpProcess::from_command(command).unwrap();
+        agent.state.lock().await.process = Some(Arc::new(process));
+    }
     Fixture { agent, log, gate }
 }
 

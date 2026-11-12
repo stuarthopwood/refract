@@ -20,11 +20,8 @@ export async function setAllPaused(paused: boolean): Promise<void> {
     notify({ code: result.error.code, message: result.error.message })
     return
   }
-  const failed = (result.value as { failed?: number }).failed ?? 0
-  if (failed > 0) {
-    notify({
-      code: 'agent-not-running',
-      message: `${failed} paused ${failed === 1 ? 'session' : 'sessions'} could not resume (start the agent first, or see the notice). Resume ${failed === 1 ? 'it' : 'them'} from the session.`
-    })
+  const { count = 0, failed = 0 } = result.value as { count?: number; failed?: number }
+  if (!paused && failed > 0) {
+    notify({ code: 'resume-failed', message: `Resumed ${count}, ${failed} failed to start` })
   }
 }

@@ -1,4 +1,4 @@
-// The low-memory alert's "Triage" dialog (#560): idle Sessions only, each with a confirmed Stop,
+// The low-memory alert's "Triage" dialog (#560): idle, unpaused Sessions only, each with a confirmed Stop,
 // plus "Stop idle". Confirms use local state so focus can return to the opening button.
 // Invariants: handlers guard re-entry and re-read live status at confirm time; confirm text keeps
 // the last target through the close animation; Stop uses `variant="invert"` (#564); announce()
@@ -13,6 +13,7 @@ import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { isFocusStranded } from '@/lib/focus'
 import { notify, useRepositoriesStore, useSessionsStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
+import { countPausedIdle, isIdleStoppable } from './triageSessions'
 
 export interface MemoryTriageDialogProps {
   open: boolean
@@ -23,7 +24,7 @@ export interface MemoryTriageDialogProps {
 
 function isStillIdle(sessionId: string): boolean {
   const session = useSessionsStore.getState().sessions.find((candidate) => candidate.id === sessionId)
-  return session !== undefined && session.status === 'idle' && !session.archivedAt
+  return session !== undefined && isIdleStoppable(session)
 }
 
 /** Shared confirm for the per-row and bulk flows, which differ only in title/description/busy/onConfirm. */
@@ -36,8 +37,9 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
   const stopAgent = useSessionsStore((state) => state.stopAgent)
   const repositories = useRepositoriesStore((state) => state.repositories)
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
-  // FR-037: idle-only; never a working, needs-you or stopped Session.
-  const idleSessions = sessions.filter((session) => session.status === 'idle' && !session.archivedAt)
+  // FR-037: idle-only; never a working, needs-you, stopped or paused Session.
+  const idleSessions = sessions.filter(isIdleStoppable)
+  const pausedSkipped = countPausedIdle(sessions)
 
   const [confirmTarget, setConfirmTarget] = useState<SessionSummary | null>(null)
   const lastConfirmTargetRef = useRef<SessionSummary | null>(null)
@@ -59,7 +61,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
   function focusAfterStop(): void {
     const remaining = useSessionsStore
       .getState()
-      .sessions.filter((session) => session.status === 'idle' && !session.archivedAt && !stoppedIdsRef.current.has(session.id))
+      .sessions.filter((session) => isIdleStoppable(session) && !stoppedIdsRef.current.has(session.id))
     const firstRemaining = remaining[0]
     if (firstRemaining) {
       const nextButton = stopButtonRefs.current.get(firstRemaining.id)
@@ -233,6 +235,11 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
                 )
               })}
             </ul>
+          )}
+          {pausedSkipped > 0 && (
+            <p className="text-sm text-muted-foreground">
+              Skipped {pausedSkipped} paused {pausedSkipped === 1 ? 'Session' : 'Sessions'}.
+            </p>
           )}
           <DialogFooter>
             {idleSessions.length > 0 && (

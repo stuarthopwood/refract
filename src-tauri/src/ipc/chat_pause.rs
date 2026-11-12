@@ -69,7 +69,8 @@ pub fn chat_pause_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// Resumes every paused Session; one that cannot resume yet stays paused.
+/// Resumes every paused Session, starting stopped ones. A Session that fails to start stays paused
+/// with its held messages and is counted in `failed`; the rest still resume. Archived Sessions are left alone.
 pub fn chat_resume_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let ids: Vec<String> = state
@@ -79,7 +80,7 @@ pub fn chat_resume_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
             .snapshot()
             .sessions
             .into_iter()
-            .filter(|s| s.paused_held.is_some())
+            .filter(|s| s.paused_held.is_some() && s.archived_at.is_none())
             .map(|s| s.id)
             .collect();
         let mut resumed = 0;

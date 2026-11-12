@@ -21,7 +21,6 @@ const SPACE_OWNERS =
 
 export function PausedBody({ sessionId, children }: { sessionId: string; children: ReactNode }) {
   const pause = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.pause)
-  const stopped = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'stopped')
   const paused = pause === 'paused'
   const resumeRef = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -88,11 +87,6 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
     return () => document.removeEventListener('keydown', onKeyDown)
   }, [paused, sessionId])
 
-  function handleStart() {
-    useSplitStore.getState().markOpened(sessionId)
-    void useSessionsStore.getState().open(sessionId, true)
-  }
-
   return (
     <div ref={rootRef} className="relative flex min-h-0 flex-1 flex-col">
       {pause === 'pausing' && (
@@ -120,15 +114,10 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button ref={resumeRef} type="button" variant={stopped ? 'ghost' : 'default'} onClick={() => void setSessionPaused(sessionId, false)}>
+                <Button ref={resumeRef} type="button" onClick={() => void setSessionPaused(sessionId, false)}>
                   <PlayIcon aria-hidden />
                   Resume
                 </Button>
-                {stopped && (
-                  <Button type="button" onClick={handleStart}>
-                    Start agent
-                  </Button>
-                )}
               </EmptyContent>
             </Empty>
           </div>
