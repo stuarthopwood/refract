@@ -108,6 +108,8 @@ function parseColorLiteral(rawValue, rawProps, seen = new Set()) {
     if (resolvedRef === undefined) return undefined
     const base = parseColorLiteral(resolvedRef, rawProps, seen)
     if (base === undefined) return undefined
+    // CSS blends alpha with white too, which this opaque-only model cannot express, so fail closed.
+    if (base.alpha !== 1) return undefined
     const p = Number(pct) / 100
     if (!Number.isFinite(p) || p < 0 || p > 1) return undefined
     return { raw: rawValue, alpha: base.alpha, linear: base.linear.map((c) => srgbGammaDecode(srgbGammaEncode(c) * p + (1 - p))) }

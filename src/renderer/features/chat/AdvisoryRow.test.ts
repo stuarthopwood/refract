@@ -31,11 +31,13 @@ type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>
 function render(severity: AdvisoryItem['severity'], forceOpen = false): string {
   const item: AdvisoryItem = { kind: 'advisory', id: `a-${severity}`, severity, text: 'Check the migration.' } as AdvisoryItem
   seed.pending = forceOpen
-  const html = renderToStaticMarkup(
-    React.createElement(TooltipProvider, null, React.createElement(AdvisoryRow, { item, sessionId: undefined, onQueuedAnnounce: () => {} }))
-  )
-  seed.pending = false
-  return html
+  try {
+    return renderToStaticMarkup(
+      React.createElement(TooltipProvider, null, React.createElement(AdvisoryRow, { item, sessionId: undefined, onQueuedAnnounce: () => {} }))
+    )
+  } finally {
+    seed.pending = false
+  }
 }
 
 // Matches the opening tag of the element carrying `attr`, so a class on the wrapper is told apart from one on the body.

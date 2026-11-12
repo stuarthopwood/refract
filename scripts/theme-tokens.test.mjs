@@ -18,6 +18,14 @@ describe('color-mix(in srgb, var(--x) P%, white)', () => {
     expect(mix(50, { a: 'color-mix(in srgb, var(--a) 50%, white)' })).toBeUndefined();
   });
 
+  it('returns undefined for a translucent base colour', () => {
+    expect(mix(50, { a: 'color-mix(in oklab, var(--b) 50%, transparent)', b: '#336699' })).toBeUndefined();
+  });
+
+  it('returns undefined when the referenced token is missing', () => {
+    expect(mix(50, { a: 'var(--nope)' })).toBeUndefined();
+  });
+
   it.each(['abc', '1.', '.5', '-5', '150', '100.5'])('returns undefined for the malformed or out-of-range percentage %s', (pct) => {
     expect(mix(pct)).toBeUndefined();
   });
