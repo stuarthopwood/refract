@@ -1,36 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { matchModAfterAttr } from './check-parity-helpers.mjs';
 
-const OLD = /^(?:\s|\/\/[^\n]*)*mod\s+\w+\s*\{/;
-
-const INPUTS = {
-  'mod directly': 'mod tests {',
-  'blank lines then mod': '\n\n  mod tests {\n}',
-  'line comment then mod': '\n// note\nmod tests {',
-  'two comments then mod': '\n// a\n// b\n  mod tests {',
-  'mod with no space before brace': 'mod tests{',
-  'declaration without body': 'mod tests;',
-  'comment only': '\n// just a comment',
-  'comment, no newline, mod on same line': '// c mod tests {',
-  'fn after attribute': '\nfn helper() {}\nmod later {}',
-  'empty': '',
+// Expected leading match text per input, or null when no `mod x {` block follows.
+const CASES = {
+  'mod directly': ['mod tests {', 'mod tests {'],
+  'blank lines then mod': ['\n\n  mod tests {\n}', '\n\n  mod tests {'],
+  'line comment then mod': ['\n// note\nmod tests {', '\n// note\nmod tests {'],
+  'two comments then mod': ['\n// a\n// b\n  mod tests {', '\n// a\n// b\n  mod tests {'],
+  'mod with no space before brace': ['mod tests{', 'mod tests{'],
+  'declaration without body': ['mod tests;', null],
+  'comment only': ['\n// just a comment', null],
+  // A comment runs to end of line, so a same-line `mod` is part of the comment.
+  'comment, no newline, mod on same line': ['// c mod tests {', null],
+  'fn after attribute': ['\nfn helper() {}\nmod later {}', null],
+  'empty': ['', null],
 };
 
-// The old pattern backtracked into a comment and accepted `// c mod x {`; the new one does not.
-const DIVERGES = new Set(['comment, no newline, mod on same line']);
-
 describe('matchModAfterAttr', () => {
-  for (const [name, text] of Object.entries(INPUTS)) {
-    it(DIVERGES.has(name) ? `rejects what the old pattern wrongly accepted: ${name}` : `agrees with the previous pattern: ${name}`, () => {
-      const oldMatch = OLD.exec(text);
-      const newMatch = matchModAfterAttr(text);
-      if (DIVERGES.has(name)) {
-        expect(oldMatch).not.toBeNull();
-        expect(newMatch).toBeNull();
-        return;
-      }
-      expect(Boolean(newMatch)).toBe(Boolean(oldMatch));
-      if (oldMatch) expect(newMatch[0]).toBe(oldMatch[0]);
+  for (const [name, [text, expected]] of Object.entries(CASES)) {
+    it(`${expected === null ? 'rejects' : 'matches'}: ${name}`, () => {
+      const match = matchModAfterAttr(text);
+      if (expected === null) expect(match).toBeNull();
+      else expect(match[0]).toBe(expected);
     });
   }
 
@@ -42,9 +33,8 @@ describe('matchModAfterAttr', () => {
     expect(matchModAfterAttr('mod tests;')).toBeNull();
   });
 
-  // `// ` repeated with no newline backtracks exponentially in the old pattern (n=18 takes ~1.4 s); the new one is
-  // microseconds, so a 100 ms bound fails the old pattern without flaking.
-  it('finishes quickly on input that is pathological for the old pattern', () => {
+  // Repeated `// ` with no newline must not backtrack; a 100 ms bound catches exponential behaviour without flaking.
+  it('finishes quickly on backtracking-prone input', () => {
     const input = '// '.repeat(18);
     const start = performance.now();
     expect(matchModAfterAttr(input)).toBeNull();
