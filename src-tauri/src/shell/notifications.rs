@@ -157,7 +157,7 @@ pub fn on_session_status(
             });
         }
         if let Err(err) = notification.show() {
-            log::warn!("refract-tauri: failed to show notification for {session_id}: {err}");
+            log::warn!("refract-tauri: failed to show notification: {err}");
         }
     });
 }

@@ -97,17 +97,28 @@ export function prependChangelogSection(existingText, section) {
   return `${HEADER}\n${section}\n${body}`;
 }
 
+// Offset of the first line that begins with `heading`, or -1; a plain scan, no regex built from input.
+function findHeadingStart(text, heading) {
+  let offset = 0;
+  while (offset <= text.length) {
+    if (text.startsWith(heading, offset)) return offset;
+    const nl = text.indexOf('\n', offset);
+    if (nl === -1) return -1;
+    offset = nl + 1;
+  }
+  return -1;
+}
+
 // Extracts a `## vX.Y.Z (...)` section for `release-local.mjs --notes-from-changelog`; null if absent.
 export function extractChangelogSection(changelogText, version) {
   assertValidSemver(version, 'extractChangelogSection version');
   // Normalise to LF so CRLF copies do not shift heading boundaries.
   const normalised = changelogText.replace(/\r\n/g, '\n');
-  const headingRe = new RegExp(`^## v${version.replace(/\./g, '\\.')} \\(`, 'm');
-  const match = headingRe.exec(normalised);
-  if (!match) return null;
-  const start = match.index;
+  const start = findHeadingStart(normalised, `## v${version} (`);
+  if (start === -1) return null;
+  // Any `## ` heading ends the section: the real CHANGELOG.md has a hand-written `## Unreleased` between versions.
   const rest = normalised.slice(start + 1);
-  const nextHeadingMatch = /\n## v\d+\.\d+\.\d+ \(/.exec(rest);
+  const nextHeadingMatch = /\n## /.exec(rest);
   const end = nextHeadingMatch ? start + 1 + nextHeadingMatch.index : normalised.length;
   return normalised.slice(start, end).replace(/\n+$/, '\n');
 }

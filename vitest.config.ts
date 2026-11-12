@@ -12,6 +12,12 @@ export default defineConfig({
   resolve: { alias: { '@': fileURLToPath(new URL('./src/renderer', import.meta.url)) } },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
+    // The `scripts/` entries are the script helpers' vitest suites; other scripts/*.test.mjs use node:test.
+    include: [
+      'src/**/*.test.ts',
+      'scripts/check-parity.test.mjs',
+      'scripts/check-drag-regions.test.mjs',
+      'scripts/release-changelog.test.mjs',
+    ],
   },
 });

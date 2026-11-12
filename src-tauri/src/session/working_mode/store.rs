@@ -30,6 +30,6 @@ pub(super) async fn save(session_id: &str, mode: WorkingMode) {
     let mut modes: Modes = read_json_file(&path, Modes::new).await.unwrap_or_default();
     modes.insert(session_id.to_string(), mode.persistable());
     if let Err(err) = write_json_file(&path, &modes).await {
-        log::warn!("working_mode: could not persist for {session_id}: {err}");
+        log::warn!("working_mode: could not persist: {err}");
     }
 }

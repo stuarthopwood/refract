@@ -111,7 +111,7 @@ async fn record_process_with(file: &Path, pid: u32, session_id: &str, query: Que
         image_path,
     });
     if let Err(err) = write_json_file(file, &records).await {
-        log::error!("pid_records: failed to record pid {pid}: {err}");
+        log::error!("pid_records: failed to record process: {err}");
     }
 }
 
@@ -131,7 +131,7 @@ async fn remove_process_record_with(file: &Path, pid: u32) {
     records.retain(|r| r.pid != pid);
     if records.len() != before {
         if let Err(err) = write_json_file(file, &records).await {
-            log::error!("pid_records: failed to remove pid {pid}: {err}");
+            log::error!("pid_records: failed to remove process record: {err}");
         }
     }
 }
@@ -145,7 +145,7 @@ async fn remove_process_records_for_session_with(file: &Path, session_id: &str) 
     records.retain(|r| r.session_id != session_id);
     if records.len() != before {
         if let Err(err) = write_json_file(file, &records).await {
-            log::error!("pid_records: failed to remove records for session {session_id}: {err}");
+            log::error!("pid_records: failed to remove session records: {err}");
         }
     }
 }
