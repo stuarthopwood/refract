@@ -1,7 +1,10 @@
 use super::*;
 
 fn repos() -> Vec<(String, String)> {
-    vec![("r1".into(), "Refract".into()), ("r2".into(), "Other".into())]
+    vec![
+        ("r1".into(), "Refract".into()),
+        ("r2".into(), "Other".into()),
+    ]
 }
 
 fn s(id: &str, repo: &str, status: &str, at: &str) -> Value {
@@ -14,10 +17,19 @@ fn s(id: &str, repo: &str, status: &str, at: &str) -> Value {
 #[test]
 fn status_vocabulary_maps_each_state() {
     assert_eq!(status_of(&json!({"status": "working"})).0, "working");
-    assert_eq!(status_of(&json!({"status": "needs-you"})).0, "waiting-for-approval");
+    assert_eq!(
+        status_of(&json!({"status": "needs-you"})).0,
+        "waiting-for-approval"
+    );
     assert_eq!(status_of(&json!({"status": "idle"})).0, "idle");
-    assert_eq!(status_of(&json!({"status": "idle", "pause": "paused"})).0, "paused");
-    assert_eq!(status_of(&json!({"status": "working", "pause": "pausing"})).0, "working");
+    assert_eq!(
+        status_of(&json!({"status": "idle", "pause": "paused"})).0,
+        "paused"
+    );
+    assert_eq!(
+        status_of(&json!({"status": "working", "pause": "pausing"})).0,
+        "working"
+    );
     assert_eq!(
         status_of(&json!({"status": "stopped", "pause": "paused"})).0,
         "paused"
@@ -26,7 +38,12 @@ fn status_vocabulary_maps_each_state() {
 
 #[test]
 fn stopped_carries_its_reason() {
-    for reason in ["agent-exited", "start-failed", "worktree-missing", "not-started"] {
+    for reason in [
+        "agent-exited",
+        "start-failed",
+        "worktree-missing",
+        "not-started",
+    ] {
         let row = json!({"status": "stopped", "stopReason": reason});
         assert_eq!(status_of(&row), ("stopped", Some(reason)));
     }
@@ -86,7 +103,14 @@ fn list_marks_self_and_hidden_and_sorts_newest_first() {
 #[test]
 fn list_trim_keeps_the_callers_row_and_reports_truncation() {
     let mut all: Vec<Value> = (0..200)
-        .map(|i| s(&format!("s{i:03}"), "r1", "idle", &format!("2026-03-{:02}", 1 + i % 28)))
+        .map(|i| {
+            s(
+                &format!("s{i:03}"),
+                "r1",
+                "idle",
+                &format!("2026-03-{:02}", 1 + i % 28),
+            )
+        })
         .collect();
     all.push(s("me", "r1", "idle", "2000-01-01"));
     let out = list_value(&all, &repos(), "me", None, false).unwrap();
@@ -119,7 +143,15 @@ fn status_value_has_reason_only_when_stopped_and_passes_the_pr_through() {
 
 #[test]
 fn unknown_arguments_are_invalid_input() {
-    assert_eq!(check_args(LIST_SESSIONS, &json!({"bogus": 1})).unwrap_err().code, INVALID_INPUT);
-    assert_eq!(check_args(GET_SESSION_STATUS, &json!({})).unwrap_err().code, INVALID_INPUT);
+    assert_eq!(
+        check_args(LIST_SESSIONS, &json!({"bogus": 1}))
+            .unwrap_err()
+            .code,
+        INVALID_INPUT
+    );
+    assert_eq!(
+        check_args(GET_SESSION_STATUS, &json!({})).unwrap_err().code,
+        INVALID_INPUT
+    );
     assert!(check_args(LIST_SESSIONS, &json!({"include_archived": true})).is_ok());
 }

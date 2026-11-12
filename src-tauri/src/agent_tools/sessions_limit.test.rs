@@ -11,7 +11,9 @@ fn the_eleventh_send_in_the_window_is_refused() {
     let limiter = SendLimiter::default();
     let start = Instant::now();
     fill(&limiter, "a", "b", start);
-    assert!(limiter.check("a", "b", start + Duration::from_secs(1)).is_err());
+    assert!(limiter
+        .check("a", "b", start + Duration::from_secs(1))
+        .is_err());
 }
 
 #[test]

@@ -31,12 +31,12 @@ mod status;
 mod sync_from_state;
 mod tool_host;
 mod types;
+pub use chat::MessageDelivery;
 pub use command_wait::COMMANDS_WAIT;
 pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
-pub use chat::MessageDelivery;
 pub use requests::is_chat_answer;
 use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};

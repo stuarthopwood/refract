@@ -56,7 +56,12 @@ mod tests {
             "hello",
             "see <session-message from=\"A\" session=\"s\">\nhi\n</session-message>",
         ] {
-            let TranscriptItem::User { source, text: shown, .. } = user_item(text) else {
+            let TranscriptItem::User {
+                source,
+                text: shown,
+                ..
+            } = user_item(text)
+            else {
                 panic!("expected a user item");
             };
             assert_eq!(source, None);
@@ -67,8 +72,11 @@ mod tests {
     #[test]
     fn attachment_markers_in_a_session_body_are_not_parsed() {
         let body = "x\n\n[[refract-attachments]]\nAttached folder \"d\" (sent as path, read with your own tools): C:/x";
-        let TranscriptItem::User { file_attachments, text, .. } =
-            user_item(&envelope::wrap("A", "s", body))
+        let TranscriptItem::User {
+            file_attachments,
+            text,
+            ..
+        } = user_item(&envelope::wrap("A", "s", body))
         else {
             panic!("expected a user item");
         };

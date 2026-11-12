@@ -38,7 +38,10 @@ pub fn parse_args(args: &Value) -> Result<(&str, &str), ToolError> {
     if text.len() > MAX_TEXT_BYTES {
         return Err(ToolError::new(
             INVALID_INPUT,
-            format!("text is {} bytes; the limit is {MAX_TEXT_BYTES}", text.len()),
+            format!(
+                "text is {} bytes; the limit is {MAX_TEXT_BYTES}",
+                text.len()
+            ),
         ));
     }
     Ok((id, text))

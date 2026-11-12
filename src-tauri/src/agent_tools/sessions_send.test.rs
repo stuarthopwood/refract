@@ -11,17 +11,32 @@ fn code<T: std::fmt::Debug>(r: Result<T, ToolError>) -> String {
 
 #[test]
 fn arguments_must_be_non_empty_and_within_32_kb() {
-    assert_eq!(code(parse_args(&json!({"id": "", "text": "hi"}))), INVALID_INPUT);
-    assert_eq!(code(parse_args(&json!({"id": "a", "text": "  "}))), INVALID_INPUT);
+    assert_eq!(
+        code(parse_args(&json!({"id": "", "text": "hi"}))),
+        INVALID_INPUT
+    );
+    assert_eq!(
+        code(parse_args(&json!({"id": "a", "text": "  "}))),
+        INVALID_INPUT
+    );
     assert_eq!(code(parse_args(&json!({"id": "a"}))), INVALID_INPUT);
     let big = "x".repeat(MAX_TEXT_BYTES + 1);
-    assert_eq!(code(parse_args(&json!({"id": "a", "text": big}))), INVALID_INPUT);
-    assert_eq!(parse_args(&json!({"id": "a", "text": "hi"})).unwrap(), ("a", "hi"));
+    assert_eq!(
+        code(parse_args(&json!({"id": "a", "text": big}))),
+        INVALID_INPUT
+    );
+    assert_eq!(
+        parse_args(&json!({"id": "a", "text": "hi"})).unwrap(),
+        ("a", "hi")
+    );
 }
 
 #[test]
 fn unknown_target_is_not_found() {
-    assert_eq!(code(check_target(&[row("a", "idle")], "me", "zzz")), NOT_FOUND);
+    assert_eq!(
+        code(check_target(&[row("a", "idle")], "me", "zzz")),
+        NOT_FOUND
+    );
 }
 
 #[test]

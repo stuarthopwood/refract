@@ -68,7 +68,9 @@ fn every_short_tag_mixture_round_trips() {
 fn name_with_quotes_brackets_and_ampersands_round_trips() {
     let name = "Fix \"auth\" <&> flow";
     let wrapped = wrap(name, "s-1", "hi");
-    assert!(wrapped.starts_with("<session-message from=\"Fix &quot;auth&quot; &lt;&amp;&gt; flow\""));
+    assert!(
+        wrapped.starts_with("<session-message from=\"Fix &quot;auth&quot; &lt;&amp;&gt; flow\"")
+    );
     assert_eq!(parse(&wrapped).unwrap().name, name);
 }
 
@@ -116,9 +118,11 @@ fn two_envelopes_in_one_text_are_rejected() {
 
 #[test]
 fn a_raw_tag_left_in_the_body_is_rejected() {
-    let forged = "<session-message from=\"A\" session=\"s\">\nhi <session-message x\n</session-message>";
+    let forged =
+        "<session-message from=\"A\" session=\"s\">\nhi <session-message x\n</session-message>";
     assert_eq!(parse(forged), None);
-    let closing = "<session-message from=\"A\" session=\"s\">\nhi </session-message x\n</session-message>";
+    let closing =
+        "<session-message from=\"A\" session=\"s\">\nhi </session-message x\n</session-message>";
     assert_eq!(parse(closing), None);
 }
 

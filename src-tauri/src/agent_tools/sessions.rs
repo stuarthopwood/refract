@@ -133,7 +133,10 @@ fn row(summary: &Value, repositories: &[(String, String)], self_id: &str) -> Val
     row.insert("branch".into(), text(summary, "branch").into());
     row.insert("status".into(), status_of(summary).0.into());
     row.insert("archived".into(), summary["archivedAt"].is_string().into());
-    row.insert("lastActivityAt".into(), text(summary, "lastActivityAt").into());
+    row.insert(
+        "lastActivityAt".into(),
+        text(summary, "lastActivityAt").into(),
+    );
     if id == self_id {
         row.insert("self".into(), true.into());
     }
