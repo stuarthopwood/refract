@@ -12,7 +12,7 @@ Test tasks are part of each task (AGENTS.md Testing rule: new logic gets co-loca
 - [ ] T003 `agent_tools/sessions.rs` (+ test): tool defs, `status_of` mapping table, `list` (project match, archived flag, `self`, `hidden`, 8 KiB trim with `truncated`/`total`), `get_status` with PR from readout cache or one backed-off `pull_request_for_branch`. Tests per case, including trim keeps caller's row and `list` never looks up a PR. (FR-002 to FR-006)
 - [ ] T004 `agent_tools/sessions_send.rs` (+ test): `send` with check order, outcomes `sent`/`queued`/`held`, `session_not_running` with status, no launch, no decoration, no approval resolution. Tests: each error, order, archived refusal, stopped refusal starts nothing. (FR-007 to FR-012, FR-014)
 - [ ] T005 `agent_tools/sessions_limit.rs` (+ test): per-pair rolling limit, 10 per 10 min, refused sends not counted, window slides. Test fails if the limit check is removed. (FR-013)
-- [ ] T006 `agent_tools/mod.rs`, `router.rs`: Root row adds the three tools, Child stays empty, `Plan::Native` dispatch, `needs_approval` false, 8 KiB cap and cancel reused; `SessionAgent::send` gains a `decorate` flag only if needed (existing callers pass `true`). Test: `tools_for(Child)` empty, Root lists all three, none asks approval in any mode. (FR-001, FR-009, FR-018, FR-019)
+- [ ] T006 `agent_tools/mod.rs`, `router.rs`: Root row adds the three tools, Child stays empty, `Plan::Native` dispatch, `needs_approval` false, 8 KiB cap and cancel reused; `SessionAgent::send` gains a `decorate` flag only if needed (existing callers pass `true`). Test: `tools_for(Child)` empty and a Child-role call to a Session tool is `unknown_tool` (SC-004), Root lists all three, none asks approval in any mode, a call from a shutting-down Session is `cancelled`. (FR-001, FR-009, FR-018, FR-019)
 
 ## Chunk B: Renderer label (files: `src/renderer/**` only; parallel with A after T002)
 
@@ -21,7 +21,7 @@ Test tasks are part of each task (AGENTS.md Testing rule: new logic gets co-loca
 
 ## Chunk C: live check and docs (after A and B)
 
-- [ ] T009 `scripts/verify-tauri-1858.mjs` and fake-omp tape support in `scripts/verify-tauri-fake-omp.mjs`, run with the `pnpm verify:tauri` harness: call each of the three tools; check registration, no approval card, list rows and `self`, status vocabulary for running and stopped Sessions, `sent`/`queued`/`held`/`session_not_running`/`rate_limited`, the envelope reaching the target, the label rendering and the link switching Session without focus moving. Screenshots and timings recorded. (SC-001 to SC-005)
+- [ ] T009 `scripts/verify-tauri-1858.mjs` and fake-omp tape support in `scripts/verify-tauri-fake-omp.mjs`, run with the `pnpm verify:tauri` harness: call each of the three tools; check registration, no approval card, list rows and `self`, status vocabulary for running and stopped Sessions, `sent`/`queued`/`held`/`session_not_running`/`rate_limited`, every error with no toast (SC-003), the envelope reaching the target, the label rendering before and after a reload (SC-002) and the link switching Session without focus moving. Screenshots and timings recorded. (SC-001 to SC-004)
 - [ ] T010 `docs/adr/0008-session-message-envelope.md`, `CONTEXT.md` term **Session message**, `docs/PLAN.md` row 1c.2. (FR-020)
 - [ ] T011 `pnpm ci:local`; fix regressions only.
 
