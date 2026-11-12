@@ -129,6 +129,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p2 later | #1947 | **Perf (p2, child of #1901):** PR/Issue reference hover cards: idle prefetch and refresh on open | Needs #1864; `todo` |
 | p2 later | #1940 | **Settings (p2):** show a saving state while a token guard write waits on the first-open migration | Follow-up of #1765 (PR #1937); needs #1765 closed (it is open); `todo` |
 | p2 later | #1954 | **UI Polish (p2, `design`):** low-memory alert hides the Triage button when no Session is idle (no noop) | `todo`; keeps the alert, drops the dead action |
+| p2 later | #1961 | **UI Polish (p2, Chat, `design`):** move "View full call" into the tool call's overflow menu; drop the chevron on rows with no expandable content | `todo`; chevron-less rows keep the kebab |
 | p2 later | #1918 | **Epic, Road to V1 (p2):** full testing, documentation, and a well-organised codebase; children #1904 to #1917 | Decided 2026-11-11 (Stuart); foundations #1904 to #1908 first, then refactors, tests, docs |
 | p2 later | #1904 | **Chore (p2, child of #1918):** code coverage with a baseline ratchet | Foundation of #1918; `todo` |
 | p2 later | #1905 | **Chore (p2, `ready-for-human`, child of #1918):** shared test utilities, mocks, and fixtures folder | Foundation of #1918; `todo` |
@@ -1323,3 +1324,5 @@ Also filed 2026-11-12 (Stuart): **#1947** (`p2`, `enhancement`, `chat`), Perf: P
 Also filed 2026-11-12 (Stuart): **#1950** (`p1`, `enhancement`, `chat`, `design`), Feat: Chat issue and PR ref links open in the right pane and show a type icon. Decided: in-project refs open the right-pane Issue/PR panel so the chat stays visible, foreign or non-Project refs keep opening on GitHub; p1; standalone issue with #1864 depending on it (the app-wide rollout reuses this core `ItemRefLink` behaviour).
 
 Also filed 2026-11-12 (Stuart): **#1954** (`p2`, `enhancement`, `design`), UI Polish: low-memory alert hides the Triage button when no Session can be stopped. Decided: keep the 'Low memory' notice but render Triage only when at least one idle Session exists (the triage dialog stops idle Sessions only); clicking Triage with nothing stoppable was a noop.
+
+Also filed 2026-11-12 (Stuart): **#1961** (`p2`, `enhancement`, `chat`, `design`), UI Polish: Chat: move "View full call" into the tool call's overflow (kebab/right-click) menu and drop the expand chevron on rows with no diff, write, or summary. Decided: content-less rows become static lines (clicking does nothing), the full call is reachable via the menu only, and CollapsedLine's non-expandable branch must still render the kebab.
