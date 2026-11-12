@@ -107,8 +107,8 @@ function analyseCancelWire() {
   const lines = readJsonl(WIRE_LOG).filter((l) => l.dir === 'omp->refract');
   const endIdx = lines.findIndex((l) => l.frame?.type === 'tool_execution_end' && l.frame.toolName === 'ask' && JSON.stringify(l.frame.result ?? '').includes(CANCEL_SENTENCE));
   const end = endIdx < 0 ? null : lines[endIdx].frame;
-  const aborted = endIdx >= 0 && lines.slice(endIdx).some((l) => JSON.stringify(l.frame ?? '').includes('"stopReason":"aborted"'));
-  return { found: end !== null, isError: end?.isError === true, aborted, result: end?.result ?? null };
+  const stop = endIdx < 0 ? undefined : lines.slice(endIdx).find((l) => JSON.stringify(l.frame ?? '').includes('"stopReason":"aborted"'));
+  return { found: end !== null, isError: end?.isError === true, aborted: stop !== undefined, stopReason: stop ? 'aborted' : null, stopFrameType: stop?.frame?.type ?? null, result: end?.result ?? null };
 }
 
 async function main() {
@@ -214,7 +214,8 @@ async function main() {
     await clickVisible(cdp, control('Note', 'input'));
     await pressEscape(cdp);
     await sleep(800);
-    check(await cdp.evaluate(`!!(${SUBMIT})`), '6f. Esc inside a text input does not cancel the card (Submit still present)', {});
+    const submitAfterInputEsc = await cdp.evaluate(`(() => { const s = ${SUBMIT}; const a = document.activeElement; return { submitPresent: !!s, submitAriaDisabled: s?.getAttribute('aria-disabled') ?? null, focusedTag: a?.tagName ?? null, focusedInNoteInput: a === ${control('Note', 'input')} }; })()`);
+    check(submitAfterInputEsc.submitPresent, '6f. Esc inside a text input does not cancel the card (Submit still present)', submitAfterInputEsc);
     await clickVisible(cdp, RADIO_NO);
     await shoot(cdp, '06-second-ask-focus-in-card-before-esc.png');
     await pressEscape(cdp);
@@ -231,8 +232,8 @@ async function main() {
     // The wire log is written by the omp wrapper as frames arrive, so the aborted turn end can lag the tool result by a moment.
     await sleep(1_500);
     const cancelWire = analyseCancelWire();
-    check(cancelWire.found && cancelWire.isError, `6d. Wire: the ask tool_execution_end carries "${CANCEL_SENTENCE}" with isError true`, cancelWire);
-    check(cancelWire.aborted, '6e. Wire: the cancelled turn ends with stopReason "aborted"', cancelWire);
+    check(cancelWire.found && cancelWire.isError, `6d. Wire: the ask tool_execution_end carries "${CANCEL_SENTENCE}" with isError true`, { found: cancelWire.found, isError: cancelWire.isError, result: cancelWire.result });
+    check(cancelWire.aborted, '6e. Wire: the cancelled turn ends with stopReason "aborted"', { stopReason: cancelWire.stopReason, stopFrameType: cancelWire.stopFrameType });
 
     // 6a/6b repeated: the first runs above plus four more of each, so five of each in one session with focus recorded per run.
     const repeats = { '6a': [{ run: 1, samples: afterSubmit }], '6b': [{ run: 1, samples: afterEsc }] };
