@@ -17,7 +17,7 @@ Parallel slices: A (T001-T002), B (T003-T006), C (T007-T012) touch disjoint file
 - [X] T011 [P] Red tests first: `scripts/release-changelog.test.mjs` for exact heading match, `1.2.3` vs `1.2.30`, CRLF, absent version (FR-007, FR-009)
 - [X] T012 `scripts/release-changelog.mjs:105`: line-start scan for `## v${version} (`, no regex (FR-007)
 - [X] T013 `scripts/verify-tauri.mjs:102`: drop `cmd.exe /c`; reuse `buildAndCopyExeFresh` from `scripts/verify-tauri-scratch-helpers.mjs` if it fits, else spawn `pnpm` without a shell (FR-008) (helper does not fit: it uses shell:true and lacks the retry; runs the repo-local `@tauri-apps/cli/tauri.js` with `process.execPath`: fixed path, no shell, no pnpm shim, no env-derived command)
-- [ ] T014 Run in the Rust build slot: `pnpm test`, `cargo test`, `cargo clippy`, `pnpm check:parity`, `pnpm check:file-size` (FR-009)
+- [X] T014 Run in the Rust build slot: `pnpm test`, `cargo test`, `cargo clippy`, `pnpm check:parity`, `pnpm check:file-size` (FR-009) (clippy -D warnings, cargo test 976+ lib tests, full `pnpm ci:local` 23/23 steps, `pnpm verify:tauri` PASS)
 - [ ] T015 Push; mark the PR ready only after the rollout steps; hand to controller for default-setup disable (FR-010)
 - [ ] T016 After the controller disables default setup: rerun the PR's CodeQL workflow; confirm it passes and verify-script alerts are not reported (SC-002)
-- [ ] T017 Docs: update `docs/PLAN.md` row 1c.1b status to done after merge; note the scanning-gap risk in the PR body
+- [X] T017 Docs: update `docs/PLAN.md` row 1c.1b status to done after merge; note the scanning-gap risk in the PR body (gap noted in the PR body; the PLAN status flip happens at merge, controller's step)
