@@ -71,8 +71,8 @@ Probed 2026-10-23 on omp 18.12.6 (`C:\Users\shopwood\AppData\Local\omp\omp.exe`)
 | prewalk.enabled | live | last request model switched to the prewalk model |
 | autolearn.autoContinue | live | capture-turn requests 0 -> 1 |
 | advisor.reviewMode | live | advisor requests 4 -> 1 |
-| todo.eager | startup-only | reminder absent mid-process; appears after `/new` (a `/new`-only key counts as startup-only, OQ-2) |
-| plan.defaultOnStartup | no-effect (RPC) | no plan-mode marker even when set at process start; RPC cannot enter plan mode |
+| todo.eager | startup-only | manual check, not in the committed probes: with the key edited mid-process the "create a phased todo" reminder is absent on the next turn (control and test 0, 0, 0); after the edit then `/new` it appears (0, 0, 1). Steps from `explore4` in `C:/Users/shopwood/refract-1935-probe/`: scratch RPC process, `omp config set todo.eager true`, send a turn, send `/new`, send a turn, count the reminder in system text. A `/new`-only key counts as startup-only (OQ-2) |
+| plan.defaultOnStartup | no-effect (RPC) | manual check, not in the committed probes: no plan-mode marker and an identical tool list after the edit, after `/new`, and even with the key set in the scratch `config.yml` before process start (`explore5`); RPC offers no way to enter plan mode. Control unchanged |
 | compaction.idleEnabled | no-effect (RPC) | no idle compaction in 75 s; RPC sessions never enable the idle scheduler (omp `sdk.md`) |
 | compaction.idleThresholdTokens | no-effect (RPC) | same observation |
 | compaction.idleTimeoutSeconds | no-effect (RPC) | same observation |

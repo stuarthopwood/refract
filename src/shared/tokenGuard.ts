@@ -154,7 +154,7 @@ export function parseThresholdInput(text: string): string | number | undefined {
 export interface TokenGuardKeyInfo {
   key: string;
   label: string;
-  /** True when OMP reloads the key into a running Session. Absent means it applies to new Sessions only (#1767, #1765 probes). */
+  /** True when OMP reloads the key into a running Session. Absent means it applies to new Sessions only. */
   live?: boolean
   kind: TokenGuardKind;
   group: TokenGuardGroup;
@@ -453,7 +453,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   }
 ];
 
-/** True when a saved change to `key` reaches only Sessions started afterwards; the few `live` keys reload into a running one. */
+/** True when a saved change to `key` reaches only Sessions started afterwards; `live` keys (most of them) reload into a running one. */
 export const appliesToNewSessionsOnly = (key: string): boolean =>
   TOKEN_GUARD_KEYS.find((info) => info.key === key)?.live !== true
 

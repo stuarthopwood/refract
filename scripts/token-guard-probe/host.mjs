@@ -9,8 +9,15 @@ import { modelSelector, modelsYml } from './provider.mjs';
 
 export const OMP_EXE = 'omp';
 
+const ENV_ALLOWLIST = new Set(['PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'COMSPEC', 'PATHEXT', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'OS']);
+
 export function defaultScratchRoot() {
   return path.join(homedir(), 'refract-1935-probe');
+}
+
+/** The real profile dirs a scratch root must never overlap. */
+export function realProfileDirs() {
+  return [path.join(homedir(), '.omp'), path.join(homedir(), '.pi'), path.join(process.env.APPDATA ?? path.join(homedir(), 'AppData', 'Roaming'), 'refract-tauri')];
 }
 
 export function ompVersion() {
@@ -73,8 +80,8 @@ export async function startHost({ label, scratchRoot, provider, config = {}, mod
   }
   assertNoRoster(agentDir, repoDir);
 
-  // Why: scratch HOME alone leaves real credentials in env; named-profile selectors would bypass PI_CODING_AGENT_DIR.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/TOKEN|KEY|SECRET|^OMP_PROFILE$|^PI_PROFILE$/i.test(k)));
+  // Why: an allowlist, not a denylist, so no real credential in the parent env can reach omp; scratch HOME/agent dir are set below.
+  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ENV_ALLOWLIST.has(k.toUpperCase())));
   Object.assign(env, {
     PI_CODING_AGENT_DIR: agentDir,
     HOME: homeDir,

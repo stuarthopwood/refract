@@ -5,9 +5,9 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { deriveVerdict } from './ab.mjs';
-import { formatLine, parseArgs, selectGroups } from './cli.mjs';
+import { assertScratchRootSafe, formatLine, parseArgs, selectGroups } from './cli.mjs';
 import { GROUPS } from './groups.mjs';
-import { defaultScratchRoot, ompVersion, startHost } from './host.mjs';
+import { defaultScratchRoot, ompVersion, realProfileDirs, startHost } from './host.mjs';
 import { startProvider } from './provider.mjs';
 
 const CONFIG_SETTLE_MS = 1500;
@@ -52,6 +52,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const names = selectGroups(GROUPS, args.groups);
   const scratchRoot = path.resolve(args.scratchRoot ?? defaultScratchRoot());
+  assertScratchRootSafe(scratchRoot, realProfileDirs());
   const report = { omp: ompVersion(), startedAt: new Date().toISOString(), runs: args.runs, scratchRoot, results: [] };
   console.log(`${report.omp}; scratch ${scratchRoot}; groups ${names.join(', ')}; runs ${args.runs}`);
 

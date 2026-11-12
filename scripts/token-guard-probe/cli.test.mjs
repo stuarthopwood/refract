@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatLine, parseArgs, selectGroups } from './cli.mjs';
+import { assertScratchRootSafe, formatLine, parseArgs, selectGroups } from './cli.mjs';
 
 describe('parseArgs', () => {
   it('defaults to two runs and no filters', () => {
@@ -17,6 +17,21 @@ describe('parseArgs', () => {
     expect(() => parseArgs(['--out', '--group'])).toThrow(/needs a value/);
     expect(() => parseArgs(['--runs', '0'])).toThrow(/positive integer/);
     expect(() => parseArgs(['--runs', 'x'])).toThrow(/positive integer/);
+  });
+});
+
+describe('assertScratchRootSafe', () => {
+  const real = ['C:\\Users\\u\\.omp', 'C:\\Users\\u\\.pi', 'C:\\Users\\u\\AppData\\Roaming\\refract-tauri'];
+
+  it('accepts a root disjoint from the real dirs', () => {
+    expect(() => assertScratchRootSafe('C:\\Users\\u\\refract-1935-probe', real)).not.toThrow();
+  });
+
+  it('refuses a root equal to, inside, or containing a real dir', () => {
+    expect(() => assertScratchRootSafe('C:\\Users\\u\\.omp', real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe('C:\\Users\\u\\.pi\\scratch', real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe('C:\\Users\\u', real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe('C:\\Users\\U\\APPDATA\\roaming\\Refract-Tauri', real)).toThrow(/overlaps/);
   });
 });
 

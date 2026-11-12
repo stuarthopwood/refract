@@ -104,9 +104,6 @@ export function startProvider({ port = 0, script = sequence([]) } = {}) {
         port: boundPort,
         baseUrl: `http://127.0.0.1:${boundPort}/v1`,
         requests,
-        setScript: (fn) => {
-          currentScript = fn;
-        },
         heldCount: () => requests.filter((r) => r.held).length,
         /** Releases every request parked by a `hold` step, and re-arms the gate for later holds. */
         release: () => {

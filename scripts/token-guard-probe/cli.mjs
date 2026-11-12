@@ -1,5 +1,7 @@
 // Pure CLI helpers for run.mjs (#1935): argument parsing, group selection and the per-key output line.
 
+import path from 'node:path';
+
 const flag = (argv, i, name) => {
   const v = argv[i + 1];
   if (v === undefined || v.startsWith('--')) throw new Error(`${name} needs a value`);
@@ -20,6 +22,23 @@ export function parseArgs(argv) {
     else throw new Error(`unknown argument ${a}`);
   }
   return out;
+}
+
+/**
+ * Throws when `scratchRoot` equals, contains or sits inside a protected real profile dir, so a probe never writes into real omp/refract state.
+ * @param {string} scratchRoot
+ * @param {string[]} protectedDirs
+ */
+export function assertScratchRootSafe(scratchRoot, protectedDirs) {
+  const root = path.resolve(scratchRoot);
+  const within = (parent, child) => {
+    const rel = path.relative(parent.toLowerCase(), child.toLowerCase());
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+  };
+  for (const dir of protectedDirs.filter(Boolean)) {
+    const prot = path.resolve(dir);
+    if (within(prot, root) || within(root, prot)) throw new Error(`--scratch-root ${scratchRoot} overlaps real profile dir ${dir}`);
+  }
 }
 
 /**
