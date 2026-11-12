@@ -12,6 +12,7 @@ pub mod gh_mutations;
 pub mod gh_permission;
 pub mod gh_pr_search_across;
 pub mod gh_pull_requests;
+pub mod gh_stack_state;
 pub mod gh_viewer;
 pub mod images;
 pub mod item_ref;
