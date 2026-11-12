@@ -1,4 +1,4 @@
-// Runs against scratch folders under the OS temp folder, left in place like the other test modules.
+// Runs against scratch folders from `test_scratch`, removed when each test ends.
 
 use super::*;
 
