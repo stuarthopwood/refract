@@ -241,10 +241,11 @@ impl SessionAgent {
     pub(super) async fn emit_status(&self) {
         self.ensure_pause_loaded().await;
         crate::session::working_mode::ensure_loaded(self).await;
+        // Emitted under the lock: a payload built before a pause change cannot be delivered after a newer one.
         let state = self.state.lock().await;
         let payload = self.status_event_locked(&state);
-        drop(state);
         self.events.emit_session_status(&payload);
+        drop(state);
     }
 
     /// Becomes `unread` only on `working` -> `idle` while the Session is hidden.
