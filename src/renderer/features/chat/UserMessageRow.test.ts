@@ -13,11 +13,19 @@ const mocks = vi.hoisted(() => {
     open: undefined as unknown as (id: string, userAction?: boolean) => Promise<null>,
     replaceFocused: undefined as unknown as (id: string) => void
   }
-  const useSessionsStore = Object.assign((selector: (s: typeof state) => unknown) => selector(state), { getState: () => state })
+  const select = vi.fn()
+  const useSessionsStore = Object.assign(
+    (selector: (s: typeof state) => unknown) => {
+      select()
+      return selector(state)
+    },
+    { getState: () => state }
+  )
   const useSplitStore = { getState: () => state }
-  return { state, useSessionsStore, useSplitStore }
+  return { state, select, useSessionsStore, useSplitStore, focusSessionPane: vi.fn() }
 })
 vi.mock('@/state', () => ({ useSessionsStore: mocks.useSessionsStore, useSplitStore: mocks.useSplitStore }))
+vi.mock('@/lib/focus', () => ({ focusSessionPane: mocks.focusSessionPane }))
 
 import { SessionSourceLine } from './SessionSourceLine'
 import { UserMessageRow, type UserItem } from './UserMessageRow'
@@ -34,30 +42,44 @@ function findAll(node: ReactNode, match: (el: ReactElement<Record<string, any>>)
   return out
 }
 
-const render = (item: UserItem) => renderToStaticMarkup(createElement(TooltipProvider, null, createElement(UserMessageRow, { item, userName: 'Stuart' })))
+const render = (item: UserItem, userAvatarUrl?: string) =>
+  renderToStaticMarkup(createElement(TooltipProvider, null, createElement(UserMessageRow, { item, userName: 'Stuart', userAvatarUrl })))
 
 beforeEach(() => {
   mocks.state.sessions = [{ id: 'sess-1' }]
   mocks.state.open = vi.fn(() => Promise.resolve(null))
   mocks.state.replaceFocused = vi.fn()
+  mocks.select.mockClear()
+  mocks.focusSessionPane.mockClear()
+  // The focus hop waits a frame for the new pane to mount; run it synchronously here.
+  vi.stubGlobal('requestAnimationFrame', (cb: () => void) => cb())
 })
 
 describe('SessionSourceLine', () => {
   it('gives the SourceTag a name action that opens the sender with the user-initiated flag', () => {
-    const tree = SessionSourceLine({ source: SOURCE, senderExists: true, id: 'line-1' })
+    const tree = SessionSourceLine({ source: SOURCE, id: 'line-1' })
     const [tag] = findAll(tree, (el) => typeof el.type !== 'string' && el.props.label !== undefined)
     expect(tag!.props.label).toBe('From Session')
     expect(tag!.props.action.label).toBe('Alpha')
+    expect(tag!.props.action.ariaLabel).toBe('Open Session Alpha')
     tag!.props.action.onActivate()
     expect(mocks.state.open).toHaveBeenCalledTimes(1)
     expect(mocks.state.open).toHaveBeenCalledWith('sess-1', true)
     expect(mocks.state.replaceFocused).toHaveBeenCalledWith('sess-1')
   })
 
-  it('shows the id as plain text with no action once the sender is deleted', () => {
-    const tree = SessionSourceLine({ source: SOURCE, senderExists: false, id: 'line-1' })
+  it('moves focus to the newly shown pane after the switch', () => {
+    const tree = SessionSourceLine({ source: SOURCE, id: 'line-1' })
     const [tag] = findAll(tree, (el) => typeof el.type !== 'string' && el.props.label !== undefined)
-    expect(tag!.props.label).toBe('From Session sess-1')
+    tag!.props.action.onActivate()
+    expect(mocks.focusSessionPane).toHaveBeenCalledWith('sess-1')
+  })
+
+  it('shows the sender name marked deleted, with no action, once the sender is gone', () => {
+    mocks.state.sessions = []
+    const tree = SessionSourceLine({ source: SOURCE, id: 'line-1' })
+    const [tag] = findAll(tree, (el) => typeof el.type !== 'string' && el.props.label !== undefined)
+    expect(tag!.props.label).toBe('From Session Alpha (deleted)')
     expect(tag!.props.action).toBeUndefined()
     expect(mocks.state.open).not.toHaveBeenCalled()
   })
@@ -66,7 +88,7 @@ describe('SessionSourceLine', () => {
 describe('UserMessageRow session source', () => {
   it('shows a From Session line with the sender name as a button, above the bubble', () => {
     const html = render({ ...base, source: SOURCE })
-    expect(html).toMatch(/From Session<button[^>]*type="button"[^>]*>Alpha<\/button>/)
+    expect(html).toMatch(/From Session <button[^>]*type="button"[^>]*aria-label="Open Session Alpha"[^>]*>Alpha<\/button>/)
     expect(html.indexOf('From Session')).toBeLessThan(html.indexOf('hello there'))
   })
 
@@ -77,19 +99,35 @@ describe('UserMessageRow session source', () => {
     expect(html).toContain(`role="group" aria-labelledby="${lineId}"`)
   })
 
-  it('shows the sender id as plain text, with no button, when the sender Session is gone', () => {
-    mocks.state.sessions = []
-    const html = render({ ...base, source: SOURCE })
-    expect(html).toContain('From Session sess-1')
-    expect(/<span data-slot="source-tag".*?<\/span>/.exec(html)?.[0]).not.toContain('<button')
-    expect(html).not.toContain('>Alpha<')
+  it('authors a sourced turn as the Session: its name and glyph, never the user name or initials', () => {
+    const html = render({ ...base, source: SOURCE }, 'https://example.test/me.png')
+    expect(html).not.toContain('Stuart')
+    expect(html).not.toContain('me.png')
+    expect(html).not.toContain('>S<')
+    expect(html).toMatch(/data-slot="message-header"[^>]*>Alpha<\/div>/)
+    expect(/data-slot="message-avatar".*?data-slot="message-content"/.exec(html)?.[0]).toContain('<svg')
   })
 
-  it('adds no line, group role or button to an ordinary user item', () => {
+  it('keeps the user name and avatar on an ordinary user item', () => {
+    const html = render(base)
+    expect(html).toMatch(/data-slot="message-header"[^>]*>Stuart<\/div>/)
+    expect(html).toContain('>S<')
+  })
+
+  it('shows the sender name marked deleted, with no button, when the sender Session is gone', () => {
+    mocks.state.sessions = []
+    const html = render({ ...base, source: SOURCE })
+    expect(html).toContain('From Session Alpha (deleted)')
+    expect(html).not.toContain('sess-1')
+    expect(/<span data-slot="source-tag".*?<\/span>/.exec(html)?.[0]).not.toContain('<button')
+  })
+
+  it('adds no line, group role, button or sessions-store lookup to an ordinary user item', () => {
     const html = render(base)
     expect(html).not.toContain('From Session')
     expect(html).not.toContain('aria-labelledby')
     expect(html).not.toContain('role="group"')
     expect(html).toContain('hello there')
+    expect(mocks.select).not.toHaveBeenCalled()
   })
 })

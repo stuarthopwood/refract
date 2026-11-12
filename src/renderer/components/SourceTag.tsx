@@ -32,17 +32,14 @@ export function SourceTag({ icon: Icon, label, tooltip, action, className }: Sou
       <Icon aria-hidden="true" className="size-4 shrink-0" />
       {label}
       {action && (
-        // A native button gives Enter and Space activation for free; no key handler, or it would fire twice.
-        <Button
-          type="button"
-          variant="text"
-          size="xs"
-          aria-label={action.ariaLabel}
-          onClick={action.onActivate}
-          className="px-1 underline"
-        >
-          {action.label}
-        </Button>
+        <>
+          {/* A real space so textContent and copied text read "From Session Alpha"; flex drops it visually. */}
+          {' '}
+          {/* A native button gives Enter and Space activation for free; no key handler, or it would fire twice. */}
+          <Button type="button" variant="text" size="xs" aria-label={action.ariaLabel} onClick={action.onActivate} className="px-1 underline">
+            {action.label}
+          </Button>
+        </>
       )}
     </span>
   )

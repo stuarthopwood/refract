@@ -34,7 +34,7 @@ describe('SourceTag', () => {
     const html = renderToStaticMarkup(
       createElement(SourceTag, { icon: MessageSquareIcon, label: 'From Session', action: { label: 'Alpha', onActivate: () => {} } }),
     )
-    expect(html).toMatch(/From Session<button[^>]*type="button"[^>]*>Alpha<\/button>/)
+    expect(html).toMatch(/From Session <button[^>]*type="button"[^>]*>Alpha<\/button>/)
   })
 
   it('activates through onClick only, so Enter and Space (native button clicks) fire it once', () => {
