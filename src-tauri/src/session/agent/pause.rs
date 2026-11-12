@@ -123,8 +123,8 @@ impl SessionAgent {
             )
             .await;
         written.store(seq, Ordering::SeqCst);
-        if result.is_err() {
-            log::warn!("pause: could not persist the held queue");
+        if let Err(err) = result {
+            log::warn!("pause: could not persist the held queue: {err:?}");
         }
     }
 
