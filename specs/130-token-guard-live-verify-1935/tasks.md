@@ -6,8 +6,8 @@ Slices: A (harness, T001-T006) is the base; B (probes, T007-T013) needs A; C (ap
 
 ## A. Probe harness (FR-002, FR-007)
 
-- [ ] T001 [P] `scripts/token-guard-probe/ab.mjs` + `ab.test.mjs`: pure verdict function (`live`, `startup-only`, `inconclusive-startup-only`; control must not change; two consecutive agreeing runs) and tests for each branch, including a flaky control and a disagreeing pair (FR-003, FR-007)
-- [ ] T002 [P] `scripts/token-guard-probe/observe.mjs` + `observe.test.mjs`: pure extractors (compaction frame count by reason, request model id, marker in system text, image parts, tool-result text, in-flight peak, extra request after agent end) with literal-fixture tests (FR-007)
+- [x] T001 [P] `scripts/token-guard-probe/ab.mjs` + `ab.test.mjs`: pure verdict function (`live`, `startup-only`, `inconclusive-startup-only`; control must not change; two consecutive agreeing runs) and tests for each branch, including a flaky control and a disagreeing pair (FR-003, FR-007)
+- [x] T002 [P] `scripts/token-guard-probe/observe.mjs` + `observe.test.mjs`: pure extractors (compaction frame count by reason, request model id, marker in system text, image parts, tool-result text, in-flight peak, extra request after agent end) with literal-fixture tests (FR-007)
 - [ ] T003 [P] `scripts/token-guard-probe/provider.mjs`: scripted OpenAI-compatible server; records request bodies; steps for text, tool call, hold-until-released; vision-capable model entry for `models.yml` (FR-002)
 - [ ] T004 `scripts/token-guard-probe/host.mjs`: scratch `PI_CODING_AGENT_DIR` with seeded `config.yml` and `models.yml`, spawn `omp --mode rpc-ui` with a fixed argv and no shell, JSONL send/collect, `omp config set` edit between turns, wait for the config file to show the value, clean shutdown; no `WATCHDOG.yml` ever written (FR-002)
 - [ ] T005 `scripts/token-guard-probe/run.mjs`: group selection, A/B orchestration, two runs, one verdict line per key, JSON report with omp version (FR-001, FR-003)

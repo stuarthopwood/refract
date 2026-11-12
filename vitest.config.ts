@@ -19,6 +19,8 @@ export default defineConfig({
       'scripts/check-drag-regions.test.mjs',
       'scripts/release-changelog.test.mjs',
       'scripts/theme-tokens.test.mjs',
+      'scripts/token-guard-probe/ab.test.mjs',
+      'scripts/token-guard-probe/observe.test.mjs',
     ],
   },
 });
