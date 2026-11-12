@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.33.0 (2026-11-12)
+
+### Features
+
+- feat(composer): slash commands before the agent starts (https://github.com/stuarthopwood/refract/pull/1837)
+- feat(composer): # picker to search and insert issue and PR references (https://github.com/stuarthopwood/refract/pull/1844)
+- feat(chat): combined card for HTML-form asks (https://github.com/stuarthopwood/refract/pull/1938)
+- feat(session): pause cancels running subagents (https://github.com/stuarthopwood/refract/pull/1939)
+
+### Fixes
+
+- fix(chat): show the Skill invoked row for skill prompts with a summary tooltip (https://github.com/stuarthopwood/refract/pull/1838)
+- fix(tool-channel): report unknown outcome and allow 30 s for agent panel mutations (https://github.com/stuarthopwood/refract/pull/1936)
+- fix(profile): Keyboard shortcuts list scrolls inside its dialog (https://github.com/stuarthopwood/refract/pull/1934)
+- fix(settings): token guard changes reach running Sessions (https://github.com/stuarthopwood/refract/pull/1937)
+- fix(security): clear open CodeQL alerts (https://github.com/stuarthopwood/refract/pull/1943)
+- fix(usage): tool Cost share shows a percentage (#1845) (https://github.com/stuarthopwood/refract/pull/1933)
+
+### Other
+
+- chore(composer): trim comments in the #1812 live check (https://github.com/stuarthopwood/refract/pull/1923)
+- test(chat): prove the Skill invoked row after a relaunch (#1817) (https://github.com/stuarthopwood/refract/pull/1924)
+- docs(plan): file #1931 subagents card redesign epic (https://github.com/stuarthopwood/refract/pull/1932)
+- docs(plan): mark Wave 1 and the CodeQL cleanup done (https://github.com/stuarthopwood/refract/pull/1944)
+
 ## v0.32.0 (2026-11-11)
 
 ### Features
