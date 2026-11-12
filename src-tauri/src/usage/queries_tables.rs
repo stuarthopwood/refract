@@ -1,12 +1,14 @@
 // Sort keys and group-by choices map to fixed column names; renderer strings never reach SQL.
 
+use std::borrow::Cow;
+
 use rusqlite::types::Value;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::queries::{
-    Filters, QueryCtx, QueryError, QueryResult, Rollup, MESSAGES, MESSAGE_ROLLUP, SESSION_ROLLUP,
-    TOOL_CALLS, TOOL_ROLLUP,
+    Filters, QueryCtx, QueryError, QueryResult, Rollup, Where, MESSAGES, MESSAGE_ROLLUP,
+    SESSION_ROLLUP, TOOL_CALLS, TOOL_ROLLUP,
 };
 
 const BREAKDOWN_LIMIT: i64 = 500;
@@ -94,36 +96,48 @@ pub fn breakdown(
     }
 }
 
+/// The three pieces of a tool listing that depend on which table answers the filters.
+struct ToolSource {
+    filters: Where,
+    cols: &'static str,
+    from: Cow<'static, str>,
+}
+
 fn tool_breakdown(
     conn: &Connection,
     f: &Filters,
     ctx: &QueryCtx,
 ) -> QueryResult<Vec<BreakdownRow>> {
-    let per_call = f.needs_tool_calls();
-    let (w, cols, from) = if per_call {
-        (
-            f.build(&TOOL_CALLS, ctx)?,
-            "tool, count(*), coalesce(sum(coalesce(is_error,0)),0), \
-             coalesce(sum(result_chars),0), coalesce(sum(cost_usd),0)",
-            "tool_calls".to_string(),
-        )
+    let ToolSource {
+        filters: w,
+        cols,
+        from,
+    } = if f.needs_tool_calls() {
+        ToolSource {
+            filters: f.build(&TOOL_CALLS, ctx)?,
+            cols: "tool, count(*), coalesce(sum(coalesce(is_error,0)),0), \
+                   coalesce(sum(result_chars),0), sum(cost_usd)",
+            from: Cow::Borrowed("tool_calls"),
+        }
     } else {
         let mut w = f.build_dims(&TOOL_ROLLUP, ctx)?;
         let src = f.rollup_source(&mut w, Rollup::Tools, ctx, false)?;
-        (
-            w,
-            "tool, sum(calls), sum(errors), sum(result_chars), sum(cost_usd)",
-            src,
-        )
+        ToolSource {
+            filters: w,
+            cols: "tool, sum(calls), sum(errors), sum(result_chars), sum(cost_usd)",
+            from: Cow::Owned(src),
+        }
     };
+    // The window sum is evaluated before LIMIT, so the denominator covers every tool in the window.
     let sql = format!(
-        "SELECT {cols} FROM {from}{} GROUP BY tool ORDER BY 5 DESC, 2 DESC, tool LIMIT {BREAKDOWN_LIMIT}",
+        "SELECT {cols}, sum(sum(cost_usd)) OVER () FROM {from}{} \
+         GROUP BY tool ORDER BY 5 DESC, 2 DESC, tool LIMIT {BREAKDOWN_LIMIT}",
         w.sql()
     );
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt
+    let mapped = stmt
         .query_map(rusqlite::params_from_iter(w.params()), |r| {
-            Ok(BreakdownRow {
+            let row = BreakdownRow {
                 label: r.get(0)?,
                 reasoning: None,
                 calls: r.get(1)?,
@@ -133,15 +147,14 @@ fn tool_breakdown(
                 errors: Some(r.get(2)?),
                 result_chars: Some(r.get(3)?),
                 cost_share: None,
-            })
+            };
+            let window_total: f64 = r.get(5)?;
+            Ok((row, window_total))
         })?
         .collect::<Result<Vec<_>, _>>()?;
-    // The listing is cut at BREAKDOWN_LIMIT, so the denominator is summed over the whole window.
-    let total: f64 = conn.query_row(
-        &format!("SELECT coalesce(sum(cost_usd), 0) FROM {from}{}", w.sql()),
-        rusqlite::params_from_iter(w.params()),
-        |r| r.get(0),
-    )?;
+    // Every row carries the same window total; an empty window has no rows to fill.
+    let total = mapped.first().map_or(0.0, |(_, t)| *t);
+    let mut rows: Vec<BreakdownRow> = mapped.into_iter().map(|(row, _)| row).collect();
     fill_cost_share(&mut rows, total);
     Ok(rows)
 }
