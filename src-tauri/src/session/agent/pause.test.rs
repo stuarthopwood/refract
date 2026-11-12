@@ -9,9 +9,12 @@ async fn stopped_paused(held: &[&str]) -> super::super::pause_subagents::fixture
         ..Stub::default()
     })
     .await;
-    fx.agent.state.lock().await.pause.hold_for_test(
-        held.iter().map(|text| text.to_string()).collect(),
-    );
+    fx.agent
+        .state
+        .lock()
+        .await
+        .pause
+        .hold_for_test(held.iter().map(|text| text.to_string()).collect());
     fx
 }
 
@@ -52,9 +55,15 @@ async fn a_failed_start_keeps_the_pause_and_every_held_message() {
 async fn a_failed_start_can_be_retried() {
     let fx = stopped_paused(&["only"]).await;
 
-    assert_eq!(fx.agent.resume().await.unwrap_err().code, "worktree-missing");
+    assert_eq!(
+        fx.agent.resume().await.unwrap_err().code,
+        "worktree-missing"
+    );
     // A stuck `resuming` flag would make the retry a silent `paused: true` no-op.
-    assert_eq!(fx.agent.resume().await.unwrap_err().code, "worktree-missing");
+    assert_eq!(
+        fx.agent.resume().await.unwrap_err().code,
+        "worktree-missing"
+    );
 }
 
 #[tokio::test]

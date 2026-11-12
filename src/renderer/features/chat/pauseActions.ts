@@ -22,6 +22,6 @@ export async function setAllPaused(paused: boolean): Promise<void> {
   }
   const { count = 0, failed = 0 } = result.value as { count?: number; failed?: number }
   if (!paused && failed > 0) {
-    notify({ code: 'resume-failed', message: `Resumed ${count}, ${failed} failed to start` })
+    notify({ code: 'agent-not-running', message: `Resumed ${count}, ${failed} failed to start` })
   }
 }

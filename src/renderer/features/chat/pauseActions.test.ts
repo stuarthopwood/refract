@@ -16,7 +16,7 @@ describe('setAllPaused', () => {
   it('reports how many resumed and how many failed to start', async () => {
     resumeAll.mockResolvedValue({ ok: true, value: { count: 3, failed: 2 } })
     await setAllPaused(false)
-    expect(notify).toHaveBeenCalledWith({ code: 'resume-failed', message: 'Resumed 3, 2 failed to start' })
+    expect(notify).toHaveBeenCalledWith({ code: 'agent-not-running', message: 'Resumed 3, 2 failed to start' })
   })
 
   it('stays silent when every Session resumed', async () => {
