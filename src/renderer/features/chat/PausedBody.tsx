@@ -26,12 +26,14 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
   const resumeRef = useRef<HTMLButtonElement>(null)
   const rootRef = useRef<HTMLDivElement>(null)
   const previous = useRef(pause)
-  // Queued, not replaced: a notice and the status change land in either order and both must be spoken.
-  const [announcements, setAnnouncements] = useState<string[]>([])
+  // Queued, not replaced: a notice and the status change land in either order and both must be
+  // spoken. One child per message, so a screen reader reads only what was added.
+  const [announcements, setAnnouncements] = useState<{ key: number; text: string }[]>([])
+  const nextKey = useRef(0)
   const timers = useRef<number[]>([])
   useEffect(() => () => timers.current.forEach((t) => window.clearTimeout(t)), [])
   const announce = useCallback((text: string) => {
-    setAnnouncements((q) => [...q, text])
+    setAnnouncements((q) => [...q, { key: nextKey.current++, text }])
     timers.current.push(window.setTimeout(() => setAnnouncements((q) => q.slice(1)), 6000))
   }, [])
   const items = useTranscriptStore((s) => s.bySession[sessionId]?.items ?? EMPTY_TRANSCRIPT.items)
@@ -134,8 +136,10 @@ export function PausedBody({ sessionId, children }: { sessionId: string; childre
       >
         {children}
       </LoadingOverlay>
-      <div aria-live="polite" aria-atomic="true" className="sr-only">
-        {announcements.join(' ')}
+      <div aria-live="polite" aria-atomic="false" aria-relevant="additions" className="sr-only">
+        {announcements.map((a) => (
+          <span key={a.key}>{a.text}</span>
+        ))}
       </div>
     </div>
   )

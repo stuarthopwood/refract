@@ -10,11 +10,29 @@ describe('pausedNoticeAnnouncement', () => {
     expect(pausedNoticeAnnouncement(items, new Set()).text).toBe('Pause cancelled subagent late-1 (started while paused).')
   })
 
-  it('keeps the Resume count and drops the guidance', () => {
+  it('keeps the Resume count, drops the guidance and the "Resumed." prefix', () => {
     const items = [
       notice('b', 'Resumed. Pause had cancelled 2 subagents: a, b. They are not restarted; ask the agent to run them again if you still need them.')
     ]
-    expect(pausedNoticeAnnouncement(items, new Set()).text).toBe('Resumed. Pause had cancelled 2 subagents: a, b. They are not restarted.')
+    expect(pausedNoticeAnnouncement(items, new Set()).text).toBe('Pause had cancelled 2 subagents: a, b. They are not restarted.')
+  })
+
+  it('announces a failed listing', () => {
+    const items = [notice('e', 'Pause could not list the running subagents: boom')]
+    expect(pausedNoticeAnnouncement(items, new Set())).toEqual({ text: 'Pause could not list the running subagents: boom', ids: ['e'] })
+  })
+
+  it('announces a failed auto-cancel and shortens it', () => {
+    const items = [notice('f', 'Pause could not cancel subagent late-1, which started while this Session was paused: boom')]
+    expect(pausedNoticeAnnouncement(items, new Set())).toEqual({
+      text: 'Pause could not cancel subagent late-1 (started while paused): boom',
+      ids: ['f']
+    })
+  })
+
+  it('announces an auto-cancel that raced Resume', () => {
+    const items = [notice('g', 'Pause cancelled subagent late-1, which started as this Session was resumed. It is not restarted.')]
+    expect(pausedNoticeAnnouncement(items, new Set()).ids).toEqual(['g'])
   })
 
   it('skips seen and unrelated notices', () => {

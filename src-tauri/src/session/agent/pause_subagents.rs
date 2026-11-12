@@ -87,11 +87,12 @@ impl SessionAgent {
     }
 
     /// Records cancelled ids and posts notices in one lock hold, and only while the Session still
-    /// gates: after Resume they are stale and would read after its "Resumed" notice.
-    async fn record_and_note(&self, cancelled: &[String], notices: &[(String, &str)]) {
+    /// gates: after Resume they are stale and would read after its "Resumed" notice. Returns
+    /// whether it applied.
+    async fn record_and_note(&self, cancelled: &[String], notices: &[(String, &str)]) -> bool {
         let mut state = self.state.lock().await;
         if !state.pause.is_gating() {
-            return;
+            return false;
         }
         for id in cancelled {
             if !state.pause.cancelled.contains(id) {
@@ -102,6 +103,7 @@ impl SessionAgent {
             let frame = json!({ "type": "notice", "level": level, "message": text });
             self.apply_frame_locked(&mut state, &frame);
         }
+        true
     }
 
     /// Cancels every running subagent. A listing or cancel failure never stops the pause; it only
@@ -189,8 +191,20 @@ impl SessionAgent {
                 let notice = format!(
                     "Pause cancelled subagent {id}, which started while this Session was paused."
                 );
-                self.record_and_note(&[id.to_string()], &[(notice, "info")])
+                let applied = self
+                    .record_and_note(&[id.to_string()], &[(notice, "info")])
                     .await;
+                if !applied {
+                    // Resume landed mid-cancel: the subagent is gone and Resume's notice
+                    // cannot name it, so say so rather than lose it silently.
+                    self.append_notice(
+                        format!(
+                            "Pause cancelled subagent {id}, which started as this Session was resumed. It is not restarted."
+                        ),
+                        "info",
+                    )
+                    .await;
+                }
             }
             Outcome::NothingToCancel => {}
             Outcome::Failed(reason) => {

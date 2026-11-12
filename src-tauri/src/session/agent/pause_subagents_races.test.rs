@@ -77,8 +77,36 @@ async fn a_resume_during_the_cancels_leaves_no_stale_ids_and_no_notice() {
 }
 
 #[tokio::test]
-async fn a_resume_during_an_auto_cancel_records_and_notes_nothing() {
+async fn a_resume_during_an_auto_cancel_still_notes_the_cancel_but_records_no_id() {
     let fx = fixture_with(Stub {
+        gated: Some("cancel_subagent"),
+        ..Stub::default()
+    })
+    .await;
+    fx.agent.pause().await.unwrap();
+    fx.agent.handle_frame(lifecycle("late-1", "started")).await;
+    fx.until_rpc("cancel_subagent").await;
+
+    fx.agent.resume().await.unwrap();
+    fx.release().await;
+    fx.until_notices(1).await;
+    tokio::time::sleep(SETTLE).await;
+
+    assert!(
+        fx.cancelled().await.is_empty(),
+        "Resume already consumed the list; a stale id would leak into the next Resume"
+    );
+    assert_eq!(
+        fx.notices().await,
+        ["Pause cancelled subagent late-1, which started as this Session was resumed. It is not restarted."]
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_resume_during_a_failed_auto_cancel_posts_no_notice() {
+    let fx = fixture_with(Stub {
+        cancel_errors: &[("late-1", "boom")],
         gated: Some("cancel_subagent"),
         ..Stub::default()
     })
@@ -91,7 +119,6 @@ async fn a_resume_during_an_auto_cancel_records_and_notes_nothing() {
     fx.release().await;
     tokio::time::sleep(SETTLE).await;
 
-    assert!(fx.cancelled().await.is_empty());
     assert!(fx.notices().await.is_empty());
     fx.finish().await;
 }

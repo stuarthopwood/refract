@@ -72,13 +72,17 @@ const lifecycle = (status, since = 0) => wireLines().filter((l) => l.dir === 'om
 const sessionRow = (cdp, sessionId) => cdp.evaluate(`window.refract.sessions.list().then((r) => r.ok ? r.value.find((s) => s.id === ${JSON.stringify(sessionId)}) ?? null : null).then((s) => s && { status: s.status, pause: s.pause ?? null })`);
 const bodyText = (cdp) => cdp.evaluate('document.body.innerText');
 const announcements = [];
-/** Waits for the PausedBody polite live region to hold `needle`; records and returns its text. */
-async function announced(cdp, needle) {
-  const expr = `[...document.querySelectorAll('[aria-live="polite"]')].map((e) => e.textContent).find((t) => t.includes(${JSON.stringify(needle)})) ?? null`;
+/**
+ * Waits for the PausedBody polite live region to hold a message containing `needle` (and one containing
+ * `companion`, when given); returns the region's messages in order, one per queued announcement.
+ */
+async function announced(cdp, needle, companion = null) {
+  const holds = (text) => `[...e.children].some((c) => c.textContent.includes(${JSON.stringify(text)}))`;
+  const expr = `[...document.querySelectorAll('[aria-live="polite"][aria-relevant="additions"]')].filter((e) => ${holds(needle)}${companion ? ` && ${holds(companion)}` : ''}).map((e) => [...e.children].map((c) => c.textContent))[0] ?? null`;
   const ok = await cdp.waitFor(`!!(${expr})`, { timeoutMs: 15_000, label: `announcement "${needle}"` }).catch(() => false);
-  const text = ok ? await cdp.evaluate(expr) : null;
-  announcements.push(text);
-  return text;
+  const items = ok ? await cdp.evaluate(expr) : null;
+  announcements.push(items ? items.join(' | ') : null);
+  return items;
 }
 
 async function waitForPause(cdp, sessionId, want, timeoutMs = 60_000) {
@@ -180,7 +184,7 @@ async function main() {
     const pauseNotice = (await bodyText(cdp)).split('\n').find((t) => t.includes('Pause cancelled 2 subagents'));
     check(!!pauseNotice, '1g. A notice names the two cancelled subagents', pauseNotice);
     const announcedPause = await announced(cdp, 'Pause cancelled 2 subagents');
-    check(!!announcedPause, '4. While Paused the cancel notice is announced by the polite live region', announcedPause);
+    check(!!announcedPause?.some((t) => t.includes('Pause cancelled 2 subagents')), '4. While Paused the cancel notice is announced by the polite live region', announcedPause);
     await shoot(cdp, '02-paused-both-subagents-cancelled-notice.png');
 
     // The Subagents panel shows them as Cancelled (FR-009).
@@ -200,8 +204,11 @@ async function main() {
     await waitForText(cdp, 'Pause had cancelled 2 subagents');
     const resumeNotice = (await bodyText(cdp)).split('\n').find((t) => t.includes('Pause had cancelled 2 subagents'));
     check(/^Resumed\. Pause had cancelled 2 subagents: .+\. They are not restarted/.test(resumeNotice ?? ''), '3b. Resume posts "Pause had cancelled 2 subagents" and says they are not restarted', resumeNotice);
-    const announcedResume = await announced(cdp, 'Pause had cancelled 2 subagents');
-    check(!!announcedResume && /not restarted/.test(announcedResume), '4a. Resume announces the cancelled count once, after the status change', announcedResume);
+    const announcedResume = await announced(cdp, 'Pause had cancelled 2 subagents', 'Session resumed');
+    const resumeHits = (announcedResume ?? []).filter((t) => t.includes('Pause had cancelled 2 subagents'));
+    const resumedAt4a = (announcedResume ?? []).indexOf('Session resumed');
+    const countAt4a = (announcedResume ?? []).findIndex((t) => t.includes('Pause had cancelled 2 subagents'));
+    check(resumeHits.length === 1 && /not restarted/.test(resumeHits[0]) && !/^Resumed/.test(resumeHits[0]) && resumedAt4a >= 0 && countAt4a > resumedAt4a, '4a. Resume announces the cancelled count exactly once, after "Session resumed", without repeating "Resumed."', announcedResume);
     await sleep(6000);
     const revived = await ompSubagents(injectDir);
     check(listedIds(revived).length === 0 && mock.subagents.length === subagentRequestsBeforeResume && lifecycle('started', resumedAt).length === 0, '3c. Resume revives nothing (no running subagent, no new subagent model request, no new started frame)', { revived, subagentRequests: mock.subagents.length, startedAfterResume: lifecycle('started', resumedAt).length });
@@ -224,7 +231,7 @@ async function main() {
     const lateNotice = (await bodyText(cdp)).split('\n').find((t) => t.includes('which started while this Session was paused'));
     check(!!lateNotice && lateNotice.includes(lateId), '2b. The subagent that started while paused is auto-cancelled, with a notice naming it', { lateId, lateNotice });
     const announcedAuto = await announced(cdp, 'started while paused');
-    check(!!announcedAuto && announcedAuto.includes(lateId), '4b. The auto-cancel notice is announced by the polite live region while Paused', announcedAuto);
+    check(!!announcedAuto?.some((t) => t.includes('started while paused') && t.includes(lateId)), '4b. The auto-cancel notice is announced by the polite live region while Paused', announcedAuto);
     const lateCancels = refractRpcs('cancel_subagent', latePausedAt).map((l) => l.frame.subagentId);
     check(lateCancels.length === 1 && lateCancels[0] === lateId, '2c. Refract sent cancel_subagent for that id', { lateCancels, lateId });
     await waitForPause(cdp, sessionId, 'paused');
