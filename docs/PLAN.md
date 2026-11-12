@@ -1258,3 +1258,7 @@ Also filed 2026-11-11 (Stuart): **#1931** (`p1`, `design`, `chat`), Epic: Redesi
 Also filed 2026-11-12 (Stuart): **#1942** (`p1`, `bug`), Bug: clear open CodeQL alerts before the next release. Decided: switch CodeQL to advanced setup (`.github/workflows/codeql.yml`, `.github/codeql/codeql-config.yml`, `paths-ignore: scripts/verify-*.mjs`), really fix every other alert. Spec 128, PR from `fix/codeql-cleanup`. The release waits for this PR. Row 1c.1b.
 
 Status 2026-11-12 (#1942): done. Merged in PR #1943 (`21a7fc1c`); row 1c.1b is done.
+
+Also filed 2026-11-12 (Stuart): **#1946** (`p1`, `bug`, `chat`), Bug: Plan mode does not switch the model role to Plan (enter plan mode selects the Plan role and overrides a pinned model, restoring the prior selection on exit).
+
+Also filed 2026-11-12 (Stuart): **#1947** (`p2`, `enhancement`, `chat`), Perf: PR/Issue reference hover cards: idle prefetch (batched) plus refresh on open. Child of the performance epic #1901.
