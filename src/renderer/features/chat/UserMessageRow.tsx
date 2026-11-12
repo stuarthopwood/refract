@@ -6,6 +6,8 @@ import { Markdown } from './Markdown'
 import { FileAttachmentChip } from './FileAttachmentChip'
 import { MessageImageGrid } from '@/components/MessageImageGrid'
 import { MessageMenu } from './MessageMenu'
+import { SessionSourceLine } from './SessionSourceLine'
+import { useSessionsStore } from '@/state'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -55,15 +57,22 @@ function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }
 /** Right-aligned user bubble; the timestamp is a sibling above the whole `Message`. */
 export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: UserMessageRowProps) {
   const name = userName ?? 'You'
+  const source = item.source
+  const senderExists = useSessionsStore((state) => source !== undefined && state.sessions.some((s) => s.id === source.sessionId))
+  const sourceLineId = React.useId()
   return (
     <>
       <UserMessageTime at={item.at} hide={hideTime} />
+      {source && <SessionSourceLine source={source} senderExists={senderExists} id={sourceLineId} />}
       <MessageMenu id={item.id} text={item.text} align="end">
       <Message align="end">
         <MessageAvatar aria-hidden>
           <UserAvatar name={name} src={userAvatarUrl} />
         </MessageAvatar>
-        <MessageContent className="w-fit max-w-[85%] rounded-lg bg-chat-user-bubble-bg px-4 py-2 outline-1 -outline-offset-1 outline-chat-user-bubble-border forced-colors:outline-2">
+        <MessageContent
+          {...(source ? { role: 'group', 'aria-labelledby': sourceLineId } : {})}
+          className="w-fit max-w-[85%] rounded-lg bg-chat-user-bubble-bg px-4 py-2 outline-1 -outline-offset-1 outline-chat-user-bubble-border forced-colors:outline-2"
+        >
           <MessageHeader className="px-0 text-muted-foreground">{name}</MessageHeader>
           {/* Chips instead of the raw inlined file text, which could flood the transcript (#926). */}
           {item.fileAttachments && item.fileAttachments.length > 0 && (
