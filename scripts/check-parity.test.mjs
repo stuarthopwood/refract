@@ -42,9 +42,10 @@ describe('matchModAfterAttr', () => {
     expect(matchModAfterAttr('mod tests;')).toBeNull();
   });
 
-  it('finishes quickly on a long run of whitespace with no module', () => {
-    const start = Date.now();
-    expect(matchModAfterAttr(' '.repeat(50_000) + 'x')).toBeNull();
-    expect(Date.now() - start).toBeLessThan(1000);
+  // `// ` repeated with no newline backtracks exponentially in the old pattern (n=21 took ~40 s); the bound is loose on purpose.
+  it('finishes quickly on input that is pathological for the old pattern', () => {
+    const start = performance.now();
+    expect(matchModAfterAttr('// '.repeat(20_000))).toBeNull();
+    expect(performance.now() - start).toBeLessThan(2000);
   });
 });
