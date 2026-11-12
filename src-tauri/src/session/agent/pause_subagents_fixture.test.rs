@@ -79,8 +79,36 @@ pub(in crate::session::agent) struct Stub<'a> {
 
 pub(in crate::session::agent) struct Fixture {
     pub agent: Arc<SessionAgent>,
+    pub manager: Arc<crate::session::manager::SessionManager>,
+    dir: PathBuf,
     log: PathBuf,
     gate: PathBuf,
+}
+
+fn session_row(id: &str, dir: &std::path::Path) -> Session {
+    Session {
+        id: id.to_string(),
+        repository_id: "repo".to_string(),
+        name: "test".to_string(),
+        branch: format!("feat/{id}"),
+        base_branch: "main".to_string(),
+        worktree_path: dir.join(format!("worktree-{id}")).to_string_lossy().into_owned(),
+        session_dir: None,
+        current_conversation: None,
+        last_message_count: None,
+        last_model: None,
+        last_thinking_level: None,
+        created_at: "2026-11-11T00:00:00.000Z".to_string(),
+        last_activity_at: "2026-11-11T00:00:00.000Z".to_string(),
+        archived_at: None,
+        hidden_at: None,
+        paused_held: None,
+        current_turn_subagents: None,
+        stopped_on_request_conversation: None,
+        stopped_on_request_at_size: None,
+        pinned_model: false,
+        origin_issue: None,
+    }
 }
 
 pub(in crate::session::agent) async fn fixture(running: &[&str], stuck: &[&str]) -> Fixture {
@@ -112,29 +140,7 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
         .await
         .unwrap();
     registry_store
-        .add_session(Session {
-            id: session_id.clone(),
-            repository_id: "repo".to_string(),
-            name: "test".to_string(),
-            branch: "feat/test".to_string(),
-            base_branch: "main".to_string(),
-            worktree_path: dir.join("worktree").to_string_lossy().into_owned(),
-            session_dir: None,
-            current_conversation: None,
-            last_message_count: None,
-            last_model: None,
-            last_thinking_level: None,
-            created_at: "2026-11-11T00:00:00.000Z".to_string(),
-            last_activity_at: "2026-11-11T00:00:00.000Z".to_string(),
-            archived_at: None,
-            hidden_at: None,
-            paused_held: None,
-            current_turn_subagents: None,
-            stopped_on_request_conversation: None,
-            stopped_on_request_at_size: None,
-            pinned_model: false,
-            origin_issue: None,
-        })
+        .add_session(session_row(&session_id, &dir))
         .await
         .unwrap();
     let registry = Arc::new(tokio::sync::Mutex::new(registry_store));
@@ -170,10 +176,25 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
         let process = OmpProcess::from_command(command).unwrap();
         agent.state.lock().await.process = Some(Arc::new(process));
     }
-    Fixture { agent, log, gate }
+    Fixture {
+        agent,
+        manager,
+        dir,
+        log,
+        gate,
+    }
 }
 
 impl Fixture {
+    /// Another Session in the same registry, with no process and a worktree that does not exist.
+    pub async fn add_session(&self, id: &str, held: &[&str], archived: bool) {
+        let mut row = session_row(id, &self.dir);
+        row.paused_held = Some(held.iter().map(|text| text.to_string()).collect());
+        row.archived_at = archived.then(|| "2026-11-12T00:00:00.000Z".to_string());
+        let registry = self.agent.registry().clone();
+        registry.lock().await.add_session(row).await.unwrap();
+    }
+
     /// Every command the stub received, in order.
     pub async fn rpcs(&self) -> Vec<Value> {
         let text = tokio::fs::read_to_string(&self.log)

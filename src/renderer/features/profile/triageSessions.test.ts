@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { countPausedIdle, isIdleStoppable } from './triageSessions'
+import { countPausedIdle, isIdleStoppable, pausedSkippedLine } from './triageSessions'
 
 const idle = { status: 'idle', archivedAt: null } as const
 
@@ -33,5 +33,19 @@ describe('countPausedIdle', () => {
 
   it('is zero when nothing is paused', () => {
     expect(countPausedIdle([idle])).toBe(0)
+  })
+})
+
+describe('pausedSkippedLine', () => {
+  it('says nothing when no paused Session was skipped', () => {
+    expect(pausedSkippedLine(0)).toBeNull()
+  })
+
+  it('uses the singular for one Session', () => {
+    expect(pausedSkippedLine(1)).toBe('Skipped 1 paused Session.')
+  })
+
+  it('uses the plural for several Sessions', () => {
+    expect(pausedSkippedLine(2)).toBe('Skipped 2 paused Sessions.')
   })
 })

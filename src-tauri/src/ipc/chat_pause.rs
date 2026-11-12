@@ -73,29 +73,8 @@ pub fn chat_pause_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
 /// with its held messages and is counted in `failed`; the rest still resume. Archived Sessions are left alone.
 pub fn chat_resume_all(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let ids: Vec<String> = state
-            .registry
-            .lock()
-            .await
-            .snapshot()
-            .sessions
-            .into_iter()
-            .filter(|s| s.paused_held.is_some() && s.archived_at.is_none())
-            .map(|s| s.id)
-            .collect();
-        let mut resumed = 0;
-        let mut failed = 0;
-        for id in ids {
-            match state
-                .session_manager
-                .get_or_create_agent(&id)
-                .resume()
-                .await
-            {
-                Ok(_) => resumed += 1,
-                Err(_) => failed += 1,
-            }
-        }
+        let (resumed, failed) =
+            crate::session::agent::pause::resume_all(&state.registry, &state.session_manager).await;
         Ok(json!({ "count": resumed, "failed": failed }))
     })
 }

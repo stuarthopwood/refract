@@ -2,6 +2,7 @@
 // Session, and its worktree is missing, so a start attempt fails with `worktree-missing`.
 use super::super::pause_subagents::fixture::{fixture_with, Stub};
 use crate::store::registry::SessionPatch;
+use std::sync::{Arc, Mutex};
 
 async fn stopped_paused(held: &[&str]) -> super::super::pause_subagents::fixture::Fixture {
     let fx = fixture_with(Stub {
@@ -87,4 +88,85 @@ async fn resume_never_starts_an_archived_session() {
 
     assert_eq!(err.code, "session-archived");
     assert!(fx.agent.is_paused().await);
+    let held = fx.agent.state.lock().await.pause.held.clone();
+    assert_eq!(held, Some(vec!["held".to_string()]));
+}
+
+#[tokio::test]
+async fn resume_sends_the_held_messages_in_order_then_clears_the_pause() {
+    let fx = fixture_with(Stub::default()).await;
+    fx.agent
+        .state
+        .lock()
+        .await
+        .pause
+        .hold_for_test(vec!["first".to_string(), "second".to_string()]);
+
+    let value = fx.agent.resume().await.unwrap();
+
+    assert_eq!(value["paused"], false);
+    let sent: Vec<String> = fx
+        .rpcs()
+        .await
+        .iter()
+        .filter(|cmd| cmd["type"] == "prompt")
+        .map(|cmd| cmd["message"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(sent, ["first", "second"]);
+    assert!(!fx.agent.is_paused().await);
+    fx.finish().await;
+}
+
+async fn paused_live(fx: &super::super::pause_subagents::fixture::Fixture) {
+    fx.agent.state.lock().await.pause.hold_for_test(Vec::new());
+    fx.agent.persist_pause().await;
+}
+
+#[tokio::test]
+async fn resume_all_counts_resumed_and_failed_and_leaves_archived_sessions_alone() {
+    let fx = fixture_with(Stub::default()).await;
+    paused_live(&fx).await;
+    fx.add_session("failing", &["kept"], false).await;
+    fx.add_session("archived", &["held"], true).await;
+
+    let (resumed, failed) = super::resume_all(fx.agent.registry(), &fx.manager).await;
+
+    assert_eq!((resumed, failed), (1, 1));
+    let registry = fx.agent.registry().lock().await;
+    let archived = registry.get_session("archived").unwrap();
+    assert_eq!(archived.paused_held, Some(vec!["held".to_string()]));
+    let failing = registry.get_session("failing").unwrap();
+    assert_eq!(failing.paused_held, Some(vec!["kept".to_string()]));
+    drop(registry);
+    assert!(fx.manager.get_or_create_agent("archived").is_paused().await);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn resume_all_does_not_count_a_resume_already_in_flight() {
+    let fx = fixture_with(Stub::default()).await;
+    paused_live(&fx).await;
+    fx.agent.state.lock().await.pause.mark_resuming_for_test();
+
+    let (resumed, failed) = super::resume_all(fx.agent.registry(), &fx.manager).await;
+
+    assert_eq!((resumed, failed), (0, 0));
+    assert!(fx.agent.is_paused().await);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_status_event_is_emitted_while_the_state_lock_is_held() {
+    let fx = fixture_with(Stub::default()).await;
+    let locked_at_emit = Arc::new(Mutex::new(Vec::new()));
+    let (agent, seen) = (fx.agent.clone(), locked_at_emit.clone());
+    // Only a lock held across the emit keeps a newer pause change from being delivered before it.
+    fx.agent
+        .events
+        .set_status_probe(move || seen.lock().unwrap().push(agent.state.try_lock().is_err()));
+
+    fx.agent.emit_status().await;
+
+    assert_eq!(*locked_at_emit.lock().unwrap(), [true]);
+    fx.finish().await;
 }

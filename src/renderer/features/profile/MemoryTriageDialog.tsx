@@ -13,7 +13,7 @@ import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { isFocusStranded } from '@/lib/focus'
 import { notify, useRepositoriesStore, useSessionsStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
-import { countPausedIdle, isIdleStoppable } from './triageSessions'
+import { countPausedIdle, isIdleStoppable, pausedSkippedLine } from './triageSessions'
 
 export interface MemoryTriageDialogProps {
   open: boolean
@@ -39,7 +39,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
   // FR-037: idle-only; never a working, needs-you, stopped or paused Session.
   const idleSessions = sessions.filter(isIdleStoppable)
-  const pausedSkipped = countPausedIdle(sessions)
+  const pausedSkippedText = pausedSkippedLine(countPausedIdle(sessions))
 
   const [confirmTarget, setConfirmTarget] = useState<SessionSummary | null>(null)
   const lastConfirmTargetRef = useRef<SessionSummary | null>(null)
@@ -236,11 +236,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
               })}
             </ul>
           )}
-          {pausedSkipped > 0 && (
-            <p className="text-sm text-muted-foreground">
-              Skipped {pausedSkipped} paused {pausedSkipped === 1 ? 'Session' : 'Sessions'}.
-            </p>
-          )}
+          {pausedSkippedText && <p className="text-sm text-muted-foreground">{pausedSkippedText}</p>}
           <DialogFooter>
             {idleSessions.length > 0 && (
               <Button

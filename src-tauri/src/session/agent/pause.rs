@@ -77,6 +77,35 @@ pub(super) fn queue_view(
     (merged, steering.to_vec())
 }
 
+/// Resumes every paused, unarchived Session and returns `(resumed, failed)`. A Resume already in
+/// flight answers `paused: true`; it is neither, since that Resume owns the outcome.
+pub async fn resume_all(
+    registry: &super::SharedRegistry,
+    manager: &crate::session::manager::SessionManager,
+) -> (u32, u32) {
+    let ids: Vec<String> = registry
+        .lock()
+        .await
+        .snapshot()
+        .sessions
+        .into_iter()
+        .filter(|s| s.paused_held.is_some() && s.archived_at.is_none())
+        .map(|s| s.id)
+        .collect();
+    let (mut resumed, mut failed) = (0, 0);
+    for id in ids {
+        match manager.get_or_create_agent(&id).resume().await {
+            Ok(value) if value["paused"] == false => resumed += 1,
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("resume all: a Session did not start: {} ({})", id, err.code);
+                failed += 1;
+            }
+        }
+    }
+    (resumed, failed)
+}
+
 impl SessionAgent {
     /// Loads the persisted pause once per agent.
     pub(super) async fn ensure_pause_loaded(&self) {

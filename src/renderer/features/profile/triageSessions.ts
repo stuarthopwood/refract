@@ -13,3 +13,9 @@ export function isIdleStoppable(session: TriageSession): boolean {
 export function countPausedIdle(sessions: readonly TriageSession[]): number {
   return sessions.filter((session) => session.status === 'idle' && !session.archivedAt && session.pause).length
 }
+
+/** The dialog's note on idle Sessions it left out; `null` when none were. */
+export function pausedSkippedLine(count: number): string | null {
+  if (count <= 0) return null
+  return `Skipped ${count} paused ${count === 1 ? 'Session' : 'Sessions'}.`
+}
