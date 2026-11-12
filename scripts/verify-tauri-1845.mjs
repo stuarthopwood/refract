@@ -104,6 +104,7 @@ const COST_CELLS_JS = `(() => {
 })()`;
 
 const SEEDED_TOOL_CALLS = SEED_ROLLUP.reduce((sum, [, , count]) => sum + count, 0);
+const SEEDED_TOOL_USD = SEED_ROLLUP.reduce((sum, [, , , usd]) => sum + usd, 0);
 
 // The ingest adds no tool calls (the session fixture has none), so every seeded row must survive.
 function verifyMigratedDb(dbPath, check) {
@@ -117,6 +118,11 @@ function verifyMigratedDb(dbPath, check) {
     }
     const { n } = db.prepare('SELECT count(*) AS n FROM tool_calls').get();
     check(n === SEEDED_TOOL_CALLS, 'the migration kept every seeded tool_calls row', { expected: SEEDED_TOOL_CALLS, actual: n });
+    // Row counts alone would pass if the rename dropped the dollar values.
+    for (const table of ['tool_calls', 'tool_rollup']) {
+      const { usd } = db.prepare(`SELECT sum(cost_usd) AS usd FROM ${table}`).get();
+      check(Math.abs(usd - SEEDED_TOOL_USD) < 1e-9, `${table} cost_usd still sums to the seeded total`, { expected: SEEDED_TOOL_USD, actual: usd });
+    }
   } finally {
     db.close();
   }
