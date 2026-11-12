@@ -35,11 +35,38 @@ Tool errors follow the #1193 shape: `isError: true` with a `{error:{code,message
 - Failures reach omp as `host_tool_result` with `isError: true` and a JSON text body `{ "error": code, "message": text }`; the renderer shows no toast. Results are capped at 8 KiB.
 - Approval policy is `needs_approval(mutates, yolo)`. None of these tools mutate files or Session lifecycle, so none raises the card in any mode (FR-009).
 
-### Open questions put to clarify
+### Decided (Skippy, delegated by Stuart; recorded by clarify, see Clarifications)
 
-- [NEEDS CLARIFICATION: Tool names. The issue writes `list_sessions`, `get_session_status`, `send_session_message`; spec 124 decision 2 says Host tools carry the `refract_` prefix.]
-- [NEEDS CLARIFICATION: Size. A `list_sessions` result can exceed the 8 KiB result cap when there are many Sessions; spec 124 turns oversize into `result_too_large`.]
-- [NEEDS CLARIFICATION: Source of `stopped-on-request`. The grill lists it as a stop reason, but the code keeps it only as registry fields (`stopped_on_request_*`), not as an in-memory stop reason string.]
+10. **Tool names carry the `refract_` prefix** (spec 124 decision 2): `refract_list_sessions`, `refract_get_session_status`, `refract_send_session_message`. This spec and the issue use the short names as prose shorthand.
+11. **A large list is trimmed, not refused.** `list_sessions` drops rows from the end until the JSON fits the 8 KiB cap and adds `truncated: true` and `total` (the matching count); the caller's own row is always kept. `result_too_large` is never returned by this tool.
+12. **`stopped-on-request` comes from the registry marker.** A Session with no live process and a `stopped_on_request_conversation` marker reports `stopReason: "stopped-on-request"`; the other four reasons come from the in-memory stop reason, and a Session never launched reports `not-started`.
+13. **Check order for `send_session_message`:** `invalid_input`, `not_found`, `invalid_target`, `session_not_running`, `rate_limited`, then delivery. Only delivered sends count toward the loop guard.
+14. **No working-mode decoration.** A Session message is not Stuart's prompt, so the working-mode prompt decoration is not applied to it; the envelope reaches the target exactly as built.
+
+## Clarifications
+
+### Session 2026-11-12 (answered from the grill; Stuart was not asked live)
+
+- Q: Do the tool names carry the `refract_` prefix? -> A: Yes. Decided (Skippy, delegated): spec 124 decision 2 sets the prefix for every Host tool, and the access table and overlay are keyed by name. The grill did not cover it.
+- Q: What happens to a Paused target's message? -> A: Decided (Stuart, 2026-11-12, grill): it is held through the existing pause hold and the outcome is `held`.
+- Q: What if the target is Stopped or Archived? -> A: Decided (Stuart, 2026-11-12, grill): `session_not_running` with the target's status; nothing is started.
+- Q: What is the status vocabulary, and where do errors go? -> A: Decided (Stuart, 2026-11-12, grill): five values; an error is `stopped` plus a failure reason; no `Error` variant.
+- Q: Where does a PR come from, and does the list carry it? -> A: Decided (Stuart, 2026-11-12, grill): readout cache when running, otherwise one backed-off on-demand lookup; only `get_session_status`.
+- Q: How is a message labelled, and does the label survive a reload? -> A: Decided (Stuart, 2026-11-12, grill): fixed envelope, escaped inner tags, parser sets `source`; omp's session file is the source of truth; a message never resolves an approval card.
+- Q: Which Sessions get the tools? -> A: Decided (Stuart, 2026-11-12, grill): the Root row only; Child stays empty until #1859.
+- Q: How does `list_sessions` filter and what does a row hold? -> A: Decided (Stuart, 2026-11-12, grill): `project` is an id or a name, case-insensitive, unknown is a tool error; row shape fixed; hidden included with `hidden:true`; archived only on request; no PR.
+- Q: What are the send edges and the loop guard? -> A: Decided (Stuart, 2026-11-12, grill): `invalid_target`, `invalid_input` (empty or over 32 KB), `not_found`, `rate_limited` at 10 per sender-target pair per rolling 10 minutes, in memory.
+- Q: What does the transcript show and what does the link do? -> A: Decided (Stuart, 2026-11-12, grill): a muted "From Session <name>" line built from shared components; the name switches to the sender without moving focus unexpectedly; a deleted sender shows its id as plain text.
+- Q: Which error code does an unmatched `project` return? -> A: Decided (Skippy, delegated): `unknown_project`. The grill says only "a tool error".
+- Q: What happens when the list is bigger than the 8 KiB cap? -> A: Decided (Skippy, delegated): trim rows from the end, keep the caller's row, add `truncated: true` and `total` (decision 11). Refusing with `result_too_large` would make the tool useless for a large workspace.
+- Q: Where does `stopped-on-request` come from? -> A: Decided (Skippy, delegated): the registry marker `stopped_on_request_conversation`, when the Session has no live process (decision 12). The in-memory stop reasons do not include it today.
+- Q: In what order are the send checks applied, and what counts toward the loop guard? -> A: Decided (Skippy, delegated): decision 13; a refused send never burns quota.
+- Q: Is the working-mode prompt decoration applied to a Session message? -> A: Decided (Skippy, delegated): no (decision 14), so the envelope arrives intact and the parser can match it strictly.
+- Q: Exact envelope layout, and how is it escaped? -> A: Decided (Skippy, delegated): `<session-message from="NAME" session="ID">\nBODY\n</session-message>`. In BODY, `<session-message` and `</session-message` are written as `&lt;session-message` and `&lt;/session-message`, and a literal `&lt;` that precedes either is escaped first so the transform is reversible. NAME is escaped for `&`, `"`, `<` and `>`. The parser accepts only text that is exactly one envelope (anchored at both ends) and reverses the escapes.
+- Q: What does `lastActivityAt` look like? -> A: Decided (Skippy, delegated): the registry's RFC 3339 string, unchanged.
+- Q: May a Session message a hidden Session, and may `get_session_status` read an archived one? -> A: Decided (Skippy, delegated): yes to reading both (hidden listed with `hidden:true`, archived by id with `archived:true`); a hidden target accepts a message like any running Session, an archived one is `session_not_running`.
+- Q: What does the link do for keyboard focus? -> A: Decided (Skippy, delegated): it is a button-style link activated with Enter or Space; activation uses the existing user-initiated Session switch (`sessions-store.open(id, true)`) and adds no focus call of its own.
+- Q: Which shared component carries the line? -> A: Decided (Skippy, delegated): extend `SourceTag` (inert today) with an optional action slot rather than build a new control (ADR 0003); the plan names the exact prop.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -125,9 +152,9 @@ In the target's transcript, the message shows as a user turn with a muted "From 
 
 ### Functional Requirements
 
-- **FR-001**: The Root row of the access table MUST register three Host tools, `list_sessions`, `get_session_status` and `send_session_message`, on every Root launch; the Child row MUST stay empty.
+- **FR-001**: The Root row of the access table MUST register three Host tools, `refract_list_sessions`, `refract_get_session_status` and `refract_send_session_message` (shorthand `list_sessions` etc. in this spec), on every Root launch; the Child row MUST stay empty.
 - **FR-002**: `list_sessions` MUST accept optional `project` and `include_archived`, return one row per matching Session with `{id, name, project:{id,name}, branch, status, archived, lastActivityAt}`, add `self: true` on the caller's row and `hidden: true` on hidden Sessions, and carry no PR.
-- **FR-003**: `project` MUST match a Project id or a Project name case-insensitively; an unmatched value MUST return a tool error.
+- **FR-003**: `project` MUST match a Project id or a Project name case-insensitively; an unmatched value MUST return a tool error with code `unknown_project`. A result over the 8 KiB cap MUST be trimmed from the end (caller's row kept) with `truncated: true` and `total`, never `result_too_large`.
 - **FR-004**: Archived Sessions MUST be listed only when `include_archived` is true.
 - **FR-005**: `get_session_status(id)` MUST return `{id, name, project, status, [stopReason], archived, hidden, branch, pullRequest, lastActivityAt}` for any Session id, using the vocabulary `working`, `waiting-for-approval`, `idle`, `paused`, `stopped`, and `stopReason` in `not-started`, `agent-exited`, `start-failed`, `worktree-missing`, `stopped-on-request` for `stopped` only.
 - **FR-006**: `pullRequest` MUST come from the readout cache for a running Session and from one on-demand `pull_request_for_branch` call otherwise, as `{number, url}` or `null`. `list_sessions` MUST NOT look up PRs.
