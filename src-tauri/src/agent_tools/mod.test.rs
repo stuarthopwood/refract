@@ -28,6 +28,19 @@ fn child_sessions_get_no_tools() {
 }
 
 #[test]
+fn child_sessions_are_never_offered_the_session_tools() {
+    let access = ToolAccess {
+        role: Role::Child,
+        depth: 2,
+    };
+    let offered = tools_for(access);
+    for tool in sessions::SESSION_TOOLS {
+        assert!(!offered.contains(&tool), "{tool}");
+    }
+    assert!(host_tool_defs(access).is_empty());
+}
+
+#[test]
 fn definitions_match_the_rpc_host_tool_shape() {
     for def in host_tool_defs(ToolAccess::root()) {
         assert_eq!(def["loadMode"], "essential");

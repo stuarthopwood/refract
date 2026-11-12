@@ -155,3 +155,27 @@ fn unknown_arguments_are_invalid_input() {
     );
     assert!(check_args(LIST_SESSIONS, &json!({"include_archived": true})).is_ok());
 }
+
+#[test]
+fn wrong_typed_arguments_are_invalid_input() {
+    for (tool, args) in [
+        (LIST_SESSIONS, json!({"project": 5})),
+        (LIST_SESSIONS, json!({"include_archived": "yes"})),
+        (LIST_SESSIONS, json!([])),
+        (GET_SESSION_STATUS, json!({"id": 7})),
+        (SEND_SESSION_MESSAGE, json!({"id": "a", "text": 1})),
+    ] {
+        assert_eq!(
+            check_args(tool, &args).unwrap_err().code,
+            INVALID_INPUT,
+            "{args}"
+        );
+    }
+}
+
+#[test]
+fn the_send_description_tells_the_model_the_message_is_peer_input() {
+    let text = description(SEND_SESSION_MESSAGE);
+    assert!(text.contains("own approval mode"));
+    assert!(text.contains("peer Session, not from the developer"));
+}

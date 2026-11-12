@@ -1,5 +1,5 @@
 use super::*;
-use std::time::Duration;
+use crate::agent_tools::sessions_limit::MAX_SENDS;
 
 fn row(id: &str, status: &str) -> Value {
     json!({ "id": id, "status": status, "archivedAt": null })
@@ -54,14 +54,33 @@ fn stopped_target_is_refused_with_its_status() {
 }
 
 #[test]
-fn paused_stopped_and_archived_targets_are_refused() {
+fn a_stopped_target_that_kept_its_pause_is_refused_as_paused() {
     let paused = [json!({"id": "t", "status": "stopped", "pause": "paused", "archivedAt": null})];
     let err = check_target(&paused, "me", "t").unwrap_err();
     assert_eq!(err.code, SESSION_NOT_RUNNING);
     assert!(err.message.contains("paused"));
+}
+
+#[test]
+fn archived_targets_are_refused_as_archived() {
     let archived = [json!({"id": "t", "status": "idle", "archivedAt": "x"})];
     let err = check_target(&archived, "me", "t").unwrap_err();
+    assert_eq!(err.code, SESSION_NOT_RUNNING);
     assert!(err.message.contains("archived"));
+}
+
+#[test]
+fn a_status_the_tools_read_as_stopped_is_refused() {
+    for status in ["starting", "weird"] {
+        let err = check_target(&[row("t", status)], "me", "t").unwrap_err();
+        assert_eq!(err.code, SESSION_NOT_RUNNING);
+        assert!(err.message.contains("stopped"));
+    }
+    let no_status = [json!({"id": "t", "archivedAt": null})];
+    assert_eq!(
+        code(check_target(&no_status, "me", "t")),
+        SESSION_NOT_RUNNING
+    );
 }
 
 #[test]
@@ -82,18 +101,121 @@ fn checks_run_in_the_contract_order() {
     assert_eq!(code(check_target(&rows, "me", "gone")), NOT_FOUND);
 }
 
-#[test]
-fn eleventh_delivered_send_is_rate_limited_and_refusals_do_not_count() {
-    let limiter = SendLimiter::default();
-    let now = Instant::now();
-    for _ in 0..crate::agent_tools::sessions_limit::MAX_SENDS {
-        assert!(check_rate(&limiter, "a", "b", now).is_ok());
-        limiter.record("a", "b", now);
+fn rows() -> Vec<Value> {
+    vec![
+        json!({"id": "me", "name": "Alpha", "status": "working", "archivedAt": null}),
+        json!({"id": "t", "name": "Beta", "status": "idle", "archivedAt": null}),
+        row("dead", "stopped"),
+    ]
+}
+
+fn plan_with<'a>(
+    args: &'a Value,
+    rows: &'a [Value],
+    limiter: &SendLimiter,
+) -> Result<SendPlan<'a>, ToolError> {
+    plan_send(args, rows, "me", limiter, Instant::now())
+}
+
+fn used(limiter: &SendLimiter, to: &str, now: Instant) -> usize {
+    // Probing takes every free slot, so each grant is handed straight back.
+    let granted = (0..MAX_SENDS)
+        .filter(|_| limiter.try_acquire("me", to, now).is_ok())
+        .count();
+    for _ in 0..granted {
+        limiter.release("me", to, now);
     }
-    let err = check_rate(&limiter, "a", "b", now).unwrap_err();
-    assert_eq!(err.code, RATE_LIMITED);
-    assert!(check_rate(&limiter, "a", "c", now).is_ok());
-    assert!(check_rate(&limiter, "a", "b", now + Duration::from_secs(601)).is_ok());
+    MAX_SENDS - granted
+}
+
+#[test]
+fn the_planner_checks_in_the_contract_order() {
+    let limiter = SendLimiter::default();
+    let rows = rows();
+    let ok = json!({"id": "t", "text": "hi"});
+    let now = Instant::now();
+    for _ in 0..MAX_SENDS {
+        plan_send(&ok, &rows, "me", &limiter, now).unwrap();
+    }
+    // The limit is spent for every target below, so only the check order decides each result.
+    for to in ["gone", "me", "dead"] {
+        for _ in 0..MAX_SENDS {
+            limiter.try_acquire("me", to, now).unwrap();
+        }
+    }
+    // Each failure beats every check after it.
+    let cases = [
+        (json!({"id": "t", "text": ""}), INVALID_INPUT),
+        (json!({"id": "gone", "text": "hi"}), NOT_FOUND),
+        (json!({"id": "me", "text": "hi"}), INVALID_TARGET),
+        (json!({"id": "dead", "text": "hi"}), SESSION_NOT_RUNNING),
+        (ok.clone(), RATE_LIMITED),
+    ];
+    for (args, expected) in cases {
+        assert_eq!(code(plan_send(&args, &rows, "me", &limiter, now)), expected);
+    }
+}
+
+#[test]
+fn a_refused_plan_takes_no_slot() {
+    let limiter = SendLimiter::default();
+    let rows = rows();
+    let now = Instant::now();
+    for args in [
+        json!({"id": "dead", "text": "hi"}),
+        json!({"id": "gone", "text": "hi"}),
+        json!({"id": "t"}),
+    ] {
+        assert!(plan_with(&args, &rows, &limiter).is_err());
+    }
+    assert_eq!(used(&limiter, "dead", now), 0);
+    assert_eq!(used(&limiter, "gone", now), 0);
+}
+
+#[test]
+fn the_sender_name_falls_back_to_the_id() {
+    let limiter = SendLimiter::default();
+    let args = json!({"id": "t", "text": "hi"});
+    let named = rows();
+    assert_eq!(plan_with(&args, &named, &limiter).unwrap().sender, "Alpha");
+    let unnamed = [json!({"id": "t", "status": "idle", "archivedAt": null})];
+    assert_eq!(plan_with(&args, &unnamed, &limiter).unwrap().sender, "me");
+}
+
+#[test]
+fn a_failed_delivery_gives_its_slot_back_and_a_delivered_one_keeps_it() {
+    let limiter = SendLimiter::default();
+    let rows = rows();
+    let args = json!({"id": "t", "text": "hi"});
+    let plan = plan_with(&args, &rows, &limiter).unwrap();
+    let failed = settle(
+        &limiter,
+        &plan,
+        Err(AgentError::new("prompt-failed", "boom")),
+    );
+    assert_eq!(code(failed), "prompt-failed");
+    assert_eq!(used(&limiter, "t", plan.slot), 0);
+
+    let plan = plan_with(&args, &rows, &limiter).unwrap();
+    let sent = settle(&limiter, &plan, Ok(MessageDelivery::Queued)).unwrap();
+    assert_eq!(sent["outcome"], "queued");
+    assert_eq!(used(&limiter, "t", plan.slot), 1);
+}
+
+#[test]
+fn a_target_that_stopped_mid_send_is_session_not_running() {
+    let limiter = SendLimiter::default();
+    let rows = rows();
+    let args = json!({"id": "t", "text": "hi"});
+    let plan = plan_with(&args, &rows, &limiter).unwrap();
+    let err = settle(
+        &limiter,
+        &plan,
+        Err(AgentError::new("agent-not-running", "no process")),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, SESSION_NOT_RUNNING);
+    assert!(err.message.contains("stopped"));
 }
 
 #[test]

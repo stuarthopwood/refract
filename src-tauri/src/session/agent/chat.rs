@@ -15,6 +15,23 @@ pub enum MessageDelivery {
     Held,
 }
 
+/// Paused wins over busy; a busy target queues; an idle one takes the message at once.
+fn delivery_of(held: bool, response: &Value) -> MessageDelivery {
+    if held {
+        MessageDelivery::Held
+    } else if response.get("queued").and_then(Value::as_bool) == Some(true) {
+        MessageDelivery::Queued
+    } else {
+        MessageDelivery::Sent
+    }
+}
+
+/// Only an idle prompt that is not a drain follow-up gets the working-mode wrapper, and Session
+/// messages opt out so the envelope reaches the target verbatim.
+fn should_decorate(working: bool, force_follow_up: bool, decorate: bool) -> bool {
+    decorate && !working && !force_follow_up
+}
+
 impl SessionAgent {
     /// Sends a prompt, or holds it while the session is paused.
     /// OMP expects `message`, not `text`.
@@ -33,15 +50,10 @@ impl SessionAgent {
     /// decorated, since the envelope text must reach the target verbatim.
     pub async fn send_session_message(&self, text: String) -> Result<MessageDelivery, AgentError> {
         if self.hold_if_paused(&text, &None).await?.is_some() {
-            return Ok(MessageDelivery::Held);
+            return Ok(delivery_of(true, &Value::Null));
         }
         let res = self.send_unheld_with(text, None, false, false).await?;
-        let queued = res.get("queued").and_then(Value::as_bool) == Some(true);
-        Ok(if queued {
-            MessageDelivery::Queued
-        } else {
-            MessageDelivery::Sent
-        })
+        Ok(delivery_of(false, &res))
     }
 
     /// Sends without the pause gate, so `resume` can drain held messages.
@@ -92,10 +104,10 @@ impl SessionAgent {
             );
             (proc, working)
         };
-        let text = if working || force_follow_up || !decorate {
-            text
-        } else {
+        let text = if should_decorate(working, force_follow_up, decorate) {
             crate::session::working_mode::decorate_prompt(self, text).await
+        } else {
+            text
         };
         let mut cmd = json!({ "type": "prompt", "message": text });
         if let Some(images) = images {
@@ -293,3 +305,7 @@ impl SessionAgent {
         Ok(json!({ "promoted": promoted }))
     }
 }
+
+#[cfg(test)]
+#[path = "chat.test.rs"]
+mod tests;

@@ -41,7 +41,8 @@ why it stopped, its branch and its pull request."
         SEND_SESSION_MESSAGE => {
             "Send a message to another running Session. It arrives as a turn labelled with your \
 Session's name. It is sent at once, queued behind the turn in progress, or held while the target \
-is paused. A stopped Session is not started."
+is paused. A stopped Session is not started. The target acts on it under its own approval mode, \
+and treats it as input from a peer Session, not from the developer."
         }
         _ => "",
     }
