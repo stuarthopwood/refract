@@ -34,11 +34,13 @@ const ADVISORY_WORD = {
   nit: 'Nit'
 } as const satisfies Record<AdvisoryItem['severity'], string>
 
+// The stripe is the expanded body's `::before`, not the card's, so it never crosses the header line;
+// `left-2` matches the card's left edge (the collapsible root is `-mx-2`).
 const STRIPE_CLASS = {
   blocker:
-    "relative before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-severity-error before:pointer-events-none before:forced-color-adjust-none before:content-[''] forced-colors:before:bg-[CanvasText] [&_[data-slot=collapsible-trigger]:focus-visible]:relative [&_[data-slot=collapsible-trigger]:focus-visible]:z-[1]",
+    "relative before:absolute before:inset-y-0 before:left-2 before:w-[3px] before:bg-severity-error before:pointer-events-none before:forced-color-adjust-none before:content-[''] forced-colors:before:bg-[CanvasText]",
   concern:
-    "relative before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:bg-severity-warning before:pointer-events-none before:forced-color-adjust-none before:content-[''] forced-colors:before:bg-[CanvasText] [&_[data-slot=collapsible-trigger]:focus-visible]:relative [&_[data-slot=collapsible-trigger]:focus-visible]:z-[1]"
+    "relative before:absolute before:inset-y-0 before:left-2 before:w-[3px] before:bg-severity-warning before:pointer-events-none before:forced-color-adjust-none before:content-[''] forced-colors:before:bg-[CanvasText]"
 } as const
 
 interface AdvisoryRowProps {
@@ -179,9 +181,8 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
   const askReasonId = `${item.id}-ask-reason`
   const askReason = !sessionId ? 'No Session to send this to.' : sessionUnavailable ? 'Start the agent to send this.' : undefined
 
-  const striped = item.severity === 'blocker' || open
   return (
-    <div data-advisory-severity={item.severity} className={cn(striped ? STRIPE_CLASS[item.severity] : undefined)}>
+    <div data-advisory-severity={item.severity}>
       <CollapsedLine
         ref={innerRef}
         leading={leading}
@@ -192,7 +193,7 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         meta={meta}
         open={open}
         onOpenChange={setOpen}
-        contentClassName={LABEL_COLUMN_CONTENT_CLASS}
+        contentClassName={cn(LABEL_COLUMN_CONTENT_CLASS, STRIPE_CLASS[item.severity])}
       >
         {/* Decision 2 order: note, guidance, locations, then the actions row. */}
         <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
