@@ -200,7 +200,11 @@ fn a_failed_delivery_gives_its_slot_back_and_a_delivered_one_keeps_it() {
     assert_eq!(sent["outcome"], "queued");
     assert_eq!(used(&limiter, "t", slot), 1);
     drop(plan);
-    assert_eq!(used(&limiter, "t", slot), 1, "a settled send keeps its slot after the plan drops");
+    assert_eq!(
+        used(&limiter, "t", slot),
+        1,
+        "a settled send keeps its slot after the plan drops"
+    );
 }
 
 #[test]
@@ -221,7 +225,11 @@ fn a_target_that_stopped_mid_send_is_session_not_running() {
     let rows = rows();
     let args = json!({"id": "t", "text": "hi"});
     let plan = plan_with(&args, &rows, &limiter).unwrap();
-    let err = settle(&plan, Err(AgentError::new("agent-not-running", "no process"))).unwrap_err();
+    let err = settle(
+        &plan,
+        Err(AgentError::new("agent-not-running", "no process")),
+    )
+    .unwrap_err();
     assert_eq!(err.code, SESSION_NOT_RUNNING);
     assert!(err.message.contains("stopped"));
 }
