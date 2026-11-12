@@ -17,7 +17,7 @@ One boolean setting plus a small gh-stack module in Rust (probe, view, merge, in
 ## Design decisions
 
 - **D1 Setting.** `stackedPullRequests`, default true, plumbed like `codeLigatures`. The toggle reads the live gh-stack state (D3) and shows the inline not-installed row with **Install**.
-- **D2 Stack data and merge routing.** New `github/stacks.rs` (about 200 lines, with `stacks.test.rs`):
+- **D2 Stack data and merge routing.** (Guard: "CLI refusal only" per research.md, as no stacked PR is available to spike.) New `github/stacks.rs` (about 200 lines, with `stacks.test.rs`):
   - `view_stack(repo_path, head_branch)` runs `gh stack view --json <branch>`, parses `viewJSONOutput` (research.md), maps exit 2 to "not stacked".
   - Renderer `src/shared/stack-chain.ts` (pure, tested): from the loaded pull requests, chains by base/head and returns `{ position, total, layers[] }`. Used when the Project has no checkout or view fails with exit 2/ missing.
   - `pullRequests.merge` gains `stackHint: 'stacked' | 'plain'` from the renderer. Rust: checkout view says stacked -> stack path; view says not stacked -> plain path (a stale hint never wins over a successful view); no view available -> hint decides.

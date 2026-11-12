@@ -25,5 +25,8 @@ Sources: `gh extension list` (gh-stack v0.3.0, installed), `gh stack --help`, `d
 ## REST
 `GET repos/{owner}/{repo}/stacks?pull_request=<n>` returned `[]` for an unstacked PR (observed). The response shape for a stacked PR was not observed (no stacked PR on this repo at probe time); implement spikes it (tasks T003) before relying on it.
 
+## Decided (Skippy, delegated): no scratch stack available
+No scratch repository with a stacked pull request exists, so the `stacks/<n>` response shape stays unobserved. The D2 guard relies on the CLI's own refusal only; no REST fixture is recorded.
+
 ## Open for implement (each has a spike task)
 - Whether `omp` accepts `--append-system-prompt` twice (help text shows it once). Plan avoids the question: stack text goes in the same rules file (D5).
