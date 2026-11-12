@@ -92,6 +92,21 @@ describe('lookupCard', () => {
     expect(peekCard({ ...TARGET, number: 201 })).toEqual(CARD)
   })
 
+  it('keeps a recently used entry when the cap evicts', async () => {
+    lookup.mockResolvedValue({ ok: true, value: CARD })
+    for (let number = 1; number <= 200; number++) await lookupCard({ ...TARGET, number })
+    await lookupCard({ ...TARGET, number: 1 })
+    await lookupCard({ ...TARGET, number: 201 })
+    expect(peekCard({ ...TARGET, number: 1 })).toEqual(CARD)
+    expect(peekCard({ ...TARGET, number: 2 })).toBeUndefined()
+  })
+
+  it('resolves null, never rejects, when the IPC call throws', async () => {
+    lookup.mockRejectedValue(new Error('ipc down'))
+    await expect(lookupCard(TARGET)).resolves.toBeNull()
+    expect(peekCard(TARGET)).toBeUndefined()
+  })
+
   it('lets a slow failure not delete the entry that replaced it', async () => {
     vi.useFakeTimers()
     try {
