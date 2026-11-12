@@ -2286,8 +2286,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
   middle-click opens the item on GitHub in the system browser and pins nothing. When the lookup fails the
   click opens the item on GitHub. A reference to another repository opens on GitHub. The link carries a type
   icon: neutral until the reference has been looked up (hover, focus or click, or a cached lookup), then
-  the issue or pull request icon. No lookup runs at render time and none is prefetched (#610); lookups stay
-  cached for five minutes per repository and number.
+  the issue or pull request icon, coloured by state with the existing tokens. The hover Item card opens with
+  the same icon and the word `Issue` or `Pull request`. No lookup runs at render time and none is prefetched
+  (#610); lookups stay cached for five minutes per repository and number.
 
 ### Key Entities
 
