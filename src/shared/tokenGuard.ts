@@ -34,6 +34,8 @@ export interface TokenGuardSnapshot {
   effectiveTriggers: TokenGuardTrigger[];
   /** Dotted keys the open Project's `.omp/config.yml` sets; empty without a Project. */
   projectOverrides: string[];
+  /** Best-effort steps that failed after a write succeeded; always empty on a read. */
+  warnings: string[];
 }
 
 export interface TokenGuardLaunchWarning {
@@ -152,7 +154,7 @@ export function parseThresholdInput(text: string): string | number | undefined {
 export interface TokenGuardKeyInfo {
   key: string;
   label: string;
-  /** True when OMP reloads the key into a running Session. Absent means it applies to new Conversations only (#1767 probe). */
+  /** True when OMP reloads the key into a running Session. Absent means it applies to new Sessions only (#1767, #1765 probes). */
   live?: boolean
   kind: TokenGuardKind;
   group: TokenGuardGroup;
@@ -438,4 +440,8 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
       'When a turn ends, the agent takes one extra hidden turn to save what it learned. This uses extra tokens.'
   }
 ];
+
+/** True when a saved change to `key` reaches only Sessions started afterwards; the few `live` keys reload into a running one. */
+export const appliesToNewSessionsOnly = (key: string): boolean =>
+  TOKEN_GUARD_KEYS.find((info) => info.key === key)?.live !== true
 

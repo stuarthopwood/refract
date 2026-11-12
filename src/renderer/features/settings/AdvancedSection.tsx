@@ -1,9 +1,9 @@
 // #1212 (spec 021), #1767: Settings > Advanced. The token guard values Refract owns, grouped by area.
 // They are written to OMP's global config (`~/.omp/agent/config.yml`), so Refract is the source of
-// truth. Only keys marked `live` reach a running Session; the rest apply to new Conversations.
+// truth. Only keys marked `live` reach a running Session; the rest apply to new Sessions.
 // The Advisor model is edited under Models > Advisor.
 import { useEffect, useRef } from 'react'
-import { InfoIcon } from 'lucide-react'
+import { InfoIcon, TriangleAlertIcon } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
@@ -22,7 +22,7 @@ import { OptimiseTokenUsage } from './advanced/OptimiseTokenUsage'
 const ADVISOR_GROUP_HINT = 'Applies in review mode only.'
 
 export function AdvancedSection() {
-  const { values, defaults, loaded, migration, effectiveTriggers, projectOverrides, error, load, set, reset, dismissMigrationNotice } = useTokenGuardStore()
+  const { values, defaults, loaded, migration, effectiveTriggers, projectOverrides, warnings, error, load, set, reset, dismissMigrationNotice } = useTokenGuardStore()
   const repositoryId = useDefaultRepositoryId()
   const roles = useModelRolesStore((state) => state.roles)
   const rolesLoaded = useModelRolesStore((state) => state.loaded)
@@ -55,7 +55,7 @@ export function AdvancedSection() {
       title="Advanced"
       headingRef={headingRef}
       actions={loaded ? <OptimiseTokenUsage rows={changedRows(values, defaults, defaultWindow)} /> : undefined}
-      intro="Refract writes these values to OMP's global config, so they apply to every Session you start from Refract. Keys marked 'Applies to new Conversations' do not change a running Conversation."
+      intro="Refract writes these values to OMP's global config, so they apply to every Session you start from Refract. Keys marked 'Applies to new Sessions' do not change a running Session."
     >
       {migration?.status === 'failed' && (
         <p role="alert" className="mb-2 text-sm text-destructive">
@@ -93,6 +93,18 @@ export function AdvancedSection() {
         <p role="alert" className="mb-2 text-sm text-destructive">
           {error}
         </p>
+      )}
+      {warnings.length > 0 && (
+        <Alert variant="warning" className="mb-6">
+          <TriangleAlertIcon aria-hidden />
+          <AlertDescription>
+            <ul>
+              {warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
       )}
       {loaded &&
         TOKEN_GUARD_GROUPS.map((group) => (

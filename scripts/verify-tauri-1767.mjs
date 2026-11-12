@@ -134,8 +134,8 @@ async function main() {
 
     const triggerLines = await cdp.evaluate(`Array.from(document.querySelectorAll('[aria-label="Where compaction starts"] li')).map((e) => e.textContent)`);
     check(triggerLines.length >= 1 && triggerLines.some((l) => l.startsWith(`${MODEL}: 80% (per-model)`) && /compaction starts at 160[,.]?000 tokens/.test(l)), 'Settings > Advanced: trigger line shows the per-model 80% of the 200000 window = 160000', triggerLines);
-    const labels = await cdp.evaluate(`(() => { const t = document.body.textContent; return { appliesToNew: t.includes('Applies to new Conversations'), projectNote: t.includes("This Project's .omp/config.yml sets this too, so it wins here. Refract does not edit that file."), intro: t.includes("Refract writes these values to OMP's global config") }; })()`);
-    check(labels.appliesToNew && labels.projectNote && labels.intro, 'Settings > Advanced: intro, "Applies to new Conversations" and the project-override note render', labels);
+    const labels = await cdp.evaluate(`(() => { const t = document.body.textContent; return { appliesToNew: t.includes('Applies to new Sessions'), projectNote: t.includes("This Project's .omp/config.yml sets this too, so it wins here. Refract does not edit that file."), intro: t.includes("Refract writes these values to OMP's global config") }; })()`);
+    check(labels.appliesToNew && labels.projectNote && labels.intro, 'Settings > Advanced: intro, "Applies to new Sessions" and the project-override note render', labels);
     await shoot(cdp, 'advanced-top.png');
     await cdp.evaluate(`(() => { const el = Array.from(document.querySelectorAll('span')).find((e) => e.textContent.startsWith("This Project's .omp/config.yml")); if (el) el.scrollIntoView({ block: 'center' }); })()`);
     await shoot(cdp, 'advanced-project-override.png');

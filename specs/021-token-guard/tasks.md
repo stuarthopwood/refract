@@ -127,3 +127,15 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 - [x] T054 `token-guard-store.ts`, bridge and `ipc.ts`: pass `repositoryId`, expose migration, triggers, overrides, `dismissMigrationNotice`; drop the thresholds-reset notice
 - [x] T055 `AdvancedSection.tsx`, `AdvancedRow.tsx`, `PerModelThresholdTable.tsx`: migration notice and error, trigger list, "Applies to new Conversations", project override note, three-form threshold field
 - [x] T056 Live verification on a scratch `REFRACT_DATA_DIR` and scratch `~/.omp` home: backup file, retry on failure, probe of live keys, override note (`scripts/verify-tauri-1767.mjs`, all steps pass)
+
+## Phase 6: Convergence
+
+**Scope**: #1765 apply token guard changes to running Sessions, spec FR-036 amended. Probes in research.md sections 9 and 10.
+
+- [x] T057 Probe the token guard keys against a running omp 18.17.0 with the scripted provider; record per-key results and unverified keys in research.md section 10
+- [x] T058 Amend FR-036, plan.md and quickstart.md for live apply
+- [x] T059 Legacy overlays: `ipc/token_guard.rs` set/reset/resetAll call `overlay::refresh_legacy`, which rewrites the legacy overlay and full legacy plan variants a Session launched before the migration still reads; the one-key plan variant and `working_mode/mod.rs` `default_mode` need no change (startup-only key, read at Session load); `overlay.rs:1` comment fixed
+- [x] T060 Change the label to "Applies to new Sessions" in `AdvancedRow.tsx` and `AdvancedSection.tsx`; no restart button
+- [x] T061 Co-located tests for the new logic, `pnpm ci:local`
+- [x] T062 Live check saving a value in Settings while a Session runs (`scripts/verify-tauri-1765.mjs`). Scenario A (main path: global config.yml holds the new value, 'Applies to new Sessions' label, reworded Optimise dialog) and scenario B (legacy overlay: seeded token-guard.json, migration made to fail at launch by a directory at `token-guard-migration-backup.json`, overlay rewritten after the Settings write) both pass against a debug build at the branch head; evidence in `C:/Users/shopwood/refract-live-check-1765/`
+- [x] T063 Reword the Optimise token usage confirm dialog (`OptimiseTokenUsage.tsx`) and mark FR-008 superseded by FR-036; the live check screenshots the dialog

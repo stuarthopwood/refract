@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 
 use serde_json::{json, Map, Value};
 
-use crate::ipc::model_roles::set_model_role;
-use crate::omp::config::{list_config, set_config, OmpConfigError};
+use crate::ipc::model_roles::set_model_role_with;
+use crate::omp::config::{
+    list_config_with, set_config_with, OmpConfigError, OmpExecutor, RealOmpExecutor,
+};
 
 pub const STORE_VERSION: u32 = 2;
 
@@ -249,7 +251,7 @@ fn remember(global: &Global) {
     *SNAPSHOT.lock().expect("poisoned") = Some(global.clone());
 }
 
-fn forget() {
+pub(crate) fn forget() {
     *SNAPSHOT.lock().expect("poisoned") = None;
 }
 
@@ -258,8 +260,8 @@ fn omp_error(err: OmpConfigError) -> String {
 }
 
 /// Reads every key from the global omp config with one `omp config list`.
-pub async fn load_global() -> Result<Global, String> {
-    let list = list_config(&[])
+pub async fn load_global_with(executor: &dyn OmpExecutor) -> Result<Global, String> {
+    let list = list_config_with(executor, &[])
         .await
         .map_err(|err| format!("Could not read token guard values: {}", err.message))?;
     let global = Global::from_list(&list);
@@ -267,28 +269,34 @@ pub async fn load_global() -> Result<Global, String> {
     Ok(global)
 }
 
+pub async fn load_global() -> Result<Global, String> {
+    load_global_with(&RealOmpExecutor).await
+}
+
 /// The remembered snapshot, or a fresh read when there is none yet.
-async fn current() -> Result<Global, String> {
+async fn current(executor: &dyn OmpExecutor) -> Result<Global, String> {
     match cached() {
         Some(global) => Ok(global),
-        None => load_global().await,
+        None => load_global_with(executor).await,
     }
 }
 
 /// Writes one key to the global omp config. The advisor role is read-merge-written because `omp config get modelRoles.advisor` is unsupported.
-pub async fn write_key(key: &str, value: &Value) -> Result<(), String> {
+pub async fn write_key(executor: &dyn OmpExecutor, key: &str, value: &Value) -> Result<(), String> {
     validate(key, value)?;
     if key == "modelRoles.advisor" {
         let selector = value.as_str().unwrap_or_default();
-        return set_model_role("advisor", Some(selector))
+        return set_model_role_with(executor, "advisor", Some(selector))
             .await
             .map(|_| ())
             .map_err(omp_error);
     }
-    set_config(key, value, &[]).await.map_err(omp_error)?;
+    set_config_with(executor, key, value, &[])
+        .await
+        .map_err(omp_error)?;
     // `prewalk.auto` adds a model call per task independent of `prewalk.enabled` (#695).
     if key == "prewalk.enabled" && value == &Value::Bool(false) {
-        set_config("prewalk.auto", &json!("off"), &[])
+        set_config_with(executor, "prewalk.auto", &json!("off"), &[])
             .await
             .map_err(omp_error)?;
     }
@@ -296,34 +304,34 @@ pub async fn write_key(key: &str, value: &Value) -> Result<(), String> {
 }
 
 /// Stores a deliberate change for one key and returns the new effective values.
-pub async fn set(key: &str, value: Value) -> Result<Global, String> {
-    if let Err(err) = write_key(key, &value).await {
+pub async fn set(executor: &dyn OmpExecutor, key: &str, value: Value) -> Result<Global, String> {
+    if let Err(err) = write_key(executor, key, &value).await {
         // A write that fails midway (the prewalk pair) may have changed omp anyway.
         forget();
         return Err(err);
     }
-    let mut global = current().await?;
+    let mut global = current(executor).await?;
     global.values.insert(key.to_string(), value);
     remember(&global);
     Ok(global)
 }
 
 /// Writes Refract's default for one key (omp has no unset) and returns the new effective values.
-pub async fn reset(key: &str) -> Result<Global, String> {
+pub async fn reset(executor: &dyn OmpExecutor, key: &str) -> Result<Global, String> {
     let default = default_for(key).ok_or_else(|| format!("Unknown token guard key: {key}"))?;
-    set(key, default).await
+    set(executor, key, default).await
 }
 
 /// Writes Refract's default for every key (the "Optimise token usage" button).
-pub async fn reset_all() -> Result<Global, String> {
+pub async fn reset_all(executor: &dyn OmpExecutor) -> Result<Global, String> {
     for (key, value) in defaults() {
-        if let Err(err) = write_key(&key, &value).await {
+        if let Err(err) = write_key(executor, &key, &value).await {
             // Some keys are already written, so the remembered snapshot no longer matches.
             forget();
             return Err(err);
         }
     }
-    let mut global = current().await?;
+    let mut global = current(executor).await?;
     global.values = defaults();
     remember(&global);
     Ok(global)

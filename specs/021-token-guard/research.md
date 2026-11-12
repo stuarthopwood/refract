@@ -29,3 +29,26 @@ Probed 2026-10-23 on omp 18.12.6 (`C:\Users\shopwood\AppData\Local\omp\omp.exe`)
 
 ## 8. Unverified offline
 - Whether the overlay's `modelRoles.advisor` (a record entry, not a settings key in #1184's finding) is honoured by `--config` is not provable offline; the live check (T021) confirms it. If omp ignores it, the fallback is leaving `modelRoles.advisor` to `ipc::model_roles::set_model_role` on explicit Settings change only, and the spec FR-004 entry is amended.
+
+## 9. Does a running OMP reload config live? (#1765 probe, 2026-11-11)
+- Probed on omp 18.17.0 (`omp --mode rpc-ui`) in a scratch `PI_CODING_AGENT_DIR` with a local scripted OpenAI-compatible provider; no real config, key or model was touched. The fake model reports 600000 of a 1000000-token window (60%) on every turn, so `compaction.thresholdPercent: 90` stays quiet and `30` compacts.
+- Method per case: start omp, send turn one, edit the config while the process keeps running, wait 4 s, send turn two, count `auto_compaction_start` frames.
+
+| Case | Edit between turns | Turn-two compaction frames |
+| --- | --- | --- |
+| control-global | none (global config at 90) | 0 |
+| global-edited | global `config.yml` 90 -> 30 | 4 (two handoff compactions) |
+| control-overlay | none (`--config` overlay at 90) | 0 |
+| overlay-edited | `--config` overlay file 90 -> 30 | 4 (two handoff compactions) |
+
+- **Finding**: a running OMP re-reads both the global config and a `--config` overlay file between turns, at least for `compaction.thresholdPercent`. Live apply is therefore feasible and FR-008's "a running Session keeps its launch values" no longer holds for that key.
+- Not yet probed: which of the other token guard keys are read per turn and which only at startup (extensions, tools, `providers.*`, `plan.defaultOnStartup`, `prewalk.*`). The existing `live` flags in `src/shared/tokenGuard.ts` came from the #1767 probe and need the same running-process check before the label is trusted.
+- Current code state: since #1767/#1780 `values::set`, `reset` and `reset_all` write the global config through `omp config set` on Save, so a running Session already sees the new value for live keys. The launch-time overlay is written only for the per-Session plan variant, or for every key while the legacy migration has not succeeded (`args.rs`, `overlay.rs`); in that legacy case a running Session still sees only the old overlay file, and `overlay.rs:1` still says edits apply "next launch".
+- Evidence files (scratch, outside the repo): `C:/Users/shopwood/refract-live-check-1765/probe-report.json`, probe scripts in `C:/Users/shopwood/refract-live-check-1765/probe/` (`lib.mjs`, `probe-live-reload.mjs`).
+
+## 10. Per-key running-process probes (#1765, 2026-11-11, omp 18.17.0)
+- Same setup as section 9 (scripted local provider, scratch `PI_CODING_AGENT_DIR`, no real model). Scripts: `probe-C.mjs` (compaction keys), `probe-K.mjs` (subagent keys), `probe-S.mjs` (start-of-turn prompt keys), `probe-I.mjs` (snapcompact), in `C:/Users/shopwood/refract-live-check-1765/probe/`; logs `run-S.log`, `run-K.log`.
+- **Live (observed by editing the config between turns of a running process)**: `compaction.thresholdPercent` (section 9), `compaction.modelThresholds` (turn one quiet, turn two compacted after the edit), `compaction.methodOrder` (turn one `handoff`, turn two `context-full` after the edit).
+- **Carried over, not re-probed here**: `tools.xdev` keeps `live: true` from the #1767 probe.
+- **Unverified (no usable observable)**: `compaction.idleEnabled`, `compaction.idleThresholdTokens`, `compaction.idleTimeoutSeconds` (an RPC session starts no idle maintenance: `session.enableIdleMaintenance` is opt-in and only the TUI enables it, per omp `sdk.md`, so no compaction fires in either turn); `task.maxConcurrency` and `task.softRequestBudget` (the scripted model's subagent fan-out was not repeatable between runs, so startup and live runs are not comparable); `plan.defaultOnStartup`, `prewalk.enabled`, `todo.eager`, `autolearn.autoContinue`, `advisor.reviewMode` (system-prompt hashes differ between runs for reasons other than the key, so the A/B is confounded; the S run was stopped before completing); `snapcompact.toolResults`, `snapcompact.systemPrompt`, `grep.contextBefore`, `grep.contextAfter`, `read.defaultLimit`, `read.summarize.enabled`, `tools.artifactSpillThreshold` (not probed).
+- **Decision**: a key keeps no `live` flag unless a probe observed it. The four existing flags stay; no flag is added. Every unverified key keeps "Applies to new Sessions" until a later probe proves it live.

@@ -1,14 +1,17 @@
 // `tokenGuard.get/set/reset/resetAll/dismissThresholdsReset`. No path or file content comes from the renderer.
-// A change applies to the next launched Session.
+// A change reaches running Sessions for `live` keys; the rest apply to the next launched Session.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
 
 use crate::ipc::model_roles::list_catalog_models;
+use crate::omp::advisor_roster::agent_dir;
+use crate::omp::config::{OmpExecutor, RealOmpExecutor};
 use crate::omp::token_guard::values::{self, Global};
-use crate::omp::token_guard::{legacy, migrate, triggers};
+use crate::omp::token_guard::{legacy, migrate, overlay, triggers};
 
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -131,11 +134,13 @@ async fn full_snapshot(
     args: &[Value],
     global: &Global,
     windows: &HashMap<String, i64>,
+    warnings: &[String],
 ) -> Value {
     let mut result = snapshot(&global.values);
     result["migration"] = json!(migrate::status(&state.data_dir).await);
     result["effectiveTriggers"] = json!(effective_triggers(state, global, windows).await);
     result["projectOverrides"] = json!(project_overrides(state, args).await);
+    result["warnings"] = json!(warnings);
     result
 }
 
@@ -147,15 +152,78 @@ fn key_arg(args: &[Value], channel: &str) -> Result<String, IpcError> {
         .ok_or_else(|| invalid_argument(format!("{channel} expects {{ key }}")))
 }
 
-/// A write while the migration is pending would be overwritten when it later runs.
-async fn require_migrated(state: &AppState) -> Result<(), IpcError> {
-    if migrate::ensure(&state.data_dir).await {
-        return Ok(());
+/// The three Settings writes differ only in which `values` call they make.
+enum Change {
+    Set(String, Value),
+    Reset(String),
+    ResetAll,
+}
+
+struct Applied {
+    updated: Global,
+    /// Best-effort steps that failed after the write itself succeeded.
+    warnings: Vec<String>,
+}
+
+/// Migrate check, then the global config write, then the legacy overlay refresh. A write while the
+/// migration is pending would be overwritten when it later runs, so a pending one is retried here
+/// and the write is refused if it still fails.
+async fn apply_change(
+    executor: &dyn OmpExecutor,
+    dir: &Path,
+    config: Option<&Path>,
+    legacy_launched: bool,
+    change: Change,
+) -> Result<Applied, String> {
+    if !migrate::ensure_with(executor, dir, config).await {
+        let status = migrate::status(dir).await;
+        return Err(status
+            .error
+            .unwrap_or_else(|| "The token guard migration has not finished".to_string()));
     }
-    let status = migrate::status(&state.data_dir).await;
-    Err(invalid_argument(status.error.unwrap_or_else(|| {
-        "The token guard migration has not finished".to_string()
-    })))
+    let updated = match change {
+        Change::Set(key, value) => values::set(executor, &key, value).await,
+        Change::Reset(key) => values::reset(executor, &key).await,
+        Change::ResetAll => values::reset_all(executor).await,
+    }?;
+    // The migration is done here, and omp dies with Refract, so only a Session launched in this
+    // process before it finished can still read the legacy overlay (which beats the global config).
+    let warnings = if legacy_launched {
+        refresh_warning(overlay::refresh_legacy(dir, &updated.values).await)
+            .into_iter()
+            .collect()
+    } else {
+        Vec::new()
+    };
+    Ok(Applied { updated, warnings })
+}
+
+/// The legacy refresh is best-effort: the write itself already succeeded, so a failure is shown, not raised.
+fn refresh_warning(result: std::io::Result<()>) -> Option<String> {
+    let err = result.err()?;
+    log::warn!("token guard: could not refresh the legacy overlay ({err})");
+    Some(format!(
+        "Saved, but a Session started before the migration may keep the old values: {err}"
+    ))
+}
+
+async fn write_change(
+    state: AppState,
+    args: Vec<Value>,
+    change: Change,
+) -> Result<Value, IpcError> {
+    let config = agent_dir().map(|d| d.join("config.yml"));
+    let applied = apply_change(
+        &RealOmpExecutor,
+        &state.data_dir,
+        config.as_deref(),
+        overlay::legacy_session_launched(),
+        change,
+    )
+    .await
+    .map_err(invalid_argument)?;
+    let windows = context_windows(false).await;
+    Ok(full_snapshot(&state, &args, &applied.updated, &windows, &applied.warnings).await)
 }
 
 /// Only reports the migration notice: screens other than Settings > Advanced also load, and must
@@ -175,7 +243,7 @@ fn token_guard_get(state: AppState, args: Vec<Value>) -> HandlerFuture {
             // Cached windows only: `omp models` would queue on the lock the migration is holding.
             (global, context_windows(false).await)
         };
-        Ok(full_snapshot(&state, &args, &global, &windows).await)
+        Ok(full_snapshot(&state, &args, &global, &windows, &[]).await)
     })
 }
 
@@ -196,28 +264,22 @@ fn token_guard_set(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .and_then(|arg| arg.get("value"))
             .cloned()
             .ok_or_else(|| invalid_argument("tokenGuard.set expects { key, value }"))?;
-        require_migrated(&state).await?;
-        let updated = values::set(&key, value).await.map_err(invalid_argument)?;
-        let windows = context_windows(false).await;
-        Ok(full_snapshot(&state, &args, &updated, &windows).await)
+        write_change(state, args, Change::Set(key, value)).await
     })
 }
 
 fn token_guard_reset(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let key = key_arg(&args, "tokenGuard.reset")?;
-        require_migrated(&state).await?;
-        let updated = values::reset(&key).await.map_err(invalid_argument)?;
-        let windows = context_windows(false).await;
-        Ok(full_snapshot(&state, &args, &updated, &windows).await)
+        write_change(state, args, Change::Reset(key)).await
     })
 }
 
 fn token_guard_reset_all(state: AppState, args: Vec<Value>) -> HandlerFuture {
-    Box::pin(async move {
-        require_migrated(&state).await?;
-        let updated = values::reset_all().await.map_err(invalid_argument)?;
-        let windows = context_windows(false).await;
-        Ok(full_snapshot(&state, &args, &updated, &windows).await)
-    })
+    Box::pin(async move { write_change(state, args, Change::ResetAll).await })
 }
+
+// Tests live in a sibling file, as in `model_roles.rs`.
+#[cfg(test)]
+#[path = "token_guard_tests.rs"]
+mod tests;

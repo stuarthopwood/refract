@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 
 use super::{legacy, values};
 use crate::omp::advisor_roster::agent_dir;
-use crate::omp::config::{list_config, set_config};
+use crate::omp::config::{list_config_with, set_config_with, OmpExecutor, RealOmpExecutor};
 use crate::store::atomic_json::write_json_file;
 
 const MARKER_FILE: &str = "token-guard-migration.json";
@@ -193,18 +193,24 @@ where
     Ok(())
 }
 
-async fn write_to_omp(key: String, value: Value) -> Result<(), String> {
+async fn write_to_omp(executor: &dyn OmpExecutor, key: String, value: Value) -> Result<(), String> {
     if key == "compaction.thresholdTokens" {
-        return set_config(&key, &value, &[])
+        return set_config_with(executor, &key, &value, &[])
             .await
             .map(|_| ())
             .map_err(|err| err.message);
     }
-    values::write_key(&key, &value).await
+    values::write_key(executor, &key, &value).await
 }
 
 /// True once the global config holds the token guard set. Runs the migration if it has not yet succeeded; a failure is retried on the next call.
 pub async fn ensure(dir: &Path) -> bool {
+    let config = agent_dir().map(|d| d.join("config.yml"));
+    ensure_with(&RealOmpExecutor, dir, config.as_deref()).await
+}
+
+/// `ensure` through an injected `omp` executor; `config` is the file the backup copies.
+pub async fn ensure_with(executor: &dyn OmpExecutor, dir: &Path, config: Option<&Path>) -> bool {
     if skipped() {
         return false;
     }
@@ -214,10 +220,10 @@ pub async fn ensure(dir: &Path) -> bool {
     }
     // A retry in flight reads as `pending`, not as the previous attempt's failure.
     *LAST_ERROR.lock().expect("poisoned") = None;
-    let config = agent_dir().map(|d| d.join("config.yml"));
     // A failed read only costs the skipped-write saving: the writes then report omp's own error.
-    let current = list_config(&[]).await.unwrap_or(Value::Null);
-    match attempt(dir, &current, config.as_deref(), &today(), write_to_omp).await {
+    let current = list_config_with(executor, &[]).await.unwrap_or(Value::Null);
+    let write = |key, value| write_to_omp(executor, key, value);
+    match attempt(dir, &current, config, &today(), write).await {
         Ok(()) => {
             *LAST_ERROR.lock().expect("poisoned") = None;
             true

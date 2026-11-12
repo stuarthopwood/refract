@@ -15,7 +15,7 @@
 All answers come from the issue's grilled block (Stuart, 2026-10-23) and the code; none were left open.
 
 - Q: Does the overlay replace the #1184 global reset, or run beside it? -> A: It replaces it. Refract stops reading and writing the global OMP config for guarding; the #1184 code is removed (plan.md lists every file). The `omp config set` helper and dotted-key validator in `omp/config.rs` stay (reused by #691).
-- Q: Where do the overlay values live and what edits them? -> A: In a Refract-owned store beside the other Refract data, seeded with the grilled defaults. A deliberate change in Settings > OMP updates the stored value; the next launch writes it into the overlay. A running Session keeps the values it launched with (OMP reads config once).
+- Q: Where do the overlay values live and what edits them? -> A: In a Refract-owned store beside the other Refract data, seeded with the grilled defaults. A deliberate change in Settings > OMP updates the stored value; the next launch writes it into the overlay. A running Session keeps the values it launched with (OMP reads config once), except live keys (FR-036).
 - Q: Does Settings > OMP exist yet? -> A: No (#691 is still open; the "Guarded" rows of #1184 item 5 never shipped). This feature adds the OMP section with only the "Set by Refract" rows; #691 later adds its own rows to it.
 - Q: What does a "Set by Refract" row offer? -> A: The key, a plain-language label, the current value, a control suited to the type (switch, number, text, and a per-model number list for `compaction.modelThresholds`), the text "Set by Refract", and Reset to default.
 - Q: Can RPC `compact` select the shake method? -> A: No (probed on omp 18.12.6; research.md). RPC `compact` takes only optional focus instructions and manual compaction knows only soft, remote and snapcompact. The `/shake` command does run in RPC mode with no model call, so Refract sends that after a turn settles. The per-Session overlay fallback is not needed.
@@ -100,7 +100,7 @@ Settings > OMP lists every overlay setting as "Set by Refract" with its current 
 **Acceptance Scenarios**:
 
 1. **Given** Settings > OMP, **When** it opens, **Then** each overlay key is a row with its value and the text "Set by Refract".
-2. **Given** the developer changes a value, **When** the next Session launches, **Then** the overlay carries the new value; a running Session is unchanged.
+2. **Given** the developer changes a value, **When** the next Session launches, **Then** the overlay carries the new value; a running Session is unchanged unless the key is live (FR-036).
 3. **Given** a changed value, **When** the developer activates "Reset to default", **Then** the grilled default is restored.
 4. **Given** keyboard-only use, **When** the developer moves through the rows, **Then** every control is reachable and labelled.
 
@@ -168,7 +168,7 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 
 - The Default role's (or a model's) context window is unknown: the idle row falls back to a token field (step 1000); a per-model row shows only the percent and no "≈" hint.
 - Optimise token usage while a row's write is in flight, or the write fails: the dialog stays open showing the error; no partial state is shown as done.
-- A running Session is unaffected by Optimise token usage; the next Session launches with the defaults.
+- A running Session picks up Optimise token usage for live keys; every other key applies to the next Session launch (FR-036).
 - A user-set value equal to a moved default's old value is indistinguishable from an untouched one and moves with it (accepted, as in #1545's migration).
 - A version 1 store holds token overrides for `compaction.thresholdTokens` or `compaction.modelThresholds`: they reset to defaults on load and a one-line note is shown once; `compaction.idleThresholdTokens` is kept.
 - A per-model row at or below the global percent shows no warning; the global row at 70 or below shows none.
@@ -193,7 +193,7 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **FR-005**: The overlay MUST also set `snapcompact.toolResults` true, `compaction.methodOrder` to snapcompact, shake, handoff, soft, and `snapcompact.systemPrompt` to `none`.
 - **FR-006**: Overlay values MUST be stored in Refract's own data, seeded with the FR-004 and FR-005 defaults, and be editable from Settings > OMP.
 - **FR-007**: Settings > OMP MUST show every overlay key as a row labelled "Set by Refract" with its value, a control to change it, and a Reset to default.
-- **FR-008**: A changed value MUST apply to the next launched Session; a running Session MUST be unchanged.
+- **FR-008** (superseded by FR-036, #1765): A changed value MUST apply to the next launched Session; a running Session MUST be unchanged.
 - **FR-009**: Refract MUST stop resetting keys in the global OMP config and MUST remove the #1184 guard, its notice, dialog and event.
 - **FR-010**: Refract MUST ship a rules file (about 1.5k characters) covering the director model, one task per worker, narrow reads, and the cheapest fitting agent, and pass it to OMP on every launch.
 - **FR-011**: Refract MUST NOT shake during a turn; after a turn settles with context above 60k tokens it MUST run one shake with no model call.
@@ -221,7 +221,7 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **FR-033** (#1646): `NumberField` MUST hide the native spinner and draw two stacked `ChevronUpIcon`/`ChevronDownIcon` `Button`s inside the field's right edge, 8px clear of the value, `text-muted-foreground` at rest and `text-foreground` on hover and press, no fill, 3:1 against the field background in every theme. They MUST be `tabIndex={-1}` and `aria-hidden`, be disabled when the field is disabled or read-only, or at `max` (up) or `min` (down), and call `stepUp()`/`stepDown()` then dispatch a native `input` event so `onChange` fires as typing does. Callers keep their props.
 - **FR-034** (#1767): Settings > Advanced MUST write token guard values to OMP's global config (`~/.omp/agent/config.yml`) and read them back from it; Refract is the source of truth. This supersedes FR-001..FR-003 and FR-006 (overlay and `token-guard.json` store) for token guard keys; a change applies to the next launched Session except for live keys (FR-036).
 - **FR-035** (#1767): On first launch Refract MUST back up the global config to `config.yml.refract-backup-YYYY-MM-DD` (`-2`, `-3` on collision, never pruned), migrate `token-guard.json` into it, and show a one-line Settings notice naming the backup path. A failed migration MUST retry every launch; until it succeeds `token-guard.json` stays in effect and Settings shows a one-line error. A debug build with a scratch `REFRACT_DATA_DIR` and no `PI_CODING_AGENT_DIR` MUST skip the migration and refuse token guard writes (migration status `skipped`), so a verification launch never backs up or rewrites the real global config.
-- **FR-036** (#1767): A row whose key is not proven to reload into a running Session MUST say "Applies to new Conversations". Proven live by probe: `compaction.thresholdPercent`, `compaction.modelThresholds`, `compaction.methodOrder`, `tools.xdev`; every other token guard key carries the label (`live` flag in `TOKEN_GUARD_KEYS`). Further live keys are tracked in #1765.
+- **FR-036** (#1767, #1765): A row whose key is not proven to reload into a running Session MUST say "Applies to new Sessions". Proven live by probe on omp 18.17.0 (research.md sections 9 and 10): `compaction.thresholdPercent`, `compaction.modelThresholds`, `compaction.methodOrder`, plus `tools.xdev` from the #1767 probe; every other token guard key carries the label (`live` flag in `TOKEN_GUARD_KEYS`) until a probe proves it. Saving a value writes the global config (`omp config set`), which a running Session re-reads between turns for live keys; Refract has no restart button.
 - **FR-037** (#1767): Settings MUST list the effective compaction trigger for the Default model and the models of open Sessions (window, threshold, per-model entry, resulting tokens), from `tokenGuard.get` `effectiveTriggers`.
 - **FR-038** (#1767): When the open Project's `.omp/config.yml` sets a token guard key, that row MUST say so (read-only; Refract never edits repo files), from `projectOverrides`.
 - **FR-039** (#1767): `compaction.modelThresholds` entries MUST accept `120000` (tokens; 1-99 reads as a percent), `"f200000"` (fixed tokens) and `"80%"`.

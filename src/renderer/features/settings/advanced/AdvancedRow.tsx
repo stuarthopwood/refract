@@ -8,6 +8,7 @@ import { ImpactWarning } from '@/components/settings/ImpactWarning'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { appliesToNewSessionsOnly } from '../../../../shared/tokenGuard'
 import type { TokenGuardKeyInfo, TokenGuardValue } from '../../../../shared/tokenGuard'
 import { MAX_PERCENT, MIN_PERCENT, percentToTokens, tokensToPercent } from './contextWindow'
 import { MethodOrderChecklist } from './MethodOrderChecklist'
@@ -54,8 +55,9 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
   // The expanded per-model table warns on its own rows; the summary warning (rendered under the
   // trigger) is only referenced while the table is closed.
   const summaryShown = costlier && !(info.kind === 'record' && tableOpen)
+  const newSessionsOnly = appliesToNewSessionsOnly(info.key)
   const noteId = `${id}-status`
-  const describedBy = [`${id}-description`, summaryShown ? impactId : undefined, disabled ? `${id}-reason` : undefined, info.live ? undefined : noteId, projectOverride ? `${noteId}-project` : undefined].filter(Boolean).join(' ')
+  const describedBy = [`${id}-description`, summaryShown ? impactId : undefined, disabled ? `${id}-reason` : undefined, newSessionsOnly ? noteId : undefined, projectOverride ? `${noteId}-project` : undefined].filter(Boolean).join(' ')
   const stacked = info.kind === 'order' || info.kind === 'record'
 
   const description: ReactNode = (
@@ -81,9 +83,9 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
   )
   const statusNotes = (
     <>
-      {!info.live && (
+      {newSessionsOnly && (
         <span id={noteId} className="text-xs text-muted-foreground">
-          Applies to new Conversations
+          Applies to new Sessions
         </span>
       )}
       {projectOverride && (

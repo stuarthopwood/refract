@@ -1140,7 +1140,7 @@ Also filed 2026-11-06 (Stuart, grilled): **#1758** (`p1`, `design`), Chat: a Too
 
 Also filed 2026-11-06 (Stuart, grilled): **#1760** (`p1`, `bug`, `session-list`), Session list: the Session details card opens after 1200 ms instead of 750 ms, stays closed after a row click until the pointer leaves the row, and never opens on click focus (Tab focus still opens it).
 
-Also filed 2026-11-06 (Stuart): **#1765** (`p0`, `bug`, `settings`), Settings: token guard changes (idle compaction threshold and others) apply only to new Sessions; saving must rewrite the overlay files so running Sessions pick the change up through OMP live reload.
+Also filed 2026-11-06 (Stuart): **#1765** (`p0`, `bug`, `settings`), Settings: token guard changes (idle compaction threshold and others) apply only to new Sessions; saving must rewrite the overlay files so running Sessions pick the change up through OMP live reload. Status 2026-11-11: PR open, 4 of 22 keys proven live, the rest labelled "Applies to new Sessions" and followed up in #1935.
 
 Also filed 2026-11-06 (Stuart, grilled): **#1767** (`p0`, `bug`, `settings`), Settings: token guard settings write to OMP's global config instead of a per-launch overlay, so Refract is the source of truth; the first launch backs up and overwrites the global token guard keys, and Settings shows the effective compaction trigger. Supersedes #1765 once live reload is confirmed.
 

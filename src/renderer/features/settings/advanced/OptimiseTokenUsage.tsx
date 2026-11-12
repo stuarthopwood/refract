@@ -68,7 +68,7 @@ export function OptimiseTokenUsage({ rows }: { rows: ChangedRow[] }) {
         open={open}
         busy={busy}
         title="Optimise token usage?"
-        description="Replaces your values for the settings below with the defaults. New Sessions use them; running Sessions and all other settings are unchanged."
+        description="Replaces your values for the settings below with the defaults. Running Sessions pick up the ones that apply live; the rest apply to new Sessions. Settings not listed are unchanged."
         confirmLabel={`Reset ${snapshot.length} ${snapshot.length === 1 ? 'setting' : 'settings'}`}
         busyLabel="Resetting…"
         size="md"
