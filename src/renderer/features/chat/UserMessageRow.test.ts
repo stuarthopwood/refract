@@ -109,8 +109,7 @@ describe('UserMessageRow session source', () => {
     expect(lineId).toBeDefined()
     expect(html).toContain(`role="group" aria-labelledby="${lineId}"`)
     const line = new RegExp(`<div id="${lineId}"[^>]*>(.*?)</div>`).exec(html)?.[1] ?? ''
-    let text = line
-    for (let prev = ''; prev !== text; ) [prev, text] = [text, text.replace(/<[^>]*>/g, '')]
+    const text = [...line.matchAll(/>([^<]*)</g)].map((m) => m[1]).join('')
     expect(text).toBe('From Session Alpha')
   })
 
