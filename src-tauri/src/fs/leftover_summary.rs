@@ -344,7 +344,7 @@ pub async fn cancel_and_wait(session_id: &str) {
     }
     // Logged only when a walk was actually cancelled.
     log::debug!(
-        "leftover_summary::cancel_and_wait: cancelling {} in-flight walk(s) for {session_id}",
+        "leftover_summary::cancel_and_wait: cancelling {} in-flight walk(s)",
         entries.len()
     );
     for (cancel, _) in &entries {
