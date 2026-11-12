@@ -8,11 +8,16 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import type { MessageSource } from '../../../shared/model'
 
 const mocks = vi.hoisted(() => {
-  const state = { sessions: [] as { id: string }[], open: undefined as unknown as (id: string, userAction?: boolean) => Promise<null> }
+  const state = {
+    sessions: [] as { id: string }[],
+    open: undefined as unknown as (id: string, userAction?: boolean) => Promise<null>,
+    replaceFocused: undefined as unknown as (id: string) => void
+  }
   const useSessionsStore = Object.assign((selector: (s: typeof state) => unknown) => selector(state), { getState: () => state })
-  return { state, useSessionsStore }
+  const useSplitStore = { getState: () => state }
+  return { state, useSessionsStore, useSplitStore }
 })
-vi.mock('@/state', () => ({ useSessionsStore: mocks.useSessionsStore }))
+vi.mock('@/state', () => ({ useSessionsStore: mocks.useSessionsStore, useSplitStore: mocks.useSplitStore }))
 
 import { SessionSourceLine } from './SessionSourceLine'
 import { UserMessageRow, type UserItem } from './UserMessageRow'
@@ -34,6 +39,7 @@ const render = (item: UserItem) => renderToStaticMarkup(createElement(TooltipPro
 beforeEach(() => {
   mocks.state.sessions = [{ id: 'sess-1' }]
   mocks.state.open = vi.fn(() => Promise.resolve(null))
+  mocks.state.replaceFocused = vi.fn()
 })
 
 describe('SessionSourceLine', () => {
@@ -45,6 +51,7 @@ describe('SessionSourceLine', () => {
     tag!.props.action.onActivate()
     expect(mocks.state.open).toHaveBeenCalledTimes(1)
     expect(mocks.state.open).toHaveBeenCalledWith('sess-1', true)
+    expect(mocks.state.replaceFocused).toHaveBeenCalledWith('sess-1')
   })
 
   it('shows the id as plain text with no action once the sender is deleted', () => {
