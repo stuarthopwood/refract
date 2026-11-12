@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use rusqlite::{Connection, ErrorCode, OptionalExtension};
+use rusqlite::{Connection, ErrorCode, OptionalExtension, TransactionBehavior};
 
 pub const USER_VERSION: i64 = 4;
 /// Older files are rebuilt; versions 2 and 3 are migrated in place.
@@ -169,7 +169,7 @@ pub fn open_reader(path: &Path) -> rusqlite::Result<Connection> {
 }
 
 fn try_open(path: &Path) -> rusqlite::Result<Connection> {
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     conn.busy_timeout(Duration::from_secs(5))?;
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     if version > USER_VERSION || (version > 0 && version < MIN_MIGRATABLE) {
@@ -181,17 +181,27 @@ fn try_open(path: &Path) -> rusqlite::Result<Connection> {
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     if version < USER_VERSION {
-        // Older rows may be gone from a rewritten session file, so a version 2 or 3 file is altered, not rebuilt.
-        let ddl = match version {
-            2 => format!("{MIGRATE_2_TO_3}{MIGRATE_3_TO_4}"),
-            3 => MIGRATE_3_TO_4.to_string(),
-            _ => DDL.to_string(),
-        };
-        conn.execute_batch(&format!(
-            "BEGIN;{ddl}PRAGMA user_version = {USER_VERSION};COMMIT;"
-        ))?;
+        migrate(&mut conn)?;
     }
     Ok(conn)
+}
+
+/// Takes the write lock before reading the version, so a second process that opened the same
+/// file at the same old version finds it already migrated and skips instead of failing.
+fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    let version: i64 = tx.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    if version >= USER_VERSION {
+        return Ok(());
+    }
+    // Older rows may be gone from a rewritten session file, so a version 2 or 3 file is altered, not rebuilt.
+    let ddl = match version {
+        2 => format!("{MIGRATE_2_TO_3}{MIGRATE_3_TO_4}"),
+        3 => MIGRATE_3_TO_4.to_string(),
+        _ => DDL.to_string(),
+    };
+    tx.execute_batch(&format!("{ddl}PRAGMA user_version = {USER_VERSION};"))?;
+    tx.commit()
 }
 
 fn is_rebuildable(err: &rusqlite::Error) -> bool {

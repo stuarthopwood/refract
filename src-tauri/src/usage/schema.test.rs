@@ -101,6 +101,26 @@ fn reopening_a_migrated_database_leaves_it_unchanged() {
 }
 
 #[test]
+fn migrating_a_file_another_process_already_upgraded_is_a_no_op() {
+    let path = scratch_db("migrate-already-4");
+    let mut conn = open_db(&path).unwrap();
+    conn.execute(
+        "INSERT INTO tool_calls (session_file, tool_call_id, ts, entry_id, tool, cost_usd)
+         VALUES ('f', 'c1', 1000, 'e1', 'bash', 1.5)",
+        [],
+    )
+    .unwrap();
+
+    migrate(&mut conn).unwrap();
+
+    assert_eq!(version(&conn), USER_VERSION);
+    let cost: f64 = conn
+        .query_row("SELECT cost_usd FROM tool_calls", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(cost, 1.5);
+}
+
+#[test]
 fn version_1_database_is_set_aside_and_rebuilt() {
     let path = scratch_db("migrate-1");
     let conn = open_db(&path).unwrap();
