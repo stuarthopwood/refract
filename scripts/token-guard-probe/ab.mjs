@@ -18,11 +18,7 @@ export const OUTCOMES = Object.freeze({
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const missing = (v) => v === undefined || v === null;
 
-/**
- * Classifies one run. `control` keeps the key's first value across both turns; `test` edits it between turns.
- * @param {{control: {before: unknown, after: unknown}, test: {before: unknown, after: unknown}}} run
- * @returns {{outcome: string, reason: string}}
- */
+// One run: `control` keeps the key's first value across both turns; `test` edits it between turns.
 export function classifyRun(run) {
   const passes = [run?.control, run?.test];
   if (passes.some((p) => !p || missing(p.before) || missing(p.after))) {
@@ -41,12 +37,7 @@ export function classifyRun(run) {
     : { outcome: OUTCOMES.CHANGED, reason: 'observable changed after the edit and not in the control' };
 }
 
-/**
- * FR-003: a key is `live` only if at least two consecutive runs agree it changed. Any run without a usable
- * observable, with an unstable control, or that disagrees with another run downgrades to inconclusive.
- * @param {Array<{control: object, test: object}>} runs
- * @returns {{verdict: string, reason: string, outcomes: string[]}}
- */
+// FR-003: live only if two consecutive runs agree the key changed; unusable, unstable or disagreeing runs downgrade.
 export function deriveVerdict(runs) {
   const classified = (runs ?? []).map(classifyRun);
   const outcomes = classified.map((c) => c.outcome);

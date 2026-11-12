@@ -25,11 +25,11 @@ Slices: A (harness, T001-T006) is the base; B (probes, T007-T013) needs A; C (ap
 
 ## C. Apply and record (FR-004, FR-005, FR-008)
 
-- [ ] T014 Run `pnpm probe:token-guard` twice; keep both reports outside the repo; confirm the two runs agree on all 17 keys (SC-003)
-- [ ] T015 `src/shared/tokenGuard.ts`: add `live: true` to each key with verdict `live`; nothing else changes (FR-004, FR-008)
-- [ ] T016 `src/shared/tokenGuard.test.ts`: update `LIVE_KEYS` to the final set (FR-004)
-- [ ] T017 `specs/021-token-guard/research.md` section 11 (17 verdicts, observables, omp version, dates, reasons; section 10 points to it), `spec.md` FR-036 and `quickstart.md` step 9 list the final live set (FR-005)
-- [ ] T018 `pnpm ci:local` green; PR body lists all 17 verdicts and says #1765 can close on merge; mark the PR ready; hand to the controller (SC-004). Answer OQ-1 in the PR body (idle keys have no effect in RPC sessions) without filing anything unless Stuart asks
+- [x] T014 Run `pnpm probe:token-guard` twice; keep both reports outside the repo; confirm the two runs agree on all 17 keys (SC-003)
+- [x] T015 `src/shared/tokenGuard.ts`: add `live: true` to each key with verdict `live`; nothing else changes (FR-004, FR-008)
+- [x] T016 `src/shared/tokenGuard.test.ts`: update `LIVE_KEYS` to the final set (FR-004)
+- [x] T017 `specs/021-token-guard/research.md` section 11 (17 verdicts, observables, omp version, dates, reasons; section 10 points to it), `spec.md` FR-036 and `quickstart.md` step 9 list the final live set (FR-005)
+- [x] T018 `pnpm ci:local` green; PR body lists all 17 verdicts and says #1765 can close on merge; mark the PR ready; hand to the controller (SC-004). Answer OQ-1 in the PR body (idle keys have no effect in RPC sessions); the issue is #1965
 
 ## Dependencies
 

@@ -48,16 +48,7 @@ function scratchRepo(dir) {
   if (r.status !== 0) throw new Error(`scratch repo init failed: ${r.stderr}`);
 }
 
-/**
- * @param {object} o
- * @param {string} o.label            short name used in the scratch dir
- * @param {string} o.scratchRoot
- * @param {{port: number, baseUrl?: string}} o.provider  running provider (models.yml points at it)
- * @param {object} [o.config]         seeded config.yml (object, dumped as YAML); `modelRoles.default` is added
- * @param {Array<{id: string, vision?: boolean}>} [o.models]
- * @param {Record<string, string>} [o.files]  extra files to write inside the scratch repo (relative path -> content)
- * @param {number} [o.configSettleMs] pause after the config file shows a new value, for omp's file watcher
- */
+/** Spawns omp against scratch dirs; `provider` is the running scripted provider, `files` land in the scratch repo. */
 export async function startHost({ label, scratchRoot, provider, config = {}, models, files = {}, configSettleMs = 1500 }) {
   const root = path.resolve(scratchRoot);
   mkdirSync(root, { recursive: true });
@@ -207,10 +198,7 @@ export async function startHost({ label, scratchRoot, provider, config = {}, mod
   const configPath = path.join(agentDir, 'config.yml');
   const configValue = (key) => getDotted(yaml.load(readFileSync(configPath, 'utf8')) ?? {}, key);
 
-  /**
-   * Edits the key with `omp config set` (as Refract does), waits for config.yml to show it, then pauses
-   * `configSettleMs` so the running process's file watcher can pick it up.
-   */
+  /** Edits via `omp config set` as Refract does, then waits for config.yml and the file watcher. */
   async function setConfig(key, value) {
     const r = spawnSync(OMP_EXE, ['config', 'set', key, String(value)], { env, cwd: repoDir, encoding: 'utf8', windowsHide: true });
     if (r.status !== 0) throw new Error(`omp config set ${key} failed: ${r.stderr || r.stdout}`);

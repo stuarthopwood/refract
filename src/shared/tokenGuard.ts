@@ -272,6 +272,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     key: 'snapcompact.toolResults',
     label: 'Compress tool results to images',
     kind: 'toggle',
+    live: true,
     group: 'Image compression',
     impact: {
       costlierWhen: setTo(false),
@@ -283,6 +284,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'snapcompact.systemPrompt',
     label: 'Compress the system prompt to images',
+    live: true,
     kind: 'enum',
     group: 'Image compression',
     options: [
@@ -297,6 +299,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     key: 'task.softRequestBudget',
     label: 'Subagent request budget',
     kind: 'count',
+    live: true,
     unit: 'requests',
     group: 'Subagents',
     impact: {
@@ -309,6 +312,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'task.maxConcurrency',
     label: 'Maximum parallel subagents',
+    live: true,
     kind: 'count',
     unit: 'subagents',
     group: 'Subagents',
@@ -317,6 +321,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'advisor.reviewMode',
     label: 'Advisor review mode',
+    live: true,
     kind: 'enum',
     group: 'Advisor',
     options: [
@@ -333,6 +338,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
     key: 'grep.contextBefore',
     label: 'Search context lines before',
     kind: 'count',
+    live: true,
     unit: 'lines',
     group: 'Tool output',
     impact: {
@@ -344,6 +350,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'grep.contextAfter',
     label: 'Search context lines after',
+    live: true,
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
@@ -356,6 +363,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'read.defaultLimit',
     label: 'File read line limit',
+    live: true,
     kind: 'count',
     unit: 'lines',
     group: 'Tool output',
@@ -368,6 +376,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'read.summarize.enabled',
     label: 'Summarise files on read',
+    live: true,
     kind: 'toggle',
     group: 'Tool output',
     description:
@@ -393,6 +402,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'tools.artifactSpillThreshold',
     label: 'Tool output spill threshold',
+    live: true,
     kind: 'count',
     unit: 'KB',
     group: 'Tool output',
@@ -418,6 +428,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'prewalk.enabled',
     label: 'Start Sessions with prewalk',
+    live: true,
     kind: 'toggle',
     group: 'Session start',
     description:
@@ -433,6 +444,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
   {
     key: 'autolearn.autoContinue',
     label: 'Extra turn to record lessons',
+    live: true,
     kind: 'toggle',
     group: 'Learning',
     impact: { costlierWhen: setTo(true), text: 'Adds a model call after the agent records a lesson.' },
