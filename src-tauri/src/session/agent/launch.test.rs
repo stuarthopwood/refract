@@ -47,6 +47,7 @@ async fn agent_for(session_id: &str) -> Arc<SessionAgent> {
             stopped_on_request_at_size: None,
             pinned_model: false,
             origin_issue: None,
+            parent_session_id: None,
         })
         .await
         .unwrap();
