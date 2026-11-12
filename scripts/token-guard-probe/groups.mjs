@@ -5,6 +5,7 @@ import { sequence } from './provider.mjs';
 import { requestModelId } from './observe.mjs';
 import { artifactSpillGroup, toolResultsGroup } from './groups/toolOutput.mjs';
 import { snapcompactGroup } from './groups/snapcompact.mjs';
+import { subagentGroup } from './groups/subagents.mjs';
 
 export const GROUPS = {
   // Why: exercises provider, host, edit and A/B end to end with a key that cannot change the model id.
@@ -29,4 +30,5 @@ export const GROUPS = {
   'tool-results': toolResultsGroup,
   'artifact-spill': artifactSpillGroup,
   snapcompact: snapcompactGroup,
+  subagents: subagentGroup,
 };
