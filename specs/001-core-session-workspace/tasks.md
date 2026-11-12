@@ -5537,5 +5537,5 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T444 [US1] Point `--agent-message` at `--accent-text` in `globals.css` and the six theme files (a one-step
   lightened accent in Dark/Obsidian where plain accent misses 4.5:1 on the row hover), teach
   `scripts/theme-tokens.mjs` to parse `color-mix`, per FR-101 (contradicts)
-- [ ] T445 Live check the collapsed and expanded advisory card and an agent-to-agent row in one dark and one light theme
+- [x] T445 Live check the collapsed and expanded advisory card and an agent-to-agent row in one dark and one light theme
   (and after an accent change), update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-051, FR-101

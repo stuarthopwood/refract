@@ -69,7 +69,7 @@ const VAR_RE = /^var\(\s*--([a-z0-9-]+)\s*\)$/i
 // `-bg` tokens are `color-mix(in oklab, var(--x) Y%, transparent)`: scale --x's alpha by Y%, which is exact
 // because every colour mixed with `transparent` today is fully opaque.
 const COLOR_MIX_TRANSPARENT_RE = /^color-mix\(\s*in\s+[\w-]+\s*,\s*var\(\s*--([a-z0-9-]+)\s*\)\s+([\d.]+)%\s*,\s*transparent\s*\)$/i
-const COLOR_MIX_WHITE_RE = /^color-mix\(\s*in\s+srgb\s*,\s*var\(\s*--([a-z0-9-]+)\s*\)\s+([\d.]+)%\s*,\s*white\s*\)$/i
+const COLOR_MIX_WHITE_RE = /^color-mix\(\s*in\s+srgb\s*,\s*var\(\s*--([a-z0-9-]+)\s*\)\s+(\d+(?:\.\d+)?)%\s*,\s*white\s*\)$/i
 
 // `seen` is threaded through this function's own recursion (resolveRawValue's is unrelated) so a mutual
 // color-mix cycle returns undefined ("token missing") instead of overflowing the stack.
@@ -109,6 +109,7 @@ function parseColorLiteral(rawValue, rawProps, seen = new Set()) {
     const base = parseColorLiteral(resolvedRef, rawProps, seen)
     if (base === undefined) return undefined
     const p = Number(pct) / 100
+    if (!Number.isFinite(p) || p < 0 || p > 1) return undefined
     return { raw: rawValue, alpha: base.alpha, linear: base.linear.map((c) => srgbGammaDecode(srgbGammaEncode(c) * p + (1 - p))) }
   }
   return undefined
@@ -162,4 +163,4 @@ for (const blockMatch of css.matchAll(THEME_BLOCK_RE)) {
   themes[themeId] = addDerivedTokens(props, rawProps)
 }
 
-export { css, cssPath, repoRoot, themes, sidebarBorderAliasesDivider }
+export { css, cssPath, repoRoot, themes, sidebarBorderAliasesDivider, parseColorLiteral }

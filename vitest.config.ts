@@ -18,6 +18,7 @@ export default defineConfig({
       'scripts/check-parity.test.mjs',
       'scripts/check-drag-regions.test.mjs',
       'scripts/release-changelog.test.mjs',
+      'scripts/theme-tokens.test.mjs',
     ],
   },
 });
