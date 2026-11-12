@@ -19,6 +19,28 @@ pub(super) struct State {
     resuming: bool,
     seq: u64,
     written: Arc<AtomicU64>,
+    /// Ids Pause cancelled; cleared on Resume and never persisted, since a restart loses the subagents anyway.
+    pub(super) cancelled: Vec<String>,
+}
+
+impl State {
+    /// True while Pause holds sends and cancels subagents. A resuming Session has stopped gating,
+    /// so what its drain spawns runs and a Pause RPC still in flight is stale.
+    pub(super) fn is_gating(&self) -> bool {
+        self.held.is_some() && !self.resuming
+    }
+}
+
+/// Seams for tests in sibling modules: `held` and `resuming` stay private so only this file changes them.
+#[cfg(test)]
+impl State {
+    pub(super) fn hold_for_test(&mut self, texts: Vec<String>) {
+        self.held = Some(texts);
+    }
+
+    pub(super) fn mark_resuming_for_test(&mut self) {
+        self.resuming = true;
+    }
 }
 
 /// Derived from status, never stored, so `pausing` vs `paused` cannot drift.
@@ -158,6 +180,7 @@ impl SessionAgent {
                 }
             }
         }
+        self.cancel_running_subagents().await;
         self.emit_status().await;
         self.emit_pause_queue().await;
         Ok(json!({ "paused": true }))
@@ -183,10 +206,23 @@ impl SessionAgent {
             state.pause.resuming = true;
         }
         let outcome = self.drain_held().await;
-        self.state.lock().await.pause.resuming = false;
+        // The list is taken only once the drain succeeded: a failed drain leaves the Session paused and the list intact.
+        let cancelled = {
+            let mut state = self.state.lock().await;
+            state.pause.resuming = false;
+            if outcome.is_ok() {
+                std::mem::take(&mut state.pause.cancelled)
+            } else {
+                Vec::new()
+            }
+        };
         self.persist_pause().await;
         self.emit_status().await;
         self.emit_pause_queue().await;
+        if outcome.is_ok() {
+            // After the status event: the transcript is inert while paused, so an earlier notice is never announced.
+            self.notify_resumed(cancelled).await;
+        }
         outcome?;
         Ok(json!({ "paused": false }))
     }

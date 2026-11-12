@@ -226,14 +226,19 @@ impl OmpProcess {
         warnings.extend(launch_warnings);
 
         let mut command = Command::new(&omp_path);
+        command.args(&args).current_dir(&opts.cwd);
+        super::process_args::trust_system_ca(&mut command);
+        Self::from_command(command)
+    }
+
+    /// Spawns a prepared `command` with piped stdio and starts the reader tasks. Split from
+    /// `connect_with_warnings` so tests can drive a stub child without the launch arguments.
+    pub(crate) fn from_command(mut command: Command) -> Result<Self, ProcessError> {
         command
-            .args(&args)
-            .current_dir(&opts.cwd)
             .creation_flags(CREATE_NO_WINDOW.0)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        super::process_args::trust_system_ca(&mut command);
 
         let spawned_at = Instant::now();
         let spawned_at_system = SystemTime::now();

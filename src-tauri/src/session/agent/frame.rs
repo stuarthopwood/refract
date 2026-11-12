@@ -92,6 +92,11 @@ impl SessionAgent {
             }
             "host_tool_call" => self.agent_tools.handle_call(&self.arc(), &frame),
             "host_tool_cancel" => self.agent_tools.handle_cancel(&frame),
+            "subagent_lifecycle" => {
+                if let Some(payload) = frame.get("payload") {
+                    self.on_subagent_started(payload).await;
+                }
+            }
             // tool_execution_update is ignored: only subagent progress uses it, and that is not ported.
             // Other frames, including agent_end and side-chat deltas, are no-ops here.
             _ => {}
@@ -276,6 +281,8 @@ impl SessionAgent {
                 state.process = None;
                 // Clears the abort flag so it cannot leak into a later launch. (#911)
                 state.turn_abort_requested = false;
+                // Cancelled ids name subagents of the dead process; a later Resume must not report them.
+                state.pause.cancelled.clear();
             }
             (
                 is_current,

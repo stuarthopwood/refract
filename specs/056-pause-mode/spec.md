@@ -31,3 +31,5 @@ Session 2026-10-29. Answered by Skippy, delegated by Stuart, from the grill bloc
 ## Out of scope
 
 - `goal pause` (#479). OMP RPC pause (upstream). Persisting images on held messages.
+
+Amended by `specs/127-pause-cancels-subagents-1835/spec.md` (#1835): Pause also cancels the Session's running subagents and auto-cancels any started while paused. Everything above is otherwise unchanged.
