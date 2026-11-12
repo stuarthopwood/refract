@@ -15,9 +15,9 @@ Slices: A (harness, T001-T006) is the base; B (probes, T007-T013) needs A; C (ap
 
 ## B. Probes (FR-001, FR-006)
 
-- [ ] T007 [P] Tool-result group: `grep.contextBefore`, `grep.contextAfter`, `read.defaultLimit`, `read.summarize.enabled` on a fixture file; observable = turn-two tool-result text
-- [ ] T008 [P] `tools.artifactSpillThreshold`: tool output between old and new threshold; observable = `artifact://` spill marker
-- [ ] T009 [P] `snapcompact.toolResults`, `snapcompact.systemPrompt`: observable = image parts in the turn-two request, system prompt as image frames
+- [x] T007 [P] Tool-result group: `grep.contextBefore`, `grep.contextAfter`, `read.defaultLimit`, `read.summarize.enabled` on a fixture file; observable = turn-two tool-result text
+- [x] T008 [P] `tools.artifactSpillThreshold`: tool output between old and new threshold; observable = `artifact://` spill marker
+- [x] T009 [P] `snapcompact.toolResults`, `snapcompact.systemPrompt`: observable = image parts in the turn-two request, system prompt as image frames
 - [ ] T010 [P] Subagent group: `task.maxConcurrency` (peak in-flight held subagent requests), `task.softRequestBudget` (requests before wrap-up notice and force-stop)
 - [ ] T011 [P] Prompt group: `plan.defaultOnStartup`, `prewalk.enabled`, `todo.eager`; observable = per-key marker or request model id, no prompt hash; control shows zero natural variance (OQ-2 definition)
 - [ ] T012 [P] `autolearn.autoContinue` (extra capture request, `autolearn.minToolCalls` lowered) and `advisor.reviewMode` (advisor requests per turn via `modelRoles.advisor` in the scratch config only; if not deterministic, `inconclusive-startup-only`)
