@@ -65,9 +65,9 @@ async function readAdvisorySeverities(cdp) {
   return cdp.evaluate(`(${ADVISORY_FINDER}).map((el) => el.querySelector('[data-slot="collapsed-line-label"]').textContent.trim().toLowerCase())`);
 }
 
-// The accent bar is a `::before` pseudo-element, so read its background; `null` for a nit (no wrapper).
+// #1876: the accent bar is the expanded body's `::before` (not the wrapper's); `null` for a nit (no wrapper).
 async function readAccentBorderColor(cdp, index) {
-  return cdp.evaluate(`(() => { const el = (${ADVISORY_FINDER})[${index}]; const wrapper = el.closest('[data-advisory-severity]'); return wrapper ? getComputedStyle(wrapper, '::before').backgroundColor : null; })()`);
+  return cdp.evaluate(`(() => { const el = (${ADVISORY_FINDER})[${index}]; const wrapper = el.closest('[data-advisory-severity]'); const body = wrapper?.querySelector('[data-slot="collapsible-content"]'); return body ? getComputedStyle(body, '::before').backgroundColor : null; })()`);
 }
 
 async function probeTokenBorderColor(cdp, className) {
@@ -270,10 +270,10 @@ async function main() {
             failures.push(`Shift+Tab twice from Ask-agent did not land back on the trigger (decision 12 reverse order).`);
           } else if (!ring.focusVisible) {
             notExercised.push('The trigger did not match :focus-visible after a real Shift+Tab sequence even with focus emulation enabled -- the M3 stripe/focus-ring z-index fix is code-reviewed only this run.');
-          } else if (ring.position !== 'relative' || ring.zIndex !== '1' || ring.outlineStyle !== 'solid' || ring.outlineWidth !== '2px') {
-            failures.push(`Focused trigger computed style was position:${ring.position} z-index:${ring.zIndex} outline:${ring.outlineStyle} ${ring.outlineWidth}, expected position:relative z-index:1 outline:solid 2px (decision 1's stripe/focus-ring fix, gate round 2/3).`);
+          } else if (ring.outlineStyle !== 'solid' || ring.outlineWidth !== '2px') {
+            failures.push(`Focused trigger computed outline was ${ring.outlineStyle} ${ring.outlineWidth}, expected solid 2px (the stripe no longer overlaps the trigger, #1876).`);
           } else {
-            findings.push(`Keyboard-focused trigger confirmed :focus-visible with the accent-bar z-index lift active (position:relative, z-index:1, a solid 2px outline) -- the fix that raises it above the stripe is proven live, not just code-reviewed.`);
+            findings.push(`Keyboard-focused trigger confirmed :focus-visible with a solid 2px outline; the stripe sits beside the body only, so it cannot cross the ring (#1876).`);
             // Clipped to the row's left edge, where the stripe and the ring overlap.
             const rect = await cdp.evaluate(`(() => { const r = (${ADVISORY_FINDER})[${targetIndex}].getBoundingClientRect(); return { x: Math.max(0, r.x - 4), y: r.y, width: Math.min(240, r.width + 8), height: r.height }; })()`);
             const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { ...rect, scale: 1 } });
