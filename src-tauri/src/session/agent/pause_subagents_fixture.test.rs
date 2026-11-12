@@ -92,7 +92,10 @@ fn session_row(id: &str, dir: &std::path::Path) -> Session {
         name: "test".to_string(),
         branch: format!("feat/{id}"),
         base_branch: "main".to_string(),
-        worktree_path: dir.join(format!("worktree-{id}")).to_string_lossy().into_owned(),
+        worktree_path: dir
+            .join(format!("worktree-{id}"))
+            .to_string_lossy()
+            .into_owned(),
         session_dir: None,
         current_conversation: None,
         last_message_count: None,

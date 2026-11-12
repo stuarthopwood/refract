@@ -167,6 +167,7 @@ async fn a_status_event_is_emitted_while_the_state_lock_is_held() {
 
     fx.agent.emit_status().await;
 
-    assert_eq!(*locked_at_emit.lock().unwrap(), [true]);
+    // Stopped before the assert, so a failing run reports instead of hanging on the stub process.
     fx.finish().await;
+    assert_eq!(*locked_at_emit.lock().unwrap(), [true]);
 }
