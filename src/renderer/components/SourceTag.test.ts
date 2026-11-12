@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MessageSquareIcon } from 'lucide-react'
 import { describe, expect, it, vi } from 'vitest'
 import { SourceTag } from './SourceTag'
+import { Button } from '@/components/ui/button'
 
 function findAll(node: ReactNode, match: (el: ReactElement<Record<string, unknown>>) => boolean, out: ReactElement<Record<string, unknown>>[] = []) {
   if (Array.isArray(node)) node.forEach((child) => findAll(child, match, out))
@@ -16,7 +17,7 @@ function findAll(node: ReactNode, match: (el: ReactElement<Record<string, unknow
   return out
 }
 
-const buttons = (node: ReactNode) => findAll(node, (el) => el.type === 'button')
+const buttons = (node: ReactNode) => findAll(node, (el) => el.type === Button)
 
 describe('SourceTag', () => {
   it('renders plain text with no button and no tab stop when no action is given', () => {
@@ -33,7 +34,7 @@ describe('SourceTag', () => {
     const html = renderToStaticMarkup(
       createElement(SourceTag, { icon: MessageSquareIcon, label: 'From Session', action: { label: 'Alpha', onActivate: () => {} } }),
     )
-    expect(html).toMatch(/From Session<button type="button"[^>]*>Alpha<\/button>/)
+    expect(html).toMatch(/From Session<button[^>]*type="button"[^>]*>Alpha<\/button>/)
   })
 
   it('activates through onClick only, so Enter and Space (native button clicks) fire it once', () => {

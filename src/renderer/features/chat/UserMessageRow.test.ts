@@ -66,7 +66,7 @@ describe('SessionSourceLine', () => {
 describe('UserMessageRow session source', () => {
   it('shows a From Session line with the sender name as a button, above the bubble', () => {
     const html = render({ ...base, source: SOURCE })
-    expect(html).toMatch(/From Session<button type="button"[^>]*>Alpha<\/button>/)
+    expect(html).toMatch(/From Session<button[^>]*type="button"[^>]*>Alpha<\/button>/)
     expect(html.indexOf('From Session')).toBeLessThan(html.indexOf('hello there'))
   })
 

@@ -21,9 +21,9 @@ Test tasks are part of each task (AGENTS.md Testing rule: new logic gets co-loca
 
 ## Chunk C: live check and docs (after A and B)
 
-- [ ] T009 `scripts/verify-tauri-1858.mjs` and fake-omp tape support in `scripts/verify-tauri-fake-omp.mjs`, run with the `pnpm verify:tauri` harness: call each of the three tools; check registration, no approval card, list rows and `self`, status vocabulary for running and stopped Sessions, `sent`/`queued`/`held`/`session_not_running`/`rate_limited`, every error with no toast (SC-003), the envelope reaching the target, the label rendering before and after a reload (SC-002) and the link switching Session without focus moving. Screenshots and timings recorded. (SC-001 to SC-004)
+- [x] T009 `scripts/verify-tauri-1858.mjs` and fake-omp tape support in `scripts/verify-tauri-fake-omp.mjs`, run with the `pnpm verify:tauri` harness: call each of the three tools; check registration, no approval card, list rows and `self`, status vocabulary for running and stopped Sessions, `sent`/`queued`/`held`/`session_not_running`/`rate_limited`, every error with no toast (SC-003), the envelope reaching the target, the label rendering before and after a reload (SC-002) and the link switching Session without focus moving. Screenshots and timings recorded. (SC-001 to SC-004)
 - [x] T010 `docs/adr/0008-session-message-envelope.md`, `CONTEXT.md` term **Session message**, `docs/PLAN.md` row 1c.2. (FR-020)
-- [ ] T011 `pnpm ci:local`; fix regressions only.
+- [x] T011 `pnpm ci:local`; fix regressions only.
 
 ## Dependencies
 

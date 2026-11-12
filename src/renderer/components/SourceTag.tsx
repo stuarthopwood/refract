@@ -5,7 +5,7 @@
 // The optional `action` (#1858) adds a real link-styled button after the word, for a tag that names
 // something the reader can jump to; only then does the tag hold a tab stop.
 import type { ComponentType, SVGProps } from 'react'
-import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -33,14 +33,16 @@ export function SourceTag({ icon: Icon, label, tooltip, action, className }: Sou
       {label}
       {action && (
         // A native button gives Enter and Space activation for free; no key handler, or it would fire twice.
-        <button
+        <Button
           type="button"
+          variant="text"
+          size="xs"
           aria-label={action.ariaLabel}
           onClick={action.onActivate}
-          className={cn('rounded-sm text-foreground underline underline-offset-2 hover:text-primary', INSET_FOCUS_OUTLINE_CLASS)}
+          className="px-1 underline"
         >
           {action.label}
-        </button>
+        </Button>
       )}
     </span>
   )
