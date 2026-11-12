@@ -33,7 +33,8 @@ export function assertScratchRootSafe(scratchRoot, protectedDirs) {
   const root = path.resolve(scratchRoot);
   const within = (parent, child) => {
     const rel = path.relative(parent.toLowerCase(), child.toLowerCase());
-    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    const outside = rel === '..' || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel);
+    return !outside;
   };
   for (const dir of protectedDirs.filter(Boolean)) {
     const prot = path.resolve(dir);

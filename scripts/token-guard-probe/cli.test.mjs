@@ -33,6 +33,22 @@ describe('assertScratchRootSafe', () => {
     expect(() => assertScratchRootSafe('C:\\Users\\u', real)).toThrow(/overlaps/);
     expect(() => assertScratchRootSafe('C:\\Users\\U\\APPDATA\\roaming\\Refract-Tauri', real)).toThrow(/overlaps/);
   });
+
+  it('does not treat a sibling sharing a name prefix as overlapping', () => {
+    expect(() => assertScratchRootSafe('C:\\Users\\u\\.omp2', real)).not.toThrow();
+  });
+
+  it('refuses a trailing separator on a real dir root', () => {
+    expect(() => assertScratchRootSafe('C:\\Users\\u\\.omp\\', real)).toThrow(/overlaps/);
+  });
+
+  it('allows a root on a different drive', () => {
+    expect(() => assertScratchRootSafe('D:\\scratch\\refract-1935-probe', real)).not.toThrow();
+  });
+
+  it('refuses a child literally named `..foo` inside a real dir', () => {
+    expect(() => assertScratchRootSafe('C:\\Users\\u\\.omp\\..foo', real)).toThrow(/overlaps/);
+  });
 });
 
 describe('selectGroups', () => {

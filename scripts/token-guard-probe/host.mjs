@@ -11,6 +11,22 @@ export const OMP_EXE = 'omp';
 
 const ENV_ALLOWLIST = new Set(['PATH', 'SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'COMSPEC', 'PATHEXT', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'OS']);
 
+/**
+ * Why: an allowlist, not a denylist, so no real credential in the parent env can reach omp; scratch HOME/agent dir override.
+ * @param {NodeJS.ProcessEnv} parentEnv
+ * @param {{agentDir: string, homeDir: string}} dirs
+ */
+export function buildChildEnv(parentEnv, { agentDir, homeDir }) {
+  const env = Object.fromEntries(Object.entries(parentEnv).filter(([k]) => ENV_ALLOWLIST.has(k.toUpperCase())));
+  return Object.assign(env, {
+    PI_CODING_AGENT_DIR: agentDir,
+    HOME: homeDir,
+    USERPROFILE: homeDir,
+    APPDATA: path.join(homeDir, 'AppData', 'Roaming'),
+    LOCALAPPDATA: path.join(homeDir, 'AppData', 'Local'),
+  });
+}
+
 export function defaultScratchRoot() {
   return path.join(homedir(), 'refract-1935-probe');
 }
@@ -80,15 +96,7 @@ export async function startHost({ label, scratchRoot, provider, config = {}, mod
   }
   assertNoRoster(agentDir, repoDir);
 
-  // Why: an allowlist, not a denylist, so no real credential in the parent env can reach omp; scratch HOME/agent dir are set below.
-  const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => ENV_ALLOWLIST.has(k.toUpperCase())));
-  Object.assign(env, {
-    PI_CODING_AGENT_DIR: agentDir,
-    HOME: homeDir,
-    USERPROFILE: homeDir,
-    APPDATA: path.join(homeDir, 'AppData', 'Roaming'),
-    LOCALAPPDATA: path.join(homeDir, 'AppData', 'Local'),
-  });
+  const env = buildChildEnv(process.env, { agentDir, homeDir });
 
   const argv = ['--mode', 'rpc-ui', '--model', selector];
   const child = spawn(OMP_EXE, argv, { cwd: repoDir, env, windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] });

@@ -48,7 +48,7 @@ export function sequence(steps, fallback = { type: 'text', text: 'ok' }) {
  */
 export function startProvider({ port = 0, script = sequence([]) } = {}) {
   const requests = [];
-  let currentScript = script;
+  const currentScript = script;
   let gate = null;
   const newGate = () => {
     let open;
