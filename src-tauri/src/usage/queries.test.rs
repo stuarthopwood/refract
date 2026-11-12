@@ -270,6 +270,24 @@ fn tool_cost_share_divides_by_the_whole_window_when_the_listing_is_cut() {
 }
 
 #[test]
+fn tool_cost_share_denominator_follows_the_project_filter() {
+    let conn = scratch_db();
+    record_tool_call(&conn, "file", &priced_tool_call("1", "bash", 3.0)).unwrap();
+    let other_project = ToolCallRow {
+        project_label: "elsewhere",
+        ..priced_tool_call("2", "read", 9.0)
+    };
+    record_tool_call(&conn, "file", &other_project).unwrap();
+    let f = Filters {
+        project: Some("proj".into()),
+        ..filters("7d")
+    };
+    let rows = breakdown(&conn, &f, BreakdownBy::Tool, &ctx()).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].cost_share, Some(1.0));
+}
+
+#[test]
 fn half_hour_zone_day_buckets_read_exact_rows() {
     let conn = scratch_db();
     let row = MessageRow {
