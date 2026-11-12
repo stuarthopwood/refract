@@ -79,14 +79,14 @@ function useRepositoryUserName(repositoryId: string | null): string | undefined 
 }
 
 /**
- * The nearest preceding `ask` tool item for a `request` item at `requestIndex`, scanning backward
- * only until an earlier `request` item (a different question) is hit.
+ * The nearest preceding `ask` tool item for a `request` item at `requestIndex`. Earlier `request`
+ * items are skipped because one ask sends a frame per field (and per checkbox toggle); any other
+ * tool item ends the scan so an unrelated approval never links to an older ask.
  */
 function findPrecedingAskItem(items: TranscriptItem[], requestIndex: number): ToolItem | undefined {
   for (let i = requestIndex - 1; i >= 0; i--) {
     const candidate = items[i]!
-    if (candidate.kind === 'request') break
-    if (candidate.kind === 'tool' && candidate.tool === 'ask') return candidate
+    if (candidate.kind === 'tool') return candidate.tool === 'ask' ? candidate : undefined
   }
   return undefined
 }
