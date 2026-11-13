@@ -34,6 +34,13 @@ export function splitItemRefs(text: string): Array<{ text: string; ref: boolean 
   return parts
 }
 
+/** `owner/repo` a reference lives in: its own qualifier, else the Project's GitHub remote; null when neither exists. */
+export function ownerRepoOf(target: Pick<ItemRefTarget, 'owner' | 'repo'>, repository: Repository | undefined): string | null {
+  if (target.owner) return `${target.owner}/${target.repo}`
+  const remote = repository?.remote
+  return remote?.kind === 'has' ? `${remote.owner}/${remote.repo}` : null
+}
+
 /** Null for a bare `#123` when the Project has no GitHub repository: that stays plain text. */
 export function resolveItemRef(text: string, repository: Repository): ItemRefTarget | null {
   const qualified = /^([^/#]+)\/([^#]+)#(\d+)$/.exec(text)
