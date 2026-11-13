@@ -58,6 +58,18 @@ fn main() {
         println!(r#"{{"hosts":{{"github.com":[{{"state":"success","active":true,"host":"github.com","login":"octotest"}}]}}}}"#);
         return;
     }
+    // `gh issue view <n>` feeds the Issue right pane (#1950 pins it); only the fixed issues are served.
+    if joined.starts_with("issue view ") {
+        let number: u64 = args.get(2).and_then(|n| n.parse().ok()).unwrap_or(0);
+        let Some(item) = ITEMS.iter().find(|i| i.number == number && !i.pr) else { std::process::exit(1) };
+        println!(
+            r#"{{"number":{n},"title":"{t}","state":"{s}","url":"https://github.com/octocat/hello-world/issues/{n}","labels":[],"assignees":[],"author":{{"login":"octotest"}},"body":"Fixture body.","createdAt":"2026-10-01T09:00:00Z","updatedAt":"2026-10-02T09:00:00Z"}}"#,
+            n = item.number,
+            t = item.title,
+            s = item.state.to_uppercase(),
+        );
+        return;
+    }
     if args.first().map(String::as_str) != Some("api") {
         std::process::exit(1);
     }

@@ -5539,3 +5539,20 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   `scripts/theme-tokens.mjs` to parse `color-mix`, per FR-101 (contradicts)
 - [x] T445 Live check the collapsed and expanded advisory card and an agent-to-agent row in one dark and one light theme
   (and after an accent change), update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-051, FR-101
+
+## Phase 93: Convergence (#1950 chat issue and pull request references open the right pane, FR-127)
+
+- [x] T446 [US1] `openItemRef.ts` (new, beside `ItemRefLink.tsx`): the click decision as a pure function with injected
+  pin and open-in-browser. A plain click on an in-Project reference looks the item up, then pins it with `focus: false`
+  as an issue or a pull request by the looked-up kind; Ctrl/Cmd or middle click opens GitHub without a lookup; a failed
+  lookup or another repository opens GitHub, per FR-127 (missing)
+- [x] T447 [US1] `ItemRefLink.tsx`: call it from `onClick` and `onAuxClick`, replacing the Pull requests view open for
+  pull requests and the GitHub open for issues; keep the five-minute cache and the hover-only lookup, per FR-127 (contradicts)
+- [x] T448 [US1] `ItemTypeIcon.tsx` (new) and `itemCardCache.ts` (new, the five-minute cache moved out of `ItemRefLink.tsx` with a
+  render-safe `peekCard`): a leading type icon, neutral (`HashIcon`) until the item is known from a hover, focus or
+  click lookup or a cached lookup, then `CircleDotIcon` or `GitPullRequestIcon` in the state colour; the hover Item card
+  opens with the icon and the type word; no lookup or prefetch at render, per FR-127 (missing)
+- [x] T449 `openItemRef.test.ts`, `ItemTypeIcon.test.ts`, `itemCardCache.test.ts` and `ItemRefLink.test.ts`: each guard (focus stays in chat, kind routing, modifier and middle
+  click, failed lookup, out-of-Project, neutral icon) fails when removed, per FR-127
+- [x] T450 Live check on a built app (`pnpm verify:tauri`): click pins and reveals the pane without taking focus, re-click
+  focuses the pin, Ctrl-click leaves the pane alone; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-127
