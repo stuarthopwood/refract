@@ -52,7 +52,14 @@ pub fn parse_view(code: i32, stdout: &str) -> ViewOutcome {
 }
 
 pub async fn view_stack(repo_path: &Path, head_branch: &str) -> ViewOutcome {
-    match gh_raw(repo_path, &["stack", "view", "--json", head_branch], None, VIEW_TIMEOUT).await {
+    match gh_raw(
+        repo_path,
+        &["stack", "view", "--json", head_branch],
+        None,
+        VIEW_TIMEOUT,
+    )
+    .await
+    {
         Ok(r) if !r.timed_out => parse_view(r.code, &r.stdout),
         _ => ViewOutcome::Unknown,
     }
@@ -61,7 +68,11 @@ pub async fn view_stack(repo_path: &Path, head_branch: &str) -> ViewOutcome {
 /// `gh stack merge <n>` tries `n` as a stack number before a pull request number, so a stack
 /// numbered `n` that is not this pull request's own stack would be merged by mistake.
 /// The stacks response shape is unobserved (research.md), so "same stack" is deep JSON equality.
-pub fn check_collision(by_number: Option<&Value>, by_pull_request: Option<&Value>, number: u64) -> Result<(), GhError> {
+pub fn check_collision(
+    by_number: Option<&Value>,
+    by_pull_request: Option<&Value>,
+    number: u64,
+) -> Result<(), GhError> {
     let Some(owner_of_number) = by_number else {
         return Ok(());
     };
@@ -78,19 +89,30 @@ pub fn check_collision(by_number: Option<&Value>, by_pull_request: Option<&Value
 }
 
 async fn api_json(repo_path: &Path, path: &str) -> Option<Value> {
-    let r = gh_raw(repo_path, &["api", path], None, VIEW_TIMEOUT).await.ok()?;
+    let r = gh_raw(repo_path, &["api", path], None, VIEW_TIMEOUT)
+        .await
+        .ok()?;
     if r.timed_out || r.code != 0 {
         return None;
     }
     serde_json::from_str(&r.stdout).ok()
 }
 
-pub async fn guard_stack_number(repo_path: &Path, owner: &str, repo: &str, number: u64) -> Result<(), GhError> {
+pub async fn guard_stack_number(
+    repo_path: &Path,
+    owner: &str,
+    repo: &str,
+    number: u64,
+) -> Result<(), GhError> {
     let by_number = api_json(repo_path, &format!("repos/{owner}/{repo}/stacks/{number}")).await;
     if by_number.is_none() {
         return Ok(());
     }
-    let by_pr = api_json(repo_path, &format!("repos/{owner}/{repo}/stacks?pull_request={number}")).await;
+    let by_pr = api_json(
+        repo_path,
+        &format!("repos/{owner}/{repo}/stacks?pull_request={number}"),
+    )
+    .await;
     check_collision(by_number.as_ref(), by_pr.as_ref(), number)
 }
 
@@ -107,7 +129,9 @@ mod tests {
 
     #[test]
     fn fixture_parses_three_layers_with_flags_and_an_unsubmitted_branch() {
-        let ViewOutcome::Stacked(v) = parse_view(0, THREE) else { panic!("not stacked") };
+        let ViewOutcome::Stacked(v) = parse_view(0, THREE) else {
+            panic!("not stacked")
+        };
         assert_eq!(v.branches.len(), 4);
         assert!(v.branches[0].is_merged && v.branches[1].is_queued && v.branches[2].needs_rebase);
         assert_eq!(v.branches[2].pr.as_ref().unwrap().number, 3);

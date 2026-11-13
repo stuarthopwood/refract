@@ -27,8 +27,11 @@ mod tests {
     use serde_json::json;
 
     async fn scratch_dir() -> std::path::PathBuf {
-        let dir = crate::test_scratch::path(format!("refract-stacked-prs-{}", uuid::Uuid::new_v4()));
-        tokio::fs::create_dir_all(&dir).await.expect("create scratch dir");
+        let dir =
+            crate::test_scratch::path(format!("refract-stacked-prs-{}", uuid::Uuid::new_v4()));
+        tokio::fs::create_dir_all(&dir)
+            .await
+            .expect("create scratch dir");
         dir
     }
 

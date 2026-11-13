@@ -167,7 +167,11 @@ pub async fn install(runtime: &GhStackRuntime) -> Result<GhStackState, GhError> 
         if result.code != 0 {
             return Err(GhError::new(
                 GhErrorCode::GhFailed,
-                non_empty_or(&result.stderr, &result.stdout, "Installing gh-stack failed."),
+                non_empty_or(
+                    &result.stderr,
+                    &result.stdout,
+                    "Installing gh-stack failed.",
+                ),
             ));
         }
     }
@@ -204,12 +208,27 @@ mod tests {
 
     #[test]
     fn version_floor_is_inclusive_and_numeric() {
-        assert_eq!(classify_probe(&version("0.1.0")).unwrap(), GhStackState::Outdated);
-        assert_eq!(classify_probe(&version("0.2.9")).unwrap(), GhStackState::Outdated);
-        assert_eq!(classify_probe(&version("0.3.0")).unwrap(), GhStackState::Ready);
+        assert_eq!(
+            classify_probe(&version("0.1.0")).unwrap(),
+            GhStackState::Outdated
+        );
+        assert_eq!(
+            classify_probe(&version("0.2.9")).unwrap(),
+            GhStackState::Outdated
+        );
+        assert_eq!(
+            classify_probe(&version("0.3.0")).unwrap(),
+            GhStackState::Ready
+        );
         // 0.10.0 sorts before 0.3.0 as text; it must compare as a number.
-        assert_eq!(classify_probe(&version("0.10.0")).unwrap(), GhStackState::Ready);
-        assert_eq!(classify_probe(&version("1.0.0")).unwrap(), GhStackState::Ready);
+        assert_eq!(
+            classify_probe(&version("0.10.0")).unwrap(),
+            GhStackState::Ready
+        );
+        assert_eq!(
+            classify_probe(&version("1.0.0")).unwrap(),
+            GhStackState::Ready
+        );
     }
 
     #[test]
@@ -291,6 +310,9 @@ mod tests {
 
     #[test]
     fn state_serialises_lowercase() {
-        assert_eq!(serde_json::to_value(GhStackState::Outdated).unwrap(), "outdated");
+        assert_eq!(
+            serde_json::to_value(GhStackState::Outdated).unwrap(),
+            "outdated"
+        );
     }
 }

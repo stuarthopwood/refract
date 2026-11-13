@@ -18,11 +18,16 @@ pub enum Route {
     Plain,
 }
 
-
 /// A successful view beats a stale renderer hint; with no view the hint decides.
 pub fn route(view: &ViewOutcome, number: u64, hint_stacked: bool) -> Route {
     match view {
-        ViewOutcome::Stacked(v) if v.branches.iter().any(|b| b.pr.as_ref().is_some_and(|p| p.number == number)) => Route::Stack,
+        ViewOutcome::Stacked(v)
+            if v.branches
+                .iter()
+                .any(|b| b.pr.as_ref().is_some_and(|p| p.number == number)) =>
+        {
+            Route::Stack
+        }
         ViewOutcome::Stacked(_) | ViewOutcome::NotStacked => Route::Plain,
         ViewOutcome::Unknown if hint_stacked => Route::Stack,
         ViewOutcome::Unknown => Route::Plain,
@@ -64,7 +69,13 @@ where
 }
 
 /// Decides the route for a merge and whether the stack path is allowed at all.
-pub async fn route_for(repo_path: &Path, number: u64, head_branch: &str, hint_stacked: bool, setting_on: bool) -> Route {
+pub async fn route_for(
+    repo_path: &Path,
+    number: u64,
+    head_branch: &str,
+    hint_stacked: bool,
+    setting_on: bool,
+) -> Route {
     if !setting_on {
         return Route::Plain;
     }
@@ -74,11 +85,18 @@ pub async fn route_for(repo_path: &Path, number: u64, head_branch: &str, hint_st
     };
     let runtime = gh_stack_state::runtime();
     if runtime.is_unavailable(&owner, &repo)
-        || !matches!(gh_stack_state::state(runtime).await, Ok(gh_stack_state::GhStackState::Ready))
+        || !matches!(
+            gh_stack_state::state(runtime).await,
+            Ok(gh_stack_state::GhStackState::Ready)
+        )
     {
         return Route::Plain;
     }
-    route(&view_stack(repo_path, head_branch).await, number, hint_stacked)
+    route(
+        &view_stack(repo_path, head_branch).await,
+        number,
+        hint_stacked,
+    )
 }
 
 pub async fn merge_stacked(repo_path: &Path, number: u64) -> Result<(), GhError> {
@@ -88,13 +106,20 @@ pub async fn merge_stacked(repo_path: &Path, number: u64) -> Result<(), GhError>
     let args: Vec<&str> = argv.iter().map(String::as_str).collect();
     let result = gh_raw(repo_path, &args, None, MERGE_TIMEOUT).await?;
     if result.timed_out {
-        return Err(GhError::new(GhErrorCode::Timeout, "The stack merge timed out."));
+        return Err(GhError::new(
+            GhErrorCode::Timeout,
+            "The stack merge timed out.",
+        ));
     }
     if marks_unavailable(result.code) {
         gh_stack_state::runtime().mark_unavailable(&owner, &repo);
     }
     if result.code != 0 {
-        return Err(map_merge_failure(result.code, &result.stderr, &result.stdout));
+        return Err(map_merge_failure(
+            result.code,
+            &result.stderr,
+            &result.stdout,
+        ));
     }
     Ok(())
 }
@@ -103,7 +128,6 @@ pub async fn merge_stacked(repo_path: &Path, number: u64) -> Result<(), GhError>
 pub fn marks_unavailable(code: i32) -> bool {
     code == 9
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -143,7 +167,10 @@ mod tests {
     fn exit_two_and_the_conflict_codes_map_to_not_mergeable() {
         assert_eq!(map_merge_failure(2, "", "").code, GhErrorCode::NotMergeable);
         for code in [3, 7, 10] {
-            assert_eq!(map_merge_failure(code, "conflict", "").code, GhErrorCode::NotMergeable);
+            assert_eq!(
+                map_merge_failure(code, "conflict", "").code,
+                GhErrorCode::NotMergeable
+            );
         }
     }
 
@@ -166,7 +193,9 @@ mod tests {
             stack_ran.store(true, std::sync::atomic::Ordering::SeqCst);
             Ok(())
         };
-        assert!(run_route(Route::Plain, stack, async { Ok(()) }).await.is_ok());
+        assert!(run_route(Route::Plain, stack, async { Ok(()) })
+            .await
+            .is_ok());
         assert!(!stack_ran.load(std::sync::atomic::Ordering::SeqCst));
     }
 }

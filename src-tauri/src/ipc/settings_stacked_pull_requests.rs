@@ -7,7 +7,10 @@ use super::{AppState, Dispatcher, HandlerFuture, IpcError};
 const CHANNEL: &str = "settings.setStackedPullRequests";
 
 pub fn register(d: &mut Dispatcher) {
-    d.register(CHANNEL, settings_set_stacked_pull_requests);
+    d.register(
+        "settings.setStackedPullRequests",
+        settings_set_stacked_pull_requests,
+    );
 }
 
 /// A non-boolean argument is an invalid-argument error, never coerced.

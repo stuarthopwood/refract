@@ -190,7 +190,8 @@ impl SessionAgent {
         .await;
         opts.stacked_prs = self.settings.lock().await.get().stacked_pull_requests
             && matches!(
-                crate::github::gh_stack_state::state(crate::github::gh_stack_state::runtime()).await,
+                crate::github::gh_stack_state::state(crate::github::gh_stack_state::runtime())
+                    .await,
                 Ok(crate::github::gh_stack_state::GhStackState::Ready)
             );
 

@@ -90,7 +90,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         for stacked in [false, true] {
             let (args, _) = build_args(&dir, None, true, stacked).await;
-            assert_eq!(args.iter().filter(|a| *a == "--append-system-prompt").count(), 1);
+            assert_eq!(
+                args.iter()
+                    .filter(|a| *a == "--append-system-prompt")
+                    .count(),
+                1
+            );
             let text = std::fs::read_to_string(&args[1]).unwrap();
             assert_eq!(text.contains("gh stack"), stacked);
         }
