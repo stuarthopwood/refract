@@ -5559,19 +5559,22 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 
 ## Phase 94: Convergence (#1985 Ask card recommended option is visible, preselected and one key from accepted, FR-066)
 
-- [x] T451 [US2] `askRecommended.ts` (new): `recommendedIndex`/`recommendedLabel` (an out-of-range or negative index names
-  none), `initialPickFor` (single choice only), `draftAfterUseRecommended` (pick, or tick keeping other ticks) and
-  `shouldTakeInitialFocus` (not while the composer holds text), per FR-066 (missing)
+- [x] T451 [US2] `askRecommended.ts` (new): `recommendedIndex`/`recommendedLabel` (an out-of-range, negative or non-integer
+  index names none), `initialPickFor` and `opensOnRecommended` (single choice only), `draftAfterUseRecommended` (pick, or
+  tick keeping other ticks) and `shouldTakeInitialFocus` (only from `body` or the card's own Session pane, never from a
+  menu, dialog or list box, and not while the composer holds text), per FR-066 (missing)
 - [x] T452 [US2] `RecommendedBadge.tsx` (new, reusable), `checkbox.tsx` (`OPTION_RECOMMENDED_FILL_CLASS`/`ROW_CLASS`, the
-  `--severity-success-bg` token) and `AskChoiceGroup.tsx`: a recommended row gets the tint, the icon plus "Recommended"
-  text and the screen-reader suffix, `data-ask-recommended`, and Enter accepts it; `RequestCard.tsx`'s one-at-a-time card
-  shows the same cue for a trailing "(Recommended)", per FR-066 (contradicts: muted text only)
-- [x] T453 [US2] `AskCard.tsx` and `ask-picks-store.ts` (`replaceQuestionDraft`): preselect and focus the recommended row
-  when a single-choice question opens, and a "Use Recommended ↵" footer button that picks it and then acts as the primary
-  button, per FR-066 (contradicts: MUST NOT be preselected)
-- [x] T454 `askRecommended.test.ts`, `ask-picks-store.test.ts`, `AskChoiceGroup.test.ts`: each guard (index range, single vs
-  multiple preselect, tick keeps ticks, focus yields to typed text, visible cue, no cue without a recommendation) fails
-  when removed, per FR-066
-- [ ] T455 `scripts/verify-tauri-1985.mjs` (written, not run): the recommended row is tinted, shows the icon and text, is
-  preselected and focused, Enter and "Use Recommended" answer it; run it on a built app before and after, update
-  `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-066
+  `--severity-success-bg` token, kept on checked and hover, steady while busy) and `AskChoiceGroup.tsx`: a recommended
+  row gets the tint, the icon plus "Recommended" text and the ", Recommended" screen-reader suffix, `data-ask-recommended`,
+  and a plain (not held, not composing) Enter on a single-choice row accepts it (`rowProps`); `RequestCard.tsx`'s
+  one-at-a-time card shows the same cue for a trailing "(Recommended)", per FR-066 (contradicts: muted text only)
+- [x] T453 [US2] `AskCard.tsx` and `ask-picks-store.ts` (`replaceQuestionDraft`): preselect a single-choice recommendation
+  and focus its row (`preventScroll`) when the question opens, and a "Use Recommended: <option> ↵" footer button (wrapping
+  footer) that picks it and then acts as the primary button, per FR-066 (contradicts: MUST NOT be preselected)
+- [x] T454 `askRecommended.test.ts`, `ask-picks-store.test.ts`, `AskChoiceGroup.test.ts`: each guard (index range and
+  integer, single vs multiple preselect, tick keeps ticks, initial-focus rule, Enter/held/composing keys, checked and hover
+  tint, one tinted row, visible cue, no cue without a recommendation) fails when removed, per FR-066
+- [ ] T455 `scripts/verify-tauri-1985.mjs` (written, not run): the recommended row is tinted (checked, hovered and
+  unchecked), shows the icon and text, is named "SQLite, Recommended", is preselected and focused, Enter and "Use
+  Recommended" answer it without an early submit; run it on a built app before and after, update `docs/PLAN.md`, then
+  `node scripts/ci-local.mjs` per FR-066

@@ -102,14 +102,14 @@ function OptionLabel({ option, labelId, descId }: { option: AskChoiceOption; lab
   )
 }
 
-/** Row styling and the recommended row's Enter shortcut, shared by the radio and tick-box rows. */
-function rowProps(option: AskChoiceOption, onAcceptRecommended: (() => void) | undefined) {
+/** Row styling and the recommended row's Enter shortcut, shared by the radio and tick-box rows. Held Enter and IME composition never accept, so one held key cannot accept several questions. */
+export function rowProps(option: AskChoiceOption, onAcceptRecommended: (() => void) | undefined) {
   if (!option.recommended) return { className: OPTION_ROW_CLASS }
   return {
     className: OPTION_RECOMMENDED_ROW_CLASS,
     'data-ask-recommended': '',
     onKeyDown: onAcceptRecommended
-      ? (event: React.KeyboardEvent<HTMLElement>) => {
+      ? (event: Pick<React.KeyboardEvent<HTMLElement>, 'key' | 'repeat' | 'preventDefault'> & { nativeEvent: Pick<KeyboardEvent, 'isComposing'> }) => {
           if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.repeat) return
           event.preventDefault()
           onAcceptRecommended()

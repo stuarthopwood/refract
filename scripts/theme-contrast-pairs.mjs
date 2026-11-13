@@ -141,6 +141,9 @@ export const PAIRS = [
   // A finished agent/Stage name renders `text-severity-success` as text, same precedent as `severity-error` above.
   { fg: 'severity-success', bg: 'background', min: 4.5 },
   { fg: 'severity-success', bg: 'muted', min: 4.5 },
+  // #1985: the Ask card's recommended row description (`muted-foreground`) sits on the translucent `--severity-success-bg`; label and badge text are covered by the severity loop in check-theme-contrast.mjs.
+  { fg: 'muted-foreground', bg: 'severity-success-bg', on: 'background', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'severity-success-bg', on: 'card', min: 4.5 },
   // Dark (high contrast) targets 7:1 text; `--muted` is its lightest surface, so the binding case (docs/design/accessibility.md).
   { fg: 'severity-error', bg: 'muted', min: 7, onlyThemes: HIGH_CONTRAST_THEMES },
   // Warning and success summaries render real body text in the same role.

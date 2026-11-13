@@ -47,8 +47,13 @@ const OPTION_LAYOUT_CLASS =
 export const OPTION_ROW_CLASS =
   OPTION_FILL_CLASS + " " + OPTION_BUSY_HOVER + " " + OPTION_LAYOUT_CLASS + " data-[state=checked]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
 // A question's recommended option (#1985): the `--severity-success-bg` tint. The icon and "Recommended" text, not this tint, carry the meaning.
-export const OPTION_RECOMMENDED_FILL_CLASS = "border-transparent bg-severity-success-bg dark:border-transparent dark:bg-severity-success-bg"
-export const OPTION_RECOMMENDED_ROW_CLASS = OPTION_RECOMMENDED_FILL_CLASS + " " + OPTION_LAYOUT_CLASS
+// The tint survives the checked state and hover (a 5% foreground mix is the cue), so the base `hover:bg-muted` and `data-[state=checked]:bg-primary/5` are overridden here.
+export const OPTION_RECOMMENDED_FILL_CLASS =
+  "border-transparent bg-severity-success-bg hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)] data-[state=checked]:bg-severity-success-bg data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)] dark:border-transparent dark:bg-severity-success-bg dark:hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)] dark:data-[state=checked]:bg-severity-success-bg dark:data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)]"
+// Busy rows keep their resting tint on hover, like `OPTION_BUSY_HOVER`.
+const RECOMMENDED_BUSY_HOVER =
+  "aria-disabled:hover:bg-severity-success-bg dark:aria-disabled:hover:bg-severity-success-bg aria-disabled:data-[state=checked]:hover:bg-severity-success-bg dark:aria-disabled:data-[state=checked]:hover:bg-severity-success-bg"
+export const OPTION_RECOMMENDED_ROW_CLASS = OPTION_RECOMMENDED_FILL_CLASS + " " + RECOMMENDED_BUSY_HOVER + " " + OPTION_LAYOUT_CLASS
 /** Mark column for an option row: centred on the whole row, spanning label and description. */
 export const OPTION_MARK_CLASS = "row-span-2 self-center"
 export const CHECKBOX_BOX_CLASS = "grid size-4 shrink-0 place-items-center rounded-sm border border-muted-foreground"

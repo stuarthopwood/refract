@@ -1,21 +1,20 @@
 // The repo has no jsdom: the group is rendered to a string and the markup is asserted on.
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
-import { AskChoiceGroup, type AskChoiceOption } from './AskChoiceGroup'
-import { OPTION_RECOMMENDED_ROW_CLASS } from '@/components/ui/checkbox'
+import { describe, expect, it, vi } from 'vitest'
+import { AskChoiceGroup, rowProps, type AskChoiceOption } from './AskChoiceGroup'
 
 const OPTIONS: AskChoiceOption[] = [
   { value: 'Alpha', label: 'Alpha' },
   { value: 'Beta', label: 'Beta', recommended: true }
 ]
 
-function render(multi: boolean, options: AskChoiceOption[] = OPTIONS) {
+function render(multi: boolean, options: AskChoiceOption[] = OPTIONS, selected: string[] = []) {
   return renderToStaticMarkup(
     createElement(AskChoiceGroup, {
       multi,
       options,
-      selected: [],
+      selected,
       otherSelected: false,
       disabled: false,
       idPrefix: 'p',
@@ -30,24 +29,43 @@ function render(multi: boolean, options: AskChoiceOption[] = OPTIONS) {
   )
 }
 
+/** The opening tag of the recommended row, where Radix puts `data-state` and the merged class. */
+function recommendedRowTag(html: string): string {
+  const tag = html.match(/<button[^>]*data-ask-recommended[^>]*>/)?.[0]
+  if (!tag) throw new Error('no recommended row rendered')
+  return tag
+}
+
 describe.each([
   ['single choice', false],
   ['multiple choice', true]
 ])('recommended option, %s (#1985)', (_name, multi) => {
   it('shows a visible, non-colour "Recommended" cue plus the screen-reader suffix', () => {
     const html = render(multi)
-    expect(html).toContain('data-recommended-badge')
     expect(html).toMatch(/aria-hidden="true"[^>]*data-recommended-badge[^>]*>.*Recommended/)
     expect(html).toContain('<span class="sr-only">, Recommended</span>')
-    expect(html).toMatch(/data-recommended-badge[^>]*>/)
     expect(html).toContain('text-severity-success')
   })
 
-  it('tints only the recommended row with the success token, and marks it for focus and Enter', () => {
+  it('tints exactly one row with the success token, and marks it for focus and Enter', () => {
     const html = render(multi)
     expect(html.match(/data-ask-recommended/g)).toHaveLength(1)
-    expect(html.match(/bg-severity-success-bg/g)?.length).toBeGreaterThan(0)
-    expect(OPTION_RECOMMENDED_ROW_CLASS).toContain('bg-severity-success-bg')
+    expect(html.match(/class="[^"]*(?<![:\w-])bg-severity-success-bg(?=[\s"])[^"]*"/g)).toHaveLength(1)
+    expect(recommendedRowTag(html)).toContain('bg-severity-success-bg')
+  })
+
+  it('keeps the success tint when the recommended row is checked, instead of the base primary wash', () => {
+    const tag = recommendedRowTag(render(multi, OPTIONS, ['Beta']))
+    expect(tag).toContain('data-state="checked"')
+    expect(tag).toContain('data-[state=checked]:bg-severity-success-bg')
+    expect(tag).not.toContain('data-[state=checked]:bg-primary/5')
+  })
+
+  it('keeps the success tint on hover, with a subtle foreground mix as the cue, and none while busy', () => {
+    const tag = recommendedRowTag(render(multi))
+    expect(tag).toContain('hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)]')
+    expect(tag).not.toContain('hover:bg-muted')
+    expect(tag).toContain('aria-disabled:hover:bg-severity-success-bg')
   })
 
   it('renders no cue or marker when nothing is recommended', () => {
@@ -55,5 +73,37 @@ describe.each([
     expect(html).not.toContain('data-recommended-badge')
     expect(html).not.toContain('data-ask-recommended')
     expect(html).not.toContain('bg-severity-success-bg')
+  })
+})
+
+describe('rowProps Enter shortcut (#1985)', () => {
+  const RECOMMENDED: AskChoiceOption = { value: 'Beta', label: 'Beta', recommended: true }
+  function press(key: string, extra: { repeat?: boolean; isComposing?: boolean } = {}) {
+    const accept = vi.fn()
+    const preventDefault = vi.fn()
+    rowProps(RECOMMENDED, accept).onKeyDown?.({ key, repeat: extra.repeat ?? false, preventDefault, nativeEvent: { isComposing: extra.isComposing ?? false } })
+    return { accept, preventDefault }
+  }
+
+  it('accepts and prevents the default on a plain Enter', () => {
+    const { accept, preventDefault } = press('Enter')
+    expect(accept).toHaveBeenCalledOnce()
+    expect(preventDefault).toHaveBeenCalledOnce()
+  })
+
+  it.each([
+    ['a held Enter', 'Enter', { repeat: true }],
+    ['Enter during IME composition', 'Enter', { isComposing: true }],
+    ['Space', ' ', {}],
+    ['ArrowDown', 'ArrowDown', {}]
+  ])('does not accept on %s', (_name, key, extra) => {
+    const { accept, preventDefault } = press(key, extra)
+    expect(accept).not.toHaveBeenCalled()
+    expect(preventDefault).not.toHaveBeenCalled()
+  })
+
+  it('adds no key handler without an accept callback, or to a row that is not recommended', () => {
+    expect(rowProps(RECOMMENDED, undefined).onKeyDown).toBeUndefined()
+    expect('onKeyDown' in rowProps({ value: 'Alpha', label: 'Alpha' }, vi.fn())).toBe(false)
   })
 })

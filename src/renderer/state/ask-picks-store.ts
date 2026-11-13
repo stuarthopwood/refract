@@ -80,7 +80,7 @@ export const useAskPicksStore = create<AskPicksState>((set, get) => ({
   setActiveQuestion: (sessionId, requestId, questionId, preselect) => {
     const state = get()
     const question = getQuestionDraft(state, sessionId, requestId, questionId)
-    const untouched = !question.viewed && question.selectedOptions.length === 0 && !question.otherSelected && question.customInput.length === 0
+    const untouched = !question.viewed && question.selectedOptions.length === 0 && !question.otherSelected
     const next = preselect !== undefined && untouched ? { ...question, selectedOptions: [preselect] } : question
     set(updateQuestion(state, sessionId, requestId, questionId, { ...next, viewed: true }, questionId))
   },

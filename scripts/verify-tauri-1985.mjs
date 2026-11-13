@@ -31,6 +31,11 @@ function check(ok, label, evidence) {
 // The label span's first text node is the option's own label; the badge and the screen-reader suffix come after it.
 const ROW = (role, label) => `Array.from(document.querySelectorAll('[role="${role}"]')).find((el) => el.querySelector('.col-start-2.break-words')?.firstChild?.nodeValue?.trim() === ${JSON.stringify(label)})`;
 const BUTTON = (text) => `Array.from(document.querySelectorAll('button')).find((b) => b.textContent.replace(/\\s+/g, ' ').trim().startsWith(${JSON.stringify(text)}))`;
+/** The computed colour a CSS value resolves to, so a row's painted background is compared with the token it should paint, not with a hard-coded string. */
+const PROBE = (css) => `(() => { const d = document.createElement('div'); d.style.backgroundColor = ${JSON.stringify(css)}; document.body.appendChild(d); const c = getComputedStyle(d).backgroundColor; d.remove(); return c; })()`;
+const TINT_CSS = 'var(--severity-success-bg)';
+const TINT_HOVER_CSS = 'color-mix(in oklch, var(--severity-success-bg), var(--foreground) 5%)';
+const BG = (expr) => `getComputedStyle(${expr}).backgroundColor`;
 const TAB = (label) => `Array.from(document.querySelectorAll('[role="tab"]')).find((el) => el.querySelector('span')?.textContent.trim() === ${JSON.stringify(label)})`;
 const FOCUSED_LABEL = `(() => { const a = document.activeElement; return { role: a?.getAttribute?.('role') ?? null, label: a?.querySelector?.('.col-start-2.break-words')?.firstChild?.nodeValue?.trim() ?? null, isBody: !a || a === document.body }; })()`;
 
@@ -107,13 +112,25 @@ async function main() {
     })()`);
     check(cue.hasBadge && cue.badgeText === 'Recommended' && cue.hasIcon && cue.visible && cue.marked && !cue.otherHasBadge, '1. The recommended row shows an icon plus the text "Recommended"; the other row does not', cue);
 
-    // 2. The row is tinted, so the cue is not text alone.
-    const tint = await cdp.evaluate(`(() => { const bg = (el) => getComputedStyle(el).backgroundColor; return { recommended: bg(${ROW('radio', 'SQLite')}), plain: bg(${ROW('radio', 'Postgres')}) }; })()`);
-    check(tint.recommended !== tint.plain && tint.recommended !== 'rgba(0, 0, 0, 0)', '2. The recommended row has its own surface tint, different from a plain row', tint);
+    // 2. The row is tinted, so the cue is not text alone, and keeps its tint when checked and when hovered (the base row would turn muted / primary wash).
+    const tintExpected = await cdp.evaluate(PROBE(TINT_CSS));
+    const mutedExpected = await cdp.evaluate(PROBE('var(--muted)'));
+    const tint = await cdp.evaluate(`({ recommendedChecked: ${BG(ROW('radio', 'SQLite'))}, plain: ${BG(ROW('radio', 'Postgres'))} })`);
+    check(tint.recommendedChecked === tintExpected && tint.plain === mutedExpected && tintExpected !== mutedExpected, '2a. The CHECKED recommended row paints the success tint; a plain row paints --muted', { ...tint, tintExpected, mutedExpected });
+    const hoverExpected = await cdp.evaluate(PROBE(TINT_HOVER_CSS));
+    const rect = await cdp.evaluate(`(() => { const r = (${ROW('radio', 'SQLite')}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: rect.x, y: rect.y });
+    await sleep(400);
+    const hovered = await cdp.evaluate(`({ hovered: (${ROW('radio', 'SQLite')}).matches(':hover'), bg: ${BG(ROW('radio', 'SQLite'))} })`);
+    check(hovered.hovered && hovered.bg === hoverExpected && hovered.bg !== mutedExpected, '2b. The HOVERED, checked recommended row keeps the success tint (plus a 5% foreground mix), not --muted', { ...hovered, hoverExpected, mutedExpected });
+    await shoot(cdp, '01b-recommended-hovered.png');
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+    await sleep(300);
 
-    // 3. Screen readers still hear it.
+    // 3. Screen readers hear "SQLite, Recommended" (the separator is part of the name).
     const name = await getAccessibleName(cdp, ROW('radio', 'SQLite'));
-    check(/Recommended/.test(String(name?.name ?? name)), '3. The recommended row\'s accessible name still contains "Recommended"', name);
+    const nameText = String(name?.name ?? name).replace(/\s+/g, ' ').trim();
+    check(nameText === 'SQLite, Recommended', '3. The recommended row\'s accessible name is "SQLite, Recommended"', name);
 
     // 4. Preselected and focused when the question opens.
     const picked = { sqlite: await checked(cdp, 'radio', 'SQLite'), postgres: await checked(cdp, 'radio', 'Postgres') };
@@ -124,37 +141,46 @@ async function main() {
     // 5. The button is present and labelled.
     const useButton = await cdp.evaluate(`(() => { const b = ${BUTTON('Use Recommended')}; return b ? { text: b.textContent.replace(/\\s+/g, ' ').trim(), disabled: b.getAttribute('aria-disabled') } : null; })()`);
     check(useButton !== null && useButton.text === 'Use Recommended ↵', '6. A "Use Recommended ↵" button is in the footer', useButton);
+    const useName = await getAccessibleName(cdp, BUTTON('Use Recommended'));
+    check(String(useName?.name ?? useName).trim() === 'Use recommended: SQLite', '6b. The button\'s accessible name names the option', useName);
 
-    // 6. Arrow up moves the pick off the recommendation; the button puts it back and moves on.
+    // 6. Arrow up moves the pick off the recommendation (SQLite stays tinted unchecked); arrow down puts it back, and Enter accepts it and moves on.
+    // The card must NOT submit here: Features is still unanswered.
     await pressKey(cdp, 'ArrowUp', 38);
     await cdp.waitFor(`(${ROW('radio', 'Postgres')})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 10_000, label: 'arrow key moved the pick to Postgres' });
+    const unchecked = await cdp.evaluate(`({ sqlite: (${ROW('radio', 'SQLite')}).getAttribute('aria-checked'), bg: ${BG(ROW('radio', 'SQLite'))} })`);
+    check(unchecked.sqlite === 'false' && unchecked.bg === tintExpected, '7a. An UNCHECKED recommended row still paints the success tint', { ...unchecked, tintExpected });
     await shoot(cdp, '02-pick-moved-off-recommended.png');
-    await cdp.click(BUTTON('Use Recommended'));
-    await cdp.waitFor(`${TAB('Features')}?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 15_000, label: 'Use Recommended moved on to Features' });
-    await cdp.click(TAB('Database'));
-    await cdp.waitFor(`!!(${ROW('radio', 'SQLite')})`, { timeoutMs: 10_000, label: 'Database tab reopened' });
-    check((await checked(cdp, 'radio', 'SQLite')) === 'true' && (await checked(cdp, 'radio', 'Postgres')) === 'false', '7. "Use Recommended" picked SQLite over the earlier Postgres pick', { sqlite: await checked(cdp, 'radio', 'SQLite') });
+    await pressKey(cdp, 'ArrowDown', 40);
+    await cdp.waitFor(`(${ROW('radio', 'SQLite')})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 10_000, label: 'arrow key moved the pick back to SQLite' });
+    const back = { sqlite: await checked(cdp, 'radio', 'SQLite'), postgres: await checked(cdp, 'radio', 'Postgres'), focus: await cdp.evaluate(FOCUSED_LABEL) };
+    check(back.sqlite === 'true' && back.postgres === 'false' && back.focus.role === 'radio' && back.focus.label === 'SQLite', '7b. After ArrowUp then ArrowDown, SQLite is checked and focused', back);
 
     // 7. Enter on the focused recommended row accepts it and moves on.
-    await cdp.evaluate(`(${ROW('radio', 'SQLite')}).focus()`);
     await pressRealEnter(cdp);
     await cdp.waitFor(`${TAB('Features')}?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 15_000, label: 'Enter on the recommended row moved on to Features' });
-    check(true, '8. Enter on the recommended row accepts it and moves to the next question');
+    const afterEnter = await cdp.evaluate(`({ features: ${TAB('Features')}?.getAttribute('aria-selected') ?? null, database: ${TAB('Database')}?.getAttribute('aria-selected') ?? null, submitted: !${TAB('Features')} })`);
+    check(afterEnter.features === 'true' && afterEnter.database === 'false' && !afterEnter.submitted, '8. Enter on the recommended row accepts it, moves to Features, and the card has not submitted', afterEnter);
     const second = await cdp.evaluate(`({ useRecommended: !!(${BUTTON('Use Recommended')}), recommendedRows: document.querySelectorAll('[data-ask-recommended]').length, preticked: Array.from(document.querySelectorAll('[role="checkbox"]')).some((el) => el.getAttribute('aria-checked') === 'true') })`);
     check(!second.useRecommended && second.recommendedRows === 0 && !second.preticked, '9. A question with no recommendation shows no cue, no button and no pre-ticked box', second);
     await shoot(cdp, '03-features-no-recommendation.png');
 
-    // 8. The wire answer carries the recommended pick.
+    // 8. Tick Auth, go back to Database, move the pick to Postgres, then "Use Recommended" restores SQLite and submits (every question is now answered).
     await cdp.click(ROW('checkbox', 'Auth'));
     await cdp.waitFor(`(${ROW('checkbox', 'Auth')})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 10_000, label: 'Auth ticked' });
-    await cdp.waitFor(`!!(${BUTTON('Submit')})`, { timeoutMs: 15_000, label: 'primary button reads Submit' });
-    await cdp.click(BUTTON('Submit'));
-    await cdp.waitFor(`!${BUTTON('Submit')}`, { timeoutMs: 30_000, label: 'live card gone' });
+    await cdp.click(TAB('Database'));
+    await cdp.waitFor(`!!(${ROW('radio', 'SQLite')})`, { timeoutMs: 10_000, label: 'Database tab reopened' });
+    await cdp.evaluate(`(${ROW('radio', 'SQLite')}).focus()`);
+    await pressKey(cdp, 'ArrowUp', 38);
+    await cdp.waitFor(`(${ROW('radio', 'Postgres')})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 10_000, label: 'arrow key moved the pick to Postgres' });
+    check((await checked(cdp, 'radio', 'Postgres')) === 'true' && (await checked(cdp, 'radio', 'SQLite')) === 'false', '10. Before "Use Recommended" the pick is Postgres', { postgres: await checked(cdp, 'radio', 'Postgres') });
+    await cdp.click(BUTTON('Use Recommended'));
+    await cdp.waitFor(`document.querySelectorAll('[role="tab"]').length === 0`, { timeoutMs: 30_000, label: 'Use Recommended submitted the answered card' });
     await sleep(1_000);
     const sentLine = readFileSync(debugLog, 'utf8').split('\n').find((l) => l.includes('RECV') && l.includes('"extension_ui_response"') && l.includes('"answers"'));
     const sent = sentLine ? JSON.parse(sentLine.match(/RECV (\{.*\}) \(waitingFor/)?.[1] ?? 'null') : null;
     const [db, features] = sent?.answers ?? [];
-    check(JSON.stringify(db?.selectedOptions) === '["SQLite"]' && JSON.stringify(features?.selectedOptions) === '["Auth"]', '10. The agent received SQLite for Database and Auth for Features', sent);
+    check(JSON.stringify(db?.selectedOptions) === '["SQLite"]' && JSON.stringify(features?.selectedOptions) === '["Auth"]', '11. The agent received ["SQLite"] for Database and ["Auth"] for Features', sent);
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
     console.error(err);

@@ -12,7 +12,7 @@ import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { type AskDraftQuestion, EMPTY_ASK_QUESTION_DRAFT, useAskPicksStore } from '@/state/ask-picks-store'
 import { Markdown } from './Markdown'
 import { splitQuestionHeading } from './RequestCard'
-import { draftAfterUseRecommended, initialPickFor, recommendedIndex, shouldTakeInitialFocus } from './askRecommended'
+import { draftAfterUseRecommended, focusProbeOf, initialPickFor, opensOnRecommended, recommendedIndex, recommendedLabel, shouldTakeInitialFocus } from './askRecommended'
 
 // New for #572: the structured multi-question dialog path (`PendingRequest` kind `ask`), built
 // only once `set_ask_dialog` is confirmed enabled for this OMP process (contracts/omp-usage.md
@@ -55,13 +55,13 @@ function formatDeadlineText(deadlineAt: number, questions: AskQuestion[]): strin
     : `If there's no answer by ${time}, the agent uses the first option for each question.`
 }
 
-/** The recommended row when there is one, so Enter confirms it; otherwise the pick, otherwise the first row. */
-function focusFirstOrCheckedOption(container: HTMLElement | null): void {
+/** The recommended row when there is one, so Enter confirms it; otherwise the pick, otherwise the first row. `preventScroll` for a card that opens on its own. */
+function focusFirstOrCheckedOption(container: HTMLElement | null, preventScroll = false): void {
   if (!container) return
   const checked = container.querySelector<HTMLElement>('[role=radio][data-state=checked], [role=checkbox][data-state=checked]')
   const recommended = container.querySelector<HTMLElement>('[data-ask-recommended]')
   const first = container.querySelector<HTMLElement>('[role=radio], [role=checkbox]')
-  ;(checked ?? recommended ?? first)?.focus()
+  ;(checked ?? recommended ?? first)?.focus({ preventScroll })
 }
 
 function friendlyAskError(message: string): string {
@@ -98,11 +98,13 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   // First render of a given question: mark it active (and, for a multi-select question, viewed)
   // so a single-question call is complete-by-default without the user ever opening a tab row
   // that does not exist for it (D6: no tab row below 2 questions). #1985: a single-choice
-  // recommendation is preselected here, and its row takes focus unless the user is mid-sentence elsewhere.
+  // recommendation is preselected here, and its row takes focus only from `body` or this Session's own pane (see `shouldTakeInitialFocus`).
   React.useEffect(() => {
     if (!draft?.activeQuestionId && activeQuestion) {
       openQuestion(activeQuestion)
-      if (recommendedIndex(activeQuestion) !== undefined && shouldTakeInitialFocus(document.activeElement)) focusFirstOrCheckedOption(questionBodyRef.current)
+      if (opensOnRecommended(activeQuestion) && shouldTakeInitialFocus(focusProbeOf(document.activeElement, sessionId))) {
+        focusFirstOrCheckedOption(questionBodyRef.current, true)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -290,7 +292,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
         {request.deadlineAt !== undefined && (
           <CardContent className="text-sm text-muted-foreground">{formatDeadlineText(request.deadlineAt, questions)}</CardContent>
         )}
-        <CardFooter>
+        <CardFooter className="flex-wrap">
           <Button
             size="sm"
             variant="ghost"
@@ -303,7 +305,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
             {busyAction === 'cancel' ? 'Cancelling…' : 'Cancel'}
           </Button>
           {recommendedIndex(activeQuestion) !== undefined && (
-            <Button size="sm" variant="outline" aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
+            <Button size="sm" variant="outline" aria-label={`Use recommended: ${recommendedLabel(activeQuestion)}`} aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
               Use Recommended
               <span aria-hidden>↵</span>
             </Button>
@@ -400,7 +402,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
           onSelectOther={onSelectOther}
           onToggleOther={onToggleOtherTicked}
           onPick={onPickSingle}
-          onAcceptRecommended={recommended === undefined ? undefined : onAcceptRecommended}
+          onAcceptRecommended={opensOnRecommended(question) ? onAcceptRecommended : undefined}
         />
         {showIncompleteNote && (
           <p id={noteId} role="alert" className="text-sm text-destructive">
