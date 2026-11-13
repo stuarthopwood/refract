@@ -5556,3 +5556,22 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   click, failed lookup, out-of-Project, neutral icon) fails when removed, per FR-127
 - [x] T450 Live check on a built app (`pnpm verify:tauri`): click pins and reveals the pane without taking focus, re-click
   focuses the pin, Ctrl-click leaves the pane alone; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-127
+
+## Phase 94: Convergence (#1985 Ask card recommended option is visible, preselected and one key from accepted, FR-066)
+
+- [x] T451 [US2] `askRecommended.ts` (new): `recommendedIndex`/`recommendedLabel` (an out-of-range or negative index names
+  none), `initialPickFor` (single choice only), `draftAfterUseRecommended` (pick, or tick keeping other ticks) and
+  `shouldTakeInitialFocus` (not while the composer holds text), per FR-066 (missing)
+- [x] T452 [US2] `RecommendedBadge.tsx` (new, reusable), `checkbox.tsx` (`OPTION_RECOMMENDED_FILL_CLASS`/`ROW_CLASS`, the
+  `--severity-success-bg` token) and `AskChoiceGroup.tsx`: a recommended row gets the tint, the icon plus "Recommended"
+  text and the screen-reader suffix, `data-ask-recommended`, and Enter accepts it; `RequestCard.tsx`'s one-at-a-time card
+  shows the same cue for a trailing "(Recommended)", per FR-066 (contradicts: muted text only)
+- [x] T453 [US2] `AskCard.tsx` and `ask-picks-store.ts` (`replaceQuestionDraft`): preselect and focus the recommended row
+  when a single-choice question opens, and a "Use Recommended ↵" footer button that picks it and then acts as the primary
+  button, per FR-066 (contradicts: MUST NOT be preselected)
+- [x] T454 `askRecommended.test.ts`, `ask-picks-store.test.ts`, `AskChoiceGroup.test.ts`: each guard (index range, single vs
+  multiple preselect, tick keeps ticks, focus yields to typed text, visible cue, no cue without a recommendation) fails
+  when removed, per FR-066
+- [ ] T455 `scripts/verify-tauri-1985.mjs` (written, not run): the recommended row is tinted, shows the icon and text, is
+  preselected and focused, Enter and "Use Recommended" answer it; run it on a built app before and after, update
+  `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-066

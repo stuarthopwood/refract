@@ -42,8 +42,13 @@ export const OPTION_FILL_CLASS =
 // Busy rows keep their resting fill on hover, so they do not look pressable. Literal classes: Tailwind cannot see interpolated ones.
 const OPTION_BUSY_HOVER =
   "aria-disabled:hover:bg-muted dark:aria-disabled:hover:bg-muted aria-disabled:data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] dark:aria-disabled:data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
+const OPTION_LAYOUT_CLASS =
+  "grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 min-h-9 py-1 aria-disabled:opacity-50 data-[state=checked]:border-transparent focus-visible:border-transparent forced-colors:data-[state=checked]:border-[Highlight]"
 export const OPTION_ROW_CLASS =
-  OPTION_FILL_CLASS + " " + OPTION_BUSY_HOVER + " grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 min-h-9 py-1 aria-disabled:opacity-50 data-[state=checked]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] data-[state=checked]:border-transparent focus-visible:border-transparent forced-colors:data-[state=checked]:border-[Highlight]"
+  OPTION_FILL_CLASS + " " + OPTION_BUSY_HOVER + " " + OPTION_LAYOUT_CLASS + " data-[state=checked]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
+// A question's recommended option (#1985): the `--severity-success-bg` tint. The icon and "Recommended" text, not this tint, carry the meaning.
+export const OPTION_RECOMMENDED_FILL_CLASS = "border-transparent bg-severity-success-bg dark:border-transparent dark:bg-severity-success-bg"
+export const OPTION_RECOMMENDED_ROW_CLASS = OPTION_RECOMMENDED_FILL_CLASS + " " + OPTION_LAYOUT_CLASS
 /** Mark column for an option row: centred on the whole row, spanning label and description. */
 export const OPTION_MARK_CLASS = "row-span-2 self-center"
 export const CHECKBOX_BOX_CLASS = "grid size-4 shrink-0 place-items-center rounded-sm border border-muted-foreground"

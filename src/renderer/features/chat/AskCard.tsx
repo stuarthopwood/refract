@@ -12,6 +12,7 @@ import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { type AskDraftQuestion, EMPTY_ASK_QUESTION_DRAFT, useAskPicksStore } from '@/state/ask-picks-store'
 import { Markdown } from './Markdown'
 import { splitQuestionHeading } from './RequestCard'
+import { draftAfterUseRecommended, initialPickFor, recommendedIndex, shouldTakeInitialFocus } from './askRecommended'
 
 // New for #572: the structured multi-question dialog path (`PendingRequest` kind `ask`), built
 // only once `set_ask_dialog` is confirmed enabled for this OMP process (contracts/omp-usage.md
@@ -45,24 +46,22 @@ function buildAnswers(questions: AskQuestion[], byQuestionId: Record<string, Ask
   })
 }
 
-function hasRecommended(question: AskQuestion): boolean {
-  return question.recommended !== undefined && question.recommended >= 0 && question.recommended < question.options.length
-}
-
 /** D16: a static deadline line, never a ticking countdown -- OMP owns the timer. */
 function formatDeadlineText(deadlineAt: number, questions: AskQuestion[]): string {
   const time = new Date(deadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const anyRecommended = questions.some(hasRecommended)
+  const anyRecommended = questions.some((question) => recommendedIndex(question) !== undefined)
   return anyRecommended
     ? `If there's no answer by ${time}, the agent uses the recommended answers.`
     : `If there's no answer by ${time}, the agent uses the first option for each question.`
 }
 
+/** The recommended row when there is one, so Enter confirms it; otherwise the pick, otherwise the first row. */
 function focusFirstOrCheckedOption(container: HTMLElement | null): void {
   if (!container) return
   const checked = container.querySelector<HTMLElement>('[role=radio][data-state=checked], [role=checkbox][data-state=checked]')
+  const recommended = container.querySelector<HTMLElement>('[data-ask-recommended]')
   const first = container.querySelector<HTMLElement>('[role=radio], [role=checkbox]')
-  ;(checked ?? first)?.focus()
+  ;(checked ?? recommended ?? first)?.focus()
 }
 
 function friendlyAskError(message: string): string {
@@ -84,6 +83,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   const toggleMultiOption = useAskPicksStore((state) => state.toggleMultiOption)
   const setCustomInput = useAskPicksStore((state) => state.setCustomInput)
   const toggleOtherTicked = useAskPicksStore((state) => state.toggleOtherTicked)
+  const replaceQuestionDraft = useAskPicksStore((state) => state.replaceQuestionDraft)
 
   const questions = request.questions
   const byQuestionId = draft?.byQuestionId ?? {}
@@ -97,9 +97,13 @@ export function AskCard({ sessionId, request }: AskCardProps) {
 
   // First render of a given question: mark it active (and, for a multi-select question, viewed)
   // so a single-question call is complete-by-default without the user ever opening a tab row
-  // that does not exist for it (D6: no tab row below 2 questions).
+  // that does not exist for it (D6: no tab row below 2 questions). #1985: a single-choice
+  // recommendation is preselected here, and its row takes focus unless the user is mid-sentence elsewhere.
   React.useEffect(() => {
-    if (!draft?.activeQuestionId && activeQuestion) setActiveQuestion(sessionId, request.requestId, activeQuestion.id)
+    if (!draft?.activeQuestionId && activeQuestion) {
+      openQuestion(activeQuestion)
+      if (recommendedIndex(activeQuestion) !== undefined && shouldTakeInitialFocus(document.activeElement)) focusFirstOrCheckedOption(questionBodyRef.current)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -173,7 +177,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     setIncompleteNoteId(null)
     focusTargetOnActiveChangeRef.current = true
     setTabEpoch((epoch) => epoch + 1)
-    setActiveQuestion(sessionId, request.requestId, next.id)
+    openQuestion(next)
   }
 
   function handlePrimary() {
@@ -187,9 +191,24 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     advance({ ...byQuestionId, [activeQuestion.id]: { ...(byQuestionId[activeQuestion.id] ?? EMPTY_ASK_QUESTION_DRAFT), selectedOptions: [label], otherSelected: false } }, false)
   }
 
+  function openQuestion(question: AskQuestion) {
+    setActiveQuestion(sessionId, request.requestId, question.id, initialPickFor(question))
+  }
+
+  // #1985: "Use Recommended" and Enter on the recommended row pick it, then act like the primary button.
+  const acceptRecommended = () => {
+    if (busy) return
+    const current = byQuestionId[activeQuestion.id] ?? EMPTY_ASK_QUESTION_DRAFT
+    const next = draftAfterUseRecommended(activeQuestion, current)
+    if (!next) return
+    replaceQuestionDraft(sessionId, request.requestId, activeQuestion.id, next)
+    advance({ ...byQuestionId, [activeQuestion.id]: next })
+  }
+
   function handleTabChange(questionId: string) {
     setIncompleteNoteId(null)
-    setActiveQuestion(sessionId, request.requestId, questionId)
+    const target = questions.find((question) => question.id === questionId)
+    if (target) openQuestion(target)
   }
 
   const groupAriaId = `${request.requestId.replace(/[^a-zA-Z0-9_-]/g, '-')}-ask`
@@ -211,6 +230,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
       onCustomInput={(text) => setCustomInput(sessionId, request.requestId, activeQuestion.id, text, activeQuestion.multi)}
       onToggleOtherTicked={() => toggleOtherTicked(sessionId, request.requestId, activeQuestion.id)}
       onEnterInOther={handlePrimary}
+      onAcceptRecommended={acceptRecommended}
     />
   )
 
@@ -282,6 +302,12 @@ export function AskCard({ sessionId, request }: AskCardProps) {
             {busyAction === 'cancel' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
             {busyAction === 'cancel' ? 'Cancelling…' : 'Cancel'}
           </Button>
+          {recommendedIndex(activeQuestion) !== undefined && (
+            <Button size="sm" variant="outline" aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
+              Use Recommended
+              <span aria-hidden>↵</span>
+            </Button>
+          )}
           <Button
             size="sm"
             aria-disabled={busy}
@@ -310,11 +336,12 @@ interface AskQuestionBodyProps {
   onToggleMulti: (label: string) => void
   onCustomInput: (text: string) => void
   onToggleOtherTicked: () => void
+  onAcceptRecommended: () => void
   onEnterInOther: () => void
 }
 
 const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(function AskQuestionBody(
-  { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther },
+  { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther, onAcceptRecommended },
   ref
 ) {
   const { heading, body } = splitQuestionHeading(question.question)
@@ -322,11 +349,12 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
   const headingId = `${safeId}-heading`
   const noteId = `${safeId}-incomplete-note`
   const describedBy = showIncompleteNote ? noteId : undefined
+  const recommended = recommendedIndex(question)
   const options = question.options.map((option, index) => ({
     value: option.label,
     label: option.label,
     description: option.description,
-    suffix: hasRecommended(question) && question.recommended === index ? ', Recommended' : undefined
+    recommended: recommended === index
   }))
 
   function handleOtherKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
@@ -372,6 +400,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
           onSelectOther={onSelectOther}
           onToggleOther={onToggleOtherTicked}
           onPick={onPickSingle}
+          onAcceptRecommended={recommended === undefined ? undefined : onAcceptRecommended}
         />
         {showIncompleteNote && (
           <p id={noteId} role="alert" className="text-sm text-destructive">

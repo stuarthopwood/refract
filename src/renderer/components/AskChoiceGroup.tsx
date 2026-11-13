@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
+import { RecommendedBadge } from '@/components/RecommendedBadge'
+import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_RECOMMENDED_ROW_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
@@ -12,8 +13,8 @@ export interface AskChoiceOption {
   value: string
   label: string
   description?: string | undefined
-  /** Appended to the label for assistive tech and sighted users alike, such as ", Recommended". */
-  suffix?: string | undefined
+  /** OMP's recommended option: tinted row plus an icon and "Recommended" text (never colour alone), and ", Recommended" for assistive tech. */
+  recommended?: boolean | undefined
 }
 
 export interface AskChoiceOther {
@@ -48,6 +49,8 @@ interface AskChoiceGroupProps {
   onToggleOther: () => void
   /** A pointer click or Space on a radio row, but not an arrow-key move; lets the caller commit and advance. */
   onPick?: (value: string) => void
+  /** Enter on the recommended row's own control; the caller picks it and moves on. */
+  onAcceptRecommended?: (() => void) | undefined
 }
 
 /** A radio value no option can collide with, so "Other" is one more row of the same group. */
@@ -88,7 +91,7 @@ function OptionLabel({ option, labelId, descId }: { option: AskChoiceOption; lab
     <>
       <span id={labelId} className="col-start-2 min-w-0 break-words">
         {option.label}
-        {option.suffix && <span className="font-normal text-muted-foreground">{option.suffix}</span>}
+        {option.recommended && <RecommendedBadge />}
       </span>
       {option.description && (
         <span id={descId} className="col-start-2 w-full min-w-0 break-words text-xs text-muted-foreground">
@@ -97,6 +100,22 @@ function OptionLabel({ option, labelId, descId }: { option: AskChoiceOption; lab
       )}
     </>
   )
+}
+
+/** Row styling and the recommended row's Enter shortcut, shared by the radio and tick-box rows. */
+function rowProps(option: AskChoiceOption, onAcceptRecommended: (() => void) | undefined) {
+  if (!option.recommended) return { className: OPTION_ROW_CLASS }
+  return {
+    className: OPTION_RECOMMENDED_ROW_CLASS,
+    'data-ask-recommended': '',
+    onKeyDown: onAcceptRecommended
+      ? (event: React.KeyboardEvent<HTMLElement>) => {
+          if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.repeat) return
+          event.preventDefault()
+          onAcceptRecommended()
+        }
+      : undefined
+  }
 }
 
 /** The radio or checkbox rows of one question, the "Other" row, and its free-text box; shared by every ask card. */
@@ -120,7 +139,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
               onCheckedChange={() => !disabled && props.onToggle(option.value)}
               aria-labelledby={labelId}
               aria-describedby={option.description ? descId : undefined}
-              className={OPTION_ROW_CLASS}
+              {...rowProps(option, props.onAcceptRecommended)}
             >
               <span aria-hidden className={cn(OPTION_MARK_CLASS, CHECKBOX_BOX_CLASS, CHECKED_MARK_CLASS)}>
                 <CheckboxIndicator />
@@ -178,7 +197,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
               aria-describedby={option.description ? descId : undefined}
               // A double-click's second click would otherwise pick the same slot in the next question.
               onClick={(event) => props.onPick && !arrowKey.current && event.detail < 2 && props.onPick(option.value)}
-              className={OPTION_ROW_CLASS}
+              {...rowProps(option, props.onAcceptRecommended)}
             >
               <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
                 <RadioGroupIndicator />
