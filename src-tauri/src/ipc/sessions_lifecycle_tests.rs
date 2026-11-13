@@ -349,6 +349,36 @@ async fn sessions_restore_into_a_full_parent_is_child_limit_until_a_slot_frees()
 }
 
 #[tokio::test]
+async fn sessions_restore_waits_for_the_project_gate() {
+    let dir = temp_registry_dir("restore-gate");
+    let state = make_state(&dir).await;
+    let mut store = state.registry.lock().await;
+    store
+        .add_repository(make_repository("repo-1", "C:/nowhere/repo"))
+        .await
+        .expect("add_repository");
+    let mut row = make_session("s1", "repo-1", "C:/nowhere/s1", "s1");
+    row.archived_at = Some("2026-01-01T00:00:00.000Z".to_string());
+    store.add_session(row).await.expect("add_session");
+    drop(store);
+
+    let held = crate::agent_tools::tree_gate::lock("repo-1").await;
+    let task = tokio::spawn(sessions_restore(
+        state.clone(),
+        vec![Value::String("s1".to_string())],
+    ));
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    let archived = |state: &AppState| {
+        let state = state.clone();
+        async move { state.registry.lock().await.get_session("s1").unwrap().archived_at.is_some() }
+    };
+    assert!(archived(&state).await, "restore must wait for the gate");
+    drop(held);
+    task.await.unwrap().expect("restore");
+    assert!(!archived(&state).await);
+}
+
+#[tokio::test]
 async fn sessions_recreate_worktree_returns_branch_missing_for_a_deleted_branch() {
     let dir = temp_registry_dir("recreate-branch-missing");
     let state = make_state(&dir).await;

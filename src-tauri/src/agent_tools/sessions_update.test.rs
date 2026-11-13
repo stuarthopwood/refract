@@ -15,6 +15,9 @@ struct FakeHost {
     stopped: bool,
     asks: AtomicUsize,
     roles_set: Mutex<Vec<(String, String)>>,
+    role_fails: bool,
+    /// Run once when the role path asks for the status: a change made while the call is mid-way.
+    on_status: Mutex<Option<(String, Option<String>)>>,
 }
 
 impl Host for FakeHost {
@@ -42,9 +45,27 @@ impl Host for FakeHost {
         Ok(vec!["default".into(), "smol".into()])
     }
     async fn status(&self, _id: &str) -> String {
+        let flip = self.on_status.lock().unwrap().take();
+        if let Some((id, parent)) = flip {
+            self.registry
+                .lock()
+                .await
+                .update_session(
+                    &id,
+                    SessionPatch {
+                        parent_session_id: Some(parent),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+        }
         if self.stopped { "stopped" } else { "idle" }.into()
     }
     async fn set_role(&self, id: &str, role: &str) -> Result<(), ToolError> {
+        if self.role_fails {
+            return Err(ToolError::new("role_failed", "the role could not be set"));
+        }
         self.roles_set
             .lock()
             .unwrap()
@@ -110,6 +131,8 @@ async fn host(rows: Vec<Session>) -> FakeHost {
         stopped: false,
         asks: AtomicUsize::new(0),
         roles_set: Mutex::new(Vec::new()),
+        role_fails: false,
+        on_status: Mutex::new(None),
     }
 }
 
@@ -309,4 +332,45 @@ async fn two_racing_nests_at_three_live_children_yield_one_success() {
     let codes: Vec<_> = [x, y].into_iter().map(|r| r.map_err(|e| e.code)).collect();
     assert_eq!(codes.iter().filter(|r| r.is_ok()).count(), 1, "{codes:?}");
     assert!(codes.contains(&Err("child_limit".to_string())), "{codes:?}");
+}
+
+#[tokio::test]
+async fn an_update_waits_for_the_project_gate_before_writing() {
+    let h = Arc::new(host(tree()).await);
+    let held = tree_gate::lock("repo").await;
+    let task = tokio::spawn({
+        let h = h.clone();
+        async move { update_with(&*h, &json!({ "id": "kid", "parent_id": null })).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    assert_eq!(parent_of(&h, "kid").await.as_deref(), Some("me"));
+    drop(held);
+    task.await.unwrap().unwrap();
+    assert_eq!(parent_of(&h, "kid").await, None);
+}
+
+#[tokio::test]
+async fn a_target_that_leaves_the_own_tree_mid_call_is_cancelled_and_nothing_is_written() {
+    let h = host(tree()).await;
+    // `kid` is inside the caller's tree, so no card; it moves out before the gate re-check.
+    *h.on_status.lock().unwrap() = Some(("kid".into(), Some("other".into())));
+    let args = json!({ "id": "kid", "name": "Z", "role": "smol", "parent_id": null });
+    assert_eq!(code(update_with(&h, &args).await), CANCELLED);
+    assert!(h.roles_set.lock().unwrap().is_empty());
+    let sessions = h.registry.lock().await.snapshot().sessions;
+    let kid = sessions.iter().find(|s| s.id == "kid").unwrap();
+    assert_eq!(kid.name, "name-kid");
+    assert_eq!(kid.parent_session_id.as_deref(), Some("other"));
+}
+
+#[tokio::test]
+async fn a_role_failure_leaves_the_name_and_the_parent_unwritten() {
+    let mut h = host(tree()).await;
+    h.role_fails = true;
+    let args = json!({ "id": "kid", "name": "Z", "role": "smol", "parent_id": null });
+    assert_eq!(code(update_with(&h, &args).await), "role_failed");
+    let sessions = h.registry.lock().await.snapshot().sessions;
+    let kid = sessions.iter().find(|s| s.id == "kid").unwrap();
+    assert_eq!(kid.name, "name-kid");
+    assert_eq!(kid.parent_session_id.as_deref(), Some("me"));
 }

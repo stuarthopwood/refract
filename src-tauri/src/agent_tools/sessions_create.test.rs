@@ -360,6 +360,22 @@ async fn two_racing_creates_at_three_live_children_yield_one_success() {
     assert_eq!(session_count(&h).await, 5);
 }
 
+/// A held gate stops the create before it writes, so the check-then-write window cannot open.
+#[tokio::test]
+async fn a_create_waits_for_the_project_gate_before_writing() {
+    let h = Arc::new(host(me()).await);
+    let held = tree_gate::lock("repo").await;
+    let task = tokio::spawn({
+        let h = h.clone();
+        async move { create_with(&h, &json!({ "prompt": "p" })).await }
+    });
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    assert_eq!(session_count(&h).await, 1);
+    drop(held);
+    task.await.unwrap().unwrap();
+    assert_eq!(session_count(&h).await, 2);
+}
+
 #[tokio::test]
 async fn a_start_failure_keeps_the_session_and_names_its_id() {
     let mut h = host(me()).await;

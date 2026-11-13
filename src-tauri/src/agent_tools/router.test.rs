@@ -104,6 +104,48 @@ async fn create_and_update_are_dispatched_to_their_own_tools() {
     }
 }
 
+/// An agent whose manager was dropped: the app is quitting.
+async fn agent_of_a_dropped_manager() -> Arc<SessionAgent> {
+    let dir = crate::test_scratch::path(format!("refract-router-test-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let registry = Arc::new(tokio::sync::Mutex::new(
+        crate::store::registry::RegistryStore::open(&dir)
+            .await
+            .unwrap(),
+    ));
+    let settings = Arc::new(tokio::sync::Mutex::new(
+        crate::store::settings::SettingsStore::open(&dir)
+            .await
+            .unwrap(),
+    ));
+    let events =
+        crate::events::EventSink::new(Arc::new(std::sync::Mutex::new(None)), registry.clone());
+    let manager = crate::session::manager::SessionManager::new(registry, settings, events);
+    manager.get_or_create_agent("caller")
+}
+
+/// A shutting-down caller reads as `cancelled`, never as a failed create.
+#[tokio::test]
+async fn create_from_a_shutting_down_caller_is_cancelled() {
+    let agent = agent_of_a_dropped_manager().await;
+    let args = json!({ "prompt": "hi" });
+    let err = sessions_create::create(&agent, "call-1", &args)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, CANCELLED);
+}
+
+/// A shutting-down caller reads as `cancelled`, never as a failed update.
+#[tokio::test]
+async fn update_from_a_shutting_down_caller_is_cancelled() {
+    let agent = agent_of_a_dropped_manager().await;
+    let args = json!({ "id": "x", "name": "n" });
+    let err = sessions_update::update(&agent, "call-1", &args)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, CANCELLED);
+}
+
 #[test]
 fn unknown_tool_panel_and_action_get_their_codes() {
     assert_eq!(code(plan("refract_nope", &json!({}))), UNKNOWN_TOOL);
