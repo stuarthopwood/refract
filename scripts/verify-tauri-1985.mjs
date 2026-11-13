@@ -153,6 +153,9 @@ async function main() {
     const unchecked = await cdp.evaluate(`({ sqlite: (${ROW('radio', 'SQLite')}).getAttribute('aria-checked'), bg: ${BG(ROW('radio', 'SQLite'))} })`);
     check(unchecked.sqlite === 'false' && unchecked.bg === tintExpected, '7a. An UNCHECKED recommended row still paints the success tint', { ...unchecked, tintExpected });
     await shoot(cdp, '02-pick-moved-off-recommended.png');
+    // The arrow key must only move the pick (#1435). Radix clicks the row it moves focus to, so a guard that is cleared by the old row's blur commits it and advances.
+    const stayed = await cdp.evaluate(`({ database: ${TAB('Database')}?.getAttribute('aria-selected') ?? null, features: ${TAB('Features')}?.getAttribute('aria-selected') ?? null, focus: ${FOCUSED_LABEL} })`);
+    check(stayed.database === 'true' && stayed.features === 'false' && stayed.focus.label === 'Postgres', '7c. An arrow key held 60 ms moves the pick without committing it: the card stays on Database with Postgres focused', stayed);
     await pressKey(cdp, 'ArrowDown', 40);
     await cdp.waitFor(`(${ROW('radio', 'SQLite')})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 10_000, label: 'arrow key moved the pick back to SQLite' });
     const back = { sqlite: await checked(cdp, 'radio', 'SQLite'), postgres: await checked(cdp, 'radio', 'Postgres'), focus: await cdp.evaluate(FOCUSED_LABEL) };
