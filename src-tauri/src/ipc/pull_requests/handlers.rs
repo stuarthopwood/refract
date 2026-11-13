@@ -4,7 +4,7 @@ use serde_json::Value;
 
 use crate::git::worktrees::{add_worktree_from_pull_request_branch, remove_worktree};
 use crate::github::gh_mutations::{self, MergeMethod, PinnedReview, ReviewVerdict};
-use crate::github::gh_pull_requests;
+use crate::github::{gh_pull_requests, stack_merge};
 use crate::ipc::{
     invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, session_kickoff,
     AppState, HandlerFuture, IpcError,
@@ -413,9 +413,20 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
             ));
         }
         // Pinned to the dialog-open-time snapshot, not `fresh.head_sha`.
-        gh_mutations::merge_pull_request(&repo_path, number, method, expected_head_sha)
-            .await
-            .map_err(map_gh_error)?;
+        let hint_stacked = input.get("stackHint").and_then(Value::as_str) == Some("stacked");
+        let head_branch =
+            stack_merge::checked_head_branch(input.get("headBranch").and_then(Value::as_str))
+                .map_err(invalid_argument)?;
+        let setting_on = state.settings.lock().await.get().stacked_pull_requests;
+        let route =
+            stack_merge::route_for(&repo_path, number, head_branch, hint_stacked, setting_on).await;
+        stack_merge::run_route(
+            route,
+            stack_merge::merge_stacked(&repo_path, number),
+            gh_mutations::merge_pull_request(&repo_path, number, method, expected_head_sha),
+        )
+        .await
+        .map_err(map_gh_error)?;
         forget_cache(repository_id, number);
         notify_changed(&state, repository_id, number);
         Ok(Value::Null)
