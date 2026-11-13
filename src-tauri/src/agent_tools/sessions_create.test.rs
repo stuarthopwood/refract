@@ -558,9 +558,10 @@ fn the_parent_name_in_the_first_turn_loses_newlines_and_quotes() {
 
 #[test]
 fn the_parent_name_in_the_first_turn_loses_bidi_and_zero_width_characters() {
-    let turn = first_turn(Some(("a\u{202E}b\u{200B}c\u{2066}d\u{FEFF}e", "p1")), "go");
+    let name = "a\u{202E}b\u{200B}c\u{2066}d\u{FEFF}e\u{061C}f\u{2028}g";
+    let turn = first_turn(Some((name, "p1")), "go");
     assert!(
-        turn.starts_with("[Parent Session: \"abcde\" (id p1)."),
+        turn.starts_with("[Parent Session: \"abcdef g\" (id p1)."),
         "{turn}"
     );
 }

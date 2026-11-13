@@ -57,7 +57,7 @@ Two **Host tools** join the #1193 **Tool channel**: `create_session` makes a **C
 34. **Same Project (Stuart, grill 2026-11-12).** `update_session` refuses a target whose Project differs from the caller's with `invalid_input`, in every mode, before any card.
 35. **Archived caller.** A `create_session` whose default parent is the caller refuses with `invalid_input` when the caller is archived, before the card and again under the gate after it, exactly as an explicit `parent_id` does. A root create (`parent_id: null`) is unaffected.
 36. **Detached update.** The writes after approval (role, parent, name) run in a detached task like create's, so a cancel drops only the wait and never leaves a partial update; an ended task reads as `cancelled`.
-37. **Cap scope.** The 6-live-Session cap binds agent creates only. Unarchive and the UI create are user actions and keep only the limit of 4 children (FR-019 says "agent creates"). Bidi overrides, zero-width and other format characters are stripped from card lines and the quoted parent name, along with control characters.
+37. **Cap scope.** The 6-live-Session cap binds agent creates only. Unarchive and the UI create are user actions and keep only the limit of 4 children (FR-019 says "agent creates"). Bidi overrides, zero-width and other format characters (the one list in `github/profile.rs`, shared with the display-name filter) are stripped from card lines and the quoted parent name, except U+200D, which stays so emoji sequences survive; U+2028, U+2029 and control characters become spaces.
 
 ## Clarifications
 

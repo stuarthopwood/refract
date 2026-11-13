@@ -272,14 +272,14 @@ async fn commit_update<H: Host>(
                 .await
                 .map_err(store_error)?;
         }
-    }
-    if let Some(name) = &request.name {
-        host.registry()
-            .lock()
-            .await
-            .update_session_name(&request.id, name.clone())
-            .await
-            .map_err(store_error)?;
+        if let Some(name) = &request.name {
+            host.registry()
+                .lock()
+                .await
+                .update_session_name(&request.id, name.clone())
+                .await
+                .map_err(store_error)?;
+        }
     }
 
     let updated = sessions_of(&*host)

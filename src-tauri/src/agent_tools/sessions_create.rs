@@ -193,12 +193,10 @@ async fn sessions_of(host: &impl Host) -> Vec<Session> {
     host.registry().lock().await.snapshot().sessions
 }
 
-/// A name inside the quoted parent line: no line breaks, quotes or invisible format characters.
+/// A name inside the quoted parent line: no quotes to break out of it, and flattened like a card
+/// line (no line breaks or invisible format characters).
 fn plain(name: &str) -> String {
-    name.chars()
-        .filter(|c| *c != '"' && *c != '\'' && !approval::is_invisible_format(*c))
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect()
+    approval::flatten(&name.replace(['"', '\''], ""))
 }
 
 /// The text the child's first turn carries; a root Session gets the bare prompt.

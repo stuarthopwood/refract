@@ -3,6 +3,7 @@
 
 use serde_json::Value;
 
+use crate::github::profile::is_invisible_format;
 use crate::session::agent::PendingRequest;
 
 pub const REQUEST_PREFIX: &str = "refract-tool-";
@@ -67,22 +68,25 @@ pub fn session_card(
     }
 }
 
-/// Bidi overrides and zero-width characters: invisible, so a name could reorder or hide card text.
-pub fn is_invisible_format(c: char) -> bool {
-    matches!(
-        c,
-        '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
-    )
+/// Card text on one line: invisible format and bidi characters (the shared list, so a name cannot
+/// reorder or hide card text) are dropped, and line breaks, including U+2028 and U+2029, and other
+/// control characters become spaces. U+200D stays so emoji sequences in a name survive.
+pub fn flatten(text: &str) -> String {
+    text.chars()
+        .filter(|c| *c == '\u{200D}' || !is_invisible_format(*c))
+        .map(|c| {
+            if c.is_control() || matches!(c, '\u{2028}' | '\u{2029}') {
+                ' '
+            } else {
+                c
+            }
+        })
+        .collect()
 }
 
-/// One card line: invisible format characters are dropped, line breaks and other control
-/// characters become spaces, then it is capped.
+/// One card line: flattened, then capped.
 pub fn clip_line(text: &str) -> String {
-    let flat: String = text
-        .chars()
-        .filter(|c| !is_invisible_format(*c))
-        .map(|c| if c.is_control() { ' ' } else { c })
-        .collect();
+    let flat = flatten(text);
     match flat.char_indices().nth(MAX_ARGS_CHARS) {
         Some((end, _)) => format!("{}…", &flat[..end]),
         None => flat,
@@ -197,14 +201,23 @@ mod tests {
 
     #[test]
     fn session_card_lines_lose_bidi_and_zero_width_characters() {
-        let hidden = "a\u{202A}b\u{202E}c\u{2066}d\u{2069}e\u{200B}f\u{200F}g\u{FEFF}h";
+        let hidden = "a\u{202A}b\u{202E}c\u{2066}d\u{2069}e\u{200B}f\u{200F}g\u{FEFF}h\u{061C}i";
         let PendingRequest::Approval {
             target, details, ..
         } = session_card("c4", "t", hidden.into(), vec![hidden.into()])
         else {
             panic!("expected an approval card");
         };
-        assert_eq!(target, "abcdefgh");
-        assert_eq!(details[0], "abcdefgh");
+        assert_eq!(target, "abcdefghi");
+        assert_eq!(details[0], "abcdefghi");
+    }
+
+    #[test]
+    fn session_card_lines_turn_unicode_line_separators_into_spaces_and_keep_joiners() {
+        assert_eq!(flatten("a\u{2028}b\u{2029}c"), "a b c");
+        assert_eq!(
+            flatten("\u{1F469}\u{200D}\u{1F4BB}"),
+            "\u{1F469}\u{200D}\u{1F4BB}"
+        );
     }
 }
