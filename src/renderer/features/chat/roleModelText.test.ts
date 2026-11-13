@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// `./roleModelText` pulls in the state barrel, whose DEV block touches `window`; `environment: 'node'` has none.
+vi.hoisted(() => {
+  Object.assign(globalThis, { window: { addEventListener: () => {}, removeEventListener: () => {} } })
+})
+
 import { chipModelTooltip, chipText } from './roleModelText'
 
 describe('chipText', () => {
