@@ -255,6 +255,18 @@ export async function waitForRegionOpacity(cdp, predicate, timeoutMs = 3_000) {
   return { value: last, ok: false };
 }
 
+/** Polls the `${REGION0}` blur radius in px (0 when no blur filter); the 150ms filter transition can leave a single read mid-way. */
+export async function waitForRegionBlur(cdp, predicate, timeoutMs = 3_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await cdp.evaluate(`(() => { const r = ${REGION0}; if (!r) return null; const m = /blur\\(([\\d.]+)px\\)/.exec(getComputedStyle(r).filter); return m ? Number(m[1]) : 0; })()`);
+    if (last !== null && predicate(last)) return { value: last, ok: true };
+    await sleep(100);
+  }
+  return { value: last, ok: false };
+}
+
 /** Forces a layout size via CDP `Emulation` so a size-dependent check never skips for the window's
  *  default regime. Always clears the override, even if `fn` throws. */
 export async function withDeviceMetrics(cdp, width, height, fn) {
@@ -473,6 +485,9 @@ export async function assertFocusedPlainStageNotice(cdp, { sessionId, kind, expe
   const opacity = await waitForRegionOpacity(cdp, (v) => v > 0.95, 2_000);
   if (!opacity.ok) failures.push(`${kind}: transcript region opacity settled at ${opacity.value}, expected >0.95 (brand-new Session has nothing to dim).`);
   else findings.push(`${kind}: transcript region opacity settled at ${opacity.value} (not dimmed), as expected for a brand-new Session.`);
+  const blur = await waitForRegionBlur(cdp, (v) => v === 0, 2_000);
+  if (!blur.ok) failures.push(`${kind}: transcript region blur radius settled at ${blur.value}px, expected 0 (brand-new Session has no history to blur).`);
+  else findings.push(`${kind}: transcript region blur radius settled at ${blur.value}px (not blurred), as expected for a brand-new Session.`);
   const text = await cdp.evaluate(`document.querySelector('[data-start-plain-text]')?.textContent ?? null`);
   if (text !== expectedText) failures.push(`${kind}: plain text reads "${text}", expected exactly "${expectedText}" (describeStartProgress).`);
   else findings.push(`${kind}: plain text reads exactly "${text}", as specified.`);

@@ -110,7 +110,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p1 later | #1879 | **UI Polish, Settings (p1):** Model roles: rename Subagent to Task | `todo`; `ready-for-agent` |
 | p1 later | #1882 | **UI Polish (p1):** Charts: tooltips show each point's value | `todo`; `ready-for-agent` |
 | p1 later | #1885 | **UI Polish, Settings (p1):** Appearance: theme files get a JSON Schema and a format help page | `todo`; `ready-for-agent` |
-| p1 later | #1892 | **UI Polish, Chat (p1):** the Starting agent notice blurs the history behind it | `todo`; `ready-for-agent` |
+| p1 later | #1892 | **UI Polish, Chat (p1):** the Starting agent notice blurs the history behind it | `PR open` (branch `fix/1892-starting-notice-blur`, converge route into spec 001 FR-080); shared blur in `components/ui/blur-content.ts` |
 | p1 later | #1758 | **UI Polish, Chat (p1):** Tool targets setting (Hide, Hover, Show), default Hover shows the target in a tooltip on the verb | `todo`; `ready-for-agent` |
 | p1 later | #1760 | **Bug, Session list (p1, design):** Session details card opens too quickly and reopens after a click, covering the Ask card when switching Sessions | `todo`; `ready-for-agent` |
 | p1 later | #1774 | **UI Polish, Subagents (p1):** drop the duplicate agent list above the composer; move per-agent Show into the Subagents card | `todo`; `ready-for-agent`; same surface as epic #1931 (Subagents card), so order against #1926 to #1929 |
