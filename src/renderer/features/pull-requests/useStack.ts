@@ -59,7 +59,8 @@ export function useStackMap(items: ReadonlyArray<{ repositoryId: string; number:
       if (cancelled) return
       const refs = new Map<string, StackRefsResult['items']>()
       results.forEach((result, index) => {
-        if (result.ok) refs.set(repositoryIds[index], result.value.items)
+        const id = repositoryIds[index]
+        if (id !== undefined && result.ok) refs.set(id, result.value.items)
       })
       setMap(buildStackMap(items, refs))
     })

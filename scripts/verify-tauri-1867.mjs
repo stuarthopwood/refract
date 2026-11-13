@@ -35,13 +35,15 @@ const setControl = (name, value) => writeFileSync(path.join(GH_DIR, name), value
 function buildFakeGh() {
   mkdirSync(GH_DIR, { recursive: true });
   writeFileSync(GH_LOG, '');
+  // Control files from an earlier run would silently steer this one.
+  for (const name of ['exit9', 'stack-version']) rmSync(path.join(GH_DIR, name), { force: true });
   copyFileSync(path.join(__dirname, 'verify-tauri-1867-fake-gh-logic.cjs'), path.join(GH_DIR, 'fake-gh-logic.cjs'));
   const out = spawnSync('rustc', ['--edition', '2021', '-O', path.join(__dirname, 'verify-1121-fake-gh-launcher.rs'), '-o', path.join(GH_DIR, 'gh.exe')], { encoding: 'utf8', windowsHide: true });
   if (out.status !== 0) throw new Error(`fake gh build failed: ${out.stderr}`);
 }
 
-async function launch(launcherExe, built, label) {
-  const dataDir = path.join(WORK_DIR, `data-${label}`);
+async function launch(launcherExe, built, label, dataLabel = label) {
+  const dataDir = path.join(WORK_DIR, `data-${dataLabel}`);
   const importDir = path.join(WORK_DIR, `import-${label}`);
   const profileDir = path.join(WORK_DIR, `webview2-${label}`);
   for (const d of [dataDir, importDir, profileDir]) mkdirSync(d, { recursive: true });
@@ -73,7 +75,8 @@ async function launch(launcherExe, built, label) {
   }
   if (!owned) throw new Error(`CDP target is not owned by the process this run launched (port ${port}, launched pid ${targetPid}, type ${typeof targetPid})`);
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project' && !el.disabled)`, { timeoutMs: 60_000, label: 'app ready' });
-  await addRepository(cdp, repoDir);
+  // A relaunch on the same data dir already has the project; adding it again would duplicate the rows.
+  if (dataLabel === label) await addRepository(cdp, repoDir);
   return { child, cdp };
 }
 
@@ -143,23 +146,24 @@ async function main() {
     await phase('install-outdated', cdp, async () => {
       await openSessionsSettings(cdp);
       await cdp.waitFor(`/needs updating/.test(${q('[data-gh-stack-notice]')}?.textContent ?? '')`, { label: 'outdated notice' });
-      check('SC-002 Settings says gh-stack needs updating with an Install button', (await count(cdp, '[data-gh-stack-notice] button')) === 1, await text(cdp, '[data-gh-stack-notice]'));
+      check('SC-001 the toggle is on by default in a fresh data dir', (await cdp.evaluate(`${q('#stacked-pull-requests-toggle')}?.getAttribute('aria-checked')`)) === 'true');
+      check('SC-005 Settings says gh-stack needs updating with an Install button', (await count(cdp, '[data-gh-stack-notice] button')) === 1, await text(cdp, '[data-gh-stack-notice]'));
       await shot(cdp, '01-settings-outdated.png');
       await cdp.clickByLabel('Install the latest gh-stack');
       await cdp.waitFor(`/installed and ready/.test(${q('[data-gh-stack-notice]')}?.textContent ?? '')`, { label: 'ready notice' });
-      check('SC-002 Install clears the prompt and runs `gh extension upgrade gh-stack`', callCount(/^extension upgrade gh-stack/) === 1, await text(cdp, '[data-gh-stack-notice]'));
+      check('SC-005 Install clears the prompt and runs `gh extension upgrade gh-stack`', callCount(/^extension upgrade gh-stack/) === 1, await text(cdp, '[data-gh-stack-notice]'));
       await shot(cdp, '02-settings-ready.png');
     });
     await phase('badge-layers', cdp, async () => {
       await openPullRequests(cdp);
       await cdp.waitFor(`document.querySelectorAll('[data-pr-row] [data-stack-badge]').length === 3`, { timeoutMs: 20_000, label: 'three badges' });
       const badges = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-pr-row]')).map((r) => [r.getAttribute('data-pr-number'), r.querySelector('[data-stack-badge]')?.textContent.trim() ?? null])`);
-      check('SC-001 rows of the 3-layer stack show "Stack N of 3"; the plain pull request shows none', JSON.stringify(badges.sort()) === JSON.stringify([['1', 'Stack 1 of 3'], ['2', 'Stack 2 of 3'], ['3', 'Stack 3 of 3'], ['4', null]]), badges);
+      check('SC-004 rows of the 3-layer stack show "Stack N of 3"; the plain pull request shows none', JSON.stringify(badges.sort()) === JSON.stringify([['1', 'Stack 1 of 3'], ['2', 'Stack 2 of 3'], ['3', 'Stack 3 of 3'], ['4', null]]), badges);
       await shot(cdp, '03-list-badges.png');
       await openDetail(cdp, 2);
       await cdp.waitFor(`!!${q('[data-stack-layers]')}`, { label: 'layers list' });
       const layers = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-stack-layers] li')).map((li) => ({ text: li.textContent.trim().replace(/\\s+/g, ' '), current: li.getAttribute('aria-current') === 'true' || !!li.querySelector('[aria-current="true"]') }))`);
-      check('SC-001 detail lists 3 layers with #2 marked current', layers.length === 3 && layers.map((l) => l.current).join() === 'false,true,false' && /#2/.test(layers[1].text), layers);
+      check('SC-004 detail lists 3 layers with #2 marked current', layers.length === 3 && layers.map((l) => l.current).join() === 'false,true,false' && /#2/.test(layers[1].text), layers);
       await shot(cdp, '04-detail-layers.png');
     });
     await phase('merge-routing', cdp, async () => {
@@ -186,32 +190,37 @@ async function main() {
       await sleep(500);
       await openPullRequests(cdp);
       await sleep(1500);
-      check('SC-006 with the toggle off no row shows a stack badge', (await count(cdp, '[data-stack-badge]')) === 0);
+      check('toggle off: no row shows a stack badge', (await count(cdp, '[data-stack-badge]')) === 0);
       await openDetail(cdp, 2);
-      check('SC-006 with the toggle off the detail shows no layers', (await count(cdp, '[data-stack-layers]')) === 0);
+      check('toggle off: the detail shows no layers', (await count(cdp, '[data-stack-layers]')) === 0);
       await openMerge(cdp);
-      check('SC-006 with the toggle off the Merge dialog has no layers line', (await count(cdp, '[data-merge-layers]')) === 0);
+      check('toggle off: the Merge dialog has no layers line', (await count(cdp, '[data-merge-layers]')) === 0);
       await shot(cdp, '06-toggle-off-merge.png');
       const before = callCount(/^stack merge/);
       await dlgClick(cdp, 'Merge');
       await cdp.waitFor(`!${q('[role="dialog"]')}`, { timeoutMs: 30_000, label: 'toggle-off merge done' });
-      check('SC-006 with the toggle off #2 merges with `gh pr merge 2`', callCount(/^pr merge 2\b/) === 1 && callCount(/^stack merge/) === before, ghCalls().filter((l) => /merge/.test(l)));
-      await openSessionsSettings(cdp);
-      await cdp.click(q('#stacked-pull-requests-toggle'));
-      await sleep(500);
+      check('toggle off: #2 merges with `gh pr merge 2`', callCount(/^pr merge 2\b/) === 1 && callCount(/^stack merge/) === before, ghCalls().filter((l) => /merge/.test(l)));
+      // Leave the toggle OFF: launch 2 reuses this data dir to prove the setting survives a restart.
     });
     await phase('exit-9', cdp, async () => {
       setControl('exit9', '');
+      await openSessionsSettings(cdp);
+      await cdp.click(q('#stacked-pull-requests-toggle'));
+      await sleep(500);
       await openPullRequests(cdp);
       await openDetail(cdp, 3);
       await openMerge(cdp);
       await dlgClick(cdp, 'Merge');
       await cdp.waitFor(`/not enabled for this repository/.test(${q('[role="dialog"]')}?.textContent ?? '')`, { timeoutMs: 30_000, label: 'exit 9 message' });
-      check('SC-005 exit 9 shows "not enabled for this repository"', true, await text(cdp, '[role="dialog"]'));
+      check('SC-006 exit 9 shows "not enabled for this repository"', true, await text(cdp, '[role="dialog"]'));
       await shot(cdp, '07-exit9-message.png');
       await dlgClick(cdp, 'Retry');
       await cdp.waitFor(`!${q('[role="dialog"]')}`, { timeoutMs: 30_000, label: 'fallback merge done' });
-      check('SC-005 after exit 9 the repository falls back to `gh pr merge 3`', callCount(/^pr merge 3\b/) === 1 && callCount(/^stack merge 3 /) === 1, ghCalls().filter((l) => /merge/.test(l)));
+      check('SC-006 after exit 9 the repository falls back to `gh pr merge 3`', callCount(/^pr merge 3\b/) === 1 && callCount(/^stack merge 3 /) === 1, ghCalls().filter((l) => /merge/.test(l)));
+      // Leave the toggle OFF again: launch 2 reuses this data dir to prove the setting survives a restart.
+      await openSessionsSettings(cdp);
+      await cdp.click(q('#stacked-pull-requests-toggle'));
+      await sleep(500);
     });
   } finally {
     session.cdp.close();
@@ -220,25 +229,31 @@ async function main() {
 
   // Launch 2: missing -> the Merge dialog offers Install.
   setControl('stack-version', 'missing');
-  setControl('exit9', '');
-  writeFileSync(path.join(GH_DIR, 'exit9'), '');
-  session = await launch(launcherExe, built, 'b');
+  // `exit9` is on while the file exists; clear it so the relaunch proves the repository is re-probed.
+  rmSync(path.join(GH_DIR, 'exit9'), { force: true });
+  session = await launch(launcherExe, built, 'b', 'a');
   try {
     const { cdp } = session;
     await phase('install-missing', cdp, async () => {
-      await cdp.clickByText('Pull requests');
-      await cdp.waitFor(`document.querySelectorAll('[data-pr-row]').length === 4`, { timeoutMs: 30_000, label: 'four rows' });
+      await openSessionsSettings(cdp);
+      check('SC-001 the toggle set off in launch 1 is still off after a restart', (await cdp.evaluate(`${q('#stacked-pull-requests-toggle')}?.getAttribute('aria-checked')`)) === 'false');
+      await cdp.click(q('#stacked-pull-requests-toggle'));
+      await sleep(500);
+      await openPullRequests(cdp);
       await sleep(1500);
-      check('SC-002 with gh-stack missing no row shows a stack badge', (await count(cdp, '[data-stack-badge]')) === 0);
+      check('SC-005 with gh-stack missing no row shows a stack badge', (await count(cdp, '[data-stack-badge]')) === 0);
       await openDetail(cdp, 2);
       await openMerge(cdp);
       await cdp.waitFor(`!!${q('[data-gh-stack-notice="missing"]')}`, { label: 'missing callout' });
-      check('SC-002 Merge dialog says gh-stack is not installed', /gh-stack is not installed/.test((await text(cdp, '[data-gh-stack-notice]')) ?? ''), await text(cdp, '[data-gh-stack-notice]'));
+      check('SC-005 Merge dialog says gh-stack is not installed', /gh-stack is not installed/.test((await text(cdp, '[data-gh-stack-notice]')) ?? ''), await text(cdp, '[data-gh-stack-notice]'));
       await shot(cdp, '08-merge-dialog-missing.png');
       await dlgClickLabel(cdp, 'Install gh-stack');
       await cdp.waitFor(`!${q('[data-gh-stack-notice]')} && !!${q('[data-merge-layers]')}`, { timeoutMs: 40_000, label: 'callout cleared, layers shown' });
-      check('SC-002 Install clears the callout and the dialog now offers the stack merge', callCount(/^extension install github\/gh-stack/) === 1, await text(cdp, '[data-merge-layers]'));
+      check('SC-005 Install clears the callout and the dialog now offers the stack merge', callCount(/^extension install github\/gh-stack/) === 1, await text(cdp, '[data-merge-layers]'));
       await shot(cdp, '09-merge-dialog-installed.png');
+      await dlgClick(cdp, 'Merge');
+      await cdp.waitFor(`!${q('[role="dialog"]')}`, { timeoutMs: 30_000, label: 'relaunch merge done' });
+      check('SC-006 after relaunch the repository is re-probed: #2 merges through `gh stack merge` again', callCount(/^stack merge 2 /) === 2, ghCalls().filter((l) => /stack merge/.test(l)));
     });
   } finally {
     session.cdp.close();

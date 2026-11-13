@@ -35,10 +35,11 @@ export function chainFor(all: readonly ChainablePullRequest[], number: number): 
   for (let cur = start; ; ) {
     // A forked base (two children) is ambiguous, so the chain stops rather than guess.
     const children = (byBase.get(cur.headRef) ?? []).filter((pr) => !seen.has(pr.number))
-    if (children.length !== 1) break
-    seen.add(children[0].number)
-    up.push(children[0])
-    cur = children[0]
+    const [child] = children
+    if (children.length !== 1 || !child) break
+    seen.add(child.number)
+    up.push(child)
+    cur = child
   }
   const layers = [...down, start, ...up]
   if (layers.length < 2) return null

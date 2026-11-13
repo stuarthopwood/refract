@@ -22,7 +22,7 @@ Test tasks are part of each task (AGENTS.md: new logic gets co-located unit test
 
 ## Slice 4: verify and close
 
-- [ ] T010 `scripts/verify-tauri-1867.mjs` (fake `gh`, isolated instance) for SC-001 to SC-006; screenshots.
+- [x] T010 `scripts/verify-tauri-1867.mjs` (fake `gh`, isolated instance) for SC-001 to SC-006; screenshots.
 - [ ] T011 Docs: PLAN row status, `CONTEXT.md` term **Stacked pull request** (glossary only), README/settings docs if a settings list exists, `check:parity`, `ci:local`.
 
 Dependencies: T001 -> T002 -> T003 -> T005 -> T007; T004 after T002; T006 independent; T008 after T006 and T007; T009 after T002, T007, T008; T010 -> T011.

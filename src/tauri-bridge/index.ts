@@ -16,7 +16,7 @@ import type { GithubChangedPayload } from '../shared/ipc-github-changed'
 import type { GhStackState } from '../shared/ipc-github-stack'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch, SessionWithKickoff } from '../shared/ipc-issues'
 import type { ItemCard, ItemSummary } from '../shared/ipc-item-refs'
-import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
+import type { PullRequestAcrossResult, StackRefsResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
   IpcErrorCode,
