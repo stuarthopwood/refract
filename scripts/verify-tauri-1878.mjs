@@ -1,12 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for issue #1878: the composer's role+model pill shows the ROLE (never the model) the moment a
-// Session starts and the moment one resumes after a restart; the model name appears only in the tooltip, which
-// opens on keyboard focus (reached by real Tab presses). Fake omp (the #741 tapes) keeps it off the network.
-// Launch 1 starts a Session whose Conversation file is empty (the role must still read Default); launch 2 reopens
-// it with the file naming Slow. Launch 3 hand-picks a model whose name is far wider than the pill (pin glyph,
-// truncation, "Pinned to ..." tooltip). Launch 4 queues a role change mid-turn (clock glyph, new tooltip copy).
-// Every capture also reads the pill's name from the AX tree. Usage:
-// CARGO_TARGET_DIR=<shared target dir> REFRACT_1878_DIR=<evidence dir> node scripts/verify-tauri-1878.mjs
+// Live CDP check for issue #1878: the composer pill shows the ROLE on start and on resume, never the model, which
+// appears only in the tooltip opened by real Tab presses. Fake omp (the #741 tapes) keeps it off the network.
+// Launches: 1 start (empty Conversation file, Default); 2 resume (file names Slow); 3 hand-picked long model name
+// (pin glyph, truncation); 4 queued role change mid-turn (clock glyph). Each capture also reads the AX name.
+// Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_1878_DIR=<evidence dir> node scripts/verify-tauri-1878.mjs
 
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
