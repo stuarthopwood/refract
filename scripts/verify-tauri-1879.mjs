@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, safeRmSync, requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, safeRmSync, requireSharedCargoTarget, sha256OfFile } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -25,8 +25,11 @@ function assert(cond, message) {
   REPORT.push(`PASS: ${message}`);
 }
 
-// Role rows are leaf text nodes inside the Models section; match on the exact trimmed text.
-const leafWithText = (text) => `Array.from(document.querySelectorAll('body *')).find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)})`;
+// The task role's label is `<label id="model-role-task-label">` (SettingRow.tsx:53 builds `${id}-label`; RoleRow.tsx:60,105
+// passes id `model-role-${role}`), so scope the text match to that element rather than any "Task" text in the page.
+const TASK_LABEL_SELECTOR = '#model-role-task-label';
+const leafWithText = (text) =>
+  `Array.from(document.querySelectorAll(${JSON.stringify(`${TASK_LABEL_SELECTOR}, ${TASK_LABEL_SELECTOR} *`)})).find((e) => e.children.length === 0 && e.textContent.trim() === ${JSON.stringify(text)})`;
 
 async function runChecks(cdp) {
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]')`, { timeoutMs: 120_000, label: 'Readiness screen mounted' });
@@ -64,6 +67,7 @@ async function main() {
     if (!existsSync(src)) throw new Error(`built exe not found at ${src}`);
     const exePath = path.join(exeDir, 'refract-tauri.exe');
     copyFileSync(src, exePath);
+    console.log(`verify-tauri-1879: exe copied to ${exePath} (sha256 ${sha256OfFile(exePath)})`);
     const port = await getFreePort();
     const launched = await launchBuiltExe(launcherExe, exePath, {
       port,
