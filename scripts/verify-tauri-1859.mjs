@@ -123,7 +123,14 @@ async function main() {
       await cdp.click(sessionRow(id));
       await cdp.waitFor(`${sessionRow(id)}?.getAttribute('aria-current') === 'true'`, { timeoutMs: 10_000, label: `Session ${id} open` });
     };
-    const waitCard = () => cdp.waitFor(`${approveCount} > 0`, { timeoutMs: 20_000, label: 'approval card' });
+    const waitCard = async () => {
+      try {
+        await cdp.waitFor(`${approveCount} > 0`, { timeoutMs: 20_000, label: 'approval card' });
+      } catch (err) {
+        await shot('zz-no-card-failure.png').catch(() => {});
+        throw err;
+      }
+    };
     const resolveCard = async (label) => {
       await waitCard();
       await sleep(300);
@@ -206,6 +213,7 @@ async function main() {
 
     // Outside the own tree: child-two updating its sibling raises the card; Deny refuses and changes nothing.
     await openSession(children[1].id);
+    await sleep(500);
     const outsideId = post('refract_update_session', { id: children[2].id, name: 'hijacked' }, children[1].pid);
     await waitCard();
     await shot('06-outside-tree-card.png');
