@@ -12,6 +12,8 @@ mod sessions_create;
 mod sessions_limit;
 pub mod sessions_send;
 #[allow(dead_code)]
+mod sessions_update;
+#[allow(dead_code)]
 pub mod tree_gate;
 
 use serde_json::{json, Value};
