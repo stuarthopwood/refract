@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live CDP check: one centred Session start notice per Session, with the transcript dimmed behind it when history exists.
+// Live CDP check: one centred Session start notice per Session, with the transcript blurred behind it when history exists (#1892).
 // Drives real timers (no `window.__refractStores`, absent from a production exe); takes ~5-6 minutes.
 // The omp shim must be PATH-prepended or a real omp launches; `setupLaunch` checks the fake's debug log.
 
@@ -13,7 +13,7 @@ import { gitHead, buildLauncher, safeRmSync, requireSharedCargoTarget } from './
 import {
   GROUP, REGIONS, REGION0, ANNOUNCE, OVERLAY, THEMES, NARROW_BREAKPOINT_PX,
   expectedSizesForWidth, fontSizePx, animationDurationMs, contrastRatio, parseRgba, blendOver, rgbToCss, dispatchTab,
-  waitForRegionOpacity, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
+  waitForRegionOpacity, waitForRegionBlur, waitForComputedOpacity, withDeviceMetrics, readNoticeState, assertCentred, assertSizesAndColours, focusLastTabbableOrSelf,
   readVisibleStartKind, waitForStartProgressKind, parseWaitTimeoutAbsence, classifyPossibleAbsence, ctrlClickSessionRow, clickSessionRow, restartAgent, assertFocusedPlainStageNotice,
   setupLaunch, teardownLaunch, quickCreateSessionId, resolveExePath
 } from './verify-672-start-message-helpers.mjs';
@@ -180,13 +180,13 @@ async function main() {
     await restartAgent(cdp1, sessionA.id);
     await waitForStartProgressKind(cdp1, sessionA.id, 'waiting', 10_000);
     await cdp1.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'notice mounted over Session-with-history (real restart)' });
-    const dimPoll = await waitForRegionOpacity(cdp1, (v) => v <= 0.45);
-    if (!dimPoll.ok) failures.push(`history/waiting: transcript region opacity settled at ${dimPoll.value}, expected <=0.45 (~40%, dimmed behind the notice).`);
-    else findings.push(`history/waiting: transcript region opacity settled at ${dimPoll.value} (~40%), dimmed behind the notice as specified.`);
+    const blurPoll = await waitForRegionBlur(cdp1, (v) => v > 0);
+    if (!blurPoll.ok) failures.push(`history/waiting: transcript region blur radius settled at ${blurPoll.value}px, expected >0 (blurred behind the notice).`);
+    else findings.push(`history/waiting: transcript region blur radius settled at ${blurPoll.value}px, blurred behind the notice as specified.`);
     const historyState = await readNoticeState(cdp1);
     assertCentred(historyState, 'history/waiting', failures);
     if (historyState.regionFound) assertSizesAndColours(historyState, historyState.regionRect.width, 'history/waiting', fg, muted, failures, findings);
-    await cdp1.screenshot(path.join(SHOTS_DIR, '04-history-dimmed.png'));
+    await cdp1.screenshot(path.join(SHOTS_DIR, '04-history-blurred.png'));
 
     await withDeviceMetrics(cdp1, 900, 260, async () => {
       try {
@@ -227,16 +227,16 @@ async function main() {
         findings.push(`history/wheel: a wheel at a point confirmed (elementFromPoint) inside the transcript and outside the notice decreased scrollTop (${before} -> ${after}), confirming it stays interactive while dimmed.`);
       }
       await focusLastTabbableOrSelf(cdp1, REGION0);
-      const focusedOpacity = await waitForRegionOpacity(cdp1, (v) => v > 0.95, 2_000);
-      if (!focusedOpacity.ok) failures.push(`history/focus: focusing the dimmed transcript region did not restore full opacity (settled at ${focusedOpacity.value}) -- focus-within:opacity-100 regressed.`);
-      else findings.push(`history/focus: focusing the dimmed transcript region restored full opacity (${focusedOpacity.value}), as specified.`);
+      const focusedBlur = await waitForRegionBlur(cdp1, (v) => v === 0, 2_000);
+      if (!focusedBlur.ok) failures.push(`history/focus: focusing the blurred transcript region did not clear the blur (settled at ${focusedBlur.value}px) -- focus-within:blur-none regressed.`);
+      else findings.push(`history/focus: focusing the blurred transcript region cleared the blur (${focusedBlur.value}px), as specified.`);
       await cdp1.evaluate(`document.activeElement?.blur()`);
     });
 
     await cdp1.waitFor(`!${GROUP}`, { timeoutMs: 30_000, label: 'history/waiting restart reached ready, notice cleared' });
-    const historyCleared = await waitForRegionOpacity(cdp1, (v) => v > 0.95);
-    if (!historyCleared.ok) failures.push(`history/cleared: transcript region opacity settled at ${historyCleared.value}, expected ~1 after startProgress cleared.`);
-    else findings.push(`history/cleared: transcript region opacity returned to ${historyCleared.value} once startProgress cleared.`);
+    const historyCleared = await waitForRegionBlur(cdp1, (v) => v === 0);
+    if (!historyCleared.ok) failures.push(`history/cleared: transcript region blur radius settled at ${historyCleared.value}px, expected 0 after startProgress cleared.`);
+    else findings.push(`history/cleared: transcript region blur radius returned to ${historyCleared.value}px once startProgress cleared.`);
     await cdp1.screenshot(path.join(SHOTS_DIR, '04b-history-cleared.png'));
 
     // Ctrl+click on B's row: the already-shown Session's own row is a deliberate no-op.
@@ -354,10 +354,11 @@ async function main() {
     await withDeviceMetrics(cdp2, 900, 260, async () => {
       await cdp2.waitFor(`!!${GROUP}`, { timeoutMs: 10_000, label: 'history/prompt: notice mounted (real prompt kind) after short-viewport override' });
       const dimBefore = await readNoticeState(cdp2);
-      if (!dimBefore.regionFound || !(dimBefore.regionOpacity <= 0.45)) {
-        failures.push(`history/prompt: transcript region opacity is ${dimBefore.regionFound ? dimBefore.regionOpacity : 'unknown (region not found)'}, expected <=0.45 (dimmed behind the real prompt-stage overlay).`);
+      const blurBefore = await waitForRegionBlur(cdp2, (v) => v > 0);
+      if (!dimBefore.regionFound || !blurBefore.ok) {
+        failures.push(`history/prompt: transcript region blur radius is ${dimBefore.regionFound ? blurBefore.value : 'unknown (region not found)'}px, expected >0 (blurred behind the real prompt-stage overlay).`);
       } else {
-        findings.push(`history/prompt: transcript region opacity settled at ${dimBefore.regionOpacity} (~40%), dimmed behind the real prompt-stage overlay.`);
+        findings.push(`history/prompt: transcript region blur radius settled at ${blurBefore.value}px, blurred behind the real prompt-stage overlay.`);
       }
       assertCentred(dimBefore, 'history/prompt', failures);
       if (dimBefore.regionFound) assertSizesAndColours(dimBefore, dimBefore.regionRect.width, 'history/prompt', fg, muted, failures, findings);

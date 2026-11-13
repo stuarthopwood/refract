@@ -255,6 +255,18 @@ export async function waitForRegionOpacity(cdp, predicate, timeoutMs = 3_000) {
   return { value: last, ok: false };
 }
 
+/** Polls the `${REGION0}` blur radius in px (0 when no blur filter); the 150ms filter transition can leave a single read mid-way. */
+export async function waitForRegionBlur(cdp, predicate, timeoutMs = 3_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    last = await cdp.evaluate(`(() => { const r = ${REGION0}; if (!r) return null; const m = /blur\\(([\\d.]+)px\\)/.exec(getComputedStyle(r).filter); return m ? Number(m[1]) : 0; })()`);
+    if (last !== null && predicate(last)) return { value: last, ok: true };
+    await sleep(100);
+  }
+  return { value: last, ok: false };
+}
+
 /** Forces a layout size via CDP `Emulation` so a size-dependent check never skips for the window's
  *  default regime. Always clears the override, even if `fn` throws. */
 export async function withDeviceMetrics(cdp, width, height, fn) {

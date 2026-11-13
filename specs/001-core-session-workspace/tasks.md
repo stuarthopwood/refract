@@ -5556,3 +5556,12 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   click, failed lookup, out-of-Project, neutral icon) fails when removed, per FR-127
 - [x] T450 Live check on a built app (`pnpm verify:tauri`): click pins and reveals the pane without taking focus, re-click
   focuses the pin, Ctrl-click leaves the pane alone; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-127
+
+## Phase 94: Convergence (#1892 the Starting agent notice blurs the history behind it, FR-080; Spec Kit route none per triage, spec amended in place)
+
+- [x] T451 [US1] `components/ui/blur-content.ts` (new): the shared blur and transition classes; `LoadingOverlay` uses them,
+  behaviour unchanged, per FR-080 (missing)
+- [x] T452 [US1] `Transcript.tsx`: replace the `opacity-40` dim of the transcript viewport with the shared blur, keep
+  `focus-within` clearing it, animate it with `motion-reduce:transition-none` (also on the notice overlay's fade), per FR-080 (contradicts)
+- [x] T453 No new logic (class names only), so no unit test; `scripts/verify-tauri-1892.mjs` reads the computed filter, opacity,
+  transition and notice sharpness on a built app and screenshots the notice, then `node scripts/ci-local.mjs` per FR-080
