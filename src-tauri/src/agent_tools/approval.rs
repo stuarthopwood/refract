@@ -50,7 +50,8 @@ pub fn card(call_id: &str, panel_id: &str, action: &str, input: &Value) -> Pendi
     }
 }
 
-/// Card for the session tools; shares the id scheme so `serve` can close it on cancel.
+/// Card for the session tools; shares the id scheme so `serve` can close it on cancel. Every line
+/// is clipped, because an agent-chosen name must not push the action off the card.
 pub fn session_card(
     call_id: &str,
     tool: &str,
@@ -60,9 +61,21 @@ pub fn session_card(
     PendingRequest::Approval {
         request_id: request_id(call_id),
         tool: tool.to_string(),
-        target,
-        details,
+        target: clip_line(&target),
+        details: details.iter().map(|d| clip_line(d)).collect(),
         options: OPTIONS.iter().map(|s| s.to_string()).collect(),
+    }
+}
+
+/// One card line: line breaks and other control characters become spaces, then it is capped.
+pub fn clip_line(text: &str) -> String {
+    let flat: String = text
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    match flat.char_indices().nth(MAX_ARGS_CHARS) {
+        Some((end, _)) => format!("{}…", &flat[..end]),
+        None => flat,
     }
 }
 
@@ -154,5 +167,21 @@ mod tests {
         assert_eq!(target, "repo");
         assert_eq!(details, vec!["d"]);
         assert_eq!(options, vec!["Approve", "Deny"]);
+    }
+
+    #[test]
+    fn session_card_lines_are_single_line_and_capped() {
+        let padded = format!("a\nb{}", "x".repeat(500));
+        let PendingRequest::Approval {
+            target, details, ..
+        } = session_card("c3", "t", padded.clone(), vec![padded])
+        else {
+            panic!("expected an approval card");
+        };
+        for line in [&target, &details[0]] {
+            assert!(!line.contains('\n'));
+            assert_eq!(line.chars().count(), MAX_ARGS_CHARS + 1);
+            assert!(line.starts_with("a b"));
+        }
     }
 }

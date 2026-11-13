@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
+use tokio::sync::Notify;
 
 use tokio::sync::Mutex as AsyncMutex;
 
@@ -17,6 +18,15 @@ struct FakeHost {
     started: Mutex<Vec<(String, Option<String>, String)>>,
     /// Deleted while the card is open, as a developer deleting the caller would.
     delete_on_ask: Option<String>,
+    /// Rows added while the card is open, as a racing create would.
+    add_on_ask: Mutex<Vec<Session>>,
+    /// Archived while the card is open.
+    archive_on_ask: Option<String>,
+    cards: Mutex<Vec<(String, Vec<String>)>>,
+    /// `start` signals `start_entered`, then waits for `start_release`.
+    block_start: bool,
+    start_entered: Notify,
+    start_release: Notify,
 }
 
 impl Host for FakeHost {
@@ -32,10 +42,37 @@ impl Host for FakeHost {
     async fn is_yolo(&self) -> bool {
         self.yolo
     }
-    async fn ask(&self, _card: PendingRequest) -> Result<(), ToolError> {
+    async fn ask(&self, card: PendingRequest) -> Result<(), ToolError> {
         self.asks.fetch_add(1, Ordering::SeqCst);
+        if let PendingRequest::Approval {
+            target, details, ..
+        } = card
+        {
+            self.cards.lock().unwrap().push((target, details));
+        }
         if let Some(id) = &self.delete_on_ask {
             self.registry.lock().await.remove_session(id).await.unwrap();
+        }
+        let added = std::mem::take(&mut *self.add_on_ask.lock().unwrap());
+        for session in added {
+            self.registry
+                .lock()
+                .await
+                .add_session(session)
+                .await
+                .unwrap();
+        }
+        if let Some(id) = &self.archive_on_ask {
+            let patch = crate::store::registry::SessionPatch {
+                archived_at: Some(Some("2026-01-02T00:00:00.000Z".into())),
+                ..Default::default()
+            };
+            self.registry
+                .lock()
+                .await
+                .update_session(id, patch)
+                .await
+                .unwrap();
         }
         if self.approve {
             Ok(())
@@ -47,6 +84,10 @@ impl Host for FakeHost {
         Ok(vec!["default".into(), "smol".into()])
     }
     async fn start(&self, id: &str, role: Option<&str>, turn: String) -> Result<(), ToolError> {
+        if self.block_start {
+            self.start_entered.notify_one();
+            self.start_release.notified().await;
+        }
         if self.start_fails {
             return Err(ToolError::new("agent-start-failed", "omp would not start"));
         }
@@ -119,6 +160,12 @@ async fn host(rows: Vec<Session>) -> FakeHost {
         asks: AtomicUsize::new(0),
         started: Mutex::new(Vec::new()),
         delete_on_ask: None,
+        add_on_ask: Mutex::new(Vec::new()),
+        archive_on_ask: None,
+        cards: Mutex::new(Vec::new()),
+        block_start: false,
+        start_entered: Notify::new(),
+        start_release: Notify::new(),
     }
 }
 
@@ -138,6 +185,7 @@ fn me() -> Vec<Session> {
 async fn an_empty_or_oversized_prompt_is_invalid_input_before_any_card() {
     let mut h = host(me()).await;
     h.yolo = false;
+    let h = Arc::new(h);
     let big = "x".repeat(MAX_TEXT_BYTES + 1);
     for prompt in ["  ", big.as_str()] {
         let result = create_with(&h, &json!({ "prompt": prompt })).await;
@@ -150,6 +198,7 @@ async fn an_empty_or_oversized_prompt_is_invalid_input_before_any_card() {
 async fn arguments_the_schema_forbids_are_invalid_input_before_any_card() {
     let mut h = host(me()).await;
     h.yolo = false;
+    let h = Arc::new(h);
     for args in [
         json!({ "prompt": "p", "bogus": 1 }),
         json!({ "prompt": "p", "role": 5 }),
@@ -171,6 +220,7 @@ async fn unknown_role_branch_and_bad_parents_are_checked_before_the_card() {
     rows.push(row("foreign", "elsewhere", None));
     let mut h = host(rows).await;
     h.yolo = false;
+    let h = Arc::new(h);
     for args in [
         json!({ "prompt": "p", "role": "nope" }),
         json!({ "prompt": "p", "base_branch": "no-such-branch" }),
@@ -194,6 +244,7 @@ async fn a_caller_at_depth_three_gets_depth_limit_and_no_card() {
     ];
     let mut h = host(rows).await;
     h.yolo = false;
+    let h = Arc::new(h);
     let result = create_with(&h, &json!({ "prompt": "p" })).await;
     assert_eq!(code(result), "depth_limit");
     assert_eq!(h.asks.load(Ordering::SeqCst), 0);
@@ -205,7 +256,7 @@ async fn a_parent_with_four_live_children_gets_child_limit_but_an_archived_one_f
     for n in 0..4 {
         rows.push(row(&format!("k{n}"), "repo", Some("me")));
     }
-    let h = host(rows).await;
+    let h = Arc::new(host(rows).await);
     assert_eq!(
         code(create_with(&h, &json!({ "prompt": "p" })).await),
         "child_limit"
@@ -230,6 +281,7 @@ async fn denial_creates_nothing_and_starts_nothing() {
     let mut h = host(me()).await;
     h.yolo = false;
     h.approve = false;
+    let h = Arc::new(h);
     let result = create_with(&h, &json!({ "prompt": "p" })).await;
     assert_eq!(code(result), "denied");
     assert_eq!(h.asks.load(Ordering::SeqCst), 1);
@@ -241,16 +293,17 @@ async fn denial_creates_nothing_and_starts_nothing() {
 async fn approval_creates_and_yolo_skips_the_card() {
     let mut h = host(me()).await;
     h.yolo = false;
+    let h = Arc::new(h);
     assert!(create_with(&h, &json!({ "prompt": "p" })).await.is_ok());
     assert_eq!(h.asks.load(Ordering::SeqCst), 1);
-    h.yolo = true;
-    assert!(create_with(&h, &json!({ "prompt": "p" })).await.is_ok());
-    assert_eq!(h.asks.load(Ordering::SeqCst), 1, "yolo must not ask again");
+    let yolo = Arc::new(host(me()).await);
+    assert!(create_with(&yolo, &json!({ "prompt": "p" })).await.is_ok());
+    assert_eq!(yolo.asks.load(Ordering::SeqCst), 0, "yolo must not ask");
 }
 
 #[tokio::test]
 async fn the_child_defaults_to_the_caller_as_parent_and_gets_the_parent_line() {
-    let h = host(me()).await;
+    let h = Arc::new(host(me()).await);
     let out = create_with(&h, &json!({ "prompt": "do it", "name": "Kid" }))
         .await
         .unwrap();
@@ -272,7 +325,7 @@ refract_send_session_message to that id.]\n\ndo it"
 
 #[tokio::test]
 async fn a_null_parent_makes_a_root_with_the_bare_prompt() {
-    let h = host(me()).await;
+    let h = Arc::new(host(me()).await);
     let out = create_with(&h, &json!({ "prompt": "solo", "parent_id": null }))
         .await
         .unwrap();
@@ -282,7 +335,7 @@ async fn a_null_parent_makes_a_root_with_the_bare_prompt() {
 
 #[tokio::test]
 async fn the_role_is_passed_only_when_given_and_never_inherited() {
-    let h = host(me()).await;
+    let h = Arc::new(host(me()).await);
     create_with(&h, &json!({ "prompt": "a", "role": "smol" }))
         .await
         .unwrap();
@@ -298,7 +351,7 @@ async fn two_racing_creates_at_three_live_children_yield_one_success() {
     for n in 0..3 {
         rows.push(row(&format!("k{n}"), "repo", Some("me")));
     }
-    let h = host(rows).await;
+    let h = Arc::new(host(rows).await);
     let args = json!({ "prompt": "p" });
     let (a, b) = tokio::join!(create_with(&h, &args), create_with(&h, &args));
     let codes: Vec<_> = [a, b].into_iter().map(|r| r.map_err(|e| e.code)).collect();
@@ -311,6 +364,7 @@ async fn two_racing_creates_at_three_live_children_yield_one_success() {
 async fn a_start_failure_keeps_the_session_and_names_its_id() {
     let mut h = host(me()).await;
     h.start_fails = true;
+    let h = Arc::new(h);
     let err = create_with(&h, &json!({ "prompt": "p" }))
         .await
         .unwrap_err();
@@ -326,8 +380,143 @@ async fn a_caller_deleted_while_the_card_is_open_cancels_with_no_link() {
     let mut h = host(me()).await;
     h.yolo = false;
     h.delete_on_ask = Some("me".into());
+    let h = Arc::new(h);
     let result = create_with(&h, &json!({ "prompt": "p" })).await;
     assert_eq!(code(result), CANCELLED);
     assert_eq!(session_count(&h).await, 0);
     assert!(h.started.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn dropping_the_call_mid_create_still_records_and_starts_the_session() {
+    let mut h = host(me()).await;
+    h.block_start = true;
+    let h = Arc::new(h);
+    let args = json!({ "prompt": "p" });
+    let mut call = Box::pin(create_with(&h, &args));
+    tokio::select! {
+        _ = &mut call => panic!("start is blocked, the call cannot finish"),
+        _ = h.start_entered.notified() => {}
+    }
+    drop(call); // host_tool_cancel: the router drops the future
+    h.start_release.notify_one();
+    for _ in 0..100 {
+        if !h.started.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        h.started.lock().unwrap().len(),
+        1,
+        "the start must complete"
+    );
+    assert_eq!(session_count(&h).await, 2);
+}
+
+fn crowded(live: usize, archived: usize) -> Vec<Session> {
+    let mut rows = me();
+    for n in 0..live - 1 {
+        rows.push(row(&format!("o{n}"), "repo", None));
+    }
+    for n in 0..archived {
+        let mut old = row(&format!("a{n}"), "repo", None);
+        old.archived_at = Some("2026-01-02T00:00:00.000Z".into());
+        rows.push(old);
+    }
+    rows
+}
+
+#[tokio::test]
+async fn a_project_with_six_live_sessions_gets_session_limit_and_no_card() {
+    let mut h = host(crowded(6, 2)).await;
+    h.yolo = false;
+    let h = Arc::new(h);
+    let result = create_with(&h, &json!({ "prompt": "p" })).await;
+    assert_eq!(code(result), "session_limit");
+    assert_eq!(h.asks.load(Ordering::SeqCst), 0);
+    assert_eq!(session_count(&h).await, 8);
+}
+
+#[tokio::test]
+async fn archived_sessions_and_other_projects_do_not_count_toward_the_cap() {
+    let mut rows = crowded(5, 3);
+    rows.push(row("far", "elsewhere", None));
+    let h = Arc::new(host(rows).await);
+    assert!(create_with(&h, &json!({ "prompt": "p" })).await.is_ok());
+}
+
+#[tokio::test]
+async fn a_slot_taken_while_the_card_is_open_gives_session_limit_and_creates_nothing() {
+    let mut h = host(crowded(5, 0)).await;
+    h.yolo = false;
+    *h.add_on_ask.lock().unwrap() = vec![row("racer", "repo", None)];
+    let h = Arc::new(h);
+    let result = create_with(&h, &json!({ "prompt": "p" })).await;
+    assert_eq!(code(result), "session_limit");
+    assert_eq!(session_count(&h).await, 6);
+    assert!(h.started.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_parent_archived_while_the_card_is_open_is_invalid_input_and_creates_nothing() {
+    let mut rows = me();
+    rows.push(row("dad", "repo", None));
+    let mut h = host(rows).await;
+    h.yolo = false;
+    h.archive_on_ask = Some("dad".into());
+    let h = Arc::new(h);
+    let result = create_with(&h, &json!({ "prompt": "p", "parent_id": "dad" })).await;
+    assert_eq!(code(result), INVALID_INPUT);
+    assert_eq!(session_count(&h).await, 2);
+    assert!(h.started.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_padded_multiline_name_cannot_push_the_card_text_off_the_card() {
+    let mut h = host(me()).await;
+    h.yolo = false;
+    let h = Arc::new(h);
+    let name = format!("a\nb{}", "n".repeat(400));
+    let prompt = "q".repeat(3000);
+    let args = json!({ "prompt": prompt, "name": name });
+    create_with(&h, &args).await.unwrap();
+    let cards = h.cards.lock().unwrap();
+    let (target, details) = &cards[0];
+    for line in std::iter::once(target).chain(details) {
+        assert!(!line.contains('\n'), "{line}");
+        assert!(line.chars().count() <= 201, "{line}");
+    }
+    assert!(details.iter().any(|d| d.contains("Name: a b")));
+    let prompt_line = details.iter().find(|d| d.starts_with("Prompt")).unwrap();
+    assert!(
+        prompt_line.contains("3000 characters, truncated"),
+        "{prompt_line}"
+    );
+    assert!(details.iter().any(|d| d.starts_with("Starts in:")));
+}
+
+#[test]
+fn a_short_prompt_preview_states_its_length_without_truncated() {
+    assert_eq!(preview("hello"), "Prompt (5 characters): hello");
+}
+
+#[test]
+fn the_parent_name_in_the_first_turn_loses_newlines_and_quotes() {
+    let turn = first_turn(Some(("x\"]\ninjected 'y'", "p1")), "go");
+    assert!(
+        turn.starts_with("[Parent Session: \"x] injected y\" (id p1)."),
+        "{turn}"
+    );
+}
+
+#[tokio::test]
+async fn a_failed_rename_is_reported_as_a_warning_with_the_generated_name() {
+    let h = host(me()).await;
+    let ghost = row("ghost", "repo", None); // not in the registry, so the rename fails
+    let (name, warning) = apply_name(h.registry(), &ghost, Some("Wanted")).await;
+    assert_eq!(name, "name-ghost");
+    assert!(warning.unwrap().contains("could not rename"));
+    let (name, warning) = apply_name(h.registry(), &ghost, None).await;
+    assert_eq!((name.as_str(), warning), ("name-ghost", None));
 }

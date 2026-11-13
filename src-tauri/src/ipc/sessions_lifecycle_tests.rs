@@ -285,6 +285,70 @@ async fn sessions_restore_clears_archived_at_back_to_none() {
 }
 
 #[tokio::test]
+async fn sessions_restore_into_a_full_parent_is_child_limit_until_a_slot_frees() {
+    let dir = temp_registry_dir("restore-child-limit");
+    let state = make_state(&dir).await;
+    state
+        .registry
+        .lock()
+        .await
+        .add_repository(make_repository("repo-1", "C:/nowhere/repo"))
+        .await
+        .expect("add_repository");
+    let mut rows = vec![make_session("parent", "repo-1", "C:/nowhere/p", "p")];
+    for n in 0..5 {
+        let mut kid = make_session(
+            &format!("kid-{n}"),
+            "repo-1",
+            &format!("C:/nowhere/k{n}"),
+            &format!("k{n}"),
+        );
+        kid.parent_session_id = Some("parent".to_string());
+        rows.push(kid);
+    }
+    rows[5].archived_at = Some("2026-01-01T00:00:00.000Z".to_string());
+    for row in rows {
+        state
+            .registry
+            .lock()
+            .await
+            .add_session(row)
+            .await
+            .expect("add_session");
+    }
+
+    let err = sessions_restore(state.clone(), vec![Value::String("kid-4".to_string())])
+        .await
+        .expect_err("a fifth live child must be refused");
+    assert_eq!(err.code, "child-limit");
+    assert!(state
+        .registry
+        .lock()
+        .await
+        .get_session("kid-4")
+        .unwrap()
+        .archived_at
+        .is_some());
+
+    state
+        .registry
+        .lock()
+        .await
+        .update_session(
+            "kid-0",
+            SessionPatch {
+                archived_at: Some(Some("2026-01-02T00:00:00.000Z".to_string())),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("archive kid-0");
+    sessions_restore(state.clone(), vec![Value::String("kid-4".to_string())])
+        .await
+        .expect("a free slot allows the restore");
+}
+
+#[tokio::test]
 async fn sessions_recreate_worktree_returns_branch_missing_for_a_deleted_branch() {
     let dir = temp_registry_dir("recreate-branch-missing");
     let state = make_state(&dir).await;

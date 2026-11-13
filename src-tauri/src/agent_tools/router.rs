@@ -397,7 +397,7 @@ async fn run(agent: &Arc<SessionAgent>, call: &Call) -> Result<Value, ToolError>
 
 /// Session tools Rust answers itself: no renderer round trip and no approval card.
 async fn run_native(
-    agent: &SessionAgent,
+    agent: &Arc<SessionAgent>,
     call_id: &str,
     tool: &str,
     args: &Value,

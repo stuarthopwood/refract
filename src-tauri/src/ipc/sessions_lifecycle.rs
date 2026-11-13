@@ -224,8 +224,29 @@ pub fn sessions_restore(state: AppState, args: Vec<Value>) -> HandlerFuture {
             None => return Err(invalid_argument("sessions.restore expects a string id")),
         };
         delete_in_flight::refuse_if_deleting(&id)?;
-        if state.registry.lock().await.get_session(&id).is_none() {
-            return Err(not_found(format!("Session not found: {id}")));
+        // Held to the patch: a racing agent create must not fill the parent's last slot between
+        // this check and the restore (#1859).
+        let _gate = crate::agent_tools::tree_gate::lock().await;
+        {
+            let registry = state.registry.lock().await;
+            let Some(session) = registry.get_session(&id) else {
+                return Err(not_found(format!("Session not found: {id}")));
+            };
+            let sessions = registry.snapshot().sessions;
+            if let Some(parent) = session.parent_session_id.as_deref() {
+                let full = session.archived_at.is_some()
+                    && crate::store::session_tree::live_children(&sessions, parent).count()
+                        >= crate::store::session_tree::MAX_LIVE_CHILDREN;
+                if full {
+                    return Err(IpcError::new(
+                        "child-limit",
+                        format!(
+                            "The parent Session already has {} live child Sessions",
+                            crate::store::session_tree::MAX_LIVE_CHILDREN
+                        ),
+                    ));
+                }
+            }
         }
         state
             .registry

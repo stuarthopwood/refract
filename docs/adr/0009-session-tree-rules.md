@@ -9,6 +9,7 @@ Rules:
 - **Atomicity.** One process-wide async gate is held from the limit check to the registry insert (create) or patch (update), so two racing calls cannot both pass the check.
 - **Approval scope.** `create_session` raises the approval card unless the caller runs in `yolo`. `update_session` skips the card only when the target and any new parent are both inside the caller's own tree (the caller plus its descendants; un-nesting a Session in the tree counts as inside). Anything else raises the card.
 - **Deletion.** Deleting a parent re-roots its live children; archiving keeps the links.
+- **Project cap.** An agent create fails with `session_limit` when the Project already has 6 live Sessions. It bounds the fan-out of a `yolo` create, which may name any live same-Project parent (accepted yolo reach). `yolo` also skips the card on update. Unarchiving takes the same gate and refuses when the parent would pass 4 live children.
 - **Access.** Root Sessions at every depth register all five Session tools, because a child must be able to report back with `send_session_message`. The `Role::Child` row stays empty.
 
 **Why:** the limits protect the developer's machine and attention from runaway fan-out, so they cannot depend on a model obeying a rule. The own-tree scope lets an agent tidy its own work without a card on every rename, while anything that touches a sibling, a parent or another root still needs the developer.

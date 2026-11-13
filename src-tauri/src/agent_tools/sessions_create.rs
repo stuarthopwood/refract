@@ -2,6 +2,8 @@
 // contract's order, the developer approves unless the caller runs in `yolo`, then the row, the
 // agent and the first turn are made. The core is generic over `Host` so the races are testable.
 
+use std::sync::Arc;
+
 use serde_json::{json, Value};
 
 use super::approval;
@@ -18,12 +20,16 @@ use crate::store::session_tree::validate_parent;
 
 pub const CREATE_SESSION: &str = "refract_create_session";
 pub const START_FAILED: &str = "start_failed";
+pub const SESSION_LIMIT: &str = "session_limit";
+/// Live (unarchived) Sessions one Project may hold before an agent can make another (#1859).
+pub const MAX_LIVE_SESSIONS: usize = 6;
+const PREVIEW_CHARS: usize = 150;
 
 pub fn description() -> &'static str {
     "Create a child Session: its own Worktree and branch, a running agent, and your prompt as its \
 first turn. Rule of thumb: a bounded report is a subagent (OMP `task`, async); the same work in \
 parallel is a background agent; an own-branch, long-lived, user-visible piece of work is a child \
-Session. Depth is at most 3 and a parent has at most 4 live children. The child reports back with \
+Session. Depth is at most 3, a parent has at most 4 live children, and a Project at most 6 live Sessions. The child reports back with \
 refract_send_session_message. `parent_id` defaults to you; null makes a root Session. Unless you run \
 in yolo, the developer approves first."
 }
@@ -43,8 +49,9 @@ pub fn parameters() -> Value {
     })
 }
 
-/// What `create` needs from the running app; a fake stands in for it in tests.
-pub(super) trait Host {
+/// What `create` needs from the running app; a fake stands in for it in tests. The calls the
+/// post-approval task makes are `Send`, because that task is spawned (see `create_with`).
+pub(super) trait Host: Send + Sync + 'static {
     fn caller_id(&self) -> &str;
     fn call_id(&self) -> &str;
     fn registry(&self) -> &SharedRegistry;
@@ -53,34 +60,34 @@ pub(super) trait Host {
     async fn ask(&self, card: PendingRequest) -> Result<(), ToolError>;
     async fn known_roles(&self) -> Result<Vec<String>, ToolError>;
     /// Starts the agent, applies `role`, then sends the first turn.
-    async fn start(
+    fn start(
         &self,
         id: &str,
         role: Option<&str>,
         first_turn: String,
-    ) -> Result<(), ToolError>;
-    async fn status(&self, id: &str) -> String;
+    ) -> impl std::future::Future<Output = Result<(), ToolError>> + Send;
+    fn status(&self, id: &str) -> impl std::future::Future<Output = String> + Send;
 }
 
-enum ParentArg<'a> {
+enum ParentArg {
     Caller,
     Root,
-    Id(&'a str),
+    Id(String),
 }
 
-struct Request<'a> {
-    prompt: &'a str,
-    name: Option<&'a str>,
-    base_branch: Option<&'a str>,
-    role: Option<&'a str>,
-    parent: ParentArg<'a>,
+struct Request {
+    prompt: String,
+    name: Option<String>,
+    base_branch: Option<String>,
+    role: Option<String>,
+    parent: ParentArg,
 }
 
 fn invalid(message: impl Into<String>) -> ToolError {
     ToolError::new(INVALID_INPUT, message)
 }
 
-fn parse(args: &Value) -> Result<Request<'_>, ToolError> {
+fn parse(args: &Value) -> Result<Request, ToolError> {
     panels::validate(&parameters(), args, "arguments").map_err(invalid)?;
     let prompt = args["prompt"].as_str().unwrap_or_default();
     if prompt.trim().is_empty() {
@@ -99,28 +106,28 @@ fn parse(args: &Value) -> Result<Request<'_>, ToolError> {
     let parent = match args.get("parent_id") {
         None => ParentArg::Caller,
         Some(Value::Null) => ParentArg::Root,
-        Some(Value::String(id)) => ParentArg::Id(id),
+        Some(Value::String(id)) => ParentArg::Id(id.clone()),
         Some(_) => return Err(invalid("parent_id must be a string or null")),
     };
     Ok(Request {
-        prompt,
-        name,
-        base_branch: args["base_branch"].as_str(),
-        role: args["role"].as_str(),
+        prompt: prompt.to_string(),
+        name: name.map(str::to_string),
+        base_branch: args["base_branch"].as_str().map(str::to_string),
+        role: args["role"].as_str().map(str::to_string),
         parent,
     })
 }
 
-/// The parent's id, or `None` for a root, after the existence and same-Project checks.
+/// The parent, or `None` for a root, after the existence, archived and same-Project checks.
 fn resolve_parent<'a>(
     sessions: &'a [Session],
     caller: &'a Session,
-    parent: &ParentArg<'a>,
+    parent: &ParentArg,
 ) -> Result<Option<&'a Session>, ToolError> {
     let id = match parent {
         ParentArg::Root => return Ok(None),
         ParentArg::Caller => return Ok(Some(caller)),
-        ParentArg::Id(id) => *id,
+        ParentArg::Id(id) => id.as_str(),
     };
     let found = sessions
         .iter()
@@ -149,29 +156,72 @@ fn caller_gone() -> ToolError {
     )
 }
 
+/// The parent's `(name, id)` after every check that depends on the registry: the parent, the
+/// tree limits and the Project cap. Run before the card and again under the gate, so a change
+/// made while the card was open cannot slip through.
+fn check_tree(
+    sessions: &[Session],
+    caller: &Session,
+    request: &Request,
+) -> Result<Option<(String, String)>, ToolError> {
+    let parent = resolve_parent(sessions, caller, &request.parent)?;
+    if let Some(parent) = parent {
+        validate_parent(sessions, None, &parent.id).map_err(|e| tree_error(&parent.id, e))?;
+    }
+    let live = sessions
+        .iter()
+        .filter(|s| s.repository_id == caller.repository_id && s.archived_at.is_none())
+        .count();
+    if live >= MAX_LIVE_SESSIONS {
+        return Err(ToolError::new(
+            SESSION_LIMIT,
+            format!(
+                "this Project already has {live} live Sessions; the limit is {MAX_LIVE_SESSIONS}"
+            ),
+        ));
+    }
+    Ok(parent.map(|p| (p.name.clone(), p.id.clone())))
+}
+
 async fn sessions_of(host: &impl Host) -> Vec<Session> {
     host.registry().lock().await.snapshot().sessions
+}
+
+/// A name inside the quoted parent line: no line breaks or quotes to break out of it.
+fn plain(name: &str) -> String {
+    name.chars()
+        .filter(|c| *c != '"' && *c != '\'')
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect()
 }
 
 /// The text the child's first turn carries; a root Session gets the bare prompt.
 pub fn first_turn(parent: Option<(&str, &str)>, prompt: &str) -> String {
     match parent {
         Some((name, id)) => format!(
-            "[Parent Session: \"{name}\" (id {id}). When you finish, report back with \
-refract_send_session_message to that id.]\n\n{prompt}"
+            "[Parent Session: \"{}\" (id {id}). When you finish, report back with \
+refract_send_session_message to that id.]\n\n{prompt}",
+            plain(name)
         ),
         None => prompt.to_string(),
     }
 }
 
-async fn create_with(host: &impl Host, args: &Value) -> Result<Value, ToolError> {
+/// What the post-approval task needs, all owned so the task outlives a cancelled call.
+struct Commit {
+    request: Request,
+    repository_id: String,
+    base: String,
+}
+
+async fn create_with<H: Host>(host: &Arc<H>, args: &Value) -> Result<Value, ToolError> {
     let request = parse(args)?;
-    let sessions = sessions_of(host).await;
+    let sessions = sessions_of(&**host).await;
     let caller = sessions
         .iter()
         .find(|s| s.id == host.caller_id())
         .ok_or_else(caller_gone)?;
-    if let Some(role) = request.role {
+    if let Some(role) = &request.role {
         if !host.known_roles().await?.iter().any(|r| r == role) {
             return Err(invalid(format!("{role} is not a known role")));
         }
@@ -185,33 +235,30 @@ async fn create_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
         .ok_or_else(|| ToolError::new(NOT_FOUND, "the caller's Project no longer exists"))?;
     let base = request
         .base_branch
-        .unwrap_or(&repository.default_branch)
-        .to_string();
+        .clone()
+        .unwrap_or_else(|| repository.default_branch.clone());
     let branches = list_branches(std::path::Path::new(&repository.path))
         .await
         .map_err(|e| ToolError::new(e.code.as_str(), e.message))?;
     if !branches.contains(&base) {
         return Err(invalid(format!("branch {base} does not exist")));
     }
-    let parent = resolve_parent(&sessions, caller, &request.parent)?;
-    if let Some(parent) = parent {
-        validate_parent(&sessions, None, &parent.id).map_err(|e| tree_error(&parent.id, e))?;
-    }
-    let parent_ref = parent.map(|p| (p.name.clone(), p.id.clone()));
+    let parent = check_tree(&sessions, caller, &request)?;
 
     if !host.is_yolo().await {
-        let target = parent_ref.as_ref().map_or_else(
+        let target = parent.as_ref().map_or_else(
             || format!("{}: new root Session", repository.name),
             |(name, _)| format!("{}: new child of {name}", repository.name),
         );
         let mut details = vec![format!("Base branch: {base}")];
-        if let Some(name) = request.name {
+        if let Some(name) = &request.name {
             details.push(format!("Name: {name}"));
         }
-        if let Some(role) = request.role {
+        if let Some(role) = &request.role {
             details.push(format!("Role: {role}"));
         }
-        details.push(format!("Prompt: {}", preview(request.prompt)));
+        details.push(START_MODE_LINE.to_string());
+        details.push(preview(&request.prompt));
         host.ask(approval::session_card(
             host.call_id(),
             CREATE_SESSION,
@@ -221,46 +268,49 @@ async fn create_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
         .await?;
     }
 
-    // The limits are checked again under the gate: the caller may have been deleted, or a racing
-    // create may have taken the last slot, while the card was open.
-    let _gate = tree_gate::lock().await;
-    let sessions = sessions_of(host).await;
-    if !sessions.iter().any(|s| s.id == host.caller_id()) {
-        return Err(caller_gone());
-    }
-    let parent_id = parent_ref.as_ref().map(|(_, id)| id.clone());
-    if let Some(id) = &parent_id {
-        if !sessions.iter().any(|s| &s.id == id) {
-            return Err(ToolError::new(NOT_FOUND, format!("no Session has id {id}")));
-        }
-        validate_parent(&sessions, None, id).map_err(|e| tree_error(id, e))?;
-    }
-    let created = create_session_record(host.registry(), &repository.id, &base, parent_id.clone())
+    // Spawned and awaited: a cancelled call (`host_tool_cancel`, shutdown) drops only this wait,
+    // so the Worktree, the row and the start are never left half done.
+    let commit = Commit {
+        request,
+        repository_id: repository.id,
+        base,
+    };
+    tokio::spawn(commit_create(host.clone(), commit))
+        .await
+        .unwrap_or_else(|e| Err(ToolError::new(CANCELLED, format!("create task ended: {e}"))))
+}
+
+/// Gate, re-check, record, rename, start. The checks run again under the gate: the caller or the
+/// parent may have changed, or a racing create may have taken the last slot, while the card was open.
+async fn commit_create<H: Host>(host: Arc<H>, commit: Commit) -> Result<Value, ToolError> {
+    let Commit {
+        request,
+        repository_id,
+        base,
+    } = commit;
+    let gate = tree_gate::lock().await;
+    let sessions = sessions_of(&*host).await;
+    let caller = sessions
+        .iter()
+        .find(|s| s.id == host.caller_id())
+        .ok_or_else(caller_gone)?;
+    let parent = check_tree(&sessions, caller, &request)?;
+    let parent_id = parent.as_ref().map(|(_, id)| id.clone());
+    let created = create_session_record(host.registry(), &repository_id, &base, parent_id.clone())
         .await
         .map_err(|e| match e.code {
             "base-missing" => invalid(e.message),
             "not-found" => ToolError::new(NOT_FOUND, e.message),
             code => ToolError::new(code, e.message),
         })?;
-    drop(_gate);
+    drop(gate);
 
-    let name = match request.name {
-        Some(name) => {
-            let renamed = host
-                .registry()
-                .lock()
-                .await
-                .update_session_name(&created.id, name.to_string())
-                .await;
-            renamed.map_or(created.name.clone(), |s| s.name)
-        }
-        None => created.name.clone(),
-    };
+    let (name, warning) = apply_name(host.registry(), &created, request.name.as_deref()).await;
     let turn = first_turn(
-        parent_ref.as_ref().map(|(n, i)| (n.as_str(), i.as_str())),
-        request.prompt,
+        parent.as_ref().map(|(n, i)| (n.as_str(), i.as_str())),
+        &request.prompt,
     );
-    host.start(&created.id, request.role, turn)
+    host.start(&created.id, request.role.as_deref(), turn)
         .await
         .map_err(|e| {
             ToolError::new(
@@ -280,29 +330,67 @@ async fn create_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
     if let Some(id) = parent_id {
         out["parentId"] = id.into();
     }
+    if let Some(warning) = warning {
+        out["warning"] = warning.into();
+    }
     Ok(out)
 }
 
-fn preview(prompt: &str) -> String {
-    match prompt.char_indices().nth(200) {
-        Some((end, _)) => format!("{}…", &prompt[..end]),
-        None => prompt.to_string(),
+/// The Session's final name, and a warning when the requested one could not be saved: the
+/// Session exists either way, so a failed rename must not fail the call or go unmentioned.
+async fn apply_name(
+    registry: &SharedRegistry,
+    created: &Session,
+    wanted: Option<&str>,
+) -> (String, Option<String>) {
+    let Some(wanted) = wanted else {
+        return (created.name.clone(), None);
+    };
+    match registry
+        .lock()
+        .await
+        .update_session_name(&created.id, wanted.to_string())
+        .await
+    {
+        Ok(renamed) => (renamed.name, None),
+        Err(e) => (
+            created.name.clone(),
+            Some(format!(
+                "could not rename the Session to the requested name ({e:?}); it keeps the generated name {}",
+                created.name
+            )),
+        ),
     }
 }
 
-struct AppHost<'a> {
-    agent: &'a SessionAgent,
-    call_id: &'a str,
-    manager: std::sync::Arc<crate::session::SessionManager>,
+const START_MODE_LINE: &str =
+    "Starts in: the app's current approval mode (not inherited from this Session)";
+
+/// The card's prompt line: the first characters, the total length, and "(truncated)" when cut.
+fn preview(prompt: &str) -> String {
+    let total = prompt.chars().count();
+    match prompt.char_indices().nth(PREVIEW_CHARS) {
+        Some((end, _)) => format!(
+            "Prompt ({total} characters, truncated): {}…",
+            &prompt[..end]
+        ),
+        None => format!("Prompt ({total} characters): {prompt}"),
+    }
+}
+
+struct AppHost {
+    agent: Arc<SessionAgent>,
+    call_id: String,
+    manager: Arc<crate::session::SessionManager>,
     registry: SharedRegistry,
 }
 
-impl Host for AppHost<'_> {
+impl Host for AppHost {
     fn caller_id(&self) -> &str {
         self.agent.tool_session_id()
     }
     fn call_id(&self) -> &str {
-        self.call_id
+        &self.call_id
     }
     fn registry(&self) -> &SharedRegistry {
         &self.registry
@@ -314,7 +402,7 @@ impl Host for AppHost<'_> {
         let rx = self
             .agent
             .tool_router()
-            .wait_for(&approval::request_id(self.call_id));
+            .wait_for(&approval::request_id(&self.call_id));
         self.agent.tool_raise_approval(card).await;
         approval_outcome(rx.await.ok())
     }
@@ -351,7 +439,11 @@ impl Host for AppHost<'_> {
     }
 }
 
-pub async fn create(agent: &SessionAgent, call_id: &str, args: &Value) -> Result<Value, ToolError> {
+pub async fn create(
+    agent: &Arc<SessionAgent>,
+    call_id: &str,
+    args: &Value,
+) -> Result<Value, ToolError> {
     let manager = agent.tool_manager().ok_or_else(|| {
         ToolError::new(
             CANCELLED,
@@ -359,12 +451,12 @@ pub async fn create(agent: &SessionAgent, call_id: &str, args: &Value) -> Result
         )
     })?;
     let registry = agent.tool_registry().clone();
-    let host = AppHost {
-        agent,
-        call_id,
+    let host = Arc::new(AppHost {
+        agent: agent.clone(),
+        call_id: call_id.to_string(),
         manager,
         registry,
-    };
+    });
     create_with(&host, args).await
 }
 

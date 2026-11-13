@@ -51,6 +51,9 @@ Two **Host tools** join the #1193 **Tool channel**: `create_session` makes a **C
 28. **Where the rule-of-thumb block lives.** Appended to the existing `refract-rules.md` (already passed with `--append-system-prompt` on every launch) rather than a second file; the shipped-rules size test bound is raised in the same task. The block is at most 900 characters.
 29. **Contract 129 is extended, not replaced:** `list_sessions` rows and `get_session_status` add `parentId` when set (FR-016).
 30. **New error codes:** `depth_limit`, `child_limit`, `invalid_parent`, `start_failed`; denial reuses spec 124's approval-denied error.
+31. **Project cap (Stuart, #1859 comment 6856365777).** `create_session` fails with `session_limit` when the Project already has 6 live (unarchived) Sessions, checked before the card and again under the gate. A `yolo` create may name any live same-Project parent; the cap bounds that reach.
+32. **Yolo and update.** A caller in `yolo` never gets a card from `update_session`; the own-tree rule applies only to other modes (amends decision 3 and FR-010).
+33. **Rename failure.** A rename that fails after creation returns the Session with a `warning` string; `name` stays the generated name.
 
 ## Clarifications
 
@@ -159,7 +162,8 @@ An agent calls `create_session` with a prompt and gets back a new Session id. Th
 - **FR-007**: The child's first turn MUST name its parent (id and name) and instruct it to report back with `send_session_message`, then carry the prompt; the working-mode prompt decoration MUST NOT be applied to it.
 - **FR-008**: `update_session` MUST accept `id` plus optional `name`, `role`, `parent_id` (absent = unchanged, `null` = un-nest, string = nest) and return the updated `{id, name, parentId}`.
 - **FR-009**: Re-parenting MUST be refused with `invalid_parent` when the new parent is the Session itself or a descendant, and with `depth_limit` when any descendant would end deeper than 3, and with `child_limit` when the new parent has 4 live children.
-- **FR-010**: Changes inside the caller's own tree (the caller plus its descendants, for both the target and a new parent) MUST run without the card; any other change MUST raise it. `create_session` always follows FR-003.
+- **FR-010**: Changes inside the caller's own tree (the caller plus its descendants, for both the target and a new parent) MUST run without the card; any other change MUST raise it, except that a caller in `yolo` never gets a card from `update_session`. `create_session` always follows FR-003.
+- **FR-019**: `create_session` MUST fail with `session_limit` when the Project already has 6 live (unarchived) Sessions, checked before the card and again under the tree gate (Stuart, #1859 comment 6856365777).
 - **FR-011**: Deleting a Session MUST set `parent_session_id` to null on its live children; archiving MUST keep links.
 - **FR-012**: `registry::Session` MUST gain `parent_session_id: Option<String>` with `#[serde(default, skip_serializing_if = "Option::is_none")]`, and `SessionPatch` a tri-state `parent_session_id`; a registry written before this change MUST load with no parents.
 - **FR-013**: A role MUST be validated against the known roles (`invalid_input` when unknown); an omitted role MUST leave the Project default; a child MUST NOT inherit the caller's role.

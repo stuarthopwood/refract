@@ -8,7 +8,7 @@ Args: `{ prompt: string, name?: string, base_branch?: string, role?: string, par
 `parent_id`: absent = the caller, `null` = a root Session, string = that Session (same Project, not archived).
 Result: `{ id, name, branch, parentId?: string, status }`.
 Approval: the existing card unless the caller's approval mode is `yolo`.
-Errors, in check order: `invalid_input` (empty or > 32 KB prompt, unknown role, unknown branch, archived parent, parent in another Project), `not_found` (unknown `parent_id`), `depth_limit` (parent at depth 3), `child_limit` (parent has 4 live children), approval denied, then creation; `start_failed` (the Session exists; message names its id).
+Errors, in check order: `invalid_input` (empty or > 32 KB prompt, unknown role, unknown branch, archived parent, parent in another Project), `not_found` (unknown `parent_id`), `depth_limit` (parent at depth 3), `child_limit` (parent has 4 live children), `session_limit` (the Project already has 6 live, unarchived Sessions), approval denied, then creation; `start_failed` (the Session exists; message names its id). The parent (still unarchived, same Project), `child_limit` and `session_limit` are checked again under the tree gate after the card. A rename that fails after creation does not fail the call: the result carries a `warning` string and `name` stays the generated name. In `yolo`, `refract_update_session` never raises a card; `refract_create_session` in `yolo` may name any live same-Project parent. The post-approval section runs to the end even if the caller cancels the call. The card clips each line to 200 characters, replaces line breaks, and shows the prompt's total length, "(truncated)" when cut, and the child's start mode.
 
 ## refract_update_session
 
