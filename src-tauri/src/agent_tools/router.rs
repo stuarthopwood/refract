@@ -227,7 +227,7 @@ fn parse_call(frame: &Value) -> Option<Call> {
     })
 }
 
-enum Reply {
+pub(super) enum Reply {
     Renderer(Result<Value, ToolError>),
     Approval(Decision),
 }
@@ -265,7 +265,7 @@ impl ToolRouter {
         self.lock().waits.remove(key);
     }
 
-    fn wait_for(&self, key: &str) -> oneshot::Receiver<Reply> {
+    pub(super) fn wait_for(&self, key: &str) -> oneshot::Receiver<Reply> {
         let (tx, rx) = oneshot::channel();
         self.lock().waits.insert(key.to_string(), tx);
         rx
@@ -426,7 +426,7 @@ async fn ask_developer(
     approval_outcome(rx.await.ok())
 }
 
-fn approval_outcome(reply: Option<Reply>) -> Result<(), ToolError> {
+pub(super) fn approval_outcome(reply: Option<Reply>) -> Result<(), ToolError> {
     match reply {
         Some(Reply::Approval(Decision::Approved)) => Ok(()),
         Some(Reply::Approval(Decision::Denied)) => {

@@ -9,6 +9,8 @@ pub mod router;
 pub mod sessions;
 mod sessions_limit;
 pub mod sessions_send;
+#[allow(dead_code)]
+pub mod tree_gate;
 
 use serde_json::{json, Value};
 
