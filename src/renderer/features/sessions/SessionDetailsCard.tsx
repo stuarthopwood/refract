@@ -7,7 +7,7 @@ import { IconButton } from '@/components/IconButton'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { useSessionsStore } from '@/state'
-import { formatModelLabel, formatThinkingLevelLabel } from '@/lib/modelDisplay'
+import { formatModelLabel, formatThinkingLevelLabel, MODEL_NOT_KNOWN } from '@/lib/modelDisplay'
 import { friendlyProviderLabel } from '@/lib/providerLabels'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
@@ -140,7 +140,7 @@ export function SessionDetailsCard({
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="flex min-w-0 items-center gap-2 truncate">
                   <CpuIcon aria-hidden className="size-4 shrink-0" />
-                  <span className="truncate">{formatModelLabel(session) ?? 'Model not known yet'}</span>
+                  <span className="truncate">{formatModelLabel(session) ?? MODEL_NOT_KNOWN}</span>
                 </span>
                 {formatThinkingLevelLabel(session) && (
                   <span className="flex shrink-0 items-center gap-2">

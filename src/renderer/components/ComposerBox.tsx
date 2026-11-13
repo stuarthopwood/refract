@@ -77,10 +77,10 @@ export function ComposerActions({ children }: { children: ReactNode }) {
   return <div className="absolute right-2 top-1/2 z-[3] flex -translate-y-1/2 items-center gap-2">{children}</div>
 }
 
-/** The bottom row inside the box. `@container` lets the pickers hide their text when narrow. */
+/** The bottom row inside the box. */
 export function ComposerFooter({ children, className }: { children: ReactNode; className?: string }) {
   return (
-    <div data-composer-row className={cn('@container flex flex-wrap items-center gap-2 px-2 pb-2', className)}>
+    <div data-composer-row className={cn('flex flex-wrap items-center gap-2 px-2 pb-2', className)}>
       {children}
     </div>
   )

@@ -304,6 +304,7 @@ async fn check_omp_signed_in() -> Check {
         no_session: true,
         plan_mode: None,
         extra_config: None,
+        stacked_prs: false,
         ready_prompt_after_ms: PROBE_READY_PROMPT_AFTER_MS,
         ready_ceiling_ms: PROBE_READY_CEILING_MS,
     };

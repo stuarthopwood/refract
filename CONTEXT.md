@@ -24,6 +24,14 @@ _Avoid_: Task, thread, chat (for the whole unit)
 A **Session** created by another Session's agent (#1304), linked to that parent Session and nested under it in the session list. It has its own **Worktree** and branch and is otherwise a full Session the developer can open, message, stop and archive. Nesting goes to depth 3 (a developer-created Session is depth 1, its child depth 2, a grandchild depth 3), and a parent has at most 4 live children; a Session at depth 3 cannot create a child. Rust enforces both limits (#1859). Not a **Subagent**, which runs inside its parent's Worktree through OMP's `task` tool and is not a Session.
 _Avoid_: Sub-session, nested session, spawned session
 
+**Own tree**:
+A calling agent's **Session** plus its descendant **Child Sessions** (ADR 0009). An agent's changes to Sessions inside its own tree run without the approval card; changes to siblings, parents and other roots raise it.
+_Avoid_: Subtree, family
+
+**Live child**:
+A **Child Session** that is not archived. Stopped and hidden children are live and count toward a parent's limit of 4.
+_Avoid_: Active child
+
 **Tool channel**:
 How Refract gives an agent its own tools (#1193, ADR 0007): each launch registers **Host tools** with OMP over the RPC stream, Refract routes each call to the renderer and back, and a failure returns to the agent as a tool error, never a toast. The tools a launch registers depend on the **Session**'s role and depth.
 _Avoid_: MCP server (the reserved fallback, not built), plugin, bridge
@@ -132,8 +140,8 @@ The subagents started by one `task()` call, or by `task()` calls issued together
 _Avoid_: Batch (in UI text), gate, phase (a phase is a **Todo phase**)
 
 **Todo task**:
-One item in a **Todo phase** of the agent's own todo list (OMP `todoPhases`), shown in the Todo panel and the Todo **Readout** (issue #1432). In user-facing text "task" means only this; delegated work is a subagent, a **Stage** or a Delegate. The model role id `task` and the `task()` tool name are protocol identifiers and stay.
-_Avoid_: Task for a subagent, Stage, step
+One item in a **Todo phase** of the agent's own todo list (OMP `todoPhases`), shown in the Todo panel and the Todo **Readout** (issue #1432). In user-facing text "task" means only this; delegated work is a subagent, a **Stage** or a Delegate. The one exception is the model role label "Task" in Settings, the model picker and the composer chip (#1879), which names OMP's `task` role that runs **Subagents**; its description says so. The model role id `task` and the `task()` tool name are protocol identifiers and stay.
+_Avoid_: Task for a subagent, Stage, step (outside that role label)
 
 **Todo phase**:
 A named group of **Todo tasks** in the agent's own todo list (OMP `todoPhases`). Pending todo phases are what **Up next** lists; a todo phase is planned work, never a **Stage**.
@@ -206,6 +214,10 @@ _Avoid_: Easter eggs, seasonal theme, festive mode
 **Pull requests view**:
 The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Project**'s **GitHub repository** and its pull requests, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
 _Avoid_: PR view, merge requests (GitLab's term)
+
+**Stacked pull request** (#1867):
+A pull request that is one layer of a chain of pull requests, each based on the branch of the one below, managed with the GitHub CLI's `gh stack` extension. The **Pull requests view** shows its position ("Stack 2 of 3") and lists the other layers, and Merge on it merges the layers up to and including it together. Turned on or off by the Settings > Sessions "Use stacked pull requests" switch (default on); with it off, or `gh stack` missing, every pull request is plain.
+_Avoid_: PR chain, dependent PR
 
 **Issues view**:
 The left-nav entry and the list-plus-detail view it opens, listing GitHub issues from every **Project** that has a **GitHub repository**, on the same list shell as the **Pull requests view**.

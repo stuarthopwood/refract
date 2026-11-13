@@ -1,0 +1,1 @@
+329f82a61f6b34a52bdca21335244b7ebba15fa1a72cc8bc5d2916037716f6d9  refract-tauri.exe (private copy made by buildAndCopyExeFresh in verify-tauri-1867.mjs at head 819ec3025d37c97e862a808be979677893b29783; 21/21 checks passed)
