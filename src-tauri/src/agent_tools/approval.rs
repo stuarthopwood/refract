@@ -67,10 +67,20 @@ pub fn session_card(
     }
 }
 
-/// One card line: line breaks and other control characters become spaces, then it is capped.
+/// Bidi overrides and zero-width characters: invisible, so a name could reorder or hide card text.
+pub fn is_invisible_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}' | '\u{FEFF}'
+    )
+}
+
+/// One card line: invisible format characters are dropped, line breaks and other control
+/// characters become spaces, then it is capped.
 pub fn clip_line(text: &str) -> String {
     let flat: String = text
         .chars()
+        .filter(|c| !is_invisible_format(*c))
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect();
     match flat.char_indices().nth(MAX_ARGS_CHARS) {
@@ -183,5 +193,18 @@ mod tests {
             assert_eq!(line.chars().count(), MAX_ARGS_CHARS + 1);
             assert!(line.starts_with("a b"));
         }
+    }
+
+    #[test]
+    fn session_card_lines_lose_bidi_and_zero_width_characters() {
+        let hidden = "a\u{202A}b\u{202E}c\u{2066}d\u{2069}e\u{200B}f\u{200F}g\u{FEFF}h";
+        let PendingRequest::Approval {
+            target, details, ..
+        } = session_card("c4", "t", hidden.into(), vec![hidden.into()])
+        else {
+            panic!("expected an approval card");
+        };
+        assert_eq!(target, "abcdefgh");
+        assert_eq!(details[0], "abcdefgh");
     }
 }

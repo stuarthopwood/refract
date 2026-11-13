@@ -1,6 +1,10 @@
-// `refract_update_session` (#1859): rename a Session, change its role, or move it in the tree. No
-// card inside the caller's own tree; elsewhere the developer approves unless the caller is in
-// `yolo`. The core is generic over `Host` so denial and the races are testable.
+// `refract_update_session` (#1859): rename a Session, change its role, or move it in the tree. The
+// target must be in the caller's Project. No card inside the caller's own tree; elsewhere in the
+// Project the developer approves unless the caller is in `yolo`. The core is generic over `Host`
+// so denial and the races are testable.
+
+use std::future::Future;
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 
@@ -19,10 +23,11 @@ use crate::store::session_tree::{validate_parent, TreeError};
 pub const UPDATE_SESSION: &str = "refract_update_session";
 
 pub fn description() -> &'static str {
-    "Rename a Session, change its model role, or move it in the Session tree. `parent_id` nests \
-under that Session; null makes it a root; omit it to leave the position alone. Depth is at most 3 \
-and a parent has at most 4 live children. Inside your own tree (you and your descendants) this \
-needs no approval; elsewhere the developer approves first unless you run in yolo."
+    "Rename a Session, change its model role, or move it in the Session tree. The Session must be \
+in your Project. `parent_id` nests under that Session; null makes it a root; omit it to leave the \
+position alone. Depth is at most 3 and a parent has at most 4 live children. Inside your own tree \
+(you and your descendants) this needs no approval; elsewhere in the Project the developer approves \
+first unless you run in yolo."
 }
 
 pub fn parameters() -> Value {
@@ -39,38 +44,40 @@ pub fn parameters() -> Value {
     })
 }
 
-/// What `update` needs from the running app; a fake stands in for it in tests.
-pub(super) trait Host {
+/// What `update` needs from the running app; a fake stands in for it in tests. The calls the
+/// post-approval task makes are `Send`, because that task is spawned (see `update_with`).
+pub(super) trait Host: Send + Sync + 'static {
     fn caller_id(&self) -> &str;
     fn call_id(&self) -> &str;
     fn registry(&self) -> &SharedRegistry;
-    async fn is_yolo(&self) -> bool;
+    fn is_yolo(&self) -> impl Future<Output = bool> + Send;
     /// Raises the card and waits: `Ok` only when the developer approved.
     async fn ask(&self, card: PendingRequest) -> Result<(), ToolError>;
     async fn known_roles(&self) -> Result<Vec<String>, ToolError>;
     /// The tool-vocabulary status; `stopped` when there is no live agent.
-    async fn status(&self, id: &str) -> String;
-    async fn set_role(&self, id: &str, role: &str) -> Result<(), ToolError>;
+    fn status(&self, id: &str) -> impl Future<Output = String> + Send;
+    fn set_role(&self, id: &str, role: &str) -> impl Future<Output = Result<(), ToolError>> + Send;
 }
 
-enum ParentArg<'a> {
+enum ParentArg {
     Unchanged,
     Root,
-    Id(&'a str),
+    Id(String),
 }
 
-struct Request<'a> {
-    id: &'a str,
-    name: Option<&'a str>,
-    role: Option<&'a str>,
-    parent: ParentArg<'a>,
+/// Owned, so the post-approval task can outlive the call that built it.
+struct Request {
+    id: String,
+    name: Option<String>,
+    role: Option<String>,
+    parent: ParentArg,
 }
 
 fn invalid(message: impl Into<String>) -> ToolError {
     ToolError::new(INVALID_INPUT, message)
 }
 
-fn parse(args: &Value) -> Result<Request<'_>, ToolError> {
+fn parse(args: &Value) -> Result<Request, ToolError> {
     panels::validate(&parameters(), args, "arguments").map_err(invalid)?;
     let name = args["name"].as_str();
     if name.is_some_and(|n| n.trim().is_empty()) {
@@ -79,7 +86,7 @@ fn parse(args: &Value) -> Result<Request<'_>, ToolError> {
     let parent = match args.get("parent_id") {
         None => ParentArg::Unchanged,
         Some(Value::Null) => ParentArg::Root,
-        Some(Value::String(id)) => ParentArg::Id(id),
+        Some(Value::String(id)) => ParentArg::Id(id.clone()),
         Some(_) => return Err(invalid("parent_id must be a string or null")),
     };
     let role = args["role"].as_str();
@@ -87,9 +94,9 @@ fn parse(args: &Value) -> Result<Request<'_>, ToolError> {
         return Err(invalid("nothing to change: give name, role or parent_id"));
     }
     Ok(Request {
-        id: args["id"].as_str().unwrap_or_default(),
-        name,
-        role,
+        id: args["id"].as_str().unwrap_or_default().to_string(),
+        name: name.map(str::to_string),
+        role: role.map(str::to_string),
         parent,
     })
 }
@@ -126,16 +133,27 @@ async fn sessions_of(host: &impl Host) -> Vec<Session> {
     host.registry().lock().await.snapshot().sessions
 }
 
-/// Everything that can refuse the call on the tree: existence, Project, then the tree rules.
-fn check_tree(sessions: &[Session], request: &Request<'_>) -> Result<(), ToolError> {
+/// Everything that can refuse the call on the tree: the caller, the target, the Project, then
+/// the tree rules.
+fn check_tree(sessions: &[Session], caller_id: &str, request: &Request) -> Result<(), ToolError> {
+    let caller = sessions
+        .iter()
+        .find(|s| s.id == caller_id)
+        .ok_or_else(caller_gone)?;
     let target = sessions
         .iter()
         .find(|s| s.id == request.id)
-        .ok_or_else(|| not_found(request.id))?;
-    if let ParentArg::Id(parent_id) = request.parent {
+        .ok_or_else(|| not_found(&request.id))?;
+    if target.repository_id != caller.repository_id {
+        return Err(invalid(format!(
+            "Session {} is in another Project; you can only update Sessions in your own",
+            request.id
+        )));
+    }
+    if let ParentArg::Id(parent_id) = &request.parent {
         let parent = sessions
             .iter()
-            .find(|s| s.id == parent_id)
+            .find(|s| s.id == *parent_id)
             .ok_or_else(|| not_found(parent_id))?;
         if parent.archived_at.is_some() {
             return Err(invalid(format!("Session {parent_id} is archived")));
@@ -145,40 +163,36 @@ fn check_tree(sessions: &[Session], request: &Request<'_>) -> Result<(), ToolErr
                 "Session {parent_id} is in another Project"
             )));
         }
-        validate_parent(sessions, Some(request.id), parent_id)
+        validate_parent(sessions, Some(&request.id), parent_id)
             .map_err(|e| tree_error(parent_id, e))?;
     }
     Ok(())
 }
 
-async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError> {
+async fn update_with<H: Host>(host: &Arc<H>, args: &Value) -> Result<Value, ToolError> {
     let request = parse(args)?;
-    if let Some(role) = request.role {
+    if let Some(role) = &request.role {
         if !host.known_roles().await?.iter().any(|r| r == role) {
             return Err(invalid(format!("{role} is not a known role")));
         }
     }
-    let sessions = sessions_of(host).await;
-    if !sessions.iter().any(|s| s.id == host.caller_id()) {
-        return Err(caller_gone());
-    }
-    check_tree(&sessions, &request)?;
+    let sessions = sessions_of(&**host).await;
+    check_tree(&sessions, host.caller_id(), &request)?;
 
-    let inside = inside_own_tree(&sessions, host, &request);
     let mut asked = false;
-    if !inside && !host.is_yolo().await {
+    if !inside_own_tree(&sessions, &**host, &request) && !host.is_yolo().await {
         let target = sessions
             .iter()
             .find(|s| s.id == request.id)
             .map_or("", |s| s.name.as_str());
         let mut details = Vec::new();
-        if let Some(name) = request.name {
+        if let Some(name) = &request.name {
             details.push(format!("Rename to: {name}"));
         }
-        if let Some(role) = request.role {
+        if let Some(role) = &request.role {
             details.push(format!("Role: {role}"));
         }
-        match request.parent {
+        match &request.parent {
             ParentArg::Id(id) => details.push(format!("Nest under: {id}")),
             ParentArg::Root => details.push("Make a root Session".to_string()),
             ParentArg::Unchanged => {}
@@ -193,8 +207,29 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
         asked = true;
     }
 
+    let repository_id = sessions
+        .iter()
+        .find(|s| s.id == request.id)
+        .map(|s| s.repository_id.clone())
+        .ok_or_else(|| not_found(&request.id))?;
+    // Spawned and awaited: a cancelled call (`host_tool_cancel`, shutdown) drops only this wait,
+    // so the role, the parent and the name are never left half written.
+    tokio::spawn(commit_update(host.clone(), request, repository_id, asked))
+        .await
+        .unwrap_or_else(|e| Err(ToolError::new(CANCELLED, format!("update task ended: {e}"))))
+}
+
+/// The writes after approval. The tree is checked again under the gate: a racing call or a
+/// delete may have changed it while the card was open. The role goes first, so a role failure
+/// leaves nothing written.
+async fn commit_update<H: Host>(
+    host: Arc<H>,
+    request: Request,
+    repository_id: String,
+    asked: bool,
+) -> Result<Value, ToolError> {
     if request.role.is_some() {
-        let status = host.status(request.id).await;
+        let status = host.status(&request.id).await;
         if status == "stopped" {
             return Err(ToolError::new(
                 SESSION_NOT_RUNNING,
@@ -203,42 +238,32 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
         }
     }
 
-    // The tree is checked again under the gate: a racing call or a delete may have changed it
-    // while the card was open. The role goes first, so a role failure leaves nothing written.
-    let target_repository = sessions
-        .iter()
-        .find(|s| s.id == request.id)
-        .map(|s| s.repository_id.clone())
-        .ok_or_else(|| not_found(request.id))?;
     {
-        let _gate = tree_gate::lock(&target_repository).await;
-        let sessions = sessions_of(host).await;
-        if !sessions.iter().any(|s| s.id == host.caller_id()) {
-            return Err(caller_gone());
-        }
-        check_tree(&sessions, &request)?;
+        let _gate = tree_gate::lock(&repository_id).await;
+        let sessions = sessions_of(&*host).await;
+        check_tree(&sessions, host.caller_id(), &request)?;
         // No card was shown because the target was inside the own tree; if it no longer is,
         // the developer never saw this change, so it is refused rather than applied.
-        if !asked && !inside_own_tree(&sessions, host, &request) && !host.is_yolo().await {
+        if !asked && !inside_own_tree(&sessions, &*host, &request) && !host.is_yolo().await {
             return Err(ToolError::new(
                 CANCELLED,
                 "the Session moved out of your own tree while the update ran; nothing was changed, call again to be asked",
             ));
         }
-        if let Some(role) = request.role {
-            host.set_role(request.id, role).await?;
+        if let Some(role) = &request.role {
+            host.set_role(&request.id, role).await?;
         }
-        let parent_patch = match request.parent {
+        let parent_patch = match &request.parent {
             ParentArg::Unchanged => None,
             ParentArg::Root => Some(None),
-            ParentArg::Id(id) => Some(Some(id.to_string())),
+            ParentArg::Id(id) => Some(Some(id.clone())),
         };
         if parent_patch.is_some() {
             host.registry()
                 .lock()
                 .await
                 .update_session(
-                    request.id,
+                    &request.id,
                     SessionPatch {
                         parent_session_id: parent_patch,
                         ..Default::default()
@@ -248,20 +273,20 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
                 .map_err(store_error)?;
         }
     }
-    if let Some(name) = request.name {
+    if let Some(name) = &request.name {
         host.registry()
             .lock()
             .await
-            .update_session_name(request.id, name.to_string())
+            .update_session_name(&request.id, name.clone())
             .await
             .map_err(store_error)?;
     }
 
-    let updated = sessions_of(host)
+    let updated = sessions_of(&*host)
         .await
         .into_iter()
         .find(|s| s.id == request.id)
-        .ok_or_else(|| not_found(request.id))?;
+        .ok_or_else(|| not_found(&request.id))?;
     let mut out = json!({ "id": updated.id, "name": updated.name });
     if let Some(parent) = updated.parent_session_id {
         out["parentId"] = parent.into();
@@ -269,27 +294,27 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
     Ok(out)
 }
 
-fn inside_own_tree(sessions: &[Session], host: &impl Host, request: &Request<'_>) -> bool {
-    let new_parent = match request.parent {
-        ParentArg::Id(id) => Some(id),
+fn inside_own_tree(sessions: &[Session], host: &impl Host, request: &Request) -> bool {
+    let new_parent = match &request.parent {
+        ParentArg::Id(id) => Some(id.as_str()),
         ParentArg::Root | ParentArg::Unchanged => None,
     };
-    tree_gate::inside_own_tree(sessions, host.caller_id(), request.id, new_parent)
+    tree_gate::inside_own_tree(sessions, host.caller_id(), &request.id, new_parent)
 }
 
-struct AppHost<'a> {
-    agent: &'a SessionAgent,
-    call_id: &'a str,
-    manager: std::sync::Arc<crate::session::SessionManager>,
+struct AppHost {
+    agent: Arc<SessionAgent>,
+    call_id: String,
+    manager: Arc<crate::session::SessionManager>,
     registry: SharedRegistry,
 }
 
-impl Host for AppHost<'_> {
+impl Host for AppHost {
     fn caller_id(&self) -> &str {
         self.agent.tool_session_id()
     }
     fn call_id(&self) -> &str {
-        self.call_id
+        &self.call_id
     }
     fn registry(&self) -> &SharedRegistry {
         &self.registry
@@ -301,7 +326,7 @@ impl Host for AppHost<'_> {
         let rx = self
             .agent
             .tool_router()
-            .wait_for(&approval::request_id(self.call_id));
+            .wait_for(&approval::request_id(&self.call_id));
         self.agent.tool_raise_approval(card).await;
         approval_outcome(rx.await.ok())
     }
@@ -328,15 +353,19 @@ impl Host for AppHost<'_> {
     }
 }
 
-pub async fn update(agent: &SessionAgent, call_id: &str, args: &Value) -> Result<Value, ToolError> {
+pub async fn update(
+    agent: &Arc<SessionAgent>,
+    call_id: &str,
+    args: &Value,
+) -> Result<Value, ToolError> {
     let manager = agent.tool_manager().ok_or_else(manager_gone)?;
     let registry = agent.tool_registry().clone();
-    let host = AppHost {
-        agent,
-        call_id,
+    let host = Arc::new(AppHost {
+        agent: agent.clone(),
+        call_id: call_id.to_string(),
         manager,
         registry,
-    };
+    });
     update_with(&host, args).await
 }
 

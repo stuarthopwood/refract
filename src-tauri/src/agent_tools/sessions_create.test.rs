@@ -492,6 +492,33 @@ async fn a_parent_archived_while_the_card_is_open_is_invalid_input_and_creates_n
 }
 
 #[tokio::test]
+async fn an_archived_caller_cannot_be_the_default_parent_but_may_make_a_root() {
+    let mut caller = row("me", "repo", None);
+    caller.archived_at = Some("2026-01-02T00:00:00.000Z".into());
+    let mut h = host(vec![caller]).await;
+    h.yolo = false;
+    let h = Arc::new(h);
+    let result = create_with(&h, &json!({ "prompt": "p" })).await;
+    assert_eq!(code(result), INVALID_INPUT);
+    assert_eq!(h.asks.load(Ordering::SeqCst), 0);
+    assert_eq!(session_count(&h).await, 1);
+    let root = create_with(&h, &json!({ "prompt": "p", "parent_id": null })).await;
+    assert!(root.is_ok());
+}
+
+#[tokio::test]
+async fn a_caller_archived_while_the_card_is_open_is_invalid_input_and_creates_nothing() {
+    let mut h = host(me()).await;
+    h.yolo = false;
+    h.archive_on_ask = Some("me".into());
+    let h = Arc::new(h);
+    let result = create_with(&h, &json!({ "prompt": "p" })).await;
+    assert_eq!(code(result), INVALID_INPUT);
+    assert_eq!(session_count(&h).await, 1);
+    assert!(h.started.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn a_padded_multiline_name_cannot_push_the_card_text_off_the_card() {
     let mut h = host(me()).await;
     h.yolo = false;
@@ -525,6 +552,15 @@ fn the_parent_name_in_the_first_turn_loses_newlines_and_quotes() {
     let turn = first_turn(Some(("x\"]\ninjected 'y'", "p1")), "go");
     assert!(
         turn.starts_with("[Parent Session: \"x] injected y\" (id p1)."),
+        "{turn}"
+    );
+}
+
+#[test]
+fn the_parent_name_in_the_first_turn_loses_bidi_and_zero_width_characters() {
+    let turn = first_turn(Some(("a\u{202E}b\u{200B}c\u{2066}d\u{FEFF}e", "p1")), "go");
+    assert!(
+        turn.starts_with("[Parent Session: \"abcde\" (id p1)."),
         "{turn}"
     );
 }

@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use tokio::sync::Mutex as AsyncMutex;
+use tokio::sync::{Mutex as AsyncMutex, Notify};
 
 use super::*;
 use crate::git::test_support::init_repo;
@@ -18,6 +18,10 @@ struct FakeHost {
     role_fails: bool,
     /// Run once when the role path asks for the status: a change made while the call is mid-way.
     on_status: Mutex<Option<(String, Option<String>)>>,
+    /// `set_role` signals `role_entered`, then waits for `role_release`.
+    block_role: bool,
+    role_entered: Notify,
+    role_release: Notify,
 }
 
 impl Host for FakeHost {
@@ -63,6 +67,10 @@ impl Host for FakeHost {
         if self.stopped { "stopped" } else { "idle" }.into()
     }
     async fn set_role(&self, id: &str, role: &str) -> Result<(), ToolError> {
+        if self.block_role {
+            self.role_entered.notify_one();
+            self.role_release.notified().await;
+        }
         if self.role_fails {
             return Err(ToolError::new("role_failed", "the role could not be set"));
         }
@@ -133,6 +141,9 @@ async fn host(rows: Vec<Session>) -> FakeHost {
         roles_set: Mutex::new(Vec::new()),
         role_fails: false,
         on_status: Mutex::new(None),
+        block_role: false,
+        role_entered: Notify::new(),
+        role_release: Notify::new(),
     }
 }
 
@@ -140,13 +151,13 @@ fn code(result: Result<Value, ToolError>) -> String {
     result.expect_err("expected a tool error").code
 }
 
-async fn parent_of(host: &FakeHost, id: &str) -> Option<String> {
+async fn session_named(host: &FakeHost, id: &str) -> Session {
     let sessions = host.registry.lock().await.snapshot().sessions;
-    sessions
-        .into_iter()
-        .find(|s| s.id == id)
-        .unwrap()
-        .parent_session_id
+    sessions.into_iter().find(|s| s.id == id).unwrap()
+}
+
+async fn parent_of(host: &FakeHost, id: &str) -> Option<String> {
+    session_named(host, id).await.parent_session_id
 }
 
 /// me -> kid, plus an unrelated root `other` and a sibling root `peer`.
@@ -161,7 +172,7 @@ fn tree() -> Vec<Session> {
 
 #[tokio::test]
 async fn nothing_to_change_an_empty_name_and_an_unknown_role_are_invalid_input() {
-    let h = host(tree()).await;
+    let h = Arc::new(host(tree()).await);
     for args in [
         json!({ "id": "kid" }),
         json!({ "id": "kid", "name": "  " }),
@@ -175,7 +186,7 @@ async fn nothing_to_change_an_empty_name_and_an_unknown_role_are_invalid_input()
 
 #[tokio::test]
 async fn a_target_or_parent_that_does_not_exist_is_not_found() {
-    let h = host(tree()).await;
+    let h = Arc::new(host(tree()).await);
     let gone = update_with(&h, &json!({ "id": "ghost", "name": "x" })).await;
     assert_eq!(code(gone), NOT_FOUND);
     let no_parent = update_with(&h, &json!({ "id": "kid", "parent_id": "ghost" })).await;
@@ -189,7 +200,7 @@ async fn an_archived_or_other_project_parent_is_invalid_input() {
     archived.archived_at = Some("2026-01-02T00:00:00.000Z".into());
     rows.push(archived);
     rows.push(row("foreign", "elsewhere", None));
-    let h = host(rows).await;
+    let h = Arc::new(host(rows).await);
     for parent in ["old", "foreign"] {
         let result = update_with(&h, &json!({ "id": "kid", "parent_id": parent })).await;
         assert_eq!(code(result), INVALID_INPUT, "{parent}");
@@ -197,10 +208,37 @@ async fn an_archived_or_other_project_parent_is_invalid_input() {
 }
 
 #[tokio::test]
+async fn a_target_in_another_project_is_invalid_input_in_every_mode_before_any_card() {
+    for yolo in [false, true] {
+        let mut rows = tree();
+        rows.push(row("foreign", "elsewhere", None));
+        let mut h = host(rows).await;
+        h.yolo = yolo;
+        let h = Arc::new(h);
+        for args in [
+            json!({ "id": "foreign", "name": "Renamed" }),
+            json!({ "id": "foreign", "role": "smol" }),
+            json!({ "id": "foreign", "parent_id": null }),
+        ] {
+            assert_eq!(
+                code(update_with(&h, &args).await),
+                INVALID_INPUT,
+                "yolo={yolo} {args}"
+            );
+        }
+        assert_eq!(h.asks.load(Ordering::SeqCst), 0);
+        assert!(h.roles_set.lock().unwrap().is_empty());
+        let foreign = session_named(&h, "foreign").await;
+        assert_eq!(foreign.name, "name-foreign");
+        assert_eq!(foreign.parent_session_id, None);
+    }
+}
+
+#[tokio::test]
 async fn nesting_under_itself_or_a_descendant_is_invalid_parent() {
     let mut rows = tree();
     rows.push(row("grandkid", "repo", Some("kid")));
-    let h = host(rows).await;
+    let h = Arc::new(host(rows).await);
     for parent in ["kid", "grandkid"] {
         let result = update_with(&h, &json!({ "id": "kid", "parent_id": parent })).await;
         assert_eq!(code(result), "invalid_parent", "{parent}");
@@ -217,7 +255,7 @@ async fn a_subtree_that_would_exceed_depth_three_is_depth_limit() {
         row("branch", "repo", None),
         row("leaf", "repo", Some("branch")),
     ];
-    let h = host(rows).await;
+    let h = Arc::new(host(rows).await);
     let result = update_with(&h, &json!({ "id": "branch", "parent_id": "mid" })).await;
     assert_eq!(code(result), "depth_limit");
     assert_eq!(parent_of(&h, "branch").await, None);
@@ -229,14 +267,14 @@ async fn a_new_parent_with_four_live_children_is_child_limit() {
     for n in 0..4 {
         rows.push(row(&format!("k{n}"), "repo", Some("me")));
     }
-    let h = host(rows).await;
+    let h = Arc::new(host(rows).await);
     let result = update_with(&h, &json!({ "id": "other", "parent_id": "me" })).await;
     assert_eq!(code(result), "child_limit");
 }
 
 #[tokio::test]
 async fn a_change_inside_the_own_tree_needs_no_card_and_null_un_nests() {
-    let h = host(tree()).await;
+    let h = Arc::new(host(tree()).await);
     let out = update_with(&h, &json!({ "id": "kid", "parent_id": null }))
         .await
         .unwrap();
@@ -249,19 +287,16 @@ async fn a_change_inside_the_own_tree_needs_no_card_and_null_un_nests() {
 async fn a_change_outside_the_own_tree_asks_and_denial_changes_nothing() {
     let mut h = host(tree()).await;
     h.approve = false;
+    let h = Arc::new(h);
     let result = update_with(&h, &json!({ "id": "other", "name": "Renamed" })).await;
     assert_eq!(code(result), "denied");
     assert_eq!(h.asks.load(Ordering::SeqCst), 1);
-    let sessions = h.registry.lock().await.snapshot().sessions;
-    assert_eq!(
-        sessions.iter().find(|s| s.id == "other").unwrap().name,
-        "name-other"
-    );
+    assert_eq!(session_named(&h, "other").await.name, "name-other");
 }
 
 #[tokio::test]
 async fn nesting_an_own_session_under_an_outside_one_asks() {
-    let h = host(tree()).await;
+    let h = Arc::new(host(tree()).await);
     let out = update_with(&h, &json!({ "id": "kid", "parent_id": "other" }))
         .await
         .unwrap();
@@ -273,6 +308,7 @@ async fn nesting_an_own_session_under_an_outside_one_asks() {
 async fn yolo_skips_the_card_outside_the_own_tree() {
     let mut h = host(tree()).await;
     h.yolo = true;
+    let h = Arc::new(h);
     update_with(&h, &json!({ "id": "other", "parent_id": "peer" }))
         .await
         .unwrap();
@@ -282,7 +318,7 @@ async fn yolo_skips_the_card_outside_the_own_tree() {
 
 #[tokio::test]
 async fn a_rename_changes_the_name_and_reports_it() {
-    let h = host(tree()).await;
+    let h = Arc::new(host(tree()).await);
     let out = update_with(&h, &json!({ "id": "kid", "name": "Fresh" }))
         .await
         .unwrap();
@@ -292,7 +328,7 @@ async fn a_rename_changes_the_name_and_reports_it() {
 
 #[tokio::test]
 async fn a_role_change_applies_to_a_running_target_and_refuses_a_stopped_one() {
-    let mut h = host(tree()).await;
+    let h = Arc::new(host(tree()).await);
     update_with(&h, &json!({ "id": "kid", "role": "smol" }))
         .await
         .unwrap();
@@ -300,17 +336,18 @@ async fn a_role_change_applies_to_a_running_target_and_refuses_a_stopped_one() {
         h.roles_set.lock().unwrap().as_slice(),
         [("kid".to_string(), "smol".to_string())]
     );
-    h.stopped = true;
-    let err = update_with(&h, &json!({ "id": "kid", "name": "Z", "role": "smol" }))
-        .await
-        .unwrap_err();
+    let mut stopped = host(tree()).await;
+    stopped.stopped = true;
+    let stopped = Arc::new(stopped);
+    let err = update_with(
+        &stopped,
+        &json!({ "id": "kid", "name": "Z", "role": "smol" }),
+    )
+    .await
+    .unwrap_err();
     assert_eq!(err.code, SESSION_NOT_RUNNING);
     assert!(err.message.contains("stopped"));
-    let sessions = h.registry.lock().await.snapshot().sessions;
-    assert_eq!(
-        sessions.iter().find(|s| s.id == "kid").unwrap().name,
-        "name-kid"
-    );
+    assert_eq!(session_named(&stopped, "kid").await.name, "name-kid");
 }
 
 #[tokio::test]
@@ -323,7 +360,7 @@ async fn two_racing_nests_at_three_live_children_yield_one_success() {
     for n in 0..3 {
         rows.push(row(&format!("k{n}"), "repo", Some("me")));
     }
-    let h = host(rows).await;
+    let h = Arc::new(host(rows).await);
     let (a, b) = (
         json!({ "id": "a", "parent_id": "me" }),
         json!({ "id": "b", "parent_id": "me" }),
@@ -340,7 +377,7 @@ async fn an_update_waits_for_the_project_gate_before_writing() {
     let held = tree_gate::lock("repo").await;
     let task = tokio::spawn({
         let h = h.clone();
-        async move { update_with(&*h, &json!({ "id": "kid", "parent_id": null })).await }
+        async move { update_with(&h, &json!({ "id": "kid", "parent_id": null })).await }
     });
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     assert_eq!(parent_of(&h, "kid").await.as_deref(), Some("me"));
@@ -351,14 +388,13 @@ async fn an_update_waits_for_the_project_gate_before_writing() {
 
 #[tokio::test]
 async fn a_target_that_leaves_the_own_tree_mid_call_is_cancelled_and_nothing_is_written() {
-    let h = host(tree()).await;
+    let h = Arc::new(host(tree()).await);
     // `kid` is inside the caller's tree, so no card; it moves out before the gate re-check.
     *h.on_status.lock().unwrap() = Some(("kid".into(), Some("other".into())));
     let args = json!({ "id": "kid", "name": "Z", "role": "smol", "parent_id": null });
     assert_eq!(code(update_with(&h, &args).await), CANCELLED);
     assert!(h.roles_set.lock().unwrap().is_empty());
-    let sessions = h.registry.lock().await.snapshot().sessions;
-    let kid = sessions.iter().find(|s| s.id == "kid").unwrap();
+    let kid = session_named(&h, "kid").await;
     assert_eq!(kid.name, "name-kid");
     assert_eq!(kid.parent_session_id.as_deref(), Some("other"));
 }
@@ -367,10 +403,38 @@ async fn a_target_that_leaves_the_own_tree_mid_call_is_cancelled_and_nothing_is_
 async fn a_role_failure_leaves_the_name_and_the_parent_unwritten() {
     let mut h = host(tree()).await;
     h.role_fails = true;
+    let h = Arc::new(h);
     let args = json!({ "id": "kid", "name": "Z", "role": "smol", "parent_id": null });
     assert_eq!(code(update_with(&h, &args).await), "role_failed");
-    let sessions = h.registry.lock().await.snapshot().sessions;
-    let kid = sessions.iter().find(|s| s.id == "kid").unwrap();
+    let kid = session_named(&h, "kid").await;
     assert_eq!(kid.name, "name-kid");
     assert_eq!(kid.parent_session_id.as_deref(), Some("me"));
+}
+
+#[tokio::test]
+async fn dropping_the_call_mid_update_still_writes_the_role_parent_and_name() {
+    let mut h = host(tree()).await;
+    h.block_role = true;
+    let h = Arc::new(h);
+    let args = json!({ "id": "kid", "name": "Fresh", "role": "smol", "parent_id": null });
+    let mut call = Box::pin(update_with(&h, &args));
+    tokio::select! {
+        _ = &mut call => panic!("the role is blocked, the call cannot finish"),
+        _ = h.role_entered.notified() => {}
+    }
+    drop(call); // host_tool_cancel: the router drops the future
+    h.role_release.notify_one();
+    for _ in 0..100 {
+        if session_named(&h, "kid").await.name == "Fresh" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let kid = session_named(&h, "kid").await;
+    assert_eq!(kid.name, "Fresh", "the rename must complete");
+    assert_eq!(
+        kid.parent_session_id, None,
+        "the parent change must complete"
+    );
+    assert_eq!(h.roles_set.lock().unwrap().len(), 1);
 }

@@ -118,7 +118,8 @@ fn parse(args: &Value) -> Result<Request, ToolError> {
     })
 }
 
-/// The parent, or `None` for a root, after the existence, archived and same-Project checks.
+/// The parent, or `None` for a root, after the existence, archived and same-Project checks. A
+/// default parent is the caller, which must not be archived either: it is the same parent.
 fn resolve_parent<'a>(
     sessions: &'a [Session],
     caller: &'a Session,
@@ -126,7 +127,12 @@ fn resolve_parent<'a>(
 ) -> Result<Option<&'a Session>, ToolError> {
     let id = match parent {
         ParentArg::Root => return Ok(None),
-        ParentArg::Caller => return Ok(Some(caller)),
+        ParentArg::Caller => {
+            if caller.archived_at.is_some() {
+                return Err(invalid(format!("Session {} is archived", caller.id)));
+            }
+            return Ok(Some(caller));
+        }
         ParentArg::Id(id) => id.as_str(),
     };
     let found = sessions
@@ -187,10 +193,10 @@ async fn sessions_of(host: &impl Host) -> Vec<Session> {
     host.registry().lock().await.snapshot().sessions
 }
 
-/// A name inside the quoted parent line: no line breaks or quotes to break out of it.
+/// A name inside the quoted parent line: no line breaks, quotes or invisible format characters.
 fn plain(name: &str) -> String {
     name.chars()
-        .filter(|c| *c != '"' && *c != '\'')
+        .filter(|c| *c != '"' && *c != '\'' && !approval::is_invisible_format(*c))
         .map(|c| if c.is_control() { ' ' } else { c })
         .collect()
 }
