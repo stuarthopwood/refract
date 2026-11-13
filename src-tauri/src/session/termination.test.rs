@@ -409,6 +409,7 @@ fn make_session(
         stopped_on_request_at_size: marker_size,
         pinned_model: false,
         origin_issue: None,
+        parent_session_id: None,
     }
 }
 

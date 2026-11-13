@@ -1,0 +1,15 @@
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"$conversationFile","sessionId":"sess-1878-pin","messageCount":1,"isSettled":true,"model":{"provider":"github-copilot","id":"claude-haiku-5.5","name":"Claude Haiku 5.5"},"thinkingLevel":"medium"}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"type":"available_commands_update","commands":[{"name":"new","description":"Start a new Conversation in this Session"}]}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["set_model"]}
+{"id":"$lastId","type":"response","command":"set_model","success":true,"data":{"model":{"provider":"github-copilot","id":"claude-fable-5-the-sixty-plus-character-example-model-name","name":"Claude Fable Five, an Example Model Name Over Sixty Characters Long"}}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"$conversationFile","sessionId":"sess-1878-pin","messageCount":1,"isSettled":true,"model":{"provider":"github-copilot","id":"claude-fable-5-the-sixty-plus-character-example-model-name","name":"Claude Fable Five, an Example Model Name Over Sixty Characters Long"},"thinkingLevel":"medium"}}
+{"__delay__":600000}

@@ -437,6 +437,7 @@ mod tests {
             stopped_on_request_at_size: None,
             pinned_model: false,
             origin_issue: None,
+            parent_session_id: None,
         }
     }
 

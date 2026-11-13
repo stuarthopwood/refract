@@ -68,6 +68,9 @@ pub struct Session {
     /// The issue this Session was started from; absent for every other Session (#1310).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_issue: Option<OriginIssue>,
+    /// The parent Session when this is a Child Session; absent for a root Session (#1859).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -107,6 +110,8 @@ pub struct SessionPatch {
     pub pinned_model: Option<bool>,
     /// Tri-state (`Some(None)` = resume) (#477).
     pub paused_held: Option<Option<Vec<String>>>,
+    /// Tri-state (`Some(None)` = un-nest) (#1859).
+    pub parent_session_id: Option<Option<String>>,
 }
 
 /// The full contents of `registry.json`.
@@ -448,6 +453,9 @@ impl RegistryStore {
             if let Some(value) = patch.paused_held {
                 session.paused_held = value;
             }
+            if let Some(value) = patch.parent_session_id {
+                session.parent_session_id = value;
+            }
         }
         if let Err(err) = self.persist().await {
             self.data.sessions[index] = previous;
@@ -458,7 +466,8 @@ impl RegistryStore {
     }
 
     /// Removes the Session and returns it (callers still need `session_dir`); rolls back on a
-    /// failed write.
+    /// failed write. Live children are re-rooted in the same persist so no write ever leaves a
+    /// link to a Session that is gone (#1859); archived children keep their link.
     pub async fn remove_session(&mut self, id: &str) -> Result<Session, RegistryStoreError> {
         let index = self
             .data
@@ -472,12 +481,25 @@ impl RegistryStore {
                 )
             })?;
         let removed = self.data.sessions.remove(index);
+        let mut rerooted = Vec::new();
+        for child in &mut self.data.sessions {
+            if child.archived_at.is_none() && child.parent_session_id.as_deref() == Some(id) {
+                child.parent_session_id = None;
+                rerooted.push(child.id.clone());
+            }
+        }
         if let Err(err) = self.persist().await {
             // Restore unless a concurrent call removed it; best-effort save, as an earlier
             // queued write may already have persisted the removal.
             if !self.data.sessions.iter().any(|s| s.id == removed.id) {
                 let insert_at = index.min(self.data.sessions.len());
                 self.data.sessions.insert(insert_at, removed.clone());
+                // Links go back with the Session, unless the child was re-parented meanwhile.
+                for child in &mut self.data.sessions {
+                    if child.parent_session_id.is_none() && rerooted.contains(&child.id) {
+                        child.parent_session_id = Some(id.to_string());
+                    }
+                }
             }
             let _ = self.persist().await;
             return Err(err.into());

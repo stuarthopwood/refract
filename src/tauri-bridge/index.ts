@@ -13,9 +13,10 @@ import type { AdvisorRoster, AdvisorRosterDetected } from '../shared/ipc-advisor
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { ClosedBranchesResult } from '../shared/ipc-home'
 import type { GithubChangedPayload } from '../shared/ipc-github-changed'
+import type { GhStackState } from '../shared/ipc-github-stack'
 import type { CreatedIssue, IssueDetail, IssueLabel, IssueListResult, IssueMatch, SessionWithKickoff } from '../shared/ipc-issues'
 import type { ItemCard, ItemSummary } from '../shared/ipc-item-refs'
-import type { PullRequestAcrossResult } from '../shared/ipc-pull-requests'
+import type { PullRequestAcrossResult, StackRefsResult } from '../shared/ipc-pull-requests'
 import type { SessionActivity } from '../shared/activity'
 import type {
   IpcErrorCode,
@@ -298,6 +299,7 @@ const refract: RefractApi = {
     setAnimatedStatusText: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ANIMATED_STATUS_TEXT, enabled),
     setCodeLigatures: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CODE_LIGATURES, enabled),
     setShowScrollbarMap: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SCROLLBAR_MAP, enabled),
+    setStackedPullRequests: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_STACKED_PULL_REQUESTS, enabled),
     setTypography: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TYPOGRAPHY, value),
     upsertAlarm: (alarm) => request<Settings>(IPC_REQUESTS.SETTINGS_UPSERT_ALARM, alarm),
     deleteAlarm: (id) => request<Settings>(IPC_REQUESTS.SETTINGS_DELETE_ALARM, id),
@@ -380,6 +382,7 @@ const refract: RefractApi = {
     list: (repositoryId, tab, state, query) => request<PullRequestListResult>(IPC_REQUESTS.PULL_REQUESTS_LIST, repositoryId, tab, state, query),
     listAcross: (tab, state, repositoryIds, query, limit) =>
       request<PullRequestAcrossResult>(IPC_REQUESTS.PULL_REQUESTS_LIST_ACROSS, tab, state, repositoryIds, query, limit),
+    stackRefs: (repositoryId) => request<StackRefsResult>(IPC_REQUESTS.PULL_REQUESTS_STACK_REFS, repositoryId),
     detail: (repositoryId, number) => request<PullRequestDetail>(IPC_REQUESTS.PULL_REQUESTS_DETAIL, repositoryId, number),
     comment: (repositoryId, number, body) =>
       request<{ id: string }>(IPC_REQUESTS.PULL_REQUESTS_COMMENT, repositoryId, number, body),
@@ -397,6 +400,11 @@ const refract: RefractApi = {
     fetchImage: (url) => request<{ dataUrl: string }>(IPC_REQUESTS.PULL_REQUESTS_FETCH_IMAGE, url),
     newSessionFromPullRequest: (repositoryId, number) =>
       request<SessionWithKickoff>(IPC_REQUESTS.PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST, repositoryId, number)
+  },
+
+  githubStack: {
+    state: () => request<GhStackState>(IPC_REQUESTS.GITHUB_STACK_STATE),
+    install: () => request<GhStackState>(IPC_REQUESTS.GITHUB_STACK_INSTALL)
   },
 
   theme: {

@@ -3,6 +3,7 @@
 use serde_json::Value;
 
 mod list_across;
+mod stack_refs;
 
 use crate::github::gh_close::close_pull_request_mutation;
 use crate::github::images::fetch_pr_image;
@@ -19,6 +20,10 @@ pub(super) fn register(d: &mut Dispatcher) {
     d.register(
         "pullRequests.listAcross",
         list_across::pull_requests_list_across,
+    );
+    d.register(
+        "pullRequests.stackRefs",
+        stack_refs::pull_requests_stack_refs,
     );
 }
 

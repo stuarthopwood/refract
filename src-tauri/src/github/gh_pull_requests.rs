@@ -53,6 +53,36 @@ pub async fn list_pull_requests_by_state(
     .await
 }
 
+/// The three fields stack chaining needs; a slim read of the open pull requests (#1867).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GhStackRefEntry {
+    pub number: u64,
+    pub head_ref_name: String,
+    pub base_ref_name: String,
+}
+
+/// Capped at 50 open pull requests, like `list_pull_requests_by_state`.
+pub async fn list_stack_refs(repo_path: &Path) -> Result<Vec<GhStackRefEntry>, GhError> {
+    let (owner, repo) = owner_repo_for(repo_path).await?;
+    gh_json(
+        repo_path,
+        &[
+            "pr",
+            "list",
+            "--repo",
+            &format!("{owner}/{repo}"),
+            "--state",
+            "open",
+            "--limit",
+            "50",
+            "--json",
+            "number,headRefName,baseRefName",
+        ],
+    )
+    .await
+}
+
 /// `gh search prs --repo <repo> "<qualifier>" --json <SEARCH_FIELDS>`: a narrower field set than
 /// `gh pr list --json`.
 #[derive(Debug, Clone, Deserialize)]

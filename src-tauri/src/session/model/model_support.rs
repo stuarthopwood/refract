@@ -257,21 +257,26 @@ pub(super) fn model_change_role(value: &Value) -> String {
         .to_string()
 }
 
+/// Drops the cached role and forces a reprobe, even while pinned; bumping the generation blocks
+/// stale write-backs from reads already in flight.
+async fn reset_role_cache(agent: &SessionAgent) {
+    agent
+        .with_model_state(|s| {
+            s.current_role = None;
+            s.role_probed_path = None;
+            s.role_needs_reprobe = true;
+            s.role_generation = s.role_generation.wrapping_add(1);
+        })
+        .await;
+}
+
 /// Clears the role cache on autonomous model events, so the next read sees the new entry.
 /// Also emits `session_list_changed`, because the renderer refreshes only on that event.
 pub(super) async fn maybe_invalidate_role_cache(agent: &SessionAgent, frame_type: &str) {
     if frame_type != "model_changed" && frame_type != "retry_fallback_succeeded" {
         return;
     }
-    agent
-        .with_model_state(|s| {
-            s.current_role = None;
-            s.role_probed_path = None;
-            // Force a reprobe even while pinned; bumping the generation blocks stale write-backs.
-            s.role_needs_reprobe = true;
-            s.role_generation = s.role_generation.wrapping_add(1);
-        })
-        .await;
+    reset_role_cache(agent).await;
     agent.events().emit_session_list_changed();
 }
 
@@ -359,4 +364,56 @@ pub(super) async fn resolve_current_selection(agent: &SessionAgent) -> (bool, Op
         .await;
     let effective_pinned = state_pinned && state_role.as_deref() != Some("fallback");
     (effective_pinned, state_role)
+}
+
+/// The role a freshly launched process runs on: the Conversation file's latest entry, else the
+/// configured `default`, which OMP starts on. A pinned Session never claims a role (#1878).
+pub(super) fn role_after_launch(pinned: bool, probed: Option<String>) -> Option<String> {
+    if pinned {
+        return None;
+    }
+    Some(probed.unwrap_or_else(|| "default".to_string()))
+}
+
+/// Reads the Session's role as its process starts or resumes, so the composer chip names it from
+/// the first paint instead of waiting for a later `model_change` frame (#1878).
+pub(super) async fn seed_role_at_launch(agent: &SessionAgent) {
+    ensure_pin_seeded(agent).await;
+    // A new process lifetime re-reads the file; bumping the generation drops any stale write-back.
+    reset_role_cache(agent).await;
+    let (pinned, probed) = resolve_current_selection(agent).await;
+    if let Some(role) = role_after_launch(pinned, probed) {
+        agent
+            .with_model_state(|s| {
+                if s.current_role.is_none() {
+                    s.current_role = Some(role);
+                }
+            })
+            .await;
+    }
+    agent.events().emit_session_list_changed();
+}
+
+#[cfg(test)]
+mod launch_role_tests {
+    use super::role_after_launch;
+
+    #[test]
+    fn fresh_session_runs_on_the_default_role() {
+        assert_eq!(role_after_launch(false, None).as_deref(), Some("default"));
+    }
+
+    #[test]
+    fn resumed_session_keeps_the_role_its_file_names() {
+        assert_eq!(
+            role_after_launch(false, Some("slow".into())).as_deref(),
+            Some("slow")
+        );
+    }
+
+    #[test]
+    fn pinned_session_claims_no_role() {
+        assert_eq!(role_after_launch(true, Some("slow".into())), None);
+        assert_eq!(role_after_launch(true, None), None);
+    }
 }
