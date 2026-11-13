@@ -5563,5 +5563,6 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   behaviour unchanged, per FR-080 (missing)
 - [x] T452 [US1] `Transcript.tsx`: replace the `opacity-40` dim of the transcript viewport with the shared blur, keep
   `focus-within` clearing it, animate it with `motion-reduce:transition-none` (also on the notice overlay's fade), per FR-080 (contradicts)
-- [x] T453 No new logic (class names only), so no unit test; `scripts/verify-tauri-1892.mjs` reads the computed filter, opacity,
+- [ ] T453 No new logic (class names only), so no unit test; `scripts/verify-tauri-1892.mjs` reads the computed filter, opacity,
   transition and notice sharpness on a built app and screenshots the notice, then `node scripts/ci-local.mjs` per FR-080
+  (open until the live run lands)

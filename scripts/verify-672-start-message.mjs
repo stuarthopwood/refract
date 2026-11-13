@@ -84,6 +84,9 @@ async function main() {
     const brandNewOpacity = await waitForRegionOpacity(cdp1, (v) => v > 0.95);
     if (!brandNewOpacity.ok) failures.push(`brand-new/waiting: transcript region opacity settled at ${brandNewOpacity.value}, expected >0.95 (brand-new Session has nothing to dim).`);
     else findings.push(`brand-new/waiting: transcript region opacity settled at ${brandNewOpacity.value} (not dimmed), as expected.`);
+    const brandNewBlur = await waitForRegionBlur(cdp1, (v) => v === 0);
+    if (!brandNewBlur.ok) failures.push(`brand-new/waiting: transcript region blur radius settled at ${brandNewBlur.value}px, expected 0 (brand-new Session has no history to blur).`);
+    else findings.push(`brand-new/waiting: transcript region blur radius settled at ${brandNewBlur.value}px (not blurred), as expected.`);
     const brandNewState = await readNoticeState(cdp1);
     assertCentred(brandNewState, 'brand-new/waiting', failures);
     let wideRegionWidth = null;
@@ -429,7 +432,8 @@ async function main() {
         continue;
       }
       if (!(panel.a >= 0.85 && panel.a <= 0.95)) failures.push(`${theme.name}: panel background-color ${panelRaw} has alpha ${panel.a}, expected 0.85-0.95 (bg-background/90); the panel class may not be applied correctly.`);
-      const worstCaseBackdrop = blendOver({ ...foregroundRgb, a: 0.4 }, backgroundRgb);
+      // Blurred history keeps full-strength glyphs behind the panel; the old dimmed treatment (40% alpha) is gone.
+      const worstCaseBackdrop = blendOver({ ...foregroundRgb, a: 1 }, backgroundRgb);
       const panelEffectiveCss = rgbToCss(blendOver(panel, worstCaseBackdrop));
       const pairs = [
         ['message', themeState.message?.color],
@@ -440,7 +444,7 @@ async function main() {
       for (const [name, colour] of pairs) {
         const ratio = contrastRatio(colour, panelEffectiveCss);
         if (ratio === null) failures.push(`${theme.name}: could not compute a contrast ratio for ${name} (${colour}) over the panel's worst-case effective background (${panelEffectiveCss}).`);
-        else if (ratio < 4.5) failures.push(`${theme.name}: ${name} colour ${colour} over the panel's worst-case effective background ${panelEffectiveCss} (foreground@40% under the real panel alpha) contrasts ${ratio.toFixed(2)}:1, expected >=4.5:1.`);
+        else if (ratio < 4.5) failures.push(`${theme.name}: ${name} colour ${colour} over the panel's worst-case effective background ${panelEffectiveCss} (foreground@100% under the real panel alpha, the blurred history text) contrasts ${ratio.toFixed(2)}:1, expected >=4.5:1.`);
         else findings.push(`${theme.name}: ${name} colour contrasts ${ratio.toFixed(2)}:1 over the panel's worst-case effective background, >=4.5:1.`);
       }
       await cdp2.evaluate(`(() => { const el = ${GROUP}; if (el) el.style.backgroundColor = 'transparent'; return true; })()`);

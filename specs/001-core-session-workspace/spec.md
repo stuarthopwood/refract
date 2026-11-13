@@ -1753,8 +1753,8 @@ The developer types a slash command and finds the ones the agent offers. If a se
   centred horizontally and vertically in the transcript viewport. For a Session that already has
   history, the transcript behind the notice MUST be blurred (the shared `LoadingOverlay` blur, `blur-sm` on the transcript
   viewport, with no opacity dim; amended 2026-11-13, issue #1892, Stuart's implementation note 2026-11-11) while the notice
-  shows, clearing the instant the start ends or whenever keyboard focus moves
-  into the history, animating over about 150ms except under `prefers-reduced-motion`, where it appears and clears at once;
+  shows, clearing when the start ends or whenever keyboard focus moves into the history; the blur animates in and
+  out over about 150ms, or appears and clears at once under `prefers-reduced-motion`;
   the blurred transcript MUST stay fully interactive throughout (scrollable,
   selectable, links still work) -- the notice itself gets a soft, borderless backing panel so
   its own text stays readable against the blur. While keyboard focus is inside that blurred

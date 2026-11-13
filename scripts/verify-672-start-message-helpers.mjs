@@ -485,6 +485,9 @@ export async function assertFocusedPlainStageNotice(cdp, { sessionId, kind, expe
   const opacity = await waitForRegionOpacity(cdp, (v) => v > 0.95, 2_000);
   if (!opacity.ok) failures.push(`${kind}: transcript region opacity settled at ${opacity.value}, expected >0.95 (brand-new Session has nothing to dim).`);
   else findings.push(`${kind}: transcript region opacity settled at ${opacity.value} (not dimmed), as expected for a brand-new Session.`);
+  const blur = await waitForRegionBlur(cdp, (v) => v === 0, 2_000);
+  if (!blur.ok) failures.push(`${kind}: transcript region blur radius settled at ${blur.value}px, expected 0 (brand-new Session has no history to blur).`);
+  else findings.push(`${kind}: transcript region blur radius settled at ${blur.value}px (not blurred), as expected for a brand-new Session.`);
   const text = await cdp.evaluate(`document.querySelector('[data-start-plain-text]')?.textContent ?? null`);
   if (text !== expectedText) failures.push(`${kind}: plain text reads "${text}", expected exactly "${expectedText}" (describeStartProgress).`);
   else findings.push(`${kind}: plain text reads exactly "${text}", as specified.`);
