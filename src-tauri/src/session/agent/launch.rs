@@ -349,6 +349,7 @@ impl SessionAgent {
             crate::session::readout::on_history_loaded(self, &messages).await;
         }
         self.sync_from_state(&state_data, None).await;
+        crate::session::model::on_launch(self).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         self.emit_status().await;

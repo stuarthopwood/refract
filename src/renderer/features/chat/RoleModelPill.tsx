@@ -1,19 +1,18 @@
 // The combined Role·Model pill (#766 part B, amended item 1): one tab stop that replaces the
-// former inert RoleChip + ModelPicker trigger pair. It shows `[role icon] Default · Sonnet 5.5`
-// (pinned: pin glyph and "Pinned · Sonnet 5.5"), and while a change is waiting for the next turn
-// it shows the NEW value with a small clock glyph. The model text truncates first; below ~400px
-// of composer width (`@container` on the composer row) only the role shows and the model moves
-// into the tooltip.
+// former inert RoleChip + ModelPicker trigger pair. It shows the ROLE only (`[icon] Default`); the
+// model name lives in the tooltip (#1878). A Session on a directly picked model shows that model
+// name with a pin glyph. While a change is waiting for the next turn it shows the NEW value with a
+// small clock glyph.
 import { forwardRef, type ComponentProps } from 'react'
 import { ClockIcon, CpuIcon, PinIcon, type LucideIcon } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { ValueCrossfade } from '@/components/ValueCrossfade'
-import { CUSTOM_ROLE, ROLE_ICON, ROLE_LABEL, type RoleChipRoleId } from '@/lib/modelRoles'
+import { ROLE_ICON, ROLE_LABEL, type RoleChipRoleId } from '@/lib/modelRoles'
 import { friendlyProviderLabel } from '@/lib/providerLabels'
 import { useModelRolesStore, useSessionsStore } from '@/state'
 import { PICKER_TRIGGER_CLASS } from './pickerShared'
-import { resolveRoleModelName, shortModelName } from './roleModelText'
+import { chipModelTooltip, chipText, resolveRoleModelName, shortModelName } from './roleModelText'
 import { useCyclingRole, useSessionRoles } from './roleCycleStore'
 
 interface Shown {
@@ -24,8 +23,8 @@ interface Shown {
 }
 
 function roleShown(role: string | null | undefined, pinned: boolean, model: string | null): Shown {
-  if (pinned) return { pinned: true, roleLabel: 'Pinned', Icon: PinIcon, model }
-  const known = role && role !== CUSTOM_ROLE ? (role as RoleChipRoleId) : null
+  if (pinned) return { pinned: true, roleLabel: null, Icon: PinIcon, model }
+  const known = role ? (role as RoleChipRoleId) : null
   return { pinned: false, roleLabel: known ? (ROLE_LABEL[known] ?? known) : null, Icon: (known && ROLE_ICON[known]) || CpuIcon, model }
 }
 
@@ -70,7 +69,7 @@ export const RoleModelPill = forwardRef<HTMLButtonElement, ComponentProps<'butto
     const nowText = shownText(current)
     const tooltip = queued
       ? `${stopped ? 'Applies when the agent starts' : 'Applies on next turn'}. Now: ${nowText}.`
-      : `${shownText(shown)}${fullModel ? ` (${fullModel})` : ''}. Ctrl+R cycles roles.`
+      : `${chipModelTooltip(shown.model, fullModel)}. Ctrl+R cycles roles.`
     return (
       <Tooltip>
         <TooltipTrigger asChild>
@@ -85,13 +84,7 @@ export const RoleModelPill = forwardRef<HTMLButtonElement, ComponentProps<'butto
             className={cn(PICKER_TRIGGER_CLASS, 'max-w-80 min-w-0 shrink', className)}
           >
             <shown.Icon aria-hidden className="size-4 shrink-0" />
-            <ValueCrossfade className="shrink-0" scope={sessionId} value={shown.roleLabel ?? (shown.model ? shortModelName(shown.model) : 'Model not known yet')} />
-            {shown.roleLabel && shown.model && (
-              <span className="flex min-w-0 gap-1 @max-[400px]:hidden">
-                <span aria-hidden>·</span>
-                <ValueCrossfade className="truncate" scope={sessionId} value={shortModelName(shown.model)} />
-              </span>
-            )}
+            <ValueCrossfade className="shrink-0" scope={sessionId} value={chipText(shown)} />
             {queued && <ClockIcon aria-hidden data-pending-glyph className="size-4 shrink-0 text-foreground" />}
           </button>
         </TooltipTrigger>

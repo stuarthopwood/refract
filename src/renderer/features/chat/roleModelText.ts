@@ -16,6 +16,18 @@ export function shortModelName(name: string): string {
   return name.replace(/^claude\s+/i, '')
 }
 
+/** The chip's visible text: the role alone, or the model name for a Session whose model was picked
+ * directly (no role). The role's model moves to the tooltip (#1878). */
+export function chipText(shown: { roleLabel: string | null; model: string | null }): string {
+  return shown.roleLabel ?? (shown.model ? shortModelName(shown.model) : 'Model not known yet')
+}
+
+/** The chip tooltip's model line; it is the only place a role Session's model name shows. */
+export function chipModelTooltip(model: string | null, fullModel: string | null): string {
+  if (!model) return 'Model not known yet'
+  return `${shortModelName(model)}${fullModel ? ` (${fullModel})` : ''}`
+}
+
 /** A role's `model` field is a raw `provider/id` selector (#741); looks it up in the loaded
  * catalog for a friendly name. `raw: true` marks the selector fallback (render monospace).
  * A role with neither a model nor a documented fallback (`hasFallback: false`) cannot be
