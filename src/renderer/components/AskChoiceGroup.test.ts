@@ -36,6 +36,16 @@ function recommendedRowTag(html: string): string {
   return tag
 }
 
+/** Whole-token class set: a substring match would also hit the `dark:` and `data-[state=checked]:` variants of the same utility. */
+function classTokens(tag: string): Set<string> {
+  const value = tag.match(/ class="([^"]*)"/)?.[1]
+  if (value === undefined) throw new Error('row has no class attribute')
+  return new Set(value.split(/\s+/).filter(Boolean))
+}
+
+const TINT = 'bg-severity-success-bg'
+const HOVER_MIX = 'bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)]'
+
 describe.each([
   ['single choice', false],
   ['multiple choice', true]
@@ -51,21 +61,25 @@ describe.each([
     const html = render(multi)
     expect(html.match(/data-ask-recommended/g)).toHaveLength(1)
     expect(html.match(/class="[^"]*(?<![:\w-])bg-severity-success-bg(?=[\s"])[^"]*"/g)).toHaveLength(1)
-    expect(recommendedRowTag(html)).toContain('bg-severity-success-bg')
+    const tokens = classTokens(recommendedRowTag(html))
+    for (const token of [TINT, `dark:${TINT}`]) expect(tokens.has(token), token).toBe(true)
   })
 
   it('keeps the success tint when the recommended row is checked, instead of the base primary wash', () => {
     const tag = recommendedRowTag(render(multi, OPTIONS, ['Beta']))
     expect(tag).toContain('data-state="checked"')
-    expect(tag).toContain('data-[state=checked]:bg-severity-success-bg')
-    expect(tag).not.toContain('data-[state=checked]:bg-primary/5')
+    const tokens = classTokens(tag)
+    for (const token of [`data-[state=checked]:${TINT}`, `dark:data-[state=checked]:${TINT}`]) expect(tokens.has(token), token).toBe(true)
+    expect(tokens.has('data-[state=checked]:bg-primary/5')).toBe(false)
   })
 
   it('keeps the success tint on hover, with a subtle foreground mix as the cue, and none while busy', () => {
-    const tag = recommendedRowTag(render(multi))
-    expect(tag).toContain('hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)]')
-    expect(tag).not.toContain('hover:bg-muted')
-    expect(tag).toContain('aria-disabled:hover:bg-severity-success-bg')
+    const tokens = classTokens(recommendedRowTag(render(multi)))
+    const hover = [`hover:${HOVER_MIX}`, `data-[state=checked]:hover:${HOVER_MIX}`, `dark:hover:${HOVER_MIX}`, `dark:data-[state=checked]:hover:${HOVER_MIX}`]
+    for (const token of hover) expect(tokens.has(token), token).toBe(true)
+    expect(tokens.has('hover:bg-muted')).toBe(false)
+    const busy = [`aria-disabled:hover:${TINT}`, `dark:aria-disabled:hover:${TINT}`, `aria-disabled:data-[state=checked]:hover:${TINT}`, `dark:aria-disabled:data-[state=checked]:hover:${TINT}`]
+    for (const token of busy) expect(tokens.has(token), token).toBe(true)
   })
 
   it('renders no cue or marker when nothing is recommended', () => {
