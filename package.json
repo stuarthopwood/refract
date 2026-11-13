@@ -1,6 +1,6 @@
 {
   "name": "refract",
-  "version": "0.33.0",
+  "version": "0.34.0",
   "private": true,
   "packageManager": "pnpm@10.33.0",
   "description": "Desktop workspace that drives omp --mode rpc-ui, one process per session worktree.",
@@ -19,6 +19,7 @@
     "verify:tauri": "node scripts/verify-tauri.mjs",
     "verify:tauri-008": "node scripts/verify-tauri-008.mjs",
     "verify:tauri-1856": "node scripts/verify-tauri-1856.mjs",
+    "probe:token-guard": "node scripts/token-guard-probe/run.mjs",
     "verify:tauri-081": "node scripts/verify-tauri-081.mjs",
     "verify:tauri-084": "node scripts/verify-tauri-084.mjs",
     "verify:tauri-086": "node scripts/verify-tauri-086.mjs",
