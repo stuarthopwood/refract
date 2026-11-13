@@ -417,13 +417,13 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
         let head_branch = input.get("headBranch").and_then(Value::as_str).unwrap_or_default();
         let setting_on = state.settings.lock().await.get().stacked_pull_requests;
         let route = stack_merge::route_for(&repo_path, number, head_branch, hint_stacked, setting_on).await;
-        let merged = match route {
-            stack_merge::Route::Stack => stack_merge::merge_stacked(&repo_path, number).await,
-            stack_merge::Route::Plain => {
-                gh_mutations::merge_pull_request(&repo_path, number, method, expected_head_sha).await
-            }
-        };
-        merged.map_err(map_gh_error)?;
+        stack_merge::run_route(
+            route,
+            stack_merge::merge_stacked(&repo_path, number),
+            gh_mutations::merge_pull_request(&repo_path, number, method, expected_head_sha),
+        )
+        .await
+        .map_err(map_gh_error)?;
         forget_cache(repository_id, number);
         notify_changed(&state, repository_id, number);
         Ok(Value::Null)

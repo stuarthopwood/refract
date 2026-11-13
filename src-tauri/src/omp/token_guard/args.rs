@@ -83,4 +83,17 @@ mod tests {
         assert!(args.iter().any(|a| a == "--config"));
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[tokio::test]
+    async fn stacked_adds_the_block_without_a_second_append_flag() {
+        let dir = std::env::temp_dir().join(format!("refract-args-stacked-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for stacked in [false, true] {
+            let (args, _) = build_args(&dir, None, true, stacked).await;
+            assert_eq!(args.iter().filter(|a| *a == "--append-system-prompt").count(), 1);
+            let text = std::fs::read_to_string(&args[1]).unwrap();
+            assert_eq!(text.contains("gh stack"), stacked);
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
