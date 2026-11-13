@@ -23,8 +23,8 @@ The controller merges the PR as `docs/stacked-prs.md` describes (`gh stack merge
 
 ## Reap
 
-1. Run `pnpm worktrees:reap` from any directory outside the worktree you expect to remove. It is a dry run and prints every verdict, reason, and literal target.
-2. Review the plan, then run `pnpm worktrees:reap --apply`.
+1. Run `pnpm worktrees:reap --apply` from any directory outside the worktree you expect to remove. No dry run first: it prints every verdict, reason, and literal target as it goes.
+2. Delete the merged lane's scratch folder `C:/Scratch/<task>` by literal path. Scratch files (exe copies, data dirs, probe runs, clones) live only under `C:/Scratch/<task>/`; keep cited evidence in `C:/Scratch/<task>/evidence/` until the PR merges.
 
 A worktree is reaped only when all of these hold: its PR is merged, its tree is clean, the branch tip equals the PR head, it is not the caller's cwd, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process command line or executable path names its path (matched on a name boundary at both ends, so `...\wt-1` and `/var/tmp/x/wt` do not count; the drive-letter start anchors the path, so `-IC:\...\wt` glued to a flag does count), and `git worktree remove` (without `--force`) succeeds. Everything else is skipped with a reason.
 

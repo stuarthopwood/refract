@@ -63,9 +63,10 @@ from the former Electron CDP skill (`scripts/verify-tauri-cdp.mjs`).
   fixed port 5174, and the running exe lives under the shared `CARGO_TARGET_DIR`, so two lanes'
   own dev servers or running binaries collide. Instead: `pnpm exec tauri build --debug --no-bundle`
   (bakes the renderer in, no dev server, no port), copy
-  `<CARGO_TARGET_DIR>/debug/refract-tauri.exe` to your own scratch dir, and run that copy with
+  `<CARGO_TARGET_DIR>/debug/refract-tauri.exe` to `C:/Scratch/<task>/` (one folder per task; see
+  `AGENTS.md`), and run that copy with
   your own `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` and
-  `REFRACT_DATA_DIR` pointing at a scratch data directory, never Stuart's real
+  `REFRACT_DATA_DIR` pointing at a data directory under `C:/Scratch/<task>/`, never Stuart's real
   `%APPDATA%\refract-tauri`. `scripts/verify-tauri.mjs` already does this.
 - `REFRACT_OMP_SESSIONS_DIR` (spec 060, #1331) is an absolute path that
   replaces `~/.omp/agent/sessions` as the folder the Usage worker reads, so a live check can feed

@@ -55,11 +55,22 @@ On 2026-10-09 the user decided that a docs-only PR merges without asking, so the
 
 Lane worktrees are created per lane and were never removed (49 worktrees, about 14 GB, measured 2026-10-11). The controller (whoever merges the PR) owns the removal.
 
-- After every merge, the controller runs `pnpm worktrees:reap` (dry run), reviews the plan, then runs `pnpm worktrees:reap --apply`.
+- After every merge, the controller runs `pnpm worktrees:reap --apply` directly (no dry run), then deletes the merged lane's `C:/Scratch/<task>` folder by literal path.
 - Lanes never delete their own worktree, folder, or branch.
 - Before each multi-lane wave, run `pnpm worktrees:reap --check`. It exits 1 when the worktrees folder holds more than 8 worktrees or its drive has under 20 GB free.
 - The script removes a worktree only when its PR is merged, the tree is clean, the branch tip equals the PR head, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process names its path, and `git worktree remove` (never `--force`) succeeds. It then clears `node_modules` husks and deletes the verified branch. Last, if the shared cargo target's build-script output (`<CARGO_TARGET_DIR>/debug/build/refract-tauri-*/output`) names a reaped or deleted worktree, `--apply` runs `cargo clean -p refract-tauri` there (skipped with a message while `cargo.exe`/`rustc.exe` runs; `--check` exits 1 while such a path remains). Everything else is skipped and reported (including open-PR worktrees and ignored files beyond rebuildable output). Exit codes: 0 success, 1 `--check` problem or `--apply` with at least one failure, 2 usage error or refusal (for example `--apply` with no registry file; `--no-registry` overrides).
 - Lane lifecycle: `.omp/skills/worktree-reap/SKILL.md`. Put this rule in every lane brief.
+
+## Scratch files live in C:/Scratch (HARD RULE)
+
+On 2026-11-13 16 GB of probe runs and dozens of stale live-check folders in the home folder filled C:.
+
+- Every scratch file, folder, clone, non-lane worktree, exe copy, data dir (`REFRACT_DATA_DIR`), WebView2 profile, probe run, log, and screenshot goes under `C:/Scratch/<task>/`, one folder per task (for example `C:/Scratch/refract-live-1950`). Never use the home folder, a repo, `C:/tmp`, `%TEMP%`, or the Desktop.
+- Lane worktrees stay in `C:/Repos/personal/pinion-worktrees/lane-<n>` and are removed by `pnpm worktrees:reap --apply`. Any other clone or worktree goes in `C:/Scratch/<task>/repo`.
+- Keep cited evidence in `C:/Scratch/<task>/evidence/`. At task end, the worker deletes everything else in its folder by literal path; the controller deletes `C:/Scratch/<task>` when the PR merges or the task is dropped.
+- No dry runs for cleanup: run reap and cache cleaners with `--apply` directly. Release dry runs and other non-cleanup dry runs are unaffected.
+- Layout and rules: `C:/Scratch/README.md`.
+- Put this rule in every delegation brief, and name the worker's task folder in it.
 
 ## Rust build is the main build (Stuart, 2026-10-13, epic #797)
 
@@ -119,7 +130,7 @@ requests view had drifted into two different filters, search fields and headers 
 ## Verifying the Rust (Tauri) build (epic #797)
 
 - Point `CARGO_TARGET_DIR` at the shared build cache for every `cargo`/`tauri` command; never let `src-tauri/target` appear in a worktree. Wait for a build in flight rather than starting a second one. Never delete under the shared cache except `cargo clean -p <crate>` for a confirmed stale-path error (`pnpm worktrees:reap --apply` runs `cargo clean -p refract-tauri` itself when needed), or `pnpm cache:sweep` (age-based, refuses while a build holds the lock; run it when `pnpm ci:local` warns the cache is over 10 GB).
-- Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to a scratch dir, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR`, never `%APPDATA%\refract-tauri`. `pnpm verify:tauri` does this with a recorded-frame fake `omp` for no model cost.
+- Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to `C:/Scratch/<task>/`, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR` under `C:/Scratch/<task>/`, never `%APPDATA%\refract-tauri`. Delete the task folder when you finish (keep cited evidence in `C:/Scratch/<task>/evidence/`). `pnpm verify:tauri` does this with a recorded-frame fake `omp` for no model cost.
 - Details: `docs/rust-build.md`.
 
 ## PR titles are Conventional Commits (HARD RULE)
