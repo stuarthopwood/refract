@@ -52,6 +52,15 @@ async function shoot(cdp, name) {
   shotNames.push(name);
 }
 
+/** Crops the screenshot to the focused element plus a margin, so the ring is visible at full resolution. */
+async function shootActive(cdp, name) {
+  await sleep(500);
+  const r = await cdp.evaluate(`(() => { const a = document.activeElement; a.scrollIntoView({ block: 'center' }); const b = a.getBoundingClientRect(); return { x: Math.max(0, b.x - 8 + scrollX), y: Math.max(0, b.y - 8 + scrollY), width: Math.min(b.width + 16, 1400), height: Math.min(b.height + 16, 600) }; })()`);
+  const { data } = await cdp.send('Page.captureScreenshot', { format: 'png', clip: { ...r, scale: 2 } });
+  writeFileSync(path.join(SHOTS_DIR, name), Buffer.from(data, 'base64'));
+  shotNames.push(name);
+}
+
 /** The card is taller than the window, so scroll the target into view first: a mouse event at off-screen coordinates hits nothing. */
 async function clickVisible(cdp, finder) {
   await cdp.waitFor(`(() => { const el = ${finder}; if (!el) return false; el.scrollIntoView({ block: 'center' }); return true; })()`, { timeoutMs: 15_000, label: `scroll target into view: ${finder.slice(0, 80)}` });
@@ -227,10 +236,14 @@ async function main() {
 
     // Submit by keyboard: focus the button and press a real Enter.
     await cdp.evaluate(`(${SUBMIT}).focus()`);
+    const submitFocus = await cdp.evaluate(FOCUS_DETAIL);
+    check(/^Submit/.test(submitFocus.name) && submitFocus.ring, 'A7. The focused Submit button has an accessible name and a visible focus ring', submitFocus);
+    await shootActive(cdp, '01c-submit-focus-ring-cropped.png');
     await pressRealEnter(cdp);
     const toolResult = await waitForToolResult(mock, 1);
     const afterSubmit = await focusAfterCardLeaves(cdp);
     const restingFocus = await cdp.evaluate(FOCUS_DETAIL);
+    await shootActive(cdp, '05b-resting-card-focus-ring-cropped.png');
     check(/^Questions from the agent: Which database/.test(restingFocus.name) && restingFocus.role === 'group' && restingFocus.ring, 'A6. After Enter-Submit, focus rests on the finished card: named by its first question, with a visible ring', restingFocus);
     check(afterSubmit.every((s) => !s.isBody), '6a. After Submit, document.activeElement is not body (sampled for 1s)', afterSubmit);
     await shoot(cdp, '05-after-submit-history-card-focus.png');
@@ -264,6 +277,8 @@ async function main() {
     check(sawCancelled, '6c. After Esc, the card shows its Cancelled state', { sawCancelled });
     const afterEsc = await focusAfterCardLeaves(cdp);
     check(afterEsc.every((s) => !s.isBody), '6b. After Esc on a second ask, document.activeElement is not body (sampled for 1s)', afterEsc);
+    const escFocus = await cdp.evaluate(FOCUS_DETAIL);
+    check(!!escFocus.name && escFocus.ring, '6g. After Esc, the focused element has an accessible name and a visible focus ring', escFocus);
     await shoot(cdp, '07-after-esc-cancel-focus.png');
     // A cancelled ask may end the turn with no further model request, so the absence is recorded rather than failed.
     const cancelResult = await waitForToolResult(mock, 2).catch((err) => `no second tool result reached the model: ${err.message}`);
