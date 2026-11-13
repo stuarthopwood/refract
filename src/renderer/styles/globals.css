@@ -413,7 +413,7 @@ samp {
   --mermaid-crit: #db0000;
   --mermaid-cscale-11: #a85400;
   --mermaid-cscale-label-11: #fafafa;
-  --mermaid-accent: #7375f2;
+  --mermaid-accent: #8082f4;
   --mermaid-accent-fill: #2d2e52;
   --mermaid-palette-1: #76a9ff;
   --mermaid-palette-2: #21df9b;
@@ -731,7 +731,7 @@ samp {
    * remediation's whole point is to avoid). `--accent-text` is still added as a new, read-by-
    * nothing token: a lighter indigo step that clears 4.5:1 against both this theme's existing
    * `--background` (5.24:1) and `--card`/`--popover` (4.74:1). */
-  --accent-text: #7375F2;
+  --accent-text: #8082F4;
   /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
   --md-heading: var(--accent-text);
   --md-marker: var(--accent-text);
@@ -897,7 +897,7 @@ samp {
   --mermaid-note-bg: #242834;
   --mermaid-note-fg: #cfd0d2;
   --mermaid-task-text: #f8fafc;
-  --mermaid-accent: #8588f4;
+  --mermaid-accent: #8c8ff5;
   --mermaid-accent-fill: #303255;
   --role-default: oklch(0.78 0.11 197);
   --role-smol: oklch(0.78 0.12 340);
@@ -975,7 +975,7 @@ samp {
    * clears 4.5:1 against `--background` (6.18:1), `--surface-1` (5.35:1) AND `--surface-2`/
    * popover (4.78:1, the binding constraint -- the earlier `#7A7DF3` cleared only 4.24:1
    * there). */
-  --accent-text: #8588F4;
+  --accent-text: #8C8FF5;
   /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
   --md-heading: var(--accent-text);
   --md-marker: var(--accent-text);

@@ -21,6 +21,9 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-row-hover-bg",
         link: "text-primary underline-offset-4 hover:underline",
+        // Borderless text-only chip for a non-button-looking control (#1873); focus shows an inset outline, never a border.
+        plain:
+          "border-transparent text-accent-text focus-visible:border-transparent focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
         focused:
           "h-auto border-active-indicator bg-focused-badge-bg py-1 font-medium text-active-indicator-foreground",
         warning: "h-auto border-severity-warning bg-severity-warning-bg py-1 text-severity-warning",
