@@ -199,8 +199,9 @@ async function main() {
     await cdp.waitFor(`${TAB('pull-request')}?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 15_000, label: 'PR tab selected before keyboard pass' }).catch(() => {});
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
     await sleep(600);
-    const key = async (name, vk) => {
-      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: vk, key: name, code: name, modifiers: 0 });
+    // `text` makes CDP synthesise the character, so Enter on a focused button fires its click like a real key press.
+    const key = async (name, vk, text) => {
+      await cdp.send('Input.dispatchKeyEvent', { type: text ? 'keyDown' : 'rawKeyDown', windowsVirtualKeyCode: vk, key: name, code: name, modifiers: 0, ...(text ? { text, unmodifiedText: text } : {}) });
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: vk, key: name, code: name, modifiers: 0 });
     };
     await cdp.evaluate(`(${link('#42')}).focus()`);
@@ -212,10 +213,10 @@ async function main() {
     check('the accessible name carries the type word once known ("Issue #12")', tabbed.name === 'Issue #12', tabbed.name);
     await cdp.evaluate(`(${link('#12')}).scrollIntoView({ block: 'center' })`);
     await shot('06-keyboard-focus-ring-on-12.png');
-    await key('Enter', 13);
+    await key('Enter', 13, '\r');
     await cdp.waitFor(`${TAB('issue')}?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 15_000, label: 'Issue tab after Enter' }).catch(() => {});
     await sleep(500);
-    const entered = await cdp.evaluate(`(() => { const b = ${link('#12')}; const live = b.parentElement.querySelector('[role="status"]'); return { selected: ${TAB('issue')}?.getAttribute('aria-selected') === 'true', focusOnLink: document.activeElement === b, focusVisible: document.activeElement?.matches(':focus-visible'), live: live?.textContent ?? null }; })()`);
+    const entered = await cdp.evaluate(`(() => { const b = ${link('#12')}; const live = Array.from(b.parentElement.querySelectorAll('[role="status"]')).map((s) => s.textContent).find((t) => t.includes('#12')); return { selected: ${TAB('issue')}?.getAttribute('aria-selected') === 'true', focusOnLink: document.activeElement === b, focusVisible: document.activeElement?.matches(':focus-visible'), live: live ?? null }; })()`);
     check('Enter on #12 pins the Issue', entered.selected === true, entered);
     check('focus stays on the #12 link after Enter', entered.focusOnLink === true, entered);
     check('the live region announces "Issue #12 opened in the right pane"', entered.live === 'Issue #12 opened in the right pane', entered.live);
