@@ -70,8 +70,8 @@ fn create_and_update_plan_as_native_with_their_own_schemas() {
     }
 }
 
-/// The manager is dropped, as at shutdown, so only the tool's own entry point can answer
-/// `cancelled`; a call that fell through to another tool would say `invalid_input`.
+/// The manager stays alive, so a call that fell through to `send_session_message` would fail
+/// on its own `id`/`text` arguments instead of the tool's own `prompt`/`nothing to change`.
 #[tokio::test]
 async fn create_and_update_are_dispatched_to_their_own_tools() {
     let dir = crate::test_scratch::path(format!("refract-router-test-{}", uuid::Uuid::new_v4()));
@@ -84,14 +84,15 @@ async fn create_and_update_are_dispatched_to_their_own_tools() {
     ));
     let events =
         crate::events::EventSink::new(Arc::new(std::sync::Mutex::new(None)), registry.clone());
-    let agent = crate::session::manager::SessionManager::new(registry, settings, events)
-        .get_or_create_agent("caller");
-    for (tool, args) in [
-        (sessions_create::CREATE_SESSION, json!({ "prompt": "go" })),
-        (sessions_update::UPDATE_SESSION, json!({ "id": "x" })),
+    let manager = crate::session::manager::SessionManager::new(registry, settings, events);
+    let agent = manager.get_or_create_agent("caller");
+    for (tool, args, expected) in [
+        (sessions_create::CREATE_SESSION, json!({}), "prompt"),
+        (sessions_update::UPDATE_SESSION, json!({ "id": "x" }), "nothing to change"),
     ] {
-        let result = run_native(&agent, "call-1", tool, &args).await;
-        assert_eq!(code_of(result), CANCELLED, "{tool}");
+        let err = run_native(&agent, "call-1", tool, &args).await.unwrap_err();
+        assert_eq!(err.code, INVALID_INPUT, "{tool}");
+        assert!(err.message.contains(expected), "{tool}: {}", err.message);
     }
 }
 
