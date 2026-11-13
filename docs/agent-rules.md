@@ -11,7 +11,7 @@ On 2026-09-30 a worker ran `rm -rf "C:/tmp/a" "C:${unsetVar:-}"`. The variable w
 - Never delete inside this repo except named scratch files (for example `out/`, `dist/`, `node_modules/` by literal relative path). Clean up from a cwd outside the repo.
 - Never run `git clean -f`, `git reset --hard`, `git checkout .`, or `git restore .` without the user approving that exact command.
 - List the literal target first, then delete.
-- Test destructive guards only against a canary you create under `C:/Scratch/<task>/`, never against `.`, `..`, `~`, or a bare drive.
+- Test destructive guards only against a canary you create under `%TEMP%\scratch\<task>\`, never against `.`, `..`, `~`, or a bare drive.
 - Commit verified work after every wave and push. Do not leave hours of work uncommitted.
 - When you delegate, put this list in the brief.
 
@@ -53,7 +53,7 @@ On 2026-10-09 the user decided that a docs-only PR merges without asking, so the
 
 Lane worktrees are created per lane and were never removed (49 worktrees, about 14 GB, measured 2026-10-11). The controller (whoever merges the PR) owns the removal.
 
-- After every merge, the controller runs `pnpm worktrees:reap --apply` directly (no dry run), then deletes the merged lane's `C:/Scratch/<task>` folder by literal path.
+- After every merge, the controller runs `pnpm worktrees:reap --apply` directly (no dry run), then deletes the merged lane's `%TEMP%\scratch\<task>` folder by literal path.
 - Lanes never delete their own worktree, folder, or branch.
 - Before each multi-lane wave, run `pnpm worktrees:reap --check`. It exits 1 when the worktrees folder holds more than 8 worktrees or its drive has under 20 GB free.
 - The script removes a worktree only when its PR is merged, the tree is clean, the branch tip equals the PR head, it is not a Refract Session in `%APPDATA%\refract-tauri\registry.json`, no process names its path, and `git worktree remove` (never `--force`) succeeds. It then clears `node_modules` husks and deletes the verified branch. Last, if the shared cargo target's build-script output (`<CARGO_TARGET_DIR>/debug/build/refract-tauri-*/output`) names a reaped or deleted worktree, `--apply` runs `cargo clean -p refract-tauri` there (skipped with a message while `cargo.exe`/`rustc.exe` runs; `--check` exits 1 while such a path remains). Everything else is skipped and reported (including open-PR worktrees and ignored files beyond rebuildable output). Exit codes: 0 success, 1 `--check` problem or `--apply` with at least one failure, 2 usage error or refusal (for example `--apply` with no registry file; `--no-registry` overrides).
@@ -91,7 +91,7 @@ On 2026-10-15 the user decided (#934 grill, ADR 0003): "All UI elements should b
 ## Verifying the Rust (Tauri) build (epic #797)
 
 - Point `CARGO_TARGET_DIR` at the shared build cache for every `cargo`/`tauri` command; never let `src-tauri/target` appear in a worktree. Wait for a build in flight rather than starting a second one. Never delete under the shared cache except `cargo clean -p <crate>` for a confirmed stale-path error (`pnpm worktrees:reap --apply` runs `cargo clean -p refract-tauri` itself when needed), or `pnpm cache:sweep` (age-based, refuses while a build holds the lock; run it when `pnpm ci:local` warns the cache is over 10 GB).
-- Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to `C:/Scratch/<task>/`, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR` under `C:/Scratch/<task>/`, never `%APPDATA%\refract-tauri`. Delete the task folder when you finish (keep cited evidence in `C:/Scratch/<task>/evidence/`). `pnpm verify:tauri` does this with a recorded-frame fake `omp` for no model cost.
+- Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to `%TEMP%\scratch\<task>\`, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR` under `%TEMP%\scratch\<task>\`, never `%APPDATA%\refract-tauri`. Delete the task folder when you finish (keep cited evidence in `%TEMP%\scratch\<task>\evidence\`). `pnpm verify:tauri` does this with a recorded-frame fake `omp` for no model cost.
 - Details: `docs/rust-build.md`.
 
 ## Grill first, then the full Spec Kit plan

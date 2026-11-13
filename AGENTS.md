@@ -13,7 +13,7 @@ On 2026-09-30 a bare `C:` target made `rm -rf` delete this repository (a bare dr
 
 ## Scratch files (HARD RULE, Stuart 2026-11-13)
 
-- Scratch files live only in `C:/Scratch/<task>/` and are always tidied: see `docs/scratch.md`. Put this rule in every delegation brief, and name the worker's task folder in it.
+- Scratch files live only in `%TEMP%\scratch\<task>\` and are always tidied (disk cleaners may remove it, so a PR must not depend on scratch evidence surviving): see `docs/scratch.md`. Put this rule in every delegation brief, and name the worker's task folder in it.
 
 ## Commit often (HARD RULE)
 
@@ -43,7 +43,7 @@ The prototyping no-new-tests phase is over (epic #1918). New PRs carry unit test
 
 ## Reap worktrees after every merge (HARD RULE, issue #658)
 
-- After every merge, the controller runs `pnpm worktrees:reap --apply` directly (no dry run), then deletes the merged lane's `C:/Scratch/<task>` folder by literal path. Lanes never delete their own worktree, folder, or branch.
+- After every merge, the controller runs `pnpm worktrees:reap --apply` directly (no dry run), then deletes the merged lane's `%TEMP%\scratch\<task>` folder by literal path. Lanes never delete their own worktree, folder, or branch.
 - Before each multi-lane wave, run `pnpm worktrees:reap --check`.
 - Put this rule in every lane brief. Lifecycle and detail: `.omp/skills/worktree-reap/SKILL.md`, `docs/agent-rules.md`.
 
@@ -59,7 +59,7 @@ The Tauri v2 Rust build (`src-tauri/`) is Refract's only build; the Electron bui
 ## Verifying the Rust (Tauri) build (epic #797)
 
 - Point `CARGO_TARGET_DIR` at the shared build cache for every `cargo`/`tauri` command; never let `src-tauri/target` appear in a worktree. Never delete under the shared cache except `cargo clean -p <crate>` for a confirmed stale-path error, or `pnpm cache:sweep`.
-- Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to `C:/Scratch/<task>/`, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR` under `C:/Scratch/<task>/`, never `%APPDATA%\refract-tauri`. `pnpm verify:tauri` does this with a recorded-frame fake `omp`.
+- Never `pnpm dev` for a live check. Build with `pnpm exec tauri build --debug --no-bundle`, copy the exe to `%TEMP%\scratch\<task>\`, and run it with your own `--remote-debugging-port` and a scratch `REFRACT_DATA_DIR` under `%TEMP%\scratch\<task>\`, never `%APPDATA%\refract-tauri`. `pnpm verify:tauri` does this with a recorded-frame fake `omp`.
 - Details: `docs/rust-build.md`, `docs/agent-rules.md`.
 
 ## No god files (HARD RULE, issue #806)
