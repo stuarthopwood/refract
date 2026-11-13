@@ -4,7 +4,7 @@
 // proof of what Merge ran. Launch 1: gh-stack outdated -> Install -> badge/layers/merge routing/toggle/exit 9.
 // Launch 2: gh-stack missing -> install callout in the Merge dialog.
 
-import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, createWriteStream } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync, existsSync, copyFileSync, createWriteStream, rmSync } from 'node:fs';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -58,6 +58,8 @@ async function launch(launcherExe, built, label) {
   };
   for (const k of Object.keys(env)) if (['GH_TOKEN', 'GITHUB_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GH_HOST'].includes(k.toUpperCase())) delete env[k];
   const pidFile = path.join(path.dirname(built.dest), `target-${label}.pid`);
+  // A pid file left by a previous run would be read before the launcher rewrites it, giving a wrong owner.
+  rmSync(pidFile, { force: true });
   const { child, targetPid } = await launchViaJobObject(launcherExe, pidFile, built.dest, [], { cwd: path.dirname(built.dest), env });
   const stream = createWriteStream(path.join(SHOTS_DIR, `app-${label}.log`));
   child.stdout.pipe(stream, { end: false });
