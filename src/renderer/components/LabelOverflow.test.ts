@@ -42,6 +42,8 @@ describe('LabelOverflow', () => {
   it('shows keyboard focus with an outline rather than a border', () => {
     // Mutation: drop the focus-visible outline from the `plain` Badge variant, leaving only a faint glow.
     expect(render(hidden)).toContain('focus-visible:outline-ring')
+    // Mutation: drop `focus-visible:ring-0`, so the base glow shows on top of the inset outline.
+    expect(render(hidden)).toContain('focus-visible:ring-0')
   })
 
   it('lets the caller add layout classes without losing the chip treatment', () => {

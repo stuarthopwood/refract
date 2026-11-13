@@ -729,10 +729,10 @@ samp {
    * its existing near-white fill above (the indigo "#550 item 4" fill is Obsidian-only; folding
    * it into Dark here would be a second value change to an existing, live token, which this
    * remediation's whole point is to avoid). `--accent-text` is still added as a new, read-by-
-   * nothing token: a lighter indigo step that clears 4.5:1 against both this theme's existing
-   * `--background` (5.24:1) and `--card`/`--popover` (4.74:1). */
+   * nothing token: a lighter indigo step that clears the 4.5:1 floor on every surface pair in
+   * `scripts/theme-contrast-pairs.mjs` (see `node scripts/check-theme-contrast.mjs` for current ratios). */
   --accent-text: #8082F4;
-  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg stays a separate lighter tint of the accent hue. */
   --md-heading: var(--accent-text);
   --md-marker: var(--accent-text);
   --md-quote-bar: var(--accent-text);
@@ -759,7 +759,7 @@ samp {
    * tokens. `--command-pill-bg` is a plain neutral step, lighter than `--card`/`--muted`,
    * chosen ONLY to clear 1.4:1 against `--background` (1.50:1, comfortable margin) -- no accent-
    * text constraint on it at all now. `--command-pill-fg` is the SAME hue as `--accent-text`
-   * (279, measured from its own hex `#7375F2` -- gate round 3 fix: round 2's hue 264 was a
+   * (279, the hue of `--accent-text` -- gate round 3 fix: round 2's hue 264 was a
    * transcription drift, 15 degrees off the real accent hue, which read as a visibly different
    * blue), lightened and desaturated only as far as needed to clear 4.5:1 on THIS fill (4.65:1,
    * measured) -- a visibly lighter step of the same accent family, not a different colour. */
@@ -813,7 +813,7 @@ samp {
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: #38BDF8;
-  /* #838/#1877: agent-to-agent message identity (glyph + label only); the accent text lightened a step: plain `--accent-text` is 4.00:1 on `--muted` (the trigger's hover fill), under the 4.5:1 floor. */
+  /* #838/#1877: agent-to-agent message identity (glyph + label only); the accent text lightened a step so it keeps headroom on `--muted` (the trigger's hover fill). */
   --agent-message: color-mix(in srgb, var(--accent-text) 91%, white);
   /* #925: diff-stat "+A -D" colouring (composer status line, Session details card, PR Changes
    * tab and its own per-file header #919, and the chat transcript's own expanded DiffView
@@ -972,11 +972,11 @@ samp {
    * the 4.5:1 AA floor, so the fill is nudged to `#5A5EEE` (4.92:1 for white text, verified by
    * check-theme-contrast.mjs's `primary-foreground`/`primary` pair). `--accent-text` is the
    * separate, lighter indigo step for text/links (never the fill), retuned with margin so it
-   * clears 4.5:1 against `--background` (6.18:1), `--surface-1` (5.35:1) AND `--surface-2`/
-   * popover (4.78:1, the binding constraint -- the earlier `#7A7DF3` cleared only 4.24:1
-   * there). */
+   * clears 4.5:1 on every surface pair listed for it in `scripts/theme-contrast-pairs.mjs`
+   * (binding constraint: `--surface-hover`/`--accent` at 4.62:1; run
+   * `node scripts/check-theme-contrast.mjs` for current ratios). */
   --accent-text: #8C8FF5;
-  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg stays a separate lighter tint of the accent hue. */
   --md-heading: var(--accent-text);
   --md-marker: var(--accent-text);
   --md-quote-bar: var(--accent-text);
@@ -998,7 +998,7 @@ samp {
   /* Issue #1050 (gate round 2 remediation, see Dark's own comment for the full reasoning): two
    * independent tokens. `--command-pill-bg` is a plain blue-grey neutral step clearing 1.4:1
    * against `--background` (1.50:1). `--command-pill-fg` is the same hue as `--accent-text`
-   * (280, measured from its own hex `#8588F4` -- gate round 3 fix: round 2's hue 255 was a
+   * (280, the hue of `--accent-text` -- gate round 3 fix: round 2's hue 255 was a
    * transcription drift, 25 degrees off the real accent hue, which read as a visibly different
    * blue), lightened/desaturated only as far as needed to clear 4.5:1 on this fill. Gate round 5
    * fix (test review): the round-3 chroma (0.166) put the computed oklch candidate outside the

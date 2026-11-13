@@ -32,7 +32,7 @@ Amended 2026-11-13 for #1873 (Skippy, delegated by Stuart; "Decided" comment on 
 - FR-001: The session list shows a "GitHub" group with Pull requests and Issues above the Project groups.
 - FR-002: The Issues view lists issues from every selected Project, deduped by owner/repo, newest update first.
 - FR-003: Filters: tab, State, Project (multi-select), Label, search.
-- FR-004: Rows show title, number, state, Project, assignee, comment count, updated time, and up to two labels plus "+N". "+N" is a focusable, borderless accent-text chip (reachable with Tab; no border in any state, a focus outline instead) whose tooltip lists every hidden label with its colour dot, and whose accessible name is the visible "+N" followed by the hidden label names.
+- FR-004: Rows show title, number, state, Project, assignee, comment count, updated time, and up to two labels plus "+N". "+N" is a focusable, borderless accent-text chip (reachable with Tab; no border in any state, a focus outline instead) whose tooltip lists every hidden label with its colour dot, and whose accessible name is the visible "+N" followed by the hidden label names. The chip has no hover style beyond the tooltip (no background, border or colour change), which replaces the "visible hover and focus states" requirement for this chip; keyboard focus still shows an inset outline.
 - FR-005: The detail pane shows the issue with a sanitised body, Open on GitHub, Copy link and New issue (existing Report an issue dialog).
 - FR-006: Inputs reaching `gh` are validated; returned URLs are checked against `https://github.com/owner/repo/issues/N`.
 

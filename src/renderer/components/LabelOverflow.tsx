@@ -20,7 +20,7 @@ export function LabelOverflow({ labels, className }: { labels: readonly Overflow
   const accessibleName = overflowChipName(labels)
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
+      <TooltipTrigger asChild aria-describedby={undefined}>
         <Badge asChild variant="plain" className={cn('h-6 min-w-6 cursor-default', className)}>
           <button type="button" aria-label={accessibleName}>
             +{labels.length}

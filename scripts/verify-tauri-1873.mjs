@@ -28,7 +28,7 @@ const ROW = (n) => `document.querySelector('[data-issue-row][data-issue-number="
 const CHIP = `${ROW(12)}.parentElement.querySelector('button[aria-label^="+2 more labels"]')`;
 const TOOLTIP_TEXT = `Array.from(document.querySelectorAll('[data-slot="tooltip-content"]')).map((el) => el.textContent.trim().replace(/\\s+/g, ' ')).join('|')`;
 // "Transparent" computed colours carry alpha 0 whatever the theme is.
-const CHIP_STYLE = `(() => { const s = getComputedStyle(${CHIP}); return { top: s.borderTopColor, right: s.borderRightColor, bottom: s.borderBottomColor, left: s.borderLeftColor, color: s.color, outlineStyle: s.outlineStyle, outlineWidth: s.outlineWidth }; })()`;
+const CHIP_STYLE = `(() => { const s = getComputedStyle(${CHIP}); return { top: s.borderTopColor, right: s.borderRightColor, bottom: s.borderBottomColor, left: s.borderLeftColor, color: s.color, background: s.backgroundColor, outlineStyle: s.outlineStyle, outlineWidth: s.outlineWidth }; })()`;
 const isTransparent = (c) => c === 'transparent' || /^rgba\(\s*\d+,\s*\d+,\s*\d+,\s*0\s*\)$/.test(c) || /\/\s*0\s*\)$/.test(c);
 const borderless = (s) => [s.top, s.right, s.bottom, s.left].every(isTransparent);
 
@@ -99,9 +99,11 @@ async function main() {
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: centre.x, y: centre.y });
     await cdp.waitFor(`${TOOLTIP_TEXT}.includes('docs') && ${TOOLTIP_TEXT}.includes('p1')`, { timeoutMs: 10_000, label: 'hover tooltip' });
     const hover = await cdp.evaluate(CHIP_STYLE);
-    check(true, 'Hover: the tooltip lists the hidden labels docs and p1', await cdp.evaluate(TOOLTIP_TEXT));
+    const hoverTooltip = await cdp.evaluate(TOOLTIP_TEXT);
+    check(hoverTooltip.includes('docs') && hoverTooltip.includes('p1'), 'Hover: the tooltip lists the hidden labels docs and p1', hoverTooltip);
     check(borderless(hover), 'Hover: chip still has no visible border', JSON.stringify(hover));
     check(hover.color === accent, 'Hover: chip text stays the accent colour', hover.color);
+    check(hover.background === rest.background, 'Hover: chip background is unchanged from rest (no hover style beyond the tooltip)', `${rest.background} -> ${hover.background}`);
     await shot(cdp, '02-chip-hover.png');
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 27, key: 'Escape', code: 'Escape' });
@@ -119,7 +121,8 @@ async function main() {
     check(reached, 'Tab from the row title reaches the chip');
     await cdp.waitFor(`${TOOLTIP_TEXT}.includes('docs') && ${TOOLTIP_TEXT}.includes('p1')`, { timeoutMs: 10_000, label: 'focus tooltip' });
     const focus = await cdp.evaluate(CHIP_STYLE);
-    check(true, 'Focus: the tooltip lists the hidden labels docs and p1', await cdp.evaluate(TOOLTIP_TEXT));
+    const focusTooltip = await cdp.evaluate(TOOLTIP_TEXT);
+    check(focusTooltip.includes('docs') && focusTooltip.includes('p1'), 'Focus: the tooltip lists the hidden labels docs and p1', focusTooltip);
     check(borderless(focus), 'Focus: chip has no visible border', JSON.stringify(focus));
     check(focus.outlineStyle === 'solid' && parseFloat(focus.outlineWidth) >= 2, 'Focus: a solid outline of at least 2px marks the chip instead of a border', `${focus.outlineStyle} ${focus.outlineWidth}`);
     await shot(cdp, '03-chip-focus.png');
