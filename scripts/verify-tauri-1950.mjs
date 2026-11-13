@@ -152,8 +152,10 @@ async function main() {
 
     // Plain click on an Issue: pins and reveals the right pane, focus stays in the chat.
     await click(cdp, '#12');
-    await cdp.waitFor(`${TAB('issue')}?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 15_000, label: 'Issue tab selected' }).catch(() => {});
-    check('a plain click on #12 pins the Issue in the right pane', await cdp.evaluate(`${TAB('issue')}?.getAttribute('aria-selected') === 'true'`), await selectedTab(cdp));
+    // A lone pinned panel shows a title instead of a tab bar, so accept either.
+    const issuePinned = `(${TAB('issue')}?.getAttribute('aria-selected') === 'true') || document.getElementById('right-pane-panel-title')?.textContent.trim() === 'Issue'`;
+    await cdp.waitFor(issuePinned, { timeoutMs: 15_000, label: 'Issue pinned' }).catch(() => {});
+    check('a plain click on #12 pins the Issue in the right pane', await cdp.evaluate(issuePinned), await selectedTab(cdp));
     check('the click did not open GitHub', (await opened(cdp)).length === 0, await opened(cdp));
     const focusIn = await cdp.evaluate(`(() => { const a = document.activeElement; return { inPane: !!a?.closest('[role="tabpanel"], [role="tablist"]'), tag: a?.tagName, text: a?.textContent?.trim().slice(0, 20) }; })()`);
     check('keyboard focus stays in the chat, not the right pane', focusIn.inPane === false, focusIn);
