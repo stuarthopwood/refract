@@ -42,8 +42,8 @@ const checkbox = (q, label) =>
   `Array.from(${field(q)}?.querySelectorAll('[role="checkbox"]') ?? []).find((el) => document.getElementById(el.getAttribute('aria-labelledby'))?.textContent.trim() === ${JSON.stringify(label)})`;
 const control = (q, tag) => `${field(q)}?.querySelector('${tag}')`;
 const SUBMIT = `Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim().startsWith('Submit'))`;
-const LIVE_TITLES = `Array.from(document.querySelectorAll('*')).filter((el) => el.children.length === 0 && el.textContent.trim() === 'Questions from the agent' && !el.closest('[role="group"]'))`;
-const HISTORY_CARDS = `Array.from(document.querySelectorAll('[role="group"][aria-label^="Questions from the agent"]'))`;
+const LIVE_CARDS = `Array.from(document.querySelectorAll('[role="group"][aria-label="Questions from the agent"]:not([tabindex])'))`;
+const HISTORY_CARDS = `Array.from(document.querySelectorAll('[role="group"][aria-label^="Questions from the agent"][tabindex="-1"]'))`;
 const FOCUS = `(() => { const a = document.activeElement; return { tag: a?.tagName ?? null, role: a?.getAttribute?.('role') ?? null, label: a?.getAttribute?.('aria-label') ?? null, isBody: !a || a === document.body }; })()`;
 
 async function shoot(cdp, name) {
@@ -168,9 +168,9 @@ async function main() {
     // 1. One combined card for the whole form.
     await cdp.waitFor(`!!${field('Which database?')} && !!${field('Owner')}`, { timeoutMs: 90_000, label: 'combined ask card rendered' });
     const headings = await cdp.evaluate(`${HEADINGS}.map((p) => p.textContent)`);
-    const titles = await cdp.evaluate(`${LIVE_TITLES}.length`);
+    const titles = await cdp.evaluate(`${LIVE_CARDS}.length`);
     const expected = ['Which database?', 'Which features?', 'Why this stack?, required', 'Team name', 'Owner'];
-    check(titles === 1 && expected.every((q, i) => headings[i] === q) && headings.length === expected.length, '1. One combined card renders for the ask (one title, five field headings in form order)', { titles, headings });
+    check(titles === 1 && expected.every((q, i) => headings[i] === q) && headings.length === expected.length, '1. One combined card renders for the ask (one live group, five field headings in form order)', { titles, headings });
     await shoot(cdp, '01-combined-card-rendered.png');
 
     // 2. Submit stays aria-disabled until the required textarea is filled.
