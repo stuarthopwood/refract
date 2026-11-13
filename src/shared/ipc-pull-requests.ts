@@ -21,6 +21,10 @@ export interface PullRequestAcrossResult {
   fetchedAt: string;
 }
 
+export interface StackRefsResult {
+  items: Array<{ number: number; headRef: string; baseRef: string }>;
+}
+
 export interface PullRequestsAcrossApi {
   /** Pull requests across `repositoryIds` (at most 40; two Projects on one remote list once),
    * newest updated first, up to `limit` rows (50 to 200). One batched `gh search prs`; the search
@@ -32,4 +36,6 @@ export interface PullRequestsAcrossApi {
     query: string,
     limit: number,
   ): Promise<Result<PullRequestAcrossResult>>;
+  /** Open pull requests' branch names for one Project, for stack chaining (#1867). */
+  stackRefs(repositoryId: string): Promise<Result<StackRefsResult>>;
 }

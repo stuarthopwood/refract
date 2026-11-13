@@ -68,6 +68,8 @@ pub struct OmpProcessOptions {
     pub plan_mode: Option<bool>,
     /// An extra `--config` overlay for this launch (omp accepts the flag repeatedly).
     pub extra_config: Option<PathBuf>,
+    /// Adds the `gh stack` block to the Session rules (#1867).
+    pub stacked_prs: bool,
     pub ready_prompt_after_ms: u64,
     pub ready_ceiling_ms: u64,
 }
@@ -81,6 +83,7 @@ impl OmpProcessOptions {
             no_session: false,
             plan_mode: None,
             extra_config: None,
+            stacked_prs: false,
             ready_prompt_after_ms: READY_PROMPT_AFTER_MS,
             ready_ceiling_ms: READY_CEILING_MS,
         }

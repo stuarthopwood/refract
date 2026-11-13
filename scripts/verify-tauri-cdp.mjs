@@ -240,7 +240,7 @@ export function isTargetOwningPort(port, targetPid) {
 $conn = Get-NetTCPConnection -State Listen -LocalPort ${port} -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $conn) { Write-Output '{}'; exit }
 $owner = $conn.OwningProcess
-$parent = (Get-CimInstance Win32_Process -Filter "ProcessId=$owner" -ErrorAction SilentlyContinue).ParentProcessId
+$parent = (Get-CimInstance Win32_Process -Filter ('ProcessId=' + $owner) -ErrorAction SilentlyContinue).ParentProcessId
 @{ owner = $owner; parent = $parent } | ConvertTo-Json -Compress
 `.trim();
   const result = spawnSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', windowsHide: true });

@@ -193,6 +193,7 @@ pub(super) fn issues_new_session(state: AppState, args: Vec<Value>) -> HandlerFu
                 title: issue.title.clone(),
                 url: issue.url.clone(),
             }),
+            parent_session_id: None,
         };
         let registered = state
             .registry

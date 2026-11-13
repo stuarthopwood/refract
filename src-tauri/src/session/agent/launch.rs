@@ -183,11 +183,18 @@ impl SessionAgent {
         );
         // Always set, so a Session out of Plan overrides a global plan.defaultOnStartup.
         opts.plan_mode = Some(crate::session::working_mode::plan_for_launch(self).await);
-        opts.extra_config = crate::agent_tools::overlay_config(
-            &crate::data_dir(),
-            crate::agent_tools::ToolAccess::root(),
-        )
-        .await;
+        // Both launch sites read the depth here, so a restart after a re-parent sees the new one.
+        let tool_access = {
+            let registry = self.registry.lock().await;
+            crate::agent_tools::ToolAccess::for_session(&registry.snapshot().sessions, &session.id)
+        };
+        opts.extra_config =
+            crate::agent_tools::overlay_config(&crate::data_dir(), tool_access).await;
+        let setting_on = self.settings.lock().await.get().stacked_pull_requests;
+        opts.stacked_prs = crate::github::gh_stack_state::stack_rules_enabled(
+            setting_on,
+            &crate::github::gh_stack_state::state(crate::github::gh_stack_state::runtime()).await,
+        );
 
         // Process-wide start slot and low-memory defer.
         let slot_guard = crate::session::start_queue::acquire_slot(self).await?;
@@ -290,8 +297,7 @@ impl SessionAgent {
             }
         };
         let ask_dialog_enabled = send_set_ask_dialog(self, &proc).await;
-        crate::agent_tools::register_host_tools(&proc, crate::agent_tools::ToolAccess::root())
-            .await;
+        crate::agent_tools::register_host_tools(&proc, tool_access).await;
         // Compares the pre-launch count with the observed state before `sync_from_state` re-baselines it.
         let rebaseline_notice = session
             .current_conversation
