@@ -69,7 +69,7 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin_issue: Option<OriginIssue>,
     /// The parent Session when this is a Child Session; absent for a root Session (#1859).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent_session_id: Option<String>,
 }
 
@@ -453,7 +453,9 @@ impl RegistryStore {
             if let Some(value) = patch.paused_held {
                 session.paused_held = value;
             }
-            let _ = &patch.parent_session_id;
+            if let Some(value) = patch.parent_session_id {
+                session.parent_session_id = value;
+            }
         }
         if let Err(err) = self.persist().await {
             self.data.sessions[index] = previous;
@@ -481,7 +483,7 @@ impl RegistryStore {
         let removed = self.data.sessions.remove(index);
         let mut rerooted = Vec::new();
         for child in &mut self.data.sessions {
-            if child.parent_session_id.as_deref() == Some(id) {
+            if child.archived_at.is_none() && child.parent_session_id.as_deref() == Some(id) {
                 child.parent_session_id = None;
                 rerooted.push(child.id.clone());
             }
@@ -492,8 +494,13 @@ impl RegistryStore {
             if !self.data.sessions.iter().any(|s| s.id == removed.id) {
                 let insert_at = index.min(self.data.sessions.len());
                 self.data.sessions.insert(insert_at, removed.clone());
+                // Links go back with the Session, unless the child was re-parented meanwhile.
+                for child in &mut self.data.sessions {
+                    if child.parent_session_id.is_none() && rerooted.contains(&child.id) {
+                        child.parent_session_id = Some(id.to_string());
+                    }
+                }
             }
-            let _ = &rerooted;
             let _ = self.persist().await;
             return Err(err.into());
         }

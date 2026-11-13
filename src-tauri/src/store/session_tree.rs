@@ -22,15 +22,15 @@ fn find<'a>(sessions: &'a [Session], id: &str) -> Option<&'a Session> {
     sessions.iter().find(|s| s.id == id)
 }
 
-/// Depth counted up the registry parent chain, root = 1. A cyclic chain counts as a root so bad
-/// data can neither loop nor push a Session past the limit.
+/// Depth counted up the registry parent chain, root = 1. A chain that loops counts as a root so
+/// bad data can neither spin nor push a Session past the limit; a dangling parent ends the chain.
 pub fn depth_of(sessions: &[Session], id: &str) -> usize {
     let mut seen = HashSet::new();
     let mut depth = 1;
     let mut current = find(sessions, id);
     while let Some(session) = current {
         if !seen.insert(session.id.as_str()) {
-            break;
+            return 1;
         }
         current = session
             .parent_session_id
@@ -49,7 +49,7 @@ pub fn live_children<'a>(
     parent_id: &'a str,
 ) -> impl Iterator<Item = &'a Session> + 'a {
     sessions.iter().filter(move |s| {
-        s.parent_session_id.as_deref() == Some(parent_id)
+        s.archived_at.is_none() && s.parent_session_id.as_deref() == Some(parent_id)
     })
 }
 
@@ -112,23 +112,22 @@ pub fn validate_parent(
     child_id: Option<&str>,
     parent_id: &str,
 ) -> Result<(), TreeError> {
-    let child_live = match child_id {
-        Some(id) => {
-            if id == parent_id {
-                return Err(TreeError::InvalidParent);
-            }
-            true
+    if let Some(id) = child_id {
+        if id == parent_id || descendants(sessions, id).iter().any(|d| d == parent_id) {
+            return Err(TreeError::InvalidParent);
         }
-        None => true,
-    };
+    }
     let moved_height = child_id.map_or(1, |id| subtree_height(sessions, id));
     if depth_of(sessions, parent_id) + moved_height > MAX_DEPTH {
         return Err(TreeError::DepthLimit);
     }
-    // A child already under this parent is not counted twice.
-    let siblings = live_children(sessions, parent_id)
-        .count();
-    if siblings + usize::from(child_live) > MAX_LIVE_CHILDREN {
+    // An archived mover, or one already live under this parent, adds nothing to the count.
+    let adds = child_id.is_none_or(|id| {
+        find(sessions, id).is_none_or(|mover| {
+            mover.archived_at.is_none() && mover.parent_session_id.as_deref() != Some(parent_id)
+        })
+    });
+    if live_children(sessions, parent_id).count() + usize::from(adds) > MAX_LIVE_CHILDREN {
         return Err(TreeError::ChildLimit);
     }
     Ok(())
