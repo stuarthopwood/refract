@@ -188,6 +188,11 @@ impl SessionAgent {
             crate::agent_tools::ToolAccess::root(),
         )
         .await;
+        opts.stacked_prs = self.settings.lock().await.get().stacked_pull_requests
+            && matches!(
+                crate::github::gh_stack_state::state(crate::github::gh_stack_state::runtime()).await,
+                Ok(crate::github::gh_stack_state::GhStackState::Ready)
+            );
 
         // Process-wide start slot and low-memory defer.
         let slot_guard = crate::session::start_queue::acquire_slot(self).await?;

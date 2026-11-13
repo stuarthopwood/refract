@@ -11,9 +11,13 @@ fn warn(warnings: &mut Vec<String>, reason: String) {
 
 /// Regenerates the rules file in `dir` (and a one-key plan overlay when the Session overrides the working mode) and returns the arguments for the files that
 /// were written, plus a warning for each one that was not. Until the migration to the global omp config has succeeded, the legacy overlay still applies.
-pub async fn launch_args(dir: &Path, plan_mode: Option<bool>) -> (Vec<String>, Vec<String>) {
+pub async fn launch_args(
+    dir: &Path,
+    plan_mode: Option<bool>,
+    stacked: bool,
+) -> (Vec<String>, Vec<String>) {
     let migrated = migrate::ensure(dir).await;
-    build_args(dir, plan_mode, migrated).await
+    build_args(dir, plan_mode, migrated, stacked).await
 }
 
 /// Split from `launch_args` so a test can pick the migrated or legacy branch without touching the real omp config.
@@ -21,6 +25,7 @@ async fn build_args(
     dir: &Path,
     plan_mode: Option<bool>,
     migrated: bool,
+    stacked: bool,
 ) -> (Vec<String>, Vec<String>) {
     let mut args = Vec::new();
     let mut warnings = Vec::new();
@@ -51,7 +56,7 @@ async fn build_args(
         ),
         None => {}
     }
-    match rules::write(dir).await {
+    match rules::write(dir, stacked).await {
         Ok(path) => {
             args.push("--append-system-prompt".to_string());
             args.push(path.to_string_lossy().into_owned());
@@ -73,7 +78,7 @@ mod tests {
     async fn the_legacy_branch_marks_a_legacy_session_launched() {
         let dir = std::env::temp_dir().join(format!("refract-args-legacy-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let (args, _) = build_args(&dir, None, false).await;
+        let (args, _) = build_args(&dir, None, false, false).await;
         assert!(overlay::legacy_session_launched());
         assert!(args.iter().any(|a| a == "--config"));
         let _ = std::fs::remove_dir_all(&dir);

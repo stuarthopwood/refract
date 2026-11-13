@@ -219,6 +219,10 @@ export interface SubmitReviewInput {
 export interface MergeInput {
   method: MergeMethod;
   expectedHeadSha: string;
+  /** Renderer's view of stacking; Rust trusts a successful `gh stack view` over it (#1867). */
+  stackHint?: 'stacked' | 'plain';
+  /** Head branch, so `gh stack view` can find the stack of this pull request. */
+  headBranch?: string;
 }
 
 /** Re-exported so existing imports from `../../shared/ipc` keep working (#891). */
