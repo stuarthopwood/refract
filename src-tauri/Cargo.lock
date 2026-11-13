@@ -3352,7 +3352,7 @@ dependencies = [
 
 [[package]]
 name = "refract-tauri"
-version = "0.34.0"
+version = "0.35.0"
 dependencies = [
  "base64 0.23.1",
  "dirs",
