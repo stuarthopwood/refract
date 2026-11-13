@@ -407,7 +407,10 @@ mod launch_role_tests {
 
     #[test]
     fn resumed_session_keeps_the_role_its_file_names() {
-        assert_eq!(role_after_launch(false, Some("slow".into())).as_deref(), Some("slow"));
+        assert_eq!(
+            role_after_launch(false, Some("slow".into())).as_deref(),
+            Some("slow")
+        );
     }
 
     #[test]
