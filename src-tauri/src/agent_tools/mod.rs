@@ -7,6 +7,8 @@ pub mod overlay;
 pub mod panels;
 pub mod router;
 pub mod sessions;
+#[allow(dead_code)]
+mod sessions_create;
 mod sessions_limit;
 pub mod sessions_send;
 #[allow(dead_code)]
