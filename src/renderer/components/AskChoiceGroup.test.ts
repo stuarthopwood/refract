@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { AskChoiceGroup, rowProps, type AskChoiceOption } from './AskChoiceGroup'
+import { AskChoiceGroup, createArrowGuard, rowProps, type AskChoiceOption } from './AskChoiceGroup'
 
 const OPTIONS: AskChoiceOption[] = [
   { value: 'Alpha', label: 'Alpha' },
@@ -119,5 +119,61 @@ describe('rowProps Enter shortcut (#1985)', () => {
   it('adds no key handler without an accept callback, or to a row that is not recommended', () => {
     expect(rowProps(RECOMMENDED, undefined).onKeyDown).toBeUndefined()
     expect('onKeyDown' in rowProps({ value: 'Alpha', label: 'Alpha' }, vi.fn())).toBe(false)
+  })
+})
+
+describe('arrow guard (#1435, #1985)', () => {
+  const row = { id: 'row' } as unknown as Node
+  const outside = { id: 'outside' } as unknown as Node
+  const group = { contains: (other: Node | null) => other === row }
+  const moveFocusWithinGroup = { currentTarget: group, relatedTarget: row }
+  const leaveGroup = { currentTarget: group, relatedTarget: outside }
+
+  it('starts not moving', () => {
+    expect(createArrowGuard().isMoving()).toBe(false)
+  })
+
+  // Radix moves focus from a timer and then clicks the new row: the old row's blur lands between the key press and that click.
+  it.each(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Home', 'End'])('still ignores the click after %s once focus has moved to another row', (key) => {
+    const guard = createArrowGuard()
+    guard.keyDown(key)
+    guard.blur(moveFocusWithinGroup)
+    expect(guard.isMoving()).toBe(true)
+  })
+
+  it('stops ignoring clicks once the arrow key comes up', () => {
+    const guard = createArrowGuard()
+    guard.keyDown('ArrowUp')
+    guard.blur(moveFocusWithinGroup)
+    guard.keyUp()
+    expect(guard.isMoving()).toBe(false)
+  })
+
+  it.each([
+    ['Space', ' '],
+    ['Enter', 'Enter'],
+    ['a letter', 'a']
+  ])('lets %s commit after an arrow key', (_name, key) => {
+    const guard = createArrowGuard()
+    guard.keyDown('ArrowDown')
+    guard.keyDown(key)
+    expect(guard.isMoving()).toBe(false)
+  })
+
+  it('lets a pointer press commit after an arrow key', () => {
+    const guard = createArrowGuard()
+    guard.keyDown('ArrowDown')
+    guard.pointerDown()
+    expect(guard.isMoving()).toBe(false)
+  })
+
+  it.each([
+    ['to somewhere outside it', leaveGroup],
+    ['to nowhere', { currentTarget: group, relatedTarget: null }]
+  ])('forgets the arrow key when focus leaves the group %s, so its keyup landing elsewhere cannot leave it stuck', (_name, event) => {
+    const guard = createArrowGuard()
+    guard.keyDown('ArrowDown')
+    guard.blur(event)
+    expect(guard.isMoving()).toBe(false)
   })
 })

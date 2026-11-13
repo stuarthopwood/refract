@@ -118,10 +118,34 @@ export function rowProps(option: AskChoiceOption, onAcceptRecommended: (() => vo
   }
 }
 
+/**
+ * Whether an arrow key is moving the pick. Radix clicks the row an arrow key moves focus to (from a timer, so after the old row's blur), and that
+ * click must not commit the card (#1435). Focus moving between rows is the move itself, so only leaving the group, the key coming up, or a pointer or
+ * non-arrow key press ends it.
+ */
+export function createArrowGuard() {
+  let moving = false
+  return {
+    keyDown(key: string) {
+      moving = /^(Arrow|Home$|End$)/.test(key)
+    },
+    keyUp() {
+      moving = false
+    },
+    pointerDown() {
+      moving = false
+    },
+    blur(event: { currentTarget: { contains(other: Node | null): boolean }; relatedTarget: Node | null }) {
+      if (!event.currentTarget.contains(event.relatedTarget)) moving = false
+    },
+    isMoving: () => moving
+  }
+}
+
 /** The radio or checkbox rows of one question, the "Other" row, and its free-text box; shared by every ask card. */
 export function AskChoiceGroup(props: AskChoiceGroupProps) {
   const { multi, options, selected, otherSelected, disabled, idPrefix, other } = props
-  const arrowKey = React.useRef(false)
+  const [arrowGuard] = React.useState(createArrowGuard)
   const otherValue = otherSentinel(options)
   const ids = (index: number) => ({ labelId: `${idPrefix}-opt-${index}-label`, descId: `${idPrefix}-opt-${index}-desc` })
   const otherInput = other.visible ? <OtherInput other={other} disabled={disabled} /> : null
@@ -167,18 +191,10 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         aria-describedby={props.groupDescribedBy}
         aria-required={props.groupRequired}
         className="gap-2"
-        onKeyDownCapture={(event) => {
-          arrowKey.current = /^(Arrow|Home$|End$)/.test(event.key)
-        }}
-        onKeyUpCapture={() => {
-          arrowKey.current = false
-        }}
-        onBlurCapture={() => {
-          arrowKey.current = false
-        }}
-        onPointerDownCapture={() => {
-          arrowKey.current = false
-        }}
+        onKeyDownCapture={(event) => arrowGuard.keyDown(event.key)}
+        onKeyUpCapture={arrowGuard.keyUp}
+        onBlurCapture={arrowGuard.blur}
+        onPointerDownCapture={arrowGuard.pointerDown}
         value={otherSelected ? otherValue : (selected[0] ?? '')}
         onValueChange={(value) => {
           if (disabled) return
@@ -196,7 +212,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
               aria-labelledby={labelId}
               aria-describedby={option.description ? descId : undefined}
               // A double-click's second click would otherwise pick the same slot in the next question.
-              onClick={(event) => props.onPick && !arrowKey.current && event.detail < 2 && props.onPick(option.value)}
+              onClick={(event) => props.onPick && !arrowGuard.isMoving() && event.detail < 2 && props.onPick(option.value)}
               {...rowProps(option, props.onAcceptRecommended)}
             >
               <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
