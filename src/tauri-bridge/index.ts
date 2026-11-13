@@ -382,6 +382,7 @@ const refract: RefractApi = {
     list: (repositoryId, tab, state, query) => request<PullRequestListResult>(IPC_REQUESTS.PULL_REQUESTS_LIST, repositoryId, tab, state, query),
     listAcross: (tab, state, repositoryIds, query, limit) =>
       request<PullRequestAcrossResult>(IPC_REQUESTS.PULL_REQUESTS_LIST_ACROSS, tab, state, repositoryIds, query, limit),
+    stackRefs: (repositoryId) => request<StackRefsResult>(IPC_REQUESTS.PULL_REQUESTS_STACK_REFS, repositoryId),
     detail: (repositoryId, number) => request<PullRequestDetail>(IPC_REQUESTS.PULL_REQUESTS_DETAIL, repositoryId, number),
     comment: (repositoryId, number, body) =>
       request<{ id: string }>(IPC_REQUESTS.PULL_REQUESTS_COMMENT, repositoryId, number, body),

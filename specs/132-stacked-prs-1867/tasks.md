@@ -17,8 +17,8 @@ Test tasks are part of each task (AGENTS.md: new logic gets co-located unit test
 
 ## Slice 3: UI (FR-008 to FR-010, FR-012)
 
-- [ ] T008 `StackBadge` and `StackLayers` (shared components extended by prop where needed), wired into `PullRequestRow` and `PullRequestDetail`; `PullRequestList` runs chaining once per load. Logic tests on the position mapping.
-- [ ] T009 `MergeDialog`: not-installed/outdated callout with **Install**, "merges layers 1 to N together" line, re-read of the setting; Settings row with toggle and inline state. Copy through `check:ui-text`.
+- [x] T008 `StackBadge` and `StackLayers` (shared components extended by prop where needed), wired into `PullRequestRow` and `PullRequestDetail`; `PullRequestList` runs chaining once per load. Logic tests on the position mapping.
+- [x] T009 `MergeDialog`: not-installed/outdated callout with **Install**, "merges layers 1 to N together" line, re-read of the setting; Settings row with toggle and inline state. Copy through `check:ui-text`.
 
 ## Slice 4: verify and close
 

@@ -358,6 +358,7 @@ export const IPC_REQUESTS = {
   WINDOW_ZOOM: 'window.zoom',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_LIST_ACROSS: 'pullRequests.listAcross',
+  PULL_REQUESTS_STACK_REFS: 'pullRequests.stackRefs',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
   PULL_REQUESTS_COMMENT: 'pullRequests.comment',
   PULL_REQUESTS_REPLY_TO_THREAD: 'pullRequests.replyToThread',
