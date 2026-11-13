@@ -17,7 +17,7 @@ export function hoveredTintEntry(tint, foreground) {
   const tintLab = linearToOklab(tint.linear)
   const fgLab = linearToOklab(foreground.linear)
   const lab = tintLab.map((c, i) => ((1 - MIX_WEIGHT) * tint.alpha * c + MIX_WEIGHT * foreground.alpha * fgLab[i]) / alpha)
-  return { raw: 'recommended-hover', alpha, linear: oklabToLinearSrgb(lab).map((c) => Math.min(1, Math.max(0, c))) }
+  return { raw: 'recommended-hover', alpha, linear: oklabToLinearSrgb(...lab).map((c) => Math.min(1, Math.max(0, c))) }
 }
 
 export function recommendedHoverContrastRows(themes) {
