@@ -13,7 +13,7 @@ Test tasks are part of each task (AGENTS.md: new logic gets co-located unit test
 
 - [x] T005 `github/stacks.rs` (+ test): `view_stack`, view JSON types, exit-code table. Tests: fixture parse (3 layers, merged, queued, needsRebase), exit 2 is "not stacked", exit 9 records the repository.
 - [x] T006 `src/shared/stack-chain.ts` (+ test): pure chaining. Tests: 3-layer, forked base ignored, merged middle, cycle-safe, no chain.
-- [x] T007 Merge routing: `ipc/pull_requests/handlers.rs` dispatch, new `github/stack_merge.rs` (argv builder, the collision guard, error mapping), `shared/ipc.ts` `stackHint`. Tests: stacked argv exact (`stack merge <n> --yes --squash`), plain stays `pr merge`, view result beats a stale hint, guard refuses when a different stack owns the number, no fallback after a failed stack merge, exit 9 sets fallback for that repository only.
+- [x] T007 Merge routing: `ipc/pull_requests/handlers.rs` dispatch, new `github/stack_merge.rs` (argv builder, the collision guard, error mapping), `shared/ipc.ts` `stackHint`. Tests: stacked argv exact (`stack merge <n> --yes --squash`), plain stays `pr merge`, a view naming another stack beats a stale hint, a `stacked` hint beats NotStacked/no view (local-only view; `gh stack merge` refuses safely), guard refuses when a different stack owns the number, no fallback after a failed stack merge, exit 9 sets fallback for that repository only.
 
 ## Slice 3: UI (FR-008 to FR-010, FR-012)
 

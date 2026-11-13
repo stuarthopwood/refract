@@ -125,17 +125,17 @@ pub async fn guard_stack_number(
     repo: &str,
     number: u64,
 ) -> Result<(), GhError> {
-    let by_number = match api_json(repo_path, &format!("repos/{owner}/{repo}/stacks/{number}")).await
-    {
-        ApiOutcome::NotFound => return Ok(()),
-        ApiOutcome::Found(value) => value,
-        ApiOutcome::Failed => {
-            return Err(GhError::new(
-                GhErrorCode::GhFailed,
-                "Couldn't check whether this number belongs to another stack; try again.",
-            ))
-        }
-    };
+    let by_number =
+        match api_json(repo_path, &format!("repos/{owner}/{repo}/stacks/{number}")).await {
+            ApiOutcome::NotFound => return Ok(()),
+            ApiOutcome::Found(value) => value,
+            ApiOutcome::Failed => {
+                return Err(GhError::new(
+                    GhErrorCode::GhFailed,
+                    "Couldn't check whether this number belongs to another stack; try again.",
+                ))
+            }
+        };
     let by_pr = match api_json(
         repo_path,
         &format!("repos/{owner}/{repo}/stacks?pull_request={number}"),
@@ -214,7 +214,10 @@ mod tests {
             classify_api(1, "", "gh: Server Error (HTTP 500)", false),
             ApiOutcome::Failed
         );
-        assert_eq!(classify_api(1, "", "dial tcp: timeout", false), ApiOutcome::Failed);
+        assert_eq!(
+            classify_api(1, "", "dial tcp: timeout", false),
+            ApiOutcome::Failed
+        );
         assert_eq!(classify_api(1, "", "HTTP 404", true), ApiOutcome::Failed);
         assert_eq!(classify_api(0, "garbage", "", false), ApiOutcome::Failed);
         assert_eq!(

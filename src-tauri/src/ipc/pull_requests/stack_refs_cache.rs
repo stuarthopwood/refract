@@ -107,9 +107,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_entry_older_than_the_ttl_is_fetched_again() {
+        let cache = RefsCache::new();
+        let calls = AtomicUsize::new(0);
+        fetch_counting(&cache, "r", &calls).await;
+        let slot = cache.slots.lock().unwrap().get("r").unwrap().clone();
+        if let Some((at, _)) = slot.lock().await.as_mut() {
+            *at = Instant::now() - (TTL + Duration::from_secs(1));
+        }
+        fetch_counting(&cache, "r", &calls).await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[tokio::test]
     async fn a_failed_fetch_is_not_cached() {
         let cache: RefsCache<u32> = RefsCache::new();
-        let failed = cache.get_or_fetch("r", || async { Err::<u32, _>("boom") }).await;
+        let failed = cache
+            .get_or_fetch("r", || async { Err::<u32, _>("boom") })
+            .await;
         assert!(failed.is_err());
         let calls = AtomicUsize::new(0);
         assert_eq!(fetch_counting_err(&cache, &calls).await, 7);
