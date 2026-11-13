@@ -63,7 +63,13 @@ async function launch(launcherExe, built, label) {
   child.stdout.pipe(stream, { end: false });
   child.stderr.pipe(stream, { end: false });
   const cdp = await CdpSession.connect(await waitForCdpTarget(port, { timeoutMs: 60_000 }));
-  if (!isTargetOwningPort(port, targetPid)) throw new Error('CDP target is not owned by the process this run launched');
+  // The WebView2 browser process can take a moment to register as the port owner, so a single read is racy.
+  let owned = false;
+  for (let attempt = 0; attempt < 10 && !owned; attempt++) {
+    owned = isTargetOwningPort(port, targetPid);
+    if (!owned) await sleep(1000);
+  }
+  if (!owned) throw new Error(`CDP target is not owned by the process this run launched (port ${port}, launched pid ${targetPid}, type ${typeof targetPid})`);
   await cdp.waitFor(`!!document.querySelector('[data-readiness-primary]:not(:disabled)') || !!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Add project' && !el.disabled)`, { timeoutMs: 60_000, label: 'app ready' });
   await addRepository(cdp, repoDir);
   return { child, cdp };

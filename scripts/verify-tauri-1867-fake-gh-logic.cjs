@@ -35,7 +35,7 @@ function viewDetail(pr) {
     commits: [{ oid: `sha-${pr.number}`, messageHeadline: `Commit for #${pr.number}` }],
     mergeStateStatus: 'CLEAN', mergeable: 'MERGEABLE', additions: 10, deletions: 2, changedFiles: 1,
     files: [{ path: 'file.txt', additions: 10, deletions: 2, changeType: 'MODIFIED' }],
-    headRefOid: `head-${pr.number}`, body: `Description for pull request #${pr.number}.`,
+    id: `PR_${pr.number}`, headRefOid: `head-${pr.number}`, body: `Description for pull request #${pr.number}.`,
     isCrossRepository: false, headRepositoryOwner: null
   };
 }
