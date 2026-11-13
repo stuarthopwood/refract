@@ -3,13 +3,13 @@
 // exe with fake `omp`, a scratch REFRACT_DATA_DIR and its own debugging port (never %APPDATA%\refract-tauri).
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_1879_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-1879.mjs
 
-import { mkdtempSync, mkdirSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CdpSession, getFreePort, waitForCdpTarget, isTargetOwningPort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
-import { gitHead, buildLauncher, safeRmSync, requireSharedCargoTarget, sha256OfFile } from './verify-tauri-scratch-helpers.mjs';
+import { gitHead, buildLauncher, safeRmSync, requireSharedCargoTarget, buildAndCopyExeFresh } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe } from './verify-926-launch-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,11 +63,9 @@ async function main() {
     exeDir = mkdtempSync(path.join(tmpdir(), 'refract-1879-exe-'));
     buildShim(shimDir);
     const launcherExe = buildLauncher(shimDir);
-    const src = process.env.REFRACT_1879_EXE_SRC || path.join(BUILD_OUTPUT_DIR, 'refract-tauri.exe');
-    if (!existsSync(src)) throw new Error(`built exe not found at ${src}`);
-    const exePath = path.join(exeDir, 'refract-tauri.exe');
-    copyFileSync(src, exePath);
-    console.log(`verify-tauri-1879: exe copied to ${exePath} (sha256 ${sha256OfFile(exePath)})`);
+    const built = buildAndCopyExeFresh(exeDir, BUILD_OUTPUT_DIR, REPO_ROOT, { label: 'verify-1879' });
+    const exePath = built.dest;
+    console.log(`verify-tauri-1879: exe built and copied to ${exePath} (sha256 ${built.hash})`);
     const port = await getFreePort();
     const launched = await launchBuiltExe(launcherExe, exePath, {
       port,
