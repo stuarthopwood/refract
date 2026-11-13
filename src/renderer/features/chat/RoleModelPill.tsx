@@ -10,9 +10,10 @@ import { cn } from '@/lib/utils'
 import { ValueCrossfade } from '@/components/ValueCrossfade'
 import { MODEL_NOT_KNOWN } from '@/lib/modelDisplay'
 import { friendlyProviderLabel } from '@/lib/providerLabels'
+import { FALLBACK_ROLE } from '@/lib/modelRoles'
 import { useModelRolesStore, useSessionsStore } from '@/state'
 import { PICKER_TRIGGER_CLASS } from './pickerShared'
-import { chipText, chipTooltip, resolveRoleModelName, roleShown } from './roleModelText'
+import { chipText, chipTooltip, FALLBACK_NOTE, resolveRoleModelName, roleShown } from './roleModelText'
 import { useCyclingRole, useSessionRoles } from './roleCycleStore'
 
 /** The current and the next-turn values the pill, tooltip and switcher all read. */
@@ -44,7 +45,8 @@ export const RoleModelPill = forwardRef<HTMLButtonElement, ComponentProps<'butto
     const noun = shown.pinned ? 'Pinned' : shown.roleLabel ? `${shown.roleLabel} role` : null
     const nameModel = queued || shown !== current ? shown.model : fullName
     const name = [noun, nameModel ? `${nameModel} model` : null].filter(Boolean).join(', ') || MODEL_NOT_KNOWN
-    const ariaLabel = `${name}${queued ? (stopped ? ', applies when the agent starts' : ', applies next turn') : ''}`
+    // The tooltip's describedby is suppressed below, so the fallback note rides in the name or a screen reader never hears it.
+    const ariaLabel = `${name}${queued ? (stopped ? ', applies when the agent starts' : ', applies next turn') : ''}${shown.role === FALLBACK_ROLE ? `. ${FALLBACK_NOTE}` : ''}`
     const tooltip = chipTooltip({ shown, current, queued, stopped, currentProvider })
     return (
       <Tooltip>

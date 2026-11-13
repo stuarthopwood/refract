@@ -115,7 +115,7 @@ export async function inspectQueuedPill(cdp, check, sessionId, shotsDir, prefix)
   const queuedRole = (await sessionSummary(cdp, sessionId))?.pendingSelection?.role ?? null;
   check(`${prefix}: Rust holds the queued role`, typeof queuedRole === 'string', queuedRole);
   await cdp.screenshot(path.join(shotsDir, `${prefix}-chip.png`));
-  const label = queuedRole ? queuedRole[0].toUpperCase() + queuedRole.slice(1) : '';
+  const label = queuedRole === 'slow' ? 'Slow' : '';
   const tip = await tooltipAfterTab(cdp, check, prefix);
   check(`${prefix}: the queued tooltip leads with the new value and its model, then names what runs now`, new RegExp(`^${label} \\([^)]+\\) applies on next turn\\. Now: Default · .+\\.$`).test(tip ?? ''), tip);
   await checkAxName(cdp, check, prefix, new RegExp(`^${label} role, .+ model, applies next turn\$`));

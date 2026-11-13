@@ -8,8 +8,8 @@ import { ROLE_FALLBACK_LABEL } from '../settings/ModelRolesSection'
 
 const ROLE_FALLBACK: Partial<Record<string, string>> = ROLE_FALLBACK_LABEL
 
-/** The tooltip sentence for a Session OMP moved off its configured role (#741). */
-const FALLBACK_NOTE = 'The agent switched models after repeated failures. This is not your saved choice.'
+/** The sentence for a Session OMP moved off its configured role (#741): in the tooltip and the pill's accessible name. */
+export const FALLBACK_NOTE = 'The agent switched models after repeated failures. This is not your saved choice.'
 
 export interface RoleListEntry {
   role: string
