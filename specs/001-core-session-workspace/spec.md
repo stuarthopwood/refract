@@ -2289,6 +2289,18 @@ The developer types a slash command and finds the ones the agent offers. If a se
   the issue or pull request icon, coloured by state with the existing tokens. The hover Item card opens with
   the same icon and the word `Issue` or `Pull request`. No lookup runs at render time and none is prefetched
   (#610); lookups stay cached for five minutes per repository and number.
+- **FR-128** (new, 2026-11-13, issue #1878, Decided Stuart 2026-11-10 and 2026-11-12; amends FR-091 and
+  FR-064's trigger text): The composer's role chip and Model picker trigger are one control
+  (`RoleModelPill`). For a Session on a role it MUST show the role's name only (for example **Default**);
+  the model name appears nowhere in the visible text and shows only in the control's tooltip, which opens
+  on hover and on keyboard focus. A Session whose model the developer picked directly (pinned) MUST show
+  that model's name with the pin glyph, never a role name. The **Custom** sentinel (FR-091) is removed: no
+  `custom` role id, label, icon or tooltip remains. The control shows the model name only when the role
+  cannot be established, never a guess. The role MUST be known from the first paint of a started or
+  resumed Session: Rust reads the role from the Conversation file once the process has launched and
+  `get_state` has been applied, falling back to the configured `default` when the file names none, and
+  emits `session_list_changed`; a pinned Session claims no role. The fix lives in Rust, not in a renderer
+  fallback.
 
 ### Key Entities
 
