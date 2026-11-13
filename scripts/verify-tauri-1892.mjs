@@ -96,7 +96,8 @@ async function main() {
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
     await cdp.send('Input.insertText', { text: `Reply with exactly the single word ${TURN_SENTINEL} and nothing else.` });
     await cdp.clickByLabel('Send message');
-    await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: 30_000, label: 'tool-call approval card rendered' });
+    // The fake's ready delay applies to this first start too, and the message is queued until it elapses.
+    await cdp.waitFor(`!!Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve')`, { timeoutMs: READY_DELAY_MS + 30_000, label: 'tool-call approval card rendered' });
     await cdp.clickByText('Approve');
     await cdp.waitFor(`Array.from(document.querySelectorAll('[aria-label="Transcript"]')).some((r) => /${TURN_SENTINEL}/.test(r.textContent))`, { timeoutMs: 60_000, label: 'first turn settled' });
     // The sentinel can render before the turn is persisted; the restart below must land on a Session that really has history, and the composer must be idle again.
