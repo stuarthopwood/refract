@@ -1,5 +1,5 @@
-// The layers of one stack, bottom first (#1867, FR-008): every other layer is a link, the current
-// one is plain text. Status carries an icon plus a word, never colour alone (FR-030).
+// The layers of one stack, bottom first (#1867, FR-008): every other layer is an underlined link, the
+// current one is plain text with a "This pull request" tag. Status carries an icon plus a word, never colour alone (FR-030).
 import type { ComponentType } from 'react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -31,12 +31,12 @@ export function StackLayers({ layers, onOpen, className }: StackLayersProps) {
               {layer.status.label}
             </span>
             {layer.current ? (
-              <span aria-current="true" className="min-w-0 truncate font-medium">
-                {label}
-                <span className="sr-only"> (this pull request)</span>
+              <span aria-current="true" className="flex min-w-0 items-center gap-2 font-medium">
+                <span className="truncate">{label}</span>
+                <span className="shrink-0 rounded-sm border border-border px-1 text-muted-foreground">This pull request</span>
               </span>
             ) : (
-              <Button variant="text" size="xs" className="min-w-0 justify-start truncate px-0" onClick={() => onOpen(layer.number)}>
+              <Button variant="text" size="xs" className="min-w-0 justify-start truncate px-0 underline underline-offset-2" onClick={() => onOpen(layer.number)}>
                 {label}
               </Button>
             )}

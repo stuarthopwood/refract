@@ -18,7 +18,9 @@ pub enum Route {
     Plain,
 }
 
-/// A successful view beats a stale renderer hint; with no view the hint decides.
+/// A successful view naming this pull request wins. `gh stack view` reads only local state, so
+/// NotStacked or no answer defers to the hint: `gh stack merge` refuses safely on its own, while
+/// a plain merge would land in a lower layer's branch. A view of another stack stays Plain.
 pub fn route(view: &ViewOutcome, number: u64, hint_stacked: bool) -> Route {
     match view {
         ViewOutcome::Stacked(v)
@@ -28,10 +30,20 @@ pub fn route(view: &ViewOutcome, number: u64, hint_stacked: bool) -> Route {
         {
             Route::Stack
         }
-        ViewOutcome::Stacked(_) | ViewOutcome::NotStacked => Route::Plain,
-        ViewOutcome::Unknown if hint_stacked => Route::Stack,
-        ViewOutcome::Unknown => Route::Plain,
+        ViewOutcome::Stacked(_) => Route::Plain,
+        ViewOutcome::NotStacked | ViewOutcome::Unknown if hint_stacked => Route::Stack,
+        ViewOutcome::NotStacked | ViewOutcome::Unknown => Route::Plain,
     }
+}
+
+/// The stack path is allowed only with the toggle on, the repository not marked unavailable and
+/// `gh stack` ready.
+pub fn stack_path_allowed(
+    setting_on: bool,
+    unavailable: bool,
+    state: &Result<gh_stack_state::GhStackState, GhError>,
+) -> bool {
+    !unavailable && gh_stack_state::stack_rules_enabled(setting_on, state)
 }
 
 pub fn merge_argv(number: u64) -> Vec<String> {
@@ -68,6 +80,18 @@ where
     }
 }
 
+/// The renderer's `headBranch` goes to `gh stack view` as an argument, so a flag-shaped or empty
+/// value is refused; absent means "no branch to look up".
+pub fn checked_head_branch(value: Option<&str>) -> Result<&str, &'static str> {
+    match value {
+        None => Ok(""),
+        Some(b) if b.is_empty() || b.starts_with('-') => {
+            Err("pullRequests.merge expects headBranch to be a branch name")
+        }
+        Some(b) => Ok(b),
+    }
+}
+
 /// Decides the route for a merge and whether the stack path is allowed at all.
 pub async fn route_for(
     repo_path: &Path,
@@ -84,19 +108,16 @@ pub async fn route_for(
         Err(_) => return Route::Plain,
     };
     let runtime = gh_stack_state::runtime();
-    if runtime.is_unavailable(&owner, &repo)
-        || !matches!(
-            gh_stack_state::state(runtime).await,
-            Ok(gh_stack_state::GhStackState::Ready)
-        )
-    {
+    let state = gh_stack_state::state(runtime).await;
+    if !stack_path_allowed(setting_on, runtime.is_unavailable(&owner, &repo), &state) {
         return Route::Plain;
     }
-    route(
-        &view_stack(repo_path, head_branch).await,
-        number,
-        hint_stacked,
-    )
+    let view = if head_branch.is_empty() {
+        ViewOutcome::Unknown
+    } else {
+        view_stack(repo_path, head_branch).await
+    };
+    route(&view, number, hint_stacked)
 }
 
 pub async fn merge_stacked(repo_path: &Path, number: u64) -> Result<(), GhError> {
@@ -108,7 +129,7 @@ pub async fn merge_stacked(repo_path: &Path, number: u64) -> Result<(), GhError>
     if result.timed_out {
         return Err(GhError::new(
             GhErrorCode::Timeout,
-            "The stack merge timed out.",
+            "The stack merge timed out. Lower layers may already have merged; check GitHub.",
         ));
     }
     if marks_unavailable(result.code) {
@@ -146,7 +167,26 @@ mod tests {
         let stacked = parse_view(0, THREE);
         assert_eq!(route(&stacked, 2, false), Route::Stack);
         assert_eq!(route(&stacked, 9, true), Route::Plain);
-        assert_eq!(route(&ViewOutcome::NotStacked, 2, true), Route::Plain);
+    }
+
+    #[test]
+    fn a_stacked_hint_wins_over_a_not_stacked_view() {
+        assert_eq!(route(&ViewOutcome::NotStacked, 2, true), Route::Stack);
+        assert_eq!(route(&ViewOutcome::NotStacked, 2, false), Route::Plain);
+    }
+
+    #[test]
+    fn the_stack_path_needs_toggle_available_repository_and_ready_state() {
+        use gh_stack_state::GhStackState::{Missing, Ready};
+        assert!(stack_path_allowed(true, false, &Ok(Ready)));
+        assert!(!stack_path_allowed(false, false, &Ok(Ready)));
+        assert!(!stack_path_allowed(true, true, &Ok(Ready)));
+        assert!(!stack_path_allowed(true, false, &Ok(Missing)));
+        assert!(!stack_path_allowed(
+            true,
+            false,
+            &Err(GhError::new(GhErrorCode::Timeout, "t"))
+        ));
     }
 
     #[test]
@@ -197,5 +237,19 @@ mod tests {
             .await
             .is_ok());
         assert!(!stack_ran.load(std::sync::atomic::Ordering::SeqCst));
+    }
+}
+
+#[cfg(test)]
+mod head_branch_tests {
+    use super::checked_head_branch;
+
+    #[test]
+    fn a_flag_shaped_or_empty_head_branch_is_refused() {
+        assert_eq!(checked_head_branch(None), Ok(""));
+        assert_eq!(checked_head_branch(Some("feat/x")), Ok("feat/x"));
+        assert!(checked_head_branch(Some("")).is_err());
+        assert!(checked_head_branch(Some("--exec")).is_err());
+        assert!(checked_head_branch(Some("-x")).is_err());
     }
 }

@@ -75,6 +75,11 @@ pub fn install_args(state: GhStackState) -> Option<&'static [&'static str]> {
     }
 }
 
+/// Stack rules apply only with the toggle on and `gh stack` ready; a probe error is "off".
+pub fn stack_rules_enabled(setting_on: bool, state: &Result<GhStackState, GhError>) -> bool {
+    setting_on && matches!(state, Ok(GhStackState::Ready))
+}
+
 /// Process-lifetime memory: the probe cache and the repositories where GitHub answered "stacks
 /// unavailable". Empty at launch, so the first probe of a run is always a fresh one.
 #[derive(Default)]
@@ -274,6 +279,16 @@ mod tests {
             Some(&["extension", "upgrade", "gh-stack"][..])
         );
         assert_eq!(install_args(GhStackState::Ready), None);
+    }
+
+    #[test]
+    fn stack_rules_need_the_toggle_and_a_ready_probe() {
+        let err = || Err(GhError::new(GhErrorCode::Timeout, "t"));
+        assert!(stack_rules_enabled(true, &Ok(GhStackState::Ready)));
+        assert!(!stack_rules_enabled(false, &Ok(GhStackState::Ready)));
+        assert!(!stack_rules_enabled(true, &Ok(GhStackState::Missing)));
+        assert!(!stack_rules_enabled(true, &Ok(GhStackState::Outdated)));
+        assert!(!stack_rules_enabled(true, &err()));
     }
 
     #[test]

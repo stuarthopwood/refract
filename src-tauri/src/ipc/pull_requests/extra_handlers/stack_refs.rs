@@ -4,7 +4,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::github::gh_pull_requests::list_pull_requests_by_state;
+use crate::github::gh_pull_requests::list_stack_refs;
 use crate::ipc::{invalid_argument, AppState, HandlerFuture};
 
 use super::super::{map_gh_error, repo_path_for};
@@ -24,15 +24,16 @@ pub(super) fn pull_requests_stack_refs(state: AppState, args: Vec<Value>) -> Han
             .and_then(Value::as_str)
             .ok_or_else(|| invalid_argument("pullRequests.stackRefs expects (repositoryId)"))?;
         let (repo_path, _) = repo_path_for(&state, repository_id).await?;
-        let entries = list_pull_requests_by_state(&repo_path, "open")
+        let entries = super::super::stack_refs_cache::shared()
+            .get_or_fetch(repository_id, || list_stack_refs(&repo_path))
             .await
             .map_err(map_gh_error)?;
         let refs: Vec<StackRef> = entries
-            .into_iter()
+            .iter()
             .map(|entry| StackRef {
                 number: entry.number,
-                head_ref: entry.head_ref_name,
-                base_ref: entry.base_ref_name,
+                head_ref: entry.head_ref_name.clone(),
+                base_ref: entry.base_ref_name.clone(),
             })
             .collect();
         Ok(serde_json::json!({ "items": refs }))

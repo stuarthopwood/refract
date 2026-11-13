@@ -36,7 +36,7 @@ export function SessionsSection() {
           description={
             <span className="flex flex-col gap-1">
               <span>Sessions open pull requests with gh stack, and Merge merges a stack together. Needs the gh-stack extension.</span>
-              <GhStackNotice layout="inline" />
+              <GhStackNotice layout="inline" onInstalled={() => document.getElementById('stacked-pull-requests-toggle')?.focus()} />
             </span>
           }
           checked={stackedPullRequests}

@@ -414,10 +414,10 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
         }
         // Pinned to the dialog-open-time snapshot, not `fresh.head_sha`.
         let hint_stacked = input.get("stackHint").and_then(Value::as_str) == Some("stacked");
-        let head_branch = input
-            .get("headBranch")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let head_branch = stack_merge::checked_head_branch(
+            input.get("headBranch").and_then(Value::as_str),
+        )
+        .map_err(invalid_argument)?;
         let setting_on = state.settings.lock().await.get().stacked_pull_requests;
         let route =
             stack_merge::route_for(&repo_path, number, head_branch, hint_stacked, setting_on).await;

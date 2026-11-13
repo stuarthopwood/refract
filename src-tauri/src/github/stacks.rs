@@ -88,14 +88,35 @@ pub fn check_collision(
     ))
 }
 
-async fn api_json(repo_path: &Path, path: &str) -> Option<Value> {
-    let r = gh_raw(repo_path, &["api", path], None, VIEW_TIMEOUT)
-        .await
-        .ok()?;
-    if r.timed_out || r.code != 0 {
-        return None;
+/// Only a clear 404 means "no such stack"; every other failure is no answer and must not pass.
+#[derive(Debug, PartialEq)]
+pub enum ApiOutcome {
+    Found(Value),
+    NotFound,
+    Failed,
+}
+
+pub fn classify_api(code: i32, stdout: &str, stderr: &str, timed_out: bool) -> ApiOutcome {
+    if timed_out {
+        return ApiOutcome::Failed;
     }
-    serde_json::from_str(&r.stdout).ok()
+    if code == 0 {
+        return serde_json::from_str(stdout)
+            .map(ApiOutcome::Found)
+            .unwrap_or(ApiOutcome::Failed);
+    }
+    if stderr.contains("HTTP 404") {
+        ApiOutcome::NotFound
+    } else {
+        ApiOutcome::Failed
+    }
+}
+
+async fn api_json(repo_path: &Path, path: &str) -> ApiOutcome {
+    match gh_raw(repo_path, &["api", path], None, VIEW_TIMEOUT).await {
+        Ok(r) => classify_api(r.code, &r.stdout, &r.stderr, r.timed_out),
+        Err(_) => ApiOutcome::Failed,
+    }
 }
 
 pub async fn guard_stack_number(
@@ -104,16 +125,27 @@ pub async fn guard_stack_number(
     repo: &str,
     number: u64,
 ) -> Result<(), GhError> {
-    let by_number = api_json(repo_path, &format!("repos/{owner}/{repo}/stacks/{number}")).await;
-    if by_number.is_none() {
-        return Ok(());
-    }
-    let by_pr = api_json(
+    let by_number = match api_json(repo_path, &format!("repos/{owner}/{repo}/stacks/{number}")).await
+    {
+        ApiOutcome::NotFound => return Ok(()),
+        ApiOutcome::Found(value) => value,
+        ApiOutcome::Failed => {
+            return Err(GhError::new(
+                GhErrorCode::GhFailed,
+                "Couldn't check whether this number belongs to another stack; try again.",
+            ))
+        }
+    };
+    let by_pr = match api_json(
         repo_path,
         &format!("repos/{owner}/{repo}/stacks?pull_request={number}"),
     )
-    .await;
-    check_collision(by_number.as_ref(), by_pr.as_ref(), number)
+    .await
+    {
+        ApiOutcome::Found(value) => Some(value),
+        _ => None,
+    };
+    check_collision(Some(&by_number), by_pr.as_ref(), number)
 }
 
 #[cfg(test)]
@@ -170,5 +202,24 @@ mod tests {
         let other = json!({"id": 7});
         assert!(check_collision(Some(&other), None, 7).is_err());
         assert!(check_collision(Some(&other), Some(&json!([])), 7).is_err());
+    }
+
+    #[test]
+    fn only_a_clear_404_means_no_stack() {
+        assert_eq!(
+            classify_api(1, "", "gh: Not Found (HTTP 404)", false),
+            ApiOutcome::NotFound
+        );
+        assert_eq!(
+            classify_api(1, "", "gh: Server Error (HTTP 500)", false),
+            ApiOutcome::Failed
+        );
+        assert_eq!(classify_api(1, "", "dial tcp: timeout", false), ApiOutcome::Failed);
+        assert_eq!(classify_api(1, "", "HTTP 404", true), ApiOutcome::Failed);
+        assert_eq!(classify_api(0, "garbage", "", false), ApiOutcome::Failed);
+        assert_eq!(
+            classify_api(0, "{\"id\":7}", "", false),
+            ApiOutcome::Found(json!({"id": 7}))
+        );
     }
 }

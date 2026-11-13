@@ -35,6 +35,11 @@ describe('StackLayers', () => {
     expect(html).toContain('Open')
   })
 
+  it('tags the current layer in words and underlines the links, so neither relies on colour', () => {
+    expect(html).toContain('This pull request')
+    expect(html.match(/ underline underline-offset-2/g)).toHaveLength(2)
+  })
+
   it('falls back to the number when a layer has no known title', () => {
     expect(html).toContain('#12')
     expect(html).not.toContain('#12 ')

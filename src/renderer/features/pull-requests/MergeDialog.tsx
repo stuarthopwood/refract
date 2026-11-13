@@ -65,6 +65,7 @@ export function MergeDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   const succeededRef = useRef(false)
+  const confirmRef = useRef<HTMLButtonElement>(null)
 
   async function handleMerge(): Promise<void> {
     setSubmitting(true)
@@ -93,6 +94,7 @@ export function MergeDialog({
     <ConfirmAlertDialog
       open={open}
       busy={submitting}
+      confirmRef={confirmRef}
       size="md"
       title={`Merge ${title}?`}
       description="Choose a merge method, then confirm."
@@ -149,7 +151,7 @@ export function MergeDialog({
           )
         })}
       </RadioGroup>
-      {stackView === 'install' && <GhStackNotice layout="callout" />}
+      {stackView === 'install' && <GhStackNotice layout="callout" onInstalled={() => confirmRef.current?.focus()} />}
       {stackView === 'layers' && stack && (
         <p data-merge-layers className="text-xs text-muted-foreground">
           {mergeLayersText(stack)}
