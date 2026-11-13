@@ -86,6 +86,42 @@ pub(crate) async fn create_session_record(
     base_branch: &str,
     parent_session_id: Option<String>,
 ) -> Result<Session, IpcError> {
+    insert_session(
+        registry,
+        repository_id,
+        base_branch,
+        parent_session_id,
+        true,
+    )
+    .await
+}
+
+/// As `create_session_record` for a caller that has just listed the branches itself, so the
+/// agent tool does not list them a second time while holding the tree gate. A base deleted since
+/// then fails in `git worktree add` instead.
+pub(crate) async fn create_session_record_on_listed_base(
+    registry: &SharedRegistry,
+    repository_id: &str,
+    base_branch: &str,
+    parent_session_id: Option<String>,
+) -> Result<Session, IpcError> {
+    insert_session(
+        registry,
+        repository_id,
+        base_branch,
+        parent_session_id,
+        false,
+    )
+    .await
+}
+
+async fn insert_session(
+    registry: &SharedRegistry,
+    repository_id: &str,
+    base_branch: &str,
+    parent_session_id: Option<String>,
+    verify_base: bool,
+) -> Result<Session, IpcError> {
     let repository = {
         let registry = registry.lock().await;
         registry
@@ -95,12 +131,14 @@ pub(crate) async fn create_session_record(
     };
     let repo_path = std::path::Path::new(&repository.path);
 
-    let branches = list_branches(repo_path).await.map_err(map_git_error)?;
-    if !branches.iter().any(|b| b == base_branch) {
-        return Err(IpcError::new(
-            "base-missing",
-            format!("Base branch not found: {base_branch}"),
-        ));
+    if verify_base {
+        let branches = list_branches(repo_path).await.map_err(map_git_error)?;
+        if !branches.iter().any(|b| b == base_branch) {
+            return Err(IpcError::new(
+                "base-missing",
+                format!("Base branch not found: {base_branch}"),
+            ));
+        }
     }
     let added = add_worktree_with_generated_name(repo_path, base_branch)
         .await
@@ -226,7 +264,11 @@ pub fn sessions_restore(state: AppState, args: Vec<Value>) -> HandlerFuture {
         delete_in_flight::refuse_if_deleting(&id)?;
         // Held to the patch: a racing agent create must not fill the parent's last slot between
         // this check and the restore (#1859).
-        let _gate = crate::agent_tools::tree_gate::lock().await;
+        let repository_id = match state.registry.lock().await.get_session(&id) {
+            Some(session) => session.repository_id.clone(),
+            None => return Err(not_found(format!("Session not found: {id}"))),
+        };
+        let _gate = crate::agent_tools::tree_gate::lock(&repository_id).await;
         {
             let registry = state.registry.lock().await;
             let Some(session) = registry.get_session(&id) else {

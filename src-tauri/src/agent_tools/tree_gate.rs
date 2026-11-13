@@ -1,16 +1,28 @@
 // Serialises Session-tree changes and decides own-tree reach for the create/update tools (#1859).
 
-use tokio::sync::{Mutex, MutexGuard};
+use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex as StdMutex};
+
+use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use crate::store::registry::Session;
 use crate::store::session_tree::{in_tree, TreeError};
 
-/// Held from the limit check to the registry write, so two racing calls cannot both pass a check
-/// that only one of them satisfies.
-static GATE: Mutex<()> = Mutex::const_new(());
+/// One gate per Project: parents are same-Project and the Session cap is per-Project, so calls in
+/// different Projects cannot invalidate each other's checks.
+static GATES: LazyLock<StdMutex<HashMap<String, Arc<Mutex<()>>>>> =
+    LazyLock::new(|| StdMutex::new(HashMap::new()));
 
-pub async fn lock() -> MutexGuard<'static, ()> {
-    GATE.lock().await
+/// Held from the limit check to the registry write, so two racing calls in a Project cannot both
+/// pass a check that only one of them satisfies.
+pub async fn lock(repository_id: &str) -> OwnedMutexGuard<()> {
+    let gate = GATES
+        .lock()
+        .expect("gate map poisoned")
+        .entry(repository_id.to_string())
+        .or_default()
+        .clone();
+    gate.lock_owned().await
 }
 
 /// A caller may change only its own tree: the target and any new parent must both be in it. An

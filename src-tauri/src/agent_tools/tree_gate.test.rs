@@ -60,12 +60,12 @@ fn tree_errors_map_to_codes() {
 }
 
 #[tokio::test]
-async fn the_gate_serialises_two_callers() {
-    let first = lock().await;
+async fn the_gate_serialises_two_callers_in_one_project() {
+    let first = lock("repo").await;
     let entered = Arc::new(AtomicBool::new(false));
     let flag = entered.clone();
     let second = tokio::spawn(async move {
-        let _guard = lock().await;
+        let _guard = lock("repo").await;
         flag.store(true, Ordering::SeqCst);
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
@@ -73,4 +73,12 @@ async fn the_gate_serialises_two_callers() {
     drop(first);
     second.await.unwrap();
     assert!(entered.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn another_project_is_not_blocked_by_a_held_gate() {
+    let _held = lock("gate-test-a").await;
+    tokio::time::timeout(Duration::from_secs(2), lock("gate-test-b"))
+        .await
+        .expect("a different Project must not wait");
 }

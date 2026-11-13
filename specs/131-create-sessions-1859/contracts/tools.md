@@ -16,7 +16,7 @@ Args: `{ id: string, name?: string, role?: string, parent_id?: string | null }`.
 `parent_id`: absent = unchanged, `null` = un-nest, string = nest under that Session.
 Result: `{ id, name, parentId?: string }`.
 Approval: none when the target and any new parent are inside the caller's own tree (the caller and its descendants); the existing card otherwise.
-Errors, in check order: `invalid_input` (nothing to change, unknown role, archived or other-Project parent, empty name), `not_found`, `invalid_parent` (the Session itself or a descendant), `depth_limit` (any descendant would exceed depth 3), `child_limit` (new parent has 4 live children), approval denied, `session_not_running` (role change on a target with no live agent; message includes its status).
+Errors, in check order: `invalid_input` (nothing to change, unknown role, empty name), `not_found` (unknown target or parent), `invalid_input` (archived or other-Project parent), `invalid_parent` (the Session itself or a descendant), `depth_limit` (any descendant would exceed depth 3), `child_limit` (new parent has 4 live children), approval denied, `session_not_running` (role change on a target with no live agent; message includes its status).
 
 ## Tree rules (Rust, from the registry)
 

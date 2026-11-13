@@ -17,7 +17,7 @@ Two **Host tools** join the #1193 **Tool channel**: `create_session` makes a **C
 
 1. **Live child** is a child that is not archived. Stopped and hidden children count toward the limit of 4.
 2. **Re-parenting.** `update_session` rejects a parent that is the Session itself or one of its descendants, and rejects a move that would put any descendant deeper than 3. Both are tool errors.
-3. **Own tree** is the calling agent's Session plus its descendants. Changes inside it run without the approval card; changes to siblings, parents and other roots raise the card.
+3. **Own tree** is the calling agent's Session plus its descendants. Changes inside it run without the approval card; changes to siblings, parents and other roots raise the card, except that a caller in `yolo` never gets a card from `update_session` (decision 32).
 4. **Parent deleted.** Live children are re-rooted: `parent_session_id` is set to null in the registry. Archiving a parent keeps the link.
 5. **Role.** When omitted, the Project default is used. An unknown role returns `invalid_input`. A child never inherits the parent's role.
 6. **Report-back.** A report from a child to its parent is a Session message (#1858) and counts against the per-pair limit of 10 per 10 minutes.
@@ -26,7 +26,7 @@ Two **Host tools** join the #1193 **Tool channel**: `create_session` makes a **C
 
 7. Tools `create_session(prompt, name?, base_branch?, role?, parent_id?)` and `update_session(id, name?, role?, parent_id?)`. Depth 3 and 4 live children per parent are enforced in Rust; violations are tool errors, never toasts.
 8. The child is made by the existing Session creation path, so it is indistinguishable from a hand-made Session except for the parent link. Base is the Project's default branch unless `base_branch` is passed (for example the caller's own branch, to stack).
-9. `create_session` raises the existing approval card unless the creating Session runs in `yolo`. A rename in the agent's own tree runs straight away; other changes outside it raise the card.
+9. `create_session` raises the existing approval card unless the creating Session runs in `yolo`. A rename in the agent's own tree runs straight away; other changes outside it raise the card, except in `yolo` (decision 32).
 10. The child's first turn names its parent (id and name) and tells it to report back with `send_session_message`. A report is delivered to a busy parent as a queued user turn.
 11. `registry::Session` gains `parent_session_id: Option<String>` with `#[serde(default)]`, so an old `registry.json` loads and every old Session has no parent.
 12. Every agent launch appends the rule-of-thumb block through `--append-system-prompt`; the `create_session` tool description repeats it. Subagents and background agents stay with #712 and epic #1272.
@@ -120,7 +120,7 @@ An agent calls `create_session` with a prompt and gets back a new Session id. Th
 **Acceptance Scenarios**:
 
 1. **Given** a Session in the agent's own tree, **When** `update_session` renames, re-roles, nests or un-nests it, **Then** it runs without the card.
-2. **Given** a target Session or new parent outside the own tree, **Then** the card is raised first; Deny returns a tool error and changes nothing.
+2. **Given** a target Session or new parent outside the own tree, **Then** the card is raised first and Deny returns a tool error and changes nothing; **Given** the caller runs in `yolo`, **Then** no card is raised and the change applies (decision 32).
 3. **Given** a new parent that is the Session itself or one of its descendants, **Then** `invalid_parent`; **Given** a move that puts any descendant deeper than 3, **Then** `depth_limit`; **Given** a new parent that already has 4 live children, **Then** `child_limit`.
 4. **Given** `parent_id: null`, **Then** the Session becomes a root; absent `parent_id` leaves the link unchanged.
 5. **Given** an unknown role, **Then** `invalid_input`; an unknown id, `not_found`.

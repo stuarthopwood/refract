@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 use super::approval;
 use super::panels;
 use super::router::{approval_outcome, ToolError, CANCELLED, INVALID_INPUT};
-use super::sessions::{status_of, NOT_FOUND};
+use super::sessions::{live_status, manager_gone, NOT_FOUND};
 use super::sessions_send::SESSION_NOT_RUNNING;
 use super::tree_gate;
 use crate::session::agent::{PendingRequest, SessionAgent, SharedRegistry};
@@ -164,11 +164,8 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
     }
     check_tree(&sessions, &request)?;
 
-    let new_parent = match request.parent {
-        ParentArg::Id(id) => Some(id),
-        ParentArg::Root | ParentArg::Unchanged => None,
-    };
-    let inside = tree_gate::inside_own_tree(&sessions, host.caller_id(), request.id, new_parent);
+    let inside = inside_own_tree(&sessions, host, &request);
+    let mut asked = false;
     if !inside && !host.is_yolo().await {
         let target = sessions
             .iter()
@@ -193,6 +190,7 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
             details,
         );
         host.ask(card).await?;
+        asked = true;
     }
 
     if request.role.is_some() {
@@ -206,14 +204,30 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
     }
 
     // The tree is checked again under the gate: a racing call or a delete may have changed it
-    // while the card was open.
+    // while the card was open. The role goes first, so a role failure leaves nothing written.
+    let target_repository = sessions
+        .iter()
+        .find(|s| s.id == request.id)
+        .map(|s| s.repository_id.clone())
+        .ok_or_else(|| not_found(request.id))?;
     {
-        let _gate = tree_gate::lock().await;
+        let _gate = tree_gate::lock(&target_repository).await;
         let sessions = sessions_of(host).await;
         if !sessions.iter().any(|s| s.id == host.caller_id()) {
             return Err(caller_gone());
         }
         check_tree(&sessions, &request)?;
+        // No card was shown because the target was inside the own tree; if it no longer is,
+        // the developer never saw this change, so it is refused rather than applied.
+        if !asked && !inside_own_tree(&sessions, host, &request) && !host.is_yolo().await {
+            return Err(ToolError::new(
+                CANCELLED,
+                "the Session moved out of your own tree while the update ran; nothing was changed, call again to be asked",
+            ));
+        }
+        if let Some(role) = request.role {
+            host.set_role(request.id, role).await?;
+        }
         let parent_patch = match request.parent {
             ParentArg::Unchanged => None,
             ParentArg::Root => Some(None),
@@ -242,9 +256,6 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
             .await
             .map_err(store_error)?;
     }
-    if let Some(role) = request.role {
-        host.set_role(request.id, role).await?;
-    }
 
     let updated = sessions_of(host)
         .await
@@ -256,6 +267,14 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
         out["parentId"] = parent.into();
     }
     Ok(out)
+}
+
+fn inside_own_tree(sessions: &[Session], host: &impl Host, request: &Request<'_>) -> bool {
+    let new_parent = match request.parent {
+        ParentArg::Id(id) => Some(id),
+        ParentArg::Root | ParentArg::Unchanged => None,
+    };
+    tree_gate::inside_own_tree(sessions, host.caller_id(), request.id, new_parent)
 }
 
 struct AppHost<'a> {
@@ -292,12 +311,7 @@ impl Host for AppHost<'_> {
             .map_err(|e| ToolError::new(e.code, e.message))
     }
     async fn status(&self, id: &str) -> String {
-        let summaries = self.manager.summaries().await;
-        summaries
-            .iter()
-            .find(|s| s["id"].as_str() == Some(id))
-            .map_or("stopped", |s| status_of(s).0)
-            .to_string()
+        live_status(&self.manager, id).await.to_string()
     }
     async fn set_role(&self, id: &str, role: &str) -> Result<(), ToolError> {
         let target = self.manager.get_agent(id).ok_or_else(|| {
@@ -315,12 +329,7 @@ impl Host for AppHost<'_> {
 }
 
 pub async fn update(agent: &SessionAgent, call_id: &str, args: &Value) -> Result<Value, ToolError> {
-    let manager = agent.tool_manager().ok_or_else(|| {
-        ToolError::new(
-            CANCELLED,
-            "Refract is shutting down; no Session can be reached",
-        )
-    })?;
+    let manager = agent.tool_manager().ok_or_else(manager_gone)?;
     let registry = agent.tool_registry().clone();
     let host = AppHost {
         agent,

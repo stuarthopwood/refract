@@ -253,11 +253,23 @@ fn repository_names(registry: &crate::store::registry::Registry) -> Vec<(String,
         .collect()
 }
 
-fn manager_gone() -> ToolError {
+pub(super) fn manager_gone() -> ToolError {
     ToolError::new(
         super::router::CANCELLED,
         "Refract is shutting down; no Session can be reached",
     )
+}
+
+/// The tool-vocabulary status of one Session from its live agent alone, so a caller that needs
+/// one status does not build every Session's summary; `stopped` when no agent runs.
+pub(super) async fn live_status(
+    manager: &crate::session::SessionManager,
+    id: &str,
+) -> &'static str {
+    match manager.get_agent(id) {
+        Some(agent) => status_of(&agent.summary_fields().await).0,
+        None => "stopped",
+    }
 }
 
 pub async fn list(agent: &SessionAgent, args: &Value) -> Result<Value, ToolError> {

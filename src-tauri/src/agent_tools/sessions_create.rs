@@ -9,11 +9,11 @@ use serde_json::{json, Value};
 use super::approval;
 use super::panels;
 use super::router::{approval_outcome, ToolError, CANCELLED, INVALID_INPUT};
-use super::sessions::{status_of, NOT_FOUND};
+use super::sessions::{live_status, manager_gone, NOT_FOUND};
 use super::sessions_send::MAX_TEXT_BYTES;
 use super::tree_gate;
 use crate::git::worktrees::list_branches;
-use crate::ipc::sessions_lifecycle::create_session_record;
+use crate::ipc::sessions_lifecycle::create_session_record_on_listed_base;
 use crate::session::agent::{PendingRequest, SessionAgent, SharedRegistry};
 use crate::store::registry::Session;
 use crate::store::session_tree::validate_parent;
@@ -288,7 +288,7 @@ async fn commit_create<H: Host>(host: Arc<H>, commit: Commit) -> Result<Value, T
         repository_id,
         base,
     } = commit;
-    let gate = tree_gate::lock().await;
+    let gate = tree_gate::lock(&repository_id).await;
     let sessions = sessions_of(&*host).await;
     let caller = sessions
         .iter()
@@ -296,13 +296,18 @@ async fn commit_create<H: Host>(host: Arc<H>, commit: Commit) -> Result<Value, T
         .ok_or_else(caller_gone)?;
     let parent = check_tree(&sessions, caller, &request)?;
     let parent_id = parent.as_ref().map(|(_, id)| id.clone());
-    let created = create_session_record(host.registry(), &repository_id, &base, parent_id.clone())
-        .await
-        .map_err(|e| match e.code {
-            "base-missing" => invalid(e.message),
-            "not-found" => ToolError::new(NOT_FOUND, e.message),
-            code => ToolError::new(code, e.message),
-        })?;
+    let created = create_session_record_on_listed_base(
+        host.registry(),
+        &repository_id,
+        &base,
+        parent_id.clone(),
+    )
+    .await
+    .map_err(|e| match e.code {
+        "base-missing" => invalid(e.message),
+        "not-found" => ToolError::new(NOT_FOUND, e.message),
+        code => ToolError::new(code, e.message),
+    })?;
     drop(gate);
 
     let (name, warning) = apply_name(host.registry(), &created, request.name.as_deref()).await;
@@ -430,12 +435,7 @@ impl Host for AppHost {
         Ok(())
     }
     async fn status(&self, id: &str) -> String {
-        let summaries = self.manager.summaries().await;
-        summaries
-            .iter()
-            .find(|s| s["id"].as_str() == Some(id))
-            .map_or("idle", |s| status_of(s).0)
-            .to_string()
+        live_status(&self.manager, id).await.to_string()
     }
 }
 
@@ -444,12 +444,7 @@ pub async fn create(
     call_id: &str,
     args: &Value,
 ) -> Result<Value, ToolError> {
-    let manager = agent.tool_manager().ok_or_else(|| {
-        ToolError::new(
-            CANCELLED,
-            "Refract is shutting down; no Session can be reached",
-        )
-    })?;
+    let manager = agent.tool_manager().ok_or_else(manager_gone)?;
     let registry = agent.tool_registry().clone();
     let host = Arc::new(AppHost {
         agent: agent.clone(),
