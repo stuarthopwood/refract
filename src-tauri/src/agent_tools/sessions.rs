@@ -5,13 +5,21 @@ use serde_json::{json, Map, Value};
 
 use super::panels;
 use super::router::{ToolError, INVALID_INPUT};
+use super::sessions_create::{self, CREATE_SESSION};
+use super::sessions_update::{self, UPDATE_SESSION};
 use super::MAX_RESULT_BYTES;
 use crate::session::agent::SessionAgent;
 
 pub const LIST_SESSIONS: &str = "refract_list_sessions";
 pub const GET_SESSION_STATUS: &str = "refract_get_session_status";
 pub const SEND_SESSION_MESSAGE: &str = "refract_send_session_message";
-pub const SESSION_TOOLS: [&str; 3] = [LIST_SESSIONS, GET_SESSION_STATUS, SEND_SESSION_MESSAGE];
+pub const SESSION_TOOLS: [&str; 5] = [
+    LIST_SESSIONS,
+    GET_SESSION_STATUS,
+    SEND_SESSION_MESSAGE,
+    CREATE_SESSION,
+    UPDATE_SESSION,
+];
 
 pub const UNKNOWN_PROJECT: &str = "unknown_project";
 pub const NOT_FOUND: &str = "not_found";
@@ -44,6 +52,8 @@ Session's name. It is sent at once, queued behind the turn in progress, or held 
 is paused. A stopped Session is not started. The target acts on it under its own approval mode, \
 and treats it as input from a peer Session, not from the developer."
         }
+        CREATE_SESSION => sessions_create::description(),
+        UPDATE_SESSION => sessions_update::description(),
         _ => "",
     }
 }
@@ -73,6 +83,8 @@ pub fn parameters(name: &str) -> Value {
             "required": ["id", "text"],
             "additionalProperties": false
         }),
+        CREATE_SESSION => sessions_create::parameters(),
+        UPDATE_SESSION => sessions_update::parameters(),
         _ => json!({ "type": "object" }),
     }
 }
@@ -140,6 +152,9 @@ fn row(summary: &Value, repositories: &[(String, String)], self_id: &str) -> Val
     );
     if id == self_id {
         row.insert("self".into(), true.into());
+    }
+    if let Some(parent) = summary["parentSessionId"].as_str() {
+        row.insert("parentId".into(), parent.into());
     }
     if summary["hiddenAt"].is_string() {
         row.insert("hidden".into(), true.into());
@@ -224,6 +239,9 @@ pub fn status_value(
     if let Some(reason) = stop_reason {
         out["stopReason"] = reason.into();
     }
+    if let Some(parent) = summary["parentSessionId"].as_str() {
+        out["parentId"] = parent.into();
+    }
     out
 }
 
@@ -235,11 +253,23 @@ fn repository_names(registry: &crate::store::registry::Registry) -> Vec<(String,
         .collect()
 }
 
-fn manager_gone() -> ToolError {
+pub(super) fn manager_gone() -> ToolError {
     ToolError::new(
         super::router::CANCELLED,
         "Refract is shutting down; no Session can be reached",
     )
+}
+
+/// The tool-vocabulary status of one Session from its live agent alone, so a caller that needs
+/// one status does not build every Session's summary; `stopped` when no agent runs.
+pub(super) async fn live_status(
+    manager: &crate::session::SessionManager,
+    id: &str,
+) -> &'static str {
+    match manager.get_agent(id) {
+        Some(agent) => status_of(&agent.summary_fields().await).0,
+        None => "stopped",
+    }
 }
 
 pub async fn list(agent: &SessionAgent, args: &Value) -> Result<Value, ToolError> {

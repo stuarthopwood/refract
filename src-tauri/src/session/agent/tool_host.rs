@@ -29,6 +29,11 @@ impl SessionAgent {
         &self.session_id
     }
 
+    /// The shared registry, for tools that create or change Session rows.
+    pub fn tool_registry(&self) -> &super::SharedRegistry {
+        self.registry()
+    }
+
     pub fn tool_events(&self) -> &EventSink {
         &self.events
     }

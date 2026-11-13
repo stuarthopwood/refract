@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.35.0 (2026-11-13)
+
+### Features
+
+- feat(chat): ref links open the right pane (#1950) (https://github.com/stuarthopwood/refract/pull/1969)
+- feat(pull-requests): stacked pull requests via gh stack (#1867) (https://github.com/stuarthopwood/refract/pull/1968)
+- feat(#1859): agents create and nest Sessions (https://github.com/stuarthopwood/refract/pull/1967)
+
+### Fixes
+
+- fix(chat): name the live ask card and tighten its live check (#1941) (https://github.com/stuarthopwood/refract/pull/1970)
+- fix(composer): chip shows the role from start and resume (#1878) (https://github.com/stuarthopwood/refract/pull/1996)
+
+### Other
+
+- docs(plan): queue #1980 flaky worktree delete-check test (https://github.com/stuarthopwood/refract/pull/1981)
+- docs(plan): add #1982 chat/status-line preview and #1983 percent sliders (https://github.com/stuarthopwood/refract/pull/1984)
+- docs(plan): add ask-card redesign epic #1990 and children #1985-#1989 (https://github.com/stuarthopwood/refract/pull/1991)
+- docs(plan): add #1992 first-install ghost button row (https://github.com/stuarthopwood/refract/pull/1993)
+- docs(plan): add #1994 app version in profile menu row (https://github.com/stuarthopwood/refract/pull/1995)
+
 ## v0.34.0 (2026-11-13)
 
 ### Features

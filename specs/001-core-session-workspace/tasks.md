@@ -5557,12 +5557,25 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
 - [x] T450 Live check on a built app (`pnpm verify:tauri`): click pins and reveals the pane without taking focus, re-click
   focuses the pin, Ctrl-click leaves the pane alone; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-127
 
-## Phase 94: Convergence (#1892 the Starting agent notice blurs the history behind it, FR-080; Spec Kit route none per triage, spec amended in place)
+## Phase 94: Convergence (#1878 composer chip shows the role from start and resume, FR-128)
 
-- [x] T451 [US1] `components/ui/blur-content.ts` (new): the shared blur and transition classes; `LoadingOverlay` uses them,
+- [x] T451 [US1] `model_support.rs` (`role_after_launch`, `seed_role_at_launch`) and `model.rs` (`on_launch`), called from
+  `launch.rs` after `sync_from_state`: reset the cached role and read it from the Conversation file once the process has
+  launched, `default` when the file names none, none when pinned, then emit `session_list_changed`, per FR-128 (missing)
+- [x] T452 [US1] `roleModelText.ts` (`roleShown`, `shownText`, `chipText`, `chipTooltip`), `RoleModelPill.tsx`: the visible text is the role
+  alone (the model name only for a pinned or role-less Session); the model name moves to the tooltip, per FR-128 (contradicts)
+- [x] T453 `modelRoles.ts`: remove the `custom` sentinel, its label, icon, tooltip and `roleChipDisplay`, per FR-128 (contradicts)
+- [x] T454 `roleModelText.test.ts` and the `launch_role_tests` module: each guard (role-only text, pinned shows model,
+  tooltip carries the model, fresh session defaults, resumed keeps its role, pinned claims none) fails when removed, per FR-128
+- [x] T455 Live check on a built app (`scripts/verify-tauri-1878.mjs`): a started Session and a resumed one show the role in the
+  chip with the model in the tooltip; a pinned Session with a long name truncates; a queued change reads the new tooltip; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-128
+
+## Phase 95: Convergence (#1892 the Starting agent notice blurs the history behind it, FR-080; Spec Kit route none per triage, spec amended in place)
+
+- [x] T456 [US1] `components/ui/blur-content.ts` (new): the shared blur and transition classes; `LoadingOverlay` uses them,
   behaviour unchanged, per FR-080 (missing)
-- [x] T452 [US1] `Transcript.tsx`: replace the `opacity-40` dim of the transcript viewport with the shared blur, keep
+- [x] T457 [US1] `Transcript.tsx`: replace the `opacity-40` dim of the transcript viewport with the shared blur, keep
   `focus-within` clearing it, animate it with `motion-reduce:transition-none` (also on the notice overlay's fade), per FR-080 (contradicts)
-- [ ] T453 No new logic (class names only), so no unit test; `scripts/verify-tauri-1892.mjs` reads the computed filter, opacity,
+- [ ] T458 No new logic (class names only), so no unit test; `scripts/verify-tauri-1892.mjs` reads the computed filter, opacity,
   transition and notice sharpness on a built app and screenshots the notice, then `node scripts/ci-local.mjs` per FR-080
   (open until the live run lands)

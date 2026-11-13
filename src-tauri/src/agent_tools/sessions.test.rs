@@ -142,6 +142,35 @@ fn status_value_has_reason_only_when_stopped_and_passes_the_pr_through() {
 }
 
 #[test]
+fn parent_id_is_on_list_rows_and_status_only_when_set() {
+    let mut child = s("kid", "r1", "idle", "t");
+    child["parentSessionId"] = "mum".into();
+    let all = [child.clone(), s("mum", "r1", "idle", "t")];
+    let listed = list_value(&all, &repos(), "mum", None, false).unwrap();
+    let rows = listed["sessions"].as_array().unwrap();
+    let find = |id: &str| rows.iter().find(|r| r["id"] == id).unwrap();
+    assert_eq!(find("kid")["parentId"], "mum");
+    assert!(find("mum").get("parentId").is_none());
+    assert_eq!(
+        status_value(&child, &repos(), Value::Null)["parentId"],
+        "mum"
+    );
+    let root = status_value(&s("mum", "r1", "idle", "t"), &repos(), Value::Null);
+    assert!(root.get("parentId").is_none());
+}
+
+#[test]
+fn the_create_and_update_tools_are_checked_against_their_own_schemas() {
+    for tool in [CREATE_SESSION, UPDATE_SESSION] {
+        assert!(is_session_tool(tool), "{tool}");
+        assert!(!description(tool).is_empty(), "{tool}");
+        let err = check_args(tool, &json!({ "bogus": 1 })).unwrap_err();
+        assert_eq!(err.code, INVALID_INPUT, "{tool}");
+    }
+    assert!(check_args(CREATE_SESSION, &json!({ "prompt": "go" })).is_ok());
+}
+
+#[test]
 fn unknown_arguments_are_invalid_input() {
     assert_eq!(
         check_args(LIST_SESSIONS, &json!({"bogus": 1}))
