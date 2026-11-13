@@ -15,6 +15,7 @@ use crate::git::worktrees::{
 };
 use crate::process::pid_records;
 use crate::session::SessionStatus;
+use crate::session::agent::SharedRegistry;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::{
@@ -71,65 +72,76 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             }
         };
 
-        let repository = {
-            let registry = state.registry.lock().await;
-            registry
-                .get_repository(&repository_id)
-                .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
-                .clone()
-        };
-        let repo_path = std::path::Path::new(&repository.path);
-
-        let branches = list_branches(repo_path).await.map_err(map_git_error)?;
-        if !branches.iter().any(|b| b == &base_branch) {
-            return Err(super::IpcError::new(
-                "base-missing",
-                format!("Base branch not found: {base_branch}"),
-            ));
-        }
-        let added = add_worktree_with_generated_name(repo_path, &base_branch)
-            .await
-            .map_err(map_git_error)?;
-        let now = now_iso8601();
-        let session = Session {
-            id: uuid::Uuid::new_v4().to_string(),
-            repository_id: repository_id.clone(),
-            name: added.branch.clone(),
-            branch: added.branch.clone(),
-            base_branch,
-            worktree_path: added.worktree_path.to_string_lossy().into_owned(),
-            session_dir: None,
-            current_conversation: None,
-            last_message_count: None,
-            last_model: None,
-            last_thinking_level: None,
-            created_at: now.clone(),
-            last_activity_at: now,
-            archived_at: None,
-            hidden_at: None,
-            paused_held: None,
-            current_turn_subagents: None,
-            stopped_on_request_conversation: None,
-            stopped_on_request_at_size: None,
-            pinned_model: false,
-            origin_issue: None,
-            parent_session_id: None,
-        };
-
-        if let Err(err) = state
-            .registry
-            .lock()
-            .await
-            .add_session(session.clone())
-            .await
-        {
-            // Roll back the new worktree if the Repository was removed mid-create.
-            let _ = remove_worktree(repo_path, &added.worktree_path, &added.branch, true).await;
-            return Err(map_registry_error(err));
-        }
-
+        let session = create_session_record(
+            &state.registry,
+            &repository_id,
+            &base_branch,
+            None,
+        )
+        .await?;
         Ok(serde_json::to_value(session).expect("Session is always JSON-serialisable"))
     })
+}
+
+/// The Worktree and registry steps of making a Session, shared by `sessions.create` and the
+/// agent's `refract_create_session`. The Worktree is removed again if the registry refuses the row.
+pub(crate) async fn create_session_record(
+    registry: &SharedRegistry,
+    repository_id: &str,
+    base_branch: &str,
+    parent_session_id: Option<String>,
+) -> Result<Session, IpcError> {
+    let repository = {
+        let registry = registry.lock().await;
+        registry
+            .get_repository(repository_id)
+            .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
+            .clone()
+    };
+    let repo_path = std::path::Path::new(&repository.path);
+
+    let branches = list_branches(repo_path).await.map_err(map_git_error)?;
+    if !branches.iter().any(|b| b == base_branch) {
+        return Err(IpcError::new(
+            "base-missing",
+            format!("Base branch not found: {base_branch}"),
+        ));
+    }
+    let added = add_worktree_with_generated_name(repo_path, base_branch)
+        .await
+        .map_err(map_git_error)?;
+    let now = now_iso8601();
+    let session = Session {
+        id: uuid::Uuid::new_v4().to_string(),
+        repository_id: repository_id.to_string(),
+        name: added.branch.clone(),
+        branch: added.branch.clone(),
+        base_branch: base_branch.to_string(),
+        worktree_path: added.worktree_path.to_string_lossy().into_owned(),
+        session_dir: None,
+        current_conversation: None,
+        last_message_count: None,
+        last_model: None,
+        last_thinking_level: None,
+        created_at: now.clone(),
+        last_activity_at: now,
+        archived_at: None,
+        hidden_at: None,
+        paused_held: None,
+        current_turn_subagents: None,
+        stopped_on_request_conversation: None,
+        stopped_on_request_at_size: None,
+        pinned_model: false,
+        origin_issue: None,
+        parent_session_id,
+    };
+
+    if let Err(err) = registry.lock().await.add_session(session.clone()).await {
+        // Roll back the new worktree if the Repository was removed mid-create.
+        let _ = remove_worktree(repo_path, &added.worktree_path, &added.branch, true).await;
+        return Err(map_registry_error(err));
+    }
+    Ok(session)
 }
 
 pub fn sessions_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
