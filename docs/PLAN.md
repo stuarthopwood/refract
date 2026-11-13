@@ -100,7 +100,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p1 later | #1950 | **Feat, Chat (p1, design):** issue and PR ref links open in the right pane (not the browser or full view) and show a type icon plus a hover-card type label | `todo`; #1864 depends on this; foreign and non-Project refs still open on GitHub |
 | p1 later | #1972 | **Feat, App-wide (p1, `build`):** all app scratch under one `%temp%/refract-scratch` folder via a mandatory RAII helper, a startup self-heal sweep, and a `ci:local` gate blocking raw temp writes | `todo`; shipped Rust app only; fixes the `omp/config.rs` leak |
 | p1 later | #1865 | **Feat, Composer (p1, `transport`):** mode picker and slash commands for Vibe, Pre-walk, Goal and Loop | `todo`; `ready-for-agent` |
-| p1 later | #1867 | **Feat, Pull requests (p1):** stacked pull requests via `gh stack`, toggled in Settings (default on) | `todo`; `ready-for-agent`; spec 132 drafted (specify route, draft PR open); installer part split to #1966 |
+| p1 later | #1867 | **Feat, Pull requests (p1):** stacked pull requests via `gh stack`, toggled in Settings (default on) | `in review`; spec 132 implemented (T001-T011), PR #1968, live check `scripts/verify-tauri-1867.mjs`; installer part split to #1966 |
 | p1 later | #1966 | **Feat, Installer (p1):** bundle gh-stack in the installer (spec 006), follow-up to #1867 | `todo`; needs grill (how the installer places the extension) |
 | p1 later | #1880 | **Feat, Pull requests (p1):** merge card at the top of the PR view, modeled on GitHub's | `todo`; `ready-for-agent` |
 | p1 later | #1873 | **UI Polish (p1):** Issue log tag overflow chip looks like a button | `todo`; `ready-for-agent` |

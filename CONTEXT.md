@@ -207,6 +207,10 @@ _Avoid_: Easter eggs, seasonal theme, festive mode
 The left-nav entry and the list-plus-detail view it opens (spec 003), scoped to a chosen **Project**'s **GitHub repository** and its pull requests, read and acted on through the developer's already-signed-in GitHub CLI; Refract stores no token of its own.
 _Avoid_: PR view, merge requests (GitLab's term)
 
+**Stacked pull request** (#1867):
+A pull request that is one layer of a chain of pull requests, each based on the branch of the one below, managed with the GitHub CLI's `gh stack` extension. The **Pull requests view** shows its position ("Stack 2 of 3") and lists the other layers, and Merge on it merges the layers up to and including it together. Turned on or off by the Settings > Sessions "Use stacked pull requests" switch (default on); with it off, or `gh stack` missing, every pull request is plain.
+_Avoid_: PR chain, dependent PR
+
 **Issues view**:
 The left-nav entry and the list-plus-detail view it opens, listing GitHub issues from every **Project** that has a **GitHub repository**, on the same list shell as the **Pull requests view**.
 _Avoid_: Issues page, issue log, issue tracker
