@@ -133,6 +133,8 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p2 later | #1940 | **Settings (p2):** show a saving state while a token guard write waits on the first-open migration | Follow-up of #1765 (PR #1937); needs #1765 closed (it is open); `todo` |
 | p2 later | #1954 | **UI Polish (p2, `design`):** low-memory alert hides the Triage button when no Session is idle (no noop) | `todo`; keeps the alert, drops the dead action |
 | p2 later | #1961 | **UI Polish (p2, Chat, `design`):** move "View full call" into the tool call's overflow menu; drop the chevron on rows with no expandable content | `todo`; chevron-less rows keep the kebab |
+| p2 later | #1982 | **Feat, Settings (p2, `design`):** live rendered preview of the chat and status line, reusing the real chat row and status line components with a canned sample | `todo`; reflects all chat / appearance / status-line options |
+| p2 later | #1983 | **UI Polish, Settings (p2, `design`):** percent fields (compaction and idle thresholds) as M3 sliders notched at 5%, paired with a number field | `todo`; depends on #1852; per-model table unchanged |
 | p2 later | #1918 | **Epic, Road to V1 (p2):** full testing, documentation, and a well-organised codebase; children #1904 to #1917 | Decided 2026-11-11 (Stuart); foundations #1904 to #1908 first, then refactors, tests, docs |
 | p2 later | #1904 | **Chore (p2, child of #1918):** code coverage with a baseline ratchet | Foundation of #1918; `todo` |
 | p2 later | #1905 | **Chore (p2, `ready-for-human`, child of #1918):** shared test utilities, mocks, and fixtures folder | Foundation of #1918; `todo` |
@@ -1338,3 +1340,7 @@ Also filed 2026-11-12 (Stuart): **#1972** (`p1`, `feature`, `build`), Feat: App-
 Also filed 2026-11-13 (OMP 18.20.0 review): **#1976** (`p2`, `enhancement`, `chat`), Feat: Chat: render Ask-form per-option notes (OMP #18779) — now that #1831 landed the HTML-form Ask, render per-option notes beneath the selected answer if the rpc-ui ask frame carries them.
 
 Also filed 2026-11-13 (OMP 18.20.0 review): **#1977** (`p2`, `enhancement`, `settings`), Feat: Usage: surface LiteLLM key and user budgets from omp usage (OMP #17873) in Refract's usage/token UI, if the rpc-ui or omp usage/config exposes the data.
+
+Also filed 2026-11-13 (Stuart): **#1982** (`p2`, `feature`, `settings`, `design`), Feat: Settings: live rendered preview of the chat and status line. Decided: one holistic live preview reusing the real TranscriptRow and ComposerStatusLine with a canned sample, pinned atop the Chat / Appearance / Status-line sections, updating as options change.
+
+Also filed 2026-11-13 (Stuart): **#1983** (`p2`, `enhancement`, `settings`, `design`), UI Polish: Settings: percent fields as M3 sliders notched at 5%. Decided: slider plus number-field pair (ScaleControl pattern), snap to 5% on the two clean percent fields (compaction and idle thresholds), skip the per-model table, preserve off-5% values until moved; depends on #1852.
