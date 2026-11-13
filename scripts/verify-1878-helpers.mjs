@@ -23,6 +23,9 @@ async function pressKey(cdp, code, name, modifiers = 0) {
  * proves the pill is reachable and that its tooltip opens for a keyboard user. */
 export async function focusPillByTab(cdp) {
   await cdp.click(MESSAGE);
+  // The composer's Tab indents by default (#1513); Ctrl+M is the documented switch to Tab moving focus.
+  const movesFocus = `document.body.textContent.includes('Tab moves focus.')`;
+  if (!(await cdp.evaluate(movesFocus))) await pressKey(cdp, 77, 'm', CTRL);
   for (let i = 0; i < 10; i++) {
     await pressTab(cdp);
     if (await cdp.evaluate(`(${PILL}) === document.activeElement`)) return true;
@@ -32,7 +35,8 @@ export async function focusPillByTab(cdp) {
 
 /** Tabs onto the pill and returns the tooltip text that opened on that focus. */
 async function tooltipAfterTab(cdp, check, prefix) {
-  check(`${prefix}: Tab from the message box reaches the pill`, await focusPillByTab(cdp));
+  const reached = await focusPillByTab(cdp);
+  check(`${prefix}: Tab from the message box reaches the pill`, reached, reached ? undefined : await cdp.evaluate(`document.activeElement?.outerHTML?.slice(0, 200) + ' | hasFocus=' + document.hasFocus()`));
   check(`${prefix}: the pill matches :focus-visible after a real Tab`, await cdp.evaluate(`(${PILL}).matches(':focus-visible')`));
   await cdp.waitFor(`!!document.querySelector('[data-slot="tooltip-content"]')`, { timeoutMs: 10_000, label: 'tooltip on focus' }).catch(() => {});
   await sleep(300);
