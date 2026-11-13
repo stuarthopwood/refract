@@ -147,6 +147,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p2 later | #1915 | **Docs (p2, child of #1918):** reorganise docs into development and user, move user docs to the Wiki | `todo` |
 | p2 later | #1916 | **Docs (p2, child of #1918):** set up the GitHub Wiki with user guides and FAQ | `todo` |
 | p2 later | #1917 | **Docs (p2, child of #1918):** rewrite the repo README as a clear intro and quickest path to install and first use | `todo` |
+| p2 later | #1974 | **Chore, Scripts (p2, `chore`):** dev scripts write scratch under `%TEMP%\scratch\<task>\` (not the home folder or loose `%TEMP%`) and remove their own folder; shared helper plus every `verify-*`, `check-mermaid-contrast`, and `token-guard-probe` script converted | `todo`; `ready-for-agent`; rule in `docs/scratch.md`; dev-script fast-follow to #1972; pickup: converge (amend spec 001 tooling notes) or direct chore PR, grill first; carries a co-located helper unit test (AGENTS.md Testing rule) |
 | p3 later | #1941 | **Ask form card (p3, feature, chat):** name the live card and tighten its live-check evidence | `todo`; `ready-for-agent` |
 
 **Wave 2 (Stuart, 2026-11-12), in this order:** #1858 (P0, specify route, grill first), #1890, #1876 + #1877 (one PR), #1872, #1935. Rows marked `next W2.n` above (and row 1c.2 for #1858) are the active wave; take them in order.
