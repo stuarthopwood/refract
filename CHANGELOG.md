@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.34.0 (2026-11-13)
+
+### Features
+
+- feat(sessions): agent Session read tools and messaging (#1858) (https://github.com/stuarthopwood/refract/pull/1953)
+
+### Fixes
+
+- fix(chat): advisory stripe beside body only and accent agent rows (#1876, #1877) (https://github.com/stuarthopwood/refract/pull/1960)
+- fix(settings): state where compaction starts once (#1872) (https://github.com/stuarthopwood/refract/pull/1958)
+- fix(session): resume starts a stopped paused Session (#1890) (https://github.com/stuarthopwood/refract/pull/1959)
+
+### Other
+
+- docs(plan): file #1946 plan-mode role and #1947 ref tooltip prefetch (https://github.com/stuarthopwood/refract/pull/1948)
+- docs(plan): add Queue rows for filed issues and set Wave 2 (https://github.com/stuarthopwood/refract/pull/1949)
+- docs(plan): add #1950 chat ref-link right-pane row (https://github.com/stuarthopwood/refract/pull/1952)
+- docs(context): add Session message term and ADR 0008 (#1858) (https://github.com/stuarthopwood/refract/pull/1951)
+- docs(plan): add #1954 low-memory triage-button row (https://github.com/stuarthopwood/refract/pull/1955)
+- docs(plan): add #1961 tool-call view-full-call menu row (https://github.com/stuarthopwood/refract/pull/1962)
+- chore(settings): live-verify token-guard keys (#1935) (https://github.com/stuarthopwood/refract/pull/1964)
+- docs(plan): add #1972 central scratch-folder feature row (https://github.com/stuarthopwood/refract/pull/1973)
+- docs(agents): put all scratch under C:/Scratch and always tidy it (https://github.com/stuarthopwood/refract/pull/1971)
+- docs(plan): record OMP 18.20.0 review ledger row (#1976, #1977) (https://github.com/stuarthopwood/refract/pull/1978)
+- docs(plan): queue #1974 dev scripts scratch under %TEMP%\scratch (https://github.com/stuarthopwood/refract/pull/1975)
+
 ## v0.33.0 (2026-11-12)
 
 ### Features
