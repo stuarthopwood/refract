@@ -151,7 +151,10 @@ fn parent_id_is_on_list_rows_and_status_only_when_set() {
     let find = |id: &str| rows.iter().find(|r| r["id"] == id).unwrap();
     assert_eq!(find("kid")["parentId"], "mum");
     assert!(find("mum").get("parentId").is_none());
-    assert_eq!(status_value(&child, &repos(), Value::Null)["parentId"], "mum");
+    assert_eq!(
+        status_value(&child, &repos(), Value::Null)["parentId"],
+        "mum"
+    );
     let root = status_value(&s("mum", "r1", "idle", "t"), &repos(), Value::Null);
     assert!(root.get("parentId").is_none());
 }

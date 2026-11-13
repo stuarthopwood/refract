@@ -28,7 +28,12 @@ mod tests {
     fn the_rule_of_thumb_block_names_the_three_way_choice_within_900_chars() {
         let block = &RULES[RULES.find(BLOCK_HEADING).expect("block heading")..];
         assert!(block.chars().count() <= 900, "{}", block.chars().count());
-        for term in ["subagent", "background agents", "child Session", "refract_create_session"] {
+        for term in [
+            "subagent",
+            "background agents",
+            "child Session",
+            "refract_create_session",
+        ] {
             assert!(block.contains(term), "{term}");
         }
     }

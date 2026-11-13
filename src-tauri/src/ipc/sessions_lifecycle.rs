@@ -14,8 +14,8 @@ use crate::git::worktrees::{
     remove_worktree,
 };
 use crate::process::pid_records;
-use crate::session::SessionStatus;
 use crate::session::agent::SharedRegistry;
+use crate::session::SessionStatus;
 use crate::store::registry::{Session, SessionPatch};
 
 use super::{
@@ -72,13 +72,8 @@ pub fn sessions_create(state: AppState, args: Vec<Value>) -> HandlerFuture {
             }
         };
 
-        let session = create_session_record(
-            &state.registry,
-            &repository_id,
-            &base_branch,
-            None,
-        )
-        .await?;
+        let session =
+            create_session_record(&state.registry, &repository_id, &base_branch, None).await?;
         Ok(serde_json::to_value(session).expect("Session is always JSON-serialisable"))
     })
 }

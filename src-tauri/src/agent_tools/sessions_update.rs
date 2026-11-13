@@ -11,7 +11,9 @@ use super::sessions::{status_of, NOT_FOUND};
 use super::sessions_send::SESSION_NOT_RUNNING;
 use super::tree_gate;
 use crate::session::agent::{PendingRequest, SessionAgent, SharedRegistry};
-use crate::store::registry::{RegistryError, RegistryErrorCode, RegistryStoreError, Session, SessionPatch};
+use crate::store::registry::{
+    RegistryError, RegistryErrorCode, RegistryStoreError, Session, SessionPatch,
+};
 use crate::store::session_tree::{validate_parent, TreeError};
 
 pub const UPDATE_SESSION: &str = "refract_update_session";
@@ -139,7 +141,9 @@ fn check_tree(sessions: &[Session], request: &Request<'_>) -> Result<(), ToolErr
             return Err(invalid(format!("Session {parent_id} is archived")));
         }
         if parent.repository_id != target.repository_id {
-            return Err(invalid(format!("Session {parent_id} is in another Project")));
+            return Err(invalid(format!(
+                "Session {parent_id} is in another Project"
+            )));
         }
         validate_parent(sessions, Some(request.id), parent_id)
             .map_err(|e| tree_error(parent_id, e))?;
@@ -166,7 +170,10 @@ async fn update_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
     };
     let inside = tree_gate::inside_own_tree(&sessions, host.caller_id(), request.id, new_parent);
     if !inside && !host.is_yolo().await {
-        let target = sessions.iter().find(|s| s.id == request.id).map_or("", |s| s.name.as_str());
+        let target = sessions
+            .iter()
+            .find(|s| s.id == request.id)
+            .map_or("", |s| s.name.as_str());
         let mut details = Vec::new();
         if let Some(name) = request.name {
             details.push(format!("Rename to: {name}"));
@@ -294,7 +301,10 @@ impl Host for AppHost<'_> {
     }
     async fn set_role(&self, id: &str, role: &str) -> Result<(), ToolError> {
         let target = self.manager.get_agent(id).ok_or_else(|| {
-            ToolError::new(SESSION_NOT_RUNNING, "the target Session stopped before the role was set")
+            ToolError::new(
+                SESSION_NOT_RUNNING,
+                "the target Session stopped before the role was set",
+            )
         })?;
         let roles = self.known_roles().await?;
         crate::session::pending_selection::choose_role(&target, role, &roles)
@@ -306,7 +316,10 @@ impl Host for AppHost<'_> {
 
 pub async fn update(agent: &SessionAgent, call_id: &str, args: &Value) -> Result<Value, ToolError> {
     let manager = agent.tool_manager().ok_or_else(|| {
-        ToolError::new(CANCELLED, "Refract is shutting down; no Session can be reached")
+        ToolError::new(
+            CANCELLED,
+            "Refract is shutting down; no Session can be reached",
+        )
     })?;
     let registry = agent.tool_registry().clone();
     let host = AppHost {

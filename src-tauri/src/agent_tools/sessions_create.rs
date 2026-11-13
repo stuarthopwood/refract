@@ -53,7 +53,12 @@ pub(super) trait Host {
     async fn ask(&self, card: PendingRequest) -> Result<(), ToolError>;
     async fn known_roles(&self) -> Result<Vec<String>, ToolError>;
     /// Starts the agent, applies `role`, then sends the first turn.
-    async fn start(&self, id: &str, role: Option<&str>, first_turn: String) -> Result<(), ToolError>;
+    async fn start(
+        &self,
+        id: &str,
+        role: Option<&str>,
+        first_turn: String,
+    ) -> Result<(), ToolError>;
     async fn status(&self, id: &str) -> String;
 }
 
@@ -207,8 +212,13 @@ async fn create_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
             details.push(format!("Role: {role}"));
         }
         details.push(format!("Prompt: {}", preview(request.prompt)));
-        host.ask(approval::session_card(host.call_id(), CREATE_SESSION, target, details))
-            .await?;
+        host.ask(approval::session_card(
+            host.call_id(),
+            CREATE_SESSION,
+            target,
+            details,
+        ))
+        .await?;
     }
 
     // The limits are checked again under the gate: the caller may have been deleted, or a racing
@@ -225,18 +235,13 @@ async fn create_with(host: &impl Host, args: &Value) -> Result<Value, ToolError>
         }
         validate_parent(&sessions, None, id).map_err(|e| tree_error(id, e))?;
     }
-    let created = create_session_record(
-        host.registry(),
-        &repository.id,
-        &base,
-        parent_id.clone(),
-    )
-    .await
-    .map_err(|e| match e.code {
-        "base-missing" => invalid(e.message),
-        "not-found" => ToolError::new(NOT_FOUND, e.message),
-        code => ToolError::new(code, e.message),
-    })?;
+    let created = create_session_record(host.registry(), &repository.id, &base, parent_id.clone())
+        .await
+        .map_err(|e| match e.code {
+            "base-missing" => invalid(e.message),
+            "not-found" => ToolError::new(NOT_FOUND, e.message),
+            code => ToolError::new(code, e.message),
+        })?;
     drop(_gate);
 
     let name = match request.name {
@@ -318,7 +323,12 @@ impl Host for AppHost<'_> {
             .await
             .map_err(|e| ToolError::new(e.code, e.message))
     }
-    async fn start(&self, id: &str, role: Option<&str>, first_turn: String) -> Result<(), ToolError> {
+    async fn start(
+        &self,
+        id: &str,
+        role: Option<&str>,
+        first_turn: String,
+    ) -> Result<(), ToolError> {
         let child = self.manager.get_or_create_agent(id);
         let fail = |e: crate::session::agent::AgentError| ToolError::new(e.code, e.message);
         child.start().await.map_err(fail)?;
@@ -343,7 +353,10 @@ impl Host for AppHost<'_> {
 
 pub async fn create(agent: &SessionAgent, call_id: &str, args: &Value) -> Result<Value, ToolError> {
     let manager = agent.tool_manager().ok_or_else(|| {
-        ToolError::new(CANCELLED, "Refract is shutting down; no Session can be reached")
+        ToolError::new(
+            CANCELLED,
+            "Refract is shutting down; no Session can be reached",
+        )
     })?;
     let registry = agent.tool_registry().clone();
     let host = AppHost {

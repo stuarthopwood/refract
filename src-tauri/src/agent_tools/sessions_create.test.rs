@@ -206,7 +206,10 @@ async fn a_parent_with_four_live_children_gets_child_limit_but_an_archived_one_f
         rows.push(row(&format!("k{n}"), "repo", Some("me")));
     }
     let h = host(rows).await;
-    assert_eq!(code(create_with(&h, &json!({ "prompt": "p" })).await), "child_limit");
+    assert_eq!(
+        code(create_with(&h, &json!({ "prompt": "p" })).await),
+        "child_limit"
+    );
     h.registry
         .lock()
         .await
@@ -248,7 +251,9 @@ async fn approval_creates_and_yolo_skips_the_card() {
 #[tokio::test]
 async fn the_child_defaults_to_the_caller_as_parent_and_gets_the_parent_line() {
     let h = host(me()).await;
-    let out = create_with(&h, &json!({ "prompt": "do it", "name": "Kid" })).await.unwrap();
+    let out = create_with(&h, &json!({ "prompt": "do it", "name": "Kid" }))
+        .await
+        .unwrap();
     assert_eq!(out["parentId"], "me");
     assert_eq!(out["name"], "Kid");
     assert_eq!(out["status"], "idle");
@@ -278,7 +283,9 @@ async fn a_null_parent_makes_a_root_with_the_bare_prompt() {
 #[tokio::test]
 async fn the_role_is_passed_only_when_given_and_never_inherited() {
     let h = host(me()).await;
-    create_with(&h, &json!({ "prompt": "a", "role": "smol" })).await.unwrap();
+    create_with(&h, &json!({ "prompt": "a", "role": "smol" }))
+        .await
+        .unwrap();
     create_with(&h, &json!({ "prompt": "b" })).await.unwrap();
     let started = h.started.lock().unwrap();
     assert_eq!(started[0].1.as_deref(), Some("smol"));
@@ -304,7 +311,9 @@ async fn two_racing_creates_at_three_live_children_yield_one_success() {
 async fn a_start_failure_keeps_the_session_and_names_its_id() {
     let mut h = host(me()).await;
     h.start_fails = true;
-    let err = create_with(&h, &json!({ "prompt": "p" })).await.unwrap_err();
+    let err = create_with(&h, &json!({ "prompt": "p" }))
+        .await
+        .unwrap_err();
     assert_eq!(err.code, START_FAILED);
     let sessions = h.registry.lock().await.snapshot().sessions;
     assert_eq!(sessions.len(), 2);

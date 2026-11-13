@@ -77,10 +77,14 @@ async fn create_and_update_are_dispatched_to_their_own_tools() {
     let dir = crate::test_scratch::path(format!("refract-router-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let registry = Arc::new(tokio::sync::Mutex::new(
-        crate::store::registry::RegistryStore::open(&dir).await.unwrap(),
+        crate::store::registry::RegistryStore::open(&dir)
+            .await
+            .unwrap(),
     ));
     let settings = Arc::new(tokio::sync::Mutex::new(
-        crate::store::settings::SettingsStore::open(&dir).await.unwrap(),
+        crate::store::settings::SettingsStore::open(&dir)
+            .await
+            .unwrap(),
     ));
     let events =
         crate::events::EventSink::new(Arc::new(std::sync::Mutex::new(None)), registry.clone());
@@ -88,7 +92,11 @@ async fn create_and_update_are_dispatched_to_their_own_tools() {
     let agent = manager.get_or_create_agent("caller");
     for (tool, args, expected) in [
         (sessions_create::CREATE_SESSION, json!({}), "prompt"),
-        (sessions_update::UPDATE_SESSION, json!({ "id": "x" }), "nothing to change"),
+        (
+            sessions_update::UPDATE_SESSION,
+            json!({ "id": "x" }),
+            "nothing to change",
+        ),
     ] {
         let err = run_native(&agent, "call-1", tool, &args).await.unwrap_err();
         assert_eq!(err.code, INVALID_INPUT, "{tool}");

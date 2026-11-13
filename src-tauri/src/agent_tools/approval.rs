@@ -140,7 +140,12 @@ mod tests {
             target,
             details,
             options,
-        } = session_card("c2", "refract_create_session", "repo".into(), vec!["d".into()])
+        } = session_card(
+            "c2",
+            "refract_create_session",
+            "repo".into(),
+            vec!["d".into()],
+        )
         else {
             panic!("expected an approval card");
         };

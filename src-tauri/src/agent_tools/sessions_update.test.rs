@@ -45,7 +45,10 @@ impl Host for FakeHost {
         if self.stopped { "stopped" } else { "idle" }.into()
     }
     async fn set_role(&self, id: &str, role: &str) -> Result<(), ToolError> {
-        self.roles_set.lock().unwrap().push((id.into(), role.into()));
+        self.roles_set
+            .lock()
+            .unwrap()
+            .push((id.into(), role.into()));
         Ok(())
     }
 }
@@ -116,7 +119,11 @@ fn code(result: Result<Value, ToolError>) -> String {
 
 async fn parent_of(host: &FakeHost, id: &str) -> Option<String> {
     let sessions = host.registry.lock().await.snapshot().sessions;
-    sessions.into_iter().find(|s| s.id == id).unwrap().parent_session_id
+    sessions
+        .into_iter()
+        .find(|s| s.id == id)
+        .unwrap()
+        .parent_session_id
 }
 
 /// me -> kid, plus an unrelated root `other` and a sibling root `peer`.
@@ -207,7 +214,9 @@ async fn a_new_parent_with_four_live_children_is_child_limit() {
 #[tokio::test]
 async fn a_change_inside_the_own_tree_needs_no_card_and_null_un_nests() {
     let h = host(tree()).await;
-    let out = update_with(&h, &json!({ "id": "kid", "parent_id": null })).await.unwrap();
+    let out = update_with(&h, &json!({ "id": "kid", "parent_id": null }))
+        .await
+        .unwrap();
     assert!(out.get("parentId").is_none());
     assert_eq!(parent_of(&h, "kid").await, None);
     assert_eq!(h.asks.load(Ordering::SeqCst), 0);
@@ -221,13 +230,18 @@ async fn a_change_outside_the_own_tree_asks_and_denial_changes_nothing() {
     assert_eq!(code(result), "denied");
     assert_eq!(h.asks.load(Ordering::SeqCst), 1);
     let sessions = h.registry.lock().await.snapshot().sessions;
-    assert_eq!(sessions.iter().find(|s| s.id == "other").unwrap().name, "name-other");
+    assert_eq!(
+        sessions.iter().find(|s| s.id == "other").unwrap().name,
+        "name-other"
+    );
 }
 
 #[tokio::test]
 async fn nesting_an_own_session_under_an_outside_one_asks() {
     let h = host(tree()).await;
-    let out = update_with(&h, &json!({ "id": "kid", "parent_id": "other" })).await.unwrap();
+    let out = update_with(&h, &json!({ "id": "kid", "parent_id": "other" }))
+        .await
+        .unwrap();
     assert_eq!(out["parentId"], "other");
     assert_eq!(h.asks.load(Ordering::SeqCst), 1);
 }
@@ -236,7 +250,9 @@ async fn nesting_an_own_session_under_an_outside_one_asks() {
 async fn yolo_skips_the_card_outside_the_own_tree() {
     let mut h = host(tree()).await;
     h.yolo = true;
-    update_with(&h, &json!({ "id": "other", "parent_id": "peer" })).await.unwrap();
+    update_with(&h, &json!({ "id": "other", "parent_id": "peer" }))
+        .await
+        .unwrap();
     assert_eq!(h.asks.load(Ordering::SeqCst), 0);
     assert_eq!(parent_of(&h, "other").await.as_deref(), Some("peer"));
 }
@@ -244,7 +260,9 @@ async fn yolo_skips_the_card_outside_the_own_tree() {
 #[tokio::test]
 async fn a_rename_changes_the_name_and_reports_it() {
     let h = host(tree()).await;
-    let out = update_with(&h, &json!({ "id": "kid", "name": "Fresh" })).await.unwrap();
+    let out = update_with(&h, &json!({ "id": "kid", "name": "Fresh" }))
+        .await
+        .unwrap();
     assert_eq!(out["name"], "Fresh");
     assert_eq!(out["parentId"], "me");
 }
@@ -252,8 +270,13 @@ async fn a_rename_changes_the_name_and_reports_it() {
 #[tokio::test]
 async fn a_role_change_applies_to_a_running_target_and_refuses_a_stopped_one() {
     let mut h = host(tree()).await;
-    update_with(&h, &json!({ "id": "kid", "role": "smol" })).await.unwrap();
-    assert_eq!(h.roles_set.lock().unwrap().as_slice(), [("kid".to_string(), "smol".to_string())]);
+    update_with(&h, &json!({ "id": "kid", "role": "smol" }))
+        .await
+        .unwrap();
+    assert_eq!(
+        h.roles_set.lock().unwrap().as_slice(),
+        [("kid".to_string(), "smol".to_string())]
+    );
     h.stopped = true;
     let err = update_with(&h, &json!({ "id": "kid", "name": "Z", "role": "smol" }))
         .await
@@ -261,17 +284,27 @@ async fn a_role_change_applies_to_a_running_target_and_refuses_a_stopped_one() {
     assert_eq!(err.code, SESSION_NOT_RUNNING);
     assert!(err.message.contains("stopped"));
     let sessions = h.registry.lock().await.snapshot().sessions;
-    assert_eq!(sessions.iter().find(|s| s.id == "kid").unwrap().name, "name-kid");
+    assert_eq!(
+        sessions.iter().find(|s| s.id == "kid").unwrap().name,
+        "name-kid"
+    );
 }
 
 #[tokio::test]
 async fn two_racing_nests_at_three_live_children_yield_one_success() {
-    let mut rows = vec![row("me", "repo", None), row("a", "repo", None), row("b", "repo", None)];
+    let mut rows = vec![
+        row("me", "repo", None),
+        row("a", "repo", None),
+        row("b", "repo", None),
+    ];
     for n in 0..3 {
         rows.push(row(&format!("k{n}"), "repo", Some("me")));
     }
     let h = host(rows).await;
-    let (a, b) = (json!({ "id": "a", "parent_id": "me" }), json!({ "id": "b", "parent_id": "me" }));
+    let (a, b) = (
+        json!({ "id": "a", "parent_id": "me" }),
+        json!({ "id": "b", "parent_id": "me" }),
+    );
     let (x, y) = tokio::join!(update_with(&h, &a), update_with(&h, &b));
     let codes: Vec<_> = [x, y].into_iter().map(|r| r.map_err(|e| e.code)).collect();
     assert_eq!(codes.iter().filter(|r| r.is_ok()).count(), 1, "{codes:?}");

@@ -44,7 +44,11 @@ fn the_session_in_the_registry_decides_the_depth_it_is_launched_with() {
     };
     let rows = [row("a", None), row("b", Some("a")), row("c", Some("b"))];
     for (id, depth) in [("a", 1), ("b", 2), ("c", 3)] {
-        assert_eq!(ToolAccess::for_session(&rows, id), ToolAccess::for_depth(depth), "{id}");
+        assert_eq!(
+            ToolAccess::for_session(&rows, id),
+            ToolAccess::for_depth(depth),
+            "{id}"
+        );
     }
     assert_eq!(ToolAccess::for_session(&rows, "c").depth, 3);
 }
