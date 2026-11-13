@@ -370,7 +370,16 @@ async fn sessions_restore_waits_for_the_project_gate() {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let archived = |state: &AppState| {
         let state = state.clone();
-        async move { state.registry.lock().await.get_session("s1").unwrap().archived_at.is_some() }
+        async move {
+            state
+                .registry
+                .lock()
+                .await
+                .get_session("s1")
+                .unwrap()
+                .archived_at
+                .is_some()
+        }
     };
     assert!(archived(&state).await, "restore must wait for the gate");
     drop(held);

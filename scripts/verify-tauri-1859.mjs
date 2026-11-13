@@ -199,6 +199,11 @@ async function main() {
     check(tooDeep.isError && tooDeep.body.error?.code === 'depth_limit', 'A depth-3 Session creating a child returned depth_limit.', `depth-4: ${JSON.stringify(tooDeep)}`);
     await shot('05-depth-limit.png');
 
+    // Root, four children and the grandchild are six live Sessions: a seventh create, even from a Session with free child slots, is session_limit before any card.
+    const seventh = await call('refract_create_session', { prompt: 'seventh' }, children[1].pid);
+    check(seventh.isError && seventh.body.error?.code === 'session_limit', 'A 7th live Session create in the Project returned session_limit.', `7th: ${JSON.stringify(seventh)}`);
+    check((await cdp.evaluate(approveCount)) === 0, 'session_limit raised no approval card.', 'a card appeared for the refused 7th Session');
+
     // Outside the own tree: child-two updating its sibling raises the card; Deny refuses and changes nothing.
     await openSession(children[1].id);
     const outsideId = post('refract_update_session', { id: children[2].id, name: 'hijacked' }, children[1].pid);

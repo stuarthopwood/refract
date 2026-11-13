@@ -369,7 +369,10 @@ async fn a_create_waits_for_the_project_gate_before_writing() {
         let h = h.clone();
         async move { create_with(&h, &json!({ "prompt": "p" })).await }
     });
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // A real create takes well under this, so finishing inside it means the gate was skipped.
+    let mut task = task;
+    let early = tokio::time::timeout(std::time::Duration::from_secs(4), &mut task).await;
+    assert!(early.is_err(), "the create must wait for the held gate");
     assert_eq!(session_count(&h).await, 1);
     drop(held);
     task.await.unwrap().unwrap();
