@@ -5556,3 +5556,16 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   click, failed lookup, out-of-Project, neutral icon) fails when removed, per FR-127
 - [x] T450 Live check on a built app (`pnpm verify:tauri`): click pins and reveals the pane without taking focus, re-click
   focuses the pin, Ctrl-click leaves the pane alone; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-127
+
+## Phase 94: Convergence (#1878 composer chip shows the role from start and resume, FR-128)
+
+- [x] T451 [US1] `model_support.rs` (`role_after_launch`, `seed_role_at_launch`) and `model.rs` (`on_launch`), called from
+  `launch.rs` after `sync_from_state`: reset the cached role and read it from the Conversation file once the process has
+  launched, `default` when the file names none, none when pinned, then emit `session_list_changed`, per FR-128 (missing)
+- [x] T452 [US1] `roleModelText.ts` (`chipText`, `chipModelTooltip`), `RoleModelPill.tsx`: the visible text is the role
+  alone (the model name only for a pinned or role-less Session); the model name moves to the tooltip, per FR-128 (contradicts)
+- [x] T453 `modelRoles.ts`: remove the `custom` sentinel, its label, icon, tooltip and `roleChipDisplay`, per FR-128 (contradicts)
+- [x] T454 `roleModelText.test.ts` and the `launch_role_tests` module: each guard (role-only text, pinned shows model,
+  tooltip carries the model, fresh session defaults, resumed keeps its role, pinned claims none) fails when removed, per FR-128
+- [ ] T455 Live check on a built app (`scripts/verify-tauri-1878.mjs`): a started Session and a resumed one show the role in the
+  chip with the model in the tooltip; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-128
