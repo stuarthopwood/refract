@@ -234,8 +234,11 @@ async function main() {
     check(initial === 'true' && beforeRequired === 'true' && afterRequired === 'false', '2. Submit is aria-disabled until the required textarea is filled', { initial, beforeRequired, afterRequired });
     await shoot(cdp, '04-submit-enabled-all-answers-filled.png');
 
-    // Submit by keyboard: focus the button and press a real Enter.
-    await cdp.evaluate(`(${SUBMIT}).focus()`);
+    // Submit by keyboard: reach the button with real Tab presses (a programmatic focus() after a mouse click is not :focus-visible, so it would show no ring) and press a real Enter.
+    for (let i = 0; i < 6 && !(await cdp.evaluate(`document.activeElement === (${SUBMIT})`)); i++) {
+      await pressKey(cdp, 'Tab', 9);
+      await sleep(100);
+    }
     const submitFocus = await cdp.evaluate(FOCUS_DETAIL);
     check(/^Submit/.test(submitFocus.name) && submitFocus.ring, 'A7. The focused Submit button has an accessible name and a visible focus ring', submitFocus);
     await shootActive(cdp, '01c-submit-focus-ring-cropped.png');
