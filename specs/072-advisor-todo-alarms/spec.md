@@ -31,3 +31,7 @@ One renderer-heavy batch, plus one Rust feature (Alarms). #1098 is skipped: OMP 
 - SC-1: Each change is visible in the built app (screenshots in the session files folder).
 - SC-2: `pnpm ci:local` and `pnpm check:ui-text` pass.
 - SC-3: No new tests (rapid-prototyping phase).
+
+## Convergence (#1879, 2026-11-13, Decided (Skippy, delegated))
+
+The #1432 decision to label the `task` model role "Subagent" is reversed: the role label reads "Task" again (Settings Models, model picker, composer chip, all derived from `CHAT_ROLE_DESCRIPTORS`). FR-2's "Subagent" wording is superseded; the role id `task`, the role description ("Subagents started by the task tool.") and every other Subagent label (usage filter, panels, tokenGuard group) are unchanged.

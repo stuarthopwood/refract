@@ -220,6 +220,24 @@ fn dropping_an_unsettled_plan_releases_its_slot() {
 }
 
 #[test]
+fn a_childs_reports_to_its_parent_count_toward_the_per_pair_limit() {
+    let limiter = SendLimiter::default();
+    let rows = [
+        json!({"id": "kid", "name": "Kid", "status": "working", "archivedAt": null, "parentSessionId": "mum"}),
+        json!({"id": "mum", "name": "Mum", "status": "idle", "archivedAt": null}),
+    ];
+    let args = json!({"id": "mum", "text": "done"});
+    let now = Instant::now();
+    for _ in 0..MAX_SENDS {
+        std::mem::forget(plan_send(&args, &rows, "kid", &limiter, now).unwrap());
+    }
+    let refused = plan_send(&args, &rows, "kid", &limiter, now);
+    assert_eq!(code(refused), RATE_LIMITED);
+    let reverse = json!({"id": "kid", "text": "ok"});
+    assert!(plan_send(&reverse, &rows, "mum", &limiter, now).is_ok());
+}
+
+#[test]
 fn a_target_that_stopped_mid_send_is_session_not_running() {
     let limiter = SendLimiter::default();
     let rows = rows();

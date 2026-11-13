@@ -8,6 +8,8 @@ import { useAccountsStore, usePullRequestsStore, useRepositoriesStore } from '@/
 import type { FilterTab } from '../../../shared/github'
 import { NewSessionRowMenu } from '@/components/NewSessionRowMenu'
 import { PullRequestRow } from './PullRequestRow'
+import { stackKey } from './stack-view'
+import { useStackMap } from './useStack'
 
 const TABS: Array<{ value: FilterTab; label: string }> = [
   { value: 'all', label: 'All' },
@@ -26,6 +28,7 @@ export function PullRequestList() {
   const query = usePullRequestsStore((s) => s.query)
   const appliedQuery = usePullRequestsStore((s) => s.appliedQuery)
   const items = usePullRequestsStore((s) => s.items)
+  const stackMap = useStackMap(items)
   const skipped = usePullRequestsStore((s) => s.skipped)
   const hasMore = usePullRequestsStore((s) => s.hasMore)
   const limit = usePullRequestsStore((s) => s.limit)
@@ -94,6 +97,7 @@ export function PullRequestList() {
           <PullRequestRow
             pullRequest={pr}
             selected={selected?.repositoryId === pr.repositoryId && selected.number === pr.number}
+            stack={stackMap.get(stackKey(pr.repositoryId, pr.number))}
             onSelect={() => select({ repositoryId: pr.repositoryId, number: pr.number })}
           />
         </NewSessionRowMenu>

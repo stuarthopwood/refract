@@ -88,8 +88,8 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
   { fg: 'accent-text', bg: 'muted', min: 3 }, // #1125, #1126: also the pressed IconRail glyph on its bg-muted fill
-  // TODO(#579): `accent-text` on `surface-hover` measures 4.00:1 (Dark) / 4.28:1 (Obsidian), under the 4.5:1 floor, so it
-  // is not a PAIRS entry. Lighten `accent-text` or add the pair before migrating any link/text colour onto a hover row.
+  { fg: 'accent-text', bg: 'surface-hover', min: 4.5 }, // #1873: the "+N" label chip on a hovered issue row
+  { fg: 'accent-text', bg: 'accent', min: 4.5 }, // #1873: the same chip on the selected issue row
   // The four role colours, as swatches beside the role names in Models (spec 036).
   ...['default', 'smol', 'slow', 'plan'].flatMap((role) => ['background', 'card', 'popover', 'accent'].map((bg) => ({ fg: `role-${role}`, bg, min: 3 }))),
   { fg: 'severity-success', bg: 'background', min: 3 },

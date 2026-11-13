@@ -9,6 +9,7 @@ import {
   MessageScrollerViewport
 } from '@/components/ui/message-scroller'
 import { Button } from '@/components/ui/button'
+import { BLUR_TRANSITION_CLASS, BLURRED_CONTENT_CLASS } from '@/components/ui/blur-content'
 import { cn } from '@/lib/utils'
 import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
 import { type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
@@ -33,6 +34,7 @@ import { toolRunningAnnouncement, toolVerb } from './toolVerbs'
 import { resolveToolDisplay } from './toolDisplay'
 import { NO_PENDING, TranscriptRow, type ToolItem } from './TranscriptRow'
 import { newestRunningRowId } from './newestRunningRow'
+import { findPrecedingAskItem } from './findPrecedingAskItem'
 import { type UserItem } from './UserMessageRow'
 import { useRepositoryAvatarUrl } from './useRepositoryAvatarUrl'
 import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
@@ -76,19 +78,6 @@ function useRepositoryUserName(repositoryId: string | null): string | undefined 
     }
   }, [repositoryId])
   return name
-}
-
-/**
- * The nearest preceding `ask` tool item for a `request` item at `requestIndex`. Earlier `request`
- * items are skipped because one ask sends a frame per field (and per checkbox toggle); any other
- * tool item ends the scan so an unrelated approval never links to an older ask.
- */
-function findPrecedingAskItem(items: TranscriptItem[], requestIndex: number): ToolItem | undefined {
-  for (let i = requestIndex - 1; i >= 0; i--) {
-    const candidate = items[i]!
-    if (candidate.kind === 'tool') return candidate.tool === 'ask' ? candidate : undefined
-  }
-  return undefined
 }
 
 interface Turn {
@@ -433,9 +422,11 @@ export function Transcript({
           tabIndex={0}
           aria-label="Transcript"
           // `ring-inset` so the focus ring is not clipped by `overflow-y-auto` and the root's `overflow-hidden`.
+          // Blur, not opacity, so the history behind the Starting agent notice stays out of the way in every theme (#1892).
           className={cn(
             'peer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
-            dimTranscript && 'opacity-40 focus-within:opacity-100'
+            BLUR_TRANSITION_CLASS,
+            dimTranscript && cn(BLURRED_CONTENT_CLASS, 'focus-within:blur-none')
           )}
         >
           <MessageScrollerContent
@@ -551,7 +542,7 @@ export function Transcript({
           <div
             data-start-overlay
             className={cn(
-              'pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2 transition-opacity duration-150',
+              'pointer-events-none absolute inset-0 flex items-center-safe justify-center overflow-y-auto p-2 transition-opacity duration-150 motion-reduce:transition-none',
               // Over visible history the transcript's own bar owns this edge; a second one here would sit beside it.
               dimTranscript && 'no-scrollbar peer-focus-within:opacity-0'
             )}

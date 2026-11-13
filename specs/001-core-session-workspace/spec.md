@@ -1751,11 +1751,13 @@ The developer types a slash command and finds the ones the agent offers. If a se
   provisional FR-079 once #941 claimed FR-079 on `origin/main` first): The Session
   start notice MUST use one centred presentation for every Session, not only a brand-new one --
   centred horizontally and vertically in the transcript viewport. For a Session that already has
-  history, the transcript behind the notice MUST dim to about 40% opacity while the notice
-  shows, returning to full opacity the instant the start ends or whenever keyboard focus moves
-  into the history; the dimmed transcript MUST stay fully interactive throughout (scrollable,
+  history, the transcript behind the notice MUST be blurred (the shared `LoadingOverlay` blur, `blur-sm` on the transcript
+  viewport, with no opacity dim; amended 2026-11-13, issue #1892, Stuart's implementation note 2026-11-11) while the notice
+  shows, clearing when the start ends or whenever keyboard focus moves into the history; the blur animates in and
+  out over about 150ms, or appears and clears at once under `prefers-reduced-motion`;
+  the blurred transcript MUST stay fully interactive throughout (scrollable,
   selectable, links still work) -- the notice itself gets a soft, borderless backing panel so
-  its own text stays readable against the dim. While keyboard focus is inside that dimmed
+  its own text stays readable against the blur. While keyboard focus is inside that blurred
   history, the notice itself MUST hide (not merely dim) so its panel never sits on top of a
   focused control, reappearing the instant focus leaves the history (for example, by reaching
   Keep waiting or Cancel). A brand-new Session's placement is unchanged (centred over the
@@ -2289,6 +2291,18 @@ The developer types a slash command and finds the ones the agent offers. If a se
   the issue or pull request icon, coloured by state with the existing tokens. The hover Item card opens with
   the same icon and the word `Issue` or `Pull request`. No lookup runs at render time and none is prefetched
   (#610); lookups stay cached for five minutes per repository and number.
+- **FR-128** (new, 2026-11-13, issue #1878, Decided Stuart 2026-11-10 and 2026-11-12; amends FR-091 and
+  FR-064's trigger text): The composer's role chip and Model picker trigger are one control
+  (`RoleModelPill`). For a Session on a role it MUST show the role's name only (for example **Default**);
+  the model name appears nowhere in the visible text and shows only in the control's tooltip, which opens
+  on hover and on keyboard focus. A Session whose model the developer picked directly (pinned) MUST show
+  that model's name with the pin glyph, never a role name. The **Custom** sentinel (FR-091) is removed: no
+  `custom` role id, label, icon or tooltip remains. The control shows the model name only when the role
+  cannot be established, never a guess. The role MUST be known from the first paint of a started or
+  resumed Session: Rust reads the role from the Conversation file once the process has launched and
+  `get_state` has been applied, falling back to the configured `default` when the file names none, and
+  emits `session_list_changed`; a pinned Session claims no role. The fix lives in Rust, not in a renderer
+  fallback.
 
 ### Key Entities
 

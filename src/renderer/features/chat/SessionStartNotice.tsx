@@ -13,7 +13,7 @@ interface SessionStartNoticeProps {
   cancelButtonRef: RefObject<HTMLButtonElement | null>
   onKeepWaiting: () => void
   onCancel: () => void
-  /** Set by `Transcript.tsx` when overlaying the dimmed history: adds a panel for text contrast. */
+  /** Set by `Transcript.tsx` when overlaying the blurred history: adds a panel for text contrast. */
   dimmed?: boolean
 }
 

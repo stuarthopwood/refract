@@ -34,10 +34,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn overlay_allows_exactly_the_three_tools() {
+    fn overlay_allows_exactly_the_registered_tools() {
         assert_eq!(
-            render(ToolAccess::root()),
-            "tools:\n  approval:\n    refract_list_panels: allow\n    refract_open_panel: allow\n    refract_invoke_panel_action: allow\n    refract_list_sessions: allow\n    refract_get_session_status: allow\n    refract_send_session_message: allow\n"
+            render(ToolAccess::for_depth(1)),
+            "tools:\n  approval:\n    refract_list_panels: allow\n    refract_open_panel: allow\n    refract_invoke_panel_action: allow\n    refract_list_sessions: allow\n    refract_get_session_status: allow\n    refract_send_session_message: allow\n    refract_create_session: allow\n    refract_update_session: allow\n"
         );
     }
 }
