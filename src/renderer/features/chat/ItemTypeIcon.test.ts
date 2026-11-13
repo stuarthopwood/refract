@@ -7,7 +7,7 @@ import type { ItemCard } from '../../../shared/ipc-item-refs'
 // The PR state map is imported from a module that reaches the stores, which assume a browser `window`.
 vi.mock('@/state', () => ({}))
 
-import { ItemTypeIcon, itemTypeVisual } from './ItemTypeIcon'
+import { ItemTypeIcon, itemDisplayState, itemTypeVisual } from './ItemTypeIcon'
 
 const CARD: ItemCard = {
   ownerRepo: 'me/app',
@@ -41,6 +41,14 @@ describe('itemTypeVisual', () => {
     expect(itemTypeVisual(pr)).toMatchObject({ label: 'Pull request', colorClass: 'text-pr-open' })
     expect(itemTypeVisual({ ...pr, draft: true }).colorClass).toBe('text-pr-draft')
     expect(itemTypeVisual({ ...pr, state: 'merged' }).colorClass).toBe('text-pr-merged')
+  })
+})
+
+describe('itemDisplayState', () => {
+  it('is draft only for an open draft, else the card state', () => {
+    expect(itemDisplayState({ ...CARD, draft: true })).toBe('draft')
+    expect(itemDisplayState({ ...CARD, draft: true, state: 'merged' })).toBe('merged')
+    expect(itemDisplayState(CARD)).toBe('open')
   })
 })
 

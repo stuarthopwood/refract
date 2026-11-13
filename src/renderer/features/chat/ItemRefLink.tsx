@@ -10,12 +10,13 @@ import { StatePill } from '@/features/pull-requests/StatePill'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { usePinnedPanelsStore, useRepositoriesStore, useSessionsStore } from '@/state'
+import { ReorderAnnouncer } from '@/components/reorder/ReorderAnnouncer'
 import type { ItemCard } from '../../../shared/ipc-item-refs'
 import { linkClassName } from './linkStyles'
 import { lookupCard, peekCard } from './itemCardCache'
-import { resolveItemRef, type ItemRefTarget } from './itemRefs'
-import { ItemTypeIcon, itemTypeVisual } from './ItemTypeIcon'
-import { openItemRef, wantsBrowser } from './openItemRef'
+import { ownerRepoOf, resolveItemRef, type ItemRefTarget } from './itemRefs'
+import { ItemTypeIcon, itemDisplayState, itemTypeVisual } from './ItemTypeIcon'
+import { isMiddleButton, openItemRef, wantsBrowser } from './openItemRef'
 
 // The shared external-link listener (tauri-bridge/externalLinks.ts) is the one place a URL opens.
 function openInBrowser(url: string): void {
@@ -28,7 +29,7 @@ function openInBrowser(url: string): void {
   anchor.remove()
 }
 
-function ItemCardBody({ card }: { card: ItemCard }) {
+export function ItemCardBody({ card }: { card: ItemCard }) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-2 text-xs font-medium">
@@ -42,7 +43,7 @@ function ItemCardBody({ card }: { card: ItemCard }) {
         {card.title} <span className="text-muted-foreground">#{card.number}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <StatePill state={card.state === 'open' && card.draft ? 'draft' : card.state} />
+        <StatePill state={itemDisplayState(card)} />
         <UserAvatar name={card.authorLogin} src={card.avatarDataUrl ?? undefined} size="xs" />
         <span className="text-xs [overflow-wrap:anywhere]">{card.authorLogin}</span>
       </div>
@@ -63,6 +64,8 @@ export function ItemRefLink({ text, sessionId, streaming }: { text: string; sess
   const [open, setOpen] = React.useState(false)
   // A lookup resolving fills the cache; this re-renders so the icon reads it.
   const [, refreshIcon] = React.useReducer((count: number) => count + 1, 0)
+  // Polite "opened in the right pane" text; the serial makes a repeated identical message announce again.
+  const [announcement, announce] = React.useReducer((prev: { text: string; serial: number }, text: string) => ({ text, serial: prev.serial + 1 }), { text: '', serial: 0 })
   const contentId = React.useId()
   if (!target) return <>{text}</>
   // Inert while streaming, like every other link in a live message.
@@ -75,57 +78,62 @@ export function ItemRefLink({ text, sessionId, streaming }: { text: string; sess
   }
 
   const openItem = (event: React.MouseEvent<HTMLElement>): void => {
-    const remote = repository?.remote
-    const ownerRepo = target.owner ? `${target.owner}/${target.repo}` : remote?.kind === 'has' ? `${remote.owner}/${remote.repo}` : null
     void openItemRef(
-      { target, sessionId, opener: event.currentTarget, toBrowser: wantsBrowser(event), ownerRepo },
+      { target, sessionId, opener: event.currentTarget, toBrowser: wantsBrowser(event), ownerRepo: ownerRepoOf(target, repository) },
       { lookup, pin: (kind, pinTarget) => usePinnedPanelsStore.getState().pin(kind, pinTarget), openUrl: openInBrowser }
-    )
+    ).then((pinned) => {
+      if (pinned) announce(`${pinned === 'pull-request' ? 'Pull request' : 'Issue'} #${target.number} opened in the right pane`)
+    })
   }
+  const typeWord = itemTypeVisual(peekCard(target)).label
 
   return (
-    <HoverCard
-      openDelay={300}
-      onOpenChange={(isOpen) => {
-        setOpen(isOpen)
-        if (!isOpen) return
-        // A previous failed or loaded card must not flash before this lookup settles.
-        setCard('loading')
-        void lookup(target).then(setCard)
-      }}
-    >
-      <HoverCardTrigger asChild>
-        <Button
-          type="button"
-          variant="link"
-          className={cn(linkClassName, 'inline h-auto min-h-6 p-0 whitespace-normal')}
-          aria-describedby={open ? contentId : undefined}
-          onClick={openItem}
-          // Middle click does not raise `click`; without the mousedown guard Windows starts autoscroll.
-          onMouseDown={(event) => {
-            if (event.button === 1) event.preventDefault()
-          }}
-          onAuxClick={(event) => {
-            if (event.button === 1) openItem(event)
-          }}
-        >
-          <ItemTypeIcon card={peekCard(target)} className="mr-1" />
-          {text}
-        </Button>
-      </HoverCardTrigger>
-      <HoverCardContent id={contentId} side="top" align="start">
-        {card === 'loading' ? (
-          <InlineStatus tone="loading" density="compact" className="p-0">
-            Loading {text}...
-          </InlineStatus>
-        ) : card ? (
-          <ItemCardBody card={card} />
-        ) : (
-          <InlineStatus tone="notice" density="compact" className="p-0">
-            Could not load {text}.
-          </InlineStatus>
-        )}
-      </HoverCardContent>
-    </HoverCard>
+    <>
+      <HoverCard
+        openDelay={300}
+        onOpenChange={(isOpen) => {
+          setOpen(isOpen)
+          if (!isOpen) return
+          // A previous failed or loaded card must not flash before this lookup settles.
+          setCard('loading')
+          void lookup(target).then(setCard)
+        }}
+      >
+        <HoverCardTrigger asChild>
+          <Button
+            type="button"
+            variant="link"
+            className={cn(linkClassName, 'inline h-auto min-h-6 p-0 whitespace-normal')}
+            aria-describedby={open ? contentId : undefined}
+            onClick={openItem}
+            // Middle click does not raise `click`; without the mousedown guard Windows starts autoscroll.
+            onMouseDown={(event) => {
+              if (isMiddleButton(event.button)) event.preventDefault()
+            }}
+            onAuxClick={(event) => {
+              if (isMiddleButton(event.button)) openItem(event)
+            }}
+          >
+            <ItemTypeIcon card={peekCard(target)} className="mr-1" />
+            {typeWord && <span className="sr-only">{typeWord} </span>}
+            {text}
+          </Button>
+        </HoverCardTrigger>
+        <HoverCardContent id={contentId} side="top" align="start">
+          {card === 'loading' ? (
+            <InlineStatus tone="loading" density="compact" className="p-0">
+              Loading {text}…
+            </InlineStatus>
+          ) : card ? (
+            <ItemCardBody card={card} />
+          ) : (
+            <InlineStatus tone="notice" density="compact" className="p-0">
+              Could not load {text}.
+            </InlineStatus>
+          )}
+        </HoverCardContent>
+      </HoverCard>
+      <ReorderAnnouncer text={announcement.text} serial={announcement.serial} />
+    </>
   )
 }

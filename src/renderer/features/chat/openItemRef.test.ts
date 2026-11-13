@@ -2,7 +2,7 @@
 import { describe, expect, it, vi, type Mock } from 'vitest'
 import type { ItemCard } from '../../../shared/ipc-item-refs'
 import type { ItemRefTarget } from './itemRefs'
-import { openItemRef, wantsBrowser, type OpenItemRefDeps } from './openItemRef'
+import { isMiddleButton, openItemRef, wantsBrowser, type OpenItemRefDeps } from './openItemRef'
 
 const TARGET: ItemRefTarget = { repositoryId: 'repo-1', owner: null, repo: null, number: 12, inProject: true }
 const CARD: ItemCard = {
@@ -39,6 +39,13 @@ describe('openItemRef', () => {
     await openItemRef(base, d)
     expect(d.pin).toHaveBeenCalledWith('issue', { repositoryId: 'repo-1', number: 12, sessionId: 'session-1', opener: OPENER, focus: false })
     expect(d.openUrl).not.toHaveBeenCalled()
+  })
+
+  it('resolves to the pinned kind, and null for the browser paths', async () => {
+    expect(await openItemRef(base, deps(CARD))).toBe('issue')
+    expect(await openItemRef(base, deps({ ...CARD, kind: 'pull-request' }))).toBe('pull-request')
+    expect(await openItemRef({ ...base, toBrowser: true }, deps(CARD))).toBeNull()
+    expect(await openItemRef(base, deps(null))).toBeNull()
   })
 
   it('pins a pull request as a pull request', async () => {
@@ -83,5 +90,14 @@ describe('wantsBrowser', () => {
     expect(wantsBrowser({ ctrlKey: false, metaKey: true, button: 0 })).toBe(true)
     expect(wantsBrowser({ ctrlKey: false, metaKey: false, button: 1 })).toBe(true)
     expect(wantsBrowser({ ctrlKey: false, metaKey: false, button: 0 })).toBe(false)
+  })
+})
+
+describe('isMiddleButton', () => {
+  it('is true for button 1 only, so mousedown autoscroll and auxclick ignore the right and back buttons', () => {
+    expect(isMiddleButton(1)).toBe(true)
+    expect(isMiddleButton(0)).toBe(false)
+    expect(isMiddleButton(2)).toBe(false)
+    expect(isMiddleButton(3)).toBe(false)
   })
 })

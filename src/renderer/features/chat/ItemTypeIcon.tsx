@@ -14,12 +14,16 @@ export interface ItemTypeVisual {
 
 const NEUTRAL: ItemTypeVisual = { Icon: HashIcon, colorClass: 'text-muted-foreground', label: null }
 
+/** A draft pull request shows as `draft`, not `open`; one place so the icon and the card pill agree. */
+export function itemDisplayState(card: ItemCard): 'draft' | ItemCard['state'] {
+  return card.state === 'open' && card.draft ? 'draft' : card.state
+}
+
 /** `card` undefined or null means the item has not been looked up (or the lookup failed): the neutral icon. */
 export function itemTypeVisual(card: ItemCard | null | undefined): ItemTypeVisual {
   if (!card) return NEUTRAL
   if (card.kind === 'pull-request') {
-    const state = card.state === 'open' && card.draft ? 'draft' : card.state
-    return { Icon: GitPullRequestIcon, colorClass: PULL_REQUEST_STATE_DISPLAY[state].colorClass, label: 'Pull request' }
+    return { Icon: GitPullRequestIcon, colorClass: PULL_REQUEST_STATE_DISPLAY[itemDisplayState(card)].colorClass, label: 'Pull request' }
   }
   return { Icon: CircleDotIcon, colorClass: card.state === 'open' ? 'text-pr-open' : 'text-pr-merged', label: 'Issue' }
 }

@@ -21,7 +21,8 @@ const WORK_DIR = process.env.REFRACT_1950_DIR || path.join(tmpdir(), 'r1950');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const CATALOG_FIXTURE = path.join(__dirname, 'fixtures', 'model-catalogs', 'chat-1069.json');
 const COMPOSER = `document.querySelector('[aria-label="Message"]')`;
-const link = (text) => `Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim() === ${JSON.stringify(text)} && !b.closest('[role="listbox"]'))`;
+// Once the type is known the link's name starts with a visually hidden type word ("Issue #12"); match the bare ref either way.
+const link = (text) => `Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim().replace(/^(Issue|Pull request) /, '') === ${JSON.stringify(text)} && !b.closest('[role="listbox"]'))`;
 const TAB = (id) => `document.getElementById('panel-tab-${id}')`;
 const CTRL = 2;
 
@@ -191,6 +192,34 @@ async function main() {
     check('the failed lookup left the pinned panel alone', (await selectedTab(cdp)).includes('panel-tab-issue'), await selectedTab(cdp));
     check('the failed #99 icon stays neutral', (await iconType(cdp, '#99')) === 'unknown', await iconType(cdp, '#99'));
     await shot('05-after-github-opens.png');
+
+    // Keyboard pass: Tab to #12, see the focus ring, Enter pins and the focus stays on the link, a live region announces it.
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+    await click(cdp, '#42');
+    await cdp.waitFor(`${TAB('pull-request')}?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 15_000, label: 'PR tab selected before keyboard pass' }).catch(() => {});
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 5, y: 5 });
+    await sleep(600);
+    const key = async (name, vk) => {
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: vk, key: name, code: name, modifiers: 0 });
+      await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: vk, key: name, code: name, modifiers: 0 });
+    };
+    await cdp.evaluate(`(${link('#42')}).focus()`);
+    await key('Tab', 9);
+    await sleep(300);
+    const tabbed = await cdp.evaluate(`(() => { const a = document.activeElement; const s = getComputedStyle(a); return { text: a?.textContent?.trim(), focusVisible: a?.matches(':focus-visible'), ring: s.boxShadow !== 'none' || (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0), name: a?.textContent }; })()`);
+    check('Tab from #42 lands on #12', tabbed.text?.endsWith('#12') === true, tabbed);
+    check(':focus-visible matches and a focus ring is painted on #12', tabbed.focusVisible === true && tabbed.ring === true, tabbed);
+    check('the accessible name carries the type word once known ("Issue #12")', tabbed.name === 'Issue #12', tabbed.name);
+    await cdp.evaluate(`(${link('#12')}).scrollIntoView({ block: 'center' })`);
+    await shot('06-keyboard-focus-ring-on-12.png');
+    await key('Enter', 13);
+    await cdp.waitFor(`${TAB('issue')}?.getAttribute('aria-selected') === 'true'`, { timeoutMs: 15_000, label: 'Issue tab after Enter' }).catch(() => {});
+    await sleep(500);
+    const entered = await cdp.evaluate(`(() => { const b = ${link('#12')}; const live = b.parentElement.querySelector('[role="status"]'); return { selected: ${TAB('issue')}?.getAttribute('aria-selected') === 'true', focusOnLink: document.activeElement === b, focusVisible: document.activeElement?.matches(':focus-visible'), live: live?.textContent ?? null }; })()`);
+    check('Enter on #12 pins the Issue', entered.selected === true, entered);
+    check('focus stays on the #12 link after Enter', entered.focusOnLink === true, entered);
+    check('the live region announces "Issue #12 opened in the right pane"', entered.live === 'Issue #12 opened in the right pane', entered.live);
+    await shot('07-keyboard-enter-pinned-focus-kept.png');
   } catch (err) {
     failures.push(`FAIL crash: ${err?.stack ?? err}`);
     console.error(err);

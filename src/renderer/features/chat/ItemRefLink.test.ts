@@ -14,7 +14,7 @@ const mocks = vi.hoisted(() => {
 vi.mock('@/state', () => ({ useSessionsStore: mocks.store, useRepositoriesStore: mocks.store, usePinnedPanelsStore: mocks.store }))
 
 import { clearCardCache, lookupCard } from './itemCardCache'
-import { ItemRefLink } from './ItemRefLink'
+import { ItemCardBody, ItemRefLink } from './ItemRefLink'
 
 const CARD: ItemCard = {
   ownerRepo: 'me/app',
@@ -56,5 +56,21 @@ describe('ItemRefLink render', () => {
 
   it('stays inert text with no icon while streaming', () => {
     expect(render('#5', true)).not.toContain('data-item-type')
+  })
+
+  it('adds the type word to the link name once the type is known, and not before', async () => {
+    expect(render('#5')).not.toContain('Pull request')
+    lookup.mockResolvedValue({ ok: true, value: { ...CARD, kind: 'pull-request' } })
+    await lookupCard({ repositoryId: 'repo-1', owner: null, repo: null, number: 5, inProject: true })
+    expect(render('#5')).toContain('<span class="sr-only">Pull request </span>')
+  })
+})
+
+describe('ItemCardBody', () => {
+  const body = (card: ItemCard) => renderToStaticMarkup(createElement(ItemCardBody, { card }))
+
+  it('shows the Issue or Pull request type word in the card header', () => {
+    expect(body(CARD)).toContain('Issue')
+    expect(body({ ...CARD, kind: 'pull-request' })).toContain('Pull request')
   })
 })
