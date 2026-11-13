@@ -140,6 +140,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p2 later | #1961 | **UI Polish (p2, Chat, `design`):** move "View full call" into the tool call's overflow menu; drop the chevron on rows with no expandable content | `todo`; chevron-less rows keep the kebab |
 | p2 later | #1982 | **Feat, Settings (p2, `design`):** live rendered preview of the chat and status line, reusing the real chat row and status line components with a canned sample | `todo`; reflects all chat / appearance / status-line options |
 | p2 later | #1983 | **UI Polish, Settings (p2, `design`):** percent fields (compaction and idle thresholds) as M3 sliders notched at 5%, paired with a number field | `todo`; depends on #1852; per-model table unchanged |
+| p2 later | #1994 | **Feat, Profile menu (p2, `design`):** show the app version (Refract v{version} from app.getVersion, plus update status, click-to-copy) near "What's new" | `todo`; data already exists (#794) |
 | p2 later | #1918 | **Epic, Road to V1 (p2):** full testing, documentation, and a well-organised codebase; children #1904 to #1917 | Decided 2026-11-11 (Stuart); foundations #1904 to #1908 first, then refactors, tests, docs |
 | p2 later | #1904 | **Chore (p2, child of #1918):** code coverage with a baseline ratchet | Foundation of #1918; `todo` |
 | p2 later | #1905 | **Chore (p2, `ready-for-human`, child of #1918):** shared test utilities, mocks, and fixtures folder | Foundation of #1918; `todo` |
@@ -155,13 +156,10 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p2 later | #1915 | **Docs (p2, child of #1918):** reorganise docs into development and user, move user docs to the Wiki | `todo` |
 | p2 later | #1916 | **Docs (p2, child of #1918):** set up the GitHub Wiki with user guides and FAQ | `todo` |
 | p2 later | #1917 | **Docs (p2, child of #1918):** rewrite the repo README as a clear intro and quickest path to install and first use | `todo` |
-<<<<<<< HEAD
-| p3 later | #1941 | **Ask form card (p3, feature, chat):** name the live card and tighten its live-check evidence | `done`; PR open |
-=======
 | p2 later | #1974 | **Chore, Scripts (p2, `chore`):** dev scripts write scratch under `%TEMP%\scratch\<task>\` (not the home folder or loose `%TEMP%`) and remove their own folder; shared helper plus every `verify-*`, `check-mermaid-contrast`, and `token-guard-probe` script converted | `todo`; `ready-for-agent`; rule in `docs/scratch.md`; dev-script fast-follow to #1972; pickup: converge (amend spec 001 tooling notes) or direct chore PR, grill first; carries a co-located helper unit test (AGENTS.md Testing rule) |
 | p2 later | #1980 | **Bug, Tests (p2, `bug`):** `git::worktree_delete_check::tests::delete_check_for_session_falls_back_to_branch_graph_when_worktree_folder_is_gone` hits the 15 s `READER_TIMEOUT` under the full parallel `cargo test` and fails `ci:local` (failed twice in the v0.34.0 `pnpm release` runs, 2026-11-13; passes alone, 5/5 in its module, and with `RUST_TEST_THREADS=4`) | Filed 2026-11-13; `todo`; `ready-for-agent`; likely parallel git subprocesses under load (inference); fix so the test never depends on the wall-clock timeout (or uses a test-only longer one), production 15 s unchanged; `ci:local` green 3 runs in a row without `RUST_TEST_THREADS`; pickup: direct fix PR, grill first; files: `src-tauri/src/git/worktree_delete_check.rs` |
-| p3 later | #1941 | **Ask form card (p3, feature, chat):** name the live card and tighten its live-check evidence | `todo`; `ready-for-agent` |
->>>>>>> origin/main
+| p3 later | #1941 | **Ask form card (p3, feature, chat):** name the live card and tighten its live-check evidence | `done`; PR open |
+| p3 later | #1992 | **UI Polish, First install (p3, `design`):** make the Add project button a ghost button (AddProjectMenu `first-run` variant → ghost) | `todo`; footer/toolbar already ghost |
 
 **Wave 2 (Stuart, 2026-11-12), in this order:** #1858 (P0, specify route, grill first), #1890, #1876 + #1877 (one PR), #1872, #1935. Rows marked `next W2.n` above (and row 1c.2 for #1858) are the active wave; take them in order.
 
@@ -1355,3 +1353,7 @@ Also filed 2026-11-13 (Stuart): **#1982** (`p2`, `feature`, `settings`, `design`
 Also filed 2026-11-13 (Stuart): **#1983** (`p2`, `enhancement`, `settings`, `design`), UI Polish: Settings: percent fields as M3 sliders notched at 5%. Decided: slider plus number-field pair (ScaleControl pattern), snap to 5% on the two clean percent fields (compaction and idle thresholds), skip the per-model table, preserve off-5% values until moved; depends on #1852.
 
 Also filed 2026-11-13 (Stuart, mock zip): **#1990** (`p1`, `design`, `chat`), Epic: Ask tool card & Session Q&A transcript redesign. Children: **#1985** (recommended-option indicator + fast-decision flow, the reported bug), **#1986** (multi-select view), **#1987** (inline option notes via 'N', blocked on #1989, absorbs #1976), **#1988** (collapsible read-only "Questions from the agent" card), **#1989** (OMP-upstream wire extension: per-option recommended + reason, answer notes). Decided: build single-recommended, multi-select, and the collapsible card to the current wire now; gate reason/multi-recommended and notes on #1989; both ask renderers; map colours to tokens; #1976 folded into #1987. All p1.
+
+Also filed 2026-11-13 (Stuart, screenshot): **#1992** (`p3`, `enhancement`, `design`), UI Polish: First install: make the Add project button a ghost button. One-line change: AddProjectMenu.tsx TRIGGER_STYLE first-run variant default to ghost; footer and toolbar are already ghost.
+
+Also filed 2026-11-13 (Stuart): **#1994** (`p2`, `enhancement`, `design`), Feat: Show the app version in the profile menu. Decided: a compact "Refract v{version}" line near "What's new" via app.getVersion(), with update status from the existing update store (#794) and click-to-copy; no new polling. Data is already fetchable but shown as text nowhere today.
