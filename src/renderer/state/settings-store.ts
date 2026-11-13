@@ -30,6 +30,7 @@ interface SettingsState {
   setAnimatedStatusText(enabled: boolean): Promise<boolean>
   setCodeLigatures(enabled: boolean): Promise<void>
   setShowScrollbarMap(enabled: boolean): Promise<void>
+  setStackedPullRequests(enabled: boolean): Promise<void>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
   setSessionNotificationSounds(enabled: boolean): Promise<void>
   setAlarmSounds(enabled: boolean): Promise<void>
@@ -189,6 +190,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setShowScrollbarMap: async (enabled) => {
     const result = await window.refract.settings.setShowScrollbarMap(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+  },
+  setStackedPullRequests: async (enabled) => {
+    const result = await window.refract.settings.setStackedPullRequests(enabled)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
   },
