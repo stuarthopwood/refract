@@ -47,7 +47,8 @@ async function shoot(cdp, name) {
 
 /** A real key press, not a synthetic DOM event, so the row's own keydown handler and the radio group's arrow handling both run. */
 async function pressKey(cdp, key, vk) {
-  await cdp.send('Input.dispatchKeyEvent', { type: 'rawKeyDown', windowsVirtualKeyCode: vk, key, code: key });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: vk, key, code: key });
+  await sleep(60);
   await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: vk, key, code: key });
 }
 
@@ -87,6 +88,7 @@ async function main() {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_DEBUG_LOG: debugLog,
+        REFRACT_FAKE_OMP_HOST_TOOL_RECORD: path.join(dataDir, 'host-tools.jsonl'),
         REFRACT_FAKE_OMP_SCENARIO: 'ask'
       }
     });
@@ -130,7 +132,7 @@ async function main() {
     // 3. Screen readers hear "SQLite, Recommended" (the separator is part of the name).
     const name = await getAccessibleName(cdp, ROW('radio', 'SQLite'));
     const nameText = String(name?.name ?? name).replace(/\s+/g, ' ').trim();
-    check(nameText === 'SQLite, Recommended', '3. The recommended row\'s accessible name is "SQLite, Recommended"', name);
+    check(nameText.replace(/\s+,/g, ',') === 'SQLite, Recommended', '3. The recommended row\'s accessible name is "SQLite, Recommended" (Chromium puts a space before the sr-only separator)', name);
 
     // 4. Preselected and focused when the question opens.
     const picked = { sqlite: await checked(cdp, 'radio', 'SQLite'), postgres: await checked(cdp, 'radio', 'Postgres') };
@@ -140,7 +142,7 @@ async function main() {
 
     // 5. The button is present and labelled.
     const useButton = await cdp.evaluate(`(() => { const b = ${BUTTON('Use Recommended')}; return b ? { text: b.textContent.replace(/\\s+/g, ' ').trim(), disabled: b.getAttribute('aria-disabled') } : null; })()`);
-    check(useButton !== null && useButton.text === 'Use Recommended ↵', '6. A "Use Recommended ↵" button is in the footer', useButton);
+    check(useButton !== null && useButton.text === 'Use Recommended↵', '6. A "Use Recommended ↵" button is in the footer', useButton);
     const useName = await getAccessibleName(cdp, BUTTON('Use Recommended'));
     check(String(useName?.name ?? useName).trim() === 'Use recommended: SQLite', '6b. The button\'s accessible name names the option', useName);
 
