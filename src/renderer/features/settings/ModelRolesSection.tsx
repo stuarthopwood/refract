@@ -40,7 +40,7 @@ export const CHAT_ROLE_DESCRIPTORS: RoleDescriptor[] = [
   { role: 'tiny', label: 'Tiny', description: 'Lightweight background work such as session titles; falls back to Smol.' },
   { role: 'widget', label: 'Widget', description: 'Designs background job charts; uses Smol until set.' },
   { role: 'memory', label: 'Memory', description: 'Recall and memory work; falls back to Tiny.' },
-  { role: 'task', label: 'Subagent', description: 'Subagents started by the task tool.' },
+  { role: 'task', label: 'Task', description: 'Subagents started by the task tool.' },
   { role: 'advisor', label: 'Advisor', description: "Reviews a Session's turns while the Advisor is on (/advisor on); falls back to Slow." }
 ]
 

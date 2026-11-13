@@ -140,8 +140,8 @@ The subagents started by one `task()` call, or by `task()` calls issued together
 _Avoid_: Batch (in UI text), gate, phase (a phase is a **Todo phase**)
 
 **Todo task**:
-One item in a **Todo phase** of the agent's own todo list (OMP `todoPhases`), shown in the Todo panel and the Todo **Readout** (issue #1432). In user-facing text "task" means only this; delegated work is a subagent, a **Stage** or a Delegate. The model role id `task` and the `task()` tool name are protocol identifiers and stay.
-_Avoid_: Task for a subagent, Stage, step
+One item in a **Todo phase** of the agent's own todo list (OMP `todoPhases`), shown in the Todo panel and the Todo **Readout** (issue #1432). In user-facing text "task" means only this; delegated work is a subagent, a **Stage** or a Delegate. The one exception is the model role label "Task" in Settings, the model picker and the composer chip (#1879), which names OMP's `task` role that runs **Subagents**; its description says so. The model role id `task` and the `task()` tool name are protocol identifiers and stay.
+_Avoid_: Task for a subagent, Stage, step (outside that role label)
 
 **Todo phase**:
 A named group of **Todo tasks** in the agent's own todo list (OMP `todoPhases`). Pending todo phases are what **Up next** lists; a todo phase is planned work, never a **Stage**.

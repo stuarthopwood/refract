@@ -145,7 +145,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
     }
   }
 
-  const selectRole = (role: string) => apply(roleLabelOf(role), () => window.refract.model.applyRole(sessionId, role))
+  const selectRole = (role: string) => apply(`${roleLabelOf(role)} role`, () => window.refract.model.applyRole(sessionId, role))
   const selectModel = (entry: Pick<ModelCatalogEntry, 'provider' | 'id' | 'name'>) =>
     apply(entry.name, () => window.refract.model.setModel(sessionId, entry.provider, entry.id))
   const keepCurrent = () => {
