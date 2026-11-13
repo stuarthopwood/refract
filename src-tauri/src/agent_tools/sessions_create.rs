@@ -5,8 +5,9 @@
 use serde_json::{json, Value};
 
 use super::approval;
+use super::panels;
 use super::router::{approval_outcome, ToolError, CANCELLED, INVALID_INPUT};
-use super::sessions::{check_args, status_of, NOT_FOUND};
+use super::sessions::{status_of, NOT_FOUND};
 use super::sessions_send::MAX_TEXT_BYTES;
 use super::tree_gate;
 use crate::git::worktrees::list_branches;
@@ -75,7 +76,7 @@ fn invalid(message: impl Into<String>) -> ToolError {
 }
 
 fn parse(args: &Value) -> Result<Request<'_>, ToolError> {
-    check_args(CREATE_SESSION, args)?;
+    panels::validate(&parameters(), args, "arguments").map_err(invalid)?;
     let prompt = args["prompt"].as_str().unwrap_or_default();
     if prompt.trim().is_empty() {
         return Err(invalid("prompt must not be empty"));

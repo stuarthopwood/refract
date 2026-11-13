@@ -16,8 +16,20 @@ pub async fn write(dir: &Path) -> io::Result<PathBuf> {
 mod tests {
     use super::*;
 
+    /// The block's start; it runs to the end of the file.
+    const BLOCK_HEADING: &str = "## Pick the right way to delegate";
+
     #[test]
-    fn shipped_rules_are_about_one_and_a_half_k_chars() {
-        assert!((1000..=2000).contains(&RULES.len()));
+    fn shipped_rules_stay_within_their_size_bound() {
+        assert!((1000..=2900).contains(&RULES.len()));
+    }
+
+    #[test]
+    fn the_rule_of_thumb_block_names_the_three_way_choice_within_900_chars() {
+        let block = &RULES[RULES.find(BLOCK_HEADING).expect("block heading")..];
+        assert!(block.chars().count() <= 900, "{}", block.chars().count());
+        for term in ["subagent", "background agents", "child Session", "refract_create_session"] {
+            assert!(block.contains(term), "{term}");
+        }
     }
 }

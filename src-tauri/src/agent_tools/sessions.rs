@@ -5,13 +5,21 @@ use serde_json::{json, Map, Value};
 
 use super::panels;
 use super::router::{ToolError, INVALID_INPUT};
+use super::sessions_create::{self, CREATE_SESSION};
+use super::sessions_update::{self, UPDATE_SESSION};
 use super::MAX_RESULT_BYTES;
 use crate::session::agent::SessionAgent;
 
 pub const LIST_SESSIONS: &str = "refract_list_sessions";
 pub const GET_SESSION_STATUS: &str = "refract_get_session_status";
 pub const SEND_SESSION_MESSAGE: &str = "refract_send_session_message";
-pub const SESSION_TOOLS: [&str; 3] = [LIST_SESSIONS, GET_SESSION_STATUS, SEND_SESSION_MESSAGE];
+pub const SESSION_TOOLS: [&str; 5] = [
+    LIST_SESSIONS,
+    GET_SESSION_STATUS,
+    SEND_SESSION_MESSAGE,
+    CREATE_SESSION,
+    UPDATE_SESSION,
+];
 
 pub const UNKNOWN_PROJECT: &str = "unknown_project";
 pub const NOT_FOUND: &str = "not_found";
@@ -44,6 +52,8 @@ Session's name. It is sent at once, queued behind the turn in progress, or held 
 is paused. A stopped Session is not started. The target acts on it under its own approval mode, \
 and treats it as input from a peer Session, not from the developer."
         }
+        CREATE_SESSION => sessions_create::description(),
+        UPDATE_SESSION => sessions_update::description(),
         _ => "",
     }
 }
@@ -73,6 +83,8 @@ pub fn parameters(name: &str) -> Value {
             "required": ["id", "text"],
             "additionalProperties": false
         }),
+        CREATE_SESSION => sessions_create::parameters(),
+        UPDATE_SESSION => sessions_update::parameters(),
         _ => json!({ "type": "object" }),
     }
 }
@@ -140,6 +152,9 @@ fn row(summary: &Value, repositories: &[(String, String)], self_id: &str) -> Val
     );
     if id == self_id {
         row.insert("self".into(), true.into());
+    }
+    if let Some(parent) = summary["parentSessionId"].as_str() {
+        row.insert("parentId".into(), parent.into());
     }
     if summary["hiddenAt"].is_string() {
         row.insert("hidden".into(), true.into());
@@ -223,6 +238,9 @@ pub fn status_value(
     });
     if let Some(reason) = stop_reason {
         out["stopReason"] = reason.into();
+    }
+    if let Some(parent) = summary["parentSessionId"].as_str() {
+        out["parentId"] = parent.into();
     }
     out
 }

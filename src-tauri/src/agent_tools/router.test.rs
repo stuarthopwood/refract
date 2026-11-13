@@ -50,6 +50,52 @@ fn session_tools_reject_bad_arguments_as_invalid_input() {
 }
 
 #[test]
+fn create_and_update_plan_as_native_with_their_own_schemas() {
+    for (tool, ok, bad) in [
+        (
+            sessions_create::CREATE_SESSION,
+            json!({ "prompt": "go" }),
+            json!({ "prompt": "go", "bogus": 1 }),
+        ),
+        (
+            sessions_update::UPDATE_SESSION,
+            json!({ "id": "s1", "name": "n" }),
+            json!({ "name": "n" }),
+        ),
+    ] {
+        let planned = plan(tool, &ok).unwrap();
+        assert!(matches!(planned, Plan::Native { .. }), "{tool}");
+        assert!(!planned.mutates(), "{tool}");
+        assert_eq!(code(plan(tool, &bad)), INVALID_INPUT, "{tool}");
+    }
+}
+
+/// The manager is dropped, as at shutdown, so only the tool's own entry point can answer
+/// `cancelled`; a call that fell through to another tool would say `invalid_input`.
+#[tokio::test]
+async fn create_and_update_are_dispatched_to_their_own_tools() {
+    let dir = crate::test_scratch::path(format!("refract-router-test-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let registry = Arc::new(tokio::sync::Mutex::new(
+        crate::store::registry::RegistryStore::open(&dir).await.unwrap(),
+    ));
+    let settings = Arc::new(tokio::sync::Mutex::new(
+        crate::store::settings::SettingsStore::open(&dir).await.unwrap(),
+    ));
+    let events =
+        crate::events::EventSink::new(Arc::new(std::sync::Mutex::new(None)), registry.clone());
+    let agent = crate::session::manager::SessionManager::new(registry, settings, events)
+        .get_or_create_agent("caller");
+    for (tool, args) in [
+        (sessions_create::CREATE_SESSION, json!({ "prompt": "go" })),
+        (sessions_update::UPDATE_SESSION, json!({ "id": "x" })),
+    ] {
+        let result = run_native(&agent, "call-1", tool, &args).await;
+        assert_eq!(code_of(result), CANCELLED, "{tool}");
+    }
+}
+
+#[test]
 fn unknown_tool_panel_and_action_get_their_codes() {
     assert_eq!(code(plan("refract_nope", &json!({}))), UNKNOWN_TOOL);
     assert_eq!(

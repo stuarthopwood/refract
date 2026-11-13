@@ -147,6 +147,22 @@ async fn an_empty_or_oversized_prompt_is_invalid_input_before_any_card() {
 }
 
 #[tokio::test]
+async fn arguments_the_schema_forbids_are_invalid_input_before_any_card() {
+    let mut h = host(me()).await;
+    h.yolo = false;
+    for args in [
+        json!({ "prompt": "p", "bogus": 1 }),
+        json!({ "prompt": "p", "role": 5 }),
+        json!({ "prompt": "p", "name": ["a"] }),
+        json!({ "name": "no prompt" }),
+    ] {
+        assert_eq!(code(create_with(&h, &args).await), INVALID_INPUT, "{args}");
+    }
+    assert_eq!(h.asks.load(Ordering::SeqCst), 0);
+    assert_eq!(session_count(&h).await, 1);
+}
+
+#[tokio::test]
 async fn unknown_role_branch_and_bad_parents_are_checked_before_the_card() {
     let mut rows = me();
     let mut archived = row("old", "repo", None);

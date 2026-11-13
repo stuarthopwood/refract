@@ -51,7 +51,6 @@ pub fn card(call_id: &str, panel_id: &str, action: &str, input: &Value) -> Pendi
 }
 
 /// Card for the session tools; shares the id scheme so `serve` can close it on cancel.
-#[allow(dead_code)]
 pub fn session_card(
     call_id: &str,
     tool: &str,

@@ -17,9 +17,9 @@ Test tasks are part of each task (AGENTS.md Testing rule: new logic gets co-loca
 
 ## Slice 3: access, dispatch, rules (one worker)
 
-- [ ] T008 `src-tauri/src/agent_tools/mod.rs`, `router.rs`, `session/agent/launch.rs`: `ToolAccess::for_depth`, Root arm adds the two defs, both launch sites pass the real depth from the registry, dispatch lines. Tests: Root lists all five, Child row still empty and a Child-role call is `unknown_tool`, a depth-2 and a depth-3 launch both register the five, a call from a shutting-down Session is `cancelled`, a child's `send_session_message` to its parent counts toward the per-pair limit. (FR-001, FR-015, FR-017)
-- [ ] T009 `src-tauri/src/agent_tools/sessions.rs`, `sessions_status.rs` (+ tests): `parentId` on list rows and status. Test: present only when set. (FR-016)
-- [ ] T010 `src-tauri/resources/refract-rules.md`, `src-tauri/src/omp/token_guard/rules.rs` (+ test): rule-of-thumb block (at most 900 characters) and the raised size bound. Test: the shipped rules contain the three-way choice and stay in bounds. (FR-014)
+- [x] T008 `src-tauri/src/agent_tools/mod.rs`, `router.rs`, `session/agent/launch.rs`: `ToolAccess::for_depth`, Root arm adds the two defs, both launch sites pass the real depth from the registry, dispatch lines. Tests: Root lists all five, Child row still empty and a Child-role call is `unknown_tool`, a depth-2 and a depth-3 launch both register the five, a call from a shutting-down Session is `cancelled`, a child's `send_session_message` to its parent counts toward the per-pair limit. (FR-001, FR-015, FR-017)
+- [x] T009 `src-tauri/src/agent_tools/sessions.rs`, `sessions_status.rs` (+ tests): `parentId` on list rows and status. Test: present only when set. (FR-016)
+- [x] T010 `src-tauri/resources/refract-rules.md`, `src-tauri/src/omp/token_guard/rules.rs` (+ test): rule-of-thumb block (at most 900 characters) and the raised size bound. Test: the shipped rules contain the three-way choice and stay in bounds. (FR-014)
 
 ## Slice 4: live check and docs (one worker, after 1 to 3)
 
