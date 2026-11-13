@@ -25,7 +25,7 @@ Test tasks are part of each task (AGENTS.md Testing rule: new logic gets co-loca
 
 - [x] T011 `scripts/verify-tauri-1859.mjs` and tape support in `scripts/verify-tauri-fake-omp.mjs`, run with the `pnpm verify:tauri` harness: create in `yolo` and under the card (approve and deny), 4th and 5th child, depth-3 refusal, update nest and un-nest and rename, delete re-roots, old registry loads, child first turn names the parent, a child report reaches the parent and the 11th is `rate_limited`, every error with no toast. Screenshots and timings recorded. (SC-001, SC-002, SC-003, SC-004)
 - [x] T012 `docs/adr/0009-session-tree-rules.md`, `CONTEXT.md` (Child Session update, **Own tree**), `docs/PLAN.md` row 1c.3. (FR-018)
-- [ ] T013 `pnpm ci:local`; fix regressions only. (SC-005, SC-006)
+- [x] T013 `pnpm ci:local`; fix regressions only. (SC-005, SC-006)
 
 ## Dependencies
 
