@@ -76,10 +76,17 @@ export async function inspectRolePill(cdp, check, sessionId, expectedRole, shots
  * glyph, truncates inside its own box, and the tooltip says how to return to a role. */
 export async function inspectPinnedPill(cdp, check, sessionId, shotsDir, prefix) {
   await cdp.waitFor(`!!(${PILL})`, { timeoutMs: 30_000, label: 'role-model pill rendered' });
+  // A hand pick made before the launch settles is queued for the next turn rather than applied, so wait for an enabled composer.
+  await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'composer enabled before the hand pick' });
   const picked = await cdp.evaluate(`window.refract.model.setModel(${JSON.stringify(sessionId)}, 'github-copilot', ${JSON.stringify(LONG_MODEL_ID)})`);
   check(`${prefix}: model.setModel accepts the hand pick`, picked.ok === true, picked);
   await cdp.waitFor(`(${PILL}).querySelector('[class*="lucide-pin"]') !== null`, { timeoutMs: 15_000, label: 'pin glyph on the pill' }).catch(() => {});
-  const summary = await sessionSummary(cdp, sessionId);
+  // Rust flips `pinned` after it processes the set_model response, which can trail the pill glyph.
+  let summary = await sessionSummary(cdp, sessionId);
+  for (const deadline = Date.now() + 15_000; summary?.pinned !== true && Date.now() < deadline;) {
+    await new Promise((r) => setTimeout(r, 250));
+    summary = await sessionSummary(cdp, sessionId);
+  }
   const modelName = summary?.lastModel ? summary.lastModel.name?.trim() || summary.lastModel.id : null;
   const probe = await cdp.evaluate(`(() => {
     const pill = ${PILL};

@@ -77,6 +77,7 @@ async function main() {
         REFRACT_FAKE_OMP_SCENARIO: scenario,
         REFRACT_FAKE_OMP_CONVERSATION_FILE: conv,
         REFRACT_FAKE_OMP_DEBUG_LOG: path.join(base, `${name}-fake-omp.log`),
+        REFRACT_FAKE_OMP_HOST_TOOL_RECORD: path.join(dataDir, 'host-tools.jsonl'),
         ...extraEnv
       }
     });

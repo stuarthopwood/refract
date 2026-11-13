@@ -8,8 +8,6 @@
 {"type":"available_commands_update","commands":[{"name":"new","description":"Start a new Conversation in this Session"}]}
 {"__wait__":["get_messages_page","get_messages"]}
 {"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
-{"__wait__":["get_state"]}
-{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"$conversationFile","sessionId":"sess-1878-queued","messageCount":1,"isSettled":true,"model":{"provider":"github-copilot","id":"claude-fable-5","name":"Claude Fable 5"},"thinkingLevel":"medium"}}
 {"__wait__":["prompt"]}
 {"id":"$turnId","type":"response","command":"prompt","success":true}
 {"type":"agent_start"}
