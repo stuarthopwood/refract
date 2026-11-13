@@ -20,7 +20,7 @@ import { CHAT_ROLE_DESCRIPTORS } from '../features/settings/ModelRolesSection'
 /** Reserved role name: OMP's ephemeral `fallback`. */
 export const FALLBACK_ROLE = 'fallback' as const
 export type RoleChipRoleId = ModelRoleId | typeof FALLBACK_ROLE
-/** Chat-role labels, matching Settings' `CHAT_ROLE_DESCRIPTORS`. `Partial` so an unrecognised role renders no chip (#741). */
+/** Chat-role labels, matching Settings' `CHAT_ROLE_DESCRIPTORS`. `Partial` because an unrecognised role has no label here; the chip then shows the raw role name (#741). */
 const CHAT_ROLE_LABEL: Partial<Record<ModelRoleId, string>> = Object.fromEntries(
   CHAT_ROLE_DESCRIPTORS.map((entry) => [entry.role, entry.label])
 )
