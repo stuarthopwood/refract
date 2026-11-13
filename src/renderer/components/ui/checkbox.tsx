@@ -47,9 +47,10 @@ const OPTION_LAYOUT_CLASS =
 export const OPTION_ROW_CLASS =
   OPTION_FILL_CLASS + " " + OPTION_BUSY_HOVER + " " + OPTION_LAYOUT_CLASS + " data-[state=checked]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
 // A question's recommended option (#1985): the `--severity-success-bg` tint. The icon and "Recommended" text, not this tint, carry the meaning.
-// The tint survives the checked state and hover (a 5% foreground mix is the cue), so the base `hover:bg-muted` and `data-[state=checked]:bg-primary/5` are overridden here.
+// The tint survives the checked state and hover (`--color-severity-success-hover-bg`, a 5% foreground mix, is the cue), so the base `hover:bg-muted` and `data-[state=checked]:bg-primary/5` are overridden here.
+// The mix is a theme token, not a `color-mix(` here: the literal-colours gate counts those, and its baseline may not grow.
 export const OPTION_RECOMMENDED_FILL_CLASS =
-  "border-transparent bg-severity-success-bg hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)] data-[state=checked]:bg-severity-success-bg data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)] dark:border-transparent dark:bg-severity-success-bg dark:hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)] dark:data-[state=checked]:bg-severity-success-bg dark:data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)]"
+  "border-transparent bg-severity-success-bg hover:bg-severity-success-hover-bg data-[state=checked]:bg-severity-success-bg data-[state=checked]:hover:bg-severity-success-hover-bg dark:border-transparent dark:bg-severity-success-bg dark:hover:bg-severity-success-hover-bg dark:data-[state=checked]:bg-severity-success-bg dark:data-[state=checked]:hover:bg-severity-success-hover-bg"
 // Busy rows keep their resting tint on hover, like `OPTION_BUSY_HOVER`.
 const RECOMMENDED_BUSY_HOVER =
   "aria-disabled:hover:bg-severity-success-bg dark:aria-disabled:hover:bg-severity-success-bg aria-disabled:data-[state=checked]:hover:bg-severity-success-bg dark:aria-disabled:data-[state=checked]:hover:bg-severity-success-bg"

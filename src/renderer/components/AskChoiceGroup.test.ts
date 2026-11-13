@@ -44,7 +44,7 @@ function classTokens(tag: string): Set<string> {
 }
 
 const TINT = 'bg-severity-success-bg'
-const HOVER_MIX = 'bg-[color-mix(in_oklch,var(--severity-success-bg),var(--foreground)_5%)]'
+const HOVER_MIX = 'bg-severity-success-hover-bg'
 
 describe.each([
   ['single choice', false],
