@@ -115,7 +115,7 @@ async function main() {
     const CHIP = `document.querySelector('[data-issue-row][data-issue-number="12"]').parentElement.querySelector('button[aria-label^="+2 more labels"]')`;
     const tooltipText = `Array.from(document.querySelectorAll('[data-slot="tooltip-content"]')).map((el) => el.textContent.trim().replace(/\\s+/g, ' ')).join('|')`;
     const chip = await cdp.evaluate(`(() => { const el = ${CHIP}; return el && { label: el.getAttribute('aria-label'), text: el.textContent.trim(), tabIndex: el.tabIndex }; })()`);
-    check(chip && chip.label === '+2 more labels' && chip.text === '+2' && chip.tabIndex === 0, 'Overflow "+2" is a focusable button named "+2 more labels"', JSON.stringify(chip));
+    check(chip && chip.label === '+2 more labels: docs, p1' && chip.text === '+2' && chip.tabIndex === 0, 'Overflow "+2" is a focusable button named "+2 more labels: docs, p1"', JSON.stringify(chip));
     check(await cdp.evaluate(`!document.querySelector('[data-issue-row][data-issue-number="20"]').parentElement.querySelector('button[aria-label*="more label"]')`), 'A row with one label renders no overflow chip');
     const chipCentre = await cdp.evaluate(`(() => { const r = ${CHIP}.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
     await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: chipCentre.x, y: chipCentre.y });

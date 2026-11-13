@@ -6,6 +6,7 @@ import { useId } from 'react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { ColourDot } from '@/components/ColourDot'
 import { LabelOverflow } from '@/components/LabelOverflow'
+import { splitOverflowLabels } from '@/components/overflowLabels'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
 import { ROW_KEBAB_INSET_CLASS } from '@/components/RowKebabMenu'
 import { cn } from '@/lib/utils'
@@ -29,8 +30,7 @@ interface IssueRowProps {
 export function IssueRow({ issue, selected, onSelect }: IssueRowProps) {
   const updatedId = useId()
   const { icon: StateIcon } = ISSUE_STATE_DISPLAY[issue.state]
-  const shownLabels = issue.labels.slice(0, MAX_ROW_LABELS)
-  const hiddenLabels = issue.labels.slice(MAX_ROW_LABELS)
+  const { shown: shownLabels, hidden: hiddenLabels } = splitOverflowLabels(issue.labels, MAX_ROW_LABELS)
 
   return (
     <div
