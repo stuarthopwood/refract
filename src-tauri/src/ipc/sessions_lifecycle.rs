@@ -563,3 +563,7 @@ pub(crate) mod delete_in_flight;
 #[cfg(test)]
 #[path = "sessions_lifecycle_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "sessions_lifecycle_gate_tests.rs"]
+mod gate_tests;

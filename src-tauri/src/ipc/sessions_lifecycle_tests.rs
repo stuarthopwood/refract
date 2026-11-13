@@ -126,7 +126,7 @@ async fn session_dir_itself_is_removed_once_cleanup_leaves_it_empty() {
 
 // Handler tests against a temp registry and a real repo (`make_state` pattern).
 
-fn temp_registry_dir(label: &str) -> std::path::PathBuf {
+pub(super) fn temp_registry_dir(label: &str) -> std::path::PathBuf {
     let dir = crate::test_scratch::path(format!(
         "refract-sessions-lifecycle-registry-test-{label}-{}",
         uuid::Uuid::new_v4()
@@ -135,7 +135,7 @@ fn temp_registry_dir(label: &str) -> std::path::PathBuf {
     dir
 }
 
-async fn make_state(dir: &std::path::Path) -> AppState {
+pub(super) async fn make_state(dir: &std::path::Path) -> AppState {
     let registry = RegistryStore::open(dir).await.expect("open registry");
     let settings = SettingsStore::open(dir).await.expect("open settings");
     let registry = Arc::new(AsyncMutex::new(registry));
@@ -152,7 +152,7 @@ async fn make_state(dir: &std::path::Path) -> AppState {
     }
 }
 
-fn make_repository(id: &str, path: &str) -> Repository {
+pub(super) fn make_repository(id: &str, path: &str) -> Repository {
     Repository {
         id: id.to_string(),
         path: path.to_string(),
@@ -163,7 +163,12 @@ fn make_repository(id: &str, path: &str) -> Repository {
     }
 }
 
-fn make_session(id: &str, repository_id: &str, worktree_path: &str, branch: &str) -> Session {
+pub(super) fn make_session(
+    id: &str,
+    repository_id: &str,
+    worktree_path: &str,
+    branch: &str,
+) -> Session {
     Session {
         id: id.to_string(),
         repository_id: repository_id.to_string(),
@@ -346,45 +351,6 @@ async fn sessions_restore_into_a_full_parent_is_child_limit_until_a_slot_frees()
     sessions_restore(state.clone(), vec![Value::String("kid-4".to_string())])
         .await
         .expect("a free slot allows the restore");
-}
-
-#[tokio::test]
-async fn sessions_restore_waits_for_the_project_gate() {
-    let dir = temp_registry_dir("restore-gate");
-    let state = make_state(&dir).await;
-    let mut store = state.registry.lock().await;
-    store
-        .add_repository(make_repository("repo-1", "C:/nowhere/repo"))
-        .await
-        .expect("add_repository");
-    let mut row = make_session("s1", "repo-1", "C:/nowhere/s1", "s1");
-    row.archived_at = Some("2026-01-01T00:00:00.000Z".to_string());
-    store.add_session(row).await.expect("add_session");
-    drop(store);
-
-    let held = crate::agent_tools::tree_gate::lock("repo-1").await;
-    let task = tokio::spawn(sessions_restore(
-        state.clone(),
-        vec![Value::String("s1".to_string())],
-    ));
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-    let archived = |state: &AppState| {
-        let state = state.clone();
-        async move {
-            state
-                .registry
-                .lock()
-                .await
-                .get_session("s1")
-                .unwrap()
-                .archived_at
-                .is_some()
-        }
-    };
-    assert!(archived(&state).await, "restore must wait for the gate");
-    drop(held);
-    task.await.unwrap().expect("restore");
-    assert!(!archived(&state).await);
 }
 
 #[tokio::test]
