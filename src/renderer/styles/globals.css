@@ -172,6 +172,7 @@
   --color-severity-error: var(--severity-error);
   --color-severity-info: var(--severity-info);
   --color-severity-success-bg: var(--severity-success-bg);
+  --color-severity-success-hover-bg: color-mix(in oklch, var(--severity-success-bg), var(--foreground) 5%);
   --color-severity-warning-bg: var(--severity-warning-bg);
   --color-severity-error-bg: var(--severity-error-bg);
   --color-severity-info-bg: var(--severity-info-bg);
