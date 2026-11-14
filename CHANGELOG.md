@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.36.0 (2026-11-14)
+
+### Features
+
+- feat(issues): borderless accent-text label overflow chip (#1873) (https://github.com/stuarthopwood/refract/pull/1999)
+
+### Fixes
+
+- fix(settings): label the task model role Task, not Subagent (#1879) (https://github.com/stuarthopwood/refract/pull/1998)
+- fix(chat): blur the history behind the Starting agent notice (#1892) (https://github.com/stuarthopwood/refract/pull/2000)
+- fix(chat): Ask card recommended option is visible, preselected and one key from accepted (#1985) (https://github.com/stuarthopwood/refract/pull/1997)
+
 ## v0.35.0 (2026-11-13)
 
 ### Features
