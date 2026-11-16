@@ -86,12 +86,12 @@ async function reattachCase({ launcherExe, exePath, shimDir, importSourceDir, ho
     const registryPath = path.join(dataDir, 'registry.json');
     let saved = null;
     for (let i = 0; i < 60 && !saved; i++) {
-      saved = JSON.parse(readFileSync(registryPath, 'utf8')).sessions.find((s) => s.id === id)?.currentConversation ?? null;
+      saved = JSON.parse(readFileSync(registryPath, 'utf8')).sessions.find((s) => s.id === id)?.sessionDir ?? null;
       if (!saved) await sleep(500);
     }
     await call(app.cdp, `window.refract.sessions.stopAgent(${JSON.stringify(id)})`);
     await app.cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(id)})?.status === 'stopped')`, { timeoutMs: 30_000, label: 'reattach: stopped' });
-    check(!!saved && norm(saved) === norm(conversationFile), 'g1. the Personal Agent saved its Conversation file in the registry', { saved, conversationFile });
+    check(!!saved && norm(saved) === norm(convDir), 'g1. the Personal Agent recorded its Conversation folder (sessionDir) in the registry from omp get_state', { saved, convDir });
   } finally {
     app.cdp.close();
     await stopLauncher(app.child).catch(() => {});
