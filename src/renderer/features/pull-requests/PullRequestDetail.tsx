@@ -24,6 +24,8 @@ import { ChangesTab } from './ChangesTab'
 import { ReviewDialog } from './ReviewDialog'
 import { MergeDialog } from './MergeDialog'
 import { StatePill } from './StatePill'
+import { StackSection } from './StackSection'
+import { useStackFeatureOn, useStackPosition } from './useStack'
 import { RefreshButton } from './RefreshButton'
 import { ReviewConsensus } from './ReviewConsensus'
 
@@ -128,6 +130,10 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
     void handleNewSession()
   }
 
+  // Only an open or draft pull request can sit in a live stack; merged and closed ones read no refs.
+  const stackState = detail?.state === 'open' || detail?.state === 'draft' ? detail.state : null
+  const stack = useStackPosition(repositoryId, number, stackState)
+  const stackFeatureOn = useStackFeatureOn()
   if (loading && !detail) {
     return <InlineStatus tone="loading">Loading…</InlineStatus>
   }
@@ -182,6 +188,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
                 {check.label}
               </span>
             </div>
+            {stack && stackFeatureOn && <StackSection repositoryId={repositoryId} number={number} position={stack} />}
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <RefreshButton loading={loading} onClick={() => void load()} label="Refresh this pull request" />
@@ -321,6 +328,8 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
         number={number}
         title={title}
         headSha={detail.headSha}
+        headBranch={detail.headBranch}
+        stack={stack}
         allowedMergeMethods={detail.allowedMergeMethods}
         open={mergeOpen}
         onOpenChange={setMergeOpen}

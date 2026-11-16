@@ -30,6 +30,7 @@ pub mod file_attachments;
 pub mod file_explorer;
 pub mod files;
 pub mod git_changes;
+pub mod github_stack;
 pub mod home;
 pub mod image_save;
 pub mod images;
@@ -37,6 +38,7 @@ pub mod issues;
 pub mod item_refs;
 pub mod model;
 pub mod model_roles;
+pub mod project_session;
 pub mod pull_requests;
 pub mod readiness;
 pub mod repositories;
@@ -55,6 +57,7 @@ pub mod settings_default_clone_folder;
 pub mod settings_finished_turn_times;
 pub mod settings_notification_sounds;
 pub mod settings_scrollbar_map;
+pub mod settings_stacked_pull_requests;
 pub mod settings_status_style;
 pub mod settings_typography;
 pub mod side_chat;
@@ -158,6 +161,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings_code_ligatures::register(dispatcher);
     settings_notification_sounds::register(dispatcher);
     settings_scrollbar_map::register(dispatcher);
+    settings_stacked_pull_requests::register(dispatcher);
     settings_typography::register(dispatcher);
     settings_alarms::register(dispatcher);
     settings_finished_turn_times::register(dispatcher);
@@ -187,6 +191,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     images::register(dispatcher);
     files::register(dispatcher);
     pull_requests::register(dispatcher);
+    github_stack::register(dispatcher);
     accounts::register(dispatcher);
     attachments::register(dispatcher);
     file_attachments::register(dispatcher);
@@ -271,6 +276,10 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
         "checkout-failed",
         "disabled",
         "session-archived",
+        "personal-agent-exists",
+        "invalid-shape",
+        "personal-agent-protected",
+        "no-repository",
     ];
     let code = if IPC_ERROR_CODES.contains(&err.code) {
         err.code

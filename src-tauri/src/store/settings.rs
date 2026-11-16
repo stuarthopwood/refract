@@ -87,6 +87,8 @@ pub struct Settings {
     pub show_scrollbar_map: bool,
     /// Settled turn total under each turn; default off (#1250).
     pub show_finished_turn_times: bool,
+    /// Stacked pull requests via `gh stack`; default on (#1867).
+    pub stacked_pull_requests: bool,
     /// Text size scales (`typography.rs`).
     pub typography: Typography,
     /// Collapsed/expanded state of session list groups; the renderer is the sole writer (#735).
@@ -146,6 +148,8 @@ mod finished_turn_times;
 mod notification_sounds;
 #[path = "scrollbar_map.rs"]
 mod scrollbar_map;
+#[path = "stacked_pull_requests.rs"]
+mod stacked_pull_requests;
 #[path = "typography.rs"]
 mod typography;
 pub use typography::Typography;
@@ -229,6 +233,7 @@ impl SettingsStore {
         let session_notification_sounds = notification_sounds::parse_session(&object);
         let alarm_sounds = notification_sounds::parse_alarm(&object);
         let show_finished_turn_times = finished_turn_times::parse(&object);
+        let stacked_pull_requests = stacked_pull_requests::parse(&object);
         let typography = typography::parse(&object);
 
         // Default `false`; see `Settings::word_prediction_enabled` for why (#772).
@@ -258,7 +263,7 @@ impl SettingsStore {
             .filter(|id| !id.is_empty() && id.len() <= 48)
             .map(str::to_string);
 
-        const KNOWN_FIELDS: [&str; 31] = [
+        const KNOWN_FIELDS: [&str; 32] = [
             "customTheme",
             "version",
             "approvalMode",
@@ -281,6 +286,7 @@ impl SettingsStore {
             code_ligatures::KEY,
             scrollbar_map::KEY,
             finished_turn_times::KEY,
+            stacked_pull_requests::KEY,
             typography::KEY,
             "wordPredictionEnabled",
             "sessionListCollapse",
@@ -320,6 +326,7 @@ impl SettingsStore {
             code_ligatures,
             show_scrollbar_map,
             show_finished_turn_times,
+            stacked_pull_requests,
             typography,
             word_prediction_enabled,
             session_list_collapse,
@@ -406,6 +413,10 @@ impl SettingsStore {
         map.insert(scrollbar_map::KEY.to_string(), json!(scrollbar_map));
         let turn_times = self.data.show_finished_turn_times;
         map.insert(finished_turn_times::KEY.to_string(), json!(turn_times));
+        map.insert(
+            stacked_pull_requests::KEY.to_string(),
+            json!(self.data.stacked_pull_requests),
+        );
         typography::write(&mut map, self.data.typography);
         map.insert(
             "wordPredictionEnabled".to_string(),

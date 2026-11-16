@@ -60,6 +60,10 @@ struct TranscriptPatchPayload<'a> {
     ops: &'a [TranscriptOp],
 }
 
+/// Shared across clones, so a probe set on the agent's sink is seen by every holder.
+#[cfg(test)]
+type StatusProbe = std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>>>;
+
 /// One typed emit method per event this build fires. Cheap to clone, so each holder keeps its own
 /// copy. Emits no-op until `lib.rs`'s `setup` fills `app_handle`.
 #[derive(Clone)]
@@ -67,6 +71,8 @@ pub struct EventSink {
     app_handle: std::sync::Arc<std::sync::Mutex<Option<AppHandle>>>,
     // OS notifications resolve a Session's display name from the registry.
     registry: std::sync::Arc<tokio::sync::Mutex<RegistryStore>>,
+    #[cfg(test)]
+    status_probe: StatusProbe,
 }
 
 impl EventSink {
@@ -77,7 +83,15 @@ impl EventSink {
         Self {
             app_handle,
             registry,
+            #[cfg(test)]
+            status_probe: Default::default(),
         }
+    }
+
+    /// Test seam: runs at every `session:status` emit, so a test can observe the emitter's lock state.
+    #[cfg(test)]
+    pub(crate) fn set_status_probe(&self, probe: impl Fn() + Send + Sync + 'static) {
+        *self.status_probe.lock().unwrap() = Some(std::sync::Arc::new(probe));
     }
 
     pub(crate) fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
@@ -94,6 +108,10 @@ impl EventSink {
     /// `session:status`. Also the OS-notification hook; `payload` is pre-serialised to avoid a
     /// module cycle with `session`.
     pub fn emit_session_status(&self, payload: &serde_json::Value) {
+        #[cfg(test)]
+        if let Some(probe) = self.status_probe.lock().unwrap().as_ref() {
+            probe();
+        }
         self.send(SESSION_STATUS, payload.clone());
         crate::shell::notifications::on_session_status(
             self.app_handle.clone(),

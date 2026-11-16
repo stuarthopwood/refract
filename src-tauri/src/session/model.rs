@@ -109,6 +109,11 @@ pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
     model_support::resolve_current_selection(agent).await
 }
 
+/// Runs once the process has launched and `get_state` is applied: seeds the role (#1878).
+pub(super) async fn on_launch(agent: &SessionAgent) {
+    model_support::seed_role_at_launch(agent).await;
+}
+
 /// `cycleOrder` (read fresh each call) plus `"plan"` (#766): the Ctrl+R selector's listing and
 /// cycling order. Narrower than `known_chat_role_list` on purpose.
 pub async fn known_role_list() -> Result<Vec<String>, AgentError> {

@@ -134,7 +134,7 @@
   --severity-warning: var(--state-needs-you);
   --severity-error: var(--destructive);
   --severity-info: #00467a;
-  --agent-message: oklch(0.44 0.15 295);
+  --agent-message: var(--accent-text);
   --diff-added: var(--state-working);
   --diff-removed: var(--destructive);
   --severity-success-bg: color-mix(in oklab, var(--severity-success) 12%, transparent);

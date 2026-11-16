@@ -7,6 +7,31 @@ use super::{
     AgentError, SessionAgent, SessionStatus, ABORT_SETTLE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS,
 };
 
+/// How a Session message reached its target (#1858).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MessageDelivery {
+    Sent,
+    Queued,
+    Held,
+}
+
+/// Paused wins over busy; a busy target queues; an idle one takes the message at once.
+fn delivery_of(held: bool, response: &Value) -> MessageDelivery {
+    if held {
+        MessageDelivery::Held
+    } else if response.get("queued").and_then(Value::as_bool) == Some(true) {
+        MessageDelivery::Queued
+    } else {
+        MessageDelivery::Sent
+    }
+}
+
+/// Only an idle prompt that is not a drain follow-up gets the working-mode wrapper, and Session
+/// messages opt out so the envelope reaches the target verbatim.
+fn should_decorate(working: bool, force_follow_up: bool, decorate: bool) -> bool {
+    decorate && !working && !force_follow_up
+}
+
 impl SessionAgent {
     /// Sends a prompt, or holds it while the session is paused.
     /// OMP expects `message`, not `text`.
@@ -21,6 +46,16 @@ impl SessionAgent {
         self.send_unheld(text, images, false).await
     }
 
+    /// Delivers another Session's envelope (#1858): held while paused, queued while busy, never
+    /// decorated, since the envelope text must reach the target verbatim.
+    pub async fn send_session_message(&self, text: String) -> Result<MessageDelivery, AgentError> {
+        if self.hold_if_paused(&text, &None).await?.is_some() {
+            return Ok(delivery_of(true, &Value::Null));
+        }
+        let res = self.send_unheld_with(text, None, false, false).await?;
+        Ok(delivery_of(false, &res))
+    }
+
     /// Sends without the pause gate, so `resume` can drain held messages.
     /// `force_follow_up` avoids racing the status update of the first message in a drain.
     pub(super) async fn send_unheld(
@@ -28,6 +63,18 @@ impl SessionAgent {
         text: String,
         images: Option<Vec<Value>>,
         force_follow_up: bool,
+    ) -> Result<Value, AgentError> {
+        self.send_unheld_with(text, images, force_follow_up, true)
+            .await
+    }
+
+    /// `decorate` adds the working-mode wrapper to an idle send; Session messages pass `false`.
+    async fn send_unheld_with(
+        &self,
+        text: String,
+        images: Option<Vec<Value>>,
+        force_follow_up: bool,
+        decorate: bool,
     ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
         let (proc, working) = {
@@ -57,10 +104,10 @@ impl SessionAgent {
             );
             (proc, working)
         };
-        let text = if working || force_follow_up {
-            text
-        } else {
+        let text = if should_decorate(working, force_follow_up, decorate) {
             crate::session::working_mode::decorate_prompt(self, text).await
+        } else {
+            text
         };
         let mut cmd = json!({ "type": "prompt", "message": text });
         if let Some(images) = images {
@@ -258,3 +305,7 @@ impl SessionAgent {
         Ok(json!({ "promoted": promoted }))
     }
 }
+
+#[cfg(test)]
+#[path = "chat.test.rs"]
+mod tests;

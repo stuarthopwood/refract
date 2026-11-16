@@ -12,6 +12,8 @@ import type { PullRequestState } from '../../../shared/github'
 import type { PullRequestAcrossItem } from '../../../shared/ipc-pull-requests'
 import type { CheckDisplay } from './check-display'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { StackBadge } from '@/components/StackBadge'
+import type { StackPosition } from '../../../shared/stack-chain'
 import { RelativeTime, formatFullDateTime } from '@/components/relative-time'
 import { ROW_KEBAB_INSET_CLASS } from '@/components/RowKebabMenu'
 import { cn } from '@/lib/utils'
@@ -19,6 +21,8 @@ import { cn } from '@/lib/utils'
 interface PullRequestRowProps {
   pullRequest: PullRequestAcrossItem
   selected: boolean
+  /** Where this pull request sits in a stack; `undefined` when it is not stacked or the feature is off. */
+  stack?: StackPosition
   onSelect(): void
 }
 
@@ -35,7 +39,7 @@ export const PULL_REQUEST_STATE_DISPLAY: Record<PullRequestState, CheckStateDisp
   merged: { icon: GitMergeIcon, label: 'Merged', colorClass: 'text-pr-merged' }
 }
 
-export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestRowProps) {
+export function PullRequestRow({ pullRequest, selected, stack, onSelect }: PullRequestRowProps) {
   const state = PULL_REQUEST_STATE_DISPLAY[pullRequest.state]
   const StateIcon = state.icon
   const authorLabel = pullRequest.author.name ?? pullRequest.author.login
@@ -80,7 +84,10 @@ export function PullRequestRow({ pullRequest, selected, onSelect }: PullRequestR
         <span aria-hidden="true">{'\u00b7'}</span>
         <span className="tabular-nums"><RelativeTime value={pullRequest.updatedAt} focusable={false} /></span>
       </span>
-      <span className="truncate text-xs text-muted-foreground">{authorLabel}</span>
+      <span className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
+        <span className="truncate">{authorLabel}</span>
+        {stack && <StackBadge position={stack.position} total={stack.total} className="shrink-0" />}
+      </span>
       <span id={updatedId} className="sr-only">Updated {formatFullDateTime(pullRequest.updatedAt)}</span>
     </button>
   )

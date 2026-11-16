@@ -5528,3 +5528,76 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   shared `ScrollArea`, per FR-126 (missing)
 - [x] T442 Live check the dialog at a short window height (list scrolls by keyboard, Done visible), update
   `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-126
+
+## Phase 92: Convergence (#1876 advisory stripe beside the body only, #1877 agent-to-agent accent colour, FR-051, FR-101; retroactive: code 6278aedd, b0cdfb41 came first)
+
+- [x] T443 [US1] `AdvisoryRow.tsx`: move `STRIPE_CLASS` from the `data-advisory-severity` wrapper to the expanded body's
+  `contentClassName`, so a collapsed card of any severity draws no bar, with `AdvisoryRow.test.ts` and
+  `scripts/verify-558-blocker-callout.mjs` reading the body's `::before`, per FR-051 (partial)
+- [x] T444 [US1] Point `--agent-message` at `--accent-text` in `globals.css` and the six theme files (a one-step
+  lightened accent in Dark/Obsidian where plain accent misses 4.5:1 on the row hover), teach
+  `scripts/theme-tokens.mjs` to parse `color-mix`, per FR-101 (contradicts)
+- [x] T445 Live check the collapsed and expanded advisory card and an agent-to-agent row in one dark and one light theme
+  (and after an accent change), update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-051, FR-101
+
+## Phase 93: Convergence (#1950 chat issue and pull request references open the right pane, FR-127)
+
+- [x] T446 [US1] `openItemRef.ts` (new, beside `ItemRefLink.tsx`): the click decision as a pure function with injected
+  pin and open-in-browser. A plain click on an in-Project reference looks the item up, then pins it with `focus: false`
+  as an issue or a pull request by the looked-up kind; Ctrl/Cmd or middle click opens GitHub without a lookup; a failed
+  lookup or another repository opens GitHub, per FR-127 (missing)
+- [x] T447 [US1] `ItemRefLink.tsx`: call it from `onClick` and `onAuxClick`, replacing the Pull requests view open for
+  pull requests and the GitHub open for issues; keep the five-minute cache and the hover-only lookup, per FR-127 (contradicts)
+- [x] T448 [US1] `ItemTypeIcon.tsx` (new) and `itemCardCache.ts` (new, the five-minute cache moved out of `ItemRefLink.tsx` with a
+  render-safe `peekCard`): a leading type icon, neutral (`HashIcon`) until the item is known from a hover, focus or
+  click lookup or a cached lookup, then `CircleDotIcon` or `GitPullRequestIcon` in the state colour; the hover Item card
+  opens with the icon and the type word; no lookup or prefetch at render, per FR-127 (missing)
+- [x] T449 `openItemRef.test.ts`, `ItemTypeIcon.test.ts`, `itemCardCache.test.ts` and `ItemRefLink.test.ts`: each guard (focus stays in chat, kind routing, modifier and middle
+  click, failed lookup, out-of-Project, neutral icon) fails when removed, per FR-127
+- [x] T450 Live check on a built app (`pnpm verify:tauri`): click pins and reveals the pane without taking focus, re-click
+  focuses the pin, Ctrl-click leaves the pane alone; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-127
+
+## Phase 94: Convergence (#1878 composer chip shows the role from start and resume, FR-128)
+
+- [x] T451 [US1] `model_support.rs` (`role_after_launch`, `seed_role_at_launch`) and `model.rs` (`on_launch`), called from
+  `launch.rs` after `sync_from_state`: reset the cached role and read it from the Conversation file once the process has
+  launched, `default` when the file names none, none when pinned, then emit `session_list_changed`, per FR-128 (missing)
+- [x] T452 [US1] `roleModelText.ts` (`roleShown`, `shownText`, `chipText`, `chipTooltip`), `RoleModelPill.tsx`: the visible text is the role
+  alone (the model name only for a pinned or role-less Session); the model name moves to the tooltip, per FR-128 (contradicts)
+- [x] T453 `modelRoles.ts`: remove the `custom` sentinel, its label, icon, tooltip and `roleChipDisplay`, per FR-128 (contradicts)
+- [x] T454 `roleModelText.test.ts` and the `launch_role_tests` module: each guard (role-only text, pinned shows model,
+  tooltip carries the model, fresh session defaults, resumed keeps its role, pinned claims none) fails when removed, per FR-128
+- [x] T455 Live check on a built app (`scripts/verify-tauri-1878.mjs`): a started Session and a resumed one show the role in the
+  chip with the model in the tooltip; a pinned Session with a long name truncates; a queued change reads the new tooltip; update `docs/PLAN.md`, then `node scripts/ci-local.mjs` per FR-128
+
+## Phase 95: Convergence (#1892 the Starting agent notice blurs the history behind it, FR-080; Spec Kit route none per triage, spec amended in place)
+
+- [x] T456 [US1] `components/ui/blur-content.ts` (new): the shared blur and transition classes; `LoadingOverlay` uses them,
+  behaviour unchanged, per FR-080 (missing)
+- [x] T457 [US1] `Transcript.tsx`: replace the `opacity-40` dim of the transcript viewport with the shared blur, keep
+  `focus-within` clearing it, animate it with `motion-reduce:transition-none` (also on the notice overlay's fade), per FR-080 (contradicts)
+- [x] T458 No new logic (class names only), so no unit test; `scripts/verify-tauri-1892.mjs` reads the computed filter, opacity,
+  transition and notice sharpness on a built app and screenshots the notice, then `node scripts/ci-local.mjs` per FR-080
+  (live run green on a built app)
+
+## Phase 96: Convergence (#1985 Ask card recommended option is visible, preselected and one key from accepted, FR-066)
+
+- [x] T459 [US2] `askRecommended.ts` (new): `recommendedIndex`/`recommendedLabel` (an out-of-range, negative or non-integer
+  index names none), `initialPickFor` and `opensOnRecommended` (single choice only), `draftAfterUseRecommended` (pick, or
+  tick keeping other ticks) and `shouldTakeInitialFocus` (only from `body` or the card's own Session pane, never from a
+  menu, dialog or list box, and not while the composer holds text), per FR-066 (missing)
+- [x] T460 [US2] `RecommendedBadge.tsx` (new, reusable), `checkbox.tsx` (`OPTION_RECOMMENDED_FILL_CLASS`/`ROW_CLASS`, the
+  `--severity-success-bg` token, kept on checked and hover, steady while busy) and `AskChoiceGroup.tsx`: a recommended
+  row gets the tint, the icon plus "Recommended" text and the ", Recommended" screen-reader suffix, `data-ask-recommended`,
+  and a plain (not held, not composing) Enter on a single-choice row accepts it (`rowProps`); `RequestCard.tsx`'s
+  one-at-a-time card shows the same cue for a trailing "(Recommended)", per FR-066 (contradicts: muted text only)
+- [x] T461 [US2] `AskCard.tsx` and `ask-picks-store.ts` (`replaceQuestionDraft`): preselect a single-choice recommendation
+  and focus its row (`preventScroll`) when the question opens, and a "Use Recommended: <option> ↵" footer button (wrapping
+  footer) that picks it and then acts as the primary button, per FR-066 (contradicts: MUST NOT be preselected)
+- [x] T462 `askRecommended.test.ts`, `ask-picks-store.test.ts`, `AskChoiceGroup.test.ts`: each guard (index range and
+  integer, single vs multiple preselect, tick keeps ticks, initial-focus rule, Enter/held/composing keys, checked and hover
+  tint, one tinted row, visible cue, no cue without a recommendation) fails when removed, per FR-066
+- [ ] T463 `scripts/verify-tauri-1985.mjs` (written, not run): the recommended row is tinted (checked, hovered and
+  unchecked), shows the icon and text, is named "SQLite, Recommended", is preselected and focused, Enter and "Use
+  Recommended" answer it without an early submit; run it on a built app before and after, update `docs/PLAN.md`, then
+  `node scripts/ci-local.mjs` per FR-066

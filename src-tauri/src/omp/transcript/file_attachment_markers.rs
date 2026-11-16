@@ -159,6 +159,19 @@ pub(super) fn build_user_item(
     at: i64,
     parts: &[serde_json::Value],
 ) -> TranscriptItem {
+    // Session messages are matched on the whole text: their body is another Session's, so it never
+    // gets attachment or hidden-instruction parsing.
+    let images = super::user_images::extract_images(parts);
+    if let Some((source, text)) = super::message_source::from_envelope(&text) {
+        return TranscriptItem::User {
+            id,
+            text,
+            at,
+            file_attachments: Vec::new(),
+            images,
+            source: Some(source),
+        };
+    }
     let visible = text.split(HIDDEN_INSTRUCTION_OPEN).next().unwrap_or("");
     let (text, file_attachments) = extract_file_attachments(visible, &id);
     TranscriptItem::User {
@@ -166,6 +179,7 @@ pub(super) fn build_user_item(
         text,
         at,
         file_attachments,
-        images: super::user_images::extract_images(parts),
+        images,
+        source: None,
     }
 }

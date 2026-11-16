@@ -10,7 +10,8 @@ pub(super) async fn build_args(opts: &OmpProcessOptions) -> (Vec<String>, Vec<St
         args.push("--no-session".to_string());
     }
     let (guard_args, warnings) =
-        super::token_guard::args::launch_args(&crate::data_dir(), opts.plan_mode).await;
+        super::token_guard::args::launch_args(&crate::data_dir(), opts.plan_mode, opts.stacked_prs)
+            .await;
     args.extend(guard_args);
     if let Some(path) = &opts.extra_config {
         args.push("--config".to_string());

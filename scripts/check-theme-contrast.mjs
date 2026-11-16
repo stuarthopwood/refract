@@ -10,7 +10,7 @@ import { swatchMetadataDriftCheck } from './theme-swatch-drift.mjs'
 import { switchTrackContrastRows } from './switch-track-contrast.mjs'
 import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
 import { focusedBadgeContrastRows } from './focused-badge-contrast.mjs'
-import { contextUsageContrastRows } from './context-usage-contrast.mjs'; import { findNavContrastRows } from './find-nav-contrast.mjs'
+import { contextUsageContrastRows } from './context-usage-contrast.mjs'; import { findNavContrastRows } from './find-nav-contrast.mjs'; import { recommendedHoverContrastRows } from './recommended-hover-contrast.mjs'
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
 import { css, cssPath, repoRoot, themes, sidebarBorderAliasesDivider } from './theme-tokens.mjs'
 
@@ -444,7 +444,7 @@ for (const [themeId, props] of Object.entries(themes)) {
 
 // These composited checks live in theme-contrast-pairs.mjs to keep this file at its #806 size baseline; merged into one loop.
 // The OKLCH blend, composer-selection, focused-badge and context-usage rows each live in their own module, merged here too.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...focusedBadgeContrastRows(themes), ...contextUsageContrastRows(themes), ...findNavContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
+for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...focusedBadgeContrastRows(themes), ...contextUsageContrastRows(themes), ...findNavContrastRows(themes), ...recommendedHoverContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   checkedCount++
   if (!row.pass) failCount++
   rows.push(row)

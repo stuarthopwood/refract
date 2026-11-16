@@ -70,6 +70,7 @@ pub async fn read_omp_login_providers() -> Option<Vec<OmpLoginProvider>> {
         no_session: true,
         plan_mode: None,
         extra_config: None,
+        stacked_prs: false,
         ready_prompt_after_ms: 30_000,
         ready_ceiling_ms: 60_000,
     };

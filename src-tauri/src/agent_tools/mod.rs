@@ -2,9 +2,16 @@
 // Routing lives in `router`, approval in `approval`, the OMP approval overlay in `overlay`.
 
 pub mod approval;
+pub mod envelope;
 pub mod overlay;
 pub mod panels;
 pub mod router;
+pub mod sessions;
+mod sessions_create;
+mod sessions_limit;
+pub mod sessions_send;
+mod sessions_update;
+pub mod tree_gate;
 
 use serde_json::{json, Value};
 
@@ -17,7 +24,8 @@ pub const MUTATION_TIMEOUT_MS: u64 = 30_000;
 pub const MAX_RESULT_BYTES: usize = 8192;
 const REGISTER_TIMEOUT_MS: u64 = 10_000;
 
-/// Who a tool is registered for. Slice 1 has only root Sessions at depth 1, but #1859 narrows by these.
+/// Who a tool is registered for. Every launched Session is `Root`; #1859 keeps `Child` for the
+/// empty row of spec 129.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Role {
     Root,
@@ -31,18 +39,29 @@ pub struct ToolAccess {
 }
 
 impl ToolAccess {
-    pub fn root() -> Self {
+    /// A Session at `depth` in the Session tree: `Root` at any depth, since a child must be able to
+    /// report to its parent. Rust enforces the tree limits from the registry, never from this.
+    pub fn for_depth(depth: usize) -> Self {
         Self {
             role: Role::Root,
-            depth: 1,
+            depth: u8::try_from(depth).unwrap_or(u8::MAX),
         }
+    }
+
+    /// The access for Session `id`, from its depth in the registry rows.
+    pub fn for_session(sessions: &[crate::store::registry::Session], id: &str) -> Self {
+        Self::for_depth(crate::store::session_tree::depth_of(sessions, id))
     }
 }
 
 /// Tool names visible to a Session. The panel tools are available to every root Session.
 pub fn tools_for(access: ToolAccess) -> Vec<&'static str> {
     match access.role {
-        Role::Root => vec![LIST_PANELS, OPEN_PANEL, INVOKE_PANEL_ACTION],
+        Role::Root => {
+            let mut names = vec![LIST_PANELS, OPEN_PANEL, INVOKE_PANEL_ACTION];
+            names.extend(sessions::SESSION_TOOLS);
+            names
+        }
         Role::Child => Vec::new(),
     }
 }
@@ -52,11 +71,16 @@ pub fn host_tool_defs(access: ToolAccess) -> Vec<Value> {
     tools_for(access)
         .into_iter()
         .map(|name| {
+            let (description, parameters) = if sessions::is_session_tool(name) {
+                (sessions::description(name), sessions::parameters(name))
+            } else {
+                (tool_description(name), tool_parameters(name))
+            };
             json!({
                 "name": name,
                 "label": name,
-                "description": tool_description(name),
-                "parameters": tool_parameters(name),
+                "description": description,
+                "parameters": parameters,
                 "loadMode": "essential",
             })
         })

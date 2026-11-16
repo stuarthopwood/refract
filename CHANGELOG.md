@@ -1,5 +1,64 @@
 # Changelog
 
+## v0.36.0 (2026-11-14)
+
+### Features
+
+- feat(issues): borderless accent-text label overflow chip (#1873) (https://github.com/stuarthopwood/refract/pull/1999)
+
+### Fixes
+
+- fix(settings): label the task model role Task, not Subagent (#1879) (https://github.com/stuarthopwood/refract/pull/1998)
+- fix(chat): blur the history behind the Starting agent notice (#1892) (https://github.com/stuarthopwood/refract/pull/2000)
+- fix(chat): Ask card recommended option is visible, preselected and one key from accepted (#1985) (https://github.com/stuarthopwood/refract/pull/1997)
+
+## v0.35.0 (2026-11-13)
+
+### Features
+
+- feat(chat): ref links open the right pane (#1950) (https://github.com/stuarthopwood/refract/pull/1969)
+- feat(pull-requests): stacked pull requests via gh stack (#1867) (https://github.com/stuarthopwood/refract/pull/1968)
+- feat(#1859): agents create and nest Sessions (https://github.com/stuarthopwood/refract/pull/1967)
+
+### Fixes
+
+- fix(chat): name the live ask card and tighten its live check (#1941) (https://github.com/stuarthopwood/refract/pull/1970)
+- fix(composer): chip shows the role from start and resume (#1878) (https://github.com/stuarthopwood/refract/pull/1996)
+
+### Other
+
+- docs(plan): queue #1980 flaky worktree delete-check test (https://github.com/stuarthopwood/refract/pull/1981)
+- docs(plan): add #1982 chat/status-line preview and #1983 percent sliders (https://github.com/stuarthopwood/refract/pull/1984)
+- docs(plan): add ask-card redesign epic #1990 and children #1985-#1989 (https://github.com/stuarthopwood/refract/pull/1991)
+- docs(plan): add #1992 first-install ghost button row (https://github.com/stuarthopwood/refract/pull/1993)
+- docs(plan): add #1994 app version in profile menu row (https://github.com/stuarthopwood/refract/pull/1995)
+
+## v0.34.0 (2026-11-13)
+
+### Features
+
+- feat(sessions): agent Session read tools and messaging (#1858) (https://github.com/stuarthopwood/refract/pull/1953)
+
+### Fixes
+
+- fix(chat): advisory stripe beside body only and accent agent rows (#1876, #1877) (https://github.com/stuarthopwood/refract/pull/1960)
+- fix(settings): state where compaction starts once (#1872) (https://github.com/stuarthopwood/refract/pull/1958)
+- fix(session): resume starts a stopped paused Session (#1890) (https://github.com/stuarthopwood/refract/pull/1959)
+
+### Other
+
+- docs(plan): file #1946 plan-mode role and #1947 ref tooltip prefetch (https://github.com/stuarthopwood/refract/pull/1948)
+- docs(plan): add Queue rows for filed issues and set Wave 2 (https://github.com/stuarthopwood/refract/pull/1949)
+- docs(plan): add #1950 chat ref-link right-pane row (https://github.com/stuarthopwood/refract/pull/1952)
+- docs(context): add Session message term and ADR 0008 (#1858) (https://github.com/stuarthopwood/refract/pull/1951)
+- docs(plan): add #1954 low-memory triage-button row (https://github.com/stuarthopwood/refract/pull/1955)
+- docs(plan): add #1961 tool-call view-full-call menu row (https://github.com/stuarthopwood/refract/pull/1962)
+- chore(settings): live-verify token-guard keys (#1935) (https://github.com/stuarthopwood/refract/pull/1964)
+- docs(plan): add #1972 central scratch-folder feature row (https://github.com/stuarthopwood/refract/pull/1973)
+- docs(agents): put all scratch under C:/Scratch and always tidy it (https://github.com/stuarthopwood/refract/pull/1971)
+- docs(plan): record OMP 18.20.0 review ledger row (#1976, #1977) (https://github.com/stuarthopwood/refract/pull/1978)
+- docs(plan): queue #1974 dev scripts scratch under %TEMP%\scratch (https://github.com/stuarthopwood/refract/pull/1975)
+
 ## v0.33.0 (2026-11-12)
 
 ### Features

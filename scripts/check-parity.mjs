@@ -304,6 +304,7 @@ const REQUEST_LANES = {
   HOME_LAST_MESSAGES: 'R9', // #869, ipc/home.rs
   HOME_CLOSED_BRANCHES: 'R9', // #869, ipc/home.rs
   PULL_REQUESTS_LIST_ACROSS: 'R9', // #874, ipc/pull_requests/extra_handlers/list_across.rs
+  PULL_REQUESTS_STACK_REFS: 'R9', // #1867, ipc/pull_requests/extra_handlers/stack_refs.rs
   PULL_REQUESTS_DETAIL: 'R9',
   PULL_REQUESTS_COMMENT: 'R9',
   PULL_REQUESTS_REPLY_TO_THREAD: 'R9',

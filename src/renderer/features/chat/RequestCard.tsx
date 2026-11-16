@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { SecretInput } from '@/components/SecretInput'
-import { OPTION_FILL_CLASS } from '@/components/ui/checkbox'
+import { OPTION_FILL_CLASS, OPTION_RECOMMENDED_FILL_CLASS } from '@/components/ui/checkbox'
+import { RecommendedBadge } from '@/components/RecommendedBadge'
 import { cn } from '@/lib/utils'
 import { ToolIcon } from '@/components/ToolIcon'
 import { resolveToolDisplay } from './toolDisplay'
@@ -439,12 +440,12 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
                   variant="ghost"
                   disabled={busy}
                   data-choice-item
-                  className={cn("h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal py-1 text-left", OPTION_FILL_CLASS)}
+                  className={cn("h-auto min-h-9 w-full flex-col items-start gap-1 whitespace-normal py-1 text-left", OPTION_FILL_CLASS, recommended && OPTION_RECOMMENDED_FILL_CLASS)}
                   onClick={() => void answer({ value: option }, 'answered', displayLabel)}
                 >
                   <span className="w-full min-w-0 break-words text-sm">
                     {displayLabel}
-                    {recommended && <span className="font-normal text-muted-foreground">, Recommended</span>}
+                    {recommended && <RecommendedBadge />}
                   </span>
                   {request.optionDetails?.[index] && (
                     <span className="w-full min-w-0 break-words text-xs font-normal text-muted-foreground">{request.optionDetails[index]}</span>

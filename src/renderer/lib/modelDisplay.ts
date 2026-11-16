@@ -16,6 +16,9 @@ export const THINKING_LEVEL_LABEL: Record<string, string> = {
 /** Display order for the Reasoning picker's menu, Default first (#564). */
 export const THINKING_LEVELS: readonly ThinkingLevel[] = ['inherit', 'off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
 
+/** What every model label says before any model has been seen for a Session (FR-064). */
+export const MODEL_NOT_KNOWN = 'Model not known yet'
+
 /** The display name only (no provider) for a Session's last known model (#741). */
 export function formatModelLabel(session: Pick<Session, 'lastModel'>): string | null {
   if (!session.lastModel) return null

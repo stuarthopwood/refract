@@ -13,6 +13,7 @@
 {"type":"agent_start"}
 {"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
 {"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"__delay__":600}
 {"type":"tool_execution_start","toolCallId":"call-ask-1","toolName":"ask","intent":"Asking a clarifying question","args":{"questions":[{"id":"db","question":"Which database?","header":"Database","options":[{"label":"Postgres","description":"Relational"},{"label":"SQLite","description":"Embedded"}],"multi":false,"recommended":1},{"id":"features","question":"Which features?","header":"Features","options":[{"label":"Auth"},{"label":"Billing"},{"label":"Search"}],"multi":true}]}}
 {"type":"extension_ui_request","id":"ask-dlg-1","method":"ask","questions":[{"id":"db","question":"Which database?","header":"Database","options":[{"label":"Postgres","description":"Relational"},{"label":"SQLite","description":"Embedded"}],"multi":false,"recommended":1},{"id":"features","question":"Which features?","header":"Features","options":[{"label":"Auth"},{"label":"Billing"},{"label":"Search"}],"multi":true}]}
 {"__wait__":["extension_ui_response"]}

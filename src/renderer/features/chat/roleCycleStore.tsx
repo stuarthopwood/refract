@@ -71,7 +71,7 @@ async function flush(sessionId: string) {
     return
   }
   const label = (ROLE_LABEL as Partial<Record<string, string>>)[role] ?? role
-  useChatAreaAnnouncer.getState().announce(result.value.queued ? `${label} queued for next turn` : `Role: ${roleText(sessionId, role)}`)
+  useChatAreaAnnouncer.getState().announce(result.value.queued ? `${label} role queued for next turn` : `Role: ${roleText(sessionId, role)}`)
   window.setTimeout(() => {
     if (useRoleCycleStore.getState().cycling[sessionId] === role && !timers.has(sessionId)) setCycling(sessionId, undefined)
   }, SETTLE_CLEAR_MS)

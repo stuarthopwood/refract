@@ -43,6 +43,9 @@ export const PAIRS = [
   { fg: 'active-indicator', bg: 'background', min: 3 },
   // dropdown-menu.tsx's active-row inset shadow renders this token on bg-popover.
   { fg: 'active-indicator', bg: 'popover', min: 3 },
+  // #1950: the item type icon (`text-pr-open` / `text-pr-merged`, non-text) in the hover card (`--popover`); the user bubble is in userBubbleContrastRows.
+  { fg: 'pr-open', bg: 'popover', min: 3 },
+  { fg: 'pr-merged', bg: 'popover', min: 3 },
   { fg: 'active-indicator', bg: 'accent', min: 3 }, // #1122: ActiveIndicatorBar now also sits on bg-accent
   { fg: 'active-indicator', bg: 'muted', min: 3 }, // #1122: SubagentPanel.tsx's `hover:bg-muted/50` row hover can paint under a selected row's bar
   { fg: 'ring', bg: 'accent', min: 3 }, // #1122: focus-visible:ring-ring now paints while focused on an accent-filled selected row
@@ -85,8 +88,8 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
   { fg: 'accent-text', bg: 'muted', min: 3 }, // #1125, #1126: also the pressed IconRail glyph on its bg-muted fill
-  // TODO(#579): `accent-text` on `surface-hover` measures 4.00:1 (Dark) / 4.28:1 (Obsidian), under the 4.5:1 floor, so it
-  // is not a PAIRS entry. Lighten `accent-text` or add the pair before migrating any link/text colour onto a hover row.
+  { fg: 'accent-text', bg: 'surface-hover', min: 4.5 }, // #1873: the "+N" label chip on a hovered issue row
+  { fg: 'accent-text', bg: 'accent', min: 4.5 }, // #1873: the same chip on the selected issue row
   // The four role colours, as swatches beside the role names in Models (spec 036).
   ...['default', 'smol', 'slow', 'plan'].flatMap((role) => ['background', 'card', 'popover', 'accent'].map((bg) => ({ fg: `role-${role}`, bg, min: 3 }))),
   { fg: 'severity-success', bg: 'background', min: 3 },
@@ -138,6 +141,9 @@ export const PAIRS = [
   // A finished agent/Stage name renders `text-severity-success` as text, same precedent as `severity-error` above.
   { fg: 'severity-success', bg: 'background', min: 4.5 },
   { fg: 'severity-success', bg: 'muted', min: 4.5 },
+  // #1985: the Ask card's recommended row description (`muted-foreground`) sits on the translucent `--severity-success-bg`; label and badge text are covered by the severity loop in check-theme-contrast.mjs.
+  { fg: 'muted-foreground', bg: 'severity-success-bg', on: 'background', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'severity-success-bg', on: 'card', min: 4.5 },
   // Dark (high contrast) targets 7:1 text; `--muted` is its lightest surface, so the binding case (docs/design/accessibility.md).
   { fg: 'severity-error', bg: 'muted', min: 7, onlyThemes: HIGH_CONTRAST_THEMES },
   // Warning and success summaries render real body text in the same role.
@@ -309,10 +315,14 @@ export function userBubbleContrastRows(themes) {
     }
     const bubble = { raw: 'bubble', alpha: 1, linear: resolvedLinear({ raw: 'muted/50', alpha: 0.5, linear: muted.linear }, background) }
     const bubbleLum = relativeLuminance(bubble.linear)
-    for (const [fg, entry] of [['accent-text', accentText], ['chat-foreground', chatForeground]]) {
+    for (const [fg, entry, min] of [['accent-text', accentText, 4.5], ['chat-foreground', chatForeground, 4.5], ['pr-open', props['pr-open'], 3], ['pr-merged', props['pr-merged'], 3]]) {
+      if (!entry) {
+        rows.push({ themeId, fg, bg: 'user-bubble (muted/50 on background)', min, ratio: null, pass: false, note: 'token missing' })
+        continue
+      }
       const fgLinear = resolvedLinear(entry, bubble)
       const ratio = contrastRatio(relativeLuminance(fgLinear), bubbleLum)
-      rows.push({ themeId, fg, bg: 'user-bubble (muted/50 on background)', min: 4.5, ratio, pass: ratio >= 4.5, fgHex: linearToHex(fgLinear), bgHex: linearToHex(bubble.linear) })
+      rows.push({ themeId, fg, bg: 'user-bubble (muted/50 on background)', min, ratio, pass: ratio >= min, fgHex: linearToHex(fgLinear), bgHex: linearToHex(bubble.linear) })
     }
   }
   return rows

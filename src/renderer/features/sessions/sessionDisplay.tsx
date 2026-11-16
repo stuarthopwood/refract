@@ -1,6 +1,6 @@
 
 import { BellRingIcon, CircleCheckIcon, CircleStopIcon, MessageSquareTextIcon, PauseIcon } from 'lucide-react'
-import type { Repository } from '../../../shared/model'
+import { isProjectSession, type Repository } from '../../../shared/model'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
@@ -30,6 +30,11 @@ export function isNeedsYouSession(s: Pick<SessionSummary, 'status' | 'archivedAt
   return s.status === 'needs-you' && !s.archivedAt && !s.hiddenAt
 }
 
+/** A Session Home lists: a project Session that is neither archived nor hidden. */
+export function isHomeLiveSession(s: SessionSummary): boolean {
+  return isProjectSession(s) && !s.archivedAt && !s.hiddenAt
+}
+
 export const STATUS_LABEL: Record<SessionDisplayStatus, string> = {
   working: 'Working',
   idle: 'Idle',
@@ -42,7 +47,7 @@ export const STATUS_LABEL: Record<SessionDisplayStatus, string> = {
 /** Issue #559 decision 12 (reused by `manageSessionsHelpers.ts`'s `filterAndSortSessions`, spec 008 so neither file has its own copy of this substring check): does `session`'s name OR branch contain `query`, case-insensitively? */
 export function matchesNameOrBranch(session: Pick<SessionSummary, 'name' | 'branch'>, query: string): boolean {
   if (!query) return true
-  return session.name.toLowerCase().includes(query) || session.branch.toLowerCase().includes(query)
+  return session.name.toLowerCase().includes(query) || (session.branch ?? '').toLowerCase().includes(query)
 }
 
 /** Issue #559 decision 12: the session list's own, strictly broader search -- name OR branch (above) OR the Session's own Project name. */
@@ -71,7 +76,7 @@ export function searchSessions(sessions: SessionSummary[], repositories: Reposit
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
   const trimmed = effectiveFilterQuery(query).toLowerCase()
   const matches = (session: SessionSummary): boolean =>
-    matchesSessionSearch(session, repositoriesById.get(session.repositoryId)?.name ?? '', trimmed)
+    matchesSessionSearch(session, (session.repositoryId ? repositoriesById.get(session.repositoryId)?.name : undefined) ?? '', trimmed)
   // Issue #748: a hidden Session is listed while Show hidden is on, and ALWAYS matches a search.
   const listed = (session: SessionSummary): boolean => !session.hiddenAt || showHidden || trimmed !== ''
   const matchingByRepository = new Map<string, SessionSummary[]>()
@@ -82,9 +87,9 @@ export function searchSessions(sessions: SessionSummary[], repositories: Reposit
     )
   }
   const matchingArchived = sessions.filter(
-    (session) => session.archivedAt && repositoriesById.has(session.repositoryId) && listed(session) && matches(session)
+    (session) => session.archivedAt && isProjectSession(session) && repositoriesById.has(session.repositoryId) && listed(session) && matches(session)
   )
-  const totalCount = sessions.filter((session) => repositoriesById.has(session.repositoryId) && listed(session)).length
+  const totalCount = sessions.filter((session) => isProjectSession(session) && repositoriesById.has(session.repositoryId) && listed(session)).length
   const shownCount = trimmed
     ? [...matchingByRepository.values()].reduce((sum, list) => sum + list.length, 0) + matchingArchived.length
     : totalCount

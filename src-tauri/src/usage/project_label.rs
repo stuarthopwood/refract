@@ -102,9 +102,10 @@ impl ProjectIndex {
             .iter()
             .map(|r| (r.path.clone(), r.name.clone()));
         let worktrees = registry.sessions.iter().filter_map(|s| {
+            let binding = s.project_binding()?;
             names
-                .get(s.repository_id.as_str())
-                .map(|name| (s.worktree_path.clone(), (*name).to_string()))
+                .get(binding.repository_id)
+                .map(|name| (binding.worktree_path.to_string(), (*name).to_string()))
         });
         Self::from_owned(projects.chain(worktrees).chain(roots).collect())
     }

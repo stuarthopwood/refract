@@ -4,12 +4,13 @@ use serde_json::Value;
 
 use crate::git::worktrees::{add_worktree_from_pull_request_branch, remove_worktree};
 use crate::github::gh_mutations::{self, MergeMethod, PinnedReview, ReviewVerdict};
-use crate::github::gh_pull_requests;
+use crate::github::{gh_pull_requests, stack_merge};
 use crate::ipc::{
     invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, session_kickoff,
     AppState, HandlerFuture, IpcError,
 };
 use crate::store::registry::Session;
+use crate::store::session_kind::SessionKind;
 
 use super::mapping::{
     self, compute_merge_disabled_reason, compute_review_disabled_reason, map_mergeable_state,
@@ -413,9 +414,20 @@ pub(super) fn pull_requests_merge(state: AppState, args: Vec<Value>) -> HandlerF
             ));
         }
         // Pinned to the dialog-open-time snapshot, not `fresh.head_sha`.
-        gh_mutations::merge_pull_request(&repo_path, number, method, expected_head_sha)
-            .await
-            .map_err(map_gh_error)?;
+        let hint_stacked = input.get("stackHint").and_then(Value::as_str) == Some("stacked");
+        let head_branch =
+            stack_merge::checked_head_branch(input.get("headBranch").and_then(Value::as_str))
+                .map_err(invalid_argument)?;
+        let setting_on = state.settings.lock().await.get().stacked_pull_requests;
+        let route =
+            stack_merge::route_for(&repo_path, number, head_branch, hint_stacked, setting_on).await;
+        stack_merge::run_route(
+            route,
+            stack_merge::merge_stacked(&repo_path, number),
+            gh_mutations::merge_pull_request(&repo_path, number, method, expected_head_sha),
+        )
+        .await
+        .map_err(map_gh_error)?;
         forget_cache(repository_id, number);
         notify_changed(&state, repository_id, number);
         Ok(Value::Null)
@@ -456,14 +468,16 @@ pub(super) fn pull_requests_new_session_from_pull_request(
         let now = now_iso8601();
         let session = Session {
             id: uuid::Uuid::new_v4().to_string(),
-            repository_id: repository_id.to_string(),
+            kind: SessionKind::Project,
+            repository_id: Some(repository_id.to_string()),
             name: added.branch.clone(),
-            branch: added.branch.clone(),
-            base_branch: view
-                .as_ref()
-                .map(|v| v.base_ref_name.clone())
-                .unwrap_or_else(|| added.branch.clone()),
-            worktree_path: added.worktree_path.to_string_lossy().into_owned(),
+            branch: Some(added.branch.clone()),
+            base_branch: Some(
+                view.as_ref()
+                    .map(|v| v.base_ref_name.clone())
+                    .unwrap_or_else(|| added.branch.clone()),
+            ),
+            worktree_path: Some(added.worktree_path.to_string_lossy().into_owned()),
             session_dir: None,
             current_conversation: None,
             last_message_count: None,
@@ -479,6 +493,7 @@ pub(super) fn pull_requests_new_session_from_pull_request(
             stopped_on_request_at_size: None,
             pinned_model: false,
             origin_issue: None,
+            parent_session_id: None,
         };
 
         if let Err(err) = state

@@ -1,8 +1,10 @@
-// The "+N" chip that stands for labels a list row has no room to show (#1740). It is a focusable
-// pill, so keyboard and pointer users both open a tooltip listing every hidden label with its colour
-// dot. The accessible name starts with the visible "+N" (WCAG 2.5.3); Radix points aria-describedby at
-// the open tooltip, which supplies the names. Label names are untrusted text, rendered as plain text.
+// The "+N" chip that stands for labels a list row has no room to show (#1740, #1873). It is a focusable
+// text-only chip (accent text, no border in any state, so it does not read as a command button), and
+// keyboard and pointer users both open a tooltip listing every hidden label with its colour dot. The
+// accessible name starts with the visible "+N" (WCAG 2.5.3) and names every hidden label. Label names are
+// untrusted text, rendered as plain text.
 import { ColourDot } from '@/components/ColourDot'
+import { overflowChipName } from '@/components/overflowLabels'
 import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
@@ -15,11 +17,11 @@ export interface OverflowLabel {
 
 export function LabelOverflow({ labels, className }: { labels: readonly OverflowLabel[]; className?: string }) {
   if (labels.length === 0) return null
-  const accessibleName = `+${labels.length} more ${labels.length === 1 ? 'label' : 'labels'}`
+  const accessibleName = overflowChipName(labels)
   return (
     <Tooltip>
-      <TooltipTrigger asChild>
-        <Badge asChild variant="outline" className={cn('h-6 min-w-6 cursor-default text-muted-foreground hover:border-ring hover:text-foreground', className)}>
+      <TooltipTrigger asChild aria-describedby={undefined}>
+        <Badge asChild variant="plain" className={cn('h-6 min-w-6 cursor-default', className)}>
           <button type="button" aria-label={accessibleName}>
             +{labels.length}
           </button>

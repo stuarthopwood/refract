@@ -1,22 +1,37 @@
 // Narrow access for `crate::agent_tools` into one Session (spec 124). Kept apart so the host tool
 // channel needs no other `session::agent` internals.
 
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
 use super::{PendingRequest, SessionAgent, SessionStatus};
 use crate::agent_tools::router::ToolRouter;
 use crate::events::EventSink;
 use crate::omp::process::OmpProcess;
 use crate::omp::transcript::RequestResolution;
+use crate::session::SessionManager;
 use crate::store::settings::ApprovalMode;
 
 impl SessionAgent {
+    pub fn attach_manager(&self, manager: Weak<SessionManager>) {
+        let _ = self.manager.set(manager);
+    }
+
+    /// The owning manager, for the Session tools. `None` once the app is shutting down.
+    pub fn tool_manager(&self) -> Option<Arc<SessionManager>> {
+        self.manager.get().and_then(Weak::upgrade)
+    }
+
     pub fn tool_router(&self) -> &ToolRouter {
         &self.agent_tools
     }
 
     pub fn tool_session_id(&self) -> &str {
         &self.session_id
+    }
+
+    /// The shared registry, for tools that create or change Session rows.
+    pub fn tool_registry(&self) -> &super::SharedRegistry {
+        self.registry()
     }
 
     pub fn tool_events(&self) -> &EventSink {

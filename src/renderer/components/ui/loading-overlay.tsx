@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
+import { BLUR_TRANSITION_CLASS, BLURRED_CONTENT_CLASS } from './blur-content'
 import { cn } from '@/lib/utils'
 
 interface LoadingOverlayProps {
@@ -45,8 +46,8 @@ export function LoadingOverlay({ loading, children, className, contentClassName,
         ))}
       <div
         className={cn(
-          'transition-[filter] duration-150 motion-reduce:transition-none',
-          visible && 'pointer-events-none blur-sm select-none',
+          BLUR_TRANSITION_CLASS,
+          visible && cn('pointer-events-none select-none', BLURRED_CONTENT_CLASS),
           contentClassName
         )}
         inert={loading}

@@ -7,6 +7,7 @@ Slice 2 of the agent sessions epic (#1858) adds `send_session_message`, which le
 Rules:
 - **Envelope.** Refract wraps the text as `<session-message from="<name>" session="<id>">…</session-message>`. Any envelope tag inside the message text is escaped, so a message cannot close or forge the envelope.
 - **Parsing.** The transcript parser recognises the envelope on load and sets a source on the user item, so the UI shows who sent it.
+- **Authority.** The recipient acts on the message under its own approval mode, like any turn it receives. It is peer input, not the developer: the envelope tells the recipient who sent it, and nothing in the text grants more authority than the recipient already has. The tool description says so to the sending agent.
 
 **Why:** omp's session file is the source of truth for the transcript, so the label must live in the text to survive a reload. The target model also reads that text, so the envelope is the only way it can tell the turn is not from the developer.
 

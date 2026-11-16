@@ -1,8 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { RefObject } from 'react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
+import { GhStackNotice } from '@/components/GhStackNotice'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
+import { useSettingsStore } from '@/state'
+import { useGhStackStore } from '@/state/gh-stack-store'
 import type { MergeMethod } from '../../../shared/github'
+import type { StackPosition } from '../../../shared/stack-chain'
+import { mergeDialogStack, mergeInputFor, mergeLayersText, stackFeatureOn } from './stack-view'
 
 /** Props for {@link MergeDialog}. */
 export interface MergeDialogProps {
@@ -10,6 +15,9 @@ export interface MergeDialogProps {
   number: number
   title: string
   headSha: string
+  headBranch: string
+  /** Where the pull request sits in a stack, from chaining; `null` when it has no neighbour. */
+  stack: StackPosition | null
   allowedMergeMethods: MergeMethod[]
   open: boolean
   onOpenChange(open: boolean): void
@@ -36,6 +44,8 @@ export function MergeDialog({
   number,
   title,
   headSha,
+  headBranch,
+  stack,
   allowedMergeMethods,
   open,
   onOpenChange,
@@ -46,17 +56,30 @@ export function MergeDialog({
   const [method, setMethod] = useState<MergeMethod>(allowedMergeMethods[0] ?? 'merge')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const settingOn = useSettingsStore((s) => s.settings.stackedPullRequests !== false)
+  const ghState = useGhStackStore((s) => s.state)
+  const stackView = mergeDialogStack(settingOn, ghState, stack)
   const expectedHeadShaRef = useRef(headSha)
   useEffect(() => {
     if (open) expectedHeadShaRef.current = headSha
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
   const succeededRef = useRef(false)
+  const confirmRef = useRef<HTMLButtonElement>(null)
 
   async function handleMerge(): Promise<void> {
     setSubmitting(true)
     setError(null)
-    const result = await window.refract.pullRequests.merge(repositoryId, number, { method, expectedHeadSha: expectedHeadShaRef.current })
+    // Read at click time, not render time: the toggle or the extension may have changed since the dialog opened.
+    const featureOn = stackFeatureOn(
+      useSettingsStore.getState().settings.stackedPullRequests !== false,
+      useGhStackStore.getState().state
+    )
+    const result = await window.refract.pullRequests.merge(
+      repositoryId,
+      number,
+      mergeInputFor({ method, expectedHeadSha: expectedHeadShaRef.current, headBranch }, stack, featureOn)
+    )
     setSubmitting(false)
     if (!result.ok) {
       setError(result.error.message)
@@ -71,6 +94,7 @@ export function MergeDialog({
     <ConfirmAlertDialog
       open={open}
       busy={submitting}
+      confirmRef={confirmRef}
       size="md"
       title={`Merge ${title}?`}
       description="Choose a merge method, then confirm."
@@ -127,6 +151,12 @@ export function MergeDialog({
           )
         })}
       </RadioGroup>
+      {stackView === 'install' && <GhStackNotice layout="callout" onInstalled={() => confirmRef.current?.focus()} />}
+      {stackView === 'layers' && stack && (
+        <p data-merge-layers className="text-xs text-muted-foreground">
+          {mergeLayersText(stack)}
+        </p>
+      )}
     </ConfirmAlertDialog>
   )
 }

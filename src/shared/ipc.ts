@@ -23,6 +23,7 @@ import type {
   ProjectColor,
   Repository,
   RepositoryRemote,
+  ProjectSession,
   Session,
   SessionListCollapse, SessionReadout,
   SessionStartProgress,
@@ -38,6 +39,7 @@ import type { WorkingMode, WorkingModeApi } from './workingMode';
 import type { AdvisorRosterApi, AdvisorRosterDetected } from './ipc-advisor-roster';
 import type { AttachmentsApi } from './ipc-attachments'; import type { ClipboardApi } from './ipc-clipboard'; import type { SpellcheckApi } from './ipc-spellcheck'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
 import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi, SessionWithKickoff } from './ipc-issues'; import type { ItemRefsApi } from './ipc-item-refs'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
+import type { GithubStackApi } from './ipc-github-stack';
 import type { ChangedFile, FilterTab, MergeMethod, PullRequestDetail, PullRequestStateFilter, PullRequestSummary, ReviewVerdict } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
 import type { ActivityText, SessionActivity } from './activity'; import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images'; import type { CustomTheme, ThemesApi } from './ipc-themes'; import type { RepositoriesCloneApi, SettingsCloneApi } from './ipc-repositories-clone';
@@ -68,6 +70,7 @@ export type IpcErrorCode =
   | 'invalid-argument'
   | 'prompt-failed'
   | 'agent-not-running'
+  | 'start-failed'
   | 'worktree-missing'
   | 'file-missing'
   | 'outside-worktree'
@@ -92,7 +95,8 @@ export type IpcErrorCode =
   | 'disabled'
   | 'session-archived'
   | 'worktree-held' | 'worktree-busy' | 'destination-not-empty' | 'too-many-clones' | 'destination-in-use'
-  | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed'; // lane R11b (#794); #1265 settings.json write failed
+  | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed' // lane R11b (#794); #1265 settings.json write failed
+  | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape' | 'no-repository';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -115,7 +119,7 @@ export interface Readiness {
   ompSignedIn: Check;
 }
 /** `sessions.list()` row. */
-export interface SessionSummary extends Session {
+export interface SessionSummaryFields {
   status: SessionStatus;
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   terminatedUnexpectedly?: boolean;
@@ -134,6 +138,9 @@ export interface SessionSummary extends Session {
   currentRole?: string | null;
   activity?: SessionActivity | null;
 }
+export type SessionSummary = Session & SessionSummaryFields;
+/** A `sessions.list()` row narrowed to a Project Session (has a repository and worktree). */
+export type ProjectSessionSummary = ProjectSession & SessionSummaryFields;
 
 /** `sessions.diffStat(id)` result. */
 export type { DiffStat } from './model';
@@ -217,6 +224,10 @@ export interface SubmitReviewInput {
 export interface MergeInput {
   method: MergeMethod;
   expectedHeadSha: string;
+  /** Renderer's view of stacking; Rust trusts a successful `gh stack view` over it (#1867). */
+  stackHint?: 'stacked' | 'plain';
+  /** Head branch, so `gh stack view` can find the stack of this pull request. */
+  headBranch?: string;
 }
 
 /** Re-exported so existing imports from `../../shared/ipc` keep working (#891). */
@@ -323,6 +334,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SHOW_SCROLLBAR_MAP: 'settings.setShowScrollbarMap',
   SETTINGS_SET_TYPOGRAPHY: 'settings.setTypography',
   SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
+  SETTINGS_SET_STACKED_PULL_REQUESTS: 'settings.setStackedPullRequests',
   SETTINGS_SET_SESSION_NOTIFICATION_SOUNDS: 'settings.setSessionNotificationSounds',
   SETTINGS_SET_ALARM_SOUNDS: 'settings.setAlarmSounds',
   SETTINGS_UPSERT_ALARM: 'settings.upsertAlarm',
@@ -351,6 +363,7 @@ export const IPC_REQUESTS = {
   WINDOW_ZOOM: 'window.zoom',
   PULL_REQUESTS_LIST: 'pullRequests.list',
   PULL_REQUESTS_LIST_ACROSS: 'pullRequests.listAcross',
+  PULL_REQUESTS_STACK_REFS: 'pullRequests.stackRefs',
   PULL_REQUESTS_DETAIL: 'pullRequests.detail',
   PULL_REQUESTS_COMMENT: 'pullRequests.comment',
   PULL_REQUESTS_REPLY_TO_THREAD: 'pullRequests.replyToThread',
@@ -361,6 +374,8 @@ export const IPC_REQUESTS = {
   PULL_REQUESTS_CLOSE: 'pullRequests.close',
   PULL_REQUESTS_FETCH_IMAGE: 'pullRequests.fetchImage',
   PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST: 'pullRequests.newSessionFromPullRequest',
+  GITHUB_STACK_STATE: 'githubStack.state',
+  GITHUB_STACK_INSTALL: 'githubStack.install',
   ISSUES_LABELS: 'issues.labels',
   ISSUES_SEARCH: 'issues.search',
   ISSUES_CREATE: 'issues.create',
@@ -557,6 +572,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setAnimatedStatusText(enabled: boolean): Promise<Result<Settings>>; // Issue #1242 (FR-042): the shared status-text shimmer switch; applies live.
     setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; setShowScrollbarMap(enabled: boolean): Promise<Result<Settings>>; // Issue #1246; #754 (spec 041) scrollbar map switch
+    setStackedPullRequests(enabled: boolean): Promise<Result<Settings>>; // Issue #1867: default on; the Pull requests Merge button and Session notes read it.
     setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
     upsertAlarm(alarm: Alarm): Promise<Result<Settings>>; // Issue #1426: create or edit one composer-clock Alarm; `alarm-limit` when the list is full.
     deleteAlarm(id: string): Promise<Result<Settings>>;
@@ -598,6 +614,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     fetchImage(url: string): Promise<Result<{ dataUrl: string }>>;
     newSessionFromPullRequest(repositoryId: string, number: number): Promise<Result<SessionWithKickoff>>;
   };
+
+  githubStack: GithubStackApi;
 
   theme: {
     set(themeId: ThemeId): Promise<Result<Settings>>;

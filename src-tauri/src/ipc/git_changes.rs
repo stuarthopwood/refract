@@ -89,9 +89,10 @@ async fn session_context(
     let session = registry
         .get_session(session_id)
         .ok_or_else(|| not_found("This Session no longer exists"))?;
+    let binding = super::project_session::repo_binding(session)?;
     Ok((
-        PathBuf::from(&session.worktree_path),
-        session.base_branch.clone(),
+        PathBuf::from(binding.worktree_path),
+        binding.base_branch.to_string(),
         session.archived_at.is_some(),
     ))
 }

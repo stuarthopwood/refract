@@ -17,10 +17,10 @@ import { ROLE_ICON, ROLE_LABEL, roleTone, type RoleChipRoleId } from '@/lib/mode
 import type { ModelCatalogEntry } from '../../../shared/model'
 import { ModelCatalogGroup } from './ModelCatalogGroup'
 import { RoleOption } from './RoleOption'
-import { RoleModelPill, shownText, useRoleModelDisplay } from './RoleModelPill'
+import { RoleModelPill, useRoleModelDisplay } from './RoleModelPill'
 import { useChatAreaAnnouncer } from './chatAreaAnnouncer'
 import { cancelCycle, useCyclingRole, useRoleCycleStore, useSessionRoles } from './roleCycleStore'
-import { friendlyRoleModel, resolveRoleModelName, shortModelName } from './roleModelText'
+import { friendlyRoleModel, resolveRoleModelName, shortModelName, shownText } from './roleModelText'
 import { OPEN_ROLE_SWITCHER_EVENT, useRoleCycleShortcut } from './useRoleCycleShortcut'
 import { PICKER_OPTION_ACTIVE_CLASS, PICKER_OPTION_CLASS, usePickerOpenState } from './pickerShared'
 
@@ -145,7 +145,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
     }
   }
 
-  const selectRole = (role: string) => apply(roleLabelOf(role), () => window.refract.model.applyRole(sessionId, role))
+  const selectRole = (role: string) => apply(`${roleLabelOf(role)} role`, () => window.refract.model.applyRole(sessionId, role))
   const selectModel = (entry: Pick<ModelCatalogEntry, 'provider' | 'id' | 'name'>) =>
     apply(entry.name, () => window.refract.model.setModel(sessionId, entry.provider, entry.id))
   const keepCurrent = () => {

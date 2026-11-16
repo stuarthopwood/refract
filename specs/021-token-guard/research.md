@@ -52,3 +52,30 @@ Probed 2026-10-23 on omp 18.12.6 (`C:\Users\shopwood\AppData\Local\omp\omp.exe`)
 - **Carried over, not re-probed here**: `tools.xdev` keeps `live: true` from the #1767 probe.
 - **Unverified (no usable observable)**: `compaction.idleEnabled`, `compaction.idleThresholdTokens`, `compaction.idleTimeoutSeconds` (an RPC session starts no idle maintenance: `session.enableIdleMaintenance` is opt-in and only the TUI enables it, per omp `sdk.md`, so no compaction fires in either turn); `task.maxConcurrency` and `task.softRequestBudget` (the scripted model's subagent fan-out was not repeatable between runs, so startup and live runs are not comparable); `plan.defaultOnStartup`, `prewalk.enabled`, `todo.eager`, `autolearn.autoContinue`, `advisor.reviewMode` (system-prompt hashes differ between runs for reasons other than the key, so the A/B is confounded; the S run was stopped before completing); `snapcompact.toolResults`, `snapcompact.systemPrompt`, `grep.contextBefore`, `grep.contextAfter`, `read.defaultLimit`, `read.summarize.enabled`, `tools.artifactSpillThreshold` (not probed).
 - **Decision**: a key keeps no `live` flag unless a probe observed it. The four existing flags stay; no flag is added. Every unverified key keeps "Applies to new Sessions" until a later probe proves it live.
+- **Superseded by section 11**: the #1935 probes resolved every "unverified" key above; the live set is now sixteen keys.
+
+## 11. Live verdicts for all 17 keys (#1935, 2026-11-12, omp 18.17.0)
+- Each probe edited the key with `omp config set` mid-process (turn 1 -> turn 2) in a scripted-provider RPC process against a scratch `PI_CODING_AGENT_DIR`; two consecutive runs agreed and an unchanged control stayed unchanged. Probes: `scripts/token-guard-probe/` (`pnpm probe:token-guard`). Reports and the evidence table are kept outside the repo in `C:/Users/shopwood/refract-1935-probe/` (`verdicts.md`).
+
+| Key | Verdict | Observable (turn 1 -> turn 2) |
+|---|---|---|
+| grep.contextBefore | live | grep result 1 row -> 4 rows |
+| grep.contextAfter | live | grep result 1 row -> 4 rows |
+| read.defaultLimit | live | 300 numbered rows -> 50 |
+| read.summarize.enabled | live | 120 collapsed bodies -> 0 |
+| tools.artifactSpillThreshold | live | 30 KB output spilled at 10 KB -> inline at 100 KB |
+| snapcompact.toolResults | live | text only -> image parts in the request |
+| snapcompact.systemPrompt | live | text only -> image parts; only for model ids omp knows |
+| task.maxConcurrency | live | peak subagent requests 1 -> 3 |
+| task.softRequestBudget | live | requests before force-stop 21 -> 39 |
+| prewalk.enabled | live | last request model switched to the prewalk model |
+| autolearn.autoContinue | live | capture-turn requests 0 -> 1 |
+| advisor.reviewMode | live | advisor requests 4 -> 1 |
+| todo.eager | startup-only | manual check, not in the committed probes: with the key edited mid-process the "create a phased todo" reminder is absent on the next turn (control and test 0, 0, 0); after the edit then `/new` it appears (0, 0, 1). Steps from `explore4` in `C:/Users/shopwood/refract-1935-probe/`: scratch RPC process, `omp config set todo.eager true`, send a turn, send `/new`, send a turn, count the reminder in system text. A `/new`-only key counts as startup-only (OQ-2) |
+| plan.defaultOnStartup | no-effect (RPC) | manual check, not in the committed probes: no plan-mode marker and an identical tool list after the edit, after `/new`, and even with the key set in the scratch `config.yml` before process start (`explore5`); RPC offers no way to enter plan mode. Control unchanged |
+| compaction.idleEnabled | no-effect (RPC) | no idle compaction in 75 s; RPC sessions never enable the idle scheduler (omp `sdk.md`) |
+| compaction.idleThresholdTokens | no-effect (RPC) | same observation |
+| compaction.idleTimeoutSeconds | no-effect (RPC) | same observation |
+
+- Together with `compaction.thresholdPercent`, `compaction.modelThresholds`, `compaction.methodOrder` (section 10) and `tools.xdev` (#1767) the live set is 16 keys.
+- **OQ-1 (decided 2026-11-12)**: the four no-effect keys have no effect in a Refract (RPC) Session. They are recorded here and in the PR body; hiding or relabelling those rows is tracked in a separate issue, not this PR.

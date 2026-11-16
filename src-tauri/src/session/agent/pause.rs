@@ -77,6 +77,35 @@ pub(super) fn queue_view(
     (merged, steering.to_vec())
 }
 
+/// Resumes every paused, unarchived Session and returns `(resumed, failed)`. A Resume already in
+/// flight answers `paused: true`; it is neither, since that Resume owns the outcome.
+pub async fn resume_all(
+    registry: &super::SharedRegistry,
+    manager: &crate::session::manager::SessionManager,
+) -> (u32, u32) {
+    let ids: Vec<String> = registry
+        .lock()
+        .await
+        .snapshot()
+        .sessions
+        .into_iter()
+        .filter(|s| s.paused_held.is_some() && s.archived_at.is_none())
+        .map(|s| s.id)
+        .collect();
+    let (mut resumed, mut failed) = (0, 0);
+    for id in ids {
+        match manager.get_or_create_agent(&id).resume().await {
+            Ok(value) if value["paused"] == false => resumed += 1,
+            Ok(_) => {}
+            Err(err) => {
+                log::warn!("resume all: a Session did not start: {} ({})", id, err.code);
+                failed += 1;
+            }
+        }
+    }
+    (resumed, failed)
+}
+
 impl SessionAgent {
     /// Loads the persisted pause once per agent.
     pub(super) async fn ensure_pause_loaded(&self) {
@@ -197,26 +226,23 @@ impl SessionAgent {
         Ok(json!({ "paused": true }))
     }
 
-    /// `chat.resume`: drains held messages in order, then clears the pause. A failed send leaves the rest held.
+    /// `chat.resume`: starts a stopped Session's agent, drains held messages in order, then clears the pause.
+    /// A failed start or send leaves the Session paused with the unsent messages still held.
     pub async fn resume(&self) -> Result<Value, AgentError> {
         self.ensure_pause_loaded().await;
-        {
+        let needs_start = {
             let mut state = self.state.lock().await;
-            let Some(held) = state.pause.held.as_ref() else {
+            if state.pause.held.is_none() {
                 return Ok(json!({ "paused": false }));
-            };
+            }
             if state.pause.resuming {
                 return Ok(json!({ "paused": true }));
             }
-            if state.process.is_none() && !held.is_empty() {
-                return Err(AgentError::new(
-                    "agent-not-running",
-                    "Start the agent before resuming: held messages are waiting.",
-                ));
-            }
+            // Set before the start, so a second Resume (Space twice, Resume all) cannot start or drain again.
             state.pause.resuming = true;
-        }
-        let outcome = self.drain_held().await;
+            state.process.is_none()
+        };
+        let outcome = self.start_then_drain(needs_start).await;
         // The list is taken only once the drain succeeded: a failed drain leaves the Session paused and the list intact.
         let cancelled = {
             let mut state = self.state.lock().await;
@@ -236,6 +262,20 @@ impl SessionAgent {
         }
         outcome?;
         Ok(json!({ "paused": false }))
+    }
+
+    /// An archived Session never starts here: Resume only clears a pause, it must not revive a hidden agent.
+    async fn start_then_drain(&self, needs_start: bool) -> Result<(), AgentError> {
+        if needs_start {
+            if self.require_session().await?.archived_at.is_some() {
+                return Err(AgentError::new(
+                    "session-archived",
+                    "Restore this Session before resuming it.",
+                ));
+            }
+            self.start().await?;
+        }
+        self.drain_held().await
     }
 
     async fn drain_held(&self) -> Result<(), AgentError> {
@@ -324,3 +364,7 @@ impl SessionAgent {
         true
     }
 }
+
+#[cfg(test)]
+#[path = "pause.test.rs"]
+mod tests;

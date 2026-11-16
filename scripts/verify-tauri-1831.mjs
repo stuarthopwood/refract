@@ -42,8 +42,8 @@ const checkbox = (q, label) =>
   `Array.from(${field(q)}?.querySelectorAll('[role="checkbox"]') ?? []).find((el) => document.getElementById(el.getAttribute('aria-labelledby'))?.textContent.trim() === ${JSON.stringify(label)})`;
 const control = (q, tag) => `${field(q)}?.querySelector('${tag}')`;
 const SUBMIT = `Array.from(document.querySelectorAll('button')).find((b) => b.textContent.trim().startsWith('Submit'))`;
-const LIVE_TITLES = `Array.from(document.querySelectorAll('*')).filter((el) => el.children.length === 0 && el.textContent.trim() === 'Questions from the agent' && !el.closest('[role="group"]'))`;
-const HISTORY_CARDS = `Array.from(document.querySelectorAll('[role="group"][aria-label^="Questions from the agent"]'))`;
+const LIVE_CARDS = `Array.from(document.querySelectorAll('[role="group"][aria-label="Questions from the agent"]:not([tabindex])'))`;
+const HISTORY_CARDS = `Array.from(document.querySelectorAll('[role="group"][aria-label^="Questions from the agent"][tabindex="-1"]'))`;
 const FOCUS = `(() => { const a = document.activeElement; return { tag: a?.tagName ?? null, role: a?.getAttribute?.('role') ?? null, label: a?.getAttribute?.('aria-label') ?? null, isBody: !a || a === document.body }; })()`;
 
 async function shoot(cdp, name) {
@@ -107,8 +107,8 @@ function analyseCancelWire() {
   const lines = readJsonl(WIRE_LOG).filter((l) => l.dir === 'omp->refract');
   const endIdx = lines.findIndex((l) => l.frame?.type === 'tool_execution_end' && l.frame.toolName === 'ask' && JSON.stringify(l.frame.result ?? '').includes(CANCEL_SENTENCE));
   const end = endIdx < 0 ? null : lines[endIdx].frame;
-  const aborted = endIdx >= 0 && lines.slice(endIdx).some((l) => JSON.stringify(l.frame ?? '').includes('"stopReason":"aborted"'));
-  return { found: end !== null, isError: end?.isError === true, aborted, result: end?.result ?? null };
+  const stop = endIdx < 0 ? undefined : lines.slice(endIdx).find((l) => JSON.stringify(l.frame ?? '').includes('"stopReason":"aborted"'));
+  return { found: end !== null, isError: end?.isError === true, aborted: stop !== undefined, stopReason: stop ? 'aborted' : null, stopFrameType: stop?.frame?.type ?? null, result: end?.result ?? null };
 }
 
 async function main() {
@@ -168,9 +168,9 @@ async function main() {
     // 1. One combined card for the whole form.
     await cdp.waitFor(`!!${field('Which database?')} && !!${field('Owner')}`, { timeoutMs: 90_000, label: 'combined ask card rendered' });
     const headings = await cdp.evaluate(`${HEADINGS}.map((p) => p.textContent)`);
-    const titles = await cdp.evaluate(`${LIVE_TITLES}.length`);
+    const titles = await cdp.evaluate(`${LIVE_CARDS}.length`);
     const expected = ['Which database?', 'Which features?', 'Why this stack?, required', 'Team name', 'Owner'];
-    check(titles === 1 && expected.every((q, i) => headings[i] === q) && headings.length === expected.length, '1. One combined card renders for the ask (one title, five field headings in form order)', { titles, headings });
+    check(titles === 1 && expected.every((q, i) => headings[i] === q) && headings.length === expected.length, '1. One combined card renders for the ask (one live group, five field headings in form order)', { titles, headings });
     await shoot(cdp, '01-combined-card-rendered.png');
 
     // 2. Submit stays aria-disabled until the required textarea is filled.
@@ -214,7 +214,8 @@ async function main() {
     await clickVisible(cdp, control('Note', 'input'));
     await pressEscape(cdp);
     await sleep(800);
-    check(await cdp.evaluate(`!!(${SUBMIT})`), '6f. Esc inside a text input does not cancel the card (Submit still present)', {});
+    const submitAfterInputEsc = await cdp.evaluate(`(() => { const s = ${SUBMIT}; const a = document.activeElement; return { submitPresent: !!s, submitAriaDisabled: s?.getAttribute('aria-disabled') ?? null, focusedTag: a?.tagName ?? null, focusedInNoteInput: a === ${control('Note', 'input')} }; })()`);
+    check(submitAfterInputEsc.submitPresent, '6f. Esc inside a text input does not cancel the card (Submit still present)', submitAfterInputEsc);
     await clickVisible(cdp, RADIO_NO);
     await shoot(cdp, '06-second-ask-focus-in-card-before-esc.png');
     await pressEscape(cdp);
@@ -231,8 +232,8 @@ async function main() {
     // The wire log is written by the omp wrapper as frames arrive, so the aborted turn end can lag the tool result by a moment.
     await sleep(1_500);
     const cancelWire = analyseCancelWire();
-    check(cancelWire.found && cancelWire.isError, `6d. Wire: the ask tool_execution_end carries "${CANCEL_SENTENCE}" with isError true`, cancelWire);
-    check(cancelWire.aborted, '6e. Wire: the cancelled turn ends with stopReason "aborted"', cancelWire);
+    check(cancelWire.found && cancelWire.isError, `6d. Wire: the ask tool_execution_end carries "${CANCEL_SENTENCE}" with isError true`, { found: cancelWire.found, isError: cancelWire.isError, result: cancelWire.result });
+    check(cancelWire.aborted, '6e. Wire: the cancelled turn ends with stopReason "aborted"', { stopReason: cancelWire.stopReason, stopFrameType: cancelWire.stopFrameType });
 
     // 6a/6b repeated: the first runs above plus four more of each, so five of each in one session with focus recorded per run.
     const repeats = { '6a': [{ run: 1, samples: afterSubmit }], '6b': [{ run: 1, samples: afterEsc }] };

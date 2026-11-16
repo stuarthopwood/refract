@@ -25,3 +25,10 @@ Refract Sessions pay for every token of context on every model call, so keep con
 ## Keep conversations short
 
 - Finish one story per conversation. When the work moves to an unrelated task, or after about 300 model calls, write a short handoff and start a new conversation.
+
+## Pick the right way to delegate
+
+- A bounded report you only need back (reading, searching, reviewing): a subagent, OMP `task`.
+- The same work split in parallel: background agents, OMP `task` run async.
+- Own-branch, long-lived work the developer should see and steer: a child Session, `refract_create_session`. It gets its own Worktree and branch, so use it sparingly: depth is at most 3, with at most 4 live children each.
+- A child Session reports back with `refract_send_session_message` to its parent.

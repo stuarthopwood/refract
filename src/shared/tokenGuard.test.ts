@@ -1,8 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { appliesToNewSessionsOnly, TOKEN_GUARD_KEYS } from './tokenGuard'
 
-// The four keys OMP reloads into a running Session (#1765 probes); every other key waits for a new one.
-const LIVE_KEYS = ['compaction.thresholdPercent', 'compaction.modelThresholds', 'compaction.methodOrder', 'tools.xdev']
+// The keys OMP reloads into a running Session (#1765, #1935 probes); every other key waits for a new one.
+const LIVE_KEYS = [
+  'compaction.thresholdPercent',
+  'compaction.modelThresholds',
+  'compaction.methodOrder',
+  'tools.xdev',
+  'snapcompact.toolResults',
+  'snapcompact.systemPrompt',
+  'task.softRequestBudget',
+  'task.maxConcurrency',
+  'advisor.reviewMode',
+  'grep.contextBefore',
+  'grep.contextAfter',
+  'read.defaultLimit',
+  'read.summarize.enabled',
+  'tools.artifactSpillThreshold',
+  'prewalk.enabled',
+  'autolearn.autoContinue'
+]
 
 describe('appliesToNewSessionsOnly', () => {
   it('is false for exactly the live keys', () => {

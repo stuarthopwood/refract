@@ -4,7 +4,7 @@ import { useSplitStore } from '../state/split-store'
 
 function resolve(
   repositories: { id: string }[],
-  sessions: { id: string; repositoryId: string }[],
+  sessions: { id: string; repositoryId: string | null }[],
   focusedSessionId: string | undefined
 ): string | undefined {
   const focusedSession = sessions.find((session) => session.id === focusedSessionId)

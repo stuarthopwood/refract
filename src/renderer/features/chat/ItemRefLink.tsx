@@ -1,6 +1,7 @@
 // A `#123` / `owner/repo#123` reference in chat prose (#1155): a link with a hover Item card. The
 // lookup runs only on hover, focus or click (#610: no existence check at render time) and is cached
-// for five minutes per repository and number.
+// for five minutes per repository and number. A plain click pins an in-Project item in the right
+// pane (#1950); the type icon stays neutral until a lookup (or a cached one) has resolved the type.
 import * as React from 'react'
 import { InlineStatus } from '@/components/InlineStatus'
 import { UserAvatar } from '@/components/UserAvatar'
@@ -8,41 +9,14 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/h
 import { StatePill } from '@/features/pull-requests/StatePill'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { usePullRequestsStore, useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
+import { usePinnedPanelsStore, useRepositoriesStore, useSessionsStore } from '@/state'
+import { ReorderAnnouncer } from '@/components/reorder/ReorderAnnouncer'
 import type { ItemCard } from '../../../shared/ipc-item-refs'
 import { linkClassName } from './linkStyles'
-import { resolveItemRef, type ItemRefTarget } from './itemRefs'
-
-const CACHE_MS = 5 * 60 * 1000
-const CACHE_MAX = 200
-// Insertion order is recency order: a hit is deleted and re-inserted, so the first key is the oldest.
-const cache = new Map<string, { at: number; card: Promise<ItemCard | null> }>()
-
-function lookupCard(target: ItemRefTarget): Promise<ItemCard | null> {
-  const key = `${target.repositoryId}|${target.owner ?? ''}/${target.repo ?? ''}#${target.number}`
-  const hit = cache.get(key)
-  if (hit) {
-    cache.delete(key)
-    if (Date.now() - hit.at < CACHE_MS) {
-      cache.set(key, hit)
-      return hit.card
-    }
-  }
-  const card = window.refract.itemRefs
-    .lookup(target.repositoryId, target.owner, target.repo, target.number)
-    .then((result) => (result.ok ? result.value : null))
-    .catch(() => null)
-  cache.set(key, { at: Date.now(), card })
-  if (cache.size > CACHE_MAX) {
-    const oldest = cache.keys().next().value
-    if (oldest !== undefined) cache.delete(oldest)
-  }
-  // A failed lookup (offline, no access) must not stick for five minutes.
-  void card.then((value) => {
-    if (!value && cache.get(key)?.card === card) cache.delete(key)
-  })
-  return card
-}
+import { lookupCard, peekCard } from './itemCardCache'
+import { ownerRepoOf, resolveItemRef, type ItemRefTarget } from './itemRefs'
+import { ItemTypeIcon, itemDisplayState, itemTypeVisual } from './ItemTypeIcon'
+import { isMiddleButton, openItemRef, wantsBrowser } from './openItemRef'
 
 // The shared external-link listener (tauri-bridge/externalLinks.ts) is the one place a URL opens.
 function openInBrowser(url: string): void {
@@ -55,9 +29,13 @@ function openInBrowser(url: string): void {
   anchor.remove()
 }
 
-function ItemCardBody({ card }: { card: ItemCard }) {
+export function ItemCardBody({ card }: { card: ItemCard }) {
   return (
     <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-2 text-xs font-medium">
+        <ItemTypeIcon card={card} />
+        {itemTypeVisual(card).label}
+      </div>
       <div className="text-xs text-muted-foreground [overflow-wrap:anywhere]">
         {card.ownerRepo} on {new Date(card.createdAt).toLocaleDateString()}
       </div>
@@ -65,7 +43,7 @@ function ItemCardBody({ card }: { card: ItemCard }) {
         {card.title} <span className="text-muted-foreground">#{card.number}</span>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <StatePill state={card.state === 'open' && card.draft ? 'draft' : card.state} />
+        <StatePill state={itemDisplayState(card)} />
         <UserAvatar name={card.authorLogin} src={card.avatarDataUrl ?? undefined} size="xs" />
         <span className="text-xs [overflow-wrap:anywhere]">{card.authorLogin}</span>
       </div>
@@ -84,61 +62,78 @@ export function ItemRefLink({ text, sessionId, streaming }: { text: string; sess
   const target = React.useMemo(() => (repository ? resolveItemRef(text, repository) : null), [text, repository])
   const [card, setCard] = React.useState<ItemCard | null | 'loading'>('loading')
   const [open, setOpen] = React.useState(false)
+  // A lookup resolving fills the cache; this re-renders so the icon reads it.
+  const [, refreshIcon] = React.useReducer((count: number) => count + 1, 0)
+  // Polite "opened in the right pane" text; the serial makes a repeated identical message announce again.
+  const [announcement, announce] = React.useReducer((prev: { text: string; serial: number }, text: string) => ({ text, serial: prev.serial + 1 }), { text: '', serial: 0 })
   const contentId = React.useId()
   if (!target) return <>{text}</>
   // Inert while streaming, like every other link in a live message.
   if (streaming) return <span className="text-accent-text underline underline-offset-2">{text}</span>
 
-  const openItem = (): void => {
-    void lookupCard(target).then((found) => {
-      if (found?.kind === 'pull-request' && target.inProject) {
-        usePullRequestsStore.getState().openPullRequest(target.repositoryId, target.number)
-        useViewStore.getState().openPullRequests()
-        return
-      }
-      // An issue (until the Issues view can show one) or a repository that is not a Project opens on GitHub.
-      const remote = repository?.remote
-      const ownerRepo = target.owner ? `${target.owner}/${target.repo}` : remote?.kind === 'has' ? `${remote.owner}/${remote.repo}` : null
-      const url = found?.url ?? (ownerRepo ? `https://github.com/${ownerRepo}/issues/${target.number}` : null)
-      if (url) openInBrowser(url)
-    })
+  const lookup = (forTarget: ItemRefTarget): Promise<ItemCard | null> => {
+    const found = lookupCard(forTarget)
+    void found.then(refreshIcon)
+    return found
   }
 
+  const openItem = (event: React.MouseEvent<HTMLElement>): void => {
+    void openItemRef(
+      { target, sessionId, opener: event.currentTarget, toBrowser: wantsBrowser(event), ownerRepo: ownerRepoOf(target, repository) },
+      { lookup, pin: (kind, pinTarget) => usePinnedPanelsStore.getState().pin(kind, pinTarget), openUrl: openInBrowser }
+    ).then((pinned) => {
+      if (pinned) announce(`${pinned === 'pull-request' ? 'Pull request' : 'Issue'} #${target.number} opened in the right pane`)
+    })
+  }
+  const typeWord = itemTypeVisual(peekCard(target)).label
+
   return (
-    <HoverCard
-      openDelay={300}
-      onOpenChange={(isOpen) => {
-        setOpen(isOpen)
-        if (!isOpen) return
-        // A previous failed or loaded card must not flash before this lookup settles.
-        setCard('loading')
-        void lookupCard(target).then(setCard)
-      }}
-    >
-      <HoverCardTrigger asChild>
-        <Button
-          type="button"
-          variant="link"
-          className={cn(linkClassName, 'inline h-auto min-h-6 p-0 whitespace-normal')}
-          aria-describedby={open ? contentId : undefined}
-          onClick={openItem}
-        >
-          {text}
-        </Button>
-      </HoverCardTrigger>
-      <HoverCardContent id={contentId} side="top" align="start">
-        {card === 'loading' ? (
-          <InlineStatus tone="loading" density="compact" className="p-0">
-            Loading {text}…
-          </InlineStatus>
-        ) : card ? (
-          <ItemCardBody card={card} />
-        ) : (
-          <InlineStatus tone="notice" density="compact" className="p-0">
-            Could not load {text}.
-          </InlineStatus>
-        )}
-      </HoverCardContent>
-    </HoverCard>
+    <>
+      <HoverCard
+        openDelay={300}
+        onOpenChange={(isOpen) => {
+          setOpen(isOpen)
+          if (!isOpen) return
+          // A previous failed or loaded card must not flash before this lookup settles.
+          setCard('loading')
+          void lookup(target).then(setCard)
+        }}
+      >
+        <HoverCardTrigger asChild>
+          <Button
+            type="button"
+            variant="link"
+            className={cn(linkClassName, 'inline h-auto min-h-6 p-0 whitespace-normal')}
+            aria-describedby={open ? contentId : undefined}
+            onClick={openItem}
+            // Middle click does not raise `click`; without the mousedown guard Windows starts autoscroll.
+            onMouseDown={(event) => {
+              if (isMiddleButton(event.button)) event.preventDefault()
+            }}
+            onAuxClick={(event) => {
+              if (isMiddleButton(event.button)) openItem(event)
+            }}
+          >
+            <ItemTypeIcon card={peekCard(target)} className="mr-1" />
+            {typeWord && <span className="sr-only">{typeWord} </span>}
+            {text}
+          </Button>
+        </HoverCardTrigger>
+        <HoverCardContent id={contentId} side="top" align="start">
+          {card === 'loading' ? (
+            <InlineStatus tone="loading" density="compact" className="p-0">
+              Loading {text}…
+            </InlineStatus>
+          ) : card ? (
+            <ItemCardBody card={card} />
+          ) : (
+            <InlineStatus tone="notice" density="compact" className="p-0">
+              Could not load {text}.
+            </InlineStatus>
+          )}
+        </HoverCardContent>
+      </HoverCard>
+      <ReorderAnnouncer text={announcement.text} serial={announcement.serial} />
+    </>
   )
 }

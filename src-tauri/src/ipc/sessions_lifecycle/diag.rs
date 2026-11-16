@@ -7,10 +7,11 @@ use std::path::Path;
 use crate::git::diff_stat::diff_stat;
 use crate::process::executables::explorer_exe_path;
 
+use super::super::project_session::repo_binding;
 use super::super::{arg_str, invalid_argument, not_found, AppState, HandlerFuture, IpcError};
 
-/// `sessions.diffStat`: always `Ok`, with `null` for a timeout, missing worktree, missing Base
-/// branch or any git failure.
+/// `sessions.diffStat`: `Ok` with `null` for a timeout, missing worktree, missing Base branch or
+/// any git failure; a Personal Agent has no repository, so it gets the typed `no-repository` error.
 pub(super) fn sessions_diff_stat(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
@@ -24,8 +25,9 @@ pub(super) fn sessions_diff_stat(state: AppState, args: Vec<Value>) -> HandlerFu
             .get_session(&id)
             .cloned()
             .ok_or_else(|| not_found(format!("Session not found: {id}")))?;
+        let binding = repo_binding(&session)?;
         let result = match crate::fs::worktree_access::read_guard_bounded(&id).await {
-            Ok(_guard) => diff_stat(Path::new(&session.worktree_path), &session.base_branch).await,
+            Ok(_guard) => diff_stat(Path::new(binding.worktree_path), binding.base_branch).await,
             Err(_) => None,
         };
         Ok(serde_json::to_value(result).expect("Option<DiffStatResult> is always serialisable"))
@@ -51,18 +53,19 @@ pub(super) fn sessions_reveal_worktree(state: AppState, args: Vec<Value>) -> Han
             .get_session(&id)
             .cloned()
             .ok_or_else(|| not_found(format!("Session not found: {id}")))?;
-        let worktree_is_directory = tokio::fs::metadata(&session.worktree_path)
+        let binding = repo_binding(&session)?;
+        let worktree_is_directory = tokio::fs::metadata(binding.worktree_path)
             .await
             .map(|metadata| metadata.is_dir())
             .unwrap_or(false);
         if !worktree_is_directory {
             return Err(IpcError::new(
                 "worktree-missing",
-                format!("Worktree missing: {}", session.worktree_path),
+                format!("Worktree missing: {}", binding.worktree_path),
             ));
         }
         match tokio::process::Command::new(explorer_exe_path())
-            .arg(&session.worktree_path)
+            .arg(binding.worktree_path)
             .spawn()
         {
             Ok(_) => Ok(Value::Null),

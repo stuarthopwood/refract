@@ -73,7 +73,7 @@ async function enableClock(cdp) {
   await sleep(600);
   await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Models')`);
   await sleep(800);
-  const subagentFinder = `Array.from(document.querySelectorAll('body *')).find((e) => Array.from(e.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim() === 'Subagent'))`;
+  const subagentFinder = `Array.from(document.querySelectorAll('body *')).find((e) => Array.from(e.childNodes).some((n) => n.nodeType === 3 && n.textContent.trim() === 'Task'))`;
   await cdp.waitFor(`!!(${subagentFinder})`, { timeoutMs: 10_000, label: 'Models section rendered' }).catch(() => {});
   const roleLabel = await cdp.evaluate(`(() => {
     const el = ${subagentFinder};
@@ -81,12 +81,8 @@ async function enableClock(cdp) {
     return !!el;
   })()`);
   await sleep(300);
-  await shot(cdp, '01-settings-subagent-role.png');
-  assert(roleLabel, '#1432: Settings model roles list a "Subagent" row');
-  assert(
-    await cdp.evaluate(`!Array.from(document.querySelectorAll('*')).some((e) => e.children.length === 0 && e.textContent.trim() === 'Task')`),
-    '#1432: no Settings row is still labelled "Task"'
-  );
+  await shot(cdp, '01-settings-task-role.png');
+  assert(roleLabel, '#1879: Settings model roles list a "Task" row (supersedes #1432 "Subagent")');
   await cdp.click(`Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Status line')`);
   await sleep(600);
   await cdp.evaluate(`(() => {

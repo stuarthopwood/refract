@@ -31,6 +31,7 @@ mod status;
 mod sync_from_state;
 mod tool_host;
 mod types;
+pub use chat::MessageDelivery;
 pub use command_wait::COMMANDS_WAIT;
 pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
@@ -109,6 +110,8 @@ pub struct SessionAgent {
     commands_reported: Notify,
     coalescer: PatchCoalescer,
     agent_tools: crate::agent_tools::router::ToolRouter,
+    /// Set once by the owning `SessionManager`, so Session tools can reach other Sessions.
+    manager: std::sync::OnceLock<Weak<crate::session::SessionManager>>,
 }
 
 /// Generates one `with_<lane>_state` accessor per lane.
@@ -187,6 +190,7 @@ impl SessionAgent {
             start_lock: AsyncMutex::new(()),
             commands_reported: Notify::new(),
             agent_tools: Default::default(),
+            manager: Default::default(),
             coalescer,
         })
     }
@@ -241,10 +245,11 @@ impl SessionAgent {
     pub(super) async fn emit_status(&self) {
         self.ensure_pause_loaded().await;
         crate::session::working_mode::ensure_loaded(self).await;
+        // Emitted under the lock: a payload built before a pause change cannot be delivered after a newer one.
         let state = self.state.lock().await;
         let payload = self.status_event_locked(&state);
-        drop(state);
         self.events.emit_session_status(&payload);
+        drop(state);
     }
 
     /// Becomes `unread` only on `working` -> `idle` while the Session is hidden.

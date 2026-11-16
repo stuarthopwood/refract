@@ -27,11 +27,12 @@ async fn agent_for(session_id: &str) -> Arc<SessionAgent> {
     registry_store
         .add_session(Session {
             id: session_id.to_string(),
-            repository_id: "repo-missing".to_string(),
+            kind: crate::store::session_kind::SessionKind::Project,
+            repository_id: Some("repo-missing".to_string()),
             name: "test".to_string(),
-            branch: "feat/test".to_string(),
-            base_branch: "main".to_string(),
-            worktree_path: dir.join("worktree").to_string_lossy().into_owned(),
+            branch: Some("feat/test".to_string()),
+            base_branch: Some("main".to_string()),
+            worktree_path: Some(dir.join("worktree").to_string_lossy().into_owned()),
             session_dir: None,
             current_conversation: None,
             last_message_count: None,
@@ -47,6 +48,7 @@ async fn agent_for(session_id: &str) -> Arc<SessionAgent> {
             stopped_on_request_at_size: None,
             pinned_model: false,
             origin_issue: None,
+            parent_session_id: None,
         })
         .await
         .unwrap();

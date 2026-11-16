@@ -19,6 +19,7 @@ pub struct SessionManager {
     events: EventSink,
     agents: StdMutex<HashMap<String, Arc<SessionAgent>>>,
     visible_ids: Arc<StdMutex<HashSet<String>>>,
+    self_ref: std::sync::Weak<SessionManager>,
 }
 
 /// Caps concurrent `git worktree list` calls across repositories.
@@ -60,12 +61,13 @@ async fn fetch_worktree_lists(
 
 impl SessionManager {
     pub fn new(registry: SharedRegistry, settings: SharedSettings, events: EventSink) -> Arc<Self> {
-        Arc::new(Self {
+        Arc::new_cyclic(|self_ref| Self {
             registry,
             settings,
             events,
             agents: StdMutex::new(HashMap::new()),
             visible_ids: Arc::new(StdMutex::new(HashSet::new())),
+            self_ref: self_ref.clone(),
         })
     }
 
@@ -210,6 +212,7 @@ impl SessionManager {
             self.events.clone(),
             self.visible_ids.clone(),
         );
+        agent.attach_manager(self.self_ref.clone());
         agents.insert(session_id.to_string(), agent.clone());
         agent
     }
@@ -244,6 +247,11 @@ impl SessionManager {
         self.events.emit_updates_state_changed(state);
     }
 
+    /// The registry's repositories and Sessions, for the Session tools.
+    pub async fn registry_snapshot(&self) -> crate::store::registry::Registry {
+        self.registry.lock().await.snapshot()
+    }
+
     /// Merges live-runtime fields over the registry row. `stopped` rows get fresh termination info.
     pub async fn summaries(&self) -> Vec<Value> {
         let snapshot = self.registry.lock().await.snapshot();
@@ -258,8 +266,10 @@ impl SessionManager {
             if self.get_agent(&session.id).is_some() {
                 continue;
             }
-            if !repos_needed.contains(&session.repository_id) {
-                repos_needed.push(session.repository_id.clone());
+            if let Some(binding) = session.project_binding() {
+                if !repos_needed.iter().any(|id| id == binding.repository_id) {
+                    repos_needed.push(binding.repository_id.to_string());
+                }
             }
         }
         let worktree_lists = fetch_worktree_lists(&repos_needed, &repositories).await;
@@ -284,22 +294,29 @@ impl SessionManager {
                 }
                 None => {
                     // Valid only if registered with git and its own `.git` pointer exists.
-                    let has_repository = repositories.iter().any(|r| r.id == session.repository_id);
-                    let validity = if !has_repository {
-                        WorktreeValidity::Invalid
-                    } else {
-                        let has_git_entry = tokio::fs::symlink_metadata(
-                            Path::new(&session.worktree_path).join(".git"),
-                        )
-                        .await
-                        .is_ok();
-                        if !has_git_entry {
+                    // A Personal Agent has no worktree to lose, so it is never "missing".
+                    let validity = match session.project_binding() {
+                        None => WorktreeValidity::Valid,
+                        Some(binding)
+                            if !repositories.iter().any(|r| r.id == binding.repository_id) =>
+                        {
                             WorktreeValidity::Invalid
-                        } else {
-                            let registered = worktree_lists
-                                .get(&session.repository_id)
-                                .and_then(|list| list.as_deref());
-                            registered_validity(Path::new(&session.worktree_path), registered).await
+                        }
+                        Some(binding) => {
+                            let has_git_entry = tokio::fs::symlink_metadata(
+                                Path::new(binding.worktree_path).join(".git"),
+                            )
+                            .await
+                            .is_ok();
+                            if !has_git_entry {
+                                WorktreeValidity::Invalid
+                            } else {
+                                let registered = worktree_lists
+                                    .get(binding.repository_id)
+                                    .and_then(|list| list.as_deref());
+                                registered_validity(Path::new(binding.worktree_path), registered)
+                                    .await
+                            }
                         }
                     };
                     // A timed-out check is `Unknown`, treated as valid, not as missing.
@@ -409,11 +426,12 @@ mod tests {
     ) -> Session {
         Session {
             id: id.to_string(),
-            repository_id: repository_id.to_string(),
+            kind: crate::store::session_kind::SessionKind::Project,
+            repository_id: Some(repository_id.to_string()),
             name: "Test Session".to_string(),
-            branch: branch.to_string(),
-            base_branch: "main".to_string(),
-            worktree_path: worktree_path.to_string_lossy().to_string(),
+            branch: Some(branch.to_string()),
+            base_branch: Some("main".to_string()),
+            worktree_path: Some(worktree_path.to_string_lossy().to_string()),
             session_dir: None,
             current_conversation: None,
             last_message_count: None,
@@ -429,6 +447,7 @@ mod tests {
             stopped_on_request_at_size: None,
             pinned_model: false,
             origin_issue: None,
+            parent_session_id: None,
         }
     }
 

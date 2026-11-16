@@ -46,6 +46,7 @@ fn build_items(n: usize) -> Vec<Arc<TranscriptItem>> {
                 at: i as i64,
                 file_attachments: Vec::new(),
                 images: Vec::new(),
+                source: None,
             })
         })
         .collect()
@@ -90,6 +91,7 @@ fn measure_diff_transcript() {
             at: changed_index as i64,
             file_attachments: Vec::new(),
             images: Vec::new(),
+            source: None,
         });
 
         let (elapsed, ops) = min_of_warmed_runs(&prev, &next);

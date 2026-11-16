@@ -30,14 +30,10 @@ export type RepositoryRemote =
   | { kind: 'has'; host: string; owner?: string; repo?: string }
   | { kind: 'unknown' };
 
-/** One unit of work: a Worktree together with the Conversations held in it. */
-export interface Session {
+/** Fields shared by both Session kinds. */
+export interface SessionBase {
   id: string;
-  repositoryId: string;
   name: string;
-  branch: string;
-  baseBranch: string;
-  worktreePath: string;
   sessionDir: string | null;
   currentConversation: string | null;
   lastMessageCount: number | null;
@@ -52,7 +48,32 @@ export interface Session {
   stoppedOnRequestAtSize?: number | null;
   /** The issue this Session was started from (#1310); absent for every other Session. */
   originIssue?: { number: number; title: string; url: string };
+  /** The parent Session when this is a Child Session (#1859); absent for a root Session. */
+  parentSessionId?: string;
 }
+
+/** One unit of work: a Worktree together with the Conversations held in it. */
+export interface ProjectSession extends SessionBase {
+  kind: 'project';
+  repositoryId: string;
+  branch: string;
+  baseBranch: string;
+  worktreePath: string;
+}
+
+/** The single project-less Personal Agent: no repository, branch or worktree. */
+export interface PersonalSession extends SessionBase {
+  kind: 'personal';
+  repositoryId: null;
+  branch: null;
+  baseBranch: null;
+  worktreePath: null;
+}
+
+export type Session = ProjectSession | PersonalSession;
+
+export const isProjectSession = <S extends Session>(s: S): s is Extract<S, { kind: 'project' }> =>
+  s.kind === 'project';
 /** The app-wide setting for how much the agent may do without asking. */
 export type ApprovalMode = 'ask' | 'ask-and-remember' | 'edit-freely' | 'auto';
 
@@ -81,7 +102,7 @@ export interface Settings {
   transcriptDisplay: TranscriptDisplaySettings;
   showSampleData: boolean;
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean;
-  wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; showScrollbarMap?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean;
+  wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; showScrollbarMap?: boolean; stackedPullRequests?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean;
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings;
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; showHidden: boolean; }
@@ -309,9 +330,16 @@ export interface FileAttachmentRef {
   isDirectory: boolean;
 }
 
+/** Who sent a user turn when it was not Stuart: another Session's message (#1858). Absent for ordinary turns. */
+export interface MessageSource {
+  kind: 'session';
+  sessionId: string;
+  name: string;
+}
+
 /** Built in the main process from OMP frames; the renderer only renders items. */
 export type TranscriptItem =
-  | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[]; images?: TranscriptImageRef[] }
+  | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[]; images?: TranscriptImageRef[]; source?: MessageSource }
   | { kind: 'assistant-text'; id: string; text: string; streaming: boolean }
   | {
       kind: 'thinking';

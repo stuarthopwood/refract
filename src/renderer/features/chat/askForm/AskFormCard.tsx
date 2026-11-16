@@ -113,10 +113,10 @@ const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
   done: 'Answers submitted'
 }
 
-/** The card chrome the live form and the read-only history share; `label` names a finished card. */
-function AskFormShell({ children, ref, label }: { children: React.ReactNode; ref?: React.Ref<HTMLDivElement>; label?: string }) {
+/** The card chrome the live form and the read-only history share; `label` names the card, `resting` makes a finished card a focus target. */
+function AskFormShell({ children, ref, label, resting }: { children: React.ReactNode; ref?: React.Ref<HTMLDivElement>; label: string; resting?: boolean }) {
   return (
-    <Card ref={ref} size="sm" {...(label ? { tabIndex: -1, role: 'group', 'aria-label': label, className: RESTING_FOCUS_CLASS } : {})}>
+    <Card ref={ref} size="sm" role="group" aria-label={label} {...(resting ? { tabIndex: -1, className: RESTING_FOCUS_CLASS } : {})}>
       <CardHeader>
         <CardTitle>Questions from the agent</CardTitle>
       </CardHeader>
@@ -136,7 +136,7 @@ function AskFormAnswersCard({ answers, sessionId, askItemId }: { answers: readon
   const rootRef = React.useRef<HTMLDivElement>(null)
   useClaimAskFormFocus(rootRef, sessionId, askItemId)
   return (
-    <AskFormShell ref={rootRef} label={askCardLabel(answers)}>
+    <AskFormShell ref={rootRef} label={askCardLabel(answers)} resting>
       <CardContent>
         <dl className="space-y-2">
           {answers.map((row, index) => (
@@ -207,7 +207,7 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
     // Esc is the Cancel shortcut for the whole card (FR-010) except while typing; the buttons below stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={rootRef} onKeyDown={handleKeyDown}>
-      <AskFormShell>
+      <AskFormShell label={askCardLabel([])}>
         {fields.map((field, index) => {
           const value = session.values[index]
           if (!value) return null

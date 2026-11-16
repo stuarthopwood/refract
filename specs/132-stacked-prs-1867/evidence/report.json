@@ -1,0 +1,309 @@
+{
+  "head": "819ec3025d37c97e862a808be979677893b29783",
+  "checks": [
+    {
+      "label": "SC-001 the toggle is on by default in a fresh data dir",
+      "ok": true
+    },
+    {
+      "label": "SC-005 Settings says gh-stack needs updating with an Install button",
+      "ok": true,
+      "detail": "gh-stack needs updating.Install"
+    },
+    {
+      "label": "SC-005 Install clears the prompt and runs `gh extension upgrade gh-stack`",
+      "ok": true,
+      "detail": "gh-stack is installed and ready."
+    },
+    {
+      "label": "SC-004 rows of the 3-layer stack show \"Stack N of 3\"; the plain pull request shows none",
+      "ok": true,
+      "detail": [
+        [
+          "1",
+          "Stack 1 of 3"
+        ],
+        [
+          "2",
+          "Stack 2 of 3"
+        ],
+        [
+          "3",
+          "Stack 3 of 3"
+        ],
+        [
+          "4",
+          null
+        ]
+      ]
+    },
+    {
+      "label": "SC-004 detail lists 3 layers with #2 marked current",
+      "ok": true,
+      "detail": [
+        {
+          "text": "Open#1 Layer 1: add the parser",
+          "current": false
+        },
+        {
+          "text": "Open#2 Layer 2: wire the parser inThis pull request",
+          "current": true
+        },
+        {
+          "text": "Open#3 Layer 3: document the parser",
+          "current": false
+        }
+      ]
+    },
+    {
+      "label": "SC-003 Merge dialog from layer 2 says it merges layers 1 to 2 together",
+      "ok": true,
+      "detail": "Merges layers 1 to 2 together."
+    },
+    {
+      "label": "SC-003 merge from a middle layer runs `gh stack merge 2 --yes --squash`, not `gh pr merge`",
+      "ok": true,
+      "detail": [
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "stack merge 2 --yes --squash"
+      ]
+    },
+    {
+      "label": "SC-003 plain pull request #4 shows no layers",
+      "ok": true
+    },
+    {
+      "label": "SC-003 plain Merge dialog has no layers line",
+      "ok": true
+    },
+    {
+      "label": "SC-003 plain pull request merges with `gh pr merge 4`",
+      "ok": true,
+      "detail": [
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "stack merge 2 --yes --squash",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 4 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "pr view 4 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "pr merge 4 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-4"
+      ]
+    },
+    {
+      "label": "toggle off: no row shows a stack badge",
+      "ok": true
+    },
+    {
+      "label": "toggle off: the detail shows no layers",
+      "ok": true
+    },
+    {
+      "label": "toggle off: the Merge dialog has no layers line",
+      "ok": true
+    },
+    {
+      "label": "toggle off: #2 merges with `gh pr merge 2`",
+      "ok": true,
+      "detail": [
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "stack merge 2 --yes --squash",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 4 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "pr view 4 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "pr merge 4 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-4",
+        "pr view 4 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "pr merge 2 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-2"
+      ]
+    },
+    {
+      "label": "SC-006 exit 9 shows \"not enabled for this repository\"",
+      "ok": true,
+      "detail": "Merge pull request #3?Choose a merge method, then confirm.Merge commitKeeps every commit and adds a merge commit.Squash and mergeCombines every commit into a single commit.Rebase and mergeReplays every commit onto the base branch.Merges layers 1 to 3 together.Error: Stacked pull requests are not enabled for this repository; Refract will use plain pull requests here.CancelRetry"
+    },
+    {
+      "label": "SC-006 after exit 9 the repository falls back to `gh pr merge 3`",
+      "ok": true,
+      "detail": [
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "stack merge 2 --yes --squash",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 4 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "pr view 4 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "pr merge 4 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-4",
+        "pr view 4 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "pr merge 2 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-2",
+        "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 3 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+        "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+        "pr view 3 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "stack merge 3 --yes --squash",
+        "pr view 3 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+        "pr merge 3 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-3"
+      ]
+    },
+    {
+      "label": "SC-001 the toggle set off in launch 1 is still off after a restart",
+      "ok": true
+    },
+    {
+      "label": "SC-005 with gh-stack missing no row shows a stack badge",
+      "ok": true
+    },
+    {
+      "label": "SC-005 Merge dialog says gh-stack is not installed",
+      "ok": true,
+      "detail": "gh-stack is not installed.Until then this pull request merges on its own, not together with the rest of its stack.Install"
+    },
+    {
+      "label": "SC-005 Install clears the callout and the dialog now offers the stack merge",
+      "ok": true,
+      "detail": "Merges layers 1 to 2 together."
+    },
+    {
+      "label": "SC-006 after relaunch the repository is re-probed: #2 merges through `gh stack merge` again",
+      "ok": true,
+      "detail": [
+        "stack merge 2 --yes --squash",
+        "stack merge 3 --yes --squash",
+        "stack merge 2 --yes --squash"
+      ]
+    }
+  ],
+  "failures": 0,
+  "shots": [
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\01-settings-outdated.png",
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\02-settings-ready.png",
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\03-list-badges.png",
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\04-detail-layers.png",
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\05-merge-dialog-middle.png",
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\06-toggle-off-merge.png",
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\07-exit9-message.png",
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\08-merge-dialog-missing.png",
+    "C:\\Users\\shopwood\\AppData\\Local\\Temp\\scratch\\refract-1867\\live\\shots\\09-merge-dialog-installed.png"
+  ],
+  "ghCalls": [
+    "auth status",
+    "auth status --json hosts",
+    "stack --version",
+    "api rate_limit",
+    "api rate_limit",
+    "issue list --repo fake-owner/fake-repo-1121 --state open --limit 50 --json number,title,state,url,labels,assignees,author,comments,updatedAt --assignee=@me",
+    "pr list --repo fake-owner/fake-repo-1121 --state all --author=@me --limit 100 --json number,state,url,headRefName,headRepositoryOwner",
+    "issue list --repo fake-owner/fake-repo-1121 --state open --limit 50 --json number,title,state,url,labels,assignees,author,comments,updatedAt --author=@me",
+    "stack --version",
+    "search prs --repo fake-owner/fake-repo-1121 --author @me --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "search prs --repo fake-owner/fake-repo-1121 --review-requested @me --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "extension upgrade gh-stack",
+    "stack --version",
+    "api rate_limit",
+    "search prs --repo fake-owner/fake-repo-1121 --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "pr list --repo fake-owner/fake-repo-1121 --state open --limit 50 --json number,headRefName,baseRefName",
+    "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "api graphql -f query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } } -f owner=fake-owner -f name=fake-repo-1121 -F number=2",
+    "api repos/fake-owner/fake-repo-1121/pulls/2/files --paginate",
+    "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    "api user",
+    "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+    "stack view --json feature-2",
+    "api repos/fake-owner/fake-repo-1121/stacks/2",
+    "stack merge 2 --yes --squash",
+    "api graphql -f query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } } -f owner=fake-owner -f name=fake-repo-1121 -F number=2",
+    "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    "api repos/fake-owner/fake-repo-1121/pulls/2/files --paginate",
+    "api user",
+    "pr list --repo fake-owner/fake-repo-1121 --state open --limit 50 --json number,headRefName,baseRefName",
+    "api rate_limit",
+    "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    "api graphql -f query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } } -f owner=fake-owner -f name=fake-repo-1121 -F number=4",
+    "pr view 4 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "api repos/fake-owner/fake-repo-1121/pulls/4/files --paginate",
+    "api user",
+    "search prs --repo fake-owner/fake-repo-1121 --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "pr view 4 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+    "stack view --json feature-4",
+    "pr merge 4 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-4",
+    "pr view 4 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "api user",
+    "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    "api graphql -f query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } } -f owner=fake-owner -f name=fake-repo-1121 -F number=4",
+    "api repos/fake-owner/fake-repo-1121/pulls/4/files --paginate",
+    "api rate_limit",
+    "search prs --repo fake-owner/fake-repo-1121 --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    "api repos/fake-owner/fake-repo-1121/pulls/2/files --paginate",
+    "api graphql -f query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } } -f owner=fake-owner -f name=fake-repo-1121 -F number=2",
+    "api user",
+    "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+    "pr merge 2 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-2",
+    "api repos/fake-owner/fake-repo-1121/pulls/2/files --paginate",
+    "api user",
+    "api graphql -f query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } } -f owner=fake-owner -f name=fake-repo-1121 -F number=2",
+    "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    "api rate_limit",
+    "api repos/fake-owner/fake-repo-1121/pulls/3/files --paginate",
+    "pr list --repo fake-owner/fake-repo-1121 --state open --limit 50 --json number,headRefName,baseRefName",
+    "api user",
+    "pr view 3 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    "api graphql -f query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } } -f owner=fake-owner -f name=fake-repo-1121 -F number=3",
+    "search prs --repo fake-owner/fake-repo-1121 --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "pr view 3 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+    "stack view --json feature-3",
+    "api repos/fake-owner/fake-repo-1121/stacks/3",
+    "stack merge 3 --yes --squash",
+    "pr view 3 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+    "stack --version",
+    "pr merge 3 --repo fake-owner/fake-repo-1121 --merge --match-head-commit head-3",
+    "pr view 3 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "auth status",
+    "auth status --json hosts",
+    "stack --version",
+    "pr list --repo fake-owner/fake-repo-1121 --state all --author=@me --limit 100 --json number,state,url,headRefName,headRepositoryOwner",
+    "issue list --repo fake-owner/fake-repo-1121 --state open --limit 50 --json number,title,state,url,labels,assignees,author,comments,updatedAt --assignee=@me",
+    "api rate_limit",
+    "issue list --repo fake-owner/fake-repo-1121 --state open --limit 50 --json number,title,state,url,labels,assignees,author,comments,updatedAt --author=@me",
+    "api rate_limit",
+    "api rate_limit",
+    "search prs --repo fake-owner/fake-repo-1121 --author @me --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "search prs --repo fake-owner/fake-repo-1121 --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "search prs --repo fake-owner/fake-repo-1121 --review-requested @me --state open --sort updated --order desc --limit 51 --json number,title,state,isDraft,author,updatedAt,repository",
+    "pr view 2 --repo fake-owner/fake-repo-1121 --json title,number,state,author,baseRefName,headRefName,reviewRequests,assignees,labels,commits,mergeStateStatus,mergeable,additions,deletions,changedFiles,files,isDraft,statusCheckRollup,updatedAt,headRefOid,body,isCrossRepository,headRepositoryOwner",
+    "api graphql -f query=query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { id reviewThreads(first: 50) { nodes { id isResolved isOutdated path line diffSide comments(first: 50) { nodes { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } } } } timelineItems(first: 100, itemTypes: [PULL_REQUEST_COMMIT, ISSUE_COMMENT, PULL_REQUEST_REVIEW]) { nodes { __typename ... on PullRequestCommit { commit { oid message committedDate author { name } } } ... on IssueComment { id author { __typename login avatarUrl ... on User { name } } body createdAt lastEditedAt } ... on PullRequestReview { id author { __typename login avatarUrl ... on User { name } } state body submittedAt lastEditedAt } } } } } } -f owner=fake-owner -f name=fake-repo-1121 -F number=2",
+    "repo view fake-owner/fake-repo-1121 --json mergeCommitAllowed,squashMergeAllowed,rebaseMergeAllowed",
+    "api repos/fake-owner/fake-repo-1121/pulls/2/files --paginate",
+    "api user",
+    "pr list --repo fake-owner/fake-repo-1121 --state open --limit 50 --json number,headRefName,baseRefName",
+    "stack --version",
+    "extension install github/gh-stack",
+    "stack --version",
+    "pr view 2 --repo fake-owner/fake-repo-1121 --json id,updatedAt,headRefOid,mergeable,mergeStateStatus,isDraft,state",
+    "stack view --json feature-2",
+    "api repos/fake-owner/fake-repo-1121/stacks/2",
+    "stack merge 2 --yes --squash"
+  ]
+}

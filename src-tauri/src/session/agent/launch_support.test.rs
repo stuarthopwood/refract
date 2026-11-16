@@ -63,11 +63,12 @@ fn verify_reattach_fails_on_a_zero_message_count() {
 fn make_session_for_notice(last_message_count: Option<i64>) -> crate::store::registry::Session {
     crate::store::registry::Session {
         id: "session-1".to_string(),
-        repository_id: "repo-1".to_string(),
+        kind: crate::store::session_kind::SessionKind::Project,
+        repository_id: Some("repo-1".to_string()),
         name: "test".to_string(),
-        branch: "feat/test".to_string(),
-        base_branch: "main".to_string(),
-        worktree_path: "C:/repos/x".to_string(),
+        branch: Some("feat/test".to_string()),
+        base_branch: Some("main".to_string()),
+        worktree_path: Some("C:/repos/x".to_string()),
         session_dir: None,
         current_conversation: Some("C:/sessions/swift-otter/conv.jsonl".to_string()),
         last_message_count,
@@ -83,6 +84,7 @@ fn make_session_for_notice(last_message_count: Option<i64>) -> crate::store::reg
         stopped_on_request_at_size: None,
         pinned_model: false,
         origin_issue: None,
+        parent_session_id: None,
     }
 }
 

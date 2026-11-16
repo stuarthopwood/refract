@@ -13,6 +13,7 @@ use crate::github::gh_issue_list;
 use crate::github::gh_permission::author_has_write_access;
 use crate::github::gh_pull_requests::GhPrViewDetail;
 use crate::store::registry::{OriginIssue, Session};
+use crate::store::session_kind::SessionKind;
 
 use super::pull_requests::{map_gh_error, repo_path_for};
 use super::{
@@ -169,11 +170,12 @@ pub(super) fn issues_new_session(state: AppState, args: Vec<Value>) -> HandlerFu
         let now = now_iso8601();
         let session = Session {
             id: uuid::Uuid::new_v4().to_string(),
-            repository_id: repository_id.to_string(),
+            kind: SessionKind::Project,
+            repository_id: Some(repository_id.to_string()),
             name: format!("#{number} {}", issue.title),
-            branch: added.branch.clone(),
-            base_branch,
-            worktree_path: added.worktree_path.to_string_lossy().into_owned(),
+            branch: Some(added.branch.clone()),
+            base_branch: Some(base_branch),
+            worktree_path: Some(added.worktree_path.to_string_lossy().into_owned()),
             session_dir: None,
             current_conversation: None,
             last_message_count: None,
@@ -193,6 +195,7 @@ pub(super) fn issues_new_session(state: AppState, args: Vec<Value>) -> HandlerFu
                 title: issue.title.clone(),
                 url: issue.url.clone(),
             }),
+            parent_session_id: None,
         };
         let registered = state
             .registry

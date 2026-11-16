@@ -356,6 +356,8 @@ async fn a_process_exit_clears_the_cancelled_list_so_resume_posts_no_notice() {
     fx.agent.handle_exit(&process, Some(1), false).await;
 
     assert!(fx.cancelled().await.is_empty());
+    // Resume starts an agent with no process; this test is about the notice, so keep the dead one attached.
+    fx.agent.state.lock().await.process = Some(process);
     fx.agent.resume().await.unwrap();
     assert!(!fx
         .notices()

@@ -34,7 +34,8 @@ pub fn truncate_display_name(name: &str) -> String {
         .collect()
 }
 
-fn is_invisible_format(c: char) -> bool {
+/// The one list of invisible format/bidi characters (also used for approval card lines).
+pub(crate) fn is_invisible_format(c: char) -> bool {
     matches!(
         c as u32,
         0x00AD

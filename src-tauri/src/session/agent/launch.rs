@@ -17,6 +17,10 @@ use crate::session::side_chat::reset_after_start_with_conversation;
 use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
 
+fn personal_not_launchable() -> AgentError {
+    AgentError::new("unsupported", "The Personal Agent cannot be started yet.")
+}
+
 impl SessionAgent {
     /// Refuses while the Session's worktree is being deleted. Called under `start_lock`, so a
     /// delete that claims the Session after the caller's earlier check cannot be raced.
@@ -65,12 +69,15 @@ impl SessionAgent {
             self.set_status(
                 SessionStatus::Stopped,
                 Some("worktree-missing"),
-                Some(session.worktree_path.clone()),
+                session.worktree_path.clone(),
             )
             .await;
             return Err(AgentError::new(
                 "worktree-missing",
-                format!("Worktree missing: {}", session.worktree_path),
+                format!(
+                    "Worktree missing: {}",
+                    session.worktree_path.as_deref().unwrap_or_default()
+                ),
             ));
         }
         self.launch(&session, "").await
@@ -79,15 +86,18 @@ impl SessionAgent {
     /// Checks the worktree via git, not just the folder. `Unknown` never blocks a start,
     /// because a slow disk scan is not evidence that the worktree is missing.
     async fn worktree_validity(&self, session: &Session) -> WorktreeValidity {
+        let Some(binding) = session.project_binding() else {
+            return WorktreeValidity::Unknown;
+        };
         let repo_path = {
             let registry = self.registry.lock().await;
             registry
-                .get_repository(&session.repository_id)
+                .get_repository(binding.repository_id)
                 .map(|r| r.path.clone())
         };
         match repo_path {
             Some(path) => {
-                worktree_is_valid(Path::new(&path), Path::new(&session.worktree_path)).await
+                worktree_is_valid(Path::new(&path), Path::new(binding.worktree_path)).await
             }
             None => WorktreeValidity::Invalid,
         }
@@ -115,7 +125,7 @@ impl SessionAgent {
             self.set_status(
                 SessionStatus::Stopped,
                 Some("worktree-missing"),
-                Some(session.worktree_path.clone()),
+                session.worktree_path.clone(),
             )
             .await;
         }
@@ -149,7 +159,10 @@ impl SessionAgent {
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
-        if tokio::fs::metadata(&session.worktree_path).await.is_ok() {
+        let Some(binding) = session.project_binding() else {
+            return Err(personal_not_launchable());
+        };
+        if tokio::fs::metadata(binding.worktree_path).await.is_ok() {
             let prev = self.current_conversation_path().await;
             let patch = SessionPatch {
                 current_conversation: Some(file.clone()),
@@ -173,21 +186,32 @@ impl SessionAgent {
         session: &Session,
         failure_prefix: &str,
     ) -> Result<(), AgentError> {
+        // The Personal Agent has no working folder until its launch path exists.
+        let Some(binding) = session.project_binding() else {
+            return Err(personal_not_launchable());
+        };
         // A new life clears the previous life's stop marker.
         self.clear_stopped_on_request_marker().await;
 
         let approval_mode = self.settings.lock().await.get().approval_mode;
         let mut opts = OmpProcessOptions::new(
-            PathBuf::from(&session.worktree_path),
+            PathBuf::from(binding.worktree_path),
             to_process_mode(approval_mode),
         );
         // Always set, so a Session out of Plan overrides a global plan.defaultOnStartup.
         opts.plan_mode = Some(crate::session::working_mode::plan_for_launch(self).await);
-        opts.extra_config = crate::agent_tools::overlay_config(
-            &crate::data_dir(),
-            crate::agent_tools::ToolAccess::root(),
-        )
-        .await;
+        // Both launch sites read the depth here, so a restart after a re-parent sees the new one.
+        let tool_access = {
+            let registry = self.registry.lock().await;
+            crate::agent_tools::ToolAccess::for_session(&registry.snapshot().sessions, &session.id)
+        };
+        opts.extra_config =
+            crate::agent_tools::overlay_config(&crate::data_dir(), tool_access).await;
+        let setting_on = self.settings.lock().await.get().stacked_pull_requests;
+        opts.stacked_prs = crate::github::gh_stack_state::stack_rules_enabled(
+            setting_on,
+            &crate::github::gh_stack_state::state(crate::github::gh_stack_state::runtime()).await,
+        );
 
         // Process-wide start slot and low-memory defer.
         let slot_guard = crate::session::start_queue::acquire_slot(self).await?;
@@ -197,7 +221,7 @@ impl SessionAgent {
         let mut launch_warnings = Vec::new();
         // Detached so the filesystem walk never delays the launch; the notice emits when ready.
         let roster_agent = self.arc();
-        let roster_cwd = PathBuf::from(&session.worktree_path);
+        let roster_cwd = PathBuf::from(binding.worktree_path);
         tokio::spawn(async move {
             if let Some(roster) = crate::omp::advisor_roster::detect_for(Some(roster_cwd)).await {
                 roster_agent
@@ -290,8 +314,7 @@ impl SessionAgent {
             }
         };
         let ask_dialog_enabled = send_set_ask_dialog(self, &proc).await;
-        crate::agent_tools::register_host_tools(&proc, crate::agent_tools::ToolAccess::root())
-            .await;
+        crate::agent_tools::register_host_tools(&proc, tool_access).await;
         // Compares the pre-launch count with the observed state before `sync_from_state` re-baselines it.
         let rebaseline_notice = session
             .current_conversation
@@ -349,6 +372,7 @@ impl SessionAgent {
             crate::session::readout::on_history_loaded(self, &messages).await;
         }
         self.sync_from_state(&state_data, None).await;
+        crate::session::model::on_launch(self).await;
         self.fail_if_process_changed(&proc, failure_prefix).await?;
 
         self.emit_status().await;

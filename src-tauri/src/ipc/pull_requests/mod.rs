@@ -5,6 +5,7 @@ mod checks;
 mod extra_handlers;
 mod handlers;
 mod mapping;
+mod stack_refs_cache;
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -308,6 +309,7 @@ pub(super) fn forget_cache(repository_id: &str, number: u64) {
         .lock()
         .expect("STALE_CACHE mutex poisoned")
         .remove(&cache_key(repository_id, number));
+    stack_refs_cache::shared().invalidate(repository_id);
 }
 
 /// Tells the renderer a PR was merged or closed so its lists refresh in the background.

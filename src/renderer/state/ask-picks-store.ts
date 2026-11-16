@@ -33,8 +33,8 @@ const EMPTY_ASK_DRAFT: AskDraft = { byQuestionId: {} }
 
 interface AskPicksState {
   bySession: Record<string, Record<string, AskDraft>>
-  /** Marks `questionId` as the open tab and viewed. */
-  setActiveQuestion(sessionId: string, requestId: string, questionId: string): void
+  /** Marks `questionId` as the open tab and viewed. `preselect` (a single-choice question's recommended label) applies only on the first open, and never over a pick or Other already made. */
+  setActiveQuestion(sessionId: string, requestId: string, questionId: string, preselect?: string): void
   selectSingleOption(sessionId: string, requestId: string, questionId: string, label: string): void
   /** Single choice only: the Other radio clicked with no text yet. */
   selectOther(sessionId: string, requestId: string, questionId: string): void
@@ -42,6 +42,8 @@ interface AskPicksState {
   /** `multi` picks which Other field typing affects. */
   setCustomInput(sessionId: string, requestId: string, questionId: string, text: string, multi: boolean): void
   toggleOtherTicked(sessionId: string, requestId: string, questionId: string): void
+  /** Replaces a question's whole draft; for "Use Recommended", which sets pick and Other together. */
+  replaceQuestionDraft(sessionId: string, requestId: string, questionId: string, next: AskDraftQuestion): void
   clear(sessionId: string, requestId: string): void
 }
 
@@ -75,10 +77,12 @@ function updateQuestion(
 
 export const useAskPicksStore = create<AskPicksState>((set, get) => ({
   bySession: {},
-  setActiveQuestion: (sessionId, requestId, questionId) => {
+  setActiveQuestion: (sessionId, requestId, questionId, preselect) => {
     const state = get()
     const question = getQuestionDraft(state, sessionId, requestId, questionId)
-    set(updateQuestion(state, sessionId, requestId, questionId, { ...question, viewed: true }, questionId))
+    const untouched = !question.viewed && question.selectedOptions.length === 0 && !question.otherSelected
+    const next = preselect !== undefined && untouched ? { ...question, selectedOptions: [preselect] } : question
+    set(updateQuestion(state, sessionId, requestId, questionId, { ...next, viewed: true }, questionId))
   },
   selectSingleOption: (sessionId, requestId, questionId, label) => {
     const state = get()
@@ -111,6 +115,7 @@ export const useAskPicksStore = create<AskPicksState>((set, get) => ({
     const question = getQuestionDraft(state, sessionId, requestId, questionId)
     set(updateQuestion(state, sessionId, requestId, questionId, { ...question, otherTicked: !question.otherTicked }))
   },
+  replaceQuestionDraft: (sessionId, requestId, questionId, next) => set(updateQuestion(get(), sessionId, requestId, questionId, next)),
   clear: (sessionId, requestId) => {
     const state = get()
     const bySessionEntry = { ...state.bySession[sessionId] }
