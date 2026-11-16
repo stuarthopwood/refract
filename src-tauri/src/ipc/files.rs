@@ -7,7 +7,7 @@ use crate::fs::resolve::{
     resolve_in_worktree, resolve_reason_code, resolve_reason_message, ResolveReason,
 };
 
-use super::{arg_str, invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
+use super::{arg_str, invalid_argument, AppState, Dispatcher, HandlerFuture, IpcError};
 
 pub fn register(d: &mut Dispatcher) {
     d.register("sessions.revealFile", sessions_reveal_file);
@@ -60,15 +60,8 @@ pub fn sessions_reveal_file(state: AppState, args: Vec<Value>) -> HandlerFuture 
             }
         };
 
-        let worktree_path = {
-            let registry = state.registry.lock().await;
-            match registry.get_session(&session_id) {
-                Some(session) => super::project_session::project_binding(session)?
-                    .worktree_path
-                    .to_string(),
-                None => return Err(not_found(format!("Session not found: {session_id}"))),
-            }
-        };
+        let worktree_path =
+            super::project_session::session_working_dir(&state, &session_id).await?;
 
         let resolved = resolve_in_worktree(std::path::Path::new(&worktree_path), &token)
             .await

@@ -30,7 +30,7 @@ const invocations = (file) =>
   existsSync(file)
     ? readFileSync(file, 'utf8')
         .split('\n')
-        .filter((l) => / argv=\[/.test(l) && l.includes('rpc-ui'))
+        .filter((l) => / argv=\[/.test(l) && l.includes('rpc-ui') && !l.includes('"--no-session"'))
         .map((l) => ({ argv: JSON.parse(l.match(/argv=(\[.*\]) cwd=/)[1]), cwd: l.slice(l.indexOf(' cwd=') + 5) }))
     : [];
 
@@ -117,6 +117,8 @@ async function main() {
     const attached = probeName ? await call(cdp, `window.refract.attachments.readFile(${JSON.stringify(id)}, ${JSON.stringify(probeName)})`) : { ok: false, error: { message: 'no small file in the home folder to attach' } };
     const roster = await call(cdp, `window.refract.advisorRoster.detect(${JSON.stringify(id)})`);
     check(attached.ok && norm(attached.value.path) === norm(path.join(home, probeName)) && roster.ok, 'e2. attachments.readFile resolves a file in the home folder and advisorRoster.detect returns without not-found', { probeName, attached: attached.ok ? { kind: attached.value.kind, path: attached.value.path, byteLength: attached.value.byteLength } : attached.error, roster: roster.ok ? roster.value : roster.error });
+    const reveal = probeName ? await call(cdp, `window.refract.sessions.revealFile(${JSON.stringify(id)}, ${JSON.stringify(probeName)})`) : { ok: false, error: { message: 'no probe file' } };
+    check(reveal.ok === true, 'e3. sessions.revealFile with the personal id and a path under the home folder succeeds', { probeName, ok: reveal.ok, error: reveal.error });
 
     // f. a Project Session is unchanged
     const added = await call(cdp, `window.refract.repositories.add(${JSON.stringify(repoDir)})`);
