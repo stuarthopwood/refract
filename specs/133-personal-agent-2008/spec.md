@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feat/2004-personal-agent-model`
 **Created**: 2026-11-16
-**Status**: Draft
+**Status**: Clarified
 **Input**: Epic #2008 "Personal Agent" and its children #2004 (data model), #2005 (create and launch), #2006 (launcher button), #2007 (disable repo-only features), plus the epic grill and the #2004 grill with Stuart on 2026-11-16. Route: specify. One spec covers the whole epic; the first PR implements only the #2004 phase and the later children converge against this spec.
 
 ## Problem
@@ -24,6 +24,28 @@ This feature adds one built-in **Personal Agent**: a **Session** with no **Proje
 7. **Repo-only features.** Git changes, file explorer, pull requests, diff and **Worktree** actions show disabled with an explanatory empty state in the Personal Agent. They are not hidden (#2007).
 8. **Scope.** One spec for the whole epic, tasks grouped per child. Only the #2004 phase is implemented in the first PR.
 9. **Priority.** The epic and all four children are p0.
+
+## Clarifications
+
+### Session 2026-11-16
+
+Every answer below comes from the epic grill and the #2004 grill (Stuart grill 2026-11-16); nothing was invented. Points the grill did not settle are in Open questions.
+
+- Q: Is the Personal Agent a Session type the developer can create many of? -> A: No. It is a single built-in Session; there is one, created on first open (Stuart grill 2026-11-16, decision 1).
+- Q: How does a Session say it is a Personal Agent? -> A: A `kind` of `project` or `personal`. A registry without `kind` loads as `project` (Stuart grill 2026-11-16, decision 2).
+- Q: Which fields are absent for the Personal Agent? -> A: The repository, branch, base branch and **Worktree** path, and only for `personal`; they stay required for `project` (Stuart grill 2026-11-16, decision 2).
+- Q: What is the Personal Agent called? -> A: "Personal Agent" is the glossary term and the meaning of the `personal` kind; the display name defaults to "My Agent" and is renameable like any Session; "My Agent" is a default label, not a second term (Stuart grill 2026-11-16, decision 3).
+- Q: Can it be archived or deleted? -> A: No. Rust rejects both with an error and #2007 shows those actions disabled. Stop, start, pause, rename and new Conversations are allowed (Stuart grill 2026-11-16, decision 4).
+- Q: Where is its working folder stored? -> A: Nowhere. The fields stay absent and launch (#2005) resolves the developer's home folder each time (Stuart grill 2026-11-16, decision 5).
+- Q: Is the home folder sandboxed? -> A: No. The agent can read and write real files there; this is Stuart's explicit choice (Stuart grill 2026-11-16, decision 5).
+- Q: How is it created and where is it opened from? -> A: From a launcher button above the projects list, which opens it and creates it if absent, with no repository or branch picker (Stuart grill 2026-11-16, decision 6).
+- Q: What does the session list look like? -> A: Launcher button, divider, a "Projects" label, then the project groups (Stuart grill 2026-11-16, decision 6).
+- Q: Are repo-only features hidden or disabled in the Personal Agent? -> A: Disabled with an explanatory empty state, not hidden (Stuart grill 2026-11-16, decision 7).
+- Q: One spec or one per child? -> A: One spec for the whole epic with tasks grouped per child; only the #2004 phase is implemented in the first PR and later children converge against this spec (Stuart grill 2026-11-16, decision 8).
+- Q: Does Session cleanup (automatic archive or delete) apply to it? -> A: No. This follows from "cannot be archived or deleted" (Stuart grill 2026-11-16, decision 4), recorded as FR-010.
+- Q: Does it use the existing conversation machinery (approvals, token guard, Conversations, recovery)? -> A: Yes, unchanged (Stuart grill 2026-11-16, decision 1), recorded as FR-014.
+- Q: What order do the children run in? -> A: #2004 first; #2005 depends on #2004, #2007 depends only on #2004, #2006 depends on #2005 (docs/PLAN.md rows for #2008 and #2004-#2007), so the task phases run #2004, #2005, #2007, #2006 (Stuart grill 2026-11-16, decision 8).
+
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -189,3 +211,13 @@ The launcher is a real labelled button with a visible focus ring and a selected 
 ## Out of scope
 
 Multiple personal agents, user-created project-less Sessions, a sandbox or a folder picker for the Personal Agent, moving a Personal Agent into a Project, cross-Session agent tools for it beyond what the open questions settle, and any change to side chat.
+
+## Open questions
+
+The grill did not settle these. Each has an interim default so the first phase is not blocked; none may be treated as decided.
+
+- **OQ-1 Agent Session tools.** How do the agent Session tools (list, status, message, create, update) treat the Personal Agent as caller or target? Interim: Project-scoped tools neither list nor act on it, and it cannot create Child Sessions (a Child Session needs a **Worktree**).
+- **OQ-2 Hide from list.** The Personal Agent is the list's top button, not a row. Does hide-from-list apply? Interim: the hide action is not offered for it.
+- **OQ-3 Duplicate on disk.** A registry on disk that already holds two `personal` Sessions (hand-edited or from a bug). Interim: load without crashing, keep the earliest as the singleton and report the rest; never delete silently.
+- **OQ-4 Home folder failure.** The home folder cannot be resolved or no longer exists at launch. Interim: the launch fails with a visible error and no fallback directory.
+- **OQ-5 omp and a non-repository folder.** Whether omp needs a git repository for any path the Personal Agent uses is not known; #2005 verifies it live and raises any gap upstream (FR-015).
