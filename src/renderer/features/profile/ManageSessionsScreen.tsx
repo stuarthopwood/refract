@@ -6,7 +6,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { focusProfileItemName } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
-import type { SessionSummary } from '../../../shared/ipc'
+import type { ProjectSessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { ManageSessionRow } from './ManageSessionRow'
 import { ManageSessionsToolbar } from './ManageSessionsToolbar'
@@ -36,12 +36,12 @@ export function ManageSessionsScreen() {
   const activeElement = typeof document !== 'undefined' ? document.activeElement : null
   const renameInputFocused = activeElement instanceof HTMLInputElement && !!listRef.current?.contains(activeElement)
   const frozenOrderRef = useRef<string[] | null>(null)
-  let visible: SessionSummary[]
+  let visible: ProjectSessionSummary[]
   if (renameInputFocused && frozenOrderRef.current) {
     const byId = new Map(freshlySorted.map((session) => [session.id, session]))
     const frozenIds = new Set(frozenOrderRef.current)
     visible = [
-      ...frozenOrderRef.current.map((id) => byId.get(id)).filter((session): session is SessionSummary => !!session),
+      ...frozenOrderRef.current.map((id) => byId.get(id)).filter((session): session is ProjectSessionSummary => !!session),
       ...freshlySorted.filter((session) => !frozenIds.has(session.id))
     ]
   } else {

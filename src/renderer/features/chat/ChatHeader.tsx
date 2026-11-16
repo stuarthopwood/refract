@@ -96,7 +96,7 @@ export function ChatHeader({
         <span className="sr-only">{displayLabel(session)}</span>
         <span className="min-w-0 truncate text-sm font-medium" title={session.name}>{session.name}</span>
         {session.hiddenAt && <HiddenMarker />}
-        <span className="min-w-0 truncate text-xs text-muted-foreground" title={session.branch}>{session.branch}</span>
+        <span className="min-w-0 truncate text-xs text-muted-foreground" title={session.branch ?? undefined}>{session.branch}</span>
         {focused && (
           <Badge variant="focused">Focused</Badge>
         )}

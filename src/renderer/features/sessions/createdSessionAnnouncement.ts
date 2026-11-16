@@ -17,7 +17,7 @@ export function createdSessionAnnouncement(session: Pick<Session, 'id' | 'name' 
     query,
     useSessionListStore.getState().showHidden
   )
-  const matches = matchingByRepository.get(session.repositoryId)?.some((candidate) => candidate.id === session.id) ?? false
+  const matches = session.repositoryId !== null && (matchingByRepository.get(session.repositoryId)?.some((candidate) => candidate.id === session.id) ?? false)
   return matches ? `Created session ${session.name}` : `Created session ${session.name}${HIDDEN_SUFFIX}`
 }
 

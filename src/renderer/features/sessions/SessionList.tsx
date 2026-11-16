@@ -38,7 +38,7 @@ export function SessionList() {
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
   // Archived counts toward "all" only while shown, and is computed from the unfiltered list since a search-hidden group still counts (#735).
   const archivedSessions = sessions.filter(
-    (session) => session.archivedAt && repositoriesById.has(session.repositoryId) && (!session.hiddenAt || showHidden)
+    (session) => session.archivedAt && session.repositoryId !== null && repositoriesById.has(session.repositoryId) && (!session.hiddenAt || showHidden)
   )
   const archivedVisible = archivedSessions.length > 0
   // `searchSessions` is the one place that computes query matches, shared with the debounced announcement so they cannot disagree.

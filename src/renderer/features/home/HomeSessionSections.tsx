@@ -27,7 +27,7 @@ export function useHomeSessions(): { needsYou: SessionSummary[]; recent: Session
 export function openSession(session: SessionSummary): void {
   useSplitStore.getState().replaceFocused(session.id)
   void useSessionsStore.getState().open(session.id)
-  useViewStore.getState().openChat(session.repositoryId)
+  useViewStore.getState().openChat(session.repositoryId ?? undefined)
 }
 
 function SessionCard({ session, lastMessage }: { session: SessionSummary; lastMessage?: string | null }) {

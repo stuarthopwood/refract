@@ -23,6 +23,7 @@ import type {
   ProjectColor,
   Repository,
   RepositoryRemote,
+  ProjectSession,
   Session,
   SessionListCollapse, SessionReadout,
   SessionStartProgress,
@@ -94,7 +95,8 @@ export type IpcErrorCode =
   | 'disabled'
   | 'session-archived'
   | 'worktree-held' | 'worktree-busy' | 'destination-not-empty' | 'too-many-clones' | 'destination-in-use'
-  | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed'; // lane R11b (#794); #1265 settings.json write failed
+  | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed' // lane R11b (#794); #1265 settings.json write failed
+  | 'personal-agent-exists' | 'personal-agent-protected';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -117,7 +119,7 @@ export interface Readiness {
   ompSignedIn: Check;
 }
 /** `sessions.list()` row. */
-export interface SessionSummary extends Session {
+export interface SessionSummaryFields {
   status: SessionStatus;
   stopReason?: 'agent-exited' | 'worktree-missing' | 'start-failed' | 'not-started';
   terminatedUnexpectedly?: boolean;
@@ -136,6 +138,9 @@ export interface SessionSummary extends Session {
   currentRole?: string | null;
   activity?: SessionActivity | null;
 }
+export type SessionSummary = Session & SessionSummaryFields;
+/** A `sessions.list()` row narrowed to a Project Session (has a repository and worktree). */
+export type ProjectSessionSummary = ProjectSession & SessionSummaryFields;
 
 /** `sessions.diffStat(id)` result. */
 export type { DiffStat } from './model';

@@ -59,7 +59,7 @@ export function buildPaletteItems(loaded: PaletteConversations | null): PaletteI
       section: 'Sessions',
       label: session.name,
       icon: createElement(StateIcon, { status: displayStatus(session) }),
-      hint: repositoryNames.get(session.repositoryId),
+      hint: session.repositoryId ? repositoryNames.get(session.repositoryId) : undefined,
       run: () => openSession(session)
     })
   }
