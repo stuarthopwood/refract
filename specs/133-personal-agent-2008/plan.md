@@ -8,7 +8,7 @@ One plan for the epic (#2008). Only the #2004 phase (Phase 1 below) is implement
 
 ## Summary
 
-Add a `kind` (`project` | `personal`) to the persisted **Session**, make the four repository fields optional only for `personal`, and enforce the singleton and the "cannot archive or delete" rule in Rust. The interface sees a discriminated union so every consumer must handle `personal`. Later children add the launch path (home folder cwd, no **Worktree**), the launcher button above the **Projects** list, and the disabled repo-only surfaces. No new storage, process mode or conversation machinery is added: the Personal Agent is an ordinary Session row that a launcher opens.
+Add a `kind` (`project` | `personal`) to the persisted **Session**, make the four repository fields optional only for `personal`, and enforce the singleton and the "cannot archive or delete" rule in Rust. The interface sees a discriminated union so every consumer must handle `personal`. Later children add the launch path (home folder cwd, no **Worktree**), the launcher button above the **Projects** list, and the repo-only empty state. No new storage, process mode or conversation machinery is added: the Personal Agent is an ordinary Session row that a launcher opens.
 
 ## Technical Context
 
@@ -120,10 +120,10 @@ See [data-model.md](data-model.md) and [contracts/session-kind.md](contracts/ses
 - Launch: the start gate at `launch.rs:64-94` is skipped for `personal`; the agent cwd and roster cwd at `launch.rs:181` and `:207` become the home folder resolved on every launch (home resolved in Rust via the existing platform helper; precedent for a non-repo cwd: `ipc/readiness.rs:300-301`, `omp/login_providers.rs:66-67`). A missing home folder fails the launch visibly (OQ-4).
 - Docs: constitution Principle I and III amendment (version bump per its governance), FINDINGS item for the omp non-repository probe (next free item), `CONTEXT.md` already has the term.
 
-**#2007 disable repo-only features.**
+**#2007 repo-only empty state.**
 
-- Rust handlers that take a Session id and need a worktree return a clean empty result for `personal`: `git_changes`, `file_explorer`, `files`, `diag` (diffStat, reveal), `pull_requests`, `issues`, `session_kickoff`, `sessions_recreate_worktree`.
-- Renderer: the git changes panel, file explorer, PR and diff views, and worktree actions show a disabled state through one reusable disabled-surface component (ADR 0003) with the explanation as text; archive and delete show disabled with the reason.
+- Rust handlers that take a Session id and need a worktree return a typed `no-repository` result for `personal` (not logged as an error): `git_changes`, `file_explorer`, `files`, `diag` (diffStat, reveal), `pull_requests`, `issues`, `session_kickoff`, `sessions_recreate_worktree`. Add `no-repository` to `IPC_ERROR_CODES` in `src-tauri/src/ipc/mod.rs` and the mirror in `src/shared/ipc.ts`.
+- Renderer: the git changes panel, file explorer, PR and diff views gate on `kind`, make no backend call, and show one shared empty state built on the existing `Empty` primitive (title "No repository"; body "The Personal Agent isn't linked to a Project, so there are no changes, files, or pull requests to show."). Worktree actions are removed from the Personal Agent's menus, not disabled; archive and delete show disabled with the reason.
 
 **#2006 launcher button.**
 
@@ -133,8 +133,8 @@ See [data-model.md](data-model.md) and [contracts/session-kind.md](contracts/ses
 
 - Every phase: `pnpm ci:local`; no file over 600 lines.
 - #2004 live: `pnpm verify:tauri` (or a scratch-instance script in `scripts/`) on an isolated data folder seeded with a pre-feature `registry.json`: all Sessions load as `project` and round-trip unchanged (SC-001); a `personal` row can be added once, a second is refused, archive and delete are refused (SC-002). Isolation per the Refract scratch-instance skills.
-- #2005 live: first launch with no worktree on disk, agent cwd is the home folder, a reply arrives (SC-003, SC-004).
-- #2006 and #2007 live: CDP check of layout, states and disabled surfaces with an empty app log (SC-005).
+- #2005 live: call the create-or-open IPC over CDP (no UI entry point until #2006); first launch with no worktree on disk, agent cwd is the home folder, a reply arrives (SC-003, SC-004).
+- #2006 and #2007 live: CDP check of layout, states and the empty state with an empty app log (SC-005).
 
 ## Complexity Tracking
 
