@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { Fragment, useId, type ReactNode } from 'react'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
@@ -81,36 +81,32 @@ function availability(action: ActionItem, reasonId: string | undefined): ItemAva
   }
 }
 
-/** The label, plus the reason as the item's accessible description and a tooltip on hover and keyboard focus. */
-function withReason(action: ActionItem, item: (props: ItemAvailability, label: ReactNode) => ReactNode): ReactNode {
+/** The label, plus the reason as the item's accessible description (kept out of its name) and a tooltip on hover and keyboard focus. */
+function withReason(action: ActionItem, idPrefix: string, item: (props: ItemAvailability, label: ReactNode) => ReactNode): ReactNode {
   const label = <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
   if (!action.reason) return item(availability(action, undefined), label)
-  const reasonId = `session-action-${action.key}-reason`
+  const reasonId = `${idPrefix}-${action.key}`
   return (
-    <Tooltip key={action.key}>
-      <TooltipTrigger asChild>
-        {item(
-          availability(action, reasonId),
-          <>
-            {label}
-            <span id={reasonId} className="sr-only">
-              {action.reason}
-            </span>
-          </>
-        )}
-      </TooltipTrigger>
-      <TooltipContent side="right">{action.reason}</TooltipContent>
-    </Tooltip>
+    <Fragment key={action.key}>
+      <Tooltip>
+        <TooltipTrigger asChild>{item(availability(action, reasonId), label)}</TooltipTrigger>
+        <TooltipContent side="right">{action.reason}</TooltipContent>
+      </Tooltip>
+      <span id={reasonId} className="sr-only">
+        {action.reason}
+      </span>
+    </Fragment>
   )
 }
 
 /** One action list, two menus (the "..." dropdown and the right-click context menu). */
 export function DropdownActionItems({ actions }: { actions: SessionRowAction[] }) {
+  const idPrefix = useId()
   return actions.map((action, index) =>
     action.kind === 'separator' ? (
       <DropdownMenuSeparator key={`sep-${index}`} />
     ) : (
-      withReason(action, (props, label) => (
+      withReason(action, idPrefix, (props, label) => (
         <DropdownMenuItem key={action.key} variant={action.variant} icon={action.icon} {...props}>
           {label}
         </DropdownMenuItem>
@@ -120,11 +116,12 @@ export function DropdownActionItems({ actions }: { actions: SessionRowAction[] }
 }
 
 export function ContextActionItems({ actions }: { actions: SessionRowAction[] }) {
+  const idPrefix = useId()
   return actions.map((action, index) =>
     action.kind === 'separator' ? (
       <ContextMenuSeparator key={`sep-${index}`} />
     ) : (
-      withReason(action, (props, label) => (
+      withReason(action, idPrefix, (props, label) => (
         <ContextMenuItem key={action.key} variant={action.variant} icon={action.icon} {...props}>
           {label}
         </ContextMenuItem>

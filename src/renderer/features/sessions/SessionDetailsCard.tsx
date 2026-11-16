@@ -67,8 +67,8 @@ export function SessionDetailsCard({
   function handleCardOpenChange(open: boolean): void {
     if (!open) return
     const requestId = ++requestIdRef.current
-    setDiffStatResult('loading')
     if (!isProjectSession(session)) return
+    setDiffStatResult('loading')
     void window.refract.sessions.diffStat(session.id).then((result) => {
       if (requestIdRef.current !== requestId) return // superseded by a later open
       setDiffStatResult(result.ok ? result.value : null)
@@ -101,45 +101,45 @@ export function SessionDetailsCard({
               {activityText && <p className="break-words pl-6 text-xs text-muted-foreground">{activityText}</p>}
             </div>
             {projectSession && (
-            <>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <FolderIcon aria-hidden className="size-4 shrink-0" />
-              <span className="truncate">{repository.name}</span>
-            </div>
-            <div className="flex items-center gap-2 text-xs">
-              <GitBranchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="truncate">{session.branch}</span>
-              <span className="shrink-0 text-muted-foreground">from {session.baseBranch}</span>
-            </div>
-            <div className="flex items-start gap-2 text-xs text-muted-foreground">
-              <MapPinIcon aria-hidden className="size-4 shrink-0" />
-              <p className="min-w-0 flex-1 break-all">
-                {worktreeMissing ? (
-                  <>
-                    {session.worktreePath} <span className="text-destructive">(missing)</span>
-                  </>
-                ) : (
-                  session.worktreePath
-                )}
-              </p>
-              <div className="-my-1 flex shrink-0 gap-1">
-                <IconButton
-                  label={worktreeMissing ? 'Worktree missing' : REVEAL_ACTION_LABEL}
-                  size="icon-xs"
-                  className="shrink-0 aria-disabled:opacity-50"
-                  aria-disabled={worktreeMissing || undefined}
-                  onClick={() => {
-                    if (!worktreeMissing) void reveal()
-                  }}
-                >
-                  <RevealActionIcon aria-hidden />
-                </IconButton>
-                <IconButton label="Copy path" size="icon-xs" className="shrink-0" onClick={() => void copyPath()}>
-                  <CopyIcon aria-hidden />
-                </IconButton>
-              </div>
-            </div>
-            </>
+              <>
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <FolderIcon aria-hidden className="size-4 shrink-0" />
+                  <span className="truncate">{repository.name}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <GitBranchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{session.branch}</span>
+                  <span className="shrink-0 text-muted-foreground">from {session.baseBranch}</span>
+                </div>
+                <div className="flex items-start gap-2 text-xs text-muted-foreground">
+                  <MapPinIcon aria-hidden className="size-4 shrink-0" />
+                  <p className="min-w-0 flex-1 break-all">
+                    {worktreeMissing ? (
+                      <>
+                        {session.worktreePath} <span className="text-destructive">(missing)</span>
+                      </>
+                    ) : (
+                      session.worktreePath
+                    )}
+                  </p>
+                  <div className="-my-1 flex shrink-0 gap-1">
+                    <IconButton
+                      label={worktreeMissing ? 'Worktree missing' : REVEAL_ACTION_LABEL}
+                      size="icon-xs"
+                      className="shrink-0 aria-disabled:opacity-50"
+                      aria-disabled={worktreeMissing || undefined}
+                      onClick={() => {
+                        if (!worktreeMissing) void reveal()
+                      }}
+                    >
+                      <RevealActionIcon aria-hidden />
+                    </IconButton>
+                    <IconButton label="Copy path" size="icon-xs" className="shrink-0" onClick={() => void copyPath()}>
+                      <CopyIcon aria-hidden />
+                    </IconButton>
+                  </div>
+                </div>
+              </>
             )}
             {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). */}
             <div className="flex flex-col gap-1">
@@ -162,19 +162,19 @@ export function SessionDetailsCard({
               {session.lastModel && <p className="truncate pl-6 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>
             {projectSession && (
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <FileDiffIcon aria-hidden className="size-4 shrink-0" />
-              {/* Issue #925: both now render through the shared `DiffStatLine`, so the figure is coloured (and paired with its sr-only text) exactly the same way in both places. */}
-              {worktreeMissing || diffStatResult === 'loading' || diffStatResult === null ? (
-                <span className="truncate">
-                  {worktreeMissing ? 'Not available' : diffStatResult === 'loading' ? 'Counting changes…' : 'Not available'}
-                </span>
-              ) : (
-                <span className="truncate">
-                  <DiffStatLine stat={diffStatResult} />
-                </span>
-              )}
-            </div>
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <FileDiffIcon aria-hidden className="size-4 shrink-0" />
+                {/* Issue #925: both now render through the shared `DiffStatLine`, so the figure is coloured (and paired with its sr-only text) exactly the same way in both places. */}
+                {worktreeMissing || diffStatResult === 'loading' || diffStatResult === null ? (
+                  <span className="truncate">
+                    {worktreeMissing ? 'Not available' : diffStatResult === 'loading' ? 'Counting changes…' : 'Not available'}
+                  </span>
+                ) : (
+                  <span className="truncate">
+                    <DiffStatLine stat={diffStatResult} />
+                  </span>
+                )}
+              </div>
             )}
           </div>
         </HoverCardContent>
