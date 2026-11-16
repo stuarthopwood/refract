@@ -7,8 +7,8 @@ use serde_json::{json, Value};
 
 use super::launch_support::{
     append_ask_dialog_unavailable_notice, assert_conversation_file_exists, fetch_all_messages,
-    personal_home_folder, reattach_rebaseline_notice, registry_store_error_message,
-    send_set_ask_dialog, to_process_mode, verify_reattach,
+    reattach_rebaseline_notice, registry_store_error_message, send_set_ask_dialog, to_process_mode,
+    verify_reattach,
 };
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
@@ -16,6 +16,7 @@ use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
 use crate::session::side_chat::reset_after_start_with_conversation;
 use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
+use crate::store::session_kind::personal_home_folder;
 
 impl SessionAgent {
     /// The agent's working folder, and whether omp must be told it with `--cwd`. A Project

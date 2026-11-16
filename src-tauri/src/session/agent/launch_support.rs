@@ -40,24 +40,6 @@ pub(super) async fn assert_conversation_file_exists(file: &str) -> Result<(), St
     Ok(())
 }
 
-/// The Personal Agent's working folder: the developer's home folder, resolved on every launch and
-/// never stored. A folder that cannot be resolved or no longer exists fails with a message the
-/// caller shows; there is no fallback directory (spec 133 OQ-4).
-pub(super) async fn personal_home_folder() -> Result<std::path::PathBuf, String> {
-    let Some(home) = dirs::home_dir() else {
-        return Err(
-            "The home folder could not be resolved, so the Personal Agent cannot start."
-                .to_string(),
-        );
-    };
-    match tokio::fs::metadata(&home).await {
-        Ok(meta) if meta.is_dir() => Ok(home),
-        _ => Err(format!(
-            "The home folder {} no longer exists, so the Personal Agent cannot start.",
-            home.display()
-        )),
-    }
-}
 /// Windows paths compare case-insensitively; both sides are already absolute, so no canonicalisation.
 pub(super) fn verify_reattach(expected_file: &str, state: &Value) -> Result<(), String> {
     let session_file = state

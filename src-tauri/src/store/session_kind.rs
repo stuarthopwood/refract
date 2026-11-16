@@ -60,6 +60,23 @@ impl Session {
 pub const PERSONAL_AGENT_PROTECTED_MESSAGE: &str =
     "The Personal Agent cannot be archived or deleted.";
 
+/// The Personal Agent's working folder: the developer's home folder, resolved on every call and
+/// never stored. A folder that cannot be resolved or no longer exists fails with a message the
+/// caller shows; there is no fallback directory (spec 133 OQ-4). Shared by the launch, the
+/// attachment handlers and the advisor roster, so there is one home lookup.
+pub async fn personal_home_folder() -> Result<std::path::PathBuf, String> {
+    let Some(home) = dirs::home_dir() else {
+        return Err("The home folder could not be resolved.".to_string());
+    };
+    match tokio::fs::metadata(&home).await {
+        Ok(meta) if meta.is_dir() => Ok(home),
+        _ => Err(format!(
+            "The home folder {} no longer exists.",
+            home.display()
+        )),
+    }
+}
+
 pub(super) fn personal_agent_protected() -> RegistryError {
     RegistryError::new(
         RegistryErrorCode::PersonalAgentProtected,
