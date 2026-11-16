@@ -62,7 +62,7 @@ pub const PERSONAL_AGENT_PROTECTED_MESSAGE: &str =
 
 /// The Personal Agent's working folder: the developer's home folder, resolved on every call and
 /// never stored. A folder that cannot be resolved or no longer exists fails with a message the
-/// caller shows; there is no fallback directory (spec 133 OQ-4). Shared by the launch, the
+/// caller shows; there is no fallback directory. Shared by the launch, the
 /// attachment handlers and the advisor roster, so there is one home lookup.
 pub async fn personal_home_folder() -> Result<std::path::PathBuf, String> {
     let Some(home) = dirs::home_dir() else {

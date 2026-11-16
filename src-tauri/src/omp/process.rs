@@ -71,7 +71,7 @@ pub struct OmpProcessOptions {
     /// Adds the `gh stack` block to the Session rules (#1867).
     pub stacked_prs: bool,
     /// Also passes `--cwd=<cwd>`: omp rebinds its working folder to the OS temp folder when the
-    /// spawn cwd is its own home folder, which is the Personal Agent's cwd (FINDINGS item 66).
+    /// spawn cwd is its own home folder, which is the Personal Agent's cwd.
     pub pass_cwd_flag: bool,
     pub ready_prompt_after_ms: u64,
     pub ready_ceiling_ms: u64,

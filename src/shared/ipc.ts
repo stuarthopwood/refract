@@ -96,7 +96,7 @@ export type IpcErrorCode =
   | 'session-archived'
   | 'worktree-held' | 'worktree-busy' | 'destination-not-empty' | 'too-many-clones' | 'destination-in-use'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed' // lane R11b (#794); #1265 settings.json write failed
-  | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape';
+  | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape' | 'working-folder-unavailable';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -486,7 +486,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   sessions: {
     list(): Promise<Result<SessionSummary[]>>;
     create(input: { repositoryId: string; baseBranch: string }): Promise<Result<Session>>;
-    /** The singleton Personal Agent: created on first call, the same Session afterwards (#2005). */
+    /** The singleton Personal Agent: created on first call, the same Session afterwards. */
     openPersonalAgent(): Promise<Result<Session>>;
     rename(id: string, name: string): Promise<Result<void>>;
     open(id: string, userAction?: boolean): Promise<Result<SessionSnapshot>>;
