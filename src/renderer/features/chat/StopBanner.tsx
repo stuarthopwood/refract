@@ -24,7 +24,8 @@ interface StopBannerProps {
   onRecover: () => void
   onResume: () => void
   onStartNew: () => void
-  onRecreateWorktree: () => void
+  /** Absent for a Personal Agent, which has no worktree to recreate. */
+  onRecreateWorktree?: () => void
   onArchive: () => void
   onDelete: () => void
   startNewButtonRef: Ref<HTMLButtonElement>
@@ -110,9 +111,11 @@ export function StopBanner(p: StopBannerProps) {
         )}
         {p.stopReason === 'worktree-missing' && (
           <>
-            <Button size="xs" variant="ghost" aria-disabled={p.deleting || undefined} className={BUSY_CLASS} onClick={guard(p.deleting, p.onRecreateWorktree)}>
-              Recreate worktree
-            </Button>
+            {p.onRecreateWorktree && (
+              <Button size="xs" variant="ghost" aria-disabled={p.deleting || undefined} className={BUSY_CLASS} onClick={guard(p.deleting, p.onRecreateWorktree)}>
+                Recreate worktree
+              </Button>
+            )}
             <Button size="xs" variant="text" onClick={p.onArchive}>
               Archive
             </Button>

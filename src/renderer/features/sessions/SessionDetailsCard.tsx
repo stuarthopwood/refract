@@ -10,7 +10,7 @@ import { useSessionsStore } from '@/state'
 import { formatModelLabel, formatThinkingLevelLabel, MODEL_NOT_KNOWN } from '@/lib/modelDisplay'
 import { friendlyProviderLabel } from '@/lib/providerLabels'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
-import type { Repository } from '../../../shared/model'
+import { isProjectSession, type Repository } from '../../../shared/model'
 import { DiffStatLine, StateIcon, displayLabel, displayStatus, formatAbsoluteTime, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
 
@@ -52,11 +52,12 @@ export function SessionDetailsCard({
   // Screen readers never reach this card's content: it is portaled to the end of `<body>` and
   // closes on blur before a virtual cursor could Tab into it, and `openDelay` means it is not yet
   // mounted when the trigger receives focus.
+  const projectSession = isProjectSession(session) ? session : null
   const descriptionText = [
     activityDescription,
-    `${session.branch} from ${session.baseBranch}`,
+    projectSession && `${projectSession.branch} from ${projectSession.baseBranch}`,
     `Last active ${formatAbsoluteTime(session.lastActivityAt)}`,
-    `${session.worktreePath}${worktreeMissing ? ' (missing)' : ''}`
+    projectSession && `${projectSession.worktreePath}${worktreeMissing ? ' (missing)' : ''}`
   ]
     .filter((part): part is string => Boolean(part))
     .join('. ')
@@ -67,6 +68,7 @@ export function SessionDetailsCard({
     if (!open) return
     const requestId = ++requestIdRef.current
     setDiffStatResult('loading')
+    if (!isProjectSession(session)) return
     void window.refract.sessions.diffStat(session.id).then((result) => {
       if (requestIdRef.current !== requestId) return // superseded by a later open
       setDiffStatResult(result.ok ? result.value : null)
@@ -98,6 +100,8 @@ export function SessionDetailsCard({
               </div>
               {activityText && <p className="break-words pl-6 text-xs text-muted-foreground">{activityText}</p>}
             </div>
+            {projectSession && (
+            <>
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FolderIcon aria-hidden className="size-4 shrink-0" />
               <span className="truncate">{repository.name}</span>
@@ -135,6 +139,8 @@ export function SessionDetailsCard({
                 </IconButton>
               </div>
             </div>
+            </>
+            )}
             {/* Model and effort shown as two separately-iconed chips, never a bracketed "(Effort)" suffix (docs/DESIGN.md "No bracket/parenthetical UI copy"). */}
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -155,6 +161,7 @@ export function SessionDetailsCard({
               {/* #741 Part 1/decision 4: a muted second line names the provider (friendly map, raw id fallback -- `friendlyProviderLabel`, `@/lib/providerLabels`), since this card has room for it that the composer strip does not. */}
               {session.lastModel && <p className="truncate pl-6 text-xs text-muted-foreground">via {friendlyProviderLabel(session.lastModel.provider)}</p>}
             </div>
+            {projectSession && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <FileDiffIcon aria-hidden className="size-4 shrink-0" />
               {/* Issue #925: both now render through the shared `DiffStatLine`, so the figure is coloured (and paired with its sr-only text) exactly the same way in both places. */}
@@ -168,6 +175,7 @@ export function SessionDetailsCard({
                 </span>
               )}
             </div>
+            )}
           </div>
         </HoverCardContent>
       </HoverCard>

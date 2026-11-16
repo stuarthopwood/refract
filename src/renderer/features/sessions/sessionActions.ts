@@ -15,13 +15,24 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import type { SessionSummary } from '../../../shared/ipc'
+import { isProjectSession } from '../../../shared/model'
 import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { canTogglePause } from '../chat/pauseActions'
 
 /** A session row menu entry: a separator or an item. */
 export type SessionRowAction =
   | { kind: 'separator' }
-  | { kind: 'item'; key: string; label: string; icon: LucideIcon; variant?: 'destructive'; disabled?: boolean; onSelect: () => void }
+  | {
+      kind: 'item'
+      key: string
+      label: string
+      icon: LucideIcon
+      variant?: 'destructive'
+      disabled?: boolean
+      /** Why the item is disabled; shown as a tooltip and exposed as its accessible description. */
+      reason?: string
+      onSelect: () => void
+    }
 
 /** Callbacks behind each session row menu item. */
 export interface SessionRowActionHandlers {
@@ -42,6 +53,8 @@ export interface SessionRowActionHandlers {
   prewalk?: { state: 'armed' | 'off' | 'unknown'; onToggle(): void }
 }
 
+export const PERSONAL_AGENT_PROTECTED_REASON = 'The Personal Agent cannot be archived or deleted.'
+
 /** Builds the ordered action list for a session row; a Session being deleted in the background has none. */
 export function buildSessionRowActions(
   session: SessionSummary,
@@ -51,6 +64,7 @@ export function buildSessionRowActions(
 ): SessionRowAction[] {
   if (deleting) return []
   const isArchived = !!session.archivedAt
+  const protectedSession = isProjectSession(session) ? {} : { disabled: true, reason: PERSONAL_AGENT_PROTECTED_REASON }
   return [
     ...(newSession
       ? ([
@@ -67,14 +81,18 @@ export function buildSessionRowActions(
       : []),
     { kind: 'item', key: 'rename', icon: PencilIcon, label: 'Rename', onSelect: handlers.onRename },
     { kind: 'item', key: 'open-in-split', icon: Columns2Icon, label: 'Open in split', onSelect: handlers.onOpenInSplit },
-    { kind: 'item', key: 'copy-path', icon: CopyIcon, label: 'Copy worktree path', onSelect: handlers.onCopyPath },
-    { kind: 'item', key: 'reveal', icon: RevealActionIcon, label: REVEAL_ACTION_LABEL, onSelect: handlers.onReveal },
+    ...(isProjectSession(session)
+      ? ([
+          { kind: 'item', key: 'copy-path', icon: CopyIcon, label: 'Copy worktree path', onSelect: handlers.onCopyPath },
+          { kind: 'item', key: 'reveal', icon: RevealActionIcon, label: REVEAL_ACTION_LABEL, onSelect: handlers.onReveal }
+        ] as const)
+      : []),
     session.hiddenAt
       ? { kind: 'item', key: 'unhide', icon: EyeIcon, label: 'Unhide', onSelect: handlers.onUnhide }
       : { kind: 'item', key: 'hide', icon: EyeOffIcon, label: 'Hide', onSelect: handlers.onHide },
     isArchived
       ? { kind: 'item', key: 'restore', icon: ArchiveRestoreIcon, label: 'Restore', onSelect: handlers.onRestore }
-      : { kind: 'item', key: 'archive', icon: ArchiveIcon, label: 'Archive', onSelect: handlers.onArchive },
+      : { kind: 'item', key: 'archive', icon: ArchiveIcon, label: 'Archive', ...protectedSession, onSelect: handlers.onArchive },
     ...(canTogglePause(session)
       ? ([
           { kind: 'separator' },
@@ -110,6 +128,7 @@ export function buildSessionRowActions(
       icon: Trash2Icon,
       label: 'Delete…',
       variant: 'destructive',
+      ...protectedSession,
       onSelect: handlers.onDelete
     }
   ]

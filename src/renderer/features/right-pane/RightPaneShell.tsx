@@ -1,3 +1,4 @@
+import { RequiresRepository } from '@/components/RequiresRepository'
 import { useEffect, useRef } from 'react'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
 import { useRightPaneStore, useSideChatStore, useSubagentPanelStore } from '@/state'
@@ -88,11 +89,23 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
             }}
           />
         )}
-        {activePanelId === 'file-explorer' && <FileExplorerPanel sessionId={sessionId} />}
-        {activePanelId === 'git-changes' && <GitChangesPanel sessionId={sessionId} />}
+        {activePanelId === 'file-explorer' && (
+          <RequiresRepository sessionId={sessionId}>
+            <FileExplorerPanel sessionId={sessionId} />
+          </RequiresRepository>
+        )}
+        {activePanelId === 'git-changes' && (
+          <RequiresRepository sessionId={sessionId}>
+            <GitChangesPanel sessionId={sessionId} />
+          </RequiresRepository>
+        )}
         {activePanelId === 'outline' && <OutlinePanel sessionId={sessionId} />}
         {activePanelId === 'session-usage' && <SessionUsagePanel sessionId={sessionId} />}
-        {activePanelId === 'pull-request' && <PinnedPullRequestPanel sessionId={sessionId} />}
+        {activePanelId === 'pull-request' && (
+          <RequiresRepository sessionId={sessionId}>
+            <PinnedPullRequestPanel sessionId={sessionId} />
+          </RequiresRepository>
+        )}
         {activePanelId === 'issue' && <PinnedIssuePanel sessionId={sessionId} />}
       </div>
       <HandleHitStrip />

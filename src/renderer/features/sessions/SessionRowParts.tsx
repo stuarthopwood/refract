@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import type { SessionRowAction } from './sessionActions'
@@ -51,15 +52,46 @@ export function SessionRenameInput({ row }: { row: RowState }) {
   )
 }
 
+type ActionItem = Extract<SessionRowAction, { kind: 'item' }>
+
+/** Disabled items sit under `pointer-events: none`, so the tooltip is on a wrapper; the reason is also the item's accessible description. */
+function withReason(action: ActionItem, item: (describedBy: string | undefined, label: ReactNode) => ReactNode): ReactNode {
+  const label = <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
+  if (!action.reason) return item(undefined, label)
+  const reasonId = `session-action-${action.key}-reason`
+  return (
+    <span key={action.key} title={action.reason} className="block">
+      {item(
+        reasonId,
+        <>
+          {label}
+          <span id={reasonId} className="sr-only">
+            {action.reason}
+          </span>
+        </>
+      )}
+    </span>
+  )
+}
+
 /** One action list, two menus (the "..." dropdown and the right-click context menu). */
 export function DropdownActionItems({ actions }: { actions: SessionRowAction[] }) {
   return actions.map((action, index) =>
     action.kind === 'separator' ? (
       <DropdownMenuSeparator key={`sep-${index}`} />
     ) : (
-      <DropdownMenuItem key={action.key} variant={action.variant} icon={action.icon} disabled={action.disabled} onSelect={action.onSelect}>
-        <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
-      </DropdownMenuItem>
+      withReason(action, (describedBy, label) => (
+        <DropdownMenuItem
+          key={action.key}
+          variant={action.variant}
+          icon={action.icon}
+          disabled={action.disabled}
+          aria-describedby={describedBy}
+          onSelect={action.onSelect}
+        >
+          {label}
+        </DropdownMenuItem>
+      ))
     )
   )
 }
@@ -69,9 +101,18 @@ export function ContextActionItems({ actions }: { actions: SessionRowAction[] })
     action.kind === 'separator' ? (
       <ContextMenuSeparator key={`sep-${index}`} />
     ) : (
-      <ContextMenuItem key={action.key} variant={action.variant} icon={action.icon} disabled={action.disabled} onSelect={action.onSelect}>
-        <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
-      </ContextMenuItem>
+      withReason(action, (describedBy, label) => (
+        <ContextMenuItem
+          key={action.key}
+          variant={action.variant}
+          icon={action.icon}
+          disabled={action.disabled}
+          aria-describedby={describedBy}
+          onSelect={action.onSelect}
+        >
+          {label}
+        </ContextMenuItem>
+      ))
     )
   )
 }
