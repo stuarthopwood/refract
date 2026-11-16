@@ -92,8 +92,8 @@ fn is_personal_id(data: &Registry, id: &str) -> bool {
     data.sessions.iter().any(|s| s.id == id && s.is_personal())
 }
 
-/// Refusals for a patch to an existing row: the Personal Agent is never archived, hidden (OQ-2
-/// interim) or nested, and nothing becomes its child. Clearing a link stays allowed.
+/// Refusals for a patch to an existing row: the Personal Agent is never archived, hidden or
+/// nested, and nothing becomes its child. Clearing a link stays allowed.
 pub(super) fn check_session_patch(
     data: &Registry,
     index: usize,
