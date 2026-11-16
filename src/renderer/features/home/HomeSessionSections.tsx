@@ -5,19 +5,13 @@ import { ListCardButton } from '@/components/ListCardButton'
 import { RelativeTime } from '@/components/relative-time'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
-import { StateIcon, displayLabel, displayStatus, formatRelativeTime, isNeedsYouSession } from '@/features/sessions/sessionDisplay'
+import { StateIcon, displayLabel, displayStatus, formatRelativeTime, isHomeLiveSession, isNeedsYouSession } from '@/features/sessions/sessionDisplay'
 import { useHomeStore } from '@/state/home-store'
 import { useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
-import { isProjectSession } from '../../../shared/model'
 
 /** How many Sessions Recent Sessions lists. Matches the last-message read cap today, but is its own knob. */
 const HOME_RECENT_MAX = 8
-
-/** A Session Home lists: a project Session that is neither archived nor hidden. */
-export function isHomeLiveSession(session: SessionSummary): boolean {
-  return isProjectSession(session) && !session.archivedAt && !session.hiddenAt
-}
 
 export function useHomeSessions(): { needsYou: SessionSummary[]; recent: SessionSummary[] } {
   const sessions = useSessionsStore((state) => state.sessions)
