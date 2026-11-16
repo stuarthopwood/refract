@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { SectionHeading } from '@/components/SectionHeading'
+import { Separator } from '@/components/ui/separator'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, SearchXIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -14,6 +16,7 @@ import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useRepositoriesStore, useSessionListStore, useSessionsStore } from '@/state'
 import { isProjectSession } from '../../../shared/model'
+import { PersonalAgentRow } from './PersonalAgentRow'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
 import { ShowHiddenToggle } from './ShowHiddenToggle'
@@ -232,6 +235,12 @@ export function SessionList() {
           )}
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-2 p-2">
+              {/* Outside search and filters, and first in DOM order so it is the list's first Tab stop. */}
+              <PersonalAgentRow />
+              <div className="px-2">
+                <Separator className="bg-divider" />
+              </div>
+              <SectionHeading>Projects</SectionHeading>
               {noMatches ? (
                 <Empty>
                   <EmptyHeader>
