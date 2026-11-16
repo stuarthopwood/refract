@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feat/2004-personal-agent-model`
 **Created**: 2026-11-16
-**Status**: Clarified
+**Status**: Implemented
 **Input**: Epic #2008 "Personal Agent" and its children #2004 (data model), #2005 (create and launch), #2006 (launcher button), #2007 (disable repo-only features), plus the epic grill and the #2004 grill with Stuart on 2026-11-16. Route: specify. One spec covers the whole epic; the first PR implements only the #2004 phase and the later children converge against this spec.
 
 ## Problem

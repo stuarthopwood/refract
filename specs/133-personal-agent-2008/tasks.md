@@ -121,7 +121,7 @@ Rule for T011 to T016: for `project` Sessions the code path and output are byte-
 
 ## Phase 6: Polish
 
-- [ ] T036 Run `pnpm ci:local`; confirm no file over 600 lines and no baselined file grew; update `CONTEXT.md` only if wording changed; set the spec Status to `Implemented` when the last child lands; close #2008 per the plan's rules.
+- [X] T036 Run `pnpm ci:local`; confirm no file over 600 lines and no baselined file grew; update `CONTEXT.md` only if wording changed; set the spec Status to `Implemented` when the last child lands; close #2008 per the plan's rules.
 
 ---
 
