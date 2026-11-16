@@ -38,6 +38,7 @@ pub mod issues;
 pub mod item_refs;
 pub mod model;
 pub mod model_roles;
+pub mod personal_agent;
 pub mod project_session;
 pub mod pull_requests;
 pub mod readiness;
@@ -174,6 +175,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     repositories_clone::register(dispatcher);
     settings_default_clone_folder::register(dispatcher);
     sessions_lifecycle::register(dispatcher);
+    personal_agent::register(dispatcher);
     sessions_visibility::register(dispatcher);
     home::register(dispatcher);
     issues::register(dispatcher);
@@ -279,6 +281,7 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
         "personal-agent-exists",
         "invalid-shape",
         "personal-agent-protected",
+        "working-folder-unavailable",
         "no-repository",
     ];
     let code = if IPC_ERROR_CODES.contains(&err.code) {

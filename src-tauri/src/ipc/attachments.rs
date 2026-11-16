@@ -377,18 +377,12 @@ pub(super) async fn resolve_attachment_path(worktree_root: &str, token: &str) ->
     }
 }
 
-/// Shared session-to-worktree lookup, so each handler does not repeat the registry lock.
+/// Shared session-to-working-folder lookup, so each handler does not repeat the registry lock.
 pub(super) async fn resolve_session_worktree(
     state: &AppState,
     session_id: &str,
 ) -> Result<String, IpcError> {
-    let registry = state.registry.lock().await;
-    match registry.get_session(session_id) {
-        Some(session) => Ok(super::project_session::project_binding(session)?
-            .worktree_path
-            .to_string()),
-        None => Err(not_found(format!("Session not found: {session_id}"))),
-    }
+    super::project_session::session_working_dir(state, session_id).await
 }
 
 /// Opens the file, then stats and reads through that one handle. Returns `None` if the file is

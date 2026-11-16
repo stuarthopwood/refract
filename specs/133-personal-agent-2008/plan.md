@@ -32,12 +32,12 @@ Add a `kind` (`project` | `personal`) to the persisted **Session**, make the fou
 
 ## Constitution Check
 
-*Gate: passes after the recorded amendment; re-checked after Phase 1 design.*
+*Gate: passes after the recorded amendment (constitution v3.1.0, 2026-11-16, T022, landed in #2005); re-checked after Phase 1 design.*
 
 | Principle | Result |
 |-----------|--------|
 | I. OMP is the engine, Refract the host: `omp --mode rpc-ui`, one OMP process per Session, "one session per git worktree" (`constitution.md:7-9`) | The Personal Agent is still one Session with one OMP process over `rpc-ui`. "One session per git worktree" no longer holds for it. This is a deliberate, separate constitution amendment (tasks T022) that lands before any launch change in #2005, not a dilution inside this plan. #2004 changes no launch, so the first PR conflicts with nothing. |
-| III. Saved-session scan in the worktree's OMP directory, reattach in the session's worktree, every OMP process spawned with the session's own worktree as cwd (`constitution.md:59-77`) | Does not hold for the Personal Agent from #2005: its cwd is the home folder. The same amendment (T022) and a `docs/spike/FINDINGS.md` item (T021, the omp probe, run first) land before the launch change (T024). #2004 changes no launch. |
+| III. Saved-session scan in the worktree's OMP directory, reattach in the session's worktree, every OMP process spawned with the session's own worktree as cwd (`constitution.md:59-77`) | Does not hold for the Personal Agent from #2005: its cwd is the home folder. Amended in constitution v3.1.0 (T022), citing FINDINGS item 66 (T021): omp rebinds its working folder to the OS temp folder when the spawn cwd is its own home, so the launch also passes `--cwd=<home>` (T038). |
 | II. RPC wire contract | Unchanged. No new RPC command; `--session-dir` and `switch_session` rules apply to the home-folder cwd exactly as to a worktree cwd (verified live in #2005, OQ-5). |
 | IV. Evidence before design | #2005 live-probes omp in a non-repository folder before relying on it (FR-015, OQ-5). |
 | V. Tauri security baseline | The renderer gets no new capability; the new Rust handler behaviour is validated server-side. The home folder is resolved in Rust. |

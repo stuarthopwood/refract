@@ -6,6 +6,9 @@ pub(super) async fn build_args(opts: &OmpProcessOptions) -> (Vec<String>, Vec<St
         "rpc-ui".to_string(),
         format!("--approval-mode={}", opts.approval_mode.omp_flag()),
     ];
+    if opts.pass_cwd_flag {
+        args.push(format!("--cwd={}", opts.cwd.display()));
+    }
     if opts.no_session {
         args.push("--no-session".to_string());
     }

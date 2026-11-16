@@ -39,6 +39,7 @@ pub(super) async fn assert_conversation_file_exists(file: &str) -> Result<(), St
     }
     Ok(())
 }
+
 /// Windows paths compare case-insensitively; both sides are already absolute, so no canonicalisation.
 pub(super) fn verify_reattach(expected_file: &str, state: &Value) -> Result<(), String> {
     let session_file = state

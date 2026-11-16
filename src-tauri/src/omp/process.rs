@@ -70,6 +70,9 @@ pub struct OmpProcessOptions {
     pub extra_config: Option<PathBuf>,
     /// Adds the `gh stack` block to the Session rules (#1867).
     pub stacked_prs: bool,
+    /// Also passes `--cwd=<cwd>`: omp rebinds its working folder to the OS temp folder when the
+    /// spawn cwd is its own home folder, which is the Personal Agent's cwd.
+    pub pass_cwd_flag: bool,
     pub ready_prompt_after_ms: u64,
     pub ready_ceiling_ms: u64,
 }
@@ -84,6 +87,7 @@ impl OmpProcessOptions {
             plan_mode: None,
             extra_config: None,
             stacked_prs: false,
+            pass_cwd_flag: false,
             ready_prompt_after_ms: READY_PROMPT_AFTER_MS,
             ready_ceiling_ms: READY_CEILING_MS,
         }

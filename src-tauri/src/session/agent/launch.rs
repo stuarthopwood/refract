@@ -16,12 +16,30 @@ use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
 use crate::session::side_chat::reset_after_start_with_conversation;
 use crate::session::termination;
 use crate::store::registry::{Session, SessionPatch};
-
-fn personal_not_launchable() -> AgentError {
-    AgentError::new("unsupported", "The Personal Agent cannot be started yet.")
-}
+use crate::store::session_kind::personal_home_folder;
 
 impl SessionAgent {
+    /// The agent's working folder, and whether omp must be told it with `--cwd`. A Project
+    /// Session uses its worktree. The Personal Agent uses the home folder, resolved here on every
+    /// launch and never stored; a missing one fails visibly with no fallback.
+    async fn working_dir(
+        &self,
+        session: &Session,
+        failure_prefix: &str,
+    ) -> Result<(PathBuf, bool), AgentError> {
+        if let Some(binding) = session.project_binding() {
+            return Ok((PathBuf::from(binding.worktree_path), false));
+        }
+        match personal_home_folder().await {
+            Ok(home) => Ok((home, true)),
+            Err(message) => {
+                let detail = format!("{failure_prefix}{message}");
+                self.record_start_failure(&detail).await;
+                Err(AgentError::new("start-failed", detail))
+            }
+        }
+    }
+
     /// Refuses while the Session's worktree is being deleted. Called under `start_lock`, so a
     /// delete that claims the Session after the caller's earlier check cannot be raced.
     fn refuse_if_worktree_deleting(&self) -> Result<(), AgentError> {
@@ -80,7 +98,8 @@ impl SessionAgent {
                 ),
             ));
         }
-        self.launch(&session, "").await
+        let (work_dir, pass_cwd_flag) = self.working_dir(&session, "").await?;
+        self.launch(&session, work_dir, pass_cwd_flag, "").await
     }
 
     /// Checks the worktree via git, not just the folder. `Unknown` never blocks a start,
@@ -159,10 +178,8 @@ impl SessionAgent {
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
-        let Some(binding) = session.project_binding() else {
-            return Err(personal_not_launchable());
-        };
-        if tokio::fs::metadata(binding.worktree_path).await.is_ok() {
+        let (work_dir, pass_cwd_flag) = self.working_dir(&session, "").await?;
+        if tokio::fs::metadata(&work_dir).await.is_ok() {
             let prev = self.current_conversation_path().await;
             let patch = SessionPatch {
                 current_conversation: Some(file.clone()),
@@ -178,26 +195,22 @@ impl SessionAgent {
             reset_after_start_with_conversation(self, file.as_deref(), Some(prev)).await;
         }
         let session = self.require_session().await?;
-        self.launch(&session, "").await
+        self.launch(&session, work_dir, pass_cwd_flag, "").await
     }
 
     pub(super) async fn launch(
         &self,
         session: &Session,
+        work_dir: PathBuf,
+        pass_cwd_flag: bool,
         failure_prefix: &str,
     ) -> Result<(), AgentError> {
-        // The Personal Agent has no working folder until its launch path exists.
-        let Some(binding) = session.project_binding() else {
-            return Err(personal_not_launchable());
-        };
         // A new life clears the previous life's stop marker.
         self.clear_stopped_on_request_marker().await;
 
         let approval_mode = self.settings.lock().await.get().approval_mode;
-        let mut opts = OmpProcessOptions::new(
-            PathBuf::from(binding.worktree_path),
-            to_process_mode(approval_mode),
-        );
+        let mut opts = OmpProcessOptions::new(work_dir.clone(), to_process_mode(approval_mode));
+        opts.pass_cwd_flag = pass_cwd_flag;
         // Always set, so a Session out of Plan overrides a global plan.defaultOnStartup.
         opts.plan_mode = Some(crate::session::working_mode::plan_for_launch(self).await);
         // Both launch sites read the depth here, so a restart after a re-parent sees the new one.
@@ -221,7 +234,7 @@ impl SessionAgent {
         let mut launch_warnings = Vec::new();
         // Detached so the filesystem walk never delays the launch; the notice emits when ready.
         let roster_agent = self.arc();
-        let roster_cwd = PathBuf::from(binding.worktree_path);
+        let roster_cwd = work_dir;
         tokio::spawn(async move {
             if let Some(roster) = crate::omp::advisor_roster::detect_for(Some(roster_cwd)).await {
                 roster_agent

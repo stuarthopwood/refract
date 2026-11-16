@@ -96,7 +96,8 @@ export type IpcErrorCode =
   | 'session-archived'
   | 'worktree-held' | 'worktree-busy' | 'destination-not-empty' | 'too-many-clones' | 'destination-in-use'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed' // lane R11b (#794); #1265 settings.json write failed
-  | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape' | 'no-repository';
+  | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape' | 'working-folder-unavailable'
+  | 'no-repository';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -251,6 +252,7 @@ export const IPC_REQUESTS = {
   REPOSITORIES_CLONE_CANCEL: 'repositories.cloneCancel',
   SESSIONS_LIST: 'sessions.list',
   SESSIONS_CREATE: 'sessions.create',
+  SESSIONS_OPEN_PERSONAL_AGENT: 'sessions.openPersonalAgent',
   SESSIONS_RENAME: 'sessions.rename',
   SESSIONS_OPEN: 'sessions.open',
   SESSIONS_ARCHIVE: 'sessions.archive',
@@ -485,6 +487,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   sessions: {
     list(): Promise<Result<SessionSummary[]>>;
     create(input: { repositoryId: string; baseBranch: string }): Promise<Result<Session>>;
+    /** The singleton Personal Agent: created on first call, the same Session afterwards. */
+    openPersonalAgent(): Promise<Result<Session>>;
     rename(id: string, name: string): Promise<Result<void>>;
     open(id: string, userAction?: boolean): Promise<Result<SessionSnapshot>>;
     archive(id: string): Promise<Result<void>>;

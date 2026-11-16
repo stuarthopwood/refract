@@ -7,7 +7,7 @@ use serde_json::{json, Value};
 
 use crate::omp::advisor_roster::{self, Roster};
 
-use super::project_session::project_binding;
+use super::project_session::session_working_dir;
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
 
 pub fn register(d: &mut Dispatcher) {
@@ -19,11 +19,7 @@ async fn detect(state: &AppState, args: &[Value]) -> Result<Option<Roster>, IpcE
     let cwd = match args.first() {
         None | Some(Value::Null) => None,
         Some(Value::String(session_id)) => {
-            let registry = state.registry.lock().await;
-            let session = registry
-                .get_session(session_id)
-                .ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
-            Some(PathBuf::from(project_binding(session)?.worktree_path))
+            Some(PathBuf::from(session_working_dir(state, session_id).await?))
         }
         Some(_) => {
             return Err(invalid_argument(

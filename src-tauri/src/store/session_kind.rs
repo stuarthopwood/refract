@@ -60,6 +60,23 @@ impl Session {
 pub const PERSONAL_AGENT_PROTECTED_MESSAGE: &str =
     "The Personal Agent cannot be archived or deleted.";
 
+/// The Personal Agent's working folder: the developer's home folder, resolved on every call and
+/// never stored. A folder that cannot be resolved or no longer exists fails with a message the
+/// caller shows; there is no fallback directory. Shared by the launch, the
+/// attachment handlers and the advisor roster, so there is one home lookup.
+pub async fn personal_home_folder() -> Result<std::path::PathBuf, String> {
+    let Some(home) = dirs::home_dir() else {
+        return Err("The home folder could not be resolved.".to_string());
+    };
+    match tokio::fs::metadata(&home).await {
+        Ok(meta) if meta.is_dir() => Ok(home),
+        _ => Err(format!(
+            "The home folder {} no longer exists.",
+            home.display()
+        )),
+    }
+}
+
 pub(super) fn personal_agent_protected() -> RegistryError {
     RegistryError::new(
         RegistryErrorCode::PersonalAgentProtected,
@@ -75,8 +92,8 @@ fn is_personal_id(data: &Registry, id: &str) -> bool {
     data.sessions.iter().any(|s| s.id == id && s.is_personal())
 }
 
-/// Refusals for a patch to an existing row: the Personal Agent is never archived, hidden (OQ-2
-/// interim) or nested, and nothing becomes its child. Clearing a link stays allowed.
+/// Refusals for a patch to an existing row: the Personal Agent is never archived, hidden or
+/// nested, and nothing becomes its child. Clearing a link stays allowed.
 pub(super) fn check_session_patch(
     data: &Registry,
     index: usize,
