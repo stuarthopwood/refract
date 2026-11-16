@@ -35,6 +35,18 @@ pub async fn session_working_dir(state: &AppState, session_id: &str) -> Result<S
         .map_err(|message| IpcError::new("working-folder-unavailable", message))
 }
 
+/// Message carried by the `no-repository` result of repo-only handlers.
+pub const NO_REPOSITORY_MESSAGE: &str =
+    "The Personal Agent isn't linked to a Project, so there is no repository to read.";
+
+/// The Project fields of `session` for a repo-only feature (git changes, files, diff, Worktree
+/// actions). A Personal Agent gets the typed, expected `no-repository` result, not `not-found`.
+pub fn repo_binding(session: &Session) -> Result<ProjectBinding<'_>, IpcError> {
+    session
+        .project_binding()
+        .ok_or_else(|| IpcError::new("no-repository", NO_REPOSITORY_MESSAGE))
+}
+
 /// Refuses archive/delete of the Personal Agent before anything changes.
 pub fn refuse_if_personal(session: &Session) -> Result<(), IpcError> {
     if session.is_personal() {

@@ -14,10 +14,13 @@ function frontSessionCheck(sessionId: string): AgentToolOutcome | null {
   return focusedPaneSessionId() === sessionId ? null : fail('panel_unavailable', 'This Session is not the front Session, so its panels are not shown.')
 }
 
+/** Panels that read a Project's repository; a Personal Agent has none, so they are unavailable before any backend call. */
+const REPOSITORY_PANELS: Partial<Record<PanelId, true>> = { 'git-changes': true, 'file-explorer': true, 'pull-request': true, issue: true }
+
 function isAvailable(sessionId: string, panelId: PanelId): boolean {
   if (focusedPaneSessionId() !== sessionId) return false
-  if (panelId === 'pull-request') return Boolean(useSessionsStore.getState().sessions.find((s) => s.id === sessionId)?.repositoryId)
-  return true
+  if (!REPOSITORY_PANELS[panelId]) return true
+  return useSessionsStore.getState().sessions.find((s) => s.id === sessionId)?.kind === 'project'
 }
 
 export function listPanels(sessionId: string): AgentToolOutcome {

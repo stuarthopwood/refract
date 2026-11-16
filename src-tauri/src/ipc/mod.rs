@@ -282,6 +282,7 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
         "invalid-shape",
         "personal-agent-protected",
         "working-folder-unavailable",
+        "no-repository",
     ];
     let code = if IPC_ERROR_CODES.contains(&err.code) {
         err.code

@@ -1,4 +1,6 @@
+import { Fragment, useId, type ReactNode } from 'react'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import type { SessionRowAction } from './sessionActions'
 import type { useSessionRowActions } from './useSessionRowActions'
@@ -51,27 +53,79 @@ export function SessionRenameInput({ row }: { row: RowState }) {
   )
 }
 
+type ActionItem = Extract<SessionRowAction, { kind: 'item' }>
+
+const REASON_ITEM_CLASS = 'aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:forced-colors:text-[GrayText]'
+
+/** What an action item needs to be unavailable and still selectable by the menu's own machinery. */
+interface ItemAvailability {
+  disabled: boolean | undefined
+  'aria-disabled': true | undefined
+  'aria-describedby': string | undefined
+  className: string | undefined
+  onSelect: (event: Event) => void
+}
+
+/** A reason keeps the item focusable (`aria-disabled` plus a guarded `onSelect`, as in `ContextShakeMenu`) so keyboard
+ * users reach it and hear why; without one the item is natively disabled when `disabled`. */
+function availability(action: ActionItem, reasonId: string | undefined): ItemAvailability {
+  return {
+    disabled: action.reason ? undefined : action.disabled,
+    'aria-disabled': action.reason ? true : undefined,
+    'aria-describedby': reasonId,
+    className: action.reason ? REASON_ITEM_CLASS : undefined,
+    onSelect: (event) => {
+      if (action.reason) event.preventDefault()
+      else action.onSelect()
+    }
+  }
+}
+
+/** The label, plus the reason as the item's accessible description (kept out of its name) and a tooltip on hover and keyboard focus. */
+function withReason(action: ActionItem, idPrefix: string, item: (props: ItemAvailability, label: ReactNode) => ReactNode): ReactNode {
+  const label = <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
+  if (!action.reason) return item(availability(action, undefined), label)
+  const reasonId = `${idPrefix}-${action.key}`
+  return (
+    <Fragment key={action.key}>
+      <Tooltip>
+        <TooltipTrigger asChild>{item(availability(action, reasonId), label)}</TooltipTrigger>
+        <TooltipContent side="right">{action.reason}</TooltipContent>
+      </Tooltip>
+      <span id={reasonId} className="sr-only">
+        {action.reason}
+      </span>
+    </Fragment>
+  )
+}
+
 /** One action list, two menus (the "..." dropdown and the right-click context menu). */
 export function DropdownActionItems({ actions }: { actions: SessionRowAction[] }) {
+  const idPrefix = useId()
   return actions.map((action, index) =>
     action.kind === 'separator' ? (
       <DropdownMenuSeparator key={`sep-${index}`} />
     ) : (
-      <DropdownMenuItem key={action.key} variant={action.variant} icon={action.icon} disabled={action.disabled} onSelect={action.onSelect}>
-        <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
-      </DropdownMenuItem>
+      withReason(action, idPrefix, (props, label) => (
+        <DropdownMenuItem key={action.key} variant={action.variant} icon={action.icon} {...props}>
+          {label}
+        </DropdownMenuItem>
+      ))
     )
   )
 }
 
 export function ContextActionItems({ actions }: { actions: SessionRowAction[] }) {
+  const idPrefix = useId()
   return actions.map((action, index) =>
     action.kind === 'separator' ? (
       <ContextMenuSeparator key={`sep-${index}`} />
     ) : (
-      <ContextMenuItem key={action.key} variant={action.variant} icon={action.icon} disabled={action.disabled} onSelect={action.onSelect}>
-        <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
-      </ContextMenuItem>
+      withReason(action, idPrefix, (props, label) => (
+        <ContextMenuItem key={action.key} variant={action.variant} icon={action.icon} {...props}>
+          {label}
+        </ContextMenuItem>
+      ))
     )
   )
 }
