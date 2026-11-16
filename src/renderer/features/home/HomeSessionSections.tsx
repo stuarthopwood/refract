@@ -14,10 +14,15 @@ import { isProjectSession } from '../../../shared/model'
 /** How many Sessions Recent Sessions lists. Matches the last-message read cap today, but is its own knob. */
 const HOME_RECENT_MAX = 8
 
+/** A Session Home lists: a project Session that is neither archived nor hidden. */
+export function isHomeLiveSession(session: SessionSummary): boolean {
+  return isProjectSession(session) && !session.archivedAt && !session.hiddenAt
+}
+
 export function useHomeSessions(): { needsYou: SessionSummary[]; recent: SessionSummary[] } {
   const sessions = useSessionsStore((state) => state.sessions)
   return useMemo(() => {
-    const live = sessions.filter(isProjectSession).filter((session) => !session.archivedAt && !session.hiddenAt)
+    const live = sessions.filter(isHomeLiveSession)
     const byRecent = (a: SessionSummary, b: SessionSummary) => b.lastActivityAt.localeCompare(a.lastActivityAt)
     const needsYou = live.filter(isNeedsYouSession).sort(byRecent)
     const recent = live.filter((session) => !isNeedsYouSession(session)).sort(byRecent).slice(0, HOME_RECENT_MAX)
