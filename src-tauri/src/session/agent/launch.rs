@@ -21,7 +21,7 @@ use crate::store::session_kind::personal_home_folder;
 impl SessionAgent {
     /// The agent's working folder, and whether omp must be told it with `--cwd`. A Project
     /// Session uses its worktree. The Personal Agent uses the home folder, resolved here on every
-    /// launch and never stored; a missing one fails visibly with no fallback (spec 133 OQ-4).
+    /// launch and never stored; a missing one fails visibly with no fallback.
     async fn working_dir(
         &self,
         session: &Session,
@@ -98,7 +98,8 @@ impl SessionAgent {
                 ),
             ));
         }
-        self.launch(&session, "").await
+        let (work_dir, pass_cwd_flag) = self.working_dir(&session, "").await?;
+        self.launch(&session, work_dir, pass_cwd_flag, "").await
     }
 
     /// Checks the worktree via git, not just the folder. `Unknown` never blocks a start,
@@ -177,7 +178,7 @@ impl SessionAgent {
             state.stop_requested = false;
         }
         let session = self.require_session().await?;
-        let (work_dir, _) = self.working_dir(&session, "").await?;
+        let (work_dir, pass_cwd_flag) = self.working_dir(&session, "").await?;
         if tokio::fs::metadata(&work_dir).await.is_ok() {
             let prev = self.current_conversation_path().await;
             let patch = SessionPatch {
@@ -194,15 +195,16 @@ impl SessionAgent {
             reset_after_start_with_conversation(self, file.as_deref(), Some(prev)).await;
         }
         let session = self.require_session().await?;
-        self.launch(&session, "").await
+        self.launch(&session, work_dir, pass_cwd_flag, "").await
     }
 
     pub(super) async fn launch(
         &self,
         session: &Session,
+        work_dir: PathBuf,
+        pass_cwd_flag: bool,
         failure_prefix: &str,
     ) -> Result<(), AgentError> {
-        let (work_dir, pass_cwd_flag) = self.working_dir(session, failure_prefix).await?;
         // A new life clears the previous life's stop marker.
         self.clear_stopped_on_request_marker().await;
 
