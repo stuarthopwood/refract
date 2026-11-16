@@ -139,6 +139,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p1 later | #1987 | **Feat, Ask card (child of #1990):** inline option notes via 'N'; absorbs #1976 | Blocked on #1989 (wire has no answer notes); `todo` |
 | p1 later | #1988 | **Feat, Ask card (child of #1990):** collapsible read-only "Questions from the agent" Q&A card | Unifies both result cards; `todo` |
 | p1 later | #1989 | **Spike, OMP upstream (child of #1990):** extend rpc-ui ask wire (per-option recommended + reason, answer notes) | Blocks reason/multi in #1985 and all of #1987; `todo` |
+| p1 later | #2027 | **Bug, Ask card (child of #1990):** selected option not visually distinct (checked fill equals the hover fill in AskChoiceGroup) | Stuart hit live 2026-11-16; affects every option, distinct from #1985; `todo` |
 | p1 later | #1901 | **Epic, Performance (p1, `ready-for-human`):** make the PR and Issue views feel instant and cut real work; children #1894 to #1900 and #1947 | Epic body order: #1894 first (the freshness guard the prefetch builds on), then #1895; the rest are independent; #1900 can run any time |
 | p1 later | #1894 | **Perf (p1, child of #1901):** PR and Issue lists skip the mount refetch when fresh | First in #1901's order; `todo` |
 | p1 later | #1895 | **Perf (p1, child of #1901):** instant PR and Issue lists via idle prefetch and a disk cache | Needs #1894; `todo` |
@@ -1382,3 +1383,5 @@ Also filed 2026-11-16 (Stuart): **#2020** (`p2`, `enhancement`, `settings`, `des
 Also filed 2026-11-16 (OMP 18.21.0 review): **#2025** (`p2`, `feature`), Feat: surface OMP's `/commit` (agent-only scoped commits, OMP 18.20.1) in Refract \u2014 commit just one agent's/subagent's changes, preserving other agents' and the user's work; respect `commit.enabled`, `no_verify` explicit. Reviewed OMP 18.20.1 to 18.21.0: no Refract break (the 18.21.0 AgentSession lifecycle change is a JS-embedder API; rpc-ui `agent_end` behavior is preserved); Stuart can update to 18.21.0. Also commented OMP 18.20.1 todo multi-task ops as prior art on #2015.
 
 Also filed 2026-11-16 (Stuart): **#2018** (`p1`, `feature`), the Personal Agent's agent Session tools across every Project, from the #2005/#2007 grill.
+
+Also filed 2026-11-16 (Stuart, live): **#2027** (`p1`, `bug`, `chat`, `design`), child of #1990: the ask card's selected option is not visually distinct \u2014 in AskChoiceGroup the checked row fill (`checkbox.tsx:48`) equals the unselected hover fill (`:41`), so a selected row looks like any hovered row and the pick is unclear. Fix: a stronger checked fill / visible selected edge mapped to tokens, distinct from hover and from the recommended (severity-success) row. Affects both ask renderers; distinct from #1985.
