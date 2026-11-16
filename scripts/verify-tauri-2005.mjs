@@ -49,8 +49,8 @@ async function reattachCase({ launcherExe, exePath, shimDir, importSourceDir, ho
   const dataDir = scratch('reattach-data');
   const convDir = scratch('reattach-conv');
   dirs.push(dataDir, convDir);
-  const conversationFile = path.join(convDir, 'conversation.json');
-  writeFileSync(conversationFile, '{}');
+  const conversationFile = path.join(convDir, '2026-11-16T10-00-00-000Z_reattach2005.jsonl');
+  writeFileSync(conversationFile, '{"type":"title","title":"Saved"}\n{"type":"message","message":{"role":"user","content":"saved turn"}}\n');
   const log1 = path.join(SHOTS_DIR, 'r2-fake-omp-reattach1.log');
   const log2 = path.join(SHOTS_DIR, 'r2-fake-omp-reattach2.log');
   const start = async (scenario, debugLog, tag) => {
@@ -82,6 +82,7 @@ async function reattachCase({ launcherExe, exePath, shimDir, importSourceDir, ho
     id = opened.value.id;
     await call(app.cdp, `window.refract.sessions.open(${JSON.stringify(id)}, true)`);
     await app.cdp.waitFor(running(id), { timeoutMs: 60_000, label: 'reattach: first life running' });
+    await call(app.cdp, `window.refract.chat.send(${JSON.stringify(id)}, 'first turn before the stop')`);
     const registryPath = path.join(dataDir, 'registry.json');
     let saved = null;
     for (let i = 0; i < 60 && !saved; i++) {
