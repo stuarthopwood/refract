@@ -327,9 +327,10 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .get_session(&id)
                 .ok_or_else(|| not_found(format!("Session not found: {id}")))?
                 .clone();
+            let repository_id = project_binding(&session)?.repository_id;
             let repository = registry
-                .get_repository(project_binding(&session)?.repository_id)
-                .ok_or_else(|| not_found("Project not found".to_string()))?
+                .get_repository(repository_id)
+                .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
                 .clone();
             (session, repository)
         };
@@ -412,9 +413,10 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 .ok_or_else(|| not_found(format!("Session not found: {id}")))?
                 .clone();
             refuse_if_personal(&session)?;
+            let repository_id = project_binding(&session)?.repository_id;
             let repository = registry
-                .get_repository(project_binding(&session)?.repository_id)
-                .ok_or_else(|| not_found("Project not found".to_string()))?
+                .get_repository(repository_id)
+                .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
                 .clone();
             (session, repository)
         };
@@ -520,9 +522,10 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
                 .get_session(&id)
                 .ok_or_else(|| not_found(format!("Session not found: {id}")))?
                 .clone();
+            let repository_id = project_binding(&session)?.repository_id;
             let repository = registry
-                .get_repository(project_binding(&session)?.repository_id)
-                .ok_or_else(|| not_found("Project not found".to_string()))?
+                .get_repository(repository_id)
+                .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
                 .clone();
             (session, repository)
         };

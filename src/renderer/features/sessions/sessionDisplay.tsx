@@ -1,6 +1,6 @@
 
 import { BellRingIcon, CircleCheckIcon, CircleStopIcon, MessageSquareTextIcon, PauseIcon } from 'lucide-react'
-import type { Repository } from '../../../shared/model'
+import { isProjectSession, type Repository } from '../../../shared/model'
 import { AgentSpinner } from '@/components/brand/AgentSpinner'
 import { compactNumber } from '@/lib/compactNumber'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
@@ -82,9 +82,9 @@ export function searchSessions(sessions: SessionSummary[], repositories: Reposit
     )
   }
   const matchingArchived = sessions.filter(
-    (session) => session.archivedAt && session.repositoryId !== null && repositoriesById.has(session.repositoryId) && listed(session) && matches(session)
+    (session) => session.archivedAt && isProjectSession(session) && repositoriesById.has(session.repositoryId) && listed(session) && matches(session)
   )
-  const totalCount = sessions.filter((session) => session.repositoryId !== null && repositoriesById.has(session.repositoryId) && listed(session)).length
+  const totalCount = sessions.filter((session) => isProjectSession(session) && repositoriesById.has(session.repositoryId) && listed(session)).length
   const shownCount = trimmed
     ? [...matchingByRepository.values()].reduce((sum, list) => sum + list.length, 0) + matchingArchived.length
     : totalCount

@@ -56,7 +56,7 @@ pub fn check_target<'a>(
 ) -> Result<&'a Value, ToolError> {
     let target = summaries
         .iter()
-        .find(|s| s["id"].as_str() == Some(id))
+        .find(|s| s["id"].as_str() == Some(id) && !super::sessions::is_personal(s))
         .ok_or_else(|| ToolError::new(NOT_FOUND, format!("no Session has id {id}")))?;
     if id == self_id {
         return Err(ToolError::new(

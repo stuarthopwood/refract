@@ -192,6 +192,7 @@ pub fn list_value(
     }
     let mut chosen: Vec<&Value> = summaries
         .iter()
+        .filter(|s| !is_personal(s))
         .filter(|s| include_archived || !s["archivedAt"].is_string())
         .filter(|s| project.is_none_or(|p| matches_project(s, repositories, p)))
         .collect();
@@ -208,6 +209,12 @@ pub fn list_value(
         truncated = true;
     }
     Ok(result(&rows, total, truncated))
+}
+
+/// The Personal Agent is not a Project Session, so the Session tools never list or reach it.
+pub(super) fn is_personal(summary: &Value) -> bool {
+    serde_json::from_value::<crate::store::session_kind::SessionKind>(summary["kind"].clone())
+        .is_ok_and(|k| k == crate::store::session_kind::SessionKind::Personal)
 }
 
 fn result(rows: &[Value], total: usize, truncated: bool) -> Value {
@@ -297,6 +304,7 @@ pub async fn get_status(agent: &SessionAgent, args: &Value) -> Result<Value, Too
     let summary = summaries
         .iter()
         .find(|s| text(s, "id") == id)
+        .filter(|s| !is_personal(s))
         .ok_or_else(|| ToolError::new(NOT_FOUND, format!("no Session has id {id}")))?;
     let repositories = repository_names(&manager.registry_snapshot().await);
     let target = manager.get_agent(id);

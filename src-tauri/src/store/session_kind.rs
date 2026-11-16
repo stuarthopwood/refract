@@ -54,10 +54,14 @@ impl Session {
     }
 }
 
+/// Single source of truth for the `personal-agent-protected` refusal text.
+pub const PERSONAL_AGENT_PROTECTED_MESSAGE: &str =
+    "The Personal Agent cannot be archived or deleted.";
+
 pub(super) fn personal_agent_protected() -> RegistryError {
     RegistryError::new(
         RegistryErrorCode::PersonalAgentProtected,
-        "The Personal Agent cannot be archived or deleted.",
+        PERSONAL_AGENT_PROTECTED_MESSAGE,
     )
 }
 
@@ -66,7 +70,7 @@ pub(super) fn check_new_session(data: &Registry, s: &Session) -> Result<(), Regi
     if s.kind == SessionKind::Personal {
         if !s.has_no_project_fields() {
             return Err(RegistryError::new(
-                RegistryErrorCode::NotFound,
+                RegistryErrorCode::InvalidShape,
                 "A Personal Agent has no Project, branch or worktree.",
             ));
         }
@@ -80,7 +84,7 @@ pub(super) fn check_new_session(data: &Registry, s: &Session) -> Result<(), Regi
     }
     let Some(binding) = s.project_binding() else {
         return Err(RegistryError::new(
-            RegistryErrorCode::NotFound,
+            RegistryErrorCode::InvalidShape,
             "A Project Session needs a Project, branch and worktree.",
         ));
     };
@@ -128,7 +132,7 @@ pub(super) fn warn_duplicate_personal(data: &Registry) {
     personal.sort_by(|a, b| a.created_at.cmp(&b.created_at));
     let others: Vec<&str> = personal[1..].iter().map(|s| s.id.as_str()).collect();
     log::warn!(
-        "registry has more than one Personal Agent row; keeping {} and ignoring {others:?}",
+        "registry has more than one Personal Agent row; keeping {} (also present: {others:?})",
         personal[0].id
     );
 }

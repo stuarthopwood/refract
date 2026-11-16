@@ -76,7 +76,7 @@ export function ManageSessionsScreen() {
 
     function announceCurrentCount(): void {
       const state = useSessionsStore.getState()
-      const current = filterAndSortSessions(state.sessions, repositories, filters)
+      const current = filterAndSortSessions(state.sessions.filter(isProjectSession), repositories, filters)
       announce(showingCountLabel(current.length, state.sessions.filter(isProjectSession).length))
     }
 

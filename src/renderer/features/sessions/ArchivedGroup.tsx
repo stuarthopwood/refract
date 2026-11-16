@@ -14,7 +14,7 @@ export function ArchivedGroup({
   sessions: SessionSummary[]
   repositoriesById: Map<string, Repository>
 }) {
-  const rows = sessions.filter(isProjectSession).filter((session) => repositoriesById.has(session.repositoryId))
+  const rows = sessions.filter((session): session is typeof session & { repositoryId: string } => isProjectSession(session) && repositoriesById.has(session.repositoryId))
   const sorted = [...rows].sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
   const isOpen = useSessionListStore((state) => state.isArchivedGroupOpen())
   const containsVisibleSession = useSplitStore((state) => sorted.some((session) => state.paneSessionIds.includes(session.id)))

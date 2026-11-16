@@ -13,6 +13,7 @@ import { ViewsNavGroup } from './ViewsNavGroup'
 import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useRepositoriesStore, useSessionListStore, useSessionsStore } from '@/state'
+import { isProjectSession } from '../../../shared/model'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
 import { ShowHiddenToggle } from './ShowHiddenToggle'
@@ -38,7 +39,7 @@ export function SessionList() {
   const repositoriesById = new Map(repositories.map((repository) => [repository.id, repository]))
   // Archived counts toward "all" only while shown, and is computed from the unfiltered list since a search-hidden group still counts (#735).
   const archivedSessions = sessions.filter(
-    (session) => session.archivedAt && session.repositoryId !== null && repositoriesById.has(session.repositoryId) && (!session.hiddenAt || showHidden)
+    (session) => session.archivedAt && isProjectSession(session) && repositoriesById.has(session.repositoryId) && (!session.hiddenAt || showHidden)
   )
   const archivedVisible = archivedSessions.length > 0
   // `searchSessions` is the one place that computes query matches, shared with the debounced announcement so they cannot disagree.

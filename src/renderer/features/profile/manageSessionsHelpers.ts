@@ -3,7 +3,7 @@
 // (matching this spec's own small-renderer-helper convention, e.g.
 // src/renderer/lib/account-format.ts).
 import type { ProjectSessionSummary, SessionSummary } from '../../../shared/ipc'
-import { isProjectSession, type Repository } from '../../../shared/model'
+import type { Repository } from '../../../shared/model'
 import type { SessionFilters } from '@/state/view-store'
 import { displayStatus, matchesNameOrBranch } from '@/features/sessions/sessionDisplay'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
@@ -26,13 +26,13 @@ const STATUS_ORDER: Record<SessionDisplayStatus, number> = {
  *  the session's name OR branch, case-insensitive substring (FR-025's own "filters name and
  *  branch" requirement). */
 export function filterAndSortSessions(
-  sessions: SessionSummary[],
+  sessions: ProjectSessionSummary[],
   repositories: Repository[],
   filters: SessionFilters
 ): ProjectSessionSummary[] {
   const repoNameById = new Map(repositories.map((repository) => [repository.id, repository.name]))
   const query = effectiveFilterQuery(filters.search).toLowerCase()
-  const filtered = sessions.filter(isProjectSession).filter((session) => {
+  const filtered = sessions.filter((session) => {
     if (filters.repositoryId !== 'all' && session.repositoryId !== filters.repositoryId) return false
     if (filters.archiveFilter === 'active' && session.archivedAt) return false
     if (filters.archiveFilter === 'archived' && !session.archivedAt) return false

@@ -148,6 +148,7 @@ pub enum RegistryErrorCode {
     HasSessions,
     PersonalAgentExists,
     PersonalAgentProtected,
+    InvalidShape,
 }
 
 impl RegistryErrorCode {
@@ -158,6 +159,7 @@ impl RegistryErrorCode {
             Self::HasSessions => "has-sessions",
             Self::PersonalAgentExists => "personal-agent-exists",
             Self::PersonalAgentProtected => "personal-agent-protected",
+            Self::InvalidShape => "invalid-shape",
         }
     }
 }

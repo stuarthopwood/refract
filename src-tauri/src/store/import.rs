@@ -392,6 +392,13 @@ fn compute_merge(dest: &Registry, source: &Registry) -> (MergePlan, HashMap<Stri
     let mut session_ids_added = Vec::new();
 
     for session in &source.sessions {
+        if session.is_personal() {
+            log::info!(
+                "refract-tauri: data import: Session id {} is a Personal Agent; skipping",
+                session.id
+            );
+            continue;
+        }
         let Some(mapped_repo_id) = session
             .repository_id
             .as_deref()
@@ -453,6 +460,9 @@ fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarke
         let Some(session) = source.sessions.iter().find(|s| &s.id == id) else {
             continue;
         };
+        if session.is_personal() {
+            continue;
+        }
         let Some(mapped_repo_id) = session
             .repository_id
             .as_deref()
