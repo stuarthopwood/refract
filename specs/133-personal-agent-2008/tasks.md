@@ -81,23 +81,23 @@ Rule for T011 to T016: for `project` Sessions the code path and output are byte-
 - [ ] T023 [US2] In `ipc/sessions_lifecycle.rs` (or a new `ipc/personal_agent.rs` registered in `ipc/mod.rs` if the file would pass 600 lines) add an open-or-create handler taking no repository or branch: returns the existing `personal` Session, or creates one named "My Agent" with all four fields `None`, `session_dir` unset and no worktree, via `RegistryStore::add_session` (FR-009, FR-011). Expose it in `shared/ipc.ts` and `tauri-bridge/index.ts`.
 - [ ] T024 [US2] In `session/agent/launch.rs` skip the worktree and Project start gate (`:64-94`) for `personal` (FR-013) and use the home folder, resolved on every launch and never stored, as the agent cwd (`:180-182`) and roster cwd (`:207`) (FR-012); a missing or unresolvable home folder fails the launch with a visible error on the Personal Agent and no fallback (OQ-4). Replace the T011 interim refusal. Everything else launches through the existing machinery unchanged (FR-014).
 - [ ] T025 [US2] Keep Project launch and creation byte-identical (FR-016); confirm saved-session scanning and `switch_session` reattach work for a home-folder cwd as recorded by T021 (`docs/spike/FINDINGS.md`).
-- [ ] T026 [US2] Live verify (quickstart.md "#2005"): SC-003 and SC-004 on a scratch instance; update `docs/PLAN.md`.
+- [ ] T026 [US2] Live verify (quickstart.md "#2005"): SC-003 and SC-004 on a scratch instance. #2005 adds no UI entry point (FR-016a), so call the create-or-open IPC from T023 over CDP; #2006 adds the button. Update `docs/PLAN.md`.
 
 **Checkpoint**: the Personal Agent works end to end from a developer-visible trigger available to the harness.
 
 ---
 
-## Phase 4: #2007 Repo-only features disabled (User Story 4, P1)
+## Phase 4: #2007 Repo-only empty state (User Story 4, P1)
 
 **Goal**: every repo-only surface in the Personal Agent is a disabled state with an explanation, never an error or another Session's data. Depends only on #2004.
 
 **Independent Test**: quickstart.md "#2007".
 
-- [ ] T027 [P] [US4] Give each repo-only handler an explicit not-applicable result for `personal` (FR-024): `ipc/git_changes.rs`, `ipc/file_explorer.rs`, `ipc/files.rs`, `ipc/sessions_lifecycle/diag.rs` (diffStat, reveal), `ipc/pull_requests/handlers.rs`, `ipc/issues.rs`, `ipc/session_kickoff.rs`, `ipc/sessions_lifecycle.rs` `sessions_recreate_worktree`; no panic, no error log. Replace the T012 interim returns.
-- [ ] T028 [P] [US4] Add one reusable disabled-surface component under `src/renderer/components/` (ADR 0003) that renders an explanation as text with the control inert; its explanation is exposed to assistive technology, not colour or a greyed control alone (FR-026).
-- [ ] T029 [US4] Use it in `right-pane/git-changes/`, `right-pane/file-explorer/FileExplorerPanel.tsx`, the pull request and diff views (`features/pull-requests/`, `features/right-pane/`), with the example copy "No repository - the Personal Agent is not linked to a project" (FR-022).
-- [ ] T030 [US4] In `features/sessions/useWorktreeActions.ts`, `useSessionRowActions.ts` and `SessionDetailsCard.tsx` make copy worktree path, reveal and recreate worktree absent or disabled for `personal`, and archive and delete disabled with the reason "The Personal Agent cannot be archived or deleted" (FR-023). Project Sessions unchanged (FR-025).
-- [ ] T031 [US4] Live verify with CDP on a scratch instance (quickstart.md "#2007"): SC-005 and SC-006; app log clean; update `docs/PLAN.md`.
+- [ ] T027 [P] [US4] Give each repo-only handler a typed `no-repository` result for `personal` (FR-024): `ipc/git_changes.rs`, `ipc/file_explorer.rs`, `ipc/files.rs`, `ipc/sessions_lifecycle/diag.rs` (diffStat, reveal), `ipc/pull_requests/handlers.rs`, `ipc/issues.rs`, `ipc/session_kickoff.rs`, `ipc/sessions_lifecycle.rs` `sessions_recreate_worktree`; no panic, no error log. Add `no-repository` to the `IPC_ERROR_CODES` allowlist in `src-tauri/src/ipc/mod.rs` and to its TypeScript mirror in `src/shared/ipc.ts`. Replace the T012 interim returns.
+- [ ] T028 [P] [US4] Add one shared repo-only empty state under `src/renderer/components/`, built on the existing `Empty` primitive (ADR 0003), with the title "No repository" and the body "The Personal Agent isn't linked to a Project, so there are no changes, files, or pull requests to show." Title and body are exposed to assistive technology as text (FR-026).
+- [ ] T029 [US4] Use it in `right-pane/git-changes/`, `right-pane/file-explorer/FileExplorerPanel.tsx`, the pull request and diff views (`features/pull-requests/`, `features/right-pane/`). Gate on the Session `kind` in the renderer and make no backend call for `personal`; the panels stay visible (FR-022).
+- [ ] T030 [US4] In `features/sessions/useWorktreeActions.ts`, `useSessionRowActions.ts` and `SessionDetailsCard.tsx` remove copy worktree path, reveal and recreate worktree from the menus for `personal` (do not show them disabled), and show archive and delete disabled with the reason "The Personal Agent cannot be archived or deleted" (FR-023). Project Sessions unchanged (FR-025).
+- [ ] T031 [US4] Live verify with CDP on a scratch instance (quickstart.md "#2007"): SC-005 and SC-006; Worktree actions absent from the menus; app log clean; update `docs/PLAN.md`.
 
 **Checkpoint**: the Personal Agent shows no repo errors.
 

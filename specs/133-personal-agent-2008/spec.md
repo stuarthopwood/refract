@@ -21,7 +21,7 @@ This feature adds one built-in **Personal Agent**: a **Session** with no **Proje
 4. **Lifecycle.** The Personal Agent cannot be archived or deleted: Rust rejects both with an error, and the interface shows those actions disabled (#2007). It can be stopped, started, paused, renamed, and can hold new **Conversations**.
 5. **Working directory.** Nothing is stored. The repository, branch, base branch and **Worktree** path stay absent; launch (#2005) resolves the developer's home folder each time. The agent can read and write real files there; this is Stuart's explicit choice and nothing downstream may assume a sandbox.
 6. **Session list.** A launcher button above the **Projects** list, then a divider, then a "Projects" label, then the project groups (#2006). The button opens the Personal Agent, creating it the first time, with no repository or branch picker (#2005).
-7. **Repo-only features.** Git changes, file explorer, pull requests, diff and **Worktree** actions show disabled with an explanatory empty state in the Personal Agent. They are not hidden (#2007).
+7. **Repo-only features.** Git changes, file explorer, pull requests and diff show one shared "No repository" empty state in the Personal Agent; the panels are not hidden. Worktree actions are removed from its menus (#2007).
 8. **Scope.** One spec for the whole epic, tasks grouped per child. Only the #2004 phase is implemented in the first PR.
 9. **Priority.** The epic and all four children are p0.
 
@@ -40,11 +40,17 @@ Every answer below comes from the epic grill and the #2004 grill (Stuart grill 2
 - Q: Is the home folder sandboxed? -> A: No. The agent can read and write real files there; this is Stuart's explicit choice (Stuart grill 2026-11-16, decision 5).
 - Q: How is it created and where is it opened from? -> A: From a launcher button above the projects list, which opens it and creates it if absent, with no repository or branch picker (Stuart grill 2026-11-16, decision 6).
 - Q: What does the session list look like? -> A: Launcher button, divider, a "Projects" label, then the project groups (Stuart grill 2026-11-16, decision 6).
-- Q: Are repo-only features hidden or disabled in the Personal Agent? -> A: Disabled with an explanatory empty state, not hidden (Stuart grill 2026-11-16, decision 7).
+- Q: Are repo-only features hidden or disabled in the Personal Agent? -> A: The panels are not hidden; they show one shared empty state (refined by the #2005/#2007 entries below) (Stuart grill 2026-11-16, decision 7).
 - Q: One spec or one per child? -> A: One spec for the whole epic with tasks grouped per child; only the #2004 phase is implemented in the first PR and later children converge against this spec (Stuart grill 2026-11-16, decision 8).
 - Q: Does Session cleanup (automatic archive or delete) apply to it? -> A: No. This follows from "cannot be archived or deleted" (Stuart grill 2026-11-16, decision 4), recorded as FR-010.
 - Q: Does it use the existing conversation machinery (approvals, token guard, Conversations, recovery)? -> A: Yes, unchanged (Stuart grill 2026-11-16, decision 1), recorded as FR-014.
 - Q: What order do the children run in? -> A: #2004 first; #2005 depends on #2004, #2007 depends only on #2004, #2006 depends on #2005 (docs/PLAN.md rows for #2008 and #2004-#2007), so the task phases run #2004, #2005, #2007, #2006 (Stuart grill 2026-11-16, decision 8).
+- Q: What does the repo-only empty state say, and who decides when to show it? -> A: One shared empty state built on the existing `Empty` primitive and reused by git changes, file explorer, pull requests and diff. Title "No repository"; body "The Personal Agent isn't linked to a Project, so there are no changes, files, or pull requests to show." The renderer gates on `kind` and makes no backend call (Stuart grill 2026-11-16, #2005/#2007).
+- Q: What do backend handlers return for the Personal Agent? -> A: A typed `no-repository` result, not logged as an error (Stuart grill 2026-11-16, #2005/#2007).
+- Q: Are Worktree actions shown disabled? -> A: No. Copy worktree path, reveal and recreate worktree are removed from the Personal Agent's menus (Stuart grill 2026-11-16, #2005/#2007).
+- Q: Does #2005 add a UI entry point? -> A: No. The live check calls the create-or-open IPC over CDP on a scratch instance; #2006 adds the launcher button (Stuart grill 2026-11-16, #2005/#2007).
+- Q: How do the agent Session tools treat the Personal Agent (OQ-1)? -> A: The interim stands for this epic: the `refract_` tools neither list nor act on it and a Personal Agent caller gets "not found". Issue #2018 covers the read and message tools across every Project; create stays refused (Stuart grill 2026-11-16, #2005/#2007).
+- Q: Can the Personal Agent be hidden from the list (OQ-2)? -> A: No. Hide is refused, as already implemented in #2004 (`personal-agent-protected`) (Stuart grill 2026-11-16, #2005/#2007).
 
 
 ## User Scenarios & Testing *(mandatory)*
@@ -105,21 +111,21 @@ The session list shows the Personal Agent as one launcher button at the very top
 
 ---
 
-### User Story 4 - Repo-only features are disabled, not broken (Priority: P1) — #2007
+### User Story 4 - Repo-only features show an empty state, not errors (Priority: P1) — #2007
 
-In the Personal Agent, every feature that needs a repository is visibly disabled with an explanation instead of erroring or showing another Session's data.
+In the Personal Agent, every feature that needs a repository shows one shared empty state instead of erroring or showing another Session's data, and Worktree actions are removed from its menus.
 
 **Why this priority**: without it the Personal Agent surfaces errors in the git changes, file explorer, pull request and diff panels.
 
-**Independent Test**: open the Personal Agent and open each repo-only panel and action; confirm each shows a disabled state with an explanation, and that the same panels still work in a Project Session.
+**Independent Test**: open the Personal Agent and open each repo-only panel and menu; confirm each panel shows the shared empty state, the Worktree actions are absent, and the same panels still work in a Project Session.
 
 **Acceptance Scenarios**:
 
-1. **Given** the Personal Agent is shown, **When** the git changes panel, file explorer, pull request view or diff is opened, **Then** each shows a disabled state with a short explanation (for example "No repository - the Personal Agent is not linked to a project").
-2. **Given** the Personal Agent, **When** the session actions are shown, **Then** copy worktree path, reveal and recreate worktree are absent or disabled, and archive and delete are shown disabled with the reason.
-3. **Given** a backend request for any repo-only data names the Personal Agent, **When** it is handled, **Then** it returns a clean empty or not-applicable result, with no panic and no error log.
+1. **Given** the Personal Agent is shown, **When** the git changes panel, file explorer, pull request view or diff is opened, **Then** each shows the shared empty state titled "No repository" with the body "The Personal Agent isn't linked to a Project, so there are no changes, files, or pull requests to show.", and the renderer makes no backend call.
+2. **Given** the Personal Agent, **When** the session menus are shown, **Then** copy worktree path, reveal and recreate worktree are absent (removed, not disabled), and archive and delete are shown disabled with the reason.
+3. **Given** a backend request for any repo-only data names the Personal Agent, **When** it is handled, **Then** it returns a typed `no-repository` result, with no panic and no error log.
 4. **Given** a Project Session, **Then** every one of these features works exactly as before.
-5. **Given** a disabled surface, **Then** its explanation is exposed to assistive technology as text, not conveyed by colour or a greyed control alone.
+5. **Given** the shared empty state, **Then** its title and body are exposed to assistive technology as text, not conveyed by colour or a greyed control alone.
 
 ### Edge Cases
 
@@ -156,6 +162,7 @@ In the Personal Agent, every feature that needs a repository is visibly disabled
 - **FR-014**: Apart from the working folder and the absent **Worktree**, the Personal Agent MUST launch through the existing machinery unchanged: the same agent process mode, approval mode, token guard, Conversations and recovery.
 - **FR-015**: If omp requires a git repository for any path the Personal Agent uses, that MUST be recorded as a finding and raised upstream rather than worked around with a fake repository.
 - **FR-016**: Creating and launching a Project Session MUST be unchanged.
+- **FR-016a**: #2005 MUST add no UI entry point. Its live check calls the create-or-open IPC over CDP on a scratch instance; #2006 adds the launcher button.
 
 **Launcher (#2006)**
 
@@ -167,9 +174,9 @@ In the Personal Agent, every feature that needs a repository is visibly disabled
 
 **Repo-only features (#2007)**
 
-- **FR-022**: In the Personal Agent, the git changes panel, file explorer, pull request views and diff MUST each show a disabled state with an explanatory empty state, not an error and not another Session's data.
-- **FR-023**: Worktree-only session actions (copy worktree path, reveal, recreate worktree) MUST be absent or disabled for the Personal Agent, and archive and delete MUST be shown disabled with the reason.
-- **FR-024**: Backend handlers for repo-only data MUST return a clean empty or not-applicable result for the Personal Agent, with no panic and no error log.
+- **FR-022**: In the Personal Agent, the git changes panel, file explorer, pull request views and diff MUST each show one shared empty state, built on the existing `Empty` primitive, with the title "No repository" and the body "The Personal Agent isn't linked to a Project, so there are no changes, files, or pull requests to show." The panels are not hidden. The renderer MUST gate on the Session `kind` and make no backend call for these panels.
+- **FR-023**: Worktree-only session actions (copy worktree path, reveal, recreate worktree) MUST be removed from the Personal Agent's menus, not shown disabled. Archive and delete MUST be shown disabled with the reason.
+- **FR-024**: Backend handlers for repo-only data MUST return a typed `no-repository` result for the Personal Agent, with no panic and no error log. The `no-repository` code is added to the `IPC_ERROR_CODES` allowlist in `src-tauri/src/ipc/mod.rs` and its TypeScript mirror in `src/shared/ipc.ts`.
 - **FR-025**: Every repo-only feature MUST work exactly as before in a Project Session.
 
 **Accessibility and docs**
@@ -186,7 +193,7 @@ In the Personal Agent, every feature that needs a repository is visibly disabled
 
 ## Accessibility (WCAG 2.1 AA)
 
-The launcher is a real labelled button with a visible focus ring and a selected state that is not colour-only; the "Projects" label is a heading for its group. Disabled repo-only surfaces keep their explanation as readable text and are not hidden. Archive and delete show a reason, not just a greyed control. The data-model phase (#2004) changes no rendered surface.
+The launcher is a real labelled button with a visible focus ring and a selected state that is not colour-only; the "Projects" label is a heading for its group. The repo-only empty state keeps its title and body as readable text and the panels are not hidden. Archive and delete show a reason, not just a greyed control. The data-model phase (#2004) changes no rendered surface.
 
 ## Success Criteria *(mandatory)*
 
@@ -216,8 +223,8 @@ Multiple personal agents, user-created project-less Sessions, a sandbox or a fol
 
 The grill did not settle these. Each has an interim default so the first phase is not blocked; none may be treated as decided.
 
-- **OQ-1 Agent Session tools.** How do the agent Session tools (list, status, message, create, update) treat the Personal Agent as caller or target? Interim: Project-scoped tools neither list nor act on it, and it cannot create Child Sessions (a Child Session needs a **Worktree**).
-- **OQ-2 Hide from list.** The Personal Agent is the list's top button, not a row. Does hide-from-list apply? Interim: the hide action is not offered for it.
+- **OQ-1 Agent Session tools. Resolved (Stuart grill 2026-11-16, #2005/#2007).** The interim is the decision for this epic: the `refract_` tools neither list nor act on the Personal Agent, a Personal Agent caller gets "not found", and it cannot create Child Sessions (a Child Session needs a **Worktree**). Issue #2018 covers letting the Personal Agent use the read and message tools across every Project; create stays refused.
+- **OQ-2 Hide from list. Resolved (Stuart grill 2026-11-16, #2005/#2007).** Hide is refused for the Personal Agent, as already implemented in #2004 (`personal-agent-protected`).
 - **OQ-3 Duplicate on disk.** A registry on disk that already holds two `personal` Sessions (hand-edited or from a bug). Interim: load without crashing, keep the earliest as the singleton and report the rest; never delete silently.
 - **OQ-4 Home folder failure.** The home folder cannot be resolved or no longer exists at launch. Interim: the launch fails with a visible error and no fallback directory.
 - **OQ-5 omp and a non-repository folder.** Whether omp needs a git repository for any path the Personal Agent uses is not known; #2005 verifies it live and raises any gap upstream (FR-015).

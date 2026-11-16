@@ -15,9 +15,11 @@ Always use an isolated scratch data folder and instance (see the Refract scratch
 
 Open the Personal Agent on a clean data folder; confirm one Session named "My Agent", no worktree on disk, the agent process cwd is the home folder, a message gets a reply, and a second open reuses the Session (SC-003, SC-004). Record the omp non-repository result in `docs/spike/FINDINGS.md`.
 
-## #2007 disabled surfaces
+Call the create-or-open IPC over CDP on the scratch instance; #2005 adds no UI entry point and #2006 adds the button.
 
-Open the git changes panel, file explorer, PR view and diff in the Personal Agent: each shows an explanation and the app log stays clean; the same panels work in a Project Session (SC-005, SC-006).
+## #2007 repo-only empty state
+
+Open the git changes panel, file explorer, PR view and diff in the Personal Agent: each shows the "No repository" empty state with no backend call and the app log stays clean; the Worktree actions are absent from its menus; the same panels work in a Project Session (SC-005, SC-006).
 
 ## #2006 launcher
 
