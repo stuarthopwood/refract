@@ -5,7 +5,7 @@
 // Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-2005.mjs
 // Env: REFRACT_2005_SHOTS_DIR overrides the evidence directory; REFRACT_2005_REPORT_FILE the report name.
 
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, statSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +53,8 @@ async function reattachCase({ launcherExe, exePath, shimDir, importSourceDir, ho
   writeFileSync(conversationFile, '{"type":"title","title":"Saved"}\n{"type":"message","message":{"role":"user","content":"saved turn"}}\n');
   const log1 = path.join(SHOTS_DIR, 'r2-fake-omp-reattach1.log');
   const log2 = path.join(SHOTS_DIR, 'r2-fake-omp-reattach2.log');
+  rmSync(log1, { force: true });
+  rmSync(log2, { force: true });
   const start = async (scenario, debugLog, tag) => {
     const port = await getFreePort();
     const launched = await launchBuiltExe(launcherExe, exePath, {
