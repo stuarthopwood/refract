@@ -106,7 +106,11 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
             <PinnedPullRequestPanel sessionId={sessionId} />
           </RequiresRepository>
         )}
-        {activePanelId === 'issue' && <PinnedIssuePanel sessionId={sessionId} />}
+        {activePanelId === 'issue' && (
+          <RequiresRepository sessionId={sessionId}>
+            <PinnedIssuePanel sessionId={sessionId} />
+          </RequiresRepository>
+        )}
       </div>
       <HandleHitStrip />
     </div>

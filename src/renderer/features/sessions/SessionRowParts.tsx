@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/context-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
 import type { SessionRowAction } from './sessionActions'
 import type { useSessionRowActions } from './useSessionRowActions'
@@ -54,23 +55,52 @@ export function SessionRenameInput({ row }: { row: RowState }) {
 
 type ActionItem = Extract<SessionRowAction, { kind: 'item' }>
 
-/** Disabled items sit under `pointer-events: none`, so the tooltip is on a wrapper; the reason is also the item's accessible description. */
-function withReason(action: ActionItem, item: (describedBy: string | undefined, label: ReactNode) => ReactNode): ReactNode {
+const REASON_ITEM_CLASS = 'aria-disabled:cursor-default aria-disabled:opacity-50 aria-disabled:forced-colors:text-[GrayText]'
+
+/** What an action item needs to be unavailable and still selectable by the menu's own machinery. */
+interface ItemAvailability {
+  disabled: boolean | undefined
+  'aria-disabled': true | undefined
+  'aria-describedby': string | undefined
+  className: string | undefined
+  onSelect: (event: Event) => void
+}
+
+/** A reason keeps the item focusable (`aria-disabled` plus a guarded `onSelect`, as in `ContextShakeMenu`) so keyboard
+ * users reach it and hear why; without one the item is natively disabled when `disabled`. */
+function availability(action: ActionItem, reasonId: string | undefined): ItemAvailability {
+  return {
+    disabled: action.reason ? undefined : action.disabled,
+    'aria-disabled': action.reason ? true : undefined,
+    'aria-describedby': reasonId,
+    className: action.reason ? REASON_ITEM_CLASS : undefined,
+    onSelect: (event) => {
+      if (action.reason) event.preventDefault()
+      else action.onSelect()
+    }
+  }
+}
+
+/** The label, plus the reason as the item's accessible description and a tooltip on hover and keyboard focus. */
+function withReason(action: ActionItem, item: (props: ItemAvailability, label: ReactNode) => ReactNode): ReactNode {
   const label = <span className="min-w-0 whitespace-normal break-words">{action.label}</span>
-  if (!action.reason) return item(undefined, label)
+  if (!action.reason) return item(availability(action, undefined), label)
   const reasonId = `session-action-${action.key}-reason`
   return (
-    <span key={action.key} title={action.reason} className="block">
-      {item(
-        reasonId,
-        <>
-          {label}
-          <span id={reasonId} className="sr-only">
-            {action.reason}
-          </span>
-        </>
-      )}
-    </span>
+    <Tooltip key={action.key}>
+      <TooltipTrigger asChild>
+        {item(
+          availability(action, reasonId),
+          <>
+            {label}
+            <span id={reasonId} className="sr-only">
+              {action.reason}
+            </span>
+          </>
+        )}
+      </TooltipTrigger>
+      <TooltipContent side="right">{action.reason}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -80,15 +110,8 @@ export function DropdownActionItems({ actions }: { actions: SessionRowAction[] }
     action.kind === 'separator' ? (
       <DropdownMenuSeparator key={`sep-${index}`} />
     ) : (
-      withReason(action, (describedBy, label) => (
-        <DropdownMenuItem
-          key={action.key}
-          variant={action.variant}
-          icon={action.icon}
-          disabled={action.disabled}
-          aria-describedby={describedBy}
-          onSelect={action.onSelect}
-        >
+      withReason(action, (props, label) => (
+        <DropdownMenuItem key={action.key} variant={action.variant} icon={action.icon} {...props}>
           {label}
         </DropdownMenuItem>
       ))
@@ -101,15 +124,8 @@ export function ContextActionItems({ actions }: { actions: SessionRowAction[] })
     action.kind === 'separator' ? (
       <ContextMenuSeparator key={`sep-${index}`} />
     ) : (
-      withReason(action, (describedBy, label) => (
-        <ContextMenuItem
-          key={action.key}
-          variant={action.variant}
-          icon={action.icon}
-          disabled={action.disabled}
-          aria-describedby={describedBy}
-          onSelect={action.onSelect}
-        >
+      withReason(action, (props, label) => (
+        <ContextMenuItem key={action.key} variant={action.variant} icon={action.icon} {...props}>
           {label}
         </ContextMenuItem>
       ))

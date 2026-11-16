@@ -65,6 +65,9 @@ export function buildSessionRowActions(
   if (deleting) return []
   const isArchived = !!session.archivedAt
   const protectedSession = isProjectSession(session) ? {} : { disabled: true, reason: PERSONAL_AGENT_PROTECTED_REASON }
+  const visibilityAction: SessionRowAction = session.hiddenAt
+    ? { kind: 'item', key: 'unhide', icon: EyeIcon, label: 'Unhide', onSelect: handlers.onUnhide }
+    : { kind: 'item', key: 'hide', icon: EyeOffIcon, label: 'Hide', onSelect: handlers.onHide }
   return [
     ...(newSession
       ? ([
@@ -87,9 +90,7 @@ export function buildSessionRowActions(
           { kind: 'item', key: 'reveal', icon: RevealActionIcon, label: REVEAL_ACTION_LABEL, onSelect: handlers.onReveal }
         ] as const)
       : []),
-    session.hiddenAt
-      ? { kind: 'item', key: 'unhide', icon: EyeIcon, label: 'Unhide', onSelect: handlers.onUnhide }
-      : { kind: 'item', key: 'hide', icon: EyeOffIcon, label: 'Hide', onSelect: handlers.onHide },
+    ...(isProjectSession(session) ? [visibilityAction] : []),
     isArchived
       ? { kind: 'item', key: 'restore', icon: ArchiveRestoreIcon, label: 'Restore', onSelect: handlers.onRestore }
       : { kind: 'item', key: 'archive', icon: ArchiveIcon, label: 'Archive', ...protectedSession, onSelect: handlers.onArchive },
