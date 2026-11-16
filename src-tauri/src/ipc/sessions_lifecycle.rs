@@ -19,7 +19,7 @@ use crate::session::SessionStatus;
 use crate::store::registry::{Session, SessionPatch};
 use crate::store::session_kind::SessionKind;
 
-use super::project_session::{project_binding, refuse_if_personal};
+use super::project_session::{project_binding, refuse_if_personal, repo_binding};
 use super::{
     arg_str, invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, AppState,
     Dispatcher, HandlerFuture, IpcError,
@@ -526,14 +526,14 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
                 .get_session(&id)
                 .ok_or_else(|| not_found(format!("Session not found: {id}")))?
                 .clone();
-            let repository_id = project_binding(&session)?.repository_id;
+            let repository_id = repo_binding(&session)?.repository_id;
             let repository = registry
                 .get_repository(repository_id)
                 .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
                 .clone();
             (session, repository)
         };
-        let binding = project_binding(&session)?;
+        let binding = repo_binding(&session)?;
 
         // Take the busy claim after `branch_exists`, so a branch-missing failure leaves the watcher running.
         let repo_path = Path::new(&repository.path);
