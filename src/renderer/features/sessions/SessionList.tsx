@@ -142,6 +142,14 @@ export function SessionList() {
       <ViewsNavGroup />
       {restored && (
         <>
+          {/* Pinned outside the ScrollArea and outside search and filters, which govern only the Project groups below. */}
+          <div className="mt-4 flex shrink-0 flex-col gap-2 px-2">
+            <PersonalAgentRow />
+            <div className="px-2">
+              <Separator className="bg-divider" />
+            </div>
+            <SectionHeading>Projects</SectionHeading>
+          </div>
           {/* Pinned above the ScrollArea; no border, fill or `role="toolbar"` (#567 rules out arrow-key roving). */}
           <div className="mt-4 flex shrink-0 items-center justify-end gap-1 px-4">
             <FilterToggleButton
@@ -235,12 +243,6 @@ export function SessionList() {
           )}
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-2 p-2">
-              {/* Outside search and filters, and first in DOM order so it is the list's first Tab stop. */}
-              <PersonalAgentRow />
-              <div className="px-2">
-                <Separator className="bg-divider" />
-              </div>
-              <SectionHeading>Projects</SectionHeading>
               {noMatches ? (
                 <Empty>
                   <EmptyHeader>

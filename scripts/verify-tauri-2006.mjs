@@ -12,7 +12,17 @@ import { fileURLToPath } from 'node:url';
 import { getFreePort, stopLauncher, sleep } from './verify-tauri-cdp.mjs';
 import { buildLauncher, makeScratchRepo, safeRmSync, requireSharedCargoTarget, gitHead, computeDirty, buildAndCopyExeFresh } from './verify-tauri-scratch-helpers.mjs';
 import { launchBuiltExe, buildOmpShim, connectCdp, worktreesDirFor, pressRealEnter } from './verify-tauri-560-helpers.mjs';
-import { pressTab, pressEscape, pressKey, hoverRow, rightClick } from './verify-tauri-session-list-helpers.mjs';
+import { pressTab, pressEscape, pressKey, hoverRow, rightClick, SEARCH_INPUT_FINDER, FILTER_TOGGLE_FINDER } from './verify-tauri-session-list-helpers.mjs';
+
+/** A tooltip can take the first Escape, so press until the menu is gone. */
+async function closeMenu(cdp) {
+  for (let i = 0; i < 3; i += 1) {
+    await pressEscape(cdp);
+    await sleep(300);
+    if (!(await cdp.evaluate(`!!document.querySelector('[role="menu"]')`))) return;
+  }
+  throw new Error('menu did not close');
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
@@ -123,17 +133,19 @@ async function main() {
     await guarded('a', async () => {
       const layout = await cdp.evaluate(`(() => {
         const ul = ${PERSONAL_UL};
-        const sep = Array.from(document.querySelectorAll('[role="separator"], hr')).find((el) => ul && (ul.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
+        const sep = Array.from(document.querySelectorAll('[data-slot="separator"]')).find((el) => ul && (ul.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING));
         const h2 = Array.from(document.querySelectorAll('h2')).find((el) => el.textContent.trim() === 'Projects');
         const group = document.querySelector('[data-repository-id]');
         const before = (a, b) => !!a && !!b && !!(a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING);
-        return { placeholder: !!(${PLACEHOLDER}), separator: !!sep, h2: !!h2, order: before(ul, sep) && before(sep, h2) && before(h2, group) };
+        const toolbar = document.querySelector('[data-session-filter-toggle]');
+        return { placeholder: !!(${PLACEHOLDER}), separator: !!sep, h2: !!h2, order: before(ul, sep) && before(sep, h2) && before(h2, toolbar) && before(toolbar, group) };
       })()`);
-      await cdp.evaluate(`document.querySelector('[aria-label="Expand all groups"]').focus()`);
+      // Focus the last tab stop before the Personal Agent so one Tab shows the first stop in the list region.
+      await cdp.evaluate(`(() => { const nav = document.querySelector('nav[aria-label="Sessions"]'); const first = Array.from(nav.querySelectorAll('button, a, [tabindex="0"]')).filter((el) => !el.closest('ul[aria-label="Personal Agent"]') && (el.compareDocumentPosition(document.querySelector('ul[aria-label="Personal Agent"]')) & Node.DOCUMENT_POSITION_FOLLOWING)); first[first.length - 1].focus(); })()`);
       await pressTab(cdp);
       const focused = await cdp.evaluate(`(() => { const a = document.activeElement; return { text: a?.textContent.trim(), inPersonal: !!a?.closest('ul[aria-label="Personal Agent"]'), tag: a?.tagName }; })()`);
       await shot(cdp, 'a-fresh-list.png');
-      check(layout.placeholder && layout.separator && layout.h2 && layout.order && focused.inPersonal && focused.text === 'My Agent', 'a. placeholder, separator, h2 "Projects", group in order; placeholder is the first Tab stop after the toolbar', { layout, focused });
+      check(layout.placeholder && layout.separator && layout.h2 && layout.order && focused.inPersonal && focused.text === 'My Agent', 'a. placeholder, separator, h2 "Projects", toolbar, group in order; placeholder is the first Tab stop after the Views group', { layout, focused });
     });
 
     // b. keyboard Enter creates the one personal row
@@ -151,22 +163,22 @@ async function main() {
 
     // c. search
     await guarded('c', async () => {
-      await cdp.click(`document.querySelector('[aria-label^="Filter sessions"]')`);
-      await cdp.waitFor(`!!document.querySelector('input[placeholder="Filter sessions…"]')`, { timeoutMs: 10_000, label: 'search field' });
-      await cdp.click(`document.querySelector('input[placeholder="Filter sessions…"]')`);
+      await cdp.click(FILTER_TOGGLE_FINDER);
+      await cdp.waitFor(`!!(${SEARCH_INPUT_FINDER})`, { timeoutMs: 10_000, label: 'search field' });
+      await cdp.click(SEARCH_INPUT_FINDER);
       await cdp.send('Input.insertText', { text: 'zzz-no-such-session' });
       await cdp.waitFor(`!document.querySelector('[data-repository-id]')`, { timeoutMs: 10_000, label: 'groups filtered out' });
       const none = await cdp.evaluate(`({ personal: !!(${PERSONAL_OPEN}), groups: document.querySelectorAll('[data-repository-id]').length, empty: document.body.textContent.includes('No sessions match') })`);
       await shot(cdp, 'c-search-no-match.png');
-      await cdp.evaluate(`(() => { const i = document.querySelector('input[placeholder="Filter sessions…"]'); i.focus(); i.select(); })()`);
+      await cdp.evaluate(`(() => { const i = ${SEARCH_INPUT_FINDER}; i.focus(); i.select(); })()`);
       await cdp.send('Input.insertText', { text: projectSessionName });
       await cdp.waitFor(`!!document.querySelector('[data-repository-id]')`, { timeoutMs: 10_000, label: 'group back for a matching query' });
       const match = await cdp.evaluate(`({ personal: !!(${PERSONAL_OPEN}), groups: document.querySelectorAll('[data-repository-id]').length })`);
-      await cdp.evaluate(`(() => { const i = document.querySelector('input[placeholder="Filter sessions…"]'); i.focus(); i.select(); })()`);
+      await cdp.evaluate(`(() => { const i = ${SEARCH_INPUT_FINDER}; i.focus(); i.select(); })()`);
       await cdp.send('Input.insertText', { text: 'My Agent' });
       await sleep(600);
       const mine = await cdp.evaluate(`({ personal: !!(${PERSONAL_OPEN}), groups: document.querySelectorAll('[data-repository-id]').length })`);
-      await cdp.evaluate(`(() => { const i = document.querySelector('input[placeholder="Filter sessions…"]'); i.focus(); i.select(); })()`);
+      await cdp.evaluate(`(() => { const i = ${SEARCH_INPUT_FINDER}; i.focus(); i.select(); })()`);
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', windowsVirtualKeyCode: 8, key: 'Backspace', code: 'Backspace' });
       await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', windowsVirtualKeyCode: 8, key: 'Backspace', code: 'Backspace' });
       await cdp.waitFor(`!!document.querySelector('[data-repository-id]')`, { timeoutMs: 10_000, label: 'group back after clearing' });
@@ -185,15 +197,13 @@ async function main() {
       await sleep(1_200);
       const tooltip = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="tooltip"], [data-slot="tooltip-content"]')).map((el) => el.textContent.trim())`);
       await shot(cdp, 'd1-overflow-menu.png');
-      await pressEscape(cdp);
-      await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'overflow closed' });
+      await closeMenu(cdp);
 
       await rightClick(cdp, PERSONAL_OPEN);
       await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'context menu' });
       const context = await readMenu(cdp);
       await shot(cdp, 'd2-context-menu-right-click.png');
-      await pressEscape(cdp);
-      await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'context menu closed' });
+      await closeMenu(cdp);
 
       await cdp.evaluate(`${PERSONAL_OPEN}.focus()`);
       await pressKey(cdp, 93, 'ContextMenu', 'ContextMenu');
@@ -202,8 +212,7 @@ async function main() {
         await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 5_000, label: 'keyboard context menu' });
         keyboard = await readMenu(cdp);
         await shot(cdp, 'd3-context-menu-keyboard.png');
-        await pressEscape(cdp);
-        await cdp.waitFor(`!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'keyboard menu closed' });
+        await closeMenu(cdp);
       } catch {
         keyboard = null;
       }
@@ -289,6 +298,23 @@ async function main() {
       const geometry = await app.cdp.evaluate(`(() => { const b = ${PLACEHOLDER}; const r = b?.getBoundingClientRect(); return r ? { left: r.left, height: r.height, width: r.width, textLeft: (() => { const range = document.createRange(); range.selectNodeContents(b); return range.getBoundingClientRect().left; })() } : null; })()`);
       writeFileSync(path.join(SHOTS_DIR, 'placeholder-geometry.json'), JSON.stringify(geometry, null, 2));
       check(!!geometry, 'g2. placeholder light and dark screenshots captured (g-placeholder-*.png)', geometry);
+    });
+    // h. creating the Personal Agent while a filter is active must not announce "hidden by the session filter"
+    await guarded('h', async () => {
+      const c = app.cdp;
+      await c.evaluate(`window.__ann = []; new MutationObserver(() => { for (const el of document.querySelectorAll('[role="status"], [aria-live]')) { const t = el.textContent.trim(); if (t) window.__ann.push(t); } }).observe(document.body, { subtree: true, childList: true, characterData: true });`);
+      await c.click(FILTER_TOGGLE_FINDER);
+      await c.waitFor(`!!(${SEARCH_INPUT_FINDER})`, { timeoutMs: 10_000, label: 'search field (h)' });
+      await c.click(SEARCH_INPUT_FINDER);
+      await c.send('Input.insertText', { text: 'zzz-no-such-session' });
+      await sleep(600);
+      await c.evaluate(`${PLACEHOLDER}.focus()`);
+      await pressRealEnter(c);
+      await c.waitFor(`!!(${PERSONAL_OPEN})`, { timeoutMs: 30_000, label: 'Personal Agent created under a filter' });
+      await sleep(2_500);
+      const ann = await c.evaluate(`window.__ann`);
+      await shot(c, 'h-created-under-filter.png');
+      check(!ann.some((t) => /hidden by the session filter/.test(t)), 'h. creating the Personal Agent under an active filter does not announce "hidden by the session filter"', { announcements: [...new Set(ann)] });
     });
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
