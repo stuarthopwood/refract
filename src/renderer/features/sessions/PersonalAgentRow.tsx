@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { notify, useSessionsStore, useSplitStore } from '@/state'
 import { Button } from '@/components/ui/button'
+import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
+import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { SessionRow } from './SessionRow'
 
 // Matches the Session row's footprint so the placeholder and the real row line up.
@@ -9,14 +11,18 @@ const PLACEHOLDER_BUTTON_CLASS =
 
 /** Creates the Personal Agent on first use, then selects and starts it like an explicit new Session. */
 async function launchPersonalAgent(): Promise<void> {
+  useChatAreaAnnouncer.getState().announce('Starting My Agent')
   const result = await window.refract.sessions.openPersonalAgent()
   if (!result.ok) {
     notify(result.error)
     return
   }
   await useSessionsStore.getState().refresh()
-  void useSessionsStore.getState().open(result.value.id, true)
-  useSplitStore.getState().replaceFocused(result.value.id)
+  const id = result.value.id
+  void useSessionsStore.getState().open(id, true)
+  useSplitStore.getState().replaceFocused(id)
+  // The placeholder unmounts on creation, so focus would otherwise drop to <body>.
+  requestAnimationFrame(() => focusSessionPane(id) || focusSessionsNav())
 }
 
 /** The list's pinned first row: the Personal Agent Session once it exists, else a "My Agent" placeholder. */
