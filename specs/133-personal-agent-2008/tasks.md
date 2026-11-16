@@ -63,7 +63,7 @@ Rule for T011 to T016: for `project` Sessions the code path and output are byte-
 
 ### Docs and live verification
 
-- [ ] T019 [US1] Update `docs/PLAN.md`: move the #2004 row per the plan's rule once the PR is open, keep the #2008 epic row and children rows consistent with this spec (FR-027). No constitution change here (that is #2005).
+- [X] T019 [US1] Update `docs/PLAN.md`: move the #2004 row per the plan's rule once the PR is open, keep the #2008 epic row and children rows consistent with this spec (FR-027). No constitution change here (that is #2005).
 - [X] T020 [US1] Live verification on a scratch instance (quickstart.md "#2004 data model", plan.md Verification): run the existing `pnpm verify:tauri` flow, or a scratch script in `scripts/` that follows the same pattern, against an isolated data folder seeded with the T001 registry. Confirm all Sessions load as `project` unchanged and round-trip on save (SC-001); a `personal` row adds once, a second is refused with `personal-agent-exists`; archive and delete return `personal-agent-protected` with no agent stopped; rename succeeds; app log has no error. Apply the Refract scratch-instance isolation skill so the real data folder is untouched. Then remove scratch files and any throwaway script. Run `pnpm ci:local` (SC-007).
 
 **Checkpoint**: first PR is complete and changes nothing a developer can see.
