@@ -234,7 +234,9 @@ async function main() {
       await cdp.evaluate(`${PERSONAL_UL}.querySelector('input[aria-label="Session name"]').select()`);
       await cdp.send('Input.insertText', { text: 'Helper' });
       await pressRealEnter(cdp);
-      await cdp.waitFor(`(${PERSONAL_OPEN})?.getAttribute('aria-label')?.startsWith('Helper')`, { timeoutMs: 15_000, label: 'row shows Helper' });
+      await sleep(2_000);
+      await shot(cdp, 'd4-renamed-helper.png');
+      await cdp.waitFor(`!${PERSONAL_UL}.querySelector('input[aria-label="Session name"]') && ${PERSONAL_UL}.textContent.includes('Helper')`, { timeoutMs: 15_000, label: 'row shows Helper' });
       await sleep(700);
       const saved = registryOf(dataDir).sessions.find((s) => s.kind === 'personal')?.name;
       await shot(cdp, 'd4-renamed-helper.png');
@@ -289,6 +291,11 @@ async function main() {
     const freshData = scratch('data-fresh');
     dirs.push(freshData);
     app = await startApp({ ...launchArgs, dataDir: freshData, tag: '3' });
+    const freshAdded = await app.cdp.evaluate(`window.refract.repositories.add(${JSON.stringify(repoDir)}).then((r) => r)`);
+    if (freshAdded.ok) await app.cdp.evaluate(`window.refract.sessions.create({ repositoryId: ${JSON.stringify(freshAdded.value.id)}, baseBranch: 'main' }).then((r) => r)`);
+    await app.cdp.send('Page.reload');
+    await app.cdp.waitFor(`!!window.refract?.sessions && !!document.querySelector('[data-repository-id]')`, { timeoutMs: 60_000, label: 'fresh list with the Project' });
+    await sleep(1_500);
     await guarded('g2', async () => {
       for (const theme of ['light', 'dark']) {
         await app.cdp.evaluate(`window.refract.theme.set(${JSON.stringify(theme)}).then((r) => r)`);
