@@ -251,6 +251,7 @@ export const IPC_REQUESTS = {
   REPOSITORIES_CLONE_CANCEL: 'repositories.cloneCancel',
   SESSIONS_LIST: 'sessions.list',
   SESSIONS_CREATE: 'sessions.create',
+  SESSIONS_OPEN_PERSONAL_AGENT: 'sessions.openPersonalAgent',
   SESSIONS_RENAME: 'sessions.rename',
   SESSIONS_OPEN: 'sessions.open',
   SESSIONS_ARCHIVE: 'sessions.archive',
@@ -485,6 +486,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   sessions: {
     list(): Promise<Result<SessionSummary[]>>;
     create(input: { repositoryId: string; baseBranch: string }): Promise<Result<Session>>;
+    /** The singleton Personal Agent: created on first call, the same Session afterwards (#2005). */
+    openPersonalAgent(): Promise<Result<Session>>;
     rename(id: string, name: string): Promise<Result<void>>;
     open(id: string, userAction?: boolean): Promise<Result<SessionSnapshot>>;
     archive(id: string): Promise<Result<void>>;
