@@ -514,6 +514,10 @@ impl RegistryStore {
         self.data.sessions.iter().find(|s| s.id == id)
     }
 
+    pub fn personal_session(&self) -> Option<&Session> {
+        self.data.sessions.iter().find(|s| s.is_personal())
+    }
+
     pub fn get_repository(&self, id: &str) -> Option<&Repository> {
         self.data.repositories.iter().find(|r| r.id == id)
     }

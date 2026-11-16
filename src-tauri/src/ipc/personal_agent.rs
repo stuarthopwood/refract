@@ -1,5 +1,5 @@
 // `sessions.openPersonalAgent`: returns the singleton Personal Agent, creating it on first call.
-// It needs no Project, repository or branch and creates no Worktree (spec 133, FR-009, FR-011).
+// It needs no Project, repository or branch and creates no Worktree.
 
 use serde_json::Value;
 
@@ -17,11 +17,7 @@ pub fn sessions_open_personal_agent(state: AppState, _args: Vec<Value>) -> Handl
     Box::pin(async move {
         // One lock across the lookup and the insert, so two concurrent opens cannot both create it.
         let mut registry = state.registry.lock().await;
-        let existing = registry
-            .snapshot()
-            .sessions
-            .into_iter()
-            .find(Session::is_personal);
+        let existing = registry.personal_session().cloned();
         let session = match existing {
             Some(session) => session,
             None => {
