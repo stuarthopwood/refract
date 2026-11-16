@@ -88,14 +88,16 @@ pub(in crate::session::agent) struct Fixture {
 fn session_row(id: &str, dir: &std::path::Path) -> Session {
     Session {
         id: id.to_string(),
-        repository_id: "repo".to_string(),
+        kind: crate::store::session_kind::SessionKind::Project,
+        repository_id: Some("repo".to_string()),
         name: "test".to_string(),
-        branch: format!("feat/{id}"),
-        base_branch: "main".to_string(),
-        worktree_path: dir
-            .join(format!("worktree-{id}"))
-            .to_string_lossy()
-            .into_owned(),
+        branch: Some(format!("feat/{id}")),
+        base_branch: Some("main".to_string()),
+        worktree_path: Some(
+            dir.join(format!("worktree-{id}"))
+                .to_string_lossy()
+                .into_owned(),
+        ),
         session_dir: None,
         current_conversation: None,
         last_message_count: None,

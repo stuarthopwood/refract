@@ -304,7 +304,7 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
                 // The restored row's group may be collapsed: fall back to its header trigger,
                 // then the generic fallback, and announce since nothing visibly got focus.
                 const groupTrigger = document.querySelector<HTMLElement>(
-                  `[data-repository-id="${CSS.escape(session.repositoryId)}"] [data-slot="collapsible-trigger"]`
+                  `[data-repository-id="${CSS.escape(session.repositoryId ?? '')}"] [data-slot="collapsible-trigger"]`
                 )
                 if (groupTrigger?.isConnected) groupTrigger.focus()
                 else focusListContainer()

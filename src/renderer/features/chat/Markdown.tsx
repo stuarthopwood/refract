@@ -153,7 +153,7 @@ interface FileLinkButtonProps {
 export function FileLinkButton({ path, display, muted = false, streaming = false, className, wrapperClassName, wrapLink }: FileLinkButtonProps) {
   const sessionId = React.useContext(LinkContext)
   const worktreePath = useSessionsStore((state) =>
-    sessionId ? state.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
+    sessionId ? state.sessions.find((session) => session.id === sessionId)?.worktreePath ?? undefined : undefined
   )
   const label = display ?? path
   // String-only early-out, not the security boundary (`resolveInWorktree` checks on click). Virtual and

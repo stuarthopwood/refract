@@ -10,6 +10,7 @@ use crate::ipc::{
     AppState, HandlerFuture, IpcError,
 };
 use crate::store::registry::Session;
+use crate::store::session_kind::SessionKind;
 
 use super::mapping::{
     self, compute_merge_disabled_reason, compute_review_disabled_reason, map_mergeable_state,
@@ -467,14 +468,16 @@ pub(super) fn pull_requests_new_session_from_pull_request(
         let now = now_iso8601();
         let session = Session {
             id: uuid::Uuid::new_v4().to_string(),
-            repository_id: repository_id.to_string(),
+            kind: SessionKind::Project,
+            repository_id: Some(repository_id.to_string()),
             name: added.branch.clone(),
-            branch: added.branch.clone(),
-            base_branch: view
-                .as_ref()
-                .map(|v| v.base_ref_name.clone())
-                .unwrap_or_else(|| added.branch.clone()),
-            worktree_path: added.worktree_path.to_string_lossy().into_owned(),
+            branch: Some(added.branch.clone()),
+            base_branch: Some(
+                view.as_ref()
+                    .map(|v| v.base_ref_name.clone())
+                    .unwrap_or_else(|| added.branch.clone()),
+            ),
+            worktree_path: Some(added.worktree_path.to_string_lossy().into_owned()),
             session_dir: None,
             current_conversation: None,
             last_message_count: None,

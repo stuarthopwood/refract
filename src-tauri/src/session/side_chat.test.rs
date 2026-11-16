@@ -272,11 +272,12 @@ async fn make_test_agent(
     let now = "2026-01-01T00:00:00.000Z".to_string();
     let session = crate::store::registry::Session {
         id: session_id.clone(),
-        repository_id: "repo-1".to_string(),
+        kind: crate::store::session_kind::SessionKind::Project,
+        repository_id: Some("repo-1".to_string()),
         name: "Test Session".to_string(),
-        branch: "test-branch".to_string(),
-        base_branch: "main".to_string(),
-        worktree_path: dir.to_string_lossy().into_owned(),
+        branch: Some("test-branch".to_string()),
+        base_branch: Some("main".to_string()),
+        worktree_path: Some(dir.to_string_lossy().into_owned()),
         session_dir: None,
         current_conversation: initial_conversation.map(str::to_string),
         last_message_count: None,

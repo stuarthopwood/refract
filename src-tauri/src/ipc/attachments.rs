@@ -384,7 +384,9 @@ pub(super) async fn resolve_session_worktree(
 ) -> Result<String, IpcError> {
     let registry = state.registry.lock().await;
     match registry.get_session(session_id) {
-        Some(session) => Ok(session.worktree_path.clone()),
+        Some(session) => Ok(super::project_session::project_binding(session)?
+            .worktree_path
+            .to_string()),
         None => Err(not_found(format!("Session not found: {session_id}"))),
     }
 }

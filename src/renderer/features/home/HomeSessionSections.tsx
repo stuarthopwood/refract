@@ -5,7 +5,7 @@ import { ListCardButton } from '@/components/ListCardButton'
 import { RelativeTime } from '@/components/relative-time'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
-import { StateIcon, displayLabel, displayStatus, formatRelativeTime, isNeedsYouSession } from '@/features/sessions/sessionDisplay'
+import { StateIcon, displayLabel, displayStatus, formatRelativeTime, isHomeLiveSession, isNeedsYouSession } from '@/features/sessions/sessionDisplay'
 import { useHomeStore } from '@/state/home-store'
 import { useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
@@ -16,7 +16,7 @@ const HOME_RECENT_MAX = 8
 export function useHomeSessions(): { needsYou: SessionSummary[]; recent: SessionSummary[] } {
   const sessions = useSessionsStore((state) => state.sessions)
   return useMemo(() => {
-    const live = sessions.filter((session) => !session.archivedAt && !session.hiddenAt)
+    const live = sessions.filter(isHomeLiveSession)
     const byRecent = (a: SessionSummary, b: SessionSummary) => b.lastActivityAt.localeCompare(a.lastActivityAt)
     const needsYou = live.filter(isNeedsYouSession).sort(byRecent)
     const recent = live.filter((session) => !isNeedsYouSession(session)).sort(byRecent).slice(0, HOME_RECENT_MAX)
@@ -27,7 +27,7 @@ export function useHomeSessions(): { needsYou: SessionSummary[]; recent: Session
 export function openSession(session: SessionSummary): void {
   useSplitStore.getState().replaceFocused(session.id)
   void useSessionsStore.getState().open(session.id)
-  useViewStore.getState().openChat(session.repositoryId)
+  useViewStore.getState().openChat(session.repositoryId ?? undefined)
 }
 
 function SessionCard({ session, lastMessage }: { session: SessionSummary; lastMessage?: string | null }) {

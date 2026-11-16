@@ -96,7 +96,10 @@ fn branch_entries(
     default_name: &str,
     sessions: &[Session],
 ) -> Vec<BranchEntry> {
-    let owners: HashMap<&str, &Session> = sessions.iter().map(|s| (s.branch.as_str(), s)).collect();
+    let owners: HashMap<&str, &Session> = sessions
+        .iter()
+        .filter_map(|s| Some((s.branch.as_deref()?, s)))
+        .collect();
     let mut entries = Vec::new();
     if branches.iter().any(|b| b == default_name) {
         entries.push(BranchEntry {
@@ -214,7 +217,7 @@ pub fn repositories_remove(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .snapshot()
             .sessions
             .iter()
-            .any(|s| s.repository_id == id);
+            .any(|s| s.repository_id.as_deref() == Some(id.as_str()));
         if has_owned_sessions {
             return Err(IpcError::new(
                 "has-sessions",
@@ -431,7 +434,7 @@ pub fn repositories_branches(state: AppState, args: Vec<Value>) -> HandlerFuture
             .snapshot()
             .sessions
             .into_iter()
-            .filter(|s| s.repository_id == repository.id)
+            .filter(|s| s.repository_id.as_deref() == Some(repository.id.as_str()))
             .collect::<Vec<_>>();
         let entries = branch_entries(branches, &repository.default_branch, &sessions);
         Ok(serde_json::to_value(entries).expect("BranchEntry is always JSON-serialisable"))

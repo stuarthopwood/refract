@@ -20,11 +20,12 @@ fn make_repository(id: &str, path: &str) -> Repository {
 fn make_session(id: &str, repository_id: &str) -> Session {
     Session {
         id: id.to_string(),
-        repository_id: repository_id.to_string(),
+        kind: crate::store::session_kind::SessionKind::Project,
+        repository_id: Some(repository_id.to_string()),
         name: "Test Session".to_string(),
-        branch: "swift-otter".to_string(),
-        base_branch: "main".to_string(),
-        worktree_path: "C:/worktrees/swift-otter".to_string(),
+        branch: Some("swift-otter".to_string()),
+        base_branch: Some("main".to_string()),
+        worktree_path: Some("C:/worktrees/swift-otter".to_string()),
         session_dir: Some("C:/sessions/swift-otter".to_string()),
         current_conversation: Some("C:/sessions/swift-otter/conv.jsonl".to_string()),
         last_message_count: Some(10),
@@ -253,8 +254,8 @@ async fn update_session_a_real_subsequent_write_still_succeeds_after_an_earlier_
 /// A distinct-worktree Session, so several can share one registry.
 fn make_child(id: &str, repository_id: &str, parent: Option<&str>) -> Session {
     let mut session = make_session(id, repository_id);
-    session.branch = format!("branch-{id}");
-    session.worktree_path = format!("C:/worktrees/{id}");
+    session.branch = Some(format!("branch-{id}"));
+    session.worktree_path = Some(format!("C:/worktrees/{id}"));
     session.parent_session_id = parent.map(str::to_string);
     session
 }

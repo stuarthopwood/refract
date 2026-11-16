@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import { FolderKanbanIcon, SearchXIcon } from 'lucide-react'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { Button } from '@/components/ui/button'
@@ -6,8 +6,8 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { focusProfileItemName } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useRepositoriesStore, useSessionsStore, useViewStore } from '@/state'
-import type { SessionSummary } from '../../../shared/ipc'
-import type { Repository } from '../../../shared/model'
+import type { ProjectSessionSummary } from '../../../shared/ipc'
+import { isProjectSession, type Repository } from '../../../shared/model'
 import { ManageSessionRow } from './ManageSessionRow'
 import { ManageSessionsToolbar } from './ManageSessionsToolbar'
 import { distinctRepositoryCount, filterAndSortSessions, sessionCountLabel } from './manageSessionsHelpers'
@@ -17,7 +17,9 @@ import { DEFAULT_FILTERS } from '@/state/view-store'
 import { HolidayEmptyStateLine } from '@/features/holidays/HolidayEmptyStateLine'
 
 export function ManageSessionsScreen() {
-  const sessions = useSessionsStore((state) => state.sessions)
+  const allSessions = useSessionsStore((state) => state.sessions)
+  // The Personal Agent is not a Project Session, so it never counts here.
+  const sessions = useMemo(() => allSessions.filter(isProjectSession), [allSessions])
   const repositories = useRepositoriesStore((state) => state.repositories)
   const filters = useViewStore((state) => state.manageSessionsFilters)
   const setFilters = useViewStore((state) => state.setManageSessionsFilters)
@@ -36,12 +38,12 @@ export function ManageSessionsScreen() {
   const activeElement = typeof document !== 'undefined' ? document.activeElement : null
   const renameInputFocused = activeElement instanceof HTMLInputElement && !!listRef.current?.contains(activeElement)
   const frozenOrderRef = useRef<string[] | null>(null)
-  let visible: SessionSummary[]
+  let visible: ProjectSessionSummary[]
   if (renameInputFocused && frozenOrderRef.current) {
     const byId = new Map(freshlySorted.map((session) => [session.id, session]))
     const frozenIds = new Set(frozenOrderRef.current)
     visible = [
-      ...frozenOrderRef.current.map((id) => byId.get(id)).filter((session): session is SessionSummary => !!session),
+      ...frozenOrderRef.current.map((id) => byId.get(id)).filter((session): session is ProjectSessionSummary => !!session),
       ...freshlySorted.filter((session) => !frozenIds.has(session.id))
     ]
   } else {
@@ -74,8 +76,8 @@ export function ManageSessionsScreen() {
 
     function announceCurrentCount(): void {
       const state = useSessionsStore.getState()
-      const current = filterAndSortSessions(state.sessions, repositories, filters)
-      announce(showingCountLabel(current.length, state.sessions.length))
+      const current = filterAndSortSessions(state.sessions.filter(isProjectSession), repositories, filters)
+      announce(showingCountLabel(current.length, state.sessions.filter(isProjectSession).length))
     }
 
     // The effect reruns only when the effective query changes, so a keystroke below the filter threshold announces nothing.

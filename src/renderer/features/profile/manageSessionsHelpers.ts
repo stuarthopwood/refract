@@ -2,7 +2,7 @@
 // the count/summary wording, kept tiny and exported as plain functions for a future test
 // (matching this spec's own small-renderer-helper convention, e.g.
 // src/renderer/lib/account-format.ts).
-import type { SessionSummary } from '../../../shared/ipc'
+import type { ProjectSessionSummary, SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import type { SessionFilters } from '@/state/view-store'
 import { displayStatus, matchesNameOrBranch } from '@/features/sessions/sessionDisplay'
@@ -26,10 +26,10 @@ const STATUS_ORDER: Record<SessionDisplayStatus, number> = {
  *  the session's name OR branch, case-insensitive substring (FR-025's own "filters name and
  *  branch" requirement). */
 export function filterAndSortSessions(
-  sessions: SessionSummary[],
+  sessions: ProjectSessionSummary[],
   repositories: Repository[],
   filters: SessionFilters
-): SessionSummary[] {
+): ProjectSessionSummary[] {
   const repoNameById = new Map(repositories.map((repository) => [repository.id, repository.name]))
   const query = effectiveFilterQuery(filters.search).toLowerCase()
   const filtered = sessions.filter((session) => {

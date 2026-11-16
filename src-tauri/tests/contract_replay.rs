@@ -365,6 +365,8 @@ fn scrub_known_divergences(value: &mut Value) {
             // keys unique to a Session object shape in this trace.
             if map.contains_key("worktreePath") && map.contains_key("baseBranch") {
                 map.remove("pinnedModel");
+                // Issue #2004: Session `kind` is Rust-only.
+                map.remove("kind");
             }
             // Issue #469: a tool item's own `intent` (the model's one-line intent) is a
             // brand-new, Rust-only transcript field -- Electron never carried it. Discriminated

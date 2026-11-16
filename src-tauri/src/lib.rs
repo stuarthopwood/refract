@@ -256,6 +256,9 @@ pub fn run() {
                 .app_handle
                 .lock()
                 .expect("app_handle mutex poisoned") = Some(app.handle().clone());
+            // The logger plugin is up only now; `RegistryStore::open` runs before it.
+            tauri::async_runtime::block_on(managed.app_state.registry.lock())
+                .warn_duplicate_personal();
             ipc::usage::start_at_launch(&managed.app_state);
 
             // Set before any renderer script runs, so the synchronous theme bootstrap can read it.

@@ -8,7 +8,7 @@ import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { SIDEBAR_NAV_BUTTON_CLASS } from '@/components/sidebarNavButtonClass'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { isNeedsYouSession } from './sessionDisplay'
+import { isHomeLiveSession, isNeedsYouSession } from './sessionDisplay'
 import { useDefaultRepositoryId } from '@/lib/defaultRepository'
 import { useAccountsStore, usePullRequestsStore, useRepositoriesStore, useSessionsStore, useSplitStore, useViewStore } from '@/state'
 import { ACTIVE_COUNT_CAP_AT } from '@/state/pull-requests-store'
@@ -54,7 +54,9 @@ export function ViewsNavGroup() {
   const view = useViewStore((state) => state.view)
   const openHome = useViewStore((state) => state.openHome)
   const noPane = useSplitStore((state) => state.paneSessionIds.length === 0)
-  const needsYouCount = useSessionsStore((state) => state.sessions.filter(isNeedsYouSession).length)
+  const needsYouCount = useSessionsStore(
+    (state) => state.sessions.filter((session) => isHomeLiveSession(session) && isNeedsYouSession(session)).length
+  )
   const selectPullRequest = usePullRequestsStore((state) => state.select)
   // Defaults to the focused pane's Session's repository, then the first added one; the view's own
   // Project control changes it afterward (issue #569: shared, reactive hook).

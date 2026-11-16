@@ -191,7 +191,7 @@ async fn session_worktree(agent: &SessionAgent) -> Option<String> {
         .lock()
         .await
         .get_session(agent.session_id())
-        .map(|s| s.worktree_path.clone())
+        .and_then(|s| s.worktree_path.clone())
 }
 
 /// Called once per recompute: matches items to registered Projects and spawns bounded state lookups.

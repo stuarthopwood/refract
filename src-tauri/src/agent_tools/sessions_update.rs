@@ -142,7 +142,7 @@ fn check_tree(sessions: &[Session], caller_id: &str, request: &Request) -> Resul
         .ok_or_else(caller_gone)?;
     let target = sessions
         .iter()
-        .find(|s| s.id == request.id)
+        .find(|s| s.id == request.id && !s.is_personal())
         .ok_or_else(|| not_found(&request.id))?;
     if target.repository_id != caller.repository_id {
         return Err(invalid(format!(
@@ -153,7 +153,7 @@ fn check_tree(sessions: &[Session], caller_id: &str, request: &Request) -> Resul
     if let ParentArg::Id(parent_id) = &request.parent {
         let parent = sessions
             .iter()
-            .find(|s| s.id == *parent_id)
+            .find(|s| s.id == *parent_id && !s.is_personal())
             .ok_or_else(|| not_found(parent_id))?;
         if parent.archived_at.is_some() {
             return Err(invalid(format!("Session {parent_id} is archived")));
@@ -210,7 +210,7 @@ async fn update_with<H: Host>(host: &Arc<H>, args: &Value) -> Result<Value, Tool
     let repository_id = sessions
         .iter()
         .find(|s| s.id == request.id)
-        .map(|s| s.repository_id.clone())
+        .and_then(|s| s.repository_id.clone())
         .ok_or_else(|| not_found(&request.id))?;
     // Spawned and awaited: a cancelled call (`host_tool_cancel`, shutdown) drops only this wait,
     // so the role, the parent and the name are never left half written.

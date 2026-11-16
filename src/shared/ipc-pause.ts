@@ -10,7 +10,7 @@ export type PauseState = 'pausing' | 'paused';
 
 // Module augmentation: the three wire shapes gain an optional `pause`.
 declare module './ipc' {
-  interface SessionSummary { pause?: PauseState }
+  interface SessionSummaryFields { pause?: PauseState }
   interface SessionRuntimeView { pause?: PauseState }
   interface SessionStatusEvent { pause?: PauseState }
 }

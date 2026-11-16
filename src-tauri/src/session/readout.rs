@@ -180,14 +180,19 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
             else {
                 return;
             };
+            let Some(binding) = session.project_binding() else {
+                return;
+            };
             if first {
                 // Seed the branch first so this lookup isn't discarded as stale.
                 agent
-                    .with_readout_state(|s| s.pull_request_branch = Some(session.branch.clone()))
+                    .with_readout_state(|s| {
+                        s.pull_request_branch = Some(binding.branch.to_string())
+                    })
                     .await;
-                super::readout_head_watch::start(&agent, &session.worktree_path).await;
+                super::readout_head_watch::start(&agent, binding.worktree_path).await;
             }
-            refresh_pull_request(&agent, &session.worktree_path, &session.branch).await;
+            refresh_pull_request(&agent, binding.worktree_path, binding.branch).await;
             schedule_readout_update(&agent).await;
             // Jitter only the first sleep.
             let sleep_ms = if first {
@@ -395,10 +400,15 @@ async fn compute_readout(agent: &Arc<SessionAgent>) {
         return;
     };
 
+    // A Personal Agent has no worktree to read.
+    let Some(binding) = session.project_binding() else {
+        return;
+    };
+
     let branch_changed = agent
         .with_readout_state(|s| {
-            if s.pull_request_branch.as_deref() != Some(session.branch.as_str()) {
-                s.pull_request_branch = Some(session.branch.clone());
+            if s.pull_request_branch.as_deref() != Some(binding.branch) {
+                s.pull_request_branch = Some(binding.branch.to_string());
                 true
             } else {
                 false
@@ -407,23 +417,23 @@ async fn compute_readout(agent: &Arc<SessionAgent>) {
         .await;
     if branch_changed {
         let spawned = agent.clone();
-        let worktree_path = session.worktree_path.clone();
-        let branch = session.branch.clone();
+        let worktree_path = binding.worktree_path.to_string();
+        let branch = binding.branch.to_string();
         tokio::spawn(async move {
             refresh_pull_request(&spawned, &worktree_path, &branch).await;
             schedule_readout_update(&spawned).await;
         });
     }
 
-    readout_touched::refresh(agent, &session.worktree_path).await;
+    readout_touched::refresh(agent, binding.worktree_path).await;
     // Independent reads, so run them concurrently.
     let (diff_result, branch) = tokio::join!(
         async {
             // One guard per read: `join!` branches must not share or nest a guard (#1157).
             let _guard = read_guard_bounded(agent.session_id()).await.ok()?;
-            diff_stat(Path::new(&session.worktree_path), &session.base_branch).await
+            diff_stat(Path::new(binding.worktree_path), binding.base_branch).await
         },
-        compute_branch(agent.session_id(), &session.worktree_path)
+        compute_branch(agent.session_id(), binding.worktree_path)
     );
     let changes = match diff_result {
         Some(stat) => {

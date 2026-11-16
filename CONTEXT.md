@@ -17,8 +17,12 @@ An optional colour the developer chooses for a **Project**, shown on its header 
 _Avoid_: Accent, tag colour, label colour
 
 **Session**:
-One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Project** has many **Sessions**; a **Session** has exactly one **Worktree**. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
+One unit of work: a **Worktree** together with the **Conversations** held in it. It is one entry in the session list and lives until the developer archives or deletes it. A **Project** has many **Sessions**; a **Session** has exactly one **Worktree**, except the **Personal Agent**, which belongs to no **Project** and has none. Its display name is independent of its branch and worktree folder name: renaming a Session never touches either, and the new name shows everywhere at once (list, chat header, branch picker, notifications).
 _Avoid_: Task, thread, chat (for the whole unit)
+
+**Personal Agent**:
+The single built-in **Session** that is not linked to a **Project**: a general-purpose chat agent for questions and side work, run from the developer's home folder with no **Worktree**. There is exactly one; the developer opens it from the launcher button above the **Projects** list, and it is created the first time it is opened. Its display name defaults to "My Agent" and can be renamed like any **Session**'s. It cannot be archived or deleted; it can be stopped, started, paused and renamed, and it can hold many **Conversations**. Repo-only features (git changes, file explorer, pull requests, diff, **Worktree** actions) show disabled in it.
+_Avoid_: My Agent (a default display name, not a second term), project-less session, chatbot, assistant
 
 **Child Session**:
 A **Session** created by another Session's agent (#1304), linked to that parent Session and nested under it in the session list. It has its own **Worktree** and branch and is otherwise a full Session the developer can open, message, stop and archive. Nesting goes to depth 3 (a developer-created Session is depth 1, its child depth 2, a grandchild depth 3), and a parent has at most 4 live children; a Session at depth 3 cannot create a child. Rust enforces both limits (#1859). Not a **Subagent**, which runs inside its parent's Worktree through OMP's `task` tool and is not a Session.

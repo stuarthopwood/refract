@@ -35,6 +35,7 @@
         "createdAt": "<TIMESTAMP>",
         "currentConversation": null,
         "id": "<SESSION_ID>",
+        "kind": "project",
         "lastActivityAt": "<TIMESTAMP>",
         "lastMessageCount": null,
         "name": "<BRANCH_NAME>",

@@ -9,11 +9,11 @@ import { SessionRow } from '@/features/sessions/SessionRow'
 import type { SessionRowSurface } from '@/features/sessions/sessionRowSurface'
 import { focusSessionPane, focusSessionsNav } from '@/lib/focus'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
-import type { SessionSummary } from '../../../shared/ipc'
+import type { ProjectSessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 
 export interface ManageSessionRowProps {
-  session: SessionSummary
+  session: ProjectSessionSummary
   // Issue #620, UX consult item 2 decision 5: the row's own repository, resolved by
   // `ManageSessionsScreen.tsx`. `undefined` in the same case `repositoryName` falls back to
   // "Unknown repository" -- the "New session from {branch}" item is then left out entirely, since
@@ -83,7 +83,7 @@ export function ManageSessionRow({ session, repository, repositoryName, searchIn
           useChatAreaAnnouncer.getState().announce(announcement)
           return
         }
-        useViewStore.getState().openChat(created.repositoryId)
+        useViewStore.getState().openChat(created.repositoryId ?? undefined)
         requestAnimationFrame(() => {
           const found = focusFocusedPane()
           // A found pane still needs the announcement when the new row is hidden by the filter.

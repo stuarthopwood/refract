@@ -204,7 +204,7 @@ export function MemoryTriageDialog({ open, onOpenChange, onCloseFocus }: MemoryT
           ) : (
             <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto">
               {idleSessions.map((session) => {
-                const repository = repositoriesById.get(session.repositoryId)
+                const repository = session.repositoryId ? repositoriesById.get(session.repositoryId) : undefined
                 return (
                   <li key={session.id} className="flex items-center justify-between gap-2 rounded-md px-2 py-1 hover:bg-muted">
                     <div className="min-w-0 flex-1">
