@@ -113,7 +113,7 @@ Rule for T011 to T016: for `project` Sessions the code path and output are byte-
 - [x] T032 [P] [US3] Add a launcher button, section label and divider from the shared reusable components in `src/renderer/components/` (FR-021): a real labelled button with a visible focus ring and a non-colour-only selected state; the label is a heading for the group below.
 - [x] T033 [US3] In `features/sessions/SessionList.tsx` (and `ProjectListPane.tsx` if it owns the layout) render, from the top: launcher, divider, "Projects" label, then the existing groups; keep the `personal` Session excluded from the group data so counts, ordering and collapse are unchanged (FR-017, FR-020).
 - [x] T034 [US3] Wire activation to the T023 open-or-create handler and select the Session; show the current name and the Session row's active, working or waiting state from the same status mapping (`sessionDisplay.tsx`) (FR-018, FR-019).
-- [ ] T035 [US3] Live verify with CDP on a scratch instance: layout order, states, rename, keyboard focus, no `personal` row in any group (quickstart.md "#2006"); update `docs/PLAN.md`.
+- [x] T035 [US3] Live verify with CDP on a scratch instance: layout order, states, rename, keyboard focus, no `personal` row in any group (quickstart.md "#2006"); update `docs/PLAN.md`.
 
 **Checkpoint**: the epic acceptance is met.
 
