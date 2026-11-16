@@ -153,4 +153,4 @@ First PR: Phases 1 and 2 only (MVP, invisible to developers, unblocks every othe
 - [x] T039 [US3] Render the Personal Agent as the shared `SessionRow` (optional `repository`) pinned at the top of the list, with a "My Agent" placeholder (no status, no menu) until the Session exists; activation by click, Enter or Space calls `sessions.openPersonalAgent`, stores the Session, then selects and starts it per US3/AC1-AC4 (missing)
 - [x] T040 [US3] Add a shared section-heading component for "Projects" and list it in `docs/design/components.md`; the row is the first Tab stop before the first Project, with no arrow navigation or new shortcut per US3/AC6 (missing)
 - [x] T041 [US3] Keep the pinned row outside search and filters (`searchSessions`, `showingCountLabel` still exclude `personal`) per US3/AC7 (missing)
-- [x] T042 [US3] Set the #2006 row in `docs/PLAN.md` to in-flight per FR-027 (missing)
+- [x] T042 [US3] Mark the #2006 row in `docs/PLAN.md` done per FR-027 (done)

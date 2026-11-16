@@ -150,6 +150,7 @@ async function main() {
 
     // b. keyboard Enter creates the one personal row
     await guarded('b', async () => {
+      await cdp.evaluate(`window.__ann = []; new MutationObserver(() => { for (const el of document.querySelectorAll('[role="status"], [aria-live]')) { const t = el.textContent.trim(); if (t) window.__ann.push(t); } }).observe(document.body, { subtree: true, childList: true, characterData: true });`);
       await pressRealEnter(cdp);
       await cdp.waitFor(`!!(${PERSONAL_OPEN})`, { timeoutMs: 30_000, label: 'real row replaces the placeholder' });
       await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && ['idle','working','needs-you'].includes(r.value.find((s) => s.kind === 'personal')?.status))`, { timeoutMs: 60_000, label: 'Personal Agent running' });
@@ -157,8 +158,11 @@ async function main() {
       const personalRows = registryOf(dataDir).sessions.filter((s) => s.kind === 'personal');
       const runs = invocations(debugLog).filter((r) => norm(r.cwd) === norm(home));
       const row = await cdp.evaluate(`(() => { const b = ${PERSONAL_OPEN}; return { name: b?.getAttribute('aria-label'), current: b?.getAttribute('aria-current'), placeholderGone: !(${PLACEHOLDER}) }; })()`);
+      const focus = await cdp.evaluate(`(() => { const a = document.activeElement; return { tag: a?.tagName, inPane: !!a?.closest('[data-session-pane]'), isBody: a === document.body }; })()`);
+      const ann = await cdp.evaluate(`window.__ann`);
       await shot(cdp, 'b-after-enter.png');
       check(personalRows.length === 1 && runs.length === 1 && runs[0].argv.includes(`--cwd=${home}`) && row.placeholderGone && /^My Agent, \S/.test(row.name ?? '') && row.current === 'true', 'b. Enter creates exactly one personal registry row, launches in home with --cwd, row is a selected real SessionRow named "My Agent" with a status', { rows: personalRows.length, runs, row });
+      check(focus.inPane && !focus.isBody && ann.some((t) => /Starting My Agent/.test(t)), 'b. after Enter focus lands inside the Personal Agent chat pane (not body) and the announcer said "Starting My Agent"', { focus, announcements: [...new Set(ann)] });
     });
 
     // c. search
@@ -269,7 +273,8 @@ async function main() {
         await sleep(400);
         await shot(cdp, `g-real-row-${theme}.png`);
       }
-      check(true, 'g1. light and dark screenshots of the real row captured (g-real-row-*.png)');
+      report.push({ step: 'g1. light and dark screenshots of the real row (visual evidence only, no assertion)', ok: true, evidence: ['g-real-row-light.png', 'g-real-row-dark.png'].map((n) => path.join(SHOTS_DIR, n)) });
+      console.log(`${LOG}: captured g-real-row-light.png and g-real-row-dark.png`);
     });
 
     cdp.close();
@@ -307,7 +312,8 @@ async function main() {
       }
       const geometry = await app.cdp.evaluate(`(() => { const b = ${PLACEHOLDER}; const r = b?.getBoundingClientRect(); return r ? { left: r.left, height: r.height, width: r.width, textLeft: (() => { const range = document.createRange(); range.selectNodeContents(b); return range.getBoundingClientRect().left; })() } : null; })()`);
       writeFileSync(path.join(SHOTS_DIR, 'placeholder-geometry.json'), JSON.stringify(geometry, null, 2));
-      check(!!geometry, 'g2. placeholder light and dark screenshots captured (g-placeholder-*.png)', geometry);
+      report.push({ step: 'g2. placeholder light and dark screenshots (visual evidence only, no assertion)', ok: !!geometry, evidence: { shots: ['g-placeholder-light.png', 'g-placeholder-dark.png'].map((n) => path.join(SHOTS_DIR, n)), geometry } });
+      console.log(`${LOG}: captured g-placeholder-*.png`);
     });
     // h. creating the Personal Agent while a filter is active must not announce "hidden by the session filter"
     await guarded('h', async () => {
@@ -325,6 +331,29 @@ async function main() {
       const ann = await c.evaluate(`window.__ann`);
       await shot(c, 'h-created-under-filter.png');
       check(!ann.some((t) => /hidden by the session filter/.test(t)), 'h. creating the Personal Agent under an active filter does not announce "hidden by the session filter"', { announcements: [...new Set(ann)] });
+    });
+    cdp = app.cdp;
+    cdp.close();
+    await stopLauncher(app.child).catch(() => {});
+    app = undefined;
+
+    // b2. Space on the placeholder (fresh data folder) also creates and opens the Personal Agent
+    const spaceData = scratch('data-space');
+    dirs.push(spaceData);
+    app = await startApp({ ...launchArgs, dataDir: spaceData, tag: '4' });
+    await guarded('b2', async () => {
+      const c = app.cdp;
+      await c.waitFor(`!!(${PLACEHOLDER})`, { timeoutMs: 30_000, label: 'placeholder on fresh data (b2)' });
+      await c.evaluate(`${PLACEHOLDER}.focus()`);
+      for (const type of ['keyDown', 'keyUp']) {
+        await c.send('Input.dispatchKeyEvent', { type, windowsVirtualKeyCode: 32, key: ' ', code: 'Space', ...(type === 'keyDown' ? { text: ' ', unmodifiedText: ' ' } : {}) });
+      }
+      await c.waitFor(`!!(${PERSONAL_OPEN})`, { timeoutMs: 30_000, label: 'Space creates the Personal Agent' });
+      await sleep(1_500);
+      const personalRows = registryOf(spaceData).sessions.filter((s) => s.kind === 'personal');
+      const state = await c.evaluate(`(() => { const b = ${PERSONAL_OPEN}; return { current: b?.getAttribute('aria-current'), pane: !!document.querySelector('[data-session-pane="' + b?.getAttribute('data-session-open') + '"]'), placeholderGone: !(${PLACEHOLDER}) }; })()`);
+      await shot(c, 'b2-after-space.png');
+      check(personalRows.length === 1 && state.placeholderGone && state.current === 'true' && state.pane, 'b2. Space on the placeholder creates exactly one personal row and opens it in a chat pane', { rows: personalRows.length, state });
     });
   } catch (err) {
     report.push({ step: 'run crashed', ok: false, error: String(err && err.stack ? err.stack : err) });
