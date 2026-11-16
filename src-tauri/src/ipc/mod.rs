@@ -38,6 +38,7 @@ pub mod issues;
 pub mod item_refs;
 pub mod model;
 pub mod model_roles;
+pub mod project_session;
 pub mod pull_requests;
 pub mod readiness;
 pub mod repositories;
@@ -275,6 +276,8 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
         "checkout-failed",
         "disabled",
         "session-archived",
+        "personal-agent-exists",
+        "personal-agent-protected",
     ];
     let code = if IPC_ERROR_CODES.contains(&err.code) {
         err.code

@@ -52,11 +52,12 @@ async fn session_context(
     let session = registry
         .get_session(session_id)
         .ok_or_else(|| not_found("This Session no longer exists"))?;
+    let binding = super::project_session::project_binding(session)?;
     let repo_path = registry
-        .get_repository(&session.repository_id)
+        .get_repository(binding.repository_id)
         .map(|r| PathBuf::from(&r.path));
     Ok((
-        PathBuf::from(&session.worktree_path),
+        PathBuf::from(binding.worktree_path),
         repo_path,
         session.archived_at.is_some(),
     ))

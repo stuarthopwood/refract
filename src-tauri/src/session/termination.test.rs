@@ -389,11 +389,12 @@ fn make_session(
 ) -> Session {
     Session {
         id: "session-1".to_string(),
-        repository_id: "repo-1".to_string(),
+        kind: crate::store::session_kind::SessionKind::Project,
+        repository_id: Some("repo-1".to_string()),
         name: "test".to_string(),
-        branch: "feat/test".to_string(),
-        base_branch: "main".to_string(),
-        worktree_path: "C:/repos/x".to_string(),
+        branch: Some("feat/test".to_string()),
+        base_branch: Some("main".to_string()),
+        worktree_path: Some("C:/repos/x".to_string()),
         session_dir: None,
         current_conversation: current_conversation.map(str::to_string),
         last_message_count: None,

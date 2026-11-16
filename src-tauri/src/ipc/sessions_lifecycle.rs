@@ -17,7 +17,9 @@ use crate::process::pid_records;
 use crate::session::agent::SharedRegistry;
 use crate::session::SessionStatus;
 use crate::store::registry::{Session, SessionPatch};
+use crate::store::session_kind::SessionKind;
 
+use super::project_session::{project_binding, refuse_if_personal};
 use super::{
     arg_str, invalid_argument, map_git_error, map_registry_error, not_found, now_iso8601, AppState,
     Dispatcher, HandlerFuture, IpcError,
@@ -146,11 +148,12 @@ async fn insert_session(
     let now = now_iso8601();
     let session = Session {
         id: uuid::Uuid::new_v4().to_string(),
-        repository_id: repository_id.to_string(),
+        kind: SessionKind::Project,
+        repository_id: Some(repository_id.to_string()),
         name: added.branch.clone(),
-        branch: added.branch.clone(),
-        base_branch: base_branch.to_string(),
-        worktree_path: added.worktree_path.to_string_lossy().into_owned(),
+        branch: Some(added.branch.clone()),
+        base_branch: Some(base_branch.to_string()),
+        worktree_path: Some(added.worktree_path.to_string_lossy().into_owned()),
         session_dir: None,
         current_conversation: None,
         last_message_count: None,
@@ -215,8 +218,9 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
             None => return Err(invalid_argument("sessions.archive expects a string id")),
         };
         delete_in_flight::refuse_if_deleting(&id)?;
-        if state.registry.lock().await.get_session(&id).is_none() {
-            return Err(not_found(format!("Session not found: {id}")));
+        match state.registry.lock().await.get_session(&id) {
+            Some(session) => refuse_if_personal(session)?,
+            None => return Err(not_found(format!("Session not found: {id}"))),
         }
         // Mark busy before archiving so a concurrent watcher restart cannot race the operation.
         // The Explorer is reset on success and failure so it never shows a stale tree.
@@ -265,7 +269,7 @@ pub fn sessions_restore(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // Held to the patch: a racing agent create must not fill the parent's last slot between
         // this check and the restore (#1859).
         let repository_id = match state.registry.lock().await.get_session(&id) {
-            Some(session) => session.repository_id.clone(),
+            Some(session) => project_binding(session)?.repository_id.to_string(),
             None => return Err(not_found(format!("Session not found: {id}"))),
         };
         let _gate = crate::agent_tools::tree_gate::lock(&repository_id).await;
@@ -324,19 +328,20 @@ pub fn sessions_delete_check(state: AppState, args: Vec<Value>) -> HandlerFuture
                 .ok_or_else(|| not_found(format!("Session not found: {id}")))?
                 .clone();
             let repository = registry
-                .get_repository(&session.repository_id)
-                .ok_or_else(|| not_found(format!("Project not found: {}", session.repository_id)))?
+                .get_repository(project_binding(&session)?.repository_id)
+                .ok_or_else(|| not_found("Project not found".to_string()))?
                 .clone();
             (session, repository)
         };
+        let binding = project_binding(&session)?;
         // Held across the git calls, so a Retry cannot remove the worktree under them (#891).
         let _read_guard = crate::fs::worktree_access::read_guard_bounded(&id)
             .await
             .map_err(map_git_error)?;
         let check = delete_check_for_session(
             Path::new(&repository.path),
-            Path::new(&session.worktree_path),
-            &session.branch,
+            Path::new(binding.worktree_path),
+            binding.branch,
         )
         .await
         .map_err(map_git_error)?;
@@ -362,7 +367,9 @@ pub fn sessions_delete_leftover_summary(state: AppState, args: Vec<Value>) -> Ha
                 .ok_or_else(|| not_found(format!("Session not found: {id}")))?
                 .clone()
         };
-        let summary = compute_leftover_summary(&id, Path::new(&session.worktree_path)).await;
+        let summary =
+            compute_leftover_summary(&id, Path::new(project_binding(&session)?.worktree_path))
+                .await;
         Ok(serde_json::to_value(summary).expect("LeftoverSummary is always JSON-serialisable"))
     })
 }
@@ -404,12 +411,14 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 .get_session(&id)
                 .ok_or_else(|| not_found(format!("Session not found: {id}")))?
                 .clone();
+            refuse_if_personal(&session)?;
             let repository = registry
-                .get_repository(&session.repository_id)
-                .ok_or_else(|| not_found(format!("Project not found: {}", session.repository_id)))?
+                .get_repository(project_binding(&session)?.repository_id)
+                .ok_or_else(|| not_found("Project not found".to_string()))?
                 .clone();
             (session, repository)
         };
+        let binding = project_binding(&session)?;
 
         // Cancel the leftover walk first so Refract's own handles are not read as external holders.
         crate::fs::worktree_access::cancel_walk_bounded(&id)
@@ -432,7 +441,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
             != SessionStatus::Stopped;
         worktree_holders::check_named_holders(
             Path::new(&repository.path),
-            Path::new(&session.worktree_path),
+            Path::new(binding.worktree_path),
             &own_pids,
         )
         .await
@@ -459,7 +468,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
         // A refused Delete restarts a Session that was running before the call (#891).
         if let Err(err) = worktree_holders::check_folder_in_use(
             Path::new(&repository.path),
-            Path::new(&session.worktree_path),
+            Path::new(binding.worktree_path),
             &id,
             &own_pids,
         )
@@ -512,18 +521,19 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
                 .ok_or_else(|| not_found(format!("Session not found: {id}")))?
                 .clone();
             let repository = registry
-                .get_repository(&session.repository_id)
-                .ok_or_else(|| not_found(format!("Project not found: {}", session.repository_id)))?
+                .get_repository(project_binding(&session)?.repository_id)
+                .ok_or_else(|| not_found("Project not found".to_string()))?
                 .clone();
             (session, repository)
         };
+        let binding = project_binding(&session)?;
 
         // Take the busy claim after `branch_exists`, so a branch-missing failure leaves the watcher running.
         let repo_path = Path::new(&repository.path);
-        if !branch_exists(repo_path, &session.branch).await {
+        if !branch_exists(repo_path, binding.branch).await {
             return Err(IpcError::new(
                 "branch-missing",
-                format!("Branch not found: {}", session.branch),
+                format!("Branch not found: {}", binding.branch),
             ));
         }
         let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
@@ -532,13 +542,9 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
         );
         // Stop the git-changes panel's separate watcher too (#464).
         crate::fs::git_changes_watch_state::stop_watcher(&id);
-        recreate_worktree(
-            repo_path,
-            Path::new(&session.worktree_path),
-            &session.branch,
-        )
-        .await
-        .map_err(map_git_error)?;
+        recreate_worktree(repo_path, Path::new(binding.worktree_path), binding.branch)
+            .await
+            .map_err(map_git_error)?;
         worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Reset);
         state.session_manager.notify_list_changed();
         Ok(Value::Null)

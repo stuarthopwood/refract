@@ -171,11 +171,12 @@ pub(super) fn make_session(
 ) -> Session {
     Session {
         id: id.to_string(),
-        repository_id: repository_id.to_string(),
+        kind: crate::store::session_kind::SessionKind::Project,
+        repository_id: Some(repository_id.to_string()),
         name: "test session".to_string(),
-        branch: branch.to_string(),
-        base_branch: "main".to_string(),
-        worktree_path: worktree_path.to_string(),
+        branch: Some(branch.to_string()),
+        base_branch: Some("main".to_string()),
+        worktree_path: Some(worktree_path.to_string()),
         session_dir: None,
         current_conversation: None,
         last_message_count: None,

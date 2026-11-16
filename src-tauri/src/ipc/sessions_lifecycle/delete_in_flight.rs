@@ -124,10 +124,11 @@ async fn remove(
     worktree_guard: WorktreeOperationGuard,
 ) -> Result<(), IpcError> {
     let id = &session.id;
+    let binding = super::super::project_session::project_binding(&session)?;
     remove_session_worktree(
         Path::new(&repository.path),
-        Path::new(&session.worktree_path),
-        &session.branch,
+        Path::new(binding.worktree_path),
+        binding.branch,
         true,
     )
     .await

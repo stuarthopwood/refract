@@ -312,17 +312,20 @@ impl SessionUniqueness {
             worktree_paths: registry
                 .sessions
                 .iter()
-                .map(|s| s.worktree_path.clone())
+                .filter_map(|s| s.worktree_path.clone())
                 .collect(),
             repo_branch: registry
                 .sessions
                 .iter()
-                .map(|s| (s.repository_id.clone(), s.branch.clone()))
+                .filter_map(|s| Some((s.repository_id.clone()?, s.branch.clone()?)))
                 .collect(),
         }
     }
 
     fn try_claim(&mut self, session: &super::registry::Session) -> bool {
+        let Some(binding) = session.project_binding() else {
+            return false;
+        };
         if self.ids.contains(&session.id) {
             log::info!(
                 "refract-tauri: data import: Session id {} already exists, keeping the Rust entry",
@@ -333,18 +336,21 @@ impl SessionUniqueness {
         if self
             .worktree_paths
             .iter()
-            .any(|p| same_path(p, &session.worktree_path))
+            .any(|p| same_path(p, binding.worktree_path))
         {
             log::info!("refract-tauri: data import: Session id {} worktreePath collides with an existing Session; skipping", session.id);
             return false;
         }
-        let key = (session.repository_id.clone(), session.branch.clone());
+        let key = (
+            binding.repository_id.to_string(),
+            binding.branch.to_string(),
+        );
         if self.repo_branch.contains(&key) {
-            log::info!("refract-tauri: data import: Session id {} branch {} collides in repository {}; skipping", session.id, session.branch, session.repository_id);
+            log::info!("refract-tauri: data import: Session id {} branch {} collides in repository {}; skipping", session.id, binding.branch, binding.repository_id);
             return false;
         }
         self.ids.insert(session.id.clone());
-        self.worktree_paths.push(session.worktree_path.clone());
+        self.worktree_paths.push(binding.worktree_path.to_string());
         self.repo_branch.insert(key);
         true
     }
@@ -386,12 +392,16 @@ fn compute_merge(dest: &Registry, source: &Registry) -> (MergePlan, HashMap<Stri
     let mut session_ids_added = Vec::new();
 
     for session in &source.sessions {
-        let Some(mapped_repo_id) = repo_id_map.get(&session.repository_id) else {
+        let Some(mapped_repo_id) = session
+            .repository_id
+            .as_deref()
+            .and_then(|id| repo_id_map.get(id))
+        else {
             log::info!("refract-tauri: data import: Session id {} references an unimported repository; skipping", session.id);
             continue;
         };
         let mut session = session.clone();
-        session.repository_id = mapped_repo_id.clone();
+        session.repository_id = Some(mapped_repo_id.clone());
         if !uniqueness.try_claim(&session) {
             continue;
         }
@@ -443,7 +453,11 @@ fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarke
         let Some(session) = source.sessions.iter().find(|s| &s.id == id) else {
             continue;
         };
-        let Some(mapped_repo_id) = repo_id_map.get(&session.repository_id) else {
+        let Some(mapped_repo_id) = session
+            .repository_id
+            .as_deref()
+            .and_then(|id| repo_id_map.get(id))
+        else {
             continue;
         };
         if !merged.repositories.iter().any(|r| &r.id == mapped_repo_id) {
@@ -451,7 +465,7 @@ fn apply_pending(dest: &Registry, source: &Registry, marker: &PendingImportMarke
             continue;
         }
         let mut session = session.clone();
-        session.repository_id = mapped_repo_id.clone();
+        session.repository_id = Some(mapped_repo_id.clone());
         if !uniqueness.try_claim(&session) {
             continue;
         }

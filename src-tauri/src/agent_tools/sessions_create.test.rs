@@ -105,11 +105,12 @@ impl Host for FakeHost {
 fn row(id: &str, repo: &str, parent: Option<&str>) -> Session {
     Session {
         id: id.into(),
-        repository_id: repo.into(),
+        kind: crate::store::session_kind::SessionKind::Project,
+        repository_id: Some(repo.into()),
         name: format!("name-{id}"),
-        branch: id.into(),
-        base_branch: "main".into(),
-        worktree_path: format!("C:/worktrees/{id}"),
+        branch: Some(id.into()),
+        base_branch: Some("main".into()),
+        worktree_path: Some(format!("C:/worktrees/{id}")),
         session_dir: None,
         current_conversation: None,
         last_message_count: None,

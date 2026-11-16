@@ -4,7 +4,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::atomic_json::{read_json_file, write_json_file};
+use super::atomic_json::{quarantine, read_json_file, write_json_file};
+use super::session_kind::{check_new_session, personal_agent_protected, warn_duplicate_personal};
+pub use super::session_kind::{ProjectBinding, SessionKind};
 
 /// A persisted Repository; `remote` is computed on demand and never stored in `registry.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,11 +36,18 @@ pub enum ProjectColor {
 #[serde(rename_all = "camelCase")]
 pub struct Session {
     pub id: String,
-    pub repository_id: String,
+    #[serde(default)]
+    pub kind: SessionKind,
+    /// The four Project fields are `None` (serialised `null`) only for a `personal` Session.
+    #[serde(default)]
+    pub repository_id: Option<String>,
     pub name: String,
-    pub branch: String,
-    pub base_branch: String,
-    pub worktree_path: String,
+    #[serde(default)]
+    pub branch: Option<String>,
+    #[serde(default)]
+    pub base_branch: Option<String>,
+    #[serde(default)]
+    pub worktree_path: Option<String>,
     pub session_dir: Option<String>,
     pub current_conversation: Option<String>,
     pub last_message_count: Option<i64>,
@@ -137,6 +146,8 @@ pub enum RegistryErrorCode {
     Duplicate,
     NotFound,
     HasSessions,
+    PersonalAgentExists,
+    PersonalAgentProtected,
 }
 
 impl RegistryErrorCode {
@@ -145,6 +156,8 @@ impl RegistryErrorCode {
             Self::Duplicate => "duplicate",
             Self::NotFound => "not-found",
             Self::HasSessions => "has-sessions",
+            Self::PersonalAgentExists => "personal-agent-exists",
+            Self::PersonalAgentProtected => "personal-agent-protected",
         }
     }
 }
@@ -204,7 +217,13 @@ pub struct RegistryStore {
 impl RegistryStore {
     pub async fn open(dir: &Path) -> std::io::Result<Self> {
         let file = dir.join("registry.json");
-        let data = read_json_file(&file, default_registry).await?;
+        let mut data = read_json_file(&file, default_registry).await?;
+        // A `project` row missing a field is a malformed file, never a `personal` Session.
+        if data.sessions.iter().any(|s| !s.is_well_formed()) {
+            quarantine(&file).await;
+            data = default_registry();
+        }
+        warn_duplicate_personal(&data);
         Ok(Self { file, data })
     }
 
@@ -303,7 +322,12 @@ impl RegistryStore {
                     format!("Project not found: {id}"),
                 )
             })?;
-        if self.data.sessions.iter().any(|s| s.repository_id == id) {
+        if self
+            .data
+            .sessions
+            .iter()
+            .any(|s| s.repository_id.as_deref() == Some(id))
+        {
             return Err(RegistryError::new(
                 RegistryErrorCode::HasSessions,
                 REPOSITORY_HAS_SESSIONS_MESSAGE,
@@ -325,40 +349,7 @@ impl RegistryStore {
     }
 
     pub async fn add_session(&mut self, s: Session) -> Result<(), RegistryStoreError> {
-        if self
-            .data
-            .sessions
-            .iter()
-            .any(|existing| same_path(&existing.worktree_path, &s.worktree_path))
-        {
-            return Err(RegistryError::new(
-                RegistryErrorCode::Duplicate,
-                format!("Worktree already registered: {}", s.worktree_path),
-            )
-            .into());
-        }
-        if self.data.sessions.iter().any(|existing| {
-            existing.repository_id == s.repository_id && existing.branch == s.branch
-        }) {
-            return Err(RegistryError::new(
-                RegistryErrorCode::Duplicate,
-                format!("Branch already used in this project: {}", s.branch),
-            )
-            .into());
-        }
-        // Closes the race where the Repository is removed while worktree creation is in flight.
-        if !self
-            .data
-            .repositories
-            .iter()
-            .any(|r| r.id == s.repository_id)
-        {
-            return Err(RegistryError::new(
-                RegistryErrorCode::NotFound,
-                format!("Project not found: {}", s.repository_id),
-            )
-            .into());
-        }
+        check_new_session(&self.data, &s)?;
         let id = s.id.clone();
         self.data.sessions.push(s);
         if let Err(err) = self.persist().await {
@@ -414,6 +405,9 @@ impl RegistryStore {
                     format!("Session not found: {id}"),
                 )
             })?;
+        if self.data.sessions[index].is_personal() && matches!(patch.archived_at, Some(Some(_))) {
+            return Err(personal_agent_protected().into());
+        }
         let previous = self.data.sessions[index].clone();
         {
             let session = &mut self.data.sessions[index];
@@ -480,6 +474,9 @@ impl RegistryStore {
                     format!("Session not found: {id}"),
                 )
             })?;
+        if self.data.sessions[index].is_personal() {
+            return Err(personal_agent_protected().into());
+        }
         let removed = self.data.sessions.remove(index);
         let mut rerooted = Vec::new();
         for child in &mut self.data.sessions {

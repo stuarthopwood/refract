@@ -137,7 +137,7 @@ fn resolve_parent<'a>(
     };
     let found = sessions
         .iter()
-        .find(|s| s.id == id)
+        .find(|s| s.id == id && !s.is_personal())
         .ok_or_else(|| ToolError::new(NOT_FOUND, format!("no Session has id {id}")))?;
     if found.archived_at.is_some() {
         return Err(invalid(format!("Session {id} is archived")));
@@ -230,11 +230,15 @@ async fn create_with<H: Host>(host: &Arc<H>, args: &Value) -> Result<Value, Tool
             return Err(invalid(format!("{role} is not a known role")));
         }
     }
+    let caller_repository_id = caller
+        .repository_id
+        .as_deref()
+        .ok_or_else(|| ToolError::new(NOT_FOUND, "the caller has no Project"))?;
     let repository = host
         .registry()
         .lock()
         .await
-        .get_repository(&caller.repository_id)
+        .get_repository(caller_repository_id)
         .cloned()
         .ok_or_else(|| ToolError::new(NOT_FOUND, "the caller's Project no longer exists"))?;
     let base = request

@@ -266,8 +266,10 @@ impl SessionManager {
             if self.get_agent(&session.id).is_some() {
                 continue;
             }
-            if !repos_needed.contains(&session.repository_id) {
-                repos_needed.push(session.repository_id.clone());
+            if let Some(binding) = session.project_binding() {
+                if !repos_needed.iter().any(|id| id == binding.repository_id) {
+                    repos_needed.push(binding.repository_id.to_string());
+                }
             }
         }
         let worktree_lists = fetch_worktree_lists(&repos_needed, &repositories).await;
@@ -292,22 +294,29 @@ impl SessionManager {
                 }
                 None => {
                     // Valid only if registered with git and its own `.git` pointer exists.
-                    let has_repository = repositories.iter().any(|r| r.id == session.repository_id);
-                    let validity = if !has_repository {
-                        WorktreeValidity::Invalid
-                    } else {
-                        let has_git_entry = tokio::fs::symlink_metadata(
-                            Path::new(&session.worktree_path).join(".git"),
-                        )
-                        .await
-                        .is_ok();
-                        if !has_git_entry {
+                    // A Personal Agent has no worktree to lose, so it is never "missing".
+                    let validity = match session.project_binding() {
+                        None => WorktreeValidity::Valid,
+                        Some(binding)
+                            if !repositories.iter().any(|r| r.id == binding.repository_id) =>
+                        {
                             WorktreeValidity::Invalid
-                        } else {
-                            let registered = worktree_lists
-                                .get(&session.repository_id)
-                                .and_then(|list| list.as_deref());
-                            registered_validity(Path::new(&session.worktree_path), registered).await
+                        }
+                        Some(binding) => {
+                            let has_git_entry = tokio::fs::symlink_metadata(
+                                Path::new(binding.worktree_path).join(".git"),
+                            )
+                            .await
+                            .is_ok();
+                            if !has_git_entry {
+                                WorktreeValidity::Invalid
+                            } else {
+                                let registered = worktree_lists
+                                    .get(binding.repository_id)
+                                    .and_then(|list| list.as_deref());
+                                registered_validity(Path::new(binding.worktree_path), registered)
+                                    .await
+                            }
                         }
                     };
                     // A timed-out check is `Unknown`, treated as valid, not as missing.
@@ -417,11 +426,12 @@ mod tests {
     ) -> Session {
         Session {
             id: id.to_string(),
-            repository_id: repository_id.to_string(),
+            kind: crate::store::session_kind::SessionKind::Project,
+            repository_id: Some(repository_id.to_string()),
             name: "Test Session".to_string(),
-            branch: branch.to_string(),
-            base_branch: "main".to_string(),
-            worktree_path: worktree_path.to_string_lossy().to_string(),
+            branch: Some(branch.to_string()),
+            base_branch: Some("main".to_string()),
+            worktree_path: Some(worktree_path.to_string_lossy().to_string()),
             session_dir: None,
             current_conversation: None,
             last_message_count: None,

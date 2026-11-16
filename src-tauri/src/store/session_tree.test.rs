@@ -3,11 +3,12 @@ use super::*;
 fn session(id: &str, parent: Option<&str>) -> Session {
     Session {
         id: id.to_string(),
-        repository_id: "repo".to_string(),
+        kind: crate::store::session_kind::SessionKind::Project,
+        repository_id: Some("repo".to_string()),
         name: id.to_string(),
-        branch: id.to_string(),
-        base_branch: "main".to_string(),
-        worktree_path: format!("C:/worktrees/{id}"),
+        branch: Some(id.to_string()),
+        base_branch: Some("main".to_string()),
+        worktree_path: Some(format!("C:/worktrees/{id}")),
         session_dir: None,
         current_conversation: None,
         last_message_count: None,
