@@ -231,8 +231,11 @@ async function main() {
       await cdp.waitFor(`!!document.querySelector('[role="menu"]')`, { timeoutMs: 10_000, label: 'context menu for rename' });
       await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Rename')`);
       await cdp.waitFor(`!!${PERSONAL_UL}.querySelector('input[aria-label="Session name"]')`, { timeoutMs: 10_000, label: 'rename input' });
-      await cdp.evaluate(`${PERSONAL_UL}.querySelector('input[aria-label="Session name"]').select()`);
+      // The menu's close-autofocus can run after the input mounts, so wait it out before taking focus.
+      await sleep(800);
+      await cdp.evaluate(`(() => { const i = ${PERSONAL_UL}.querySelector('input[aria-label="Session name"]'); i.focus(); i.select(); })()`);
       await cdp.send('Input.insertText', { text: 'Helper' });
+      await cdp.waitFor(`${PERSONAL_UL}.querySelector('input[aria-label="Session name"]')?.value === 'Helper'`, { timeoutMs: 5_000, label: 'rename input holds Helper' });
       await pressRealEnter(cdp);
       await sleep(2_000);
       await shot(cdp, 'd4-renamed-helper.png');
