@@ -110,9 +110,9 @@ Rule for T011 to T016: for `project` Sessions the code path and output are byte-
 
 **Independent Test**: quickstart.md "#2006".
 
-- [ ] T032 [P] [US3] Add a launcher button, section label and divider from the shared reusable components in `src/renderer/components/` (FR-021): a real labelled button with a visible focus ring and a non-colour-only selected state; the label is a heading for the group below.
-- [ ] T033 [US3] In `features/sessions/SessionList.tsx` (and `ProjectListPane.tsx` if it owns the layout) render, from the top: launcher, divider, "Projects" label, then the existing groups; keep the `personal` Session excluded from the group data so counts, ordering and collapse are unchanged (FR-017, FR-020).
-- [ ] T034 [US3] Wire activation to the T023 open-or-create handler and select the Session; show the current name and the Session row's active, working or waiting state from the same status mapping (`sessionDisplay.tsx`) (FR-018, FR-019).
+- [x] T032 [P] [US3] Add a launcher button, section label and divider from the shared reusable components in `src/renderer/components/` (FR-021): a real labelled button with a visible focus ring and a non-colour-only selected state; the label is a heading for the group below.
+- [x] T033 [US3] In `features/sessions/SessionList.tsx` (and `ProjectListPane.tsx` if it owns the layout) render, from the top: launcher, divider, "Projects" label, then the existing groups; keep the `personal` Session excluded from the group data so counts, ordering and collapse are unchanged (FR-017, FR-020).
+- [x] T034 [US3] Wire activation to the T023 open-or-create handler and select the Session; show the current name and the Session row's active, working or waiting state from the same status mapping (`sessionDisplay.tsx`) (FR-018, FR-019).
 - [ ] T035 [US3] Live verify with CDP on a scratch instance: layout order, states, rename, keyboard focus, no `personal` row in any group (quickstart.md "#2006"); update `docs/PLAN.md`.
 
 **Checkpoint**: the epic acceptance is met.
@@ -147,3 +147,10 @@ First PR: Phases 1 and 2 only (MVP, invisible to developers, unblocks every othe
 
 - [x] T037 [US4] Also gate the pinned pull request panel (`right-pane/pinned/PinnedPullRequestPanel.tsx`, `PinnedPanelShell.tsx`) and the diff stat in `SessionDetailsCard.tsx` on the Session `kind`, showing the shared empty state or no diff stat for `personal` with no backend call, per FR-022
 - [X] T038 [US2] The Personal Agent launch also passes `--cwd=<resolved home folder>` to omp (`omp/process_args.rs` and `OmpProcessOptions`), because omp rebinds its working folder to the OS temp folder when the spawn cwd is its own home folder (FINDINGS item 66, T021); `current_dir` alone leaves the agent's tools in temp, so SC-004 would fail. Project launch args stay byte-identical. per FR-012 (partial)
+
+## Phase 8: Convergence
+
+- [x] T039 [US3] Render the Personal Agent as the shared `SessionRow` (optional `repository`) pinned at the top of the list, with a "My Agent" placeholder (no status, no menu) until the Session exists; activation by click, Enter or Space calls `sessions.openPersonalAgent`, stores the Session, then selects and starts it per US3/AC1-AC4 (missing)
+- [x] T040 [US3] Add a shared section-heading component for "Projects" and list it in `docs/design/components.md`; the row is the first Tab stop before the first Project, with no arrow navigation or new shortcut per US3/AC6 (missing)
+- [x] T041 [US3] Keep the pinned row outside search and filters (`searchSessions`, `showingCountLabel` still exclude `personal`) per US3/AC7 (missing)
+- [x] T042 [US3] Set the #2006 row in `docs/PLAN.md` to in-flight per FR-027 (missing)

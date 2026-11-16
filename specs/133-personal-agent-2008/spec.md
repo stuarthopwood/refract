@@ -53,7 +53,7 @@ Every answer below comes from the epic grill and the #2004 grill (Stuart grill 2
 - Q: Can the Personal Agent be hidden from the list (OQ-2)? -> A: No. Hide is refused, as already implemented in #2004 (`personal-agent-protected`) (Stuart grill 2026-11-16, #2005/#2007).
 - Q: What does the launcher look like and show? -> A: A pinned Session row built from the shared Session row component, above a divider and a "Projects" heading. It shows the Session's current name (default "My Agent"), status and selected state, and has the same overflow and context menu as any Session row (Rename, Stop, new Conversation, and the disabled Archive and Delete from #2007) (Stuart grill 2026-11-16, #2006).
 - Q: Do the list's search and filters hide the Personal Agent row? -> A: No. The row is always shown; search and filters apply only to the Project groups below the "Projects" heading (Stuart grill 2026-11-16, #2006).
-- Q: Where is the row in keyboard navigation? -> A: It is the first stop in the list's arrow-key navigation and in the next and previous Session shortcuts. The "Projects" heading is not a stop (Stuart grill 2026-11-16, #2006).
+- Q: Where is the row in keyboard navigation? -> A: It is the first Tab stop in the list, before the first Project, like any other row; the list has no arrow navigation and no next or previous Session shortcut, and nothing new is added. The "Projects" heading is not a stop (Stuart grill 2026-11-16, #2006).
 - Q: When is the Personal Agent created? -> A: Lazily. Until the first activation the row is a placeholder labelled "My Agent" with no status; the first click, Enter or Space calls the create-or-open IPC, then selects and starts it; after that it is a normal persisted row (Stuart grill 2026-11-16, #2006).
 - Q: Which spec does #2006 converge against? -> A: The epic spec `specs/133-personal-agent-2008`, not spec 001 (Stuart grill 2026-11-16, #2006).
 
@@ -112,7 +112,7 @@ The session list shows the Personal Agent as one pinned Session row at the very 
 3. **Given** the Personal Agent is working, waiting or idle, **Then** the row shows that state and its selected state the way any Session row does.
 4. **Given** the Personal Agent has been renamed, **Then** the row shows the new name.
 5. **Given** project groups, **Then** their counts, ordering and collapse behaviour are unchanged and the Personal Agent never appears inside one.
-6. **Given** keyboard-only use, **Then** the row is the first stop in arrow-key navigation (Arrow Down enters the first Project, Arrow Up returns), is included in the next and previous Session shortcuts, shows a visible focus ring and its selected state, and "Projects" is a real heading that is not a stop.
+6. **Given** keyboard-only use, **Then** the row is the first Tab stop in the list, before the first Project, shows a visible focus ring and its selected state, Enter or Space activates it, and "Projects" is a real heading that is not a stop.
 7. **Given** a search query or filter, **Then** the Personal Agent row is still shown and only the groups below "Projects" are filtered.
 8. **Given** the Personal Agent row, **Then** its overflow and context menus are the shared Session menus, with archive and delete disabled and worktree actions absent (#2007).
 
