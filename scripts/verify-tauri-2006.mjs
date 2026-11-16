@@ -343,6 +343,12 @@ async function main() {
     app = await startApp({ ...launchArgs, dataDir: spaceData, tag: '4' });
     await guarded('b2', async () => {
       const c = app.cdp;
+      // A fresh data folder shows the first-install screen until a Project exists.
+      const spaceAdded = await c.evaluate(`window.refract.repositories.add(${JSON.stringify(repoDir)}).then((r) => r)`);
+      if (!spaceAdded.ok) throw new Error(`add Project failed: ${JSON.stringify(spaceAdded.error)}`);
+      await c.send('Page.reload');
+      await c.waitFor(`!!window.refract?.sessions && !!document.querySelector('[data-repository-id]')`, { timeoutMs: 60_000, label: 'fresh list with the Project (b2)' });
+      await sleep(1_500);
       await c.waitFor(`!!(${PLACEHOLDER})`, { timeoutMs: 30_000, label: 'placeholder on fresh data (b2)' });
       await c.evaluate(`${PLACEHOLDER}.focus()`);
       for (const type of ['keyDown', 'keyUp']) {
