@@ -52,7 +52,7 @@ async fn session_context(
     let session = registry
         .get_session(session_id)
         .ok_or_else(|| not_found("This Session no longer exists"))?;
-    let binding = super::project_session::project_binding(session)?;
+    let binding = super::project_session::repo_binding(session)?;
     let repo_path = registry
         .get_repository(binding.repository_id)
         .map(|r| PathBuf::from(&r.path));

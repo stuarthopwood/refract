@@ -30,7 +30,7 @@ import type { ResolvedDropItem } from './attachDroppedPaths'
 import { canResumeSession, resumeSession } from './resume'
 import { applySnapshot } from './applySnapshot'
 import { closeChatPane } from './closeChatPane'
-import { READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
+import { isProjectSession, READY_CEILING_MS, type SessionStartProgress } from '../../../shared/model'
 import { describeStartProgressLabel } from '@/features/sessions/startProgressDisplay'
 import { BrandWatermark } from './BrandWatermark'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
@@ -663,7 +663,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           onRecover={() => void handleRecover()}
           onResume={() => void handleResume()}
           onStartNew={() => void handleStartNewConversation()}
-          onRecreateWorktree={() => void handleRecreateWorktree()}
+          onRecreateWorktree={isProjectSession(session) ? () => void handleRecreateWorktree() : undefined}
           onArchive={() => void handleArchive()}
           onDelete={() => setDeleteForId(sessionId)}
           startNewButtonRef={startNewButtonRef} deleteButtonRef={deleteBannerButtonRef} deleting={deleting}

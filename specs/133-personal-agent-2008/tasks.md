@@ -93,11 +93,12 @@ Rule for T011 to T016: for `project` Sessions the code path and output are byte-
 
 **Independent Test**: quickstart.md "#2007".
 
-- [ ] T027 [P] [US4] Give each repo-only handler a typed `no-repository` result for `personal` (FR-024): `ipc/git_changes.rs`, `ipc/file_explorer.rs`, `ipc/files.rs`, `ipc/sessions_lifecycle/diag.rs` (diffStat, reveal), `ipc/pull_requests/handlers.rs`, `ipc/issues.rs`, `ipc/session_kickoff.rs`, `ipc/sessions_lifecycle.rs` `sessions_recreate_worktree`; no panic, no error log. Add `no-repository` to the `IPC_ERROR_CODES` allowlist in `src-tauri/src/ipc/mod.rs` and to its TypeScript mirror in `src/shared/ipc.ts`. Replace the T012 interim returns.
-- [ ] T028 [P] [US4] Add one shared repo-only empty state under `src/renderer/components/`, built on the existing `Empty` primitive (ADR 0003), with the title "No repository" and the body "The Personal Agent isn't linked to a Project, so there are no changes, files, or pull requests to show." Title and body are exposed to assistive technology as text (FR-026).
-- [ ] T029 [US4] Use it in `right-pane/git-changes/`, `right-pane/file-explorer/FileExplorerPanel.tsx`, the pull request and diff views (`features/pull-requests/`, `features/right-pane/`). Gate on the Session `kind` in the renderer and make no backend call for `personal`; the panels stay visible (FR-022).
-- [ ] T030 [US4] In `features/sessions/useWorktreeActions.ts`, `useSessionRowActions.ts` and `SessionDetailsCard.tsx` remove copy worktree path, reveal and recreate worktree from the menus for `personal` (do not show them disabled), and show archive and delete disabled with the reason "The Personal Agent cannot be archived or deleted" (FR-023). Project Sessions unchanged (FR-025).
-- [ ] T031 [US4] Live verify with CDP on a scratch instance (quickstart.md "#2007"): SC-005 and SC-006; Worktree actions absent from the menus; app log clean; update `docs/PLAN.md`.
+- [x] T027 [P] [US4] Give each repo-only handler a typed `no-repository` result for `personal` (FR-024): `ipc/git_changes.rs`, `ipc/file_explorer.rs`, `ipc/files.rs`, `ipc/sessions_lifecycle/diag.rs` (diffStat, reveal), `ipc/pull_requests/handlers.rs`, `ipc/issues.rs`, `ipc/session_kickoff.rs`, `ipc/sessions_lifecycle.rs` `sessions_recreate_worktree`; no panic, no error log. Add `no-repository` to the `IPC_ERROR_CODES` allowlist in `src-tauri/src/ipc/mod.rs` and to its TypeScript mirror in `src/shared/ipc.ts`. Replace the T012 interim returns.
+  - `files.revealFile` is deliberately left to #2005. `pull_requests/handlers.rs`, `issues.rs` and `session_kickoff.rs` take a `repository_id`, so they have no Personal Agent path.
+- [x] T028 [P] [US4] Add one shared repo-only empty state under `src/renderer/components/`, built on the existing `Empty` primitive (ADR 0003), with the title "No repository" and the body "The Personal Agent isn't linked to a Project, so there are no changes, files, or pull requests to show." Title and body are exposed to assistive technology as text (FR-026).
+- [x] T029 [US4] Use it in `right-pane/git-changes/`, `right-pane/file-explorer/FileExplorerPanel.tsx`, the pull request and diff views (`features/pull-requests/`, `features/right-pane/`). Gate on the Session `kind` in the renderer and make no backend call for `personal`; the panels stay visible (FR-022).
+- [x] T030 [US4] In `features/sessions/useWorktreeActions.ts`, `useSessionRowActions.ts` and `SessionDetailsCard.tsx` remove copy worktree path, reveal and recreate worktree from the menus for `personal` (do not show them disabled), and show archive and delete disabled with the reason "The Personal Agent cannot be archived or deleted" (FR-023). Project Sessions unchanged (FR-025).
+- [X] T031 [US4] Live verify with CDP on a scratch instance (quickstart.md "#2007"): SC-005 and SC-006; Worktree actions absent from the menus; app log clean; update `docs/PLAN.md`. **Done 2026-11-16:** panels, guarded IPC and Project row menus verified live; no surface renders `buildSessionRowActions` for the Personal Agent before #2006 (list, archived group and Manage sessions all filter to Project Sessions), so its menu absence is by construction until the launcher lands.
 
 **Checkpoint**: the Personal Agent shows no repo errors.
 
@@ -139,3 +140,9 @@ TypeScript:      T010 first, then T015, T016, T017 (different files)
 ## Implementation strategy
 
 First PR: Phases 1 and 2 only (MVP, invisible to developers, unblocks every other child). Then Phase 3 for the first usable Personal Agent, Phase 4 to remove errors, Phase 5 for the launcher button. Each later phase is converged against this spec before starting.
+
+---
+
+## Phase 7: Convergence
+
+- [x] T037 [US4] Also gate the pinned pull request panel (`right-pane/pinned/PinnedPullRequestPanel.tsx`, `PinnedPanelShell.tsx`) and the diff stat in `SessionDetailsCard.tsx` on the Session `kind`, showing the shared empty state or no diff stat for `personal` with no backend call, per FR-022
