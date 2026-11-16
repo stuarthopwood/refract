@@ -392,6 +392,10 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 ))
             }
         };
+        // Ahead of the confirmation check: "protected" is the more accurate refusal.
+        if let Some(session) = state.registry.lock().await.get_session(&id) {
+            refuse_if_personal(session)?;
+        }
         let options = match args.get(1).and_then(Value::as_object) {
             Some(options) => options,
             None => {

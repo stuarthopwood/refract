@@ -2,7 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::registry::{same_path, Registry, RegistryError, RegistryErrorCode, Session};
+use super::registry::{
+    same_path, Registry, RegistryError, RegistryErrorCode, Session, SessionPatch,
+};
 
 /// A row without `kind` on disk is a `project` Session, so old registries load unchanged.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -65,13 +67,58 @@ pub(super) fn personal_agent_protected() -> RegistryError {
     )
 }
 
+fn invalid_shape(message: &str) -> RegistryError {
+    RegistryError::new(RegistryErrorCode::InvalidShape, message)
+}
+
+fn is_personal_id(data: &Registry, id: &str) -> bool {
+    data.sessions.iter().any(|s| s.id == id && s.is_personal())
+}
+
+/// Refusals for a patch to an existing row: the Personal Agent is never archived, hidden (OQ-2
+/// interim) or nested, and nothing becomes its child. Clearing a link stays allowed.
+pub(super) fn check_session_patch(
+    data: &Registry,
+    index: usize,
+    patch: &SessionPatch,
+) -> Result<(), RegistryError> {
+    if data.sessions[index].is_personal()
+        && (matches!(patch.archived_at, Some(Some(_)))
+            || matches!(patch.hidden_at, Some(Some(_)))
+            || matches!(patch.parent_session_id, Some(Some(_))))
+    {
+        return Err(RegistryError::new(
+            RegistryErrorCode::PersonalAgentProtected,
+            "The Personal Agent cannot be archived, hidden or nested under another Session.",
+        ));
+    }
+    if let Some(Some(parent)) = &patch.parent_session_id {
+        if is_personal_id(data, parent) {
+            return Err(invalid_shape(PERSONAL_NO_CHILDREN_MESSAGE));
+        }
+    }
+    Ok(())
+}
+
+const PERSONAL_NO_CHILDREN_MESSAGE: &str = "A Personal Agent cannot have child Sessions.";
+
 /// Every check `add_session` makes before a row is stored.
 pub(super) fn check_new_session(data: &Registry, s: &Session) -> Result<(), RegistryError> {
+    if s.parent_session_id
+        .as_deref()
+        .is_some_and(|parent| is_personal_id(data, parent))
+    {
+        return Err(invalid_shape(PERSONAL_NO_CHILDREN_MESSAGE));
+    }
     if s.kind == SessionKind::Personal {
         if !s.has_no_project_fields() {
-            return Err(RegistryError::new(
-                RegistryErrorCode::InvalidShape,
+            return Err(invalid_shape(
                 "A Personal Agent has no Project, branch or worktree.",
+            ));
+        }
+        if s.parent_session_id.is_some() || s.hidden_at.is_some() || s.archived_at.is_some() {
+            return Err(invalid_shape(
+                "A Personal Agent is never hidden, archived or nested.",
             ));
         }
         if data.sessions.iter().any(Session::is_personal) {

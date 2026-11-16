@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::atomic_json::{quarantine, read_json_file, write_json_file};
-use super::session_kind::{check_new_session, personal_agent_protected, warn_duplicate_personal};
+use super::session_kind::{
+    check_new_session, check_session_patch, personal_agent_protected, warn_duplicate_personal,
+};
 pub use super::session_kind::{ProjectBinding, SessionKind};
 
 /// A persisted Repository; `remote` is computed on demand and never stored in `registry.json`.
@@ -225,8 +227,12 @@ impl RegistryStore {
             quarantine(&file).await;
             data = default_registry();
         }
-        warn_duplicate_personal(&data);
         Ok(Self { file, data })
+    }
+
+    /// Separate from `open`, which runs before the logger plugin and would drop the line.
+    pub fn warn_duplicate_personal(&self) {
+        warn_duplicate_personal(&self.data);
     }
 
     pub fn snapshot(&self) -> Registry {
@@ -407,9 +413,7 @@ impl RegistryStore {
                     format!("Session not found: {id}"),
                 )
             })?;
-        if self.data.sessions[index].is_personal() && matches!(patch.archived_at, Some(Some(_))) {
-            return Err(personal_agent_protected().into());
-        }
+        check_session_patch(&self.data, index, &patch)?;
         let previous = self.data.sessions[index].clone();
         {
             let session = &mut self.data.sessions[index];
