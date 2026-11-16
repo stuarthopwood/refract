@@ -5,8 +5,10 @@
 ### I. OMP Is the Engine, Refract Is the Host
 
 - Refract MUST drive OMP only through `omp --mode rpc-ui` over stdio: one OMP child process per
-  session, one session per git worktree. Refract MUST NOT embed the OMP SDK, require Bun, or use
-  ACP.
+  session, one session per git worktree, except the Personal Agent (amended 2026-11-16, spec 133,
+  #2005): the single project-less Session that has no worktree and whose cwd is the developer's
+  home folder, resolved on every launch and never stored. Refract MUST NOT embed the OMP SDK,
+  require Bun, or use ACP.
 - Every launch MUST load OMP's full feature set (skills, extensions, MCP servers, rules). Refract
   MUST NOT pass `--no-extensions`, `--no-skills`, `--no-tools`, `--no-rules`, or `--no-ui`.
 - Every launch MUST pass `--approval-mode` explicitly, set from Refract's global Approval mode
@@ -57,10 +59,12 @@ sessions do not survive a process restart.
 ### III. Session and Process Lifecycle
 
 - Refract lists saved sessions by scanning `*.jsonl` files in the directory OMP uses for that
-  worktree. Refract passes no `--session-dir` and takes `dirname(sessionFile)` from `get_state`
-  (FINDINGS item 11); RPC has no list-sessions command.
+  worktree (for the Personal Agent, the directory OMP uses for the home folder). Refract passes no
+  `--session-dir` and takes `dirname(sessionFile)` from `get_state` (FINDINGS item 11); RPC has no
+  list-sessions command.
 - To reopen a saved session after an app restart, Refract spawns a fresh process in the session's
-  worktree and binds it with `switch_session` and `sessionPath` (FINDINGS C16). Refract MUST NOT
+  worktree (the Personal Agent: the home folder) and binds it with `switch_session` and
+  `sessionPath` (FINDINGS C16). Refract MUST NOT
   use `--resume` for reattach: after a worktree is removed and recreated at the same path it
   reports an empty session and its later exit overwrites the file with a blank one (FINDINGS
   item 17). Refract MUST confirm every reattach: `get_state` `sessionFile` must equal the saved
@@ -72,7 +76,10 @@ sessions do not survive a process restart.
   `lastMessageCount` to the observed count and shows a visible, one-time notice naming both
   counts. A missing file is reported as such, because `switch_session` to a missing path succeeds
   with an empty session.
-- Every OMP process MUST be spawned with the session's own worktree as its cwd. `switch_session`
+- Every OMP process MUST be spawned with the session's own worktree as its cwd. The Personal
+  Agent has no worktree: its cwd is the home folder, and because OMP rebinds its working folder
+  to the OS temp folder when the spawn cwd is OMP's own home folder, Refract also passes
+  `--cwd=<home folder>` for it (amended 2026-11-16, FINDINGS item 66). `switch_session`
   to a session recorded under a different cwd is cancelled and leaves the process on an empty
   session (FINDINGS C16, item 5).
 - Refract stops a session by closing its stdin and reading stdout until the process exits, and
@@ -169,4 +176,4 @@ sessions do not survive a process restart.
   guidance, PATCH for wording.
 - A change to a Principle II or III rule MUST cite the FINDINGS row or probe result behind it.
 
-**Version**: 3.0.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-10-15
+**Version**: 3.1.0 | **Ratified**: 2026-09-30 | **Last Amended**: 2026-11-16
