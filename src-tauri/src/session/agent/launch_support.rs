@@ -45,7 +45,10 @@ pub(super) async fn assert_conversation_file_exists(file: &str) -> Result<(), St
 /// caller shows; there is no fallback directory (spec 133 OQ-4).
 pub(super) async fn personal_home_folder() -> Result<std::path::PathBuf, String> {
     let Some(home) = dirs::home_dir() else {
-        return Err("The home folder could not be resolved, so the Personal Agent cannot start.".to_string());
+        return Err(
+            "The home folder could not be resolved, so the Personal Agent cannot start."
+                .to_string(),
+        );
     };
     match tokio::fs::metadata(&home).await {
         Ok(meta) if meta.is_dir() => Ok(home),
