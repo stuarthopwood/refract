@@ -102,7 +102,7 @@ An agent deletes a Session. The card is raised in every mode, including `yolo`; 
 - **FR-011**: A cascading or deleting call that completes returns the affected ids so the agent can read them back with `refract_list_sessions`; no result carries secrets or paths.
 - **FR-012**: A call is checked again under the Project tree gate after the card resolves, so a racing create, update or delete cannot make the approved set differ from the applied set.
 - **FR-013**: No new renderer round trip: every check and write runs in Rust, and the renderer only sees the existing card and list-changed events.
-- **FR-014**: No new tests are skipped: every guard (self, ancestor, Personal Agent, approval table, cascade set, 4-live-children gate, in-flight delete) has a test that fails when the guard is removed.
+- **FR-014**: Every guard (self, ancestor, Personal Agent, approval table, cascade set, 4-live-children gate, in-flight delete) has a unit test that fails when the guard is removed.
 
 ### Key Entities
 
