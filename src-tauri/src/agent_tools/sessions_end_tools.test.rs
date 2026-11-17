@@ -306,6 +306,34 @@ async fn pause_and_resume_state_errors() {
 }
 
 #[tokio::test]
+async fn a_stopped_session_that_still_holds_messages_is_not_running_for_stop_pause_and_resume() {
+    let h = Arc::new(host(tree()).await);
+    set_status(&h, "kid", "stopped+held");
+    for tool in [EndTool::Stop, EndTool::Pause, EndTool::Resume] {
+        assert_eq!(
+            code(call(&h, tool, json!({ "id": "kid" })).await),
+            SESSION_NOT_RUNNING
+        );
+    }
+    assert!(h.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_pausing_session_is_already_paused_and_can_be_resumed() {
+    let h = Arc::new(host(tree()).await);
+    set_status(&h, "kid", "pausing");
+    assert_eq!(
+        code(call(&h, EndTool::Pause, json!({ "id": "kid" })).await),
+        INVALID_STATE
+    );
+    assert_eq!(h.card_count(), 0);
+    let out = call(&h, EndTool::Resume, json!({ "id": "kid" }))
+        .await
+        .unwrap();
+    assert_eq!(out["outcome"], "resumed");
+}
+
+#[tokio::test]
 async fn a_pause_in_yolo_outside_the_tree_needs_no_card() {
     let mut h = host(tree()).await;
     h.yolo = true;

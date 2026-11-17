@@ -160,8 +160,10 @@ fn parent_id_is_on_list_rows_and_status_only_when_set() {
 }
 
 #[test]
-fn the_create_and_update_tools_are_checked_against_their_own_schemas() {
-    for tool in [CREATE_SESSION, UPDATE_SESSION] {
+fn the_create_update_and_end_tools_are_checked_against_their_own_schemas() {
+    let mut tools = vec![CREATE_SESSION, UPDATE_SESSION];
+    tools.extend(super::super::sessions_end::EndTool::ALL.map(|t| t.name()));
+    for tool in tools {
         assert!(is_session_tool(tool), "{tool}");
         assert!(!description(tool).is_empty(), "{tool}");
         let err = check_args(tool, &json!({ "bogus": 1 })).unwrap_err();

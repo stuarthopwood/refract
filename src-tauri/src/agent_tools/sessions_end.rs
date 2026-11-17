@@ -11,7 +11,7 @@ use serde_json::Value;
 use super::approval;
 use super::panels;
 use super::router::{approval_outcome, ToolError, CANCELLED, INVALID_INPUT};
-use super::sessions::{live_status, manager_gone, NOT_FOUND};
+use super::sessions::{manager_gone, NOT_FOUND};
 use super::sessions_send::INVALID_TARGET;
 use crate::session::agent::{PendingRequest, SessionAgent, SharedRegistry};
 use crate::store::registry::Session;
@@ -19,6 +19,13 @@ use crate::store::registry::Session;
 pub const INVALID_STATE: &str = "invalid_state";
 pub const CHILD_LIMIT: &str = "child_limit";
 pub const DELETE_REFUSED: &str = "delete_refused";
+
+pub const ARCHIVE_SESSION: &str = "refract_archive_session";
+pub const UNARCHIVE_SESSION: &str = "refract_unarchive_session";
+pub const STOP_SESSION: &str = "refract_stop_session";
+pub const PAUSE_SESSION: &str = "refract_pause_session";
+pub const RESUME_SESSION: &str = "refract_resume_session";
+pub const DELETE_SESSION: &str = "refract_delete_session";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EndTool {
@@ -42,12 +49,12 @@ impl EndTool {
 
     pub fn name(self) -> &'static str {
         match self {
-            EndTool::Archive => "refract_archive_session",
-            EndTool::Unarchive => "refract_unarchive_session",
-            EndTool::Stop => "refract_stop_session",
-            EndTool::Pause => "refract_pause_session",
-            EndTool::Resume => "refract_resume_session",
-            EndTool::Delete => "refract_delete_session",
+            EndTool::Archive => ARCHIVE_SESSION,
+            EndTool::Unarchive => UNARCHIVE_SESSION,
+            EndTool::Stop => STOP_SESSION,
+            EndTool::Pause => PAUSE_SESSION,
+            EndTool::Resume => RESUME_SESSION,
+            EndTool::Delete => DELETE_SESSION,
         }
     }
 
@@ -197,8 +204,10 @@ pub(super) trait EndHost: Send + Sync + 'static {
     fn is_yolo(&self) -> impl Future<Output = bool> + Send;
     /// Raises the card and waits: `Ok` only when the developer approved.
     fn ask(&self, card: PendingRequest) -> impl Future<Output = Result<(), ToolError>> + Send;
-    /// The tool-vocabulary status; `stopped` when there is no live agent.
-    fn status(&self, id: &str) -> impl Future<Output = String> + Send;
+    /// A live agent with a process or a non-stopped status; pause state is not folded in.
+    fn is_running(&self, id: &str) -> impl Future<Output = bool> + Send;
+    /// Held messages are kept: true while paused and while the turn is still finishing (pausing).
+    fn is_paused(&self, id: &str) -> impl Future<Output = bool> + Send;
     fn archive(&self, id: &str) -> impl Future<Output = Result<(), ToolError>> + Send;
     fn restore(&self, id: &str) -> impl Future<Output = Result<(), ToolError>> + Send;
     fn stop(&self, id: &str) -> impl Future<Output = Result<(), ToolError>> + Send;
@@ -286,8 +295,20 @@ impl EndHost for AppEndHost {
         self.agent.tool_raise_approval(card).await;
         approval_outcome(rx.await.ok())
     }
-    async fn status(&self, id: &str) -> String {
-        live_status(&self.manager, id).await.to_string()
+    async fn is_running(&self, id: &str) -> bool {
+        match self.manager.get_agent(id) {
+            Some(agent) => {
+                agent.status().await != crate::session::agent::SessionStatus::Stopped
+                    || agent.tool_process().await.is_some()
+            }
+            None => false,
+        }
+    }
+    async fn is_paused(&self, id: &str) -> bool {
+        match self.manager.get_agent(id) {
+            Some(agent) => agent.is_paused().await,
+            None => false,
+        }
     }
     async fn archive(&self, id: &str) -> Result<(), ToolError> {
         crate::ipc::sessions_lifecycle::archive_core::archive_core(&self.state, id)

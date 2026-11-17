@@ -95,16 +95,15 @@ async fn plan_for<H: EndHost>(
             }
         }
         EndTool::Stop => {
-            if host.status(&target.id).await == "stopped" {
+            if !host.is_running(&target.id).await {
                 return Err(not_running());
             }
         }
         EndTool::Pause | EndTool::Resume => {
-            let status = host.status(&target.id).await;
-            if status == "stopped" {
+            if !host.is_running(&target.id).await {
                 return Err(not_running());
             }
-            let paused = status == "paused";
+            let paused = host.is_paused(&target.id).await;
             if tool == EndTool::Pause && paused {
                 return Err(invalid_state("the target Session is already paused"));
             }

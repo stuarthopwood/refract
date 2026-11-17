@@ -75,9 +75,17 @@ impl EndHost for FakeHost {
             Err(ToolError::new(DENIED, "the developer denied this action"))
         }
     }
-    async fn status(&self, id: &str) -> String {
+    async fn is_running(&self, id: &str) -> bool {
         let statuses = self.statuses.lock().unwrap();
-        statuses.get(id).cloned().unwrap_or_else(|| "idle".into())
+        !statuses
+            .get(id)
+            .is_some_and(|status| status.starts_with("stopped"))
+    }
+    async fn is_paused(&self, id: &str) -> bool {
+        let statuses = self.statuses.lock().unwrap();
+        statuses
+            .get(id)
+            .is_some_and(|status| matches!(status.as_str(), "paused" | "pausing" | "stopped+held"))
     }
     async fn archive(&self, id: &str) -> Result<(), ToolError> {
         self.calls.lock().unwrap().push(format!("archive:{id}"));

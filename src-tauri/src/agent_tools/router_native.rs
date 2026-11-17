@@ -5,7 +5,10 @@ use std::sync::Arc;
 use serde_json::Value;
 
 use super::router::ToolError;
-use super::{sessions, sessions_create, sessions_send, sessions_update};
+use super::{
+    sessions, sessions_create, sessions_end_schema, sessions_end_tools, sessions_send,
+    sessions_update,
+};
 use crate::session::agent::SessionAgent;
 
 /// Session tools Rust answers itself: no renderer round trip and no generic approval card.
@@ -20,6 +23,10 @@ pub(super) async fn run_native(
         sessions::GET_SESSION_STATUS => sessions::get_status(agent, args).await,
         sessions_create::CREATE_SESSION => sessions_create::create(agent, call_id, args).await,
         sessions_update::UPDATE_SESSION => sessions_update::update(agent, call_id, args).await,
+        other if sessions_end_schema::end_tool(other).is_some() => {
+            let end = sessions_end_schema::end_tool(other).expect("checked by the guard");
+            sessions_end_tools::run(agent, call_id, end, args).await
+        }
         _ => sessions_send::send(agent, args).await,
     }
 }
