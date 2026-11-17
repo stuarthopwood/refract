@@ -42,7 +42,7 @@ Test work is part of each task (AGENTS.md Testing rule: new logic gets co-locate
 - [x] T021 `scripts/verify-tauri-1860.mjs`: live check per `quickstart.md` cases 1-13 with the fake omp over CDP (pattern of `verify-tauri-1858.mjs`); never `pnpm dev`; scratch `REFRACT_DATA_DIR`; record head sha and `dirty: false`. Screenshots of the one-card cascade and the yolo delete card. (SC-001 to SC-005)
 - [x] T022 Run the live check from a clean committed tree (`pnpm exec tauri build --debug --no-bundle`, `CARGO_TARGET_DIR=C:/Users/shopwood/.cargo-target/refract`); fix regressions only; keep evidence under the scratch folder. Passed at `d94b335d`, `dirty: false`, exe sha256 `b040a739d43737f7033e999d92a78e0a3550c06bf923a23280ffbb9747dc578f`: `evidence/live-check.md`.
 - [x] T023 `docs/PLAN.md` row 1c.4: mark #1860 done with PR and spec 134; `docs/adr/0009-session-tree-rules.md` one line that the end tools use the same gates; `CONTEXT.md` add **End tool** if the term is used. (FR-010) PLAN row (done-pending-PR, PR number added at merge) and ADR line are in; the term is not used outside the ADR, so no glossary entry.
-- [ ] T024 `pnpm ci:local`; fix regressions only; `pnpm check:file-size` and `pnpm check:comment-density` clean. (SC-006)
+- [x] T024 `pnpm ci:local`; fix regressions only; `pnpm check:file-size` and `pnpm check:comment-density` clean. (SC-006)
 
 ## Dependencies
 
