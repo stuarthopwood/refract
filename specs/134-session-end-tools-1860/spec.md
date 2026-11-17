@@ -2,8 +2,22 @@
 
 **Feature Branch**: `feat/1860-session-end-tools`
 **Created**: 2026-11-17
-**Status**: Draft
+**Status**: Clarified
 **Input**: GitHub issue #1860 (P0 Agent Sessions slice 4 of 6, child of #1304); builds on spec 124 (tool channel), spec 129 (read tools, #1858), spec 131 (create and nest, #1859, ADR 0009) and spec 133 (Personal Agent). Reuses the background delete of spec 113 (#1591) and the pause path of spec 127 (#1835). Route: specify (grill done with Stuart on 2026-11-17).
+
+## Clarifications
+
+### Session 2026-11-17
+
+- Q: Which targets may an agent act on? -> A: Decided (Stuart, 2026-11-17): all six tools refuse the caller's own Session and any ancestor with `invalid_target`; descendants and unrelated Sessions are allowed, subject to approval. The developer can still do any of these by hand.
+- Q: What does archive cascade over? -> A: Decided (Stuart, 2026-11-17): `include_children: true` archives the whole subtree under one card that lists every Session; stop, pause, resume and delete act on the named Session only; `unarchive_session` restores only the named Session through the existing 4-live-children gate.
+- Q: Which calls raise the card? -> A: Decided (Stuart, 2026-11-17): archive and stop everywhere (`yolo` skips); pause, resume and unarchive only outside the agent's own tree (`yolo` skips); delete in every mode including `yolo`, then the #1591 background delete.
+- Q: What about the Personal Agent? -> A: Decided (Stuart, 2026-11-17): all six tools refuse it with a clear error (spec 133 interim rule); #2018 revisits it.
+- Q: Does delete re-root children, and where? -> A: Decided (Stuart, 2026-11-17, ADR 0009): live children become roots, archived children keep their link. The code already does this in `Registry::remove_session` (`store/registry.rs:471`), which the background delete calls (`delete_in_flight.rs:147`); the tool reuses it and adds no second path.
+- Q: What does `resume_session` do for a stopped Session? -> A: Decided (Stuart, 2026-11-17, from the issue's "existing pause path" and spec 129's rule that messages never start a Session): it resumes only a paused Session; a stopped Session returns `session_not_running`.
+- Q: Which error codes? -> A: Decided (Stuart, 2026-11-17, from spec 124/129/131 vocabulary): `invalid_input`, `not_found`, `invalid_target`, `invalid_state`, `session_not_running`, `child_limit`, `denied`, `cancelled`, `delete_refused`; see `contracts/tools.md`.
+- Q: What does a delete return, and how are late git failures reported? -> A: Decided (Stuart, 2026-11-17, spec 113): the call returns `{ outcome: "deleting" }` at once; a later removal failure reaches the developer through the existing `session-delete-failed` event, not the tool result.
+- Q: Is the cascade set fixed at card time? -> A: Decided (Stuart, 2026-11-17): the set is recomputed under the Project tree gate after approval; a different set returns `cancelled` and nothing is archived.
 
 ## Problem
 
