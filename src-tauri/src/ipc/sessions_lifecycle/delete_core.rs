@@ -3,6 +3,8 @@
 
 use std::path::Path;
 
+use tokio::sync::OwnedRwLockWriteGuard;
+
 use crate::git::git::GitError;
 use crate::git::worktree_holders;
 use crate::process::pid_records;
@@ -31,6 +33,32 @@ async fn session_and_repository(
     Ok((session, repository))
 }
 
+/// The refusals both halves share: cancel the leftover walk, take the write guard and refuse when
+/// a named program holds a file. Returns the guard and Refract's own pids, which are excluded.
+async fn refuse_holders(
+    id: &str,
+    repository: &Repository,
+    worktree_path: &str,
+) -> Result<(OwnedRwLockWriteGuard<()>, Vec<u32>), IpcError> {
+    // Cancel the leftover walk first so Refract's own handles are not read as external holders.
+    crate::fs::worktree_access::cancel_walk_bounded(id)
+        .await
+        .map_err(map_git_error)?;
+    // Held through removal by the caller that keeps it, so no new reader starts (#1055).
+    let write_guard = crate::fs::worktree_access::write_guard_bounded(id)
+        .await
+        .map_err(map_git_error)?;
+    let own_pids = pid_records::pids_for_session(id).await;
+    worktree_holders::check_named_holders(
+        Path::new(&repository.path),
+        Path::new(worktree_path),
+        &own_pids,
+    )
+    .await
+    .map_err(map_git_error)?;
+    Ok((write_guard, own_pids))
+}
+
 /// Runs the refusals that leave the Session untouched and claims nothing, so a tool can call it
 /// before raising its approval card.
 pub(crate) async fn delete_precheck(
@@ -40,21 +68,7 @@ pub(crate) async fn delete_precheck(
     delete_in_flight::refuse_if_deleting(id)?;
     let (session, repository) = session_and_repository(state, id).await?;
     let binding = project_binding(&session)?;
-    // Cancel the leftover walk first so Refract's own handles are not read as external holders.
-    crate::fs::worktree_access::cancel_walk_bounded(id)
-        .await
-        .map_err(map_git_error)?;
-    let _write_guard = crate::fs::worktree_access::write_guard_bounded(id)
-        .await
-        .map_err(map_git_error)?;
-    let own_pids = pid_records::pids_for_session(id).await;
-    worktree_holders::check_named_holders(
-        Path::new(&repository.path),
-        Path::new(binding.worktree_path),
-        &own_pids,
-    )
-    .await
-    .map_err(map_git_error)?;
+    refuse_holders(id, &repository, binding.worktree_path).await?;
     Ok((session, repository))
 }
 
@@ -65,28 +79,11 @@ pub(crate) async fn delete_core(state: &AppState, id: &str) -> Result<(), IpcErr
     let (session, repository) = session_and_repository(state, id).await?;
     let binding = project_binding(&session)?;
 
-    // Cancel the leftover walk first so Refract's own handles are not read as external holders.
-    crate::fs::worktree_access::cancel_walk_bounded(id)
-        .await
-        .map_err(map_git_error)?;
-
-    // Held through removal so no new reader starts (#1055); the background task takes it over.
-    let write_guard = crate::fs::worktree_access::write_guard_bounded(id)
-        .await
-        .map_err(map_git_error)?;
-
-    // Check named file holders before stopping the agent, so a refusal changes nothing. Own pids are excluded.
-    let own_pids = pid_records::pids_for_session(id).await;
+    // Named holders are checked before stopping the agent, so a refusal changes nothing.
+    let (write_guard, own_pids) = refuse_holders(id, &repository, binding.worktree_path).await?;
     // Read the status directly; the own-pids list can be stale after a crash.
     let was_running =
         state.session_manager.get_or_create_agent(id).status().await != SessionStatus::Stopped;
-    worktree_holders::check_named_holders(
-        Path::new(&repository.path),
-        Path::new(binding.worktree_path),
-        &own_pids,
-    )
-    .await
-    .map_err(map_git_error)?;
 
     // Claimed once the refusals that leave the Session untouched pass, so other handlers refuse
     // for the whole destructive phase; dropping the claim on any error path unmarks it.

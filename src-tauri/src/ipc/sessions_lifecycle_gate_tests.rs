@@ -41,3 +41,48 @@ async fn sessions_restore_waits_for_the_project_gate() {
     task.await.unwrap().expect("restore");
     assert!(!is_archived(&state).await);
 }
+
+#[tokio::test]
+async fn delete_precheck_on_an_unknown_id_is_not_found_and_claims_nothing() {
+    let state = make_state(&temp_registry_dir("precheck-unknown")).await;
+    let err = delete_core::delete_precheck(&state, "ghost")
+        .await
+        .expect_err("unknown id must be refused");
+    assert_eq!(err.code, "not-found");
+    assert!(!delete_in_flight::is_deleting("ghost"));
+}
+
+#[tokio::test]
+async fn delete_precheck_refuses_a_personal_agent_and_claims_nothing() {
+    let state = make_state(&temp_registry_dir("precheck-personal")).await;
+    let mut row = make_session("pa-precheck", "repo-1", "C:/nowhere/pa", "pa");
+    row.kind = crate::store::session_kind::SessionKind::Personal;
+    row.repository_id = None;
+    row.branch = None;
+    row.base_branch = None;
+    row.worktree_path = None;
+    state.registry.lock().await.add_session(row).await.unwrap();
+    delete_core::delete_precheck(&state, "pa-precheck")
+        .await
+        .expect_err("a Personal Agent is never deleted");
+    assert!(!delete_in_flight::is_deleting("pa-precheck"));
+}
+
+#[tokio::test]
+async fn delete_precheck_refuses_a_session_already_being_deleted() {
+    let state = make_state(&temp_registry_dir("precheck-deleting")).await;
+    let _claim = delete_in_flight::claim("deleting-precheck").unwrap();
+    let err = delete_core::delete_precheck(&state, "deleting-precheck")
+        .await
+        .expect_err("a claimed id must be refused");
+    assert_eq!(err.code, delete_in_flight::ALREADY_DELETING);
+}
+
+#[tokio::test]
+async fn stop_core_on_an_unknown_id_is_not_found() {
+    let state = make_state(&temp_registry_dir("stop-unknown")).await;
+    let err = crate::ipc::sessions_agent::stop_core::stop_core(&state, "ghost")
+        .await
+        .expect_err("unknown id must be refused");
+    assert_eq!(err.code, "not-found");
+}

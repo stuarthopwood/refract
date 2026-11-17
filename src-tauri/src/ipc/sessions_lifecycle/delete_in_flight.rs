@@ -58,8 +58,12 @@ pub fn claim(id: &str) -> Result<Claim, IpcError> {
     Ok(Claim { id: id.to_string() })
 }
 
+/// The code every refusal for a Session whose removal is running carries, so callers match it
+/// instead of the message text.
+pub const ALREADY_DELETING: &str = "already-deleting";
+
 fn already_deleting() -> IpcError {
-    IpcError::new("worktree-busy", "This Session is already being deleted.")
+    IpcError::new(ALREADY_DELETING, "This Session is already being deleted.")
 }
 
 /// The refusal every lifecycle handler gives for a Session whose removal is running.
