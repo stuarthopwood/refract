@@ -1078,7 +1078,7 @@ samp {
   --composer-background: transparent;
   --composer-border: var(--divider);
   --field-border: var(--divider);
-  /* A1 (Low, gate951A11y; Decided, Skippy, delegated by Stuart 2026-10-17): the 55% mix
+  /* A1 (Low, gate951A11y; Decided 2026-10-17): the 55% mix
    * measured ~2.20:1 against this theme's own `--background` -- noticeably weaker than Dark's
    * equivalent `oklch(1 0 0 / 35%)` at ~3.14:1 -- so the muted focus cue read as a different
    * strength per theme though both are meant to be the same "quiet border-colour change"
@@ -1268,7 +1268,7 @@ samp {
   --accent-foreground: oklch(1 0 0);
   /* A card header for the signed-in viewer's own entries (PR timeline); a solid fill, never an opacity modifier. */
   --viewer-tint: oklch(0.18 0 0);
-  /* #552 fix (Skippy, delegated by Stuart 2026-10-18, gate round): the mock's own 0.78
+  /* #552 fix (2026-10-18, gate round): the mock's own 0.78
    * lightness measured only 6.65:1 against this theme's `--muted` hover fill (#570 decision 20,
    * recorded on #552 2026-10-16) -- under this theme's OWN declared 7:1 high-contrast text
    * floor (`docs/design/accessibility.md`/`foundations-tokens-theming.md` "High contrast
@@ -1466,12 +1466,12 @@ samp {
  * surface ladder here (`--card`/`--popover`/`--muted` alias INTO `--surface-1/2/3`, the opposite
  * direction from Dark/HC's legacy alias), since there is no existing rendering to protect.
  *
- * **Decided (Skippy, delegated by Stuart 2026-10-18): `--border` retuned to clear 3:1** against
+ * **Decided (2026-10-18): `--border` retuned to clear 3:1** against
  * every surface it renders on (`--background` 4.85:1, `--surface-1`/card 4.39:1, `--surface-2`/
  * popover 3.82:1, `--surface-3`/muted 3.22:1 -- `scripts/check-theme-contrast.mjs`), fixing the
  * mock's own under-floor value; the mock's soft literal lives on the new, floor-exempt
  * `--divider` token instead (same split every other preset already makes).
- * **Decided (Skippy, delegated by Stuart 2026-10-18): accent and info are no longer the same
+ * **Decided (2026-10-18): accent and info are no longer the same
  * hue.** `--accent-text`/`--primary`/`--active-indicator` keep the mock's own cyan (hue 195,
  * the preset's signature "cyan accent"); `--severity-info` moves to a cooler, 60-degree-distant
  * periwinkle-blue (hue 255) reserved for the info role alone, so an accent link and an info

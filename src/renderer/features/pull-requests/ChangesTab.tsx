@@ -49,7 +49,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
           {file.patch !== null ? (
             <DiffViewFromPatch path={file.path} patch={file.patch} additions={file.additions} deletions={file.deletions} />
           ) : (
-            // Gate round 2 (M4 follow-up, Decided, Skippy, delegated by Stuart 2026-10-18,
+            // Gate round 2 (M4 follow-up, Decided 2026-10-18,
             // posted on #925): the earlier cut rendered this file's "too large" message TWICE --
             // a standalone banner above this block plus a second "Diff not shown." line inside
             // it, each with its own "Open in browser" link. One block now: the header's own
