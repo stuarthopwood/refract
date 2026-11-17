@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 use super::router::{ToolError, CANCELLED};
 use super::sessions::NOT_FOUND;
 use super::sessions_end::{
-    card_for, needs_card, parse_args, refuse_target, AppEndHost, EndHost, EndTool, CHILD_LIMIT,
-    INVALID_STATE,
+    card_for, labels_for, needs_card, parse_args, refuse_target, AppEndHost, EndHost, EndTool,
+    CHILD_LIMIT, INVALID_STATE,
 };
 use super::sessions_send::SESSION_NOT_RUNNING;
 use super::tree_gate;
@@ -18,11 +18,11 @@ use crate::session::agent::SessionAgent;
 use crate::store::registry::Session;
 use crate::store::session_tree::{descendants, live_children, MAX_LIVE_CHILDREN};
 
-/// What a call acts on: the target first, then any cascaded descendants.
+/// What a call acts on: the target first, then any cascaded descendants. A rename while the card
+/// is open changes neither field, so it does not cancel the call.
 #[derive(PartialEq, Eq)]
 struct Plan {
     ids: Vec<String>,
-    names: Vec<String>,
     reroots: bool,
 }
 
@@ -49,11 +49,18 @@ fn not_running() -> ToolError {
     ToolError::new(SESSION_NOT_RUNNING, "the target Session is stopped")
 }
 
-fn name_of(sessions: &[Session], id: &str) -> String {
-    sessions
-        .iter()
-        .find(|s| s.id == id)
-        .map_or_else(|| id.to_string(), |s| s.name.clone())
+fn partial_cascade(error: ToolError, archived: &[String]) -> ToolError {
+    if archived.is_empty() {
+        return error;
+    }
+    ToolError::new(
+        &error.code,
+        format!(
+            "{}; already archived: {}",
+            error.message,
+            archived.join(", ")
+        ),
+    )
 }
 
 /// The state refusals and the set of Sessions the call acts on.
@@ -102,7 +109,7 @@ async fn plan_for<H: EndHost>(
                 // Same code restore_core gives, raised before the card so nobody approves a doomed call.
                 return Err(ToolError::new(
                     CHILD_LIMIT,
-                    "the parent has 4 live children",
+                    format!("the parent has {MAX_LIVE_CHILDREN} live children"),
                 ));
             }
         }
@@ -125,12 +132,7 @@ async fn plan_for<H: EndHost>(
         }
         EndTool::Delete => reroots = live_children(sessions, &target.id).next().is_some(),
     }
-    let names = ids.iter().map(|id| name_of(sessions, id)).collect();
-    Ok(Plan {
-        ids,
-        names,
-        reroots,
-    })
+    Ok(Plan { ids, reroots })
 }
 
 fn inside_own_tree(host: &impl EndHost, sessions: &[Session], target: &str) -> bool {
@@ -157,7 +159,8 @@ async fn run_with<H: EndHost>(
     let inside = inside_own_tree(&**host, &sessions, &parsed.id);
     let asked = needs_card(tool, inside, host.is_yolo().await);
     if asked {
-        host.ask(card_for(tool, host.call_id(), &plan.names, plan.reroots))
+        let labels = labels_for(&sessions, &plan.ids);
+        host.ask(card_for(tool, host.call_id(), &labels, plan.reroots))
             .await?;
     }
     // Spawned and awaited: a cancelled call drops only this wait, so a cascade is never left
@@ -183,6 +186,81 @@ fn changed(what: &str) -> ToolError {
     )
 }
 
+/// The checks that must hold again once the card is answered and the gate is held. `Err` means
+/// nothing was changed by this call.
+async fn recheck<H: EndHost>(
+    host: &H,
+    tool: EndTool,
+    id: &str,
+    include_children: bool,
+    approved: &Plan,
+    asked: bool,
+) -> Result<(), ToolError> {
+    let sessions = sessions_of(host).await;
+    let target =
+        refuse_target(&sessions, host.caller_id(), id).map_err(|e| match e.code.as_str() {
+            NOT_FOUND => changed("the target Session was removed"),
+            _ => e,
+        })?;
+    let now = plan_for(host, tool, &sessions, target, include_children).await?;
+    if now != *approved {
+        return Err(changed("the Sessions this call acts on changed"));
+    }
+    // No card was shown because the target was in the own tree; if it no longer is, the
+    // developer never saw this change, so it is refused rather than applied.
+    let inside = inside_own_tree(host, &sessions, id);
+    if !asked && needs_card(tool, inside, host.is_yolo().await) {
+        return Err(changed("the Session moved out of your own tree"));
+    }
+    Ok(())
+}
+
+/// Stops every running member's agent at once, so the cascade waits for the slowest shutdown
+/// instead of the sum of them.
+async fn shut_down_running<H: EndHost>(host: &Arc<H>, ids: &[String]) {
+    let mut shutdowns = tokio::task::JoinSet::new();
+    for id in ids {
+        if host.is_running(id).await {
+            let (host, id) = (host.clone(), id.clone());
+            shutdowns.spawn(async move { host.shutdown(&id).await });
+        }
+    }
+    while shutdowns.join_next().await.is_some() {}
+}
+
+/// The archive cascade. Agents stop outside the tree gate, which blocks every tree change in
+/// the Project; only the registry patches, deepest first, run under it.
+async fn archive_members<H: EndHost>(
+    host: &Arc<H>,
+    tool: EndTool,
+    id: &str,
+    include_children: bool,
+    repository_id: &str,
+    approved: &Plan,
+    asked: bool,
+) -> Result<Value, ToolError> {
+    shut_down_running(host, &approved.ids).await;
+    let _gate = tree_gate::lock(repository_id).await;
+    // The tree can move while the agents stop, so the plan is checked again before any patch.
+    recheck(&**host, tool, id, include_children, approved, asked)
+        .await
+        .map_err(|e| {
+            ToolError::new(
+                &e.code,
+                format!("{} (the agents had already been stopped)", e.message),
+            )
+        })?;
+    let mut archived = Vec::new();
+    // Deepest first, so a parent is never archived above a live child mid-way.
+    for member in approved.ids.iter().rev() {
+        host.archive(member)
+            .await
+            .map_err(|e| partial_cascade(e, &archived))?;
+        archived.push(member.clone());
+    }
+    Ok(json!({ "outcome": "archived", "ids": approved.ids }))
+}
+
 /// The actions after approval, behind the Project's tree gate.
 async fn commit<H: EndHost>(
     host: Arc<H>,
@@ -194,30 +272,23 @@ async fn commit<H: EndHost>(
     asked: bool,
 ) -> Result<Value, ToolError> {
     let gate = tree_gate::lock(&repository_id).await;
-    let sessions = sessions_of(&*host).await;
-    let target =
-        refuse_target(&sessions, host.caller_id(), &id).map_err(|e| match e.code.as_str() {
-            NOT_FOUND => changed("the target Session was removed"),
-            _ => e,
-        })?;
-    let now = plan_for(&*host, tool, &sessions, target, include_children).await?;
-    if now != approved {
-        return Err(changed("the Sessions this call acts on changed"));
-    }
-    // No card was shown because the target was in the own tree; if it no longer is, the
-    // developer never saw this change, so it is refused rather than applied.
-    let inside = inside_own_tree(&*host, &sessions, &id);
-    if !asked && needs_card(tool, inside, host.is_yolo().await) {
-        return Err(changed("the Session moved out of your own tree"));
-    }
+    recheck(&*host, tool, &id, include_children, &approved, asked).await?;
     if tool == EndTool::Archive {
-        // Deepest first, so a parent is never archived above a live child mid-way.
-        for member in approved.ids.iter().rev() {
-            host.archive(member).await?;
-        }
-        return Ok(json!({ "outcome": "archived", "ids": approved.ids }));
+        // Released: stopping agents is slow, and the cascade takes the gate back for the patches.
+        drop(gate);
+        return archive_members(
+            &host,
+            tool,
+            &id,
+            include_children,
+            &repository_id,
+            &approved,
+            asked,
+        )
+        .await;
     }
-    // The IPC cores for these take the gate themselves or run long; the re-check above is done.
+    // Released before the action: restore takes the gate itself, and the others run long and
+    // change no tree links.
     drop(gate);
     let outcome = match tool {
         EndTool::Unarchive => host.restore(&id).await.map(|()| "unarchived"),

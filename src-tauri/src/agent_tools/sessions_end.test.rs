@@ -14,6 +14,7 @@ use crate::store::session_kind::SessionKind;
 pub(in crate::agent_tools) enum WhileAsking {
     Remove(String),
     Add(Box<Session>),
+    Rename(String),
 }
 
 /// Stands in for the running app: records every action in order and applies archive and restore
@@ -28,6 +29,8 @@ pub(in crate::agent_tools) struct FakeHost {
     pub cards: Mutex<Vec<PendingRequest>>,
     pub calls: Mutex<Vec<String>>,
     pub precheck_error: Mutex<Option<(String, String)>>,
+    pub shutdowns: Mutex<Vec<String>>,
+    pub archive_fails: Mutex<Option<String>>,
     pub while_asking: Mutex<Option<WhileAsking>>,
 }
 
@@ -67,6 +70,14 @@ impl EndHost for FakeHost {
                     .await
                     .unwrap();
             }
+            Some(WhileAsking::Rename(id)) => {
+                self.registry
+                    .lock()
+                    .await
+                    .update_session_name(&id, "renamed".into())
+                    .await
+                    .unwrap();
+            }
             None => {}
         }
         if self.approve {
@@ -88,6 +99,9 @@ impl EndHost for FakeHost {
             .is_some_and(|status| matches!(status.as_str(), "paused" | "pausing" | "stopped+held"))
     }
     async fn archive(&self, id: &str) -> Result<(), ToolError> {
+        if self.archive_fails.lock().unwrap().as_deref() == Some(id) {
+            return Err(ToolError::new("registry_error", "the registry refused"));
+        }
         self.calls.lock().unwrap().push(format!("archive:{id}"));
         self.patch_archived(id, Some("2026-02-01T00:00:00.000Z".into()))
             .await
@@ -132,6 +146,9 @@ impl EndHost for FakeHost {
     async fn delete(&self, id: &str) -> Result<(), ToolError> {
         self.calls.lock().unwrap().push(format!("delete:{id}"));
         Ok(())
+    }
+    async fn shutdown(&self, id: &str) {
+        self.shutdowns.lock().unwrap().push(id.to_string());
     }
 }
 
@@ -222,6 +239,8 @@ pub(in crate::agent_tools) async fn host(rows: Vec<Session>) -> FakeHost {
         cards: Mutex::new(Vec::new()),
         calls: Mutex::new(Vec::new()),
         precheck_error: Mutex::new(None),
+        shutdowns: Mutex::new(Vec::new()),
+        archive_fails: Mutex::new(None),
         while_asking: Mutex::new(None),
     }
 }
@@ -308,15 +327,21 @@ fn refuse_target_allows_a_descendant_and_an_unrelated_session() {
 }
 
 #[test]
-fn refuse_target_refuses_self_parent_and_grandparent() {
-    let sessions = tree();
-    for (caller, target) in [("kid", "kid"), ("kid", "me"), ("grandkid", "me")] {
-        assert_eq!(
-            code(refuse_target(&sessions, caller, target)),
-            INVALID_TARGET,
-            "{caller} -> {target}"
-        );
-    }
+fn refuse_target_refuses_the_caller_itself() {
+    assert_eq!(code(refuse_target(&tree(), "kid", "kid")), INVALID_TARGET);
+}
+
+#[test]
+fn refuse_target_refuses_the_parent() {
+    assert_eq!(code(refuse_target(&tree(), "kid", "me")), INVALID_TARGET);
+}
+
+#[test]
+fn refuse_target_refuses_the_grandparent() {
+    assert_eq!(
+        code(refuse_target(&tree(), "grandkid", "me")),
+        INVALID_TARGET
+    );
 }
 
 #[test]
@@ -329,11 +354,13 @@ fn refuse_target_refuses_the_personal_agent() {
 }
 
 #[test]
-fn refuse_target_hides_unknown_and_other_project_sessions() {
-    let sessions = tree();
-    for target in ["ghost", "foreign"] {
-        assert_eq!(code(refuse_target(&sessions, "me", target)), NOT_FOUND);
-    }
+fn refuse_target_hides_an_unknown_session() {
+    assert_eq!(code(refuse_target(&tree(), "me", "ghost")), NOT_FOUND);
+}
+
+#[test]
+fn refuse_target_hides_a_session_of_another_project() {
+    assert_eq!(code(refuse_target(&tree(), "me", "foreign")), NOT_FOUND);
 }
 
 #[test]
@@ -394,25 +421,60 @@ fn needs_card_follows_the_approval_table() {
 }
 
 #[test]
-fn a_cascade_card_lists_every_session_name() {
-    let names: Vec<String> = ["alpha", "beta", "gamma"].map(String::from).to_vec();
-    let (title, details) = parts(&card_for(EndTool::Archive, "call-1", &names, false));
-    assert_eq!(title, "Archive 3 Sessions");
-    assert_eq!(details, names);
+fn a_cascade_card_lists_every_session_with_its_short_id() {
+    let sessions = tree();
+    let ids: Vec<String> = ["kid", "grandkid"].map(String::from).to_vec();
+    let (title, details) = parts(&card_for(
+        EndTool::Archive,
+        "call-1",
+        &labels_for(&sessions, &ids),
+        false,
+    ));
+    assert_eq!(title, "Archive 2 Sessions");
+    assert_eq!(details, ["kid name-kid", "grandkid name-grandkid"]);
+}
+
+#[test]
+fn a_card_tells_a_lookalike_name_apart_by_id_and_parent() {
+    let mut sessions = tree();
+    let mut twin = row("0123456789abcdef", "repo", Some("kid"));
+    twin.name = "name-other".into();
+    sessions.push(twin);
+    let ids = |id: &str| vec![id.to_string()];
+    let (real, real_details) = parts(&card_for(
+        EndTool::Stop,
+        "call-1",
+        &labels_for(&sessions, &ids("other")),
+        false,
+    ));
+    let (fake, fake_details) = parts(&card_for(
+        EndTool::Stop,
+        "call-1",
+        &labels_for(&sessions, &ids("0123456789abcdef")),
+        false,
+    ));
+    assert_eq!(real, "Stop Session other name-other");
+    assert_eq!(fake, "Stop Session 01234567 name-other");
+    assert_ne!(real_details, fake_details);
+    assert_eq!(fake_details, ["Child of name-kid"]);
+    assert_eq!(real_details, ["Branch other"]);
 }
 
 #[test]
 fn single_card_titles_name_the_session_and_the_tool() {
-    let names = vec!["alpha".to_string()];
+    let labels = labels_for(&tree(), &["other".to_string()]);
     for (tool, title) in [
-        (EndTool::Archive, "Archive Session alpha"),
-        (EndTool::Unarchive, "Unarchive Session alpha"),
-        (EndTool::Stop, "Stop Session alpha"),
-        (EndTool::Pause, "Pause Session alpha"),
-        (EndTool::Resume, "Resume Session alpha"),
+        (EndTool::Archive, "Archive Session other name-other"),
+        (EndTool::Unarchive, "Unarchive Session other name-other"),
+        (EndTool::Stop, "Stop Session other name-other"),
+        (EndTool::Pause, "Pause Session other name-other"),
+        (EndTool::Resume, "Resume Session other name-other"),
     ] {
-        let card = card_for(tool, "call-1", &names, false);
-        assert_eq!(parts(&card), (title.to_string(), Vec::new()));
+        let card = card_for(tool, "call-1", &labels, false);
+        assert_eq!(
+            parts(&card),
+            (title.to_string(), vec!["Branch other".to_string()])
+        );
         let PendingRequest::Approval { tool: named, .. } = card else {
             panic!("expected an approval card");
         };
@@ -422,13 +484,19 @@ fn single_card_titles_name_the_session_and_the_tool() {
 
 #[test]
 fn a_delete_card_warns_about_children_only_when_there_are_some() {
-    let names = vec!["alpha".to_string()];
-    let (title, plain) = parts(&card_for(EndTool::Delete, "call-1", &names, false));
-    assert_eq!(title, "Delete Session alpha");
-    assert_eq!(plain, vec!["Its worktree and Conversations are removed."]);
-    let (_, with_children) = parts(&card_for(EndTool::Delete, "call-1", &names, true));
-    assert_eq!(with_children.len(), 2);
-    assert!(with_children[1].contains("become root Sessions"));
+    let labels = labels_for(&tree(), &["other".to_string()]);
+    let (title, plain) = parts(&card_for(EndTool::Delete, "call-1", &labels, false));
+    assert_eq!(title, "Delete Session other name-other");
+    assert_eq!(
+        plain,
+        vec![
+            "Branch other",
+            "Its worktree and Conversations are removed."
+        ]
+    );
+    let (_, with_children) = parts(&card_for(EndTool::Delete, "call-1", &labels, true));
+    assert_eq!(with_children.len(), 3);
+    assert!(with_children[2].contains("become root Sessions"));
 }
 
 #[tokio::test]
@@ -448,14 +516,51 @@ async fn the_fake_host_applies_archive_and_enforces_the_live_child_limit() {
 }
 
 #[test]
-fn delete_errors_use_the_contract_codes() {
+fn a_session_counts_as_running_by_status_or_process_but_not_for_held_messages_alone() {
+    use crate::session::agent::SessionStatus;
+    assert!(counts_as_running(SessionStatus::Idle, false));
+    assert!(counts_as_running(SessionStatus::Working, false));
+    assert!(counts_as_running(SessionStatus::Stopped, true));
+    // A stopped agent holding queued messages has neither.
+    assert!(!counts_as_running(SessionStatus::Stopped, false));
+}
+
+#[test]
+fn ipc_errors_map_not_found_and_keep_every_other_code() {
+    use crate::ipc::IpcError;
+    assert_eq!(
+        ipc_error(IpcError::new("not-found", "Session not found: x")).code,
+        NOT_FOUND
+    );
+    assert_eq!(
+        ipc_error(IpcError::new("session-archived", "archived")).code,
+        "session-archived"
+    );
+}
+
+#[test]
+fn restore_errors_map_child_limit_and_not_found_to_the_contract_codes() {
+    use crate::ipc::IpcError;
+    assert_eq!(
+        restore_error(IpcError::new("child-limit", "full")).code,
+        CHILD_LIMIT
+    );
+    assert_eq!(
+        restore_error(IpcError::new("not-found", "Session not found: x")).code,
+        NOT_FOUND
+    );
+}
+
+#[tokio::test]
+async fn delete_errors_use_the_contract_codes() {
+    use crate::ipc::sessions_lifecycle::delete_in_flight;
     use crate::ipc::IpcError;
     let missing = delete_error(IpcError::new("not-found", "Session not found: x"));
     assert_eq!(missing.code, NOT_FOUND);
-    let running = delete_error(IpcError::new(
-        "worktree-busy",
-        "This Session is already being deleted.",
-    ));
+    // The real refusal after a real claim, so a reworded message cannot make this pass by luck.
+    let id = format!("delete-error-{}", uuid::Uuid::new_v4());
+    let _claim = delete_in_flight::claim(&id).unwrap();
+    let running = delete_error(delete_in_flight::refuse_if_deleting(&id).unwrap_err());
     assert_eq!(running.code, INVALID_STATE);
     let held = delete_error(IpcError::new("worktree-busy", "A program holds a file."));
     assert_eq!(held.code, DELETE_REFUSED);

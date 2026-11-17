@@ -9,7 +9,7 @@ pub mod router;
 mod router_native;
 pub mod sessions;
 mod sessions_create;
-mod sessions_end;
+pub(crate) mod sessions_end;
 mod sessions_end_schema;
 mod sessions_end_tools;
 mod sessions_limit;

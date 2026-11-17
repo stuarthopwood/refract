@@ -174,22 +174,72 @@ pub fn needs_card(tool: EndTool, inside_own_tree: bool, yolo: bool) -> bool {
     }
 }
 
-/// The card for one call. `names` is every Session the call acts on (target first); `reroots` is
+/// How one Session reads on a card. The agent picks the name, so the id and where the Session
+/// sits come with it and a lookalike name cannot pass for another Session.
+pub struct CardLabel {
+    pub short_id: String,
+    pub name: String,
+    pub context: Option<String>,
+}
+
+impl CardLabel {
+    /// The id leads, so a long name cannot clip it off the line.
+    fn headline(&self) -> String {
+        format!("{} {}", self.short_id, self.name)
+    }
+}
+
+const SHORT_ID_CHARS: usize = 8;
+
+/// A label per id, in order: the parent's name when there is one, else the branch.
+pub fn labels_for(sessions: &[Session], ids: &[String]) -> Vec<CardLabel> {
+    ids.iter()
+        .map(|id| {
+            let row = sessions.iter().find(|s| s.id == *id);
+            let parent = row
+                .and_then(|s| s.parent_session_id.as_deref())
+                .and_then(|parent| sessions.iter().find(|s| s.id == parent));
+            let context = match (parent, row.and_then(|s| s.branch.as_deref())) {
+                (Some(parent), _) => Some(format!("Child of {}", parent.name)),
+                (None, Some(branch)) => Some(format!("Branch {branch}")),
+                (None, None) => None,
+            };
+            CardLabel {
+                short_id: id.chars().take(SHORT_ID_CHARS).collect(),
+                name: row.map_or_else(|| id.clone(), |s| s.name.clone()),
+                context,
+            }
+        })
+        .collect()
+}
+
+/// The card for one call. `labels` is every Session the call acts on (target first); `reroots` is
 /// true when a delete leaves live children behind.
-pub fn card_for(tool: EndTool, call_id: &str, names: &[String], reroots: bool) -> PendingRequest {
-    let first = names.first().map_or("", String::as_str);
+pub fn card_for(
+    tool: EndTool,
+    call_id: &str,
+    labels: &[CardLabel],
+    reroots: bool,
+) -> PendingRequest {
+    let first = labels.first().map(CardLabel::headline).unwrap_or_default();
+    let context = labels.first().and_then(|l| l.context.clone());
     let (title, details) = match tool {
-        EndTool::Archive if names.len() > 1 => {
-            (format!("Archive {} Sessions", names.len()), names.to_vec())
-        }
+        EndTool::Archive if labels.len() > 1 => (
+            format!("Archive {} Sessions", labels.len()),
+            labels.iter().map(CardLabel::headline).collect(),
+        ),
         EndTool::Delete => {
-            let mut lines = vec!["Its worktree and Conversations are removed.".to_string()];
+            let mut lines: Vec<String> = context.into_iter().collect();
+            lines.push("Its worktree and Conversations are removed.".to_string());
             if reroots {
                 lines.push("Live child Sessions become root Sessions.".to_string());
             }
             (format!("Delete Session {first}"), lines)
         }
-        other => (format!("{} Session {first}", other.verb()), Vec::new()),
+        other => (
+            format!("{} Session {first}", other.verb()),
+            context.into_iter().collect(),
+        ),
     };
     approval::session_card(call_id, tool.name(), title, details)
 }
@@ -209,6 +259,8 @@ pub(super) trait EndHost: Send + Sync + 'static {
     /// Held messages are kept: true while paused and while the turn is still finishing (pausing).
     fn is_paused(&self, id: &str) -> impl Future<Output = bool> + Send;
     fn archive(&self, id: &str) -> impl Future<Output = Result<(), ToolError>> + Send;
+    /// Stops the agent's process if any; archive does this before it patches the registry.
+    fn shutdown(&self, id: &str) -> impl Future<Output = ()> + Send;
     fn restore(&self, id: &str) -> impl Future<Output = Result<(), ToolError>> + Send;
     fn stop(&self, id: &str) -> impl Future<Output = Result<(), ToolError>> + Send;
     fn pause(&self, id: &str) -> impl Future<Output = Result<(), ToolError>> + Send;
@@ -250,6 +302,12 @@ impl AppEndHost {
     }
 }
 
+/// A Session counts as running with a live process or any status but stopped; a stopped agent that
+/// only holds queued messages does not, so stop, pause and resume leave it alone.
+fn counts_as_running(status: crate::session::agent::SessionStatus, has_process: bool) -> bool {
+    status != crate::session::agent::SessionStatus::Stopped || has_process
+}
+
 fn ipc_error(error: crate::ipc::IpcError) -> ToolError {
     let code = if error.code == "not-found" {
         NOT_FOUND
@@ -262,13 +320,21 @@ fn ipc_error(error: crate::ipc::IpcError) -> ToolError {
 /// Delete refusals keep the Delete flow's text; a missing Session and a removal already running
 /// use the contract's own codes.
 fn delete_error(error: crate::ipc::IpcError) -> ToolError {
-    if error.code == "not-found" {
-        return ipc_error(error);
+    match error.code {
+        "not-found" => ipc_error(error),
+        crate::ipc::sessions_lifecycle::delete_in_flight::ALREADY_DELETING => {
+            ToolError::new(INVALID_STATE, error.message)
+        }
+        _ => ToolError::new(DELETE_REFUSED, error.message),
     }
-    if error.message.contains("already being deleted") {
-        return ToolError::new(INVALID_STATE, error.message);
+}
+
+/// An unarchive into a full parent gets the contract's own code; the rest map like any IPC error.
+fn restore_error(error: crate::ipc::IpcError) -> ToolError {
+    match error.code {
+        "child-limit" => ToolError::new(CHILD_LIMIT, error.message),
+        _ => ipc_error(error),
     }
-    ToolError::new(DELETE_REFUSED, error.message)
 }
 
 impl EndHost for AppEndHost {
@@ -298,8 +364,7 @@ impl EndHost for AppEndHost {
     async fn is_running(&self, id: &str) -> bool {
         match self.manager.get_agent(id) {
             Some(agent) => {
-                agent.status().await != crate::session::agent::SessionStatus::Stopped
-                    || agent.tool_process().await.is_some()
+                counts_as_running(agent.status().await, agent.tool_process().await.is_some())
             }
             None => false,
         }
@@ -310,6 +375,11 @@ impl EndHost for AppEndHost {
             None => false,
         }
     }
+    async fn shutdown(&self, id: &str) {
+        if let Some(agent) = self.manager.get_agent(id) {
+            agent.shutdown().await;
+        }
+    }
     async fn archive(&self, id: &str) -> Result<(), ToolError> {
         crate::ipc::sessions_lifecycle::archive_core::archive_core(&self.state, id)
             .await
@@ -318,10 +388,7 @@ impl EndHost for AppEndHost {
     async fn restore(&self, id: &str) -> Result<(), ToolError> {
         crate::ipc::sessions_lifecycle::archive_core::restore_core(&self.state, id)
             .await
-            .map_err(|e| match e.code {
-                "child-limit" => ToolError::new(CHILD_LIMIT, e.message),
-                _ => ipc_error(e),
-            })
+            .map_err(restore_error)
     }
     async fn stop(&self, id: &str) -> Result<(), ToolError> {
         crate::ipc::sessions_agent::stop_core::stop_core(&self.state, id)

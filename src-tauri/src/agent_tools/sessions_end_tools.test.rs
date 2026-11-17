@@ -74,7 +74,7 @@ async fn archive_asks_then_archives_only_the_target() {
         .unwrap();
     assert_eq!(out, json!({ "outcome": "archived", "ids": ["kid"] }));
     assert_eq!(h.card_count(), 1);
-    assert_eq!(card_target(&h).0, "Archive Session name-kid");
+    assert_eq!(card_target(&h).0, "Archive Session kid name-kid");
     assert!(is_archived(&h, "kid").await);
     assert!(!is_archived(&h, "grandkid").await);
     let sessions = h.registry.lock().await.snapshot().sessions;
@@ -132,7 +132,7 @@ async fn a_cascade_is_one_card_and_archives_deepest_first() {
     assert_eq!(h.card_count(), 1);
     let (title, names) = card_target(&h);
     assert_eq!(title, "Archive 2 Sessions");
-    assert_eq!(names, ["name-kid", "name-grandkid"]);
+    assert_eq!(names, ["kid name-kid", "grandkid name-grandkid"]);
     assert_eq!(h.calls(), ["archive:grandkid", "archive:kid"]);
 }
 
@@ -174,10 +174,9 @@ async fn the_caller_deleted_while_the_card_is_open_cancels_the_call() {
             CANCELLED,
             "{tool:?}"
         );
-        assert!(!h
-            .calls()
-            .iter()
-            .any(|c| c.starts_with("delete:") || c.starts_with("stop:")));
+        assert!(!h.calls().iter().any(|c| c.starts_with("delete:")
+            || c.starts_with("stop:")
+            || c.starts_with("archive:")));
     }
 }
 
@@ -295,7 +294,7 @@ async fn pause_and_resume_skip_the_card_inside_the_own_tree_only() {
         .unwrap();
     assert_eq!(out["outcome"], "resumed");
     assert_eq!(h.card_count(), 1);
-    assert_eq!(card_target(&h).0, "Resume Session name-other");
+    assert_eq!(card_target(&h).0, "Resume Session other name-other");
 }
 
 #[tokio::test]
@@ -415,7 +414,9 @@ async fn delete_warns_when_live_children_will_be_re_rooted() {
     call(&h, EndTool::Delete, json!({ "id": "kid" }))
         .await
         .unwrap();
-    assert_eq!(card_target(&h).1.len(), 2);
+    let details = card_target(&h).1;
+    assert_eq!(details.len(), 3, "{details:?}");
+    assert!(details.iter().any(|l| l.contains("become root Sessions")));
 }
 
 #[tokio::test]
@@ -467,4 +468,111 @@ async fn every_tool_refuses_a_session_being_deleted_with_invalid_state() {
     }
     assert_eq!(h.card_count(), 0);
     assert!(h.calls().is_empty());
+}
+
+#[tokio::test]
+async fn every_tool_refuses_an_ancestor_and_the_personal_agent() {
+    let mut rows = tree();
+    let mut personal = row("pa", "repo", None);
+    personal.kind = crate::store::session_kind::SessionKind::Personal;
+    personal.repository_id = None;
+    personal.branch = None;
+    personal.base_branch = None;
+    personal.worktree_path = None;
+    rows.push(personal);
+    let mut h = host(rows).await;
+    h.caller = "grandkid".into();
+    let h = Arc::new(h);
+    for tool in EndTool::ALL {
+        for target in ["kid", "me", "pa"] {
+            assert_eq!(
+                code(call(&h, tool, json!({ "id": target })).await),
+                INVALID_TARGET,
+                "{tool:?} -> {target}"
+            );
+        }
+    }
+    assert_eq!(h.card_count(), 0);
+    assert!(h.calls().is_empty());
+}
+
+#[tokio::test]
+async fn a_target_removed_while_the_card_is_open_cancels_and_changes_nothing() {
+    for tool in EndTool::ALL {
+        let mut rows = tree();
+        // Archived so unarchive passes its state check; the others are live.
+        rows.iter_mut()
+            .find(|s| s.id == "other")
+            .unwrap()
+            .archived_at =
+            (tool == EndTool::Unarchive).then(|| "2026-01-02T00:00:00.000Z".to_string());
+        let h = host(rows).await;
+        if tool == EndTool::Resume {
+            set_status(&h, "other", "paused");
+        }
+        *h.while_asking.lock().unwrap() = Some(WhileAsking::Remove("other".into()));
+        let h = Arc::new(h);
+        assert_eq!(
+            code(call(&h, tool, json!({ "id": "other" })).await),
+            CANCELLED,
+            "{tool:?}"
+        );
+        assert!(
+            h.calls().iter().all(|c| c.starts_with("precheck:")),
+            "{tool:?}"
+        );
+        assert!(h.shutdowns.lock().unwrap().is_empty(), "{tool:?}");
+    }
+}
+
+#[tokio::test]
+async fn a_rename_while_the_card_is_open_does_not_cancel() {
+    let h = Arc::new(host(tree()).await);
+    let renamed = h.registry.clone();
+    *h.while_asking.lock().unwrap() = Some(WhileAsking::Rename("other".into()));
+    call(&h, EndTool::Stop, json!({ "id": "other" }))
+        .await
+        .unwrap();
+    let sessions = renamed.lock().await.snapshot().sessions;
+    assert_eq!(
+        sessions.iter().find(|s| s.id == "other").unwrap().name,
+        "renamed"
+    );
+    assert_eq!(h.calls(), ["stop:other"]);
+}
+
+#[tokio::test]
+async fn a_cascade_stops_only_running_members_then_archives_deepest_first() {
+    let h = Arc::new(host(tree()).await);
+    set_status(&h, "grandkid", "stopped");
+    let args = json!({ "id": "kid", "include_children": true });
+    call(&h, EndTool::Archive, args).await.unwrap();
+    // The stopped member needs no shutdown.
+    assert_eq!(*h.shutdowns.lock().unwrap(), ["kid"]);
+    assert_eq!(h.calls(), ["archive:grandkid", "archive:kid"]);
+}
+
+#[tokio::test]
+async fn a_cascade_that_fails_part_way_names_the_sessions_already_archived() {
+    let h = Arc::new(host(tree()).await);
+    *h.archive_fails.lock().unwrap() = Some("kid".into());
+    let args = json!({ "id": "kid", "include_children": true });
+    let err = call(&h, EndTool::Archive, args).await.unwrap_err();
+    assert_eq!(err.code, "registry_error");
+    assert!(
+        err.message.contains("already archived: grandkid"),
+        "{}",
+        err.message
+    );
+    assert!(is_archived(&h, "grandkid").await);
+    assert!(!is_archived(&h, "kid").await);
+}
+
+#[tokio::test]
+async fn a_cascade_that_fails_first_reports_the_plain_error() {
+    let h = Arc::new(host(tree()).await);
+    *h.archive_fails.lock().unwrap() = Some("grandkid".into());
+    let args = json!({ "id": "kid", "include_children": true });
+    let err = call(&h, EndTool::Archive, args).await.unwrap_err();
+    assert_eq!(err.message, "the registry refused");
 }
