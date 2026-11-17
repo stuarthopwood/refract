@@ -19,13 +19,18 @@ use crate::store::registry::Session;
 use crate::store::session_tree::{descendants, live_children, MAX_LIVE_CHILDREN};
 
 /// What a call acts on: the target first, then any cascaded descendants, and whether each sits in
-/// the caller's own tree, which the approved card stated. A rename while the card is open
-/// changes none of these, so it does not cancel the call.
+/// the caller's own tree. A rename while the card is open changes none of it.
 #[derive(PartialEq, Eq)]
 struct Plan {
     ids: Vec<String>,
     inside: Vec<bool>,
     reroots: bool,
+}
+
+impl Plan {
+    fn target_inside(&self) -> bool {
+        self.inside[0]
+    }
 }
 
 /// Runs one end tool for the calling Session; the router calls this for all six names.
@@ -145,10 +150,6 @@ async fn plan_for<H: EndHost>(
     })
 }
 
-fn inside_own_tree(host: &impl EndHost, sessions: &[Session], target: &str) -> bool {
-    tree_gate::inside_own_tree(sessions, host.caller_id(), target, None)
-}
-
 async fn run_with<H: EndHost>(
     host: &Arc<H>,
     tool: EndTool,
@@ -166,10 +167,9 @@ async fn run_with<H: EndHost>(
         // Before the card, so a refusal never asks the developer about something that cannot run.
         host.delete_precheck(&parsed.id).await?;
     }
-    let inside = inside_own_tree(&**host, &sessions, &parsed.id);
-    let asked = needs_card(tool, inside, host.is_yolo().await);
+    let asked = needs_card(tool, plan.target_inside(), host.is_yolo().await);
     if asked {
-        let labels = labels_for(&sessions, host.caller_id(), &plan.ids);
+        let labels = labels_for(&sessions, &plan.ids, &plan.inside);
         host.ask(card_for(tool, host.call_id(), &labels, plan.reroots))
             .await?;
     }
@@ -189,14 +189,32 @@ async fn run_with<H: EndHost>(
         .unwrap_or_else(|e| Err(ToolError::new(CANCELLED, format!("end task ended: {e}"))))
 }
 
-fn changed(what: &str) -> ToolError {
-    ToolError::new(
-        CANCELLED,
-        format!("{what} while the approval was open; nothing was changed, call again"),
-    )
+/// Why a re-check refused: the plan moved under the call, or a rule now refuses it.
+enum Recheck {
+    Changed(&'static str),
+    Refused(ToolError),
+}
+
+impl From<ToolError> for Recheck {
+    fn from(error: ToolError) -> Self {
+        Recheck::Refused(error)
+    }
 }
 
 const STOPPED_NOTE: &str = "the agents had already been stopped";
+
+/// `stopped` is set once the cascade's agents are down, so nothing is claimed as unchanged.
+fn changed(what: &str, stopped: bool) -> ToolError {
+    let outcome = if stopped {
+        format!("{STOPPED_NOTE}, call again")
+    } else {
+        "nothing was changed, call again".to_string()
+    };
+    ToolError::new(
+        CANCELLED,
+        format!("{what} while the approval was open; {outcome}"),
+    )
+}
 
 /// The checks that must hold again once the card is answered and the gate is held. `Err` means
 /// nothing was changed by this call, unless `stopped`: the cascade's agents are already down.
@@ -210,17 +228,12 @@ async fn recheck<H: EndHost>(
     stopped: bool,
 ) -> Result<(), ToolError> {
     let outcome = recheck_plan(host, tool, id, include_children, approved, asked).await;
-    outcome.map_err(|e| {
-        if !stopped {
-            e
-        } else if e.message.ends_with("; nothing was changed, call again") {
-            let what = e
-                .message
-                .trim_end_matches("; nothing was changed, call again");
-            ToolError::new(&e.code, format!("{what}; {STOPPED_NOTE}, call again"))
-        } else {
+    outcome.map_err(|failure| match failure {
+        Recheck::Changed(what) => changed(what, stopped),
+        Recheck::Refused(e) if stopped => {
             ToolError::new(&e.code, format!("{} ({STOPPED_NOTE})", e.message))
         }
+        Recheck::Refused(e) => e,
     })
 }
 
@@ -231,22 +244,21 @@ async fn recheck_plan<H: EndHost>(
     include_children: bool,
     approved: &Plan,
     asked: bool,
-) -> Result<(), ToolError> {
+) -> Result<(), Recheck> {
     let sessions = sessions_of(host).await;
     let target =
         refuse_target(&sessions, host.caller_id(), id).map_err(|e| match e.code.as_str() {
-            NOT_FOUND => changed("the target Session was removed"),
-            _ => e,
+            NOT_FOUND => Recheck::Changed("the target Session was removed"),
+            _ => Recheck::Refused(e),
         })?;
     let now = plan_for(host, tool, &sessions, target, include_children).await?;
     if now != *approved {
-        return Err(changed("the Sessions this call acts on changed"));
+        return Err(Recheck::Changed("the Sessions this call acts on changed"));
     }
     // No card was shown because the target was in the own tree; if it no longer is, the
     // developer never saw this change, so it is refused rather than applied.
-    let inside = inside_own_tree(host, &sessions, id);
-    if !asked && needs_card(tool, inside, host.is_yolo().await) {
-        return Err(changed("the Session moved out of your own tree"));
+    if !asked && needs_card(tool, now.target_inside(), host.is_yolo().await) {
+        return Err(Recheck::Changed("the Session moved out of your own tree"));
     }
     Ok(())
 }
@@ -263,7 +275,11 @@ async fn shut_down_running<H: EndHost>(host: &Arc<H>, ids: &[String]) {
     }
     while let Some(joined) = shutdowns.join_next().await {
         if let Err(error) = joined {
-            log::warn!("a Session shutdown task ended abnormally: {error}");
+            // Fixed text: a panic payload could carry Session data.
+            log::warn!(
+                "agent tools: a Session shutdown task ended abnormally (panicked: {})",
+                error.is_panic()
+            );
         }
     }
 }

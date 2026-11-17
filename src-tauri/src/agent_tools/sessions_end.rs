@@ -205,11 +205,12 @@ impl CardLabel {
 
 const SHORT_ID_CHARS: usize = 8;
 
-/// A label per id, in order: the parent's name when there is one, else the branch, plus whether
-/// the Session sits in the caller's own tree.
-pub fn labels_for(sessions: &[Session], caller: &str, ids: &[String]) -> Vec<CardLabel> {
+/// A label per id, in order: the parent's name when there is one, else the branch. `inside` says
+/// per id whether the Session sits in the caller's own tree, computed once by the caller's plan.
+pub fn labels_for(sessions: &[Session], ids: &[String], inside: &[bool]) -> Vec<CardLabel> {
     ids.iter()
-        .map(|id| {
+        .zip(inside)
+        .map(|(id, &inside_own_tree)| {
             let row = sessions.iter().find(|s| s.id == *id);
             let parent = row
                 .and_then(|s| s.parent_session_id.as_deref())
@@ -223,7 +224,7 @@ pub fn labels_for(sessions: &[Session], caller: &str, ids: &[String]) -> Vec<Car
                 short_id: id.chars().take(SHORT_ID_CHARS).collect(),
                 name: row.map_or_else(|| id.clone(), |s| s.name.clone()),
                 context,
-                inside_own_tree: super::tree_gate::inside_own_tree(sessions, caller, id, None),
+                inside_own_tree,
             }
         })
         .collect()

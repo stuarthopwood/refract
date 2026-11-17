@@ -1,6 +1,5 @@
-// What the fake host does while a cascade shuts agents down, split from `sessions_end.test.rs` for
-// the 600-line cap: a rendezvous that only concurrent shutdowns pass, an ordered event log, and a
-// tree change made mid-shutdown.
+// What the fake host does while a cascade shuts agents down: a rendezvous only concurrent
+// shutdowns pass, an ordered event log, and a tree change made mid-shutdown.
 
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -25,6 +24,8 @@ pub(in crate::agent_tools) struct Probe {
     pub events: Mutex<Vec<String>>,
     /// Whether the Project's tree gate could be taken during a shutdown; `None` until one ran.
     pub gate_was_free: Mutex<Option<bool>>,
+    /// The Project whose tree gate the cascade takes, so the probe checks the right one.
+    pub repo: String,
 }
 
 pub(in crate::agent_tools) async fn shut_down(host: &FakeHost, id: &str) {
@@ -40,7 +41,7 @@ pub(in crate::agent_tools) async fn shut_down(host: &FakeHost, id: &str) {
     }
     let change = host.probe.change.lock().unwrap().take();
     if let Some(WhileShuttingDown::Add(session)) = change {
-        let free = tokio::time::timeout(Duration::from_secs(5), tree_gate::lock("repo"))
+        let free = tokio::time::timeout(Duration::from_secs(5), tree_gate::lock(&host.probe.repo))
             .await
             .is_ok();
         *host.probe.gate_was_free.lock().unwrap() = Some(free);

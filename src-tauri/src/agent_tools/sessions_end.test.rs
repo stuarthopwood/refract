@@ -214,11 +214,17 @@ pub(in crate::agent_tools) fn row(id: &str, repo: &str, parent: Option<&str>) ->
 /// A registry holding `rows` in the Projects `repo` and `elsewhere`; the caller is `me`, not in
 /// `yolo`, and the developer approves.
 pub(in crate::agent_tools) async fn host(rows: Vec<Session>) -> FakeHost {
+    host_in("repo", rows).await
+}
+
+/// Like `host`, but the first Project is `repo`, so a test that needs the process-wide tree gate to
+/// itself gives its rows a repository id no other test uses.
+pub(in crate::agent_tools) async fn host_in(repo: &str, rows: Vec<Session>) -> FakeHost {
     let repos = [init_repo().await, init_repo().await];
     let dir = crate::test_scratch::path(format!("refract-end-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&dir).unwrap();
     let mut store = RegistryStore::open(&dir).await.unwrap();
-    for (id, repo) in ["repo", "elsewhere"].into_iter().zip(&repos) {
+    for (id, repo) in [repo, "elsewhere"].into_iter().zip(&repos) {
         store
             .add_repository(Repository {
                 id: id.into(),
@@ -247,7 +253,10 @@ pub(in crate::agent_tools) async fn host(rows: Vec<Session>) -> FakeHost {
         shutdowns: Mutex::new(Vec::new()),
         archive_fails: Mutex::new(None),
         while_asking: Mutex::new(None),
-        probe: Default::default(),
+        probe: super::hooks::Probe {
+            repo: repo.into(),
+            ..Default::default()
+        },
     }
 }
 
@@ -255,7 +264,7 @@ fn code<T: std::fmt::Debug>(result: Result<T, ToolError>) -> String {
     result.expect_err("expected a tool error").code
 }
 
-fn parts(card: &PendingRequest) -> (String, Vec<String>) {
+pub(in crate::agent_tools) fn parts(card: &PendingRequest) -> (String, Vec<String>) {
     let PendingRequest::Approval {
         target, details, ..
     } = card
@@ -433,7 +442,7 @@ fn a_cascade_card_lists_every_session_with_its_short_id() {
     let (title, details) = parts(&card_for(
         EndTool::Archive,
         "call-1",
-        &labels_for(&sessions, "me", &ids),
+        &labels_for(&sessions, &ids, &[true, true]),
         false,
     ));
     assert_eq!(title, "Archive 2 Sessions");
@@ -456,13 +465,13 @@ fn a_card_tells_a_lookalike_name_apart_by_id_and_parent() {
     let (real, real_details) = parts(&card_for(
         EndTool::Stop,
         "call-1",
-        &labels_for(&sessions, "me", &ids("other")),
+        &labels_for(&sessions, &ids("other"), &[false]),
         false,
     ));
     let (fake, fake_details) = parts(&card_for(
         EndTool::Stop,
         "call-1",
-        &labels_for(&sessions, "me", &ids("0123456789abcdef")),
+        &labels_for(&sessions, &ids("0123456789abcdef"), &[true]),
         false,
     ));
     assert_eq!(real, "Stop Session other name-other");
@@ -480,7 +489,7 @@ fn a_card_tells_a_lookalike_name_apart_by_id_and_parent() {
 
 #[test]
 fn single_card_titles_name_the_session_and_the_tool() {
-    let labels = labels_for(&tree(), "me", &["other".to_string()]);
+    let labels = labels_for(&tree(), &["other".to_string()], &[false]);
     for (tool, title) in [
         (EndTool::Archive, "Archive Session other name-other"),
         (EndTool::Unarchive, "Unarchive Session other name-other"),
@@ -505,7 +514,7 @@ fn single_card_titles_name_the_session_and_the_tool() {
 
 #[test]
 fn a_delete_card_warns_about_children_only_when_there_are_some() {
-    let labels = labels_for(&tree(), "me", &["other".to_string()]);
+    let labels = labels_for(&tree(), &["other".to_string()], &[false]);
     let (title, plain) = parts(&card_for(EndTool::Delete, "call-1", &labels, false));
     assert_eq!(title, "Delete Session other name-other");
     assert_eq!(
