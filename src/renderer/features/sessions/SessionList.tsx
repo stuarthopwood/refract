@@ -1,4 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { SectionHeading } from '@/components/SectionHeading'
+import { Separator } from '@/components/ui/separator'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, SearchXIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -14,6 +16,7 @@ import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useRepositoriesStore, useSessionListStore, useSessionsStore } from '@/state'
 import { isProjectSession } from '../../../shared/model'
+import { PersonalAgentRow } from './PersonalAgentRow'
 import { ArchivedGroup } from './ArchivedGroup'
 import { RepositoryGroup } from './RepositoryGroup'
 import { ShowHiddenToggle } from './ShowHiddenToggle'
@@ -139,6 +142,14 @@ export function SessionList() {
       <ViewsNavGroup />
       {restored && (
         <>
+          {/* Pinned outside the ScrollArea and outside search and filters, which govern only the Project groups below. */}
+          <div className="mt-4 flex shrink-0 flex-col gap-2 px-2">
+            <PersonalAgentRow />
+            <div className="px-2">
+              <Separator className="bg-divider" />
+            </div>
+            <SectionHeading>Projects</SectionHeading>
+          </div>
           {/* Pinned above the ScrollArea; no border, fill or `role="toolbar"` (#567 rules out arrow-key roving). */}
           <div className="mt-4 flex shrink-0 items-center justify-end gap-1 px-4">
             <FilterToggleButton

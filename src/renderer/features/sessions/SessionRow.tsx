@@ -86,7 +86,8 @@ function lineTwoKind(
 }
 
 export type SessionRowProps =
-  | { layout?: 'list'; session: SessionSummary; repository: Repository }
+  // `repository` is absent for the Personal Agent, which belongs to no Project.
+  | { layout?: 'list'; session: SessionSummary; repository?: Repository }
   // The table layout renders this row on Manage sessions (#934); `surface` supplies its focus, announcement
   // and open behaviour, and `repository` is `undefined` when the Project can't be resolved.
   | { layout: 'table'; session: SessionSummary; repository: Repository | undefined; projectName: string; surface: SessionRowSurface }
@@ -135,7 +136,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
       : lineTwo === 'terminated'
         ? 'Terminated unexpectedly'
         : lineTwo === 'archived'
-          ? repository.name
+          ? (repository?.name ?? '')
           : lineTwo === 'activity'
             ? (activityText ?? undefined)
             : undefined
@@ -215,7 +216,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                   ) : lineTwo === 'archived' ? (
                     <span className={cn('flex min-w-0 items-center gap-1 pl-6 text-xs', metaFg)}>
                       <FolderGit2Icon aria-hidden className="size-4 shrink-0" />
-                      <span className="truncate">{repository.name}</span>
+                      <span className="truncate">{repository?.name}</span>
                     </span>
                   ) : lineTwo === 'activity' ? (
                     <span
@@ -228,7 +229,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                       {activityText}
                     </span>
                   ) : (
-                    <span className={cn('truncate pl-6 font-code text-xs', metaFg)}>{session.branch}</span>
+                    session.branch && <span className={cn('truncate pl-6 font-code text-xs', metaFg)}>{session.branch}</span>
                   )}
                 </button>
               </SessionDetailsCard>

@@ -24,7 +24,7 @@ export function SessionDetailsCard({
   children
 }: {
   session: SessionSummary
-  repository: Repository
+  repository?: Repository
   worktreeMissing: boolean
   // #567 decision 16: the row's own line-2 text, when it is not the branch (the start-progress or
   // "Terminated unexpectedly" text `SessionRow.tsx` shows instead) -- leads the accessible
@@ -104,7 +104,7 @@ export function SessionDetailsCard({
               <>
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
                   <FolderIcon aria-hidden className="size-4 shrink-0" />
-                  <span className="truncate">{repository.name}</span>
+                  <span className="truncate">{repository?.name}</span>
                 </div>
                 <div className="flex items-center gap-2 text-xs">
                   <GitBranchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />

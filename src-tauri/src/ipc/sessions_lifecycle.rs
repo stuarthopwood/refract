@@ -206,6 +206,8 @@ pub fn sessions_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .update_session_name(&id, name)
             .await
             .map_err(map_registry_error)?;
+        // The renderer only reloads the list on this event, so without it the row keeps the old name.
+        state.session_manager.notify_list_changed();
         Ok(Value::Null)
     })
 }

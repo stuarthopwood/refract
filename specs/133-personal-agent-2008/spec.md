@@ -2,7 +2,7 @@
 
 **Feature Branch**: `feat/2004-personal-agent-model`
 **Created**: 2026-11-16
-**Status**: Clarified
+**Status**: Implemented
 **Input**: Epic #2008 "Personal Agent" and its children #2004 (data model), #2005 (create and launch), #2006 (launcher button), #2007 (disable repo-only features), plus the epic grill and the #2004 grill with Stuart on 2026-11-16. Route: specify. One spec covers the whole epic; the first PR implements only the #2004 phase and the later children converge against this spec.
 
 ## Problem
@@ -51,6 +51,11 @@ Every answer below comes from the epic grill and the #2004 grill (Stuart grill 2
 - Q: Does #2005 add a UI entry point? -> A: No. The live check calls the create-or-open IPC over CDP on a scratch instance; #2006 adds the launcher button (Stuart grill 2026-11-16, #2005/#2007).
 - Q: How do the agent Session tools treat the Personal Agent (OQ-1)? -> A: The interim stands for this epic: the `refract_` tools neither list nor act on it and a Personal Agent caller gets "not found". Issue #2018 covers the read and message tools across every Project; create stays refused (Stuart grill 2026-11-16, #2005/#2007).
 - Q: Can the Personal Agent be hidden from the list (OQ-2)? -> A: No. Hide is refused, as already implemented in #2004 (`personal-agent-protected`) (Stuart grill 2026-11-16, #2005/#2007).
+- Q: What does the launcher look like and show? -> A: A pinned Session row built from the shared Session row component, above a divider and a "Projects" heading. It shows the Session's current name (default "My Agent"), status and selected state, and has the same overflow and context menu as any Session row (Rename, Stop, new Conversation, and the disabled Archive and Delete from #2007) (Stuart grill 2026-11-16, #2006).
+- Q: Do the list's search and filters hide the Personal Agent row? -> A: No. The row is always shown; search and filters apply only to the Project groups below the "Projects" heading (Stuart grill 2026-11-16, #2006).
+- Q: Where is the row in keyboard navigation? -> A: It is the first Tab stop in the list, before the first Project, like any other row; the list has no arrow navigation and no next or previous Session shortcut, and nothing new is added. The "Projects" heading is not a stop (Stuart grill 2026-11-16, #2006).
+- Q: When is the Personal Agent created? -> A: Lazily. Until the first activation the row is a placeholder labelled "My Agent" with no status; the first click, Enter or Space calls the create-or-open IPC, then selects and starts it; after that it is a normal persisted row (Stuart grill 2026-11-16, #2006).
+- Q: Which spec does #2006 converge against? -> A: The epic spec `specs/133-personal-agent-2008`, not spec 001 (Stuart grill 2026-11-16, #2006).
 
 
 ## User Scenarios & Testing *(mandatory)*
@@ -94,7 +99,7 @@ The developer opens the Personal Agent and has a normal chat with an agent that 
 
 ### User Story 3 - A launcher button above the Projects list (Priority: P1) — #2006
 
-The session list shows the Personal Agent as one launcher button at the very top, then a divider, then a "Projects" label, then the project groups.
+The session list shows the Personal Agent as one pinned Session row at the very top (the shared Session row, not a separate button), then a divider, then a "Projects" heading, then the project groups.
 
 **Why this priority**: it is the only way to reach the Personal Agent.
 
@@ -102,12 +107,14 @@ The session list shows the Personal Agent as one launcher button at the very top
 
 **Acceptance Scenarios**:
 
-1. **Given** the session list, **Then** from the top it shows the launcher button, a divider, a "Projects" label, then the project groups.
-2. **Given** the developer activates the button, **Then** the Personal Agent opens (created if absent) and its chat is shown.
-3. **Given** the Personal Agent is working, waiting or idle, **Then** the button shows that state the way a Session row does.
-4. **Given** the Personal Agent has been renamed, **Then** the button shows the new name.
+1. **Given** the session list, **Then** from the top it shows the Personal Agent row, a divider, a "Projects" heading, then the project groups.
+2. **Given** no Personal Agent exists, **Then** the row is a placeholder labelled "My Agent" with no status; **When** the developer clicks it (or presses Enter or Space), **Then** the Personal Agent is created, added to the list, selected and started, and its chat is shown. **Given** it exists, **When** clicked, **Then** it is simply selected.
+3. **Given** the Personal Agent is working, waiting or idle, **Then** the row shows that state and its selected state the way any Session row does.
+4. **Given** the Personal Agent has been renamed, **Then** the row shows the new name.
 5. **Given** project groups, **Then** their counts, ordering and collapse behaviour are unchanged and the Personal Agent never appears inside one.
-6. **Given** keyboard-only use, **Then** the button is reachable, shows a visible focus ring and its selected state, and the "Projects" label is a real heading for the group below it.
+6. **Given** keyboard-only use, **Then** the row is the first Tab stop in the list, before the first Project, shows a visible focus ring and its selected state, Enter or Space activates it, and "Projects" is a real heading that is not a stop.
+7. **Given** a search query or filter, **Then** the Personal Agent row is still shown and only the groups below "Projects" are filtered.
+8. **Given** the Personal Agent row, **Then** its overflow and context menus are the shared Session menus, with archive and delete disabled and worktree actions absent (#2007).
 
 ---
 
