@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.37.0 (2026-11-17)
+
+### Features
+
+- feat(sessions): Personal Agent data model (#2004) (https://github.com/stuarthopwood/refract/pull/2017)
+- feat(sessions): Personal Agent repo-only features show an empty state (#2007) (https://github.com/stuarthopwood/refract/pull/2022)
+- feat(sessions): create and launch the Personal Agent in the home folder (#2005) (https://github.com/stuarthopwood/refract/pull/2023)
+- feat(sessions): Personal Agent launcher row above the projects list (#2006) (https://github.com/stuarthopwood/refract/pull/2030)
+
+### Other
+
+- docs(plan): add Personal Agent epic #2008 and children #2004-#2007 (https://github.com/stuarthopwood/refract/pull/2009)
+- docs(plan): add interactive plan epic #2015 and children #2010-#2014 (https://github.com/stuarthopwood/refract/pull/2016)
+- docs(spec): #2005 and #2007 grill decisions (#2008) (https://github.com/stuarthopwood/refract/pull/2019)
+- docs(plan): add #2020 model cost tier + recommendation row (https://github.com/stuarthopwood/refract/pull/2021)
+- Add Contributor Covenant Code of Conduct (https://github.com/stuarthopwood/refract/pull/1956)
+- Add MIT License to the project (https://github.com/stuarthopwood/refract/pull/1957)
+- chore(deps): bump pnpm/action-setup from 6.1.0 to 6.1.1 (https://github.com/stuarthopwood/refract/pull/1963)
+- docs(plan): mark #2005 and #2007 done (#2008) (https://github.com/stuarthopwood/refract/pull/2024)
+- docs(plan): add #2025 OMP /commit opportunity (18.21.0 review) (https://github.com/stuarthopwood/refract/pull/2026)
+- docs(plan): add #2027 ask-card selection visibility bug (https://github.com/stuarthopwood/refract/pull/2028)
+- docs(plan): record OMP 18.21.0 review ledger row (https://github.com/stuarthopwood/refract/pull/2029)
+- docs(plan): add #2031 away-mode ask-tool bug (https://github.com/stuarthopwood/refract/pull/2032)
+- docs(plan): add #2033 ask-card markdown rendering bug (https://github.com/stuarthopwood/refract/pull/2034)
+- docs(plan): add usage items #2035 (filter bug), #2036 (pie), #2037 (trend) (https://github.com/stuarthopwood/refract/pull/2038)
+
 ## v0.36.0 (2026-11-14)
 
 ### Features
