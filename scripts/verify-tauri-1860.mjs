@@ -258,7 +258,7 @@ async function main() {
 
     // ---- a. Archive a child: card, approve sets archivedAt; deny changes nothing.
     const arch = await withCard(A, 'refract_archive_session', { id: C.id }, 'Approve', async (text, count) => {
-      check(count === 1 && inOrder(text, [`Archive Session ${headline(C)}`, `Child of ${B.name}`]), `The archive card is titled "Archive Session ${headline(C)}" and shows "Child of ${B.name}".`, `archive card (${count} cards): ${text.slice(0, 400)}`);
+      check(count === 1 && inOrder(text, [`Archive Session ${headline(C)}`, 'Below the calling Session', `Child of ${B.name}`]), `The archive card is titled "Archive Session ${headline(C)}" and shows "Below the calling Session" then "Child of ${B.name}".`, `archive card (${count} cards): ${text.slice(0, 400)}`);
       await shot('01-archive-card.png');
     });
     const rowC = await listRow(C.id);
@@ -318,8 +318,8 @@ async function main() {
     await sleep(500);
     const cascadeMark = (await toastLog()).length;
     const cascadeDeny = await withCard(D, 'refract_archive_session', { id: A.id, include_children: true }, 'Deny', async (text, count) => {
-      const heads = [A, B, C].map(headline);
-      check(count === 1 && inOrder(text, ['Archive 3 Sessions', ...heads]), `ONE card titled "Archive 3 Sessions" lists all three Sessions with their short ids (${heads.join(', ')}).`, `cascade card (${count} cards): ${text.slice(0, 600)}`);
+      const heads = [A, B, C].map((s) => `${headline(s)} (Outside this Session's tree)`);
+      check(count === 1 && inOrder(text, ['Archive 3 Sessions', ...heads]), `ONE card titled "Archive 3 Sessions" lists all three Sessions, each ending "(Outside this Session's tree)" since caller D is not above them (${heads.join(', ')}).`, `cascade card (${count} cards): ${text.slice(0, 600)}`);
       await shot('02-archive-cascade-card.png');
     });
     const afterDeny = await Promise.all([A, B, C].map((s) => listRow(s.id)));
@@ -341,8 +341,8 @@ async function main() {
     await waitCard();
     await sleep(300);
     const delCard = await readCard();
-    const delLines = [`Delete Session ${headline(B)}`, `Child of ${A.name}`, 'Its worktree and Conversations are removed.', 'Live child Sessions become root Sessions.'];
-    check(delCard.count === 1 && inOrder(delCard.text, delLines), `In yolo, delete_session still raised ONE card titled "Delete Session ${headline(B)}" with its parent, the removal, and the re-root line.`, `delete card (${delCard.count} cards): ${delCard.text.slice(0, 600)}`);
+    const delLines = [`Delete Session ${headline(B)}`, "Outside this Session's tree", `Child of ${A.name}`, 'Its worktree and Conversations are removed.', 'Live child Sessions become root Sessions.'];
+    check(delCard.count === 1 && inOrder(delCard.text, delLines), `In yolo, delete_session by Y (outside B's tree) still raised ONE card titled "Delete Session ${headline(B)}" with the relationship, parent, removal and re-root lines in order.`, `delete card (${delCard.count} cards): ${delCard.text.slice(0, 600)}`);
     await shot('03-delete-card-yolo.png');
     await cdp.clickByText('Approve');
     // A stop racing the removal would depend on timing; the unit test `a_delete_already_in_flight_is_invalid_state` proves that code.
