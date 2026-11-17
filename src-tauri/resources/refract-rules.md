@@ -32,3 +32,4 @@ Refract Sessions pay for every token of context on every model call, so keep con
 - The same work split in parallel: background agents, OMP `task` run async.
 - Own-branch, long-lived work the developer should see and steer: a child Session, `refract_create_session`. It gets its own Worktree and branch, so use it sparingly: depth is at most 3, with at most 4 live children each.
 - A child Session reports back with `refract_send_session_message` to its parent.
+- To end or tidy a Session in your Project, use `refract_archive_session`, `refract_unarchive_session`, `refract_stop_session`, `refract_pause_session`, `refract_resume_session` or `refract_delete_session`. Delete always asks the developer.

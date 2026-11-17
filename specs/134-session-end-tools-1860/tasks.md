@@ -28,14 +28,14 @@ Test work is part of each task (AGENTS.md Testing rule: new logic gets co-locate
 
 ## Phase 4: Delete re-rooting (ADR 0009)
 
-- [ ] T016 Verify, do not re-implement: re-rooting already happens in `Registry::remove_session` (`store/registry.rs:471-511`, live children get `parent_session_id = None` in the same persist, archived keep their link, rolled back on write failure), called by the background delete at `delete_in_flight.rs:147-153`. Confirm `delete_core` (T002) still reaches it and no tool path removes a row any other way. If no existing test covers it at the `remove_session` seam, add one beside the registry tests: live children become roots, archived children keep the link, and it fails when the loop at `registry.rs:488` is removed. (FR-009, SC-005)
+- [x] T016 Verify, do not re-implement: re-rooting already happens in `Registry::remove_session` (`store/registry.rs:471-511`, live children get `parent_session_id = None` in the same persist, archived keep their link, rolled back on write failure), called by the background delete at `delete_in_flight.rs:147-153`. Covered by `registry_tests.rs::removing_a_session_re_roots_its_live_children_in_the_same_write`. (FR-009, SC-005)
 
 ## Phase 5: Registration everywhere names are listed
 
-- [ ] T017 `src-tauri/src/agent_tools/sessions.rs`: six name constants, extend `SESSION_TOOLS` (`:16`), `description()`/`parameters()` for each tool per `contracts/tools.md` (move to a new `sessions_end_schema.rs` if `sessions.rs` (323) nears 450). Test: every tool has a non-empty description and an object schema with `additionalProperties: false`.
-- [ ] T018 `src-tauri/src/agent_tools/router_native.rs`: dispatch the six names to `sessions_end` (`run_native`); `mod.rs` declares the new modules; the router plan treats them as native, mutating tools (`needs_approval` is decided inside the tool, since delete asks in yolo and pause only outside the tree). Test: a router test per tool that a call reaches the tool and that an unlisted name stays `unknown_tool`.
-- [ ] T019 Tool-name lists: `agent_tools/mod.test.rs:15`, `agent_tools/overlay.rs:40`, `omp/token_guard/rules.rs:45`, `src-tauri/resources/refract-rules.md:33` (add the six names and the approval wording: delete always asks). Tests updated so each list fails when a name is missing (registration test checks all eleven session tools plus the panel tools). (FR-010)
-- [ ] T020 `session/agent/tool_host.rs:46`: confirm the yolo read is what `EndHost::is_yolo` uses; no change expected. Record the result in the commit message.
+- [x] T017 `src-tauri/src/agent_tools/sessions.rs`: six name constants, extend `SESSION_TOOLS`, descriptions and parameters in `sessions_end_schema.rs`, with a test that each has a non-empty description and a closed object schema.
+- [x] T018 `src-tauri/src/agent_tools/router_native.rs`: dispatch the six names to `sessions_end_tools::run`; router tests per tool and for an unlisted name.
+- [x] T019 Tool-name lists: `agent_tools/mod.test.rs`, `agent_tools/overlay.rs`, `omp/token_guard/rules.rs`, `src-tauri/resources/refract-rules.md` carry the six names and the approval wording. (FR-010)
+- [x] T020 `EndHost::is_yolo` reads `agent.tool_is_yolo()`, the same read as the router gate; no change needed.
 
 ## Phase 6: Live check, docs, gate
 

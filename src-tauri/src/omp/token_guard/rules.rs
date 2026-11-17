@@ -49,6 +49,17 @@ mod tests {
     }
 
     #[test]
+    fn the_rules_name_every_end_tool_and_say_delete_always_asks() {
+        for tool in crate::agent_tools::sessions::SESSION_TOOLS
+            .iter()
+            .filter(|t| t.ends_with("_session") && !t.contains("create") && !t.contains("update"))
+        {
+            assert!(RULES.contains(*tool), "{tool}");
+        }
+        assert!(RULES.contains("Delete always asks"));
+    }
+
+    #[test]
     fn stack_block_is_present_only_when_stacked() {
         assert!(content(true).contains("gh stack submit --auto"));
         assert!(!content(false).contains("gh stack"));
