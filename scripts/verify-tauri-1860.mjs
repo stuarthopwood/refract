@@ -120,6 +120,10 @@ async function main() {
     };
     const listRow = (id) => cdp.evaluate(`window.refract.sessions.list().then((r) => (r.ok ? r.value.find((s) => s.id === ${JSON.stringify(id)}) ?? null : null))`);
     const openSession = async (id) => {
+      // The list pane is short, so a row can sit below the clipped edge where a coordinate click misses it.
+      await cdp.waitFor(`!!${sessionRow(id)}`, { timeoutMs: 10_000, label: `row ${id} mounted` });
+      await cdp.evaluate(`${sessionRow(id)}.scrollIntoView({ block: 'center' })`);
+      await sleep(200);
       await cdp.click(sessionRow(id));
       await cdp.waitFor(`${sessionRow(id)}?.getAttribute('aria-current') === 'true'`, { timeoutMs: 10_000, label: `Session ${id} open` });
       await sleep(300);
