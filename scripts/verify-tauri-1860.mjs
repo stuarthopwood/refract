@@ -194,14 +194,8 @@ async function main() {
     const personalRes = await cdp.evaluate(`window.refract.sessions.openPersonalAgent()`);
     if (!personalRes?.ok) throw new Error(`openPersonalAgent failed: ${JSON.stringify(personalRes)}`);
     const P = { id: personalRes.value.id };
-    for (const s of [B, C]) {
-      try {
-        await waitForSessionStatus(cdp, s.id, 'idle');
-      } catch (err) {
-        console.log('seed status dump:', JSON.stringify(await cdp.evaluate(`window.refract.sessions.list().then((r) => r.value.map((x) => ({ id: x.id, name: x.name, status: x.status, parent: x.parentSessionId ?? null })))`)));
-        throw err;
-      }
-    }
+    // B stays `working` while it holds the open create call; only the leaf must settle.
+    await waitForSessionStatus(cdp, C.id, 'idle');
     const toastsBefore = await toasts();
     registryDumps.before = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.value.map((s) => ({ id: s.id, name: s.name, parent: s.parentSessionId ?? null, archivedAt: s.archivedAt, kind: s.kind })))`);
 
