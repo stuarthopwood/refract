@@ -232,6 +232,8 @@ async function main() {
     check(!unarch.isError && unarch.cards === 0 && !rowC2?.archivedAt, 'unarchive_session on descendant C raised no card and restored it.', `unarchive C: ${JSON.stringify(unarch)} row ${JSON.stringify(rowC2)}`);
     const gate = await noCard(q, 'refract_unarchive_session', { id: qKids[3].id });
     check(archivedKid?.ok && gate.isError && code(gate) === 'child_limit', 'unarchive with 4 live children under the parent returned child_limit.', `gate: ${JSON.stringify(gate)} archive ${JSON.stringify(archivedKid)}`);
+    const gateOutside = await noCard(D, 'refract_unarchive_session', { id: qKids[3].id });
+    check(gateOutside.isError && code(gateOutside) === 'child_limit' && gateOutside.cards === 0, 'From outside the parent tree, unarchive into a full parent returned child_limit with no approval card.', `gate outside: ${JSON.stringify(gateOutside)}`);
     const freed = await cdp.evaluate(`window.refract.sessions.archive(${JSON.stringify(fifth.id)})`);
     const ok4 = await noCard(q, 'refract_unarchive_session', { id: qKids[3].id });
     const row5 = await listRow(fifth.id);
