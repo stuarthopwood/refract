@@ -111,9 +111,56 @@ async fn a_target_that_leaves_the_own_tree_while_the_card_is_open_cancels_the_ca
             .await
             .unwrap_err();
         assert_eq!(err.code, CANCELLED, "{tool:?}");
+        assert!(
+            err.message.contains("nothing was changed"),
+            "{}",
+            err.message
+        );
+        assert!(
+            !err.message.contains("agents had already been stopped"),
+            "{}",
+            err.message
+        );
         assert!(h.calls().is_empty(), "{tool:?}");
         assert!(h.shutdowns.lock().unwrap().is_empty(), "{tool:?}");
     }
+}
+
+#[tokio::test]
+async fn a_caller_removed_while_agents_stop_refuses_and_says_they_were_stopped() {
+    let h = fresh().await;
+    *h.probe.change.lock().unwrap() = Some(WhileShuttingDown::Remove("me".into()));
+    let h = Arc::new(h);
+    let err = run_with(&h, EndTool::Archive, &cascade())
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, CANCELLED);
+    assert!(
+        err.message
+            .ends_with("(the agents had already been stopped)"),
+        "{}",
+        err.message
+    );
+    assert!(!events(&h).iter().any(|e| e.starts_with("archive:")));
+}
+
+#[tokio::test]
+async fn a_refusal_before_any_agent_stops_carries_no_stopped_suffix() {
+    let repo = unique_repo();
+    let rows = vec![row("me", &repo, None), row("other", &repo, None)];
+    let h = host_in(&repo, rows).await;
+    *h.while_asking.lock().unwrap() = Some(WhileAsking::Remove("me".into()));
+    let h = Arc::new(h);
+    let err = run_with(&h, EndTool::Archive, &json!({ "id": "other" }))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, CANCELLED);
+    assert!(
+        !err.message.contains("already been stopped"),
+        "{}",
+        err.message
+    );
+    assert!(h.calls().is_empty());
 }
 
 #[tokio::test]

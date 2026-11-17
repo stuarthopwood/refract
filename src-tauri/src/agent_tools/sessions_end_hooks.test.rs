@@ -13,6 +13,7 @@ use crate::store::registry::Session;
 /// A change made to the registry while the cascade's agents are stopping.
 pub(in crate::agent_tools) enum WhileShuttingDown {
     Add(Box<Session>),
+    Remove(String),
 }
 
 #[derive(Default)]
@@ -40,17 +41,29 @@ pub(in crate::agent_tools) async fn shut_down(host: &FakeHost, id: &str) {
         barrier.wait().await;
     }
     let change = host.probe.change.lock().unwrap().take();
-    if let Some(WhileShuttingDown::Add(session)) = change {
-        let free = tokio::time::timeout(Duration::from_secs(5), tree_gate::lock(&host.probe.repo))
-            .await
-            .is_ok();
-        *host.probe.gate_was_free.lock().unwrap() = Some(free);
-        host.registry
-            .lock()
-            .await
-            .add_session(*session)
-            .await
-            .unwrap();
+    match change {
+        Some(WhileShuttingDown::Add(session)) => {
+            let free =
+                tokio::time::timeout(Duration::from_secs(5), tree_gate::lock(&host.probe.repo))
+                    .await
+                    .is_ok();
+            *host.probe.gate_was_free.lock().unwrap() = Some(free);
+            host.registry
+                .lock()
+                .await
+                .add_session(*session)
+                .await
+                .unwrap();
+        }
+        Some(WhileShuttingDown::Remove(id)) => {
+            host.registry
+                .lock()
+                .await
+                .remove_session(&id)
+                .await
+                .unwrap();
+        }
+        None => {}
     }
 }
 

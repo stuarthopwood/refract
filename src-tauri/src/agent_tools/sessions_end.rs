@@ -208,6 +208,7 @@ const SHORT_ID_CHARS: usize = 8;
 /// A label per id, in order: the parent's name when there is one, else the branch. `inside` says
 /// per id whether the Session sits in the caller's own tree, computed once by the caller's plan.
 pub fn labels_for(sessions: &[Session], ids: &[String], inside: &[bool]) -> Vec<CardLabel> {
+    debug_assert_eq!(ids.len(), inside.len());
     ids.iter()
         .zip(inside)
         .map(|(id, &inside_own_tree)| {
