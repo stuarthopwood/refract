@@ -4,9 +4,9 @@ Script `scripts/verify-tauri-1860.mjs`, fake omp (`session-tools-1858` scenario)
 
 | Field | Value |
 |---|---|
-| Head sha | `e6d4d4a2aff0396463c381d3ef44f3e9970308f1` |
+| Head sha | `251b7331909d21caa975211ad51824d3dfe9b802` |
 | dirty | `false` |
-| Exe sha256 | `3f429af3af0f5ed4dce1b23a3a6baada95aded209ac0b348f78480241b40d969` |
+| Exe sha256 | `c7a5462192dacb72cec3e8897c787dd8f4cdc99c1e73cc5551687910c1ca2aa2` |
 | Build | `pnpm exec tauri build --debug --no-bundle`, `CARGO_TARGET_DIR=C:/Users/shopwood/.cargo-target/refract`, from the committed tree |
 | Verdict | DONE (0 failures, 35 findings) |
 
@@ -22,7 +22,7 @@ Notes: a Session in another Project cannot see the target and gets `not_found`, 
 - The toast watcher saw a probe toast node, so a clean log means no toast was inserted.
 - 30 calls (six tools on self, ancestors B and A, and the Personal Agent) all returned invalid_target with no card.
 - An unknown id returned not_found.
-- The archive card is titled "Archive Session 4cd09de9 child-c" and shows "Child of child-b".
+- The archive card is titled "Archive Session abd6ab67 child-c" and shows "Below the calling Session" then "Child of child-b".
 - archive_session on child C raised a card; after Approve archivedAt is set.
 - Deny on the archive card returned the denied error and B stayed live.
 - The denied archive raised no toast.
@@ -40,23 +40,23 @@ Notes: a Session in another Project cannot see the target and gets `not_found`, 
 - In yolo, resume of D (outside the tree) raised no card.
 - In yolo, pause of D (outside the tree) raised no card and D is paused.
 - D was resumed again in yolo, no card.
-- ONE card titled "Archive 3 Sessions" lists all three Sessions with their short ids (d9cc9f7a silent-harrier, 07c5e949 child-b, 4cd09de9 child-c).
+- ONE card titled "Archive 3 Sessions" lists all three Sessions, each ending "(Outside this Session's tree)" since caller D is not above them (94ccb8e7 silent-plover, 126c9d77 child-b, abd6ab67 child-c).
 - Deny on the cascade card returned the denied error and changed nothing: all three Sessions stay live.
 - The denied cascade raised no toast.
 - After Approve the three Sessions are archived; the result lists their 3 ids.
 - Y unarchived silent-harrier with no card.
 - Y unarchived child-b with no card.
 - Y unarchived child-c with no card.
-- In yolo, delete_session still raised ONE card titled "Delete Session 07c5e949 child-b" with its parent, the removal, and the re-root line.
+- In yolo, delete_session by Y (outside B's tree) still raised ONE card titled "Delete Session 126c9d77 child-b" with "Outside this Session's tree", "Child of silent-plover", the removal line and the re-root line in order.
 - After Approve delete_session returned outcome "deleting".
-- The background delete removed B's worktree (C:\Users\shopwood\AppData\Local\Temp\scratch\lane-1860\tmp\refract-1860-repo-q8kuIW\..\pinion-worktrees\refract-1860-repo-q8kuIW\cosmic-lynx) and its row.
+- The background delete removed B's worktree (C:\Users\shopwood\AppData\Local\Temp\scratch\lane-1860\tmp\refract-1860-repo-XesqRr\..\pinion-worktrees\refract-1860-repo-XesqRr\nimble-raven) and its row.
 - C, a live child of the deleted B, was re-rooted: its parent link is cleared.
 - A call on the deleted Session returned not_found with no card.
 - No error result raised a toast: none was inserted from the first refusal to the end.
 
 ## Screenshots (sha256)
 
-- `01-archive-card.png` cb1565b33c814180b8e26a290977968771c38578282e7165b057b6672c030f93
-- `02-archive-cascade-card.png` d3850913ed37deeb97eb380b9f29312e17cd542231b89db9fb2373a103e83681
-- `03-delete-card-yolo.png` d48869f32f47d55237962968f5c6f098d8b372c0e9383b7c460086d3ea31a28a
-- `04-after-delete.png` 426a09e2b47d0b05ae4f0eda4a08c15b1144fe47261228143f9fa48414a43995
+- `01-archive-card.png` 639262bbeb9a6863e5df6ee34920f8897fa78140dde6aae17bd69f292644b26b
+- `02-archive-cascade-card.png` 72c4fdb0573fe077f32591c3bd21cc2c905376c8cd6820db8f892f8ebc0e7632
+- `03-delete-card-yolo.png` 4b0d69bc45c3fa5d6c1e982e5a40e2828a500661ce24c386f0bf000fa62084d3
+- `04-after-delete.png` c77c5e0ba06e9e7578b9bf1756402c0a09e4cd49e943e245005223fcaf58674e
