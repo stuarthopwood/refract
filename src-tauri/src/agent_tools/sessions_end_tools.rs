@@ -9,13 +9,14 @@ use serde_json::{json, Value};
 use super::router::{ToolError, CANCELLED};
 use super::sessions::NOT_FOUND;
 use super::sessions_end::{
-    card_for, needs_card, parse_args, refuse_target, AppEndHost, EndHost, EndTool, INVALID_STATE,
+    card_for, needs_card, parse_args, refuse_target, AppEndHost, EndHost, EndTool, CHILD_LIMIT,
+    INVALID_STATE,
 };
 use super::sessions_send::SESSION_NOT_RUNNING;
 use super::tree_gate;
 use crate::session::agent::SessionAgent;
 use crate::store::registry::Session;
-use crate::store::session_tree::{descendants, live_children};
+use crate::store::session_tree::{descendants, live_children, MAX_LIVE_CHILDREN};
 
 /// What a call acts on: the target first, then any cascaded descendants.
 #[derive(PartialEq, Eq)]
@@ -92,6 +93,13 @@ async fn plan_for<H: EndHost>(
         EndTool::Unarchive => {
             if target.archived_at.is_none() {
                 return Err(invalid_state("the target Session is not archived"));
+            }
+            let full = target.parent_session_id.as_deref().is_some_and(|parent| {
+                live_children(sessions, parent).count() >= MAX_LIVE_CHILDREN
+            });
+            if full {
+                // Same code restore_core gives, raised before the card so nobody approves a doomed call.
+                return Err(ToolError::new(CHILD_LIMIT, "the parent has 4 live children"));
             }
         }
         EndTool::Stop => {

@@ -230,6 +230,22 @@ async fn unarchive_through_a_full_parent_is_child_limit() {
 }
 
 #[tokio::test]
+async fn unarchive_into_a_full_parent_outside_the_own_tree_is_refused_before_any_card() {
+    let mut rows = tree();
+    for id in ["a", "b", "c", "d", "e"] {
+        rows.push(row(id, "repo", Some("other")));
+    }
+    let h = Arc::new(host(rows).await);
+    h.archive("e").await.unwrap();
+    assert_eq!(
+        code(call(&h, EndTool::Unarchive, json!({ "id": "e" })).await),
+        CHILD_LIMIT
+    );
+    assert_eq!(h.card_count(), 0);
+    assert!(is_archived(&h, "e").await);
+}
+
+#[tokio::test]
 async fn stop_asks_unless_yolo_and_refuses_a_stopped_session() {
     let h = Arc::new(host(tree()).await);
     let out = call(&h, EndTool::Stop, json!({ "id": "kid" }))
