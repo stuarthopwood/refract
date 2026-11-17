@@ -10,6 +10,7 @@ use super::launch_support::{
     reattach_rebaseline_notice, registry_store_error_message, send_set_ask_dialog, to_process_mode,
     verify_reattach,
 };
+use super::queued_handoff;
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
@@ -349,6 +350,7 @@ impl SessionAgent {
         let conv = session.current_conversation.as_deref();
         let terminated_unexpectedly =
             complete && termination::detect_unexpected_termination_for_transcript(conv).await;
+        let note_live = queued_handoff::is_note_file(conv).await;
 
         // A concurrent exit may clear `process` during the history fetch.
         self.fail_if_process_changed(&proc, failure_prefix).await?;
@@ -365,9 +367,11 @@ impl SessionAgent {
             } else {
                 Some(current_mode)
             };
+            state.handoff.note_live = note_live;
             if complete {
                 let transcript = &mut state.transcript;
                 transcript.merge_from_history(&messages, terminated_unexpectedly);
+                queued_handoff::mark_note(&mut state);
             }
         }
         // After the merge above, so the notice is not dropped as unpersisted.

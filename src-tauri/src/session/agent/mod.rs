@@ -26,6 +26,7 @@ mod launch;
 mod launch_support;
 pub mod pause;
 mod pause_subagents;
+mod queued_handoff;
 mod requests;
 mod status;
 mod sync_from_state;
@@ -92,6 +93,7 @@ struct AgentState {
     termination: crate::session::termination::State,
     token_guard: crate::session::token_guard::State,
     working_mode: crate::session::working_mode::State,
+    handoff: queued_handoff::State,
     pause: pause::State,
 }
 
@@ -184,6 +186,7 @@ impl SessionAgent {
                 termination: Default::default(),
                 token_guard: Default::default(),
                 working_mode: Default::default(),
+                handoff: Default::default(),
                 pause: Default::default(),
             }),
             status_tx,
@@ -385,6 +388,7 @@ impl SessionAgent {
         let before = state.transcript.snapshot();
         let turn_abort_requested = state.turn_abort_requested;
         state.transcript.apply_frame(frame, turn_abort_requested);
+        queued_handoff::mark_note(state);
         let ops = diff_transcript(&before, state.transcript.items());
         // Queued under the state lock so a concurrent reset cannot supersede this upsert.
         if !ops.is_empty() {

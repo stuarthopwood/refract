@@ -30,7 +30,7 @@ vi.mock('@/lib/focus', () => ({ focusSessionPane: mocks.focusSessionPane, focusS
 import { SessionSourceLine } from './SessionSourceLine'
 import { UserMessageRow, type UserItem } from './UserMessageRow'
 
-const SOURCE: MessageSource = { kind: 'session', sessionId: 'sess-1', name: 'Alpha' }
+const SOURCE: Extract<MessageSource, { kind: 'session' }> = { kind: 'session', sessionId: 'sess-1', name: 'Alpha' }
 const base: UserItem = { kind: 'user', id: 'u1', text: 'hello there', at: 0 }
 
 function findAll(node: ReactNode, match: (el: ReactElement<Record<string, any>>) => boolean, out: ReactElement<Record<string, any>>[] = []) {
@@ -142,6 +142,14 @@ describe('UserMessageRow session source', () => {
     expect(html).not.toContain('aria-labelledby')
     expect(html).not.toContain('role="group"')
     expect(html).toContain('hello there')
+    expect(mocks.select).not.toHaveBeenCalled()
+  })
+
+  it('labels a handoff note, keeps the user name, and does not read the sessions store', () => {
+    const html = render({ ...base, source: { kind: 'handoff' } })
+    expect(html).toContain('Handoff note from the previous Conversation')
+    expect(html).not.toContain('From Session')
+    expect(html).toMatch(/data-slot="message-header"[^>]*>Stuart<\/div>/)
     expect(mocks.select).not.toHaveBeenCalled()
   })
 })

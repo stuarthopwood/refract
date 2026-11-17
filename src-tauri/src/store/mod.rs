@@ -3,6 +3,7 @@
 pub mod approval_mode;
 pub mod atomic_json;
 pub mod chat_width;
+pub mod handoff_notes;
 pub mod holiday_touches;
 pub mod import;
 pub mod last_commands;

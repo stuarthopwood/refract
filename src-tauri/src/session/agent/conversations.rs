@@ -74,6 +74,7 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.transcript = TranscriptState::new();
+            state.handoff.note_live = false;
             state.pause.cancelled.clear();
         }
         self.emit_patch_reset().await;
@@ -179,8 +180,10 @@ impl SessionAgent {
         } else {
             false
         };
+        let note_live = super::queued_handoff::is_note_file(Some(&file)).await;
         {
             let mut state = self.state.lock().await;
+            state.handoff.note_live = note_live;
             state.pause.cancelled.clear();
             state.transcript = if complete {
                 let mut fresh = TranscriptState::from_history(&messages);
@@ -190,6 +193,7 @@ impl SessionAgent {
             } else {
                 TranscriptState::new()
             };
+            super::queued_handoff::mark_note(&mut state);
         }
         // A different Conversation, so the old readout and subagent state must not carry over (#577).
         crate::session::readout::on_conversation_reset(self).await;

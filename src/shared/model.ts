@@ -330,12 +330,10 @@ export interface FileAttachmentRef {
   isDirectory: boolean;
 }
 
-/** Who sent a user turn when it was not Stuart: another Session's message (#1858). Absent for ordinary turns. */
-export interface MessageSource {
-  kind: 'session';
-  sessionId: string;
-  name: string;
-}
+/** Who sent a user turn when it was not Stuart: another Session (#1858), or an agent's own handoff note (#1861). Absent for ordinary turns. */
+export type MessageSource =
+  | { kind: 'session'; sessionId: string; name: string }
+  | { kind: 'handoff' };
 
 /** Built in the main process from OMP frames; the renderer only renders items. */
 export type TranscriptItem =
