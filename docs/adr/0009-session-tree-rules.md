@@ -11,6 +11,7 @@ Rules:
 - **Deletion.** Deleting a parent re-roots its live children; archiving keeps the links.
 - **Project cap.** An agent create fails with `session_limit` when the Project already has 6 live Sessions. It bounds the fan-out of a `yolo` create, which may name any live same-Project parent (accepted yolo reach). Unarchive and the UI create are user actions and keep only the 4-child limit. Unarchiving takes the same gate and refuses when the parent would pass 4 live children.
 - **Access.** Root Sessions at every depth register all five Session tools, because a child must be able to report back with `send_session_message`. The `Role::Child` row stays empty.
+- **End tools.** `archive_session`, `unarchive_session`, `stop_session`, `pause_session`, `resume_session` and `delete_session` use the same gates: none may target the caller or an ancestor, and unarchive takes the 4-child gate. Pause, resume and unarchive skip the card inside the own tree or in `yolo`; archive and stop skip it only in `yolo`; delete always asks, even in `yolo`, and re-roots live children.
 
 **Why:** the limits protect the developer's machine and attention from runaway fan-out, so they cannot depend on a model obeying a rule. The own-tree scope lets an agent tidy its own work without a card on every rename, while anything that touches a sibling, a parent or another root still needs the developer.
 
