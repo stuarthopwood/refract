@@ -174,12 +174,13 @@ pub fn needs_card(tool: EndTool, inside_own_tree: bool, yolo: bool) -> bool {
     }
 }
 
-/// How one Session reads on a card. The agent picks the name, so the id and where the Session
-/// sits come with it and a lookalike name cannot pass for another Session.
+/// How one Session reads on a card. The agent picks the name and branch, so the id and the
+/// id-derived relationship come with them and a lookalike cannot pass for another Session.
 pub struct CardLabel {
     pub short_id: String,
     pub name: String,
     pub context: Option<String>,
+    pub inside_own_tree: bool,
 }
 
 impl CardLabel {
@@ -187,12 +188,26 @@ impl CardLabel {
     fn headline(&self) -> String {
         format!("{} {}", self.short_id, self.name)
     }
+
+    /// Derived from ids alone, so the agent cannot word it.
+    fn relationship(&self) -> &'static str {
+        if self.inside_own_tree {
+            "Below the calling Session"
+        } else {
+            "Outside this Session's tree"
+        }
+    }
+
+    fn cascade_line(&self) -> String {
+        format!("{} ({})", self.headline(), self.relationship())
+    }
 }
 
 const SHORT_ID_CHARS: usize = 8;
 
-/// A label per id, in order: the parent's name when there is one, else the branch.
-pub fn labels_for(sessions: &[Session], ids: &[String]) -> Vec<CardLabel> {
+/// A label per id, in order: the parent's name when there is one, else the branch, plus whether
+/// the Session sits in the caller's own tree.
+pub fn labels_for(sessions: &[Session], caller: &str, ids: &[String]) -> Vec<CardLabel> {
     ids.iter()
         .map(|id| {
             let row = sessions.iter().find(|s| s.id == *id);
@@ -208,6 +223,7 @@ pub fn labels_for(sessions: &[Session], ids: &[String]) -> Vec<CardLabel> {
                 short_id: id.chars().take(SHORT_ID_CHARS).collect(),
                 name: row.map_or_else(|| id.clone(), |s| s.name.clone()),
                 context,
+                inside_own_tree: super::tree_gate::inside_own_tree(sessions, caller, id, None),
             }
         })
         .collect()
@@ -222,24 +238,26 @@ pub fn card_for(
     reroots: bool,
 ) -> PendingRequest {
     let first = labels.first().map(CardLabel::headline).unwrap_or_default();
-    let context = labels.first().and_then(|l| l.context.clone());
+    let mut context: Vec<String> = labels
+        .first()
+        .map(|l| l.relationship().to_string())
+        .into_iter()
+        .collect();
+    context.extend(labels.first().and_then(|l| l.context.clone()));
     let (title, details) = match tool {
         EndTool::Archive if labels.len() > 1 => (
             format!("Archive {} Sessions", labels.len()),
-            labels.iter().map(CardLabel::headline).collect(),
+            labels.iter().map(CardLabel::cascade_line).collect(),
         ),
         EndTool::Delete => {
-            let mut lines: Vec<String> = context.into_iter().collect();
+            let mut lines = context;
             lines.push("Its worktree and Conversations are removed.".to_string());
             if reroots {
                 lines.push("Live child Sessions become root Sessions.".to_string());
             }
             (format!("Delete Session {first}"), lines)
         }
-        other => (
-            format!("{} Session {first}", other.verb()),
-            context.into_iter().collect(),
-        ),
+        other => (format!("{} Session {first}", other.verb()), context),
     };
     approval::session_card(call_id, tool.name(), title, details)
 }
@@ -427,3 +445,7 @@ impl EndHost for AppEndHost {
 #[cfg(test)]
 #[path = "sessions_end.test.rs"]
 pub(super) mod tests;
+
+#[cfg(test)]
+#[path = "sessions_end_hooks.test.rs"]
+pub(super) mod hooks;

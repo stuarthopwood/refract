@@ -18,11 +18,13 @@ use crate::session::agent::SessionAgent;
 use crate::store::registry::Session;
 use crate::store::session_tree::{descendants, live_children, MAX_LIVE_CHILDREN};
 
-/// What a call acts on: the target first, then any cascaded descendants. A rename while the card
-/// is open changes neither field, so it does not cancel the call.
+/// What a call acts on: the target first, then any cascaded descendants, and whether each sits in
+/// the caller's own tree, which the approved card stated. A rename while the card is open
+/// changes none of these, so it does not cancel the call.
 #[derive(PartialEq, Eq)]
 struct Plan {
     ids: Vec<String>,
+    inside: Vec<bool>,
     reroots: bool,
 }
 
@@ -132,7 +134,15 @@ async fn plan_for<H: EndHost>(
         }
         EndTool::Delete => reroots = live_children(sessions, &target.id).next().is_some(),
     }
-    Ok(Plan { ids, reroots })
+    let inside = ids
+        .iter()
+        .map(|id| tree_gate::inside_own_tree(sessions, host.caller_id(), id, None))
+        .collect();
+    Ok(Plan {
+        ids,
+        inside,
+        reroots,
+    })
 }
 
 fn inside_own_tree(host: &impl EndHost, sessions: &[Session], target: &str) -> bool {
@@ -159,7 +169,7 @@ async fn run_with<H: EndHost>(
     let inside = inside_own_tree(&**host, &sessions, &parsed.id);
     let asked = needs_card(tool, inside, host.is_yolo().await);
     if asked {
-        let labels = labels_for(&sessions, &plan.ids);
+        let labels = labels_for(&sessions, host.caller_id(), &plan.ids);
         host.ask(card_for(tool, host.call_id(), &labels, plan.reroots))
             .await?;
     }
@@ -186,9 +196,35 @@ fn changed(what: &str) -> ToolError {
     )
 }
 
+const STOPPED_NOTE: &str = "the agents had already been stopped";
+
 /// The checks that must hold again once the card is answered and the gate is held. `Err` means
-/// nothing was changed by this call.
+/// nothing was changed by this call, unless `stopped`: the cascade's agents are already down.
 async fn recheck<H: EndHost>(
+    host: &H,
+    tool: EndTool,
+    id: &str,
+    include_children: bool,
+    approved: &Plan,
+    asked: bool,
+    stopped: bool,
+) -> Result<(), ToolError> {
+    let outcome = recheck_plan(host, tool, id, include_children, approved, asked).await;
+    outcome.map_err(|e| {
+        if !stopped {
+            e
+        } else if e.message.ends_with("; nothing was changed, call again") {
+            let what = e
+                .message
+                .trim_end_matches("; nothing was changed, call again");
+            ToolError::new(&e.code, format!("{what}; {STOPPED_NOTE}, call again"))
+        } else {
+            ToolError::new(&e.code, format!("{} ({STOPPED_NOTE})", e.message))
+        }
+    })
+}
+
+async fn recheck_plan<H: EndHost>(
     host: &H,
     tool: EndTool,
     id: &str,
@@ -225,7 +261,11 @@ async fn shut_down_running<H: EndHost>(host: &Arc<H>, ids: &[String]) {
             shutdowns.spawn(async move { host.shutdown(&id).await });
         }
     }
-    while shutdowns.join_next().await.is_some() {}
+    while let Some(joined) = shutdowns.join_next().await {
+        if let Err(error) = joined {
+            log::warn!("a Session shutdown task ended abnormally: {error}");
+        }
+    }
 }
 
 /// The archive cascade. Agents stop outside the tree gate, which blocks every tree change in
@@ -242,14 +282,7 @@ async fn archive_members<H: EndHost>(
     shut_down_running(host, &approved.ids).await;
     let _gate = tree_gate::lock(repository_id).await;
     // The tree can move while the agents stop, so the plan is checked again before any patch.
-    recheck(&**host, tool, id, include_children, approved, asked)
-        .await
-        .map_err(|e| {
-            ToolError::new(
-                &e.code,
-                format!("{} (the agents had already been stopped)", e.message),
-            )
-        })?;
+    recheck(&**host, tool, id, include_children, approved, asked, true).await?;
     let mut archived = Vec::new();
     // Deepest first, so a parent is never archived above a live child mid-way.
     for member in approved.ids.iter().rev() {
@@ -272,7 +305,7 @@ async fn commit<H: EndHost>(
     asked: bool,
 ) -> Result<Value, ToolError> {
     let gate = tree_gate::lock(&repository_id).await;
-    recheck(&*host, tool, &id, include_children, &approved, asked).await?;
+    recheck(&*host, tool, &id, include_children, &approved, asked, false).await?;
     if tool == EndTool::Archive {
         // Released: stopping agents is slow, and the cascade takes the gate back for the patches.
         drop(gate);
@@ -304,3 +337,7 @@ async fn commit<H: EndHost>(
 #[cfg(test)]
 #[path = "sessions_end_tools.test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "sessions_end_cascade.test.rs"]
+mod cascade_tests;

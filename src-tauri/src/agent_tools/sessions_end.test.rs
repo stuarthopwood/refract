@@ -15,6 +15,7 @@ pub(in crate::agent_tools) enum WhileAsking {
     Remove(String),
     Add(Box<Session>),
     Rename(String),
+    Unparent(String),
 }
 
 /// Stands in for the running app: records every action in order and applies archive and restore
@@ -32,6 +33,7 @@ pub(in crate::agent_tools) struct FakeHost {
     pub shutdowns: Mutex<Vec<String>>,
     pub archive_fails: Mutex<Option<String>>,
     pub while_asking: Mutex<Option<WhileAsking>>,
+    pub probe: super::hooks::Probe,
 }
 
 impl EndHost for FakeHost {
@@ -70,6 +72,7 @@ impl EndHost for FakeHost {
                     .await
                     .unwrap();
             }
+            Some(WhileAsking::Unparent(id)) => super::hooks::unparent(self, &id).await,
             Some(WhileAsking::Rename(id)) => {
                 self.registry
                     .lock()
@@ -103,6 +106,8 @@ impl EndHost for FakeHost {
             return Err(ToolError::new("registry_error", "the registry refused"));
         }
         self.calls.lock().unwrap().push(format!("archive:{id}"));
+        let event = format!("archive:{id}");
+        self.probe.events.lock().unwrap().push(event);
         self.patch_archived(id, Some("2026-02-01T00:00:00.000Z".into()))
             .await
     }
@@ -148,7 +153,7 @@ impl EndHost for FakeHost {
         Ok(())
     }
     async fn shutdown(&self, id: &str) {
-        self.shutdowns.lock().unwrap().push(id.to_string());
+        super::hooks::shut_down(self, id).await;
     }
 }
 
@@ -242,6 +247,7 @@ pub(in crate::agent_tools) async fn host(rows: Vec<Session>) -> FakeHost {
         shutdowns: Mutex::new(Vec::new()),
         archive_fails: Mutex::new(None),
         while_asking: Mutex::new(None),
+        probe: Default::default(),
     }
 }
 
@@ -427,11 +433,17 @@ fn a_cascade_card_lists_every_session_with_its_short_id() {
     let (title, details) = parts(&card_for(
         EndTool::Archive,
         "call-1",
-        &labels_for(&sessions, &ids),
+        &labels_for(&sessions, "me", &ids),
         false,
     ));
     assert_eq!(title, "Archive 2 Sessions");
-    assert_eq!(details, ["kid name-kid", "grandkid name-grandkid"]);
+    assert_eq!(
+        details,
+        [
+            "kid name-kid (Below the calling Session)",
+            "grandkid name-grandkid (Below the calling Session)"
+        ]
+    );
 }
 
 #[test]
@@ -444,25 +456,31 @@ fn a_card_tells_a_lookalike_name_apart_by_id_and_parent() {
     let (real, real_details) = parts(&card_for(
         EndTool::Stop,
         "call-1",
-        &labels_for(&sessions, &ids("other")),
+        &labels_for(&sessions, "me", &ids("other")),
         false,
     ));
     let (fake, fake_details) = parts(&card_for(
         EndTool::Stop,
         "call-1",
-        &labels_for(&sessions, &ids("0123456789abcdef")),
+        &labels_for(&sessions, "me", &ids("0123456789abcdef")),
         false,
     ));
     assert_eq!(real, "Stop Session other name-other");
     assert_eq!(fake, "Stop Session 01234567 name-other");
     assert_ne!(real_details, fake_details);
-    assert_eq!(fake_details, ["Child of name-kid"]);
-    assert_eq!(real_details, ["Branch other"]);
+    assert_eq!(
+        fake_details,
+        ["Below the calling Session", "Child of name-kid"]
+    );
+    assert_eq!(
+        real_details,
+        ["Outside this Session's tree", "Branch other"]
+    );
 }
 
 #[test]
 fn single_card_titles_name_the_session_and_the_tool() {
-    let labels = labels_for(&tree(), &["other".to_string()]);
+    let labels = labels_for(&tree(), "me", &["other".to_string()]);
     for (tool, title) in [
         (EndTool::Archive, "Archive Session other name-other"),
         (EndTool::Unarchive, "Unarchive Session other name-other"),
@@ -473,7 +491,10 @@ fn single_card_titles_name_the_session_and_the_tool() {
         let card = card_for(tool, "call-1", &labels, false);
         assert_eq!(
             parts(&card),
-            (title.to_string(), vec!["Branch other".to_string()])
+            (
+                title.to_string(),
+                vec!["Outside this Session's tree".into(), "Branch other".into()]
+            )
         );
         let PendingRequest::Approval { tool: named, .. } = card else {
             panic!("expected an approval card");
@@ -484,19 +505,20 @@ fn single_card_titles_name_the_session_and_the_tool() {
 
 #[test]
 fn a_delete_card_warns_about_children_only_when_there_are_some() {
-    let labels = labels_for(&tree(), &["other".to_string()]);
+    let labels = labels_for(&tree(), "me", &["other".to_string()]);
     let (title, plain) = parts(&card_for(EndTool::Delete, "call-1", &labels, false));
     assert_eq!(title, "Delete Session other name-other");
     assert_eq!(
         plain,
         vec![
+            "Outside this Session's tree",
             "Branch other",
             "Its worktree and Conversations are removed."
         ]
     );
     let (_, with_children) = parts(&card_for(EndTool::Delete, "call-1", &labels, true));
-    assert_eq!(with_children.len(), 3);
-    assert!(with_children[2].contains("become root Sessions"));
+    assert_eq!(with_children.len(), 4);
+    assert!(with_children[3].contains("become root Sessions"));
 }
 
 #[tokio::test]

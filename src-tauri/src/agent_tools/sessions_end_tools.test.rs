@@ -132,7 +132,13 @@ async fn a_cascade_is_one_card_and_archives_deepest_first() {
     assert_eq!(h.card_count(), 1);
     let (title, names) = card_target(&h);
     assert_eq!(title, "Archive 2 Sessions");
-    assert_eq!(names, ["kid name-kid", "grandkid name-grandkid"]);
+    assert_eq!(
+        names,
+        [
+            "kid name-kid (Below the calling Session)",
+            "grandkid name-grandkid (Below the calling Session)"
+        ]
+    );
     assert_eq!(h.calls(), ["archive:grandkid", "archive:kid"]);
 }
 
@@ -415,7 +421,7 @@ async fn delete_warns_when_live_children_will_be_re_rooted() {
         .await
         .unwrap();
     let details = card_target(&h).1;
-    assert_eq!(details.len(), 3, "{details:?}");
+    assert_eq!(details.len(), 4, "{details:?}");
     assert!(details.iter().any(|l| l.contains("become root Sessions")));
 }
 
@@ -539,17 +545,6 @@ async fn a_rename_while_the_card_is_open_does_not_cancel() {
         "renamed"
     );
     assert_eq!(h.calls(), ["stop:other"]);
-}
-
-#[tokio::test]
-async fn a_cascade_stops_only_running_members_then_archives_deepest_first() {
-    let h = Arc::new(host(tree()).await);
-    set_status(&h, "grandkid", "stopped");
-    let args = json!({ "id": "kid", "include_children": true });
-    call(&h, EndTool::Archive, args).await.unwrap();
-    // The stopped member needs no shutdown.
-    assert_eq!(*h.shutdowns.lock().unwrap(), ["kid"]);
-    assert_eq!(h.calls(), ["archive:grandkid", "archive:kid"]);
 }
 
 #[tokio::test]

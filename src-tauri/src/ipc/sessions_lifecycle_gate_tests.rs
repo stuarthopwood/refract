@@ -62,9 +62,10 @@ async fn delete_precheck_refuses_a_personal_agent_and_claims_nothing() {
     row.base_branch = None;
     row.worktree_path = None;
     state.registry.lock().await.add_session(row).await.unwrap();
-    delete_core::delete_precheck(&state, "pa-precheck")
+    let err = delete_core::delete_precheck(&state, "pa-precheck")
         .await
         .expect_err("a Personal Agent is never deleted");
+    assert_eq!(err.code, "personal-agent-protected");
     assert!(!delete_in_flight::is_deleting("pa-precheck"));
 }
 
