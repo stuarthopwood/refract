@@ -30,6 +30,18 @@ const check = (ok, pass, fail) => (ok ? findings.push(pass) : failures.push(fail
 const sessionRow = (id) => `document.querySelector('[data-session-open=${JSON.stringify(id)}]')`;
 const approveCount = `Array.from(document.querySelectorAll('button')).filter((el) => el.textContent.trim() === 'Approve').length`;
 const code = (r) => r.body?.error?.code;
+// The card text comes from the element around the Approve button, so words elsewhere on the page cannot satisfy a check.
+const approvalCards = `Array.from(document.querySelectorAll('button')).filter((el) => el.textContent.trim() === 'Approve').map((el) => el.closest('[data-slot="card"]')).filter(Boolean)`;
+const headline = (s) => `${s.id.slice(0, 8)} ${s.name}`;
+const inOrder = (text, parts) => {
+  let at = 0;
+  for (const part of parts) {
+    const found = text.indexOf(part, at);
+    if (found < 0) return false;
+    at = found + part.length;
+  }
+  return true;
+};
 
 async function main() {
   const dirs = [];
@@ -103,7 +115,22 @@ async function main() {
       appendFileSync(callsFile, `${JSON.stringify({ type: 'host_tool_call', id, toolCallId: `t-${n}`, toolName, arguments: args, __pid: pid })}\n`);
       return id;
     };
-    const toasts = () => cdp.evaluate(`document.querySelectorAll('[data-sonner-toast]').length`);
+    const toastLog = () => cdp.evaluate(`window.__toastLog.slice()`);
+    // Watches insertions, so a toast shown and dismissed between two checks is still caught; a probe node proves the watcher can see one.
+    const watchToasts = async () => {
+      await cdp.evaluate(`(() => { window.__toastLog = []; const note = (node) => { if (node.nodeType !== 1) return; const hits = node.matches('[data-sonner-toast]') ? [node] : Array.from(node.querySelectorAll('[data-sonner-toast]')); for (const t of hits) window.__toastLog.push({ type: t.getAttribute('data-type'), text: (t.textContent ?? '').slice(0, 160) }); }; new MutationObserver((records) => { for (const r of records) r.addedNodes.forEach(note); }).observe(document.body, { childList: true, subtree: true }); return true; })()`);
+      await cdp.evaluate(`(() => { const probe = document.createElement('li'); probe.setAttribute('data-sonner-toast', ''); probe.setAttribute('data-type', 'probe'); document.body.appendChild(probe); return true; })()`);
+      await sleep(200);
+      const seen = (await toastLog()).some((t) => t.type === 'probe');
+      await cdp.evaluate(`(() => { document.querySelector('[data-type="probe"]')?.remove(); window.__toastLog.length = 0; return true; })()`);
+      return seen;
+    };
+    const noNewToast = async (mark, what) => {
+      await sleep(400);
+      const fresh = (await toastLog()).slice(mark);
+      check(fresh.length === 0, `${what} raised no toast.`, `${what} raised toasts: ${JSON.stringify(fresh)}`);
+    };
+    const readCard = () => cdp.evaluate(`(() => { const cards = ${approvalCards}; return { count: cards.length, text: (cards[0]?.innerText ?? '').replace(/\\s+/g, ' ').trim() }; })()`);
     const shot = async (name) => {
       await cdp.screenshot(path.join(SHOTS_DIR, name));
       shots.push({ name, sha256: createHash('sha256').update(readFileSync(path.join(SHOTS_DIR, name))).digest('hex') });
@@ -136,16 +163,16 @@ async function main() {
         throw err;
       }
     };
-    // A call from `caller` that raises a card in the caller's pane; `answer` is clicked after `onCard`.
+    // A call from `caller` that raises a card in the caller's pane; `onCard(text, count)` sees the card before `answer` is clicked.
     const withCard = async (caller, tool, args, answer, onCard) => {
       await openSession(caller.id);
       const id = post(tool, args, caller.pid);
       await waitCard();
       await sleep(300);
-      const cardText = await cdp.evaluate(`document.body.innerText`);
-      if (onCard) await onCard(cardText);
+      const card = await readCard();
+      if (onCard) await onCard(card.text, card.count);
       await cdp.clickByText(answer);
-      return { id, cardText, ...(await resultFor(id)) };
+      return { id, cardText: card.text, ...(await resultFor(id)) };
     };
     // A call that must raise no card; the caller's pane is open so a card would be seen.
     const noCard = async (caller, tool, args) => {
@@ -209,7 +236,8 @@ async function main() {
     const P = { id: personalRes.value.id };
     // B stays `working` while it holds the open create call; only the leaf must settle.
     await waitForSessionStatus(cdp, C.id, 'idle');
-    const toastsBefore = await toasts();
+    const watching = await watchToasts();
+    check(watching, 'The toast watcher saw a probe toast node, so a clean log means no toast was inserted.', 'the toast watcher did not see a probe toast node');
     registryDumps.before = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.value.map((s) => ({ id: s.id, name: s.name, parent: s.parentSessionId ?? null, archivedAt: s.archivedAt, kind: s.kind })))`);
 
     // ---- e. Self, ancestor and Personal Agent refusal: six tools each, no card.
@@ -229,15 +257,17 @@ async function main() {
     check(unknown.isError && code(unknown) === 'not_found', 'An unknown id returned not_found.', `unknown id: ${JSON.stringify(unknown)}`);
 
     // ---- a. Archive a child: card, approve sets archivedAt; deny changes nothing.
-    const arch = await withCard(A, 'refract_archive_session', { id: C.id }, 'Approve', async (text) => {
-      check(text.includes(`Archive Session ${C.name}`), `The archive card is titled "Archive Session ${C.name}".`, `archive card text: ${text.slice(0, 400)}`);
+    const arch = await withCard(A, 'refract_archive_session', { id: C.id }, 'Approve', async (text, count) => {
+      check(count === 1 && inOrder(text, [`Archive Session ${headline(C)}`, `Child of ${B.name}`]), `The archive card is titled "Archive Session ${headline(C)}" and shows "Child of ${B.name}".`, `archive card (${count} cards): ${text.slice(0, 400)}`);
       await shot('01-archive-card.png');
     });
     const rowC = await listRow(C.id);
     check(!arch.isError && arch.body.outcome === 'archived' && !!rowC?.archivedAt, 'archive_session on child C raised a card; after Approve archivedAt is set.', `archive C: ${JSON.stringify(arch.body)} row ${JSON.stringify(rowC)}`);
+    const denyMark = (await toastLog()).length;
     const denied = await withCard(A, 'refract_archive_session', { id: B.id }, 'Deny');
     const rowB = await listRow(B.id);
-    check(denied.isError && !rowB?.archivedAt, 'Deny on the archive card returned a tool error and B stayed live.', `deny: ${JSON.stringify(denied.body)} row ${JSON.stringify(rowB)}`);
+    check(denied.isError && code(denied) === 'denied' && !rowB?.archivedAt, 'Deny on the archive card returned the denied error and B stayed live.', `deny: ${JSON.stringify(denied.body)} row ${JSON.stringify(rowB)}`);
+    await noNewToast(denyMark, 'The denied archive');
 
     // ---- b. Unarchive a descendant: no card. The child-limit gate runs in Project Q.
     const unarch = await noCard(A, 'refract_unarchive_session', { id: C.id });
@@ -286,13 +316,15 @@ async function main() {
 
     // ---- a. Archive cascade: one card listing the target and every descendant.
     await sleep(500);
-    const cascadeDeny = await withCard(D, 'refract_archive_session', { id: A.id, include_children: true }, 'Deny', async (text) => {
-      const all = [A.name, B.name, C.name].every((nm) => text.includes(nm));
-      check(all && text.includes('Archive 3 Sessions'), `ONE card titled "Archive 3 Sessions" lists all three names (${A.name}, ${B.name}, ${C.name}).`, `cascade card text: ${text.slice(0, 600)}`);
+    const cascadeMark = (await toastLog()).length;
+    const cascadeDeny = await withCard(D, 'refract_archive_session', { id: A.id, include_children: true }, 'Deny', async (text, count) => {
+      const heads = [A, B, C].map(headline);
+      check(count === 1 && inOrder(text, ['Archive 3 Sessions', ...heads]), `ONE card titled "Archive 3 Sessions" lists all three Sessions with their short ids (${heads.join(', ')}).`, `cascade card (${count} cards): ${text.slice(0, 600)}`);
       await shot('02-archive-cascade-card.png');
     });
     const afterDeny = await Promise.all([A, B, C].map((s) => listRow(s.id)));
-    check(cascadeDeny.isError && afterDeny.every((r) => !r?.archivedAt), 'Deny on the cascade card changed nothing: all three Sessions stay live.', `cascade deny: ${JSON.stringify(cascadeDeny.body)} rows ${JSON.stringify(afterDeny)}`);
+    check(cascadeDeny.isError && code(cascadeDeny) === 'denied' && afterDeny.every((r) => !r?.archivedAt), 'Deny on the cascade card returned the denied error and changed nothing: all three Sessions stay live.', `cascade deny: ${JSON.stringify(cascadeDeny.body)} rows ${JSON.stringify(afterDeny)}`);
+    await noNewToast(cascadeMark, 'The denied cascade');
     const cascade = await withCard(D, 'refract_archive_session', { id: A.id, include_children: true }, 'Approve');
     const afterApprove = await Promise.all([A, B, C].map((s) => listRow(s.id)));
     check(!cascade.isError && cascade.body.ids?.length === 3 && afterApprove.every((r) => !!r?.archivedAt), 'After Approve the three Sessions are archived; the result lists their 3 ids.', `cascade: ${JSON.stringify(cascade.body)} rows ${JSON.stringify(afterApprove)}`);
@@ -308,15 +340,14 @@ async function main() {
     const delId = post('refract_delete_session', { id: B.id }, Y.pid);
     await waitCard();
     await sleep(300);
-    const delCardText = await cdp.evaluate(`document.body.innerText`);
-    check(delCardText.includes(`Delete Session ${B.name}`) && delCardText.includes('Live child Sessions become root Sessions'), 'In yolo, delete_session still raised a card titled "Delete Session child-b" noting live children become roots.', `delete card text: ${delCardText.slice(0, 600)}`);
+    const delCard = await readCard();
+    const delLines = [`Delete Session ${headline(B)}`, `Child of ${A.name}`, 'Its worktree and Conversations are removed.', 'Live child Sessions become root Sessions.'];
+    check(delCard.count === 1 && inOrder(delCard.text, delLines), `In yolo, delete_session still raised ONE card titled "Delete Session ${headline(B)}" with its parent, the removal, and the re-root line.`, `delete card (${delCard.count} cards): ${delCard.text.slice(0, 600)}`);
     await shot('03-delete-card-yolo.png');
     await cdp.clickByText('Approve');
-    const racing = post('refract_stop_session', { id: B.id }, Y.pid);
+    // A stop racing the removal would depend on timing; the unit test `a_delete_already_in_flight_is_invalid_state` proves that code.
     const del = { id: delId, ...(await resultFor(delId)) };
-    const second = { id: racing, ...(await resultFor(racing)) };
     check(!del.isError && del.body.outcome === 'deleting', 'After Approve delete_session returned outcome "deleting".', `delete: ${JSON.stringify(del)}`);
-    check(second.isError && ['invalid_state', 'not_found'].includes(code(second)), `A call on the Session being deleted returned ${code(second)}.`, `during delete: ${JSON.stringify(second)}`);
     await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && !r.value.some((s) => s.id === ${JSON.stringify(B.id)}))`, { timeoutMs: 60_000, label: 'B row removed' });
     const rowCAfter = await listRow(C.id);
     check(!existsSync(bBefore.worktreePath), `The background delete removed B's worktree (${bBefore.worktreePath}) and its row.`, `worktree still exists: ${bBefore.worktreePath}`);
@@ -324,7 +355,10 @@ async function main() {
     registryDumps.afterDelete = await cdp.evaluate(`window.refract.sessions.list().then((r) => r.value.map((s) => ({ id: s.id, name: s.name, parent: s.parentSessionId ?? null, archivedAt: s.archivedAt })))`);
     await shot('04-after-delete.png');
 
-    check((await toasts()) === toastsBefore, 'No error result raised a toast.', `toasts ${toastsBefore} -> ${await toasts()}`);
+    const gone = await noCard(Y, 'refract_stop_session', { id: B.id });
+    check(gone.isError && code(gone) === 'not_found' && gone.cards === 0, 'A call on the deleted Session returned not_found with no card.', `after delete: ${JSON.stringify(gone)}`);
+    const allToasts = await toastLog();
+    check(allToasts.length === 0, 'No error result raised a toast: none was inserted from the first refusal to the end.', `toasts inserted: ${JSON.stringify(allToasts)}`);
 
     const verdict = failures.length ? 'FAILED' : 'DONE';
     writeFileSync(path.join(SHOTS_DIR, 'report.json'), JSON.stringify({ gitHead: gitHeadSha, dirty, exeSha256: exeHash, shots, findings, failures, registryDumps, verdict }, null, 2));
