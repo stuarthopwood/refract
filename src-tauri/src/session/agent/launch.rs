@@ -48,7 +48,7 @@ impl SessionAgent {
     }
 
     /// Starts the process, or joins a live one as a no-op. Serialised through `start_lock`.
-    /// Refuses with `worktree-busy` while the worktree is being deleted.
+    /// Refuses with `already-deleting` while the worktree is being deleted.
     pub async fn start(&self) -> Result<(), AgentError> {
         self.start_inner(true).await
     }

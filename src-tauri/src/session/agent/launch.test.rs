@@ -71,9 +71,9 @@ async fn start_is_refused_while_the_worktree_is_being_deleted() {
     let _claim = delete_in_flight::claim(&id).unwrap();
 
     let err = agent.start().await.unwrap_err();
-    assert_eq!(err.code, "worktree-busy");
+    assert_eq!(err.code, "already-deleting");
     let err = agent.start_with_conversation(None).await.unwrap_err();
-    assert_eq!(err.code, "worktree-busy");
+    assert_eq!(err.code, "already-deleting");
 }
 
 #[tokio::test]
@@ -83,5 +83,5 @@ async fn start_unchecked_is_not_refused_by_the_deleting_claim() {
     let _claim = delete_in_flight::claim(&id).unwrap();
 
     let err = agent.start_unchecked().await.unwrap_err();
-    assert_ne!(err.code, "worktree-busy");
+    assert_ne!(err.code, "already-deleting");
 }

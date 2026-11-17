@@ -10,7 +10,8 @@ use tokio::sync::{oneshot, Notify};
 
 use super::approval::{self, Decision};
 use super::panels::{self, INVOKE_PANEL_ACTION, LIST_PANELS, OPEN_PANEL};
-use super::{sessions, sessions_create, sessions_send, sessions_update};
+use super::router_native::run_native;
+use super::sessions;
 use super::{MAX_RESULT_BYTES, MUTATION_TIMEOUT_MS, RENDERER_TIMEOUT_MS};
 use crate::omp::transcript::RequestResolution;
 use crate::session::agent::SessionAgent;
@@ -393,22 +394,6 @@ async fn run(agent: &Arc<SessionAgent>, call: &Call) -> Result<Value, ToolError>
         ask_developer(agent, call, &plan).await?;
     }
     ask_renderer(agent, call, &plan).await
-}
-
-/// Session tools Rust answers itself: no renderer round trip and no approval card.
-async fn run_native(
-    agent: &Arc<SessionAgent>,
-    call_id: &str,
-    tool: &str,
-    args: &Value,
-) -> Result<Value, ToolError> {
-    match tool {
-        sessions::LIST_SESSIONS => sessions::list(agent, args).await,
-        sessions::GET_SESSION_STATUS => sessions::get_status(agent, args).await,
-        sessions_create::CREATE_SESSION => sessions_create::create(agent, call_id, args).await,
-        sessions_update::UPDATE_SESSION => sessions_update::update(agent, call_id, args).await,
-        _ => sessions_send::send(agent, args).await,
-    }
 }
 
 async fn ask_developer(

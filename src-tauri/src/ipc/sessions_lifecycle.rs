@@ -6,17 +6,13 @@ use std::path::Path;
 use serde_json::Value;
 
 use crate::fs::leftover_summary::compute_leftover_summary;
-use crate::git::git::GitError;
 use crate::git::worktree_delete_check::delete_check_for_session;
-use crate::git::worktree_holders;
 use crate::git::worktrees::{
     add_worktree_with_generated_name, branch_exists, list_branches, recreate_worktree,
     remove_worktree,
 };
-use crate::process::pid_records;
 use crate::session::agent::SharedRegistry;
-use crate::session::SessionStatus;
-use crate::store::registry::{Session, SessionPatch};
+use crate::store::registry::Session;
 use crate::store::session_kind::SessionKind;
 
 use super::project_session::{project_binding, refuse_if_personal, repo_binding};
@@ -219,43 +215,7 @@ pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
             Some(id) => id.to_string(),
             None => return Err(invalid_argument("sessions.archive expects a string id")),
         };
-        delete_in_flight::refuse_if_deleting(&id)?;
-        match state.registry.lock().await.get_session(&id) {
-            Some(session) => refuse_if_personal(session)?,
-            None => return Err(not_found(format!("Session not found: {id}"))),
-        }
-        // Mark busy before archiving so a concurrent watcher restart cannot race the operation.
-        // The Explorer is reset on success and failure so it never shows a stale tree.
-        let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
-            state.app_handle.clone(),
-            &id,
-        );
-        // The git-changes watcher is separate from `begin_worktree_operation`; stop it too (#464).
-        crate::fs::git_changes_watch_state::stop_watcher(&id);
-        state
-            .session_manager
-            .get_or_create_agent(&id)
-            .shutdown()
-            .await;
-        // Clears any stale pid record.
-        crate::process::pid_records::remove_process_records_for_session(&id).await;
-        state
-            .registry
-            .lock()
-            .await
-            .update_session(
-                &id,
-                SessionPatch {
-                    archived_at: Some(Some(now_iso8601())),
-                    ..Default::default()
-                },
-            )
-            .await
-            .map_err(map_registry_error)?;
-        // Disk-reclaim hook for archived worktrees (#657, #658). Fires only on success.
-        on_worktree_released(&id);
-        worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Reset);
-        state.session_manager.notify_list_changed();
+        archive_core::archive_core(&state, &id).await?;
         Ok(Value::Null)
     })
 }
@@ -267,51 +227,7 @@ pub fn sessions_restore(state: AppState, args: Vec<Value>) -> HandlerFuture {
             Some(id) => id.to_string(),
             None => return Err(invalid_argument("sessions.restore expects a string id")),
         };
-        delete_in_flight::refuse_if_deleting(&id)?;
-        // Held to the patch: a racing agent create must not fill the parent's last slot between
-        // this check and the restore (#1859).
-        let repository_id = match state.registry.lock().await.get_session(&id) {
-            Some(session) => project_binding(session)?.repository_id.to_string(),
-            None => return Err(not_found(format!("Session not found: {id}"))),
-        };
-        let _gate = crate::agent_tools::tree_gate::lock(&repository_id).await;
-        {
-            let registry = state.registry.lock().await;
-            let Some(session) = registry.get_session(&id) else {
-                return Err(not_found(format!("Session not found: {id}")));
-            };
-            let sessions = registry.snapshot().sessions;
-            if let Some(parent) = session.parent_session_id.as_deref() {
-                let full = session.archived_at.is_some()
-                    && crate::store::session_tree::live_children(&sessions, parent).count()
-                        >= crate::store::session_tree::MAX_LIVE_CHILDREN;
-                if full {
-                    return Err(IpcError::new(
-                        "child-limit",
-                        format!(
-                            "The parent Session already has {} live child Sessions",
-                            crate::store::session_tree::MAX_LIVE_CHILDREN
-                        ),
-                    ));
-                }
-            }
-        }
-        state
-            .registry
-            .lock()
-            .await
-            .update_session(
-                &id,
-                SessionPatch {
-                    archived_at: Some(None),
-                    ..Default::default()
-                },
-            )
-            .await
-            .map_err(map_registry_error)?;
-        // Reset the Explorer, which may still show the archived state.
-        crate::fs::explorer_watch_state::notify_file_explorer_reset(&state.app_handle, &id);
-        state.session_manager.notify_list_changed();
+        archive_core::restore_core(&state, &id).await?;
         Ok(Value::Null)
     })
 }
@@ -411,101 +327,7 @@ pub fn sessions_delete(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "sessions.delete requires { confirmed: true }",
             ));
         }
-        delete_in_flight::refuse_if_deleting(&id)?;
-        let (session, repository) = {
-            let registry = state.registry.lock().await;
-            let session = registry
-                .get_session(&id)
-                .ok_or_else(|| not_found(format!("Session not found: {id}")))?
-                .clone();
-            refuse_if_personal(&session)?;
-            let repository_id = project_binding(&session)?.repository_id;
-            let repository = registry
-                .get_repository(repository_id)
-                .ok_or_else(|| not_found(format!("Project not found: {repository_id}")))?
-                .clone();
-            (session, repository)
-        };
-        let binding = project_binding(&session)?;
-
-        // Cancel the leftover walk first so Refract's own handles are not read as external holders.
-        crate::fs::worktree_access::cancel_walk_bounded(&id)
-            .await
-            .map_err(map_git_error)?;
-
-        // Held through removal so no new reader starts (#1055); the background task takes it over.
-        let write_guard = crate::fs::worktree_access::write_guard_bounded(&id)
-            .await
-            .map_err(map_git_error)?;
-
-        // Check named file holders before stopping the agent, so a refusal changes nothing. Own pids are excluded.
-        let own_pids = pid_records::pids_for_session(&id).await;
-        // Read the status directly; the own-pids list can be stale after a crash.
-        let was_running = state
-            .session_manager
-            .get_or_create_agent(&id)
-            .status()
-            .await
-            != SessionStatus::Stopped;
-        worktree_holders::check_named_holders(
-            Path::new(&repository.path),
-            Path::new(binding.worktree_path),
-            &own_pids,
-        )
-        .await
-        .map_err(map_git_error)?;
-
-        // Claimed once the refusals that leave the Session untouched pass, so other handlers refuse
-        // for the whole destructive phase; dropping the claim on any error path unmarks it.
-        let claim = delete_in_flight::claim(&id)?;
-        // Resets the Explorer on failure too (see `sessions_archive`).
-        let worktree_guard = crate::fs::explorer_watch_state::begin_worktree_operation(
-            state.app_handle.clone(),
-            &id,
-        );
-        // Stop the git-changes panel's separate watcher too (#464).
-        crate::fs::git_changes_watch_state::stop_watcher(&id);
-        // Shut the agent down before removal: a live process holds the worktree's cwd.
-        // The cwd-holder check must run after this, or it refuses every Delete of a running Session.
-        state
-            .session_manager
-            .get_or_create_agent(&id)
-            .shutdown()
-            .await;
-
-        // A refused Delete restarts a Session that was running before the call (#891).
-        if let Err(err) = worktree_holders::check_folder_in_use(
-            Path::new(&repository.path),
-            Path::new(binding.worktree_path),
-            &id,
-            &own_pids,
-        )
-        .await
-        {
-            let code = err.code;
-            let mut message = err.message;
-            if was_running {
-                let agent = state.session_manager.get_or_create_agent(&id);
-                let _ = agent.start_unchecked().await;
-                if agent.status().await == SessionStatus::Stopped {
-                    message = format!(
-                        "{message} Also, Refract could not restart this Session's agent automatically -- reopen it yourself."
-                    );
-                }
-            }
-            return Err(map_git_error(GitError::new(code, message)));
-        }
-
-        crate::process::pid_records::remove_process_records_for_session(&id).await;
-
-        delete_in_flight::start(
-            state,
-            session,
-            repository,
-            write_guard,
-            worktree_guard,
-            claim,
-        );
+        delete_core::delete_core(&state, &id).await?;
         Ok(Value::Null)
     })
 }
@@ -563,9 +385,12 @@ pub fn sessions_recreate_worktree(state: AppState, args: Vec<Value>) -> HandlerF
 mod diag;
 use diag::{sessions_diff_stat, sessions_reveal_worktree};
 
+// The archive and restore bodies, shared with the agent tools.
+pub(crate) mod archive_core;
+pub(crate) mod delete_core;
+
 // Delete helpers (reclaim hook, Conversation cleanup, path check) live in `sessions_delete_support.rs`.
 mod sessions_delete_support;
-use sessions_delete_support::on_worktree_released;
 #[cfg(test)]
 use sessions_delete_support::{
     delete_session_conversations, is_strict_descendant_of_omp_sessions,

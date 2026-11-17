@@ -38,6 +38,18 @@ impl SessionAgent {
         &self.events
     }
 
+    /// The state the IPC cores run on, so a tool shares the handlers' gates; `None` at shutdown.
+    pub fn tool_app_state(&self) -> Option<crate::ipc::AppState> {
+        let manager = self.tool_manager()?;
+        Some(crate::ipc::AppState {
+            data_dir: crate::data_dir(),
+            registry: manager.registry.clone(),
+            settings: manager.settings.clone(),
+            app_handle: self.events.app_handle_slot(),
+            session_manager: manager,
+        })
+    }
+
     pub async fn tool_process(&self) -> Option<Arc<OmpProcess>> {
         self.state.lock().await.process.clone()
     }

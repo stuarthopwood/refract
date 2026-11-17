@@ -6,6 +6,10 @@ use serde_json::{json, Map, Value};
 use super::panels;
 use super::router::{ToolError, INVALID_INPUT};
 use super::sessions_create::{self, CREATE_SESSION};
+use super::sessions_end::{
+    ARCHIVE_SESSION, DELETE_SESSION, PAUSE_SESSION, RESUME_SESSION, STOP_SESSION, UNARCHIVE_SESSION,
+};
+use super::sessions_end_schema;
 use super::sessions_update::{self, UPDATE_SESSION};
 use super::MAX_RESULT_BYTES;
 use crate::session::agent::SessionAgent;
@@ -13,12 +17,18 @@ use crate::session::agent::SessionAgent;
 pub const LIST_SESSIONS: &str = "refract_list_sessions";
 pub const GET_SESSION_STATUS: &str = "refract_get_session_status";
 pub const SEND_SESSION_MESSAGE: &str = "refract_send_session_message";
-pub const SESSION_TOOLS: [&str; 5] = [
+pub const SESSION_TOOLS: [&str; 11] = [
     LIST_SESSIONS,
     GET_SESSION_STATUS,
     SEND_SESSION_MESSAGE,
     CREATE_SESSION,
     UPDATE_SESSION,
+    ARCHIVE_SESSION,
+    UNARCHIVE_SESSION,
+    STOP_SESSION,
+    PAUSE_SESSION,
+    RESUME_SESSION,
+    DELETE_SESSION,
 ];
 
 pub const UNKNOWN_PROJECT: &str = "unknown_project";
@@ -54,7 +64,7 @@ and treats it as input from a peer Session, not from the developer."
         }
         CREATE_SESSION => sessions_create::description(),
         UPDATE_SESSION => sessions_update::description(),
-        _ => "",
+        other => sessions_end_schema::end_tool(other).map_or("", sessions_end_schema::description),
     }
 }
 
@@ -85,7 +95,10 @@ pub fn parameters(name: &str) -> Value {
         }),
         CREATE_SESSION => sessions_create::parameters(),
         UPDATE_SESSION => sessions_update::parameters(),
-        _ => json!({ "type": "object" }),
+        other => sessions_end_schema::end_tool(other).map_or_else(
+            || json!({ "type": "object" }),
+            sessions_end_schema::parameters,
+        ),
     }
 }
 

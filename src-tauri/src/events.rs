@@ -88,6 +88,11 @@ impl EventSink {
         }
     }
 
+    /// The shared handle slot, so a caller outside IPC can build an `AppState` over the same app.
+    pub(crate) fn app_handle_slot(&self) -> std::sync::Arc<std::sync::Mutex<Option<AppHandle>>> {
+        self.app_handle.clone()
+    }
+
     /// Test seam: runs at every `session:status` emit, so a test can observe the emitter's lock state.
     #[cfg(test)]
     pub(crate) fn set_status_probe(&self, probe: impl Fn() + Send + Sync + 'static) {

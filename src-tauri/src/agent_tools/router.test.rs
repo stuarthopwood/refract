@@ -1,6 +1,8 @@
 use serde_json::json;
 
 use super::*;
+use crate::agent_tools::sessions_end::EndTool;
+use crate::agent_tools::{sessions_create, sessions_update};
 
 fn code(result: Result<Plan, ToolError>) -> String {
     result.unwrap_err().code
@@ -101,6 +103,59 @@ async fn create_and_update_are_dispatched_to_their_own_tools() {
         let err = run_native(&agent, "call-1", tool, &args).await.unwrap_err();
         assert_eq!(err.code, INVALID_INPUT, "{tool}");
         assert!(err.message.contains(expected), "{tool}: {}", err.message);
+    }
+}
+
+#[test]
+fn end_tools_plan_as_native_and_reject_bad_arguments() {
+    for tool in EndTool::ALL {
+        let name = tool.name();
+        let planned = plan(name, &json!({ "id": "s1" })).unwrap();
+        assert!(matches!(planned, Plan::Native { .. }), "{name}");
+        assert_eq!(code(plan(name, &json!({}))), INVALID_INPUT, "{name}");
+        assert_eq!(
+            code(plan(name, &json!({ "id": "s1", "bogus": 1 }))),
+            INVALID_INPUT,
+            "{name}"
+        );
+    }
+    assert_eq!(
+        code(plan("refract_nuke_session", &json!({ "id": "s1" }))),
+        UNKNOWN_TOOL
+    );
+}
+
+/// The caller has no row, so a call that reached the end tool stops at the caller check rather
+/// than falling through to `send_session_message`'s own `text` argument error.
+#[tokio::test]
+async fn end_tools_are_dispatched_to_their_own_handler() {
+    let dir = crate::test_scratch::path(format!("refract-router-test-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let registry = Arc::new(tokio::sync::Mutex::new(
+        crate::store::registry::RegistryStore::open(&dir)
+            .await
+            .unwrap(),
+    ));
+    let settings = Arc::new(tokio::sync::Mutex::new(
+        crate::store::settings::SettingsStore::open(&dir)
+            .await
+            .unwrap(),
+    ));
+    let events =
+        crate::events::EventSink::new(Arc::new(std::sync::Mutex::new(None)), registry.clone());
+    let manager = crate::session::manager::SessionManager::new(registry, settings, events);
+    let agent = manager.get_or_create_agent("caller");
+    for tool in EndTool::ALL {
+        let err = run_native(&agent, "call-1", tool.name(), &json!({ "id": "x" }))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            err.code,
+            crate::agent_tools::router::CANCELLED,
+            "{}",
+            tool.name()
+        );
+        assert!(err.message.contains("calling Session"), "{}", err.message);
     }
 }
 

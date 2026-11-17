@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn root_sessions_get_the_five_session_tools_and_the_panel_tools() {
+fn root_sessions_get_the_eleven_session_tools_and_the_panel_tools() {
     let names = tools_for(ToolAccess::for_depth(1));
     assert_eq!(
         names,
@@ -13,20 +13,26 @@ fn root_sessions_get_the_five_session_tools_and_the_panel_tools() {
             "refract_get_session_status",
             "refract_send_session_message",
             "refract_create_session",
-            "refract_update_session"
+            "refract_update_session",
+            "refract_archive_session",
+            "refract_unarchive_session",
+            "refract_stop_session",
+            "refract_pause_session",
+            "refract_resume_session",
+            "refract_delete_session"
         ]
     );
     assert!(names.iter().all(|n| n.starts_with(TOOL_PREFIX)));
 }
 
 #[test]
-fn every_depth_registers_the_five_session_tools() {
+fn every_depth_registers_every_session_tool() {
     for depth in [1, 2, 3] {
         let names = tools_for(ToolAccess::for_depth(depth));
         for tool in sessions::SESSION_TOOLS {
             assert!(names.contains(&tool), "depth {depth}: {tool}");
         }
-        assert_eq!(host_tool_defs(ToolAccess::for_depth(depth)).len(), 8);
+        assert_eq!(host_tool_defs(ToolAccess::for_depth(depth)).len(), 14);
     }
 }
 
