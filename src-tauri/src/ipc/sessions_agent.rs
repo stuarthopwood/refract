@@ -472,14 +472,7 @@ pub fn sessions_stop_agent(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 "sessions.stopAgent expects a string sessionId",
             ));
         };
-        if state.registry.lock().await.get_session(id).is_none() {
-            return Err(not_found(format!("Session not found: {id}")));
-        }
-        state
-            .session_manager
-            .get_or_create_agent(id)
-            .shutdown()
-            .await;
+        stop_core::stop_core(&state, id).await?;
         Ok(Value::Null)
     })
 }
@@ -510,6 +503,9 @@ pub fn sessions_set_visible(state: AppState, args: Vec<Value>) -> HandlerFuture 
         Ok(Value::Null)
     })
 }
+
+// The stop body, shared with the agent tools.
+pub(crate) mod stop_core;
 
 #[cfg(test)]
 #[path = "sessions_agent.test.rs"]

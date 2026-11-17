@@ -4,17 +4,17 @@ Test work is part of each task (AGENTS.md Testing rule: new logic gets co-locate
 
 ## Phase 1: Make room and expose the existing actions (no behaviour change)
 
-- [ ] T001 `src-tauri/src/ipc/sessions_lifecycle.rs` -> new `ipc/sessions_lifecycle/archive_core.rs`: move the bodies of `sessions_archive` (`:214`) and `sessions_restore` (`:262`, including the 4-live-children gate at `:282`) into `pub(crate) async fn archive_core(state: &AppState, id: &str) -> Result<(), IpcError>` and `restore_core(state, id)`; the handlers keep argument parsing and call the cores. Code moves unchanged; `sessions_lifecycle.rs` ends smaller. Existing tests stay green. (FR-006, FR-007)
-- [ ] T002 `src-tauri/src/ipc/sessions_lifecycle.rs` and `sessions_lifecycle/delete_in_flight.rs`: extract the refusal checks of `sessions_delete` (`:385`) into `pub(crate) async fn delete_precheck(state: &AppState, id: &str) -> Result<(Session, Repository), IpcError>` (no claim, so a tool can run it before the card) and the rest (re-run precheck, claim, `delete_in_flight::start`) into `pub(crate) async fn delete_core(state: &AppState, id: &str) -> Result<(), IpcError>`, both in a new `sessions_lifecycle/delete_core.rs`; the handler calls `delete_core`. Existing delete tests stay green. (FR-009)
-- [ ] T003 `src-tauri/src/ipc/sessions_agent.rs`: extract the body of `sessions_stop_agent` (`:467`) into `pub(crate) async fn stop_core(state: &AppState, id: &str) -> Result<(), IpcError>` in a new `ipc/sessions_agent/stop_core.rs`, so the file shrinks. (FR-008)
-- [ ] T004 `src-tauri/src/agent_tools/router.rs`: move `run_native` (`:399`) into a new `agent_tools/router_native.rs` so six new dispatch lines do not push `router.rs` (556) toward 600; `router.rs` calls it. (FR-010)
+- [X] T001 (done; no test: prototyping rule) archive_core/restore_core in `ipc/sessions_lifecycle/archive_core.rs`.
+- [X] T002 (done) delete_precheck/delete_core in `ipc/sessions_lifecycle/delete_core.rs`.
+- [X] T003 (done) stop_core in `ipc/sessions_agent/stop_core.rs`.
+- [X] T004 (done) run_native moved to `agent_tools/router_native.rs`.
 
 ## Phase 2: Shared guards and the approval table
 
-- [ ] T005 `src-tauri/src/agent_tools/sessions_end.rs` (new) + `sessions_end.test.rs`: `EndTool` enum, `parse_id`/`parse_archive_args` (`id` non-empty string; `include_children` boolean, rejected on any other tool; unknown keys `invalid_input`), error code constants (`INVALID_STATE`, `CHILD_LIMIT`, `DELETE_REFUSED`; reuse `INVALID_TARGET`, `SESSION_NOT_RUNNING`, `NOT_FOUND`, `INVALID_INPUT`, `CANCELLED`, `DENIED`). Tests: each argument error. (FR-001)
-- [ ] T006 `sessions_end.rs` + test: `ancestors_of(sessions, id)` and `refuse_target(sessions, caller, target) -> Result<&Session, ToolError>`: `not_found` for unknown or other-Project, `invalid_target` for self, any ancestor (cycle and dangling parent safe) and the Personal Agent, with distinct messages. Tests: self, parent, grandparent, descendant allowed, sibling allowed, Personal Agent, cycle terminates; each fails when its branch is removed. (FR-002, FR-003)
-- [ ] T007 `sessions_end.rs` + test: `needs_card(tool, inside_own_tree, yolo) -> bool` exactly per FR-004 and `card_for(tool, call_id, names)` building `approval::session_card` titles and details from `contracts/tools.md` (archive lists every name; delete adds the re-root line when live children exist). Tests: the full 6 x 2 x 2 table; delete is true with `yolo`. (FR-004, FR-005)
-- [ ] T008 `sessions_end.rs` + test: an `EndHost` trait (caller id, `is_yolo`, registry snapshot, `ask(card)`, and one method per action wrapping the cores/`pause`/`resume`), a real `AppEndHost` over `Arc<SessionAgent>` (pattern of `sessions_update.rs` `Host`/`AppHost`), and a fake host in the test file so the rest runs without a process. (FR-013)
+- [X] T005 (done; no test: prototyping rule) EndTool, parse_args, error codes in `agent_tools/sessions_end.rs`.
+- [X] T006 (done; no test: prototyping rule) ancestors_of, refuse_target.
+- [X] T007 (done; no test: prototyping rule) needs_card, card_for.
+- [X] T008 (done; no test: prototyping rule) EndHost and AppEndHost; no fake host.
 
 ## Phase 3: The six tools
 

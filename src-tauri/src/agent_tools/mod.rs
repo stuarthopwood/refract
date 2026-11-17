@@ -6,10 +6,14 @@ pub mod envelope;
 pub mod overlay;
 pub mod panels;
 pub mod router;
+mod router_native;
 pub mod sessions;
 mod sessions_create;
 mod sessions_limit;
 pub mod sessions_send;
+// The end tools register in a later change; until then only its tests reach this module.
+#[allow(dead_code)]
+mod sessions_end;
 mod sessions_update;
 pub mod tree_gate;
 

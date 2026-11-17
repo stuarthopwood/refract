@@ -5,7 +5,7 @@ use super::*;
 use crate::events::EventSink;
 use crate::git::test_support::init_repo;
 use crate::session::{SessionManager, SessionStatus};
-use crate::store::registry::{RegistryStore, Repository};
+use crate::store::registry::{RegistryStore, Repository, SessionPatch};
 use crate::store::settings::SettingsStore;
 use std::sync::{Arc, Mutex as StdMutex};
 use tokio::sync::Mutex as AsyncMutex;
