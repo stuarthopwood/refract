@@ -193,6 +193,7 @@ pub(super) trait EndHost: Send + Sync + 'static {
     fn caller_id(&self) -> &str;
     fn call_id(&self) -> &str;
     fn registry(&self) -> &SharedRegistry;
+    fn is_deleting(&self, id: &str) -> bool;
     fn is_yolo(&self) -> impl Future<Output = bool> + Send;
     /// Raises the card and waits: `Ok` only when the developer approved.
     fn ask(&self, card: PendingRequest) -> impl Future<Output = Result<(), ToolError>> + Send;
@@ -241,10 +242,23 @@ impl AppEndHost {
 }
 
 fn ipc_error(error: crate::ipc::IpcError) -> ToolError {
-    ToolError::new(error.code, error.message)
+    let code = if error.code == "not-found" {
+        NOT_FOUND
+    } else {
+        error.code
+    };
+    ToolError::new(code, error.message)
 }
 
+/// Delete refusals keep the Delete flow's text; a missing Session and a removal already running
+/// use the contract's own codes.
 fn delete_error(error: crate::ipc::IpcError) -> ToolError {
+    if error.code == "not-found" {
+        return ipc_error(error);
+    }
+    if error.message.contains("already being deleted") {
+        return ToolError::new(INVALID_STATE, error.message);
+    }
     ToolError::new(DELETE_REFUSED, error.message)
 }
 
@@ -257,6 +271,9 @@ impl EndHost for AppEndHost {
     }
     fn registry(&self) -> &SharedRegistry {
         &self.registry
+    }
+    fn is_deleting(&self, id: &str) -> bool {
+        crate::ipc::sessions_lifecycle::delete_in_flight::is_deleting(id)
     }
     async fn is_yolo(&self) -> bool {
         self.agent.tool_is_yolo().await
@@ -318,3 +335,7 @@ impl EndHost for AppEndHost {
             .map_err(delete_error)
     }
 }
+
+#[cfg(test)]
+#[path = "sessions_end.test.rs"]
+pub(super) mod tests;

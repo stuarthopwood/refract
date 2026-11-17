@@ -14,6 +14,8 @@ pub mod sessions_send;
 // The end tools register in a later change; until then only its tests reach this module.
 #[allow(dead_code)]
 mod sessions_end;
+#[allow(dead_code)]
+mod sessions_end_tools;
 mod sessions_update;
 pub mod tree_gate;
 

@@ -11,20 +11,20 @@ Test work is part of each task (AGENTS.md Testing rule: new logic gets co-locate
 
 ## Phase 2: Shared guards and the approval table
 
-- [X] T005 (done; no test: prototyping rule) EndTool, parse_args, error codes in `agent_tools/sessions_end.rs`.
-- [X] T006 (done; no test: prototyping rule) ancestors_of, refuse_target.
-- [X] T007 (done; no test: prototyping rule) needs_card, card_for.
-- [X] T008 (done; no test: prototyping rule) EndHost and AppEndHost; no fake host.
+- [X] T005 EndTool, parse_args, error codes in `agent_tools/sessions_end.rs`; tests in `sessions_end.test.rs`.
+- [X] T006 ancestors_of, refuse_target; tests in `sessions_end.test.rs`.
+- [X] T007 needs_card (all 24 rows), card_for; tests in `sessions_end.test.rs`.
+- [X] T008 EndHost and AppEndHost; fake host (`FakeHost`) in `sessions_end.test.rs`.
 
 ## Phase 3: The six tools
 
-- [ ] T009 `sessions_end.rs` + test: `archive_session` single target: state check (`invalid_state` if archived or deleting), card per table, re-check under `tree_gate::lock(repository_id)` after approval, `archive_core`; spawned-and-awaited write (spec 131 pattern). Tests: card in ask mode, none in yolo, deny gives `denied` with nothing archived, caller deleted while card open gives `cancelled`, live children keep their link. (FR-004, FR-006, FR-012)
-- [ ] T010 `sessions_end.rs` + test: archive cascade: compute the set (`descendants` plus target minus archived), refuse the whole call with `invalid_state` if any member is being deleted (`delete_in_flight::is_deleting`), one card listing every name, recompute under the gate after approval and return `cancelled` when the set differs, then `archive_core` deepest first; result `ids`. Tests: three-Session subtree gives one card with three names, all archived; descendant added while the card is open gives `cancelled` with nothing archived; already archived descendant skipped. (FR-005, FR-012, SC-004)
-- [ ] T011 `sessions_end.rs` + test: `unarchive_session`: `invalid_state` if not archived, card only outside own tree and not yolo, gate, `restore_core`, map `child-limit` to `child_limit`. Tests: 4 live siblings gives `child_limit`, 3 succeeds, only the named Session restored (archived descendants stay archived), approval table rows, and a target that left the own tree while no card was shown gives `cancelled` (as `commit_update` does). (FR-004, FR-007)
-- [ ] T012 `sessions_end.rs` + test: `stop_session`: `session_not_running` if already stopped, card unless yolo, `stop_core`. Tests: card in ask mode, none in yolo, deny leaves it running, stopped Session refused. (FR-004, FR-008)
-- [ ] T013 `sessions_end.rs` + test: `pause_session` and `resume_session`: stopped gives `session_not_running`; pause of a paused or resume of an unpaused Session gives `invalid_state`; card only outside own tree and not yolo; act through `SessionAgent::pause()` / `resume()` (`session/agent/pause.rs:186,231`), never a new pause implementation. Tests: own-tree no card, outside tree card, yolo no card, state errors, resume of stopped never starts it, a target that left the own tree while no card was shown gives `cancelled`. (FR-004, FR-008)
-- [ ] T014 `sessions_end.rs` + test: `delete_session`: `delete_precheck` (T002) before the card (its refusals map to `delete_refused`; deleting maps to `invalid_state`), always raise the card even in yolo, then `delete_core`; result `{ outcome: "deleting", id }`. Tests: card in yolo, deny leaves the Session, worktree holder refusal before any card, second call while in flight refused, caller deleted while the card is open gives `cancelled`. (FR-004, FR-009, SC-002)
-- [ ] T015 If `sessions_end.rs` passes about 450 lines, split the six tool fns into `sessions_end_tools.rs` with the guards and table staying in `sessions_end.rs`; no file over 600 lines. (SC-006)
+- [X] T009 archive single target: `sessions_end_tools.rs` + `sessions_end_tools.test.rs`.
+- [X] T010 archive cascade, one card, deepest first, recheck under gate.
+- [X] T011 unarchive through the child limit gate.
+- [X] T012 stop.
+- [X] T013 pause and resume.
+- [X] T014 delete: precheck, card even in yolo, then delete_core.
+- [X] T015 tool fns live in `sessions_end_tools.rs`; guards and table stay in `sessions_end.rs`.
 
 ## Phase 4: Delete re-rooting (ADR 0009)
 
