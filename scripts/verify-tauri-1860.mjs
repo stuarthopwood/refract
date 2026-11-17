@@ -173,6 +173,11 @@ async function main() {
     for (const nm of ['q-one', 'q-two', 'q-three', 'q-four']) qKids.push(await create(q, { prompt: `Do ${nm}`, name: nm }));
     const archivedKid = await cdp.evaluate(`window.refract.sessions.archive(${JSON.stringify(qKids[3].id)})`);
     const fifth = await create(q, { prompt: 'Do q-five', name: 'q-five' });
+    // A caller in Q but outside the full parent's tree, so only the 4-child limit can refuse.
+    await createSessionViaQuickCreate(cdp, repoNameQ);
+    const QD = await latestSessionIdAndName(cdp, repoNameQ, [q.id, ...qKids.map((k) => k.id), fifth.id]);
+    QD.pid = await pidAfter();
+    await waitForSessionStatus(cdp, QD.id, 'idle');
 
     // ---- Project 1: A (caller, ask) with child B and grandchild C; unrelated D; Y (yolo caller) added later.
     await addRepository(cdp, repoDir);
@@ -195,6 +200,10 @@ async function main() {
     const Y = await latestSessionIdAndName(cdp, repoName, [A.id, B.id, C.id, D.id]);
     Y.pid = await pidAfter();
     await waitForSessionStatus(cdp, Y.id, 'idle');
+    await createSessionViaQuickCreate(cdp, repoName);
+    const E = await latestSessionIdAndName(cdp, repoName, [A.id, B.id, C.id, D.id, Y.id]);
+    E.pid = await pidAfter();
+    await waitForSessionStatus(cdp, E.id, 'idle');
     const personalRes = await cdp.evaluate(`window.refract.sessions.openPersonalAgent()`);
     if (!personalRes?.ok) throw new Error(`openPersonalAgent failed: ${JSON.stringify(personalRes)}`);
     const P = { id: personalRes.value.id };
@@ -236,7 +245,7 @@ async function main() {
     check(!unarch.isError && unarch.cards === 0 && !rowC2?.archivedAt, 'unarchive_session on descendant C raised no card and restored it.', `unarchive C: ${JSON.stringify(unarch)} row ${JSON.stringify(rowC2)}`);
     const gate = await noCard(q, 'refract_unarchive_session', { id: qKids[3].id });
     check(archivedKid?.ok && gate.isError && code(gate) === 'child_limit', 'unarchive with 4 live children under the parent returned child_limit.', `gate: ${JSON.stringify(gate)} archive ${JSON.stringify(archivedKid)}`);
-    const gateOutside = await noCard(D, 'refract_unarchive_session', { id: qKids[3].id });
+    const gateOutside = await noCard(QD, 'refract_unarchive_session', { id: qKids[3].id });
     check(gateOutside.isError && code(gateOutside) === 'child_limit' && gateOutside.cards === 0, 'From outside the parent tree, unarchive into a full parent returned child_limit with no approval card.', `gate outside: ${JSON.stringify(gateOutside)}`);
     const freed = await cdp.evaluate(`window.refract.sessions.archive(${JSON.stringify(fifth.id)})`);
     const ok4 = await noCard(q, 'refract_unarchive_session', { id: qKids[3].id });
@@ -244,24 +253,26 @@ async function main() {
     check(freed?.ok && !ok4.isError && !(await listRow(qKids[3].id))?.archivedAt && !!row5?.archivedAt, 'After one child was archived, unarchive succeeded and restored only the named Session.', `unarchive after free: ${JSON.stringify(ok4)} fifth ${JSON.stringify(row5)}`);
 
     // ---- c. Pause, resume, stop.
+    // B holds an open create call, so it is `working`: pause reports `pausing` and the status stays `working`.
     const pauseB = await noCard(A, 'refract_pause_session', { id: B.id });
-    const pausedStatus = await statusOf(A, B.id);
-    check(!pauseB.isError && pauseB.cards === 0 && pausedStatus === 'paused', 'pause_session on running descendant B raised no card; status reads paused.', `pause B: ${JSON.stringify(pauseB)} status ${pausedStatus}`);
+    const pausedPhase = (await listRow(B.id))?.pause;
+    check(!pauseB.isError && pauseB.cards === 0 && ['pausing', 'paused'].includes(pausedPhase), 'pause_session on running descendant B raised no card; its pause state reads pausing.', `pause B: ${JSON.stringify(pauseB)} pause ${pausedPhase}`);
     const pauseAgain = await noCard(A, 'refract_pause_session', { id: B.id });
     check(pauseAgain.isError && code(pauseAgain) === 'invalid_state', 'Pause again returned invalid_state.', `pause again: ${JSON.stringify(pauseAgain)}`);
     const resumeB = await noCard(A, 'refract_resume_session', { id: B.id });
-    const resumedStatus = await statusOf(A, B.id);
-    check(!resumeB.isError && resumeB.cards === 0 && resumedStatus !== 'paused', 'resume_session on B raised no card; B is no longer paused.', `resume B: ${JSON.stringify(resumeB)} status ${resumedStatus}`);
-    const stopC = await withCard(A, 'refract_stop_session', { id: C.id }, 'Approve');
-    await waitForSessionStatus(cdp, C.id, 'stopped');
-    check(!stopC.isError && stopC.body.outcome === 'stopped', 'stop_session on running child C raised a card; after Approve C is stopped.', `stop C: ${JSON.stringify(stopC)}`);
-    const stopAgain = await noCard(A, 'refract_stop_session', { id: C.id });
+    const resumedPhase = (await listRow(B.id))?.pause ?? null;
+    check(!resumeB.isError && resumeB.cards === 0 && resumedPhase === null, 'resume_session on B raised no card; B is no longer paused.', `resume B: ${JSON.stringify(resumeB)} pause ${resumedPhase}`);
+    // E is a live idle root outside A's tree: stop asks everywhere.
+    const stopE = await withCard(A, 'refract_stop_session', { id: E.id }, 'Approve');
+    await waitForSessionStatus(cdp, E.id, 'stopped');
+    check(!stopE.isError && stopE.body.outcome === 'stopped', 'stop_session on running Session E raised a card; after Approve E is stopped.', `stop E: ${JSON.stringify(stopE)}`);
+    const stopAgain = await noCard(A, 'refract_stop_session', { id: E.id });
     check(stopAgain.isError && code(stopAgain) === 'session_not_running' && stopAgain.cards === 0, 'Stop on a stopped Session returned session_not_running with no card.', `stop again: ${JSON.stringify(stopAgain)}`);
     const pidsBefore = new Set(records().filter((r) => r.frame.type === 'set_host_tools').map((r) => r.pid)).size;
-    const resumeStopped = await noCard(A, 'refract_resume_session', { id: C.id });
+    const resumeStopped = await noCard(A, 'refract_resume_session', { id: E.id });
     await sleep(1500);
     const pidsAfter = new Set(records().filter((r) => r.frame.type === 'set_host_tools').map((r) => r.pid)).size;
-    check(resumeStopped.isError && code(resumeStopped) === 'session_not_running' && pidsAfter === pidsBefore && (await listRow(C.id))?.status === 'stopped', `resume on stopped C returned session_not_running and did not start it (omp processes ${pidsBefore} -> ${pidsAfter}).`, `resume stopped: ${JSON.stringify(resumeStopped)} pids ${pidsBefore}->${pidsAfter}`);
+    check(resumeStopped.isError && code(resumeStopped) === 'session_not_running' && pidsAfter === pidsBefore && (await listRow(E.id))?.status === 'stopped', `resume on stopped E returned session_not_running and did not start it (omp processes ${pidsBefore} -> ${pidsAfter}).`, `resume stopped: ${JSON.stringify(resumeStopped)} pids ${pidsBefore}->${pidsAfter}`);
 
     // ---- f. Outside the caller's tree: pause raises a card; yolo skips it.
     const pauseD = await withCard(B, 'refract_pause_session', { id: D.id }, 'Approve');
