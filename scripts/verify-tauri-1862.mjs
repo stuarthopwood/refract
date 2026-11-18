@@ -200,7 +200,8 @@ async function main() {
     const P2 = await quickRoot([P.id, k1.id, k2.id, g1.id]);
     const m1 = await create(P2, { prompt: 'Do m1', name: 'm1' });
     check(k1.parentId === P.id && k2.parentId === P.id && g1.parentId === k1.id, 'Seed: k1 and k2 are children of P and g1 a child of k1.', `seed parents: ${JSON.stringify({ k1, k2, g1 })}`);
-    for (const id of [k1.id, k2.id, g1.id, m1.id]) await waitForSessionStatus(cdp, id, 'idle');
+    // A parent that just called refract_create_session stays mid-turn in the fake omp, so only the leaves are awaited.
+    for (const id of [k2.id, g1.id, m1.id]) await waitForSessionStatus(cdp, id, 'idle');
     await switchTheme(cdp, 'dark', 'Dark');
     await cdp.waitFor(`!!document.querySelector(${q(g1.id)})`, { timeoutMs: 15_000, label: 'grandchild row mounted in the tree' });
 
@@ -277,7 +278,7 @@ async function main() {
     await cdp.waitFor(`${approveCount} > 0`, { timeoutMs: 15_000, label: 'k1 approval card' });
     await cdp.clickByText('Deny');
     await resultFor(askId);
-    await waitForSessionStatus(cdp, k1.id, 'idle');
+    await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(k1.id)})?.status !== 'needs-you')`, { timeoutMs: 30_000, label: 'k1 leaves needs-you after Deny' });
 
     // ---- SC-004: archive dialog. P2 has one running child: Escape, then Archive parent only.
     const archiveFromMenu = async (sessionId) => {
