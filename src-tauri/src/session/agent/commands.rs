@@ -40,10 +40,10 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
     }
 }
 
-/// Only `file` and `skill` sources are non-builtin. Any other value, or none, fails closed as builtin.
+/// Only `file`, `skill`, `extension` and `custom` sources are non-builtin. Any other value, or none, fails closed as builtin.
 /// Trusting an unknown source would allow free-form arguments on it.
 fn is_builtin_source(source: Option<&str>) -> bool {
-    !matches!(source, Some("file") | Some("skill"))
+    !matches!(source, Some("file" | "skill" | "extension" | "custom"))
 }
 
 /// Refract's native command names, refused locally and never forwarded as a prompt.

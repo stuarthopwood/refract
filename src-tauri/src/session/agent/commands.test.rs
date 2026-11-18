@@ -51,6 +51,8 @@ fn is_builtin_source_table() {
     );
     assert!(!is_builtin_source(Some("file")));
     assert!(!is_builtin_source(Some("skill")));
+    assert!(!is_builtin_source(Some("extension")));
+    assert!(!is_builtin_source(Some("custom")));
 }
 
 #[test]
@@ -123,6 +125,31 @@ fn filter_supported_commands_passes_through_a_skill_sourced_command() {
     assert!(out
         .iter()
         .any(|c| c.get("name").and_then(Value::as_str) == Some("skill:my-skill")));
+}
+
+#[test]
+fn filter_supported_commands_passes_through_an_extension_sourced_command() {
+    let raw = vec![json!({ "name": "skippy-banter", "source": "extension" })];
+    let out = filter_supported_commands(&raw);
+    assert!(out
+        .iter()
+        .any(|c| c.get("name").and_then(Value::as_str) == Some("skippy-banter")));
+}
+
+#[test]
+fn filter_supported_commands_drops_an_extension_command_shadowing_a_builtin_name() {
+    let raw = vec![
+        json!({ "name": "model", "source": "builtin" }),
+        json!({ "name": "model", "source": "extension" }),
+    ];
+    let out = filter_supported_commands(&raw);
+    assert!(
+        !out.iter().any(|c| {
+            c.get("name").and_then(Value::as_str) == Some("model")
+                && c.get("source").and_then(Value::as_str) == Some("extension")
+        }),
+        "an extension command shadowing a builtin must not survive: {out:?}"
+    );
 }
 
 fn builtin(name: &str, subcommands: &[&str]) -> Value {
