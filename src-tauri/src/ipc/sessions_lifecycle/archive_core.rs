@@ -55,7 +55,11 @@ fn partial_failure(error: IpcError, archived: &[String]) -> IpcError {
     }
     IpcError::new(
         error.code,
-        format!("{}; already archived: {}", error.message, archived.join(", ")),
+        format!(
+            "{}; already archived: {}",
+            error.message,
+            archived.join(", ")
+        ),
     )
 }
 
