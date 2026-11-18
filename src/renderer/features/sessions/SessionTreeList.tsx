@@ -8,7 +8,17 @@ import { treeGroupId } from './SessionRowTree'
 import { fromLabel, subtreeContains, type SessionTreeNode } from './sessionTree'
 import type { SessionSummary } from '../../../shared/ipc'
 
-function SessionTreeItem({ node, repository, sessionsById }: { node: SessionTreeNode; repository: Repository; sessionsById: ReadonlyMap<string, SessionSummary> }) {
+function SessionTreeItem({
+  node,
+  roots,
+  repository,
+  sessionsById
+}: {
+  node: SessionTreeNode
+  roots: readonly SessionTreeNode[]
+  repository: Repository
+  sessionsById: ReadonlyMap<string, SessionSummary>
+}) {
   const { session } = node
   const hasChildren = node.children.length > 0
   const open = useSessionListStore((state) => state.isParentOpen(session.id))
@@ -17,11 +27,11 @@ function SessionTreeItem({ node, repository, sessionsById }: { node: SessionTree
     (state) => hasChildren && !open && state.paneSessionIds.some((id) => node.children.some((child) => subtreeContains(child, id)))
   )
   return (
-    <SessionRow session={session} repository={repository} tree={{ node, from: fromLabel(session, sessionsById), open, selectedBelow }}>
+    <SessionRow session={session} repository={repository} tree={{ node, roots, from: fromLabel(session, sessionsById), open, selectedBelow }}>
       {hasChildren && open && (
         <ul role="group" id={treeGroupId(session.id)} className="flex flex-col gap-0">
           {node.children.map((child) => (
-            <SessionTreeItem key={child.session.id} node={child} repository={repository} sessionsById={sessionsById} />
+            <SessionTreeItem key={child.session.id} node={child} roots={roots} repository={repository} sessionsById={sessionsById} />
           ))}
         </ul>
       )}
@@ -36,7 +46,7 @@ export function SessionTreeList({ nodes, repository, label }: { nodes: readonly 
   return (
     <ul role="tree" aria-label={label} className="flex flex-col gap-0 py-1">
       {nodes.map((node) => (
-        <SessionTreeItem key={node.session.id} node={node} repository={repository} sessionsById={sessionsById} />
+        <SessionTreeItem key={node.session.id} node={node} roots={nodes} repository={repository} sessionsById={sessionsById} />
       ))}
     </ul>
   )

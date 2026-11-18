@@ -23,7 +23,9 @@ export interface SessionRowSurface {
 export function useSurfaceArchiveActions(
   session: SessionSummary,
   surface: SessionRowSurface | undefined,
-  captureFocusFallback: () => void
+  captureFocusFallback: () => void,
+  /** Opens the archive dialog when the Session has live descendants; false means archive directly. */
+  requestParentArchive: (viaMenu: boolean) => boolean
 ) {
   const archive = useSessionsStore((state) => state.archive)
   const restore = useSessionsStore((state) => state.restore)
@@ -32,8 +34,9 @@ export function useSurfaceArchiveActions(
   const deferAnnouncementRef = useRef(false)
   const pendingAnnouncementRef = useRef<string | null>(null)
 
-  function fromMenu(run: (id: string) => Promise<boolean>, verb: string): void {
+  function fromMenu(run: (id: string) => Promise<boolean>, verb: string, isArchive = false): void {
     captureFocusFallback()
+    if (isArchive && requestParentArchive(true)) return
     deferAnnouncementRef.current = true
     void run(session.id).then((ok) => {
       if (!ok) return
@@ -58,6 +61,11 @@ export function useSurfaceArchiveActions(
     quickActionPendingRef.current = true
     setQuickActionPending(true)
     captureFocusFallback()
+    if (!session.archivedAt && requestParentArchive(false)) {
+      quickActionPendingRef.current = false
+      setQuickActionPending(false)
+      return
+    }
     const wasArchived = !!session.archivedAt
     void (wasArchived ? restore(session.id) : archive(session.id)).then((ok) => {
       quickActionPendingRef.current = false
@@ -68,7 +76,7 @@ export function useSurfaceArchiveActions(
   }
 
   return {
-    onArchive: () => fromMenu(archive, 'Archived'),
+    onArchive: () => fromMenu(archive, 'Archived', true),
     onRestore: () => fromMenu(restore, 'Restored'),
     flushPendingAnnouncement,
     quickActionPending,

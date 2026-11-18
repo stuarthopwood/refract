@@ -59,7 +59,8 @@ function node(sessions: SessionSummary[], id: string): SessionTreeNode {
 }
 
 function props(sessions: SessionSummary[], id: string, over: Partial<SessionRowTreeProps> = {}): SessionRowTreeProps {
-  return { node: node(sessions, id), from: null, open: true, selectedBelow: false, ...over }
+  const found = node(sessions, id)
+  return { node: found, roots: [found], from: null, open: true, selectedBelow: false, ...over }
 }
 
 const render = (element: Parameters<typeof renderToStaticMarkup>[0]) =>
@@ -123,7 +124,8 @@ describe('treeNamePart and treeDescription', () => {
 })
 
 describe('TreeToggle', () => {
-  const toggle = (open: boolean) => render(createElement(TreeToggle, { name: 'Alpha', sessionId: 'p', open, onToggle: () => undefined }))
+  const toggle = (open: boolean) =>
+    render(createElement(TreeToggle, { name: 'Alpha', sessionId: 'p', open, onToggle: () => undefined, onKeyDown: () => undefined }))
 
   it('says Collapse while open and wires aria-controls to the rendered group', () => {
     const html = toggle(true)

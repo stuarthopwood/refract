@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { notify, notifyPersistentError, useSessionsStore, useSplitStore } from '@/state'
+import { notify, notifyPersistentError, useSessionListStore, useSessionsStore, useSplitStore } from '@/state'
 import type { SessionSummary } from '../../../shared/ipc'
 import type { Repository } from '../../../shared/model'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -13,12 +13,20 @@ import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmou
 import { createdSessionAnnouncement } from './createdSessionAnnouncement'
 import { useHideSession } from './useHideSession'
 import { useSurfaceArchiveActions } from './sessionRowSurface'
+import { useArchiveSession } from './useArchiveSession'
+import { flattenVisible, treeKeyMove } from './sessionTree'
+import type { SessionRowTreeProps } from './SessionRowTree'
 import type { SessionRowSurface } from './sessionRowSurface'
 import { setSessionPaused } from '@/features/chat/pauseActions'
 import { setPrewalk } from './prewalkActions'
 import { usePrewalkStore } from '@/state/prewalk-store'
 
-export function useSessionRowActions(session: SessionSummary, repository: Repository | undefined, surface?: SessionRowSurface) {
+export function useSessionRowActions(
+  session: SessionSummary,
+  repository: Repository | undefined,
+  surface?: SessionRowSurface,
+  tree?: SessionRowTreeProps
+) {
   const isVisible = useSplitStore((state) => state.paneSessionIds.includes(session.id))
   const isFocusedPane = useSplitStore((state) => {
     const index = state.paneSessionIds.indexOf(session.id)
@@ -126,10 +134,29 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
   }
 
   function handleOpenButtonKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (handleTreeKeyDown(event)) return
     // Only F2 is claimed; every other key (Tab, arrows) must keep navigating while the row is deleting.
     if (event.key !== 'F2') return
     event.preventDefault()
     if (!deleting) startRenaming()
+  }
+
+  // Down, Up, Home, End, Right and Left in a tree group (FR-009). Bound to the open button and the toggle
+  // only, not the `<li>`: the Radix menus portal but React events bubble, so a row-level handler would take
+  // submenu arrows. Returns whether the key was handled.
+  function handleTreeKeyDown(event: KeyboardEvent<HTMLElement>): boolean {
+    if (!tree) return false
+    const listState = useSessionListStore.getState()
+    const move = treeKeyMove(flattenVisible(tree.roots, listState.isParentOpen), session.id, event, listState.isParentOpen)
+    if (!move) return false
+    event.preventDefault()
+    if (move.kind === 'toggle') {
+      if (listState.isParentOpen(move.id) !== move.open) listState.toggleParent(move.id)
+      return true
+    }
+    const target = document.querySelector<HTMLElement>(`[data-session-id="${CSS.escape(move.id)}"] .session-open-button`)
+    target?.focus()
+    return true
   }
 
   // The row's actions unmount when it starts deleting. Subscribing (not an effect on `deleting`) lets
@@ -239,7 +266,36 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
     focusRow: () => menuTriggerRef.current?.focus(),
     ...(surface ? { onAnnounce: surface.announce, focusAfterUnhide: () => openButtonRef.current?.focus() } : {})
   })
-  const surfaceArchive = useSurfaceArchiveActions(session, surface, captureFocusFallback)
+  // Where the archive dialog was opened from, so Escape and Cancel can return focus there (`null`: the
+  // always-visible quick action, whose button Radix restores itself).
+  const archiveOriginRef = useRef<'dropdown' | 'context' | null>(null)
+  const archiveParent = useArchiveSession(session.id, {
+    announce: surface ? surface.announce : (message) => useChatAreaAnnouncer.getState().announce(message),
+    onClosed: (archived) => {
+      if (archived) {
+        const active = document.activeElement
+        if (!active || active === document.body || !active.isConnected || rowRef.current?.contains(active)) focusListContainer()
+        return true
+      }
+      const origin =
+        archiveOriginRef.current === 'context'
+          ? (contextMenuOpenerRef.current ?? openButtonRef.current)
+          : archiveOriginRef.current === 'dropdown'
+            ? menuTriggerRef.current
+            : null
+      if (!origin) return false
+      if (origin.isConnected) origin.focus()
+      else if (openButtonRef.current?.isConnected) openButtonRef.current.focus()
+      else focusListContainer()
+      return true
+    }
+  })
+  // Opens the dialog when the Session has live descendants; false means archive it directly, as before.
+  function requestParentArchive(viaMenu: boolean): boolean {
+    archiveOriginRef.current = viaMenu ? createOriginRef.current : null
+    return archiveParent.request()
+  }
+  const surfaceArchive = useSurfaceArchiveActions(session, surface, captureFocusFallback, requestParentArchive)
   const actions: SessionRowAction[] = buildSessionRowActions(
     session,
     {
@@ -253,8 +309,10 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
       onReveal: () => void reveal(),
       // Focus moves to the list only on archive success: a refused archive keeps the row, and
       // `archive()` can take seconds, so only move focus if it is stranded or still inside this row.
+      // A parent with live descendants opens the confirm dialog instead (#1862).
       onArchive: surface ? surfaceArchive.onArchive : () => {
         captureFocusFallback()
+        if (requestParentArchive(true)) return
         const row = rowRef.current
         void archive(session.id)
           .then((ok) => {
@@ -417,8 +475,9 @@ export function useSessionRowActions(session: SessionSummary, repository: Reposi
     createRequestedRef, createOriginRef, contextMenuOpenerRef,
     settledCreateRef, settledRestoreRef, restoreRequestedRef,
     focusListContainer, startRenaming, canResume, handleResume,
-    commitRename, handleNameKeyDown, handleOpenButtonKeyDown,
+    commitRename, handleNameKeyDown, handleOpenButtonKeyDown, handleTreeKeyDown,
     actions, handleMenuCloseAutoFocus,
+    archiveDialog: archiveParent.controls,
     quickActionPending: surfaceArchive.quickActionPending, runQuickAction: surfaceArchive.runQuickAction
   }
 }

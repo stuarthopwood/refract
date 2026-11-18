@@ -1,6 +1,7 @@
 // Shared confirm AlertDialog (extracted from MemoryTriageDialog.tsx for issue #883, so the
 // "Update now" confirmation reuses it instead of hand-building a second one): a title, a
-// description, Cancel, and an optional confirm action. While `busy`, Escape, the body and both buttons are inert.
+// description, Cancel, an optional confirm action and an optional secondary action between them (#1862:
+// "Archive parent only"). While `busy`, Escape, the body and every button are inert.
 // Focus on close is the caller's choice (`onCloseAutoFocus`; `false` lets Radix restore it), since these
 // dialogs open from a plain state flag with no Trigger for Radix to return focus to.
 import type { ReactNode, Ref } from 'react'
@@ -29,9 +30,11 @@ export function ConfirmAlertDialog({
   error,
   children,
   bodyLabel,
+  secondaryLabel,
   confirmDisabled = false,
   confirmRef,
   onCancel,
+  onSecondary,
   onConfirm,
   onCloseAutoFocus,
   tone = 'default'
@@ -52,11 +55,14 @@ export function ConfirmAlertDialog({
   children?: ReactNode
   /** Names the body group for assistive tech; give one whenever `children` is a set of controls. */
   bodyLabel?: string
+  /** A third action (outline) between Cancel and the confirm; shown only with `confirmLabel`. */
+  secondaryLabel?: string
   /** Blocks the confirm without the busy label (a pre-check still loading). */
   confirmDisabled?: boolean
   /** Lets the caller move focus here before content that holds it is removed. */
   confirmRef?: Ref<HTMLButtonElement>
   onCancel(): void
+  onSecondary?(): void
   onConfirm?(): void
   /** Return `false` to let Radix restore focus itself; any other result means the caller moved it. */
   onCloseAutoFocus(): boolean | void
@@ -103,6 +109,19 @@ export function ConfirmAlertDialog({
           >
             {cancelLabel ?? (confirmLabel ? 'Cancel' : 'Close')}
           </AlertDialogCancel>
+          {confirmLabel && secondaryLabel && (
+            <AlertDialogAction
+              variant="outline"
+              aria-disabled={busy}
+              className="aria-disabled:opacity-50"
+              onClick={(event) => {
+                event.preventDefault()
+                if (!busy) onSecondary?.()
+              }}
+            >
+              {secondaryLabel}
+            </AlertDialogAction>
+          )}
           {confirmLabel && (
             <AlertDialogAction
               ref={confirmRef}

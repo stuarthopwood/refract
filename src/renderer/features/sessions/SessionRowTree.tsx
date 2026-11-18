@@ -1,6 +1,6 @@
 // The parts a Session row adds when its Project group is a tree (#1862). Kept out of `SessionRow.tsx`
 // so that file stays one row; each piece is a plain function or component so it renders to markup on its own.
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { IconButton } from '@/components/IconButton'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
@@ -10,6 +10,8 @@ import { childCountLabel, fromLabelText, needsYouLabel, rollUp, rollUpLabel, typ
 /** What `SessionTree` hands a row: its place in the tree and the state of its own disclosure. */
 export interface SessionRowTreeProps {
   node: SessionTreeNode
+  /** The group's top-level nodes: the keyboard handler flattens them to find the next visible row. */
+  roots: readonly SessionTreeNode[]
   /** Null for a root Session or a parent unknown to the store. */
   from: FromLabel | null
   /** Whether this parent shows its children; meaningless for a leaf. */
@@ -64,7 +66,19 @@ export function treeDescription(tree: SessionRowTreeProps): string | null {
   return text || null
 }
 
-export function TreeToggle({ name, sessionId, open, onToggle }: { name: string; sessionId: string; open: boolean; onToggle: () => void }) {
+export function TreeToggle({
+  name,
+  sessionId,
+  open,
+  onToggle,
+  onKeyDown
+}: {
+  name: string
+  sessionId: string
+  open: boolean
+  onToggle: () => void
+  onKeyDown: (event: KeyboardEvent<HTMLButtonElement>) => void
+}) {
   return (
     <IconButton
       size="icon-xs"
@@ -72,6 +86,7 @@ export function TreeToggle({ name, sessionId, open, onToggle }: { name: string; 
       // Set only while the group is rendered: a collapsed parent has no element to control.
       aria-controls={open ? treeGroupId(sessionId) : undefined}
       onClick={onToggle}
+      onKeyDown={onKeyDown}
       // Sits in the row's existing 24 px gutter, at the row's own indent, so the status icon never moves.
       className={cn(
         'absolute left-(--tree-indent) top-0.5 z-10 text-muted-foreground hover:bg-sidebar-border hover:text-foreground dark:hover:bg-sidebar-border',

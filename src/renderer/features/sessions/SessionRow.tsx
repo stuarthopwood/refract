@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
+import { ArchiveParentDialog } from './ArchiveParentDialog'
 import { focusSessionsNav } from '@/lib/focus'
 import { useMinuteTick } from '@/lib/useMinuteTick'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
@@ -107,7 +108,12 @@ export type SessionRowProps =
 
 export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
   const { session } = props
-  const row = useSessionRowActions(session, props.repository, props.layout === 'table' ? props.surface : undefined)
+  const row = useSessionRowActions(
+    session,
+    props.repository,
+    props.layout === 'table' ? props.surface : undefined,
+    props.layout === 'table' ? undefined : props.tree
+  )
   const {
     isVisible, isFocusedPane, isSplitOpen, replaceFocused, openInSplit, open, deleting,
     renaming, deleteOpen, setDeleteOpen, resuming,
@@ -208,6 +214,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                 sessionId={session.id}
                 open={parentTree.open}
                 onToggle={() => useSessionListStore.getState().toggleParent(session.id)}
+                onKeyDown={row.handleTreeKeyDown}
               />
             )}
             {renaming ? (
@@ -336,6 +343,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
           else focusSessionsNav()
         }}
       />
+      <ArchiveParentDialog controls={row.archiveDialog} />
     </>
   )
   if (!tree) {
