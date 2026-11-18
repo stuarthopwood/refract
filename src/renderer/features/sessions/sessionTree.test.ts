@@ -78,8 +78,8 @@ describe('buildSessionTree', () => {
 
   it('breaks a two-Session cycle so both still appear exactly once', () => {
     const tree = buildSessionTree([session('a', { parentSessionId: 'b' }), session('b', { parentSessionId: 'a' })])
-    expect(ids(flattenVisible(tree, open)).sort()).toEqual(['a', 'b'])
-    expect(tree.length).toBeGreaterThan(0)
+    expect(ids(tree)).toEqual(['a', 'b'])
+    expect(ids(flattenVisible(tree, open))).toEqual(['a', 'b'])
   })
 
   it('keeps a Session that hangs off a cycle in the tree', () => {
