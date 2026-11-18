@@ -78,7 +78,7 @@ async fn rig(cfg: Value) -> Rig {
             .append(true)
             .open(&probe_log)
             .unwrap();
-        writeln!(file, "{}", json!({ "type": "EVENT" })).unwrap();
+        writeln!(file, "{}", json!({ "kind": "EVENT" })).unwrap();
     });
     Rig { fx, log, dir }
 }
@@ -90,7 +90,13 @@ impl Rig {
             .unwrap_or_default()
             .lines()
             .filter_map(|l| serde_json::from_str::<Value>(l).ok())
-            .map(|v| v["type"].as_str().unwrap().to_string())
+            .map(|v| {
+                v["type"]
+                    .as_str()
+                    .or(v["kind"].as_str())
+                    .unwrap()
+                    .to_string()
+            })
             .collect()
     }
 }
