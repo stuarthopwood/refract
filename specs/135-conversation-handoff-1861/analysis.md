@@ -18,7 +18,7 @@ Every scenario in the spec maps to a numbered live check in `plan.md`.
 
 ## Findings
 
-- **Open 1 (conflict between grill notes).** The 2026-11-17 comment says AGENTS.md now asks for co-located unit tests, and the issue body and the 2026-11-18 comment say no new tests. The assignment follows 2026-11-18 (live check only). Main should confirm before Phase 2.
+- **Resolved 1 (tests).** `AGENTS.md` on `origin/main` (line 36, epic #1918) requires co-located unit tests using the shared test utilities, so the "no new tests" note is dropped. `tasks.md` adds a `*.test.rs` task beside each implementation task; the 15 fake-omp live scenarios stay.
 - **Open 2 (superseded text).** The 2026-11-17 rule "another Session that is Working is refused with `invalid_state`" is replaced by deferral (2026-11-18). The spec records the replacement; the issue body should be updated.
 - **Open 3 (unverified code).** The plan cites `handle_turn_settled` (`frame.rs:188`) and the stop paths, but the settle handler body was not read in full. Implementation must confirm the hook point is after the status becomes idle and that `turn_abort_requested` is still readable there.
 - **Open 4 (agent sees the notice).** Whether a transcript notice reaches omp as context on the next turn is unverified. Scenario 8 checks it; if not, the fallback is to prefix the next user prompt with the notice.

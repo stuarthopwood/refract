@@ -85,7 +85,9 @@ In `handoff.rs`, add `pub async fn start_conversation_with(&self, first_message:
 
 `agent_tools/{mod,router_native,sessions,sessions_conversations,sessions_conversations_schema}.rs`, `session/agent/{mod,frame,chat,handoff,handoff_queue,conversations}.rs`, `ipc/{conversations,conversations_core}.rs`, `store/registry.rs` (handoff-note list, `serde(default)`), `events.rs`, a renderer listener and bubble label, `CONTEXT.md`, `docs/PLAN.md`.
 
-## Verification (live, fake omp, no new tests)
+## Verification (unit tests co-located, plus live fake omp)
+
+Unit tests live beside each changed module as `*.test.rs` (see `tasks.md`, T001t-T012t) and use the shared test utilities, as `agent_tools/sessions_end.test.rs` does. The live check below is the end-to-end layer.
 
 Run the fake-omp harness used by specs 129, 131 and 134 (see `specs/134-session-end-tools-1860/plan.md`). Scenarios:
 

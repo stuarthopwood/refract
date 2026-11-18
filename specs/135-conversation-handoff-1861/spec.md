@@ -22,7 +22,7 @@ Stuart's 2026-11-18 (Wave 5) comment is the latest word. Where it differs from t
 - Q: What does the UI do? -> A: Decided (Stuart, 2026-11-17): a new backend event moves every pane that shows the Session to the new or switched Conversation and keeps the unsent composer draft. No toast. The Conversation switcher marks the current one. Nothing extra shows while a self-handoff is queued.
 - Q: What does `list_conversations` return? -> A: Decided (Stuart, 2026-11-17): newest first; each row has `id`, `title`, `createdAt`, `isCurrent` and a preview clipped to 120 characters; default page 20, optional `limit` up to 100.
 - Q: Does `switch_conversation` to the current Conversation fail? -> A: Decided (Stuart, 2026-11-17): it succeeds and changes nothing. A Conversation the Session does not own returns `not_found`.
-- Q: Tests? -> A: Decided (Stuart, 2026-11-18 and the Wave 5 brief): no new tests while prototyping; verification is a live fake-omp harness check. The 2026-11-17 note that AGENTS.md now asks for co-located unit tests is recorded as an open item in `analysis.md`.
+- Q: Tests? -> A: Decided (Main, 2026-11-18, after `AGENTS.md` line 36 on `origin/main`, epic #1918): co-located `*.test.rs` unit tests beside each changed module using the shared test utilities, plus the live fake-omp harness check. This replaces the earlier "no new tests" note.
 
 ### Assumptions (chosen conservatively, not settled by the grill)
 
