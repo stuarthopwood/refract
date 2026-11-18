@@ -3,6 +3,7 @@ import * as React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { ModelCatalogEntry, ModelRoleId } from '../../../shared/model'
+import { markupText } from './markupText'
 import { RoleRow } from './RoleRow'
 import type { RoleRowProps } from './RoleRow'
 
@@ -53,7 +54,7 @@ function render(role: ModelRoleId, overrides: Partial<RoleRowProps>, forceOpen: 
 
 /** The text (icons stripped) of each save-status region, in document order. */
 function statusTexts(html: string): string[] {
-  return [...html.matchAll(/<div role="status"[^>]*>(.*?)<\/div>/g)].map((m) => (m[1] ?? '').replace(/<[^>]+>/g, ''))
+  return [...html.matchAll(/<div role="status"[^>]*>(.*?)<\/div>/g)].map((m) => markupText(m[1] ?? ''))
 }
 
 describe('RoleRow save status (#2002)', () => {

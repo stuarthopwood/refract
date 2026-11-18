@@ -3,6 +3,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ModelCatalogEntry } from '../../../shared/model'
+import { markupText } from './markupText'
 import { RoleReasoningRadios } from './RoleReasoningRadios'
 import type { RoleReasoningRadiosProps } from './RoleReasoningRadios'
 
@@ -33,7 +34,7 @@ function openingTag(html: string, id: string): string {
 
 /** The text (icons stripped) of each save-status region, in document order. */
 function statusTexts(html: string): string[] {
-  return [...html.matchAll(/<div role="status"[^>]*>(.*?)<\/div>/g)].map((m) => (m[1] ?? '').replace(/<[^>]+>/g, ''))
+  return [...html.matchAll(/<div role="status"[^>]*>(.*?)<\/div>/g)].map((m) => markupText(m[1] ?? ''))
 }
 
 describe('RoleReasoningRadios save state (#2002)', () => {

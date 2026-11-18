@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { TokenGuardKeyInfo } from '../../../../shared/tokenGuard'
 import type { KeySave } from '@/state/token-guard-store'
+import { markupText } from '../markupText'
 import { AdvancedRow } from './AdvancedRow'
 
 // The real `@/state` wires stores to `window` at import time, which this node-environment suite lacks;
@@ -38,7 +39,7 @@ function openingTag(html: string, id: string): string {
 
 /** The text (icons stripped) inside each live region with this role, in document order. */
 function liveTexts(html: string, role: 'status' | 'alert'): string[] {
-  return [...html.matchAll(new RegExp(`<(\\w+)\\b[^>]*role="${role}"[^>]*>(.*?)</\\1>`, 'g'))].map((m) => (m[2] ?? '').replace(/<[^>]+>/g, ''))
+  return [...html.matchAll(new RegExp(`<(\\w+)\\b[^>]*role="${role}"[^>]*>(.*?)</\\1>`, 'g'))].map((m) => markupText(m[2] ?? ''))
 }
 
 const isDisabled = (tag: string): boolean => /\bdisabled(=|\s|>)/.test(tag)
