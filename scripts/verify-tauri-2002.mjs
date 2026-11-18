@@ -2,7 +2,7 @@
 // Live CDP check for #2002 / #1940 / #1765 (T069): Settings rows show their own save status, and opening Settings writes nothing.
 // Drives the built debug exe (scratch copy) against the REAL `omp` CLI with PI_CODING_AGENT_DIR pointed at a scratch agent dir
 // and a legacy token-guard.json. A forwarding omp shim fails every `config set` while the app launches (so the launch migration
-// fails and Readiness passes), then holds every `config set` for 4 s: the first save then retries the migration, which holds
+// fails and Readiness passes), then holds every `config set` for 1 s: the first save then retries the migration, which holds
 // its lock for about a minute (the #1940 case). Without PI_CODING_AGENT_DIR a debug build skips the migration (FR-035). The
 // real ~/.omp is never read or written.
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_2002_DIR=<task dir> node scripts/verify-tauri-2002.mjs
@@ -27,8 +27,9 @@ const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const TASK_DIR = process.env.REFRACT_2002_DIR || path.join(tmpdir(), 'refract-2002');
 const EVIDENCE_DIR = path.join(TASK_DIR, 'evidence');
 const KEY = 'plan.defaultOnStartup';
-// While a migration retry runs, each `omp config set` is held this long, so the ~14-write migration holds its lock for about a minute.
-const SET_DELAY_MS = 4000;
+// While a migration retry runs, each `omp config set` is held this long on top of omp's own 4-7 s on this machine, so the
+// ~14-write migration holds its lock for about two minutes; a longer hold pushes a call past the 15 s omp timeout (seen at 4 s).
+const SET_DELAY_MS = 1000;
 const MODEL = 'probe-fake/probe-fake-model';
 const ORIGINAL_CONFIG = ['task:', '  maxConcurrency: 2', 'modelRoles:', `  default: ${MODEL}`, ''].join('\n');
 const MODELS_YML = ['providers:', '  probe-fake:', '    baseUrl: http://127.0.0.1:1', '    auth: none', '    api: openai-completions', '    models:', '      - id: probe-fake-model', '        name: Probe Fake Model', '        api: openai-completions', '        contextWindow: 200000', '        maxTokens: 1000', ''].join('\n');
