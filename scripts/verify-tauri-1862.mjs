@@ -288,6 +288,10 @@ async function main() {
       await rightClick(cdp, openButton(sessionId));
       await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`, { timeoutMs: 10_000, label: 'row menu with Archive' });
       await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`);
+      // The menu closes under the pointer, which leaves it over the row; its hover card then opens on top of the dialog and covers Cancel.
+      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
+      await sleep(900);
+      await cdp.waitFor(`document.querySelectorAll('[data-radix-popper-content-wrapper]').length === 0`, { timeoutMs: 10_000, label: 'row hover card closed' });
     };
     await archiveFromMenu(P2.id);
     await cdp.waitFor(`${dialogText} !== null`, { timeoutMs: 10_000, label: 'archive dialog for P2' });
