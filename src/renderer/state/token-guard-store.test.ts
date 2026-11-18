@@ -23,8 +23,12 @@ function stubTokenGuard(tokenGuard: Record<string, unknown>) {
 /** A promise the test settles by hand (`Promise.withResolvers` is not in the web lib). */
 function deferred() {
   let resolve: (value: unknown) => void = () => {}
-  const promise = new Promise<unknown>((r) => (resolve = r))
-  return { promise, resolve }
+  let reject: (reason: unknown) => void = () => {}
+  const promise = new Promise<unknown>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
 }
 
 const STALE_OVERLAY = 'Saved, but a Session started before the migration may keep the old values: access denied'
@@ -149,5 +153,61 @@ describe('useTokenGuardStore per-key save state', () => {
     call.resolve({ ok: true, value: snapshot() })
     await write
     expect(useTokenGuardStore.getState().saves).toEqual({})
+  })
+
+  // #2002: a slow first write must not end the Saving… of the newer write that replaced it.
+  it('keeps the second write saving when the first write resolves after it started', async () => {
+    const first = deferred()
+    const second = deferred()
+    const set = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    stubTokenGuard({ set })
+    const firstWrite = useTokenGuardStore.getState().set(KEY, 55)
+    const secondWrite = useTokenGuardStore.getState().set(KEY, 60)
+    first.resolve({ ok: true, value: snapshot() })
+    await firstWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 60 })
+    second.resolve({ ok: true, value: snapshot() })
+    await secondWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('does not let a failed first write put an error on the newer write', async () => {
+    const first = deferred()
+    const second = deferred()
+    stubTokenGuard({ set: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise) })
+    const firstWrite = useTokenGuardStore.getState().set(KEY, 55)
+    const secondWrite = useTokenGuardStore.getState().set(KEY, 60)
+    first.resolve({ ok: false, error: { code: 'invalid-argument', message: 'omp config set failed' } })
+    await firstWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 60 })
+    second.resolve({ ok: true, value: snapshot() })
+    await secondWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('does not let a rejected first write overwrite the newer write either', async () => {
+    const first = deferred()
+    const second = deferred()
+    stubTokenGuard({ set: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise) })
+    const firstWrite = useTokenGuardStore.getState().set(KEY, 55)
+    const secondWrite = useTokenGuardStore.getState().set(KEY, 60)
+    const rejected = expect(firstWrite).rejects.toThrow('ipc down')
+    first.reject(new Error('ipc down'))
+    await rejected
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 60 })
+    second.resolve({ ok: true, value: snapshot() })
+    await secondWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('leaves an in-flight save alone when a read loads the snapshot meanwhile', async () => {
+    const call = deferred()
+    stubTokenGuard({ set: vi.fn(() => call.promise), get: vi.fn(async () => ({ ok: true, value: snapshot() })) })
+    const write = useTokenGuardStore.getState().set(KEY, 55)
+    await useTokenGuardStore.getState().load()
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 55 })
+    call.resolve({ ok: true, value: snapshot() })
+    await write
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
   })
 })

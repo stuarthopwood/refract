@@ -7,8 +7,12 @@ use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex as AsyncMutex;
 
 use super::*;
+use crate::events::EventSink;
 use crate::omp::config::{OmpConfigError, OmpConfigErrorCode};
 use crate::omp::token_guard::overlay::{path as overlay_path, write_legacy};
+use crate::session::SessionManager;
+use crate::store::registry::RegistryStore;
+use crate::store::settings::SettingsStore;
 
 /// The migration marker, the omp invocation lock and the remembered snapshot are process-wide.
 static SERIAL: AsyncMutex<()> = AsyncMutex::const_new(());
@@ -210,24 +214,56 @@ async fn the_legacy_overlay_is_left_alone_when_no_pre_migration_session_launched
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// An `AppState` whose data dir is the migration dir under test; its stores live apart so they add no files there.
+async fn state_for(data_dir: &Path, stores_dir: &Path) -> AppState {
+    let registry = RegistryStore::open(stores_dir).await.expect("open registry");
+    let settings = SettingsStore::open(stores_dir).await.expect("open settings");
+    let registry = Arc::new(AsyncMutex::new(registry));
+    let settings = Arc::new(AsyncMutex::new(settings));
+    let app_handle: Arc<StdMutex<Option<tauri::AppHandle>>> = Arc::new(StdMutex::new(None));
+    let events = EventSink::new(app_handle.clone(), registry.clone());
+    let session_manager = SessionManager::new(registry.clone(), settings.clone(), events);
+    AppState {
+        data_dir: data_dir.to_path_buf(),
+        registry,
+        settings,
+        app_handle,
+        session_manager,
+    }
+}
+
+/// Goes through the real `tokenGuard.get` handler, so a migration start re-added to it (which would reach the
+/// real `omp`) turns `migration` into `done`/`failed` or creates the marker, and this fails.
 #[tokio::test]
 async fn a_read_while_the_migration_is_pending_writes_nothing() {
     let _serial = SERIAL.lock().await;
+    if migrate::skipped() {
+        return;
+    }
     values::forget();
+    // A cold cache would make the handler run `omp models`; an empty one keeps the read offline.
+    *CONTEXT_WINDOWS.lock().unwrap() = Some(Arc::new(HashMap::new()));
     let dir = scratch("read-pending");
+    let stores = scratch("read-pending-stores");
     write_legacy(&dir, &values::defaults()).await.unwrap();
     let before = std::fs::read_to_string(overlay_path(&dir)).unwrap();
     let files = || std::fs::read_dir(&dir).unwrap().count();
     let count = files();
+    let state = state_for(&dir, &stores).await;
 
-    let global = pending_global(&dir).await;
-    let _ = migrate::status(&dir).await;
+    let snapshot = token_guard_get(state, Vec::new()).await.unwrap();
 
-    assert_eq!(global.values, legacy::effective(&dir).await);
+    assert_eq!(snapshot["migration"]["status"], json!("pending"));
+    assert_eq!(
+        snapshot["values"],
+        json!(values::to_object(&legacy::effective(&dir).await))
+    );
     assert_eq!(files(), count, "a read must not create or retire any file");
     assert!(!dir.join("token-guard-migration.json").exists());
     assert_eq!(std::fs::read_to_string(overlay_path(&dir)).unwrap(), before);
+    *CONTEXT_WINDOWS.lock().unwrap() = None;
     let _ = std::fs::remove_dir_all(&dir);
+    let _ = std::fs::remove_dir_all(&stores);
 }
 
 #[test]

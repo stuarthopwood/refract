@@ -455,8 +455,13 @@ mod tests {
             let (omp, dir) = (std::sync::Arc::clone(&omp), dir.clone());
             tokio::spawn(async move { ensure_with(&*omp, &dir, None).await })
         };
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        // Yielding lets the spawned run execute as far as it can on this single-threaded runtime: a run that
+        // ignored the lock would finish (and call omp) long before the marker below exists.
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
         assert!(!waiting.is_finished(), "the run must wait on the lock");
+        assert_eq!(omp.0.load(Ordering::SeqCst), 0);
         std::fs::write(marker_path(&dir), "{}").unwrap();
         drop(held);
         assert!(waiting.await.unwrap());
