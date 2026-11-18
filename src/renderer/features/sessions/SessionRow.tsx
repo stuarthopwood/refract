@@ -1,4 +1,6 @@
 import { memo } from 'react'
+import type { ReactNode } from 'react'
+import { useSessionListStore } from '@/state'
 import { useEnterOnAppear } from '@/components/useEnterOnAppear'
 import { HiddenMarker } from './HiddenMarker'
 import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
@@ -35,6 +37,17 @@ import {
   onDropdownOpenChange
 } from './SessionRowParts'
 import type { SessionRowSurface } from './sessionRowSurface'
+import {
+  TreeFromLine,
+  TreeLineTwo,
+  TreeToggle,
+  hasTreeChildren,
+  treeDescription,
+  treeItemAttributes,
+  treeNamePart,
+  treeOpenButtonId
+} from './SessionRowTree'
+import type { SessionRowTreeProps } from './SessionRowTree'
 import { IconButton } from '@/components/IconButton'
 
 // The menu trigger stays in the DOM and focusable (opacity/pointer-events swap, overlaid on the time cell under
@@ -87,7 +100,7 @@ function lineTwoKind(
 
 export type SessionRowProps =
   // `repository` is absent for the Personal Agent, which belongs to no Project.
-  | { layout?: 'list'; session: SessionSummary; repository?: Repository }
+  | { layout?: 'list'; session: SessionSummary; repository?: Repository; tree?: SessionRowTreeProps; children?: ReactNode }
   // The table layout renders this row on Manage sessions (#934); `surface` supplies its focus, announcement
   // and open behaviour, and `repository` is `undefined` when the Project can't be resolved.
   | { layout: 'table'; session: SessionSummary; repository: Repository | undefined; projectName: string; surface: SessionRowSurface }
@@ -124,13 +137,14 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
     session.archivedAt ? 'Archived' : null,
     session.hiddenAt ? 'Hidden' : null,
     isSplitOpen && isFocusedPane ? 'focused pane' : null,
+    props.tree ? treeNamePart(props.tree) : null,
     deleting ? 'deleting' : null
   ]
     .filter((part): part is string => Boolean(part))
     .join(', ')
   // An archived row's line 2 is the Project name, which the hover card doesn't expose to screen readers
   // and which tells rows apart in the cross-Project Archived list (#527).
-  const activityDescription =
+  const activityDescription = [
     lineTwo === 'start-progress' && session.startProgress
       ? describeStartProgress(session.startProgress)
       : lineTwo === 'terminated'
@@ -139,20 +153,63 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
           ? (repository?.name ?? '')
           : lineTwo === 'activity'
             ? (activityText ?? undefined)
-            : undefined
+            : undefined,
+    // The count and the "from" line are in the sr-only description, not the name, so the name stays short (FR-008).
+    props.tree ? treeDescription(props.tree) : null
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join('. ') || undefined
 
-  return (
-    <li ref={rowRef} data-choice-item className="group relative w-full">
-      {isVisible && <ActiveIndicatorBar />}
+  const { tree, children } = props
+  const parentTree = tree && hasTreeChildren(tree) ? tree : null
+  // A parent's count shares line 2 with the slot, so the slot drops its own indent there.
+  const linePad = parentTree ? undefined : 'pl-6'
+  // A collapsed parent takes the open-Session state while a hidden descendant is the selected Session.
+  const showSelected = isVisible || Boolean(tree?.selectedBelow && !tree.open)
+  const lineTwoSlot =
+    lineTwo === 'deleting' ? (
+      <span className={cn('truncate text-xs', linePad, metaFg)}>Deleting…</span>
+    ) : lineTwo === 'start-progress' && session.startProgress ? (
+      <span className={cn('truncate text-xs', linePad, metaFg)} aria-hidden>
+        {describeStartProgress(session.startProgress)}
+      </span>
+    ) : lineTwo === 'terminated' ? (
+      <span className={cn('truncate text-xs text-destructive', linePad)}>Terminated unexpectedly</span>
+    ) : lineTwo === 'archived' ? (
+      <span className={cn('flex min-w-0 items-center gap-1 text-xs', linePad, metaFg)}>
+        <FolderGit2Icon aria-hidden className="size-4 shrink-0" />
+        <span className="truncate">{repository?.name}</span>
+      </span>
+    ) : lineTwo === 'activity' ? (
+      <span data-testid="session-activity-line" className={cn('truncate text-xs', linePad, session.status === 'needs-you' ? fg : metaFg)}>
+        {activityText}
+      </span>
+    ) : (
+      session.branch && <span className={cn('truncate font-code text-xs', linePad, metaFg)}>{session.branch}</span>
+    )
+  const lineTwoNode = parentTree ? <TreeLineTwo tree={parentTree} metaFg={metaFg} slot={lineTwoSlot} /> : lineTwoSlot
+
+  const body = (
+    <>
+      {showSelected && <ActiveIndicatorBar />}
       <ContextMenu onOpenChange={(open) => onContextMenuOpenChange(row, open)}>
         <ContextMenuTrigger asChild disabled={deleting}>
           <div
             className={cn(
-              'relative flex w-full min-h-11 items-start gap-1 pl-6 pr-2 py-1',
+              'relative flex w-full min-h-11 items-start gap-1 pr-2 py-1',
+              tree ? 'pl-[calc(1.5rem+var(--tree-indent,0px))]' : 'pl-6',
               deleting && 'opacity-60',
-              isVisible ? 'bg-session-row-selected-bg text-session-row-selected-fg' : !deleting && 'hover:bg-session-row-hover-bg'
+              showSelected ? 'bg-session-row-selected-bg text-session-row-selected-fg' : !deleting && 'hover:bg-session-row-hover-bg'
             )}
           >
+            {parentTree && (
+              <TreeToggle
+                name={session.name}
+                sessionId={session.id}
+                open={parentTree.open}
+                onToggle={() => useSessionListStore.getState().toggleParent(session.id)}
+              />
+            )}
             {renaming ? (
               <SessionRenameInput row={row} />
             ) : (
@@ -166,6 +223,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                 <button
                   ref={openButtonRef}
                   type="button"
+                  id={tree ? treeOpenButtonId(session.id) : undefined}
                   aria-current={isVisible ? 'true' : undefined}
                   aria-label={accessibleName}
                   aria-disabled={deleting || undefined}
@@ -205,32 +263,8 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                     <span className={cn('truncate text-sm font-normal', session.hiddenAt ? metaFg : fg)}>{session.name}</span>
                     {session.hiddenAt && <HiddenMarker compact />}
                   </span>
-                  {lineTwo === 'deleting' ? (
-                    <span className={cn('truncate pl-6 text-xs', metaFg)}>Deleting…</span>
-                  ) : lineTwo === 'start-progress' && session.startProgress ? (
-                    <span className={cn('truncate pl-6 text-xs', metaFg)} aria-hidden>
-                      {describeStartProgress(session.startProgress)}
-                    </span>
-                  ) : lineTwo === 'terminated' ? (
-                    <span className="truncate pl-6 text-xs text-destructive">Terminated unexpectedly</span>
-                  ) : lineTwo === 'archived' ? (
-                    <span className={cn('flex min-w-0 items-center gap-1 pl-6 text-xs', metaFg)}>
-                      <FolderGit2Icon aria-hidden className="size-4 shrink-0" />
-                      <span className="truncate">{repository?.name}</span>
-                    </span>
-                  ) : lineTwo === 'activity' ? (
-                    <span
-                      data-testid="session-activity-line"
-                      className={cn(
-                        'truncate pl-6 text-xs',
-                        session.status === 'needs-you' ? fg : metaFg
-                      )}
-                    >
-                      {activityText}
-                    </span>
-                  ) : (
-                    session.branch && <span className={cn('truncate pl-6 font-code text-xs', metaFg)}>{session.branch}</span>
-                  )}
+                  {lineTwoNode}
+                  {tree?.from && <TreeFromLine from={tree.from} metaFg={metaFg} />}
                 </button>
               </SessionDetailsCard>
             )}
@@ -302,6 +336,21 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
           else focusSessionsNav()
         }}
       />
+    </>
+  )
+  if (!tree) {
+    return (
+      <li ref={rowRef} data-choice-item className="group relative w-full">
+        {body}
+      </li>
+    )
+  }
+  // The tree item is the `<li>`, but hover, the active bar and the menu's `group-has` rules must stop at
+  // this Session's own row, so `group` sits on an inner element and the children list sits beside it.
+  return (
+    <li ref={rowRef} data-choice-item className="relative w-full" {...treeItemAttributes(tree, session.id)}>
+      <div className="group relative w-full">{body}</div>
+      {children}
     </li>
   )
 })
