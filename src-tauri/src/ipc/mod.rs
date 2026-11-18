@@ -24,6 +24,7 @@ pub mod chat;
 pub mod chat_pause;
 pub mod clipboard;
 pub mod conversations;
+pub mod conversations_core;
 pub mod copilot_plan;
 pub mod debug;
 pub mod file_attachments;

@@ -6,14 +6,14 @@ Phase 2 (implementation) is a separate run. Each implementation task has a co-lo
 
 - [x] T001 Add the shared helper `start_conversation_then_send(FirstMessage)` in `src-tauri/src/session/agent/start_with_message.rs` (deviation, see analysis.md); `hand_off()` calls it and keeps the `handoff-send-failed` wording.
 - [x] T001t Test in `session/agent/start_with_message.test.rs`: 8 cases covering event order, note flag, failure stages, sidecar key.
-- [ ] T002 Extract `start_new_core` and `switch_core` into `src-tauri/src/ipc/conversations_core.rs` from the `conversations.startNew` and `conversations.open` arms; keep the IPC handlers as thin callers.
-- [ ] T002t Test in `ipc/conversations_core.test.rs`: `start_new_core` and `switch_core` cover started, switched, unchanged and unknown-id cases.
+- [x] T002 Extract `start_new_core` and `switch_core` into `src-tauri/src/ipc/conversations_core.rs` from the `conversations.startNew` and `conversations.open` arms; keep the IPC handlers as thin callers.
+- [x] T002t Test in `ipc/conversations_core.test.rs`: `start_new_core` and `switch_core` cover started, switched, current-reloaded (no `unchanged`, see analysis.md), refused and unknown-id cases.
 
 ## Phase B - deferral slot
 
-- [ ] T003 Add `session/agent/handoff_queue.rs` with `QueuedHandoff`, `HandoffAction`, `try_queue`, `take_queued_handoff`, `clear`.
-- [ ] T003t Test in `session/agent/handoff_queue.test.rs`: `try_queue` accepts one action and refuses a second; `take_queued_handoff` empties the slot; `clear` empties it.
-- [ ] T004 Add the `queued_handoff` field to `AgentState` in `session/agent/mod.rs`.
+- [x] T003 Add `session/agent/handoff_queue.rs` with `QueuedHandoff`, `HandoffAction`, `try_queue`, `take_queued_handoff`, `clear`.
+- [x] T003t Test in `session/agent/handoff_queue.test.rs`: `try_queue` accepts one action and refuses a second; `take_queued_handoff` empties the slot; `clear` empties it.
+- [x] T004 Add the `queued_handoff` field to `AgentState` in `session/agent/mod.rs`.
 - [ ] T005 In `frame.rs` `handle_turn_settled`, take the slot after the Session is idle and spawn the run task: act, retry once, then the "Handoff failed" notice.
 - [ ] T005t Test in `session/agent/frame.test.rs`: settle takes the slot after idle, acts, retries once, then posts the "Handoff failed" notice.
 - [ ] T006 Clear the slot on `chat.stop` (`chat.rs`), `shutdown`, stop exits and `on_process_exit`; drop it when `turn_abort_requested` is set at settle.

@@ -4,6 +4,7 @@
 use serde::Serialize;
 use serde_json::Value;
 
+use super::conversations_core::{start_new_core, switch_core};
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture};
 
 pub fn register(d: &mut Dispatcher) {
@@ -16,7 +17,7 @@ pub fn register(d: &mut Dispatcher) {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ConversationInfo {
-    file: String,
+    pub(crate) file: String,
     id: String,
     created_at: String,
     title: String,
@@ -261,7 +262,7 @@ async fn read_conversation_file(
     Ok(Some((title, preview)))
 }
 
-fn same_file(a: &str, b: &str) -> bool {
+pub(crate) fn same_file(a: &str, b: &str) -> bool {
     let resolve = |p: &str| {
         std::path::absolute(p)
             .map(|resolved| resolved.to_string_lossy().to_lowercase())
@@ -325,38 +326,13 @@ pub(crate) async fn list_conversations(
 /// `conversations.startNew`. A `stopped` Session starts on a new Conversation; a live one starts it in place.
 pub fn conversations_start_new(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let Some(session_id) = args.first().and_then(Value::as_str).map(str::to_string) else {
+        let Some(session_id) = args.first().and_then(Value::as_str) else {
             return Err(invalid_argument(
                 "conversations.startNew expects a string sessionId",
             ));
         };
-        super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(&session_id)?;
-        if state
-            .registry
-            .lock()
-            .await
-            .get_session(&session_id)
-            .is_none()
-        {
-            return Err(not_found(format!("Session not found: {session_id}")));
-        }
-        let agent = state.session_manager.get_or_create_agent(&session_id);
-        let result = if agent.status().await == crate::session::SessionStatus::Stopped {
-            agent.start_with_conversation(None).await
-        } else {
-            agent.start_new_conversation().await
-        };
-        if let Err(err) = result {
-            return Err(super::map_agent_error(err));
-        }
-        let session = state
-            .registry
-            .lock()
-            .await
-            .get_session(&session_id)
-            .cloned()
-            .ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
-        Ok(build_snapshot(&session, &agent, None).await)
+        start_new_core(&state, session_id).await?;
+        snapshot_of(&state, session_id).await
     })
 }
 
@@ -364,58 +340,27 @@ pub fn conversations_start_new(state: AppState, args: Vec<Value>) -> HandlerFutu
 pub fn conversations_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let (Some(session_id), Some(file)) = (
-            args.first().and_then(Value::as_str).map(str::to_string),
-            args.get(1).and_then(Value::as_str).map(str::to_string),
+            args.first().and_then(Value::as_str),
+            args.get(1).and_then(Value::as_str),
         ) else {
             return Err(invalid_argument(
                 "conversations.open expects (sessionId, file) strings",
             ));
         };
-        super::sessions_lifecycle::delete_in_flight::refuse_if_deleting(&session_id)?;
-        let session = state
-            .registry
-            .lock()
-            .await
-            .get_session(&session_id)
-            .cloned()
-            .ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
-        let own_conversations = list_conversations(
-            session.session_dir.as_deref(),
-            session.current_conversation.as_deref(),
-        )
-        .await;
-        let resolved_file = std::path::absolute(&file)
-            .map(|p| p.to_string_lossy().to_lowercase())
-            .unwrap_or_else(|_| file.to_lowercase());
-        let matched = own_conversations.into_iter().find(|c| {
-            std::path::absolute(&c.file)
-                .map(|p| p.to_string_lossy().to_lowercase())
-                .unwrap_or_else(|_| c.file.to_lowercase())
-                == resolved_file
-        });
-        let Some(matched) = matched else {
-            return Err(invalid_argument(
-                "conversations.open file must be one of this Session's own Conversations",
-            ));
-        };
-        let agent = state.session_manager.get_or_create_agent(&session_id);
-        let result = if agent.status().await == crate::session::SessionStatus::Stopped {
-            agent
-                .start_with_conversation(Some(matched.file.clone()))
-                .await
-        } else {
-            agent.open_conversation(matched.file.clone()).await
-        };
-        if let Err(err) = result {
-            return Err(super::map_agent_error(err));
-        }
-        let session = state
-            .registry
-            .lock()
-            .await
-            .get_session(&session_id)
-            .cloned()
-            .ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
-        Ok(build_snapshot(&session, &agent, None).await)
+        switch_core(&state, session_id, file).await?;
+        snapshot_of(&state, session_id).await
     })
+}
+
+/// The snapshot the renderer reloads from after a start or switch.
+async fn snapshot_of(state: &AppState, session_id: &str) -> super::HandlerResult {
+    let session = state
+        .registry
+        .lock()
+        .await
+        .get_session(session_id)
+        .cloned()
+        .ok_or_else(|| not_found(format!("Session not found: {session_id}")))?;
+    let agent = state.session_manager.get_or_create_agent(session_id);
+    Ok(build_snapshot(&session, &agent, None).await)
 }

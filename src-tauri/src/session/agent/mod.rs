@@ -21,6 +21,7 @@ mod commands;
 mod conversations;
 mod frame;
 mod handoff;
+mod handoff_queue;
 mod lane_support;
 mod launch;
 mod launch_support;
@@ -39,6 +40,7 @@ pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
+pub use handoff_queue::{HandoffAction, QueuedHandoff};
 pub use requests::is_chat_answer;
 pub use start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use types::should_apply_crash_exit_verdict;
@@ -96,6 +98,9 @@ struct AgentState {
     token_guard: crate::session::token_guard::State,
     working_mode: crate::session::working_mode::State,
     handoff: queued_handoff::State,
+    // Read by the settle handler and stop paths once the tool wires them (#1861 T005-T007).
+    #[allow(dead_code)]
+    queued_handoff: Option<QueuedHandoff>,
     pause: pause::State,
 }
 
@@ -189,6 +194,7 @@ impl SessionAgent {
                 token_guard: Default::default(),
                 working_mode: Default::default(),
                 handoff: Default::default(),
+                queued_handoff: None,
                 pause: Default::default(),
             }),
             status_tx,
@@ -229,6 +235,14 @@ impl SessionAgent {
                     ),
                 )
             })
+    }
+
+    /// Gives the agent a live process in `status`, for tests outside this module that cannot reach `AgentState`.
+    #[cfg(test)]
+    pub(crate) async fn adopt_process_for_test(&self, process: OmpProcess, status: SessionStatus) {
+        let mut state = self.state.lock().await;
+        state.process = Some(Arc::new(process));
+        state.status = status;
     }
 
     /// Needs the registry row to record and clear the termination marker.
