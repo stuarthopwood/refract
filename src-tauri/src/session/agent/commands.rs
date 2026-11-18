@@ -40,8 +40,8 @@ fn supported_omp_subcommands(name: &str) -> Option<&'static [&'static str]> {
     }
 }
 
-/// Only `file`, `skill`, `extension` and `custom` sources are non-builtin. Any other value, or none, fails closed as builtin.
-/// Trusting an unknown source would allow free-form arguments on it.
+/// Only `file`, `skill`, `extension` and `custom` sources are non-builtin.
+/// Any other value, or none, fails closed as builtin: trusting an unknown source would allow free-form arguments.
 fn is_builtin_source(source: Option<&str>) -> bool {
     !matches!(source, Some("file" | "skill" | "extension" | "custom"))
 }
@@ -74,10 +74,10 @@ const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
     ("models", "Open model role settings"),
 ];
 
-/// Filters the raw command list. Non-builtin (`file`/`skill`) commands are listed unpruned.
+/// Filters the raw command list. Non-builtin commands are listed unpruned.
 /// Builtins are shown only when verified, and then only with their verified subcommands.
 pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
-    // Collected before pruning, so a file/skill command cannot shadow a dropped builtin.
+    // Collected before pruning, so a non-builtin command cannot shadow a dropped builtin.
     // Reserved names are seeded too, so a command that can never run is not listed.
     let mut builtin_claimed: std::collections::HashSet<&str> = std::collections::HashSet::new();
     builtin_claimed.extend(NATIVE_RESERVED_COMMANDS.iter().copied());
@@ -108,7 +108,7 @@ pub(super) fn filter_supported_commands(raw: &[Value]) -> Vec<Value> {
         };
         let source = command.get("source").and_then(Value::as_str);
         if !is_builtin_source(source) {
-            // A file/skill command sharing a name with any builtin is dropped entirely.
+            // A non-builtin command sharing a name with any builtin is dropped entirely.
             let shadows_a_builtin = builtin_claimed.contains(name)
                 || command
                     .get("aliases")

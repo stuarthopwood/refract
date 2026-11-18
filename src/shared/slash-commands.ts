@@ -48,9 +48,9 @@ export const NATIVE_BUILT_COMMANDS: readonly SlashCommandDescriptor[] = [
   { name: 'btw', description: 'Ask the agent a side question', source: 'native' },
 ];
 
-// OMP reports `source` as 'builtin', 'file' (project/user command) or 'skill' (#760).
+// OMP reports `source` as 'builtin', 'file', 'skill', 'extension' or 'custom'; the last four are non-builtin (#760, #2088).
 function isBuiltinSource(source: string | undefined): boolean {
-  return source !== 'file' && source !== 'skill';
+  return source !== 'file' && source !== 'skill' && source !== 'extension' && source !== 'custom';
 }
 
 // Drops unverified subcommands (e.g. `/todo copy`) so neither the menu nor `chat.send` can see them (#129).
@@ -60,7 +60,7 @@ function pruneSubcommands(command: SlashCommandDescriptor): SlashCommandDescript
   return { ...command, subcommands: command.subcommands.filter((sub) => allowed.includes(sub.name)) };
 }
 
-/** Keeps verified builtin commands; non-builtin (user-written file or skill) commands pass through unpruned (#760). */
+/** Keeps verified builtin commands; non-builtin (`file`, `skill`, `extension`, `custom`) commands pass through unpruned (#760, #2088). */
 export function filterSupportedCommands(commands: readonly SlashCommandDescriptor[]): SlashCommandDescriptor[] {
   const builtinClaimed = new Set<string>(Object.keys(NATIVE_RESERVED_COMMANDS));
   for (const command of commands) {

@@ -78,7 +78,7 @@ export interface SlashCommandDescriptor {
   aliases?: string[];
   input?: { hint: string };
   subcommands?: SlashCommandDescriptor[];
-  source?: 'builtin' | 'file' | 'skill' | 'native' | (string & {}); // #760: OMP's own field ('builtin'/'file'/'skill'), or 'native' for a locally-supplied descriptor (`/new`/`/btw`); absent = 'builtin' (fail-closed default, `session::agent::commands.rs`). `(string & {})` keeps unknown future values accepted without widening to a bare `string`.
+  source?: 'builtin' | 'file' | 'skill' | 'extension' | 'custom' | 'native' | (string & {}); // #760: OMP's own field ('builtin'/'file'/'skill'/'extension'/'custom'), or 'native' for a locally-supplied descriptor (`/new`/`/btw`); absent = 'builtin' (fail-closed default, `session::agent::commands.rs`). `(string & {})` keeps unknown future values accepted without widening to a bare `string`.
 }
 
 export type ExtensionUiMethod = 'select' | 'confirm' | 'input' | 'editor' | 'ask' | 'notify' | 'setStatus' | 'setWidget' | 'setTitle' | 'set_editor_text' | 'open_url' | 'cancel';
