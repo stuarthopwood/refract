@@ -62,6 +62,16 @@ impl SessionAgent {
         Ok(())
     }
 
+    /// The retry after an `AfterNew` failure: the Conversation exists, so only the send is repeated.
+    /// The sidecar is written again because the first attempt may have failed before the file was named.
+    pub(super) async fn resend_first_message(&self, first: FirstMessage) -> Result<(), AgentError> {
+        self.send(first.text, None).await?;
+        if first.handoff_note {
+            self.record_note_file().await;
+        }
+        Ok(())
+    }
+
     /// Records the current Conversation file in the handoff sidecar. `Session.current_conversation`
     /// stays `None` until a message exists, so the file name comes from omp's `get_state`.
     async fn record_note_file(&self) -> bool {

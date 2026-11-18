@@ -98,8 +98,7 @@ struct AgentState {
     token_guard: crate::session::token_guard::State,
     working_mode: crate::session::working_mode::State,
     handoff: queued_handoff::State,
-    // Read by the settle handler and stop paths once the tool wires them (#1861 T005-T007).
-    #[allow(dead_code)]
+    // Filled by the Session tools; run by the settle handler, dropped by the stop paths (#1861).
     queued_handoff: Option<QueuedHandoff>,
     pause: pause::State,
 }

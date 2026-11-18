@@ -193,6 +193,11 @@ impl SessionAgent {
                 return;
             }
             state.turn_generation = state.turn_generation.wrapping_add(1);
+            // A stopped turn cancels its deferred handoff. The flag is read here because it is cleared
+            // just below, before the Session goes idle. (#1861)
+            if state.turn_abort_requested {
+                super::handoff_queue::clear(&mut state);
+            }
             // Clears the abort flag for this turn. A no-op if stop() was never called for it. (#911)
             state.turn_abort_requested = false;
             (state.turn_generation, state.shutdown_generation)
@@ -201,6 +206,10 @@ impl SessionAgent {
         self.set_status(SessionStatus::Idle, None, None).await;
         crate::session::token_guard::on_turn_settled(self, generation).await;
         crate::session::working_mode::on_turn_settled(self).await;
+        // Spawned like the re-sync below: the run sends prompts whose replies this frame loop must keep
+        // reading, so awaiting it here would deadlock. Runs after idle, so the new Conversation can start.
+        let agent = self.arc();
+        tokio::spawn(async move { agent.run_settled_handoff(generation).await });
         // Spawned so the get_state round trip does not block the frame loop. Tagged with generation counters.
         // sync_from_state re-checks both counters before writing, so stale replies are dropped.
         let agent = self.arc();
@@ -281,6 +290,8 @@ impl SessionAgent {
                 state.process = None;
                 // Clears the abort flag so it cannot leak into a later launch. (#911)
                 state.turn_abort_requested = false;
+                // A dead process runs no turn, so its deferred handoff cannot fire. (#1861)
+                super::handoff_queue::clear(&mut state);
                 // Cancelled ids name subagents of the dead process; a later Resume must not report them.
                 state.pause.cancelled.clear();
             }
@@ -354,3 +365,7 @@ impl SessionAgent {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "frame.test.rs"]
+mod tests;
