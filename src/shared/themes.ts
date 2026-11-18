@@ -9,6 +9,7 @@ export type ThemeId =
   | 'dark'
   | 'dark-high-contrast'
   | 'obsidian'
+  | 'amber-obsidian'
   | 'nordic-frost'
   | 'cyber-amber'
   | 'light'
@@ -60,6 +61,14 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     name: 'Obsidian',
     swatch: '#0F1014',
     swatchPrimary: '#5A5EEE',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#1c1f28', symbolColor: '#e8e9e9' }
+  },
+  'amber-obsidian': {
+    id: 'amber-obsidian',
+    name: 'Amber Obsidian',
+    swatch: '#0F1014',
+    swatchPrimary: '#fcc527',
     syntaxTheme: 'css-variables',
     titleBarOverlay: { color: '#1c1f28', symbolColor: '#e8e9e9' }
   },
