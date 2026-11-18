@@ -288,10 +288,13 @@ async function main() {
       await rightClick(cdp, openButton(sessionId));
       await cdp.waitFor(`!!Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`, { timeoutMs: 10_000, label: 'row menu with Archive' });
       await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((el) => el.textContent.trim() === 'Archive')`);
-      // The menu closes under the pointer, which leaves it over the row; its hover card then opens on top of the dialog and covers Cancel.
-      await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 1, y: 1 });
-      await sleep(900);
-      await cdp.waitFor(`document.querySelectorAll('[data-radix-popper-content-wrapper]').length === 0`, { timeoutMs: 10_000, label: 'row hover card closed' });
+      await cdp.waitFor(`${dialogText} !== null`, { timeoutMs: 10_000, label: `archive dialog for ${sessionId}` });
+      // Returning focus to the row opens its hover card on top of the dialog and covers Cancel; Escape closes only that top layer.
+      await sleep(1000);
+      if (await cdp.evaluate(`document.querySelectorAll('[data-radix-popper-content-wrapper]').length > 0`)) {
+        await press('Escape');
+        await cdp.waitFor(`document.querySelectorAll('[data-radix-popper-content-wrapper]').length === 0 && ${dialogText} !== null`, { timeoutMs: 10_000, label: 'row hover card closed and the dialog still open' });
+      }
     };
     await archiveFromMenu(P2.id);
     await cdp.waitFor(`${dialogText} !== null`, { timeoutMs: 10_000, label: 'archive dialog for P2' });
