@@ -2,7 +2,7 @@
 
 **Input**: Design documents from `specs/021-token-guard/` (plan.md, spec.md, research.md, data-model.md, contracts/ipc.md, quickstart.md)
 
-**Tests**: Rust unit tests inside `src-tauri/src/omp/token_guard/` only, kept minimal. No new tests in `src/renderer` or `src/shared` (prototyping rule). Existing gates plus a live check verify the work.
+**Tests**: Rust unit tests inside `src-tauri/src/omp/token_guard/` only, kept minimal. No new tests in `src/renderer` or `src/shared` (prototyping rule). Existing gates plus a live check verify the work. **Superseded from Phase 7**: every changed module gets a co-located unit test (FR-045).
 
 **Lanes**: two sequential implementation lanes. Lane A merges before Lane B starts. Each task is tagged `[A]` or `[B]`; the "Owns" line lists the files that lane may edit. Shared files (`src/shared/ipc.ts`, `src-tauri/src/session/agent/frame.rs`, `scripts/check-parity.mjs`) get small edits from both lanes, always A first.
 
