@@ -30,6 +30,8 @@ function* walk(dir) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (EXCLUDED_DIRS.has(entry.name)) continue;
+      // docs/design/<bundle>/ holds vendored design mockups, not product source.
+      if (/^docs\/design\/[^/]+$/.test(path.relative(repoRoot, full).split(path.sep).join('/'))) continue;
       yield* walk(full);
     } else if (entry.isFile() && /\.(ts|tsx|js|mjs)$/.test(entry.name)) {
       yield full;
