@@ -47,6 +47,11 @@ const navButton = (label) => `Array.from(document.querySelectorAll('nav[aria-lab
 const SWITCH = `document.getElementById(${JSON.stringify(`advanced-${KEY}`)})`;
 const ROW_STATUS = `document.getElementById(${JSON.stringify(`advanced-${KEY}-save`)})`;
 
+/** True while the process `pid` exists; a read-only tasklist query, never a kill. */
+function isProcessAlive(pid) {
+  return spawnSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH'], { encoding: 'utf8', windowsHide: true }).stdout.includes(String(pid));
+}
+
 /** Runs the real omp against the scratch agent dir only. */
 function omp(agentDir, ...args) {
   const result = spawnSync('omp', args, { encoding: 'utf8', windowsHide: true, env: { ...process.env, PI_CODING_AGENT_DIR: agentDir } });
@@ -97,7 +102,13 @@ async function launch(env) {
       REFRACT_2002_MODE_FILE: env.modeFile
     }
   });
+  const closeInfo = { pid: launched.targetPid };
+  report.cdpSocket = closeInfo;
   const cdp = await CdpSession.connect(await waitForCdpTarget(port, { timeoutMs: 60_000 }));
+  cdp.ws.addEventListener('close', (event) => {
+    Object.assign(closeInfo, { closedAt: new Date().toISOString(), code: event.code, reason: event.reason, wasClean: event.wasClean, appProcessAlive: isProcessAlive(launched.targetPid), launcherExited: launched.child.exitCode !== null });
+    console.log(`${LOG}: CDP socket closed ${JSON.stringify(closeInfo)}`);
+  });
   if (!isTargetOwningPort(port, launched.targetPid)) throw new Error('CDP target not owned by launched pid');
   console.log(`${LOG}: launched exe pid ${launched.targetPid} on port ${port}`);
   return { cdp, child: launched.child, port, pid: launched.targetPid };
