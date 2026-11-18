@@ -15,6 +15,7 @@ Every `omp` Refract launches gets `--config <overlay>` and `--append-system-prom
 **Primary Dependencies**: existing `store/atomic_json.rs`, `omp::process`, `session::agent::{frame,launch,conversations}`, shared `ui/*` components, sonner
 **Storage**: new `token-guard.json` (values store) and generated `token-guard-overlay.yml` and `refract-rules.md` in the Refract data dir; shipped `src-tauri/resources/refract-rules.md` embedded with `include_str!`
 **Testing**: existing gates only; minimal Rust unit tests inside `token_guard/` (overlay rendering, threshold and counter logic). No new tests in `src/renderer` or `src/shared` (prototyping rule). Live check at the end.
+   **Amended (#2002, #1940, #1765, 2026-11-18)**: `AGENTS.md` on `origin/main` (Testing, V1, 2026-11-11) requires a co-located unit test for every changed module, so the prototyping rule above no longer applies to Phase 7. Vitest runs `environment: 'node'` on `src/**/*.test.ts`, so renderer logic is tested as pure functions and stores, not through a DOM. See FR-045.
 **Target Platform**: Windows desktop
 **Constraints**: 600-line cap (issue #806); ADR 0003 shared components; `pnpm check:parity` must pass; omp 18.12.6 behaviour as probed.
 
@@ -70,6 +71,13 @@ Scripts/specs: `scripts/check-parity.mjs` (`OMP_GUARD_RESET` entry), `scripts/ve
 6. **Counter** (`counter.rs`): per Session+Conversation count of assistant `message_end`; re-derived from history on open or resume; emits snapshot updates when crossing 300 or 500.
 7. **Hand off** (`handoff.rs`): Idle only; prompt the agent for a handoff summary, await settle, `start_new_conversation`, send summary as first message; failure leaves the old Conversation untouched and returns a reason.
 8. **UI**: Settings `omp` section built from `SettingSwitchRow`, `ui/input`, `ui/button`, `ui/badge`; Status line chip as a `ReadoutChip` (text "Long conversation, N calls") containing a real `Button` "Hand off"; banner from shared `ui/alert`; a visually hidden `role="status"` live region announces once per threshold crossing per Conversation.
+9. **Save status (Phase 7, #2002, #1940, #1765)**: FR-040 to FR-045, tasks T064 to T070.
+   - **Root cause first (T064)**: research.md section 12 lists two suspects: `!loaded` in `isPending` (`AdvisorModelRow.tsx:81`) and the migration that `tokenGuard.get` starts on Settings open (`token_guard.rs:238`). No fix starts before both are checked against the fake omp and the real omp.
+   - **Shared save-status component**: extend `src/renderer/components/InlineStatus.tsx` (tones loading, notice, error, with ARIA roles) with the Saving..., Saved and error states, and keep the state-to-text-and-tone mapping as a pure function beside it so it is testable without a DOM. No new component unless T065 shows `InlineStatus` cannot carry it. It replaces the inline spans in `RoleRow.tsx:118-123` and `RoleReasoningRadios.tsx:237-243` and is used by `AdvisorModelRow.tsx` and the Advanced rows. "Saved" shows for 3 s and is announced politely; "Saving..." has no timer; the error is an alert.
+   - **Per-key pending state**: `token-guard-store.ts` (`set`, `reset`, `resetAll`, lines 73-75) gains per-key state (pending value, `saving`, `saved`, error), modelled on `pendingRoles` and `saveErrors` in `model-roles-store.ts:72-95`. State lives in the store so it survives a row remounting.
+   - **Disable only the pending row**: a row's control is disabled while its own key is saving. Other rows stay editable. The row shows the new value while saving and the stored value after an error. `isPending` no longer reads `!loaded`.
+   - **No write on open**: if T064 confirms suspect 2, `tokenGuard.get` stops calling `migrate::start` and only reports `pending`; launch (`lib.rs:250-253`) and the first save (`apply_change`, `token_guard.rs:178`) still run the migration. A Rust test asserts that `get` writes nothing.
+   - **Live check**: `scripts/verify-tauri-fake-omp.mjs` with a scratch `REFRACT_DATA_DIR` and a scratch `PI_CODING_AGENT_DIR` (FR-035), a file hash of `config.yml` and the fake omp call log before and after opening Settings (SC-010), and a held migration lock for SC-011.
 
 ## Lanes
 

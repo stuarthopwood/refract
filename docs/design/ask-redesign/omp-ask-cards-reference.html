@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OMP Ask Tool &amp; Collapsible Session Q&amp;A — HTML/CSS Reference</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-canvas: #090a0c;
+      --bg-card: #101216;
+      --bg-card-header: #13151b;
+      --bg-option: #16181d;
+      --bg-option-hover: #1b1e25;
+      --bg-option-selected: #1b1f27;
+      --bg-rec: #131918;
+      --bg-rec-selected: #13221c;
+      --border-card: #22252e;
+      --border-subtle: #1d2028;
+      --border-rec: rgba(16, 185, 129, 0.55);
+      --text-primary: #e6e8ec;
+      --text-muted: #9ca3af;
+      --text-dim: #6b7280;
+      --emerald: #34d399;
+      --amber: #fcd34d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 32px 20px;
+      background: var(--bg-canvas);
+      color: var(--text-primary);
+      font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+      -webkit-font-smoothing: antialiased;
+    }
+    .container {
+      max-width: 760px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+    .status-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      margin-bottom: 6px;
+    }
+    .status-answered {
+      color: var(--emerald);
+      font-weight: 600;
+    }
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 6px;
+      padding: 14px;
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    .question-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #f3f4f6;
+      margin: 0;
+    }
+    .btn-recommended {
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .options-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .option-row {
+      background: var(--bg-option);
+      border: 1px solid var(--border-card);
+      border-radius: 4px;
+      padding: 8px 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .option-row.recommended {
+      background: var(--bg-rec-selected);
+      border-color: var(--border-rec);
+    }
+    .option-main {
+      display: flex;
+      gap: 10px;
+      align-items: flex-start;
+      flex: 1;
+    }
+    .rec-meta {
+      font-size: 11px;
+      color: var(--emerald);
+      margin-top: 2px;
+    }
+    .rec-reason {
+      color: var(--text-muted);
+    }
+    .option-note {
+      margin-top: 6px;
+      padding-top: 6px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      font-size: 12px;
+      color: var(--amber);
+    }
+    .kbd {
+      background: #0b0d11;
+      border: 1px solid #323846;
+      border-radius: 3px;
+      padding: 1px 5px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: #6ee7b7;
+    }
+    .card-footer {
+      margin-top: 10px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .btn-confirm {
+      background: #f3f4f6;
+      color: #090a0c;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    /* Session Q&A Card */
+    .qa-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .qa-header {
+      padding: 8px 14px;
+      background: var(--bg-card-header);
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+    }
+    .digest-row {
+      padding: 6px 14px;
+      border-bottom: 1px solid #181b22;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-size: 12px;
+    }
+    .digest-row:last-child { border-bottom: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- 1. Active Ask Tool Card (Multi-Select + Recommended + 'N' Note) -->
+    <div>
+      <div class="status-line">
+        <span class="status-answered">✓ Answered</span>
+        <span style="color: #525866;">·</span>
+        <span style="color: #9ca3af; font-family: 'JetBrains Mono', monospace;">4/5</span>
+      </div>
+      <section class="card">
+        <header class="card-header">
+          <div>
+            <h2 class="question-title" style="display:inline;">Which fields, and how do the 5% notches behave?</h2>
+            <span style="font-size: 11px; color: #9ca3af; margin-left: 8px;">Select all that apply</span>
+          </div>
+          <button type="button" class="btn-recommended">✦ Recommended ↵</button>
+        </header>
+
+        <div class="options-list">
+          <div class="option-row recommended">
+            <div class="option-main">
+              <input type="checkbox" checked style="margin-top: 2px; accent-color: #10b981;" />
+              <div>
+                <div style="font-weight: 500; color: #fff;">
+                  Convert the two clean 1–99% fields (compaction threshold, idle threshold-as-%); snap to 5% with ticks.
+                </div>
+                <div class="rec-meta">
+                  ✦ Recommended <span style="color: #525866;">·</span>
+                  <span class="rec-reason">Both fields are pure 1–99% ratios with no overloaded unit semantics.</span>
+                </div>
+                <div class="option-note">
+                  <strong>Note:</strong> <span style="color: #e5e7eb;">Existing off-5% values preserved until moved.</span>
+                </div>
+              </div>
+            </div>
+            <span style="font-size: 11px; color: #d1d5db; background: rgba(255,255,255,0.06); padding: 2px 6px; border-radius: 3px; white-space: nowrap;">
+              Edit note <span class="kbd">N</span>
+            </span>
+          </div>
+
+          <div class="option-row recommended">
+            <div class="option-main">
+              <input type="checkbox" checked style="margin-top: 2px; accent-color: #10b981;" />
+              <div>
+                <div style="font-weight: 500; color: #fff;">
+                  Skip the per-model table (it also accepts token caps).
+                </div>
+                <div class="rec-meta">
+                  ✦ Recommended <span style="color: #525866;">·</span>
+                  <span class="rec-reason">Avoids breaking hybrid percentage/token-cap inputs in per-model overrides.</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="option-row">
+            <div class="option-main">
+              <input type="checkbox" />
+              <div style="color: #d1d5db;">Other (type your own)</div>
+            </div>
+          </div>
+        </div>
+
+        <footer class="card-footer">
+          <div>
+            Press <span class="kbd">N</span> to add a note to selected option
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px;">2 selected</span>
+            <button type="button" style="background: transparent; border: none; color: #9ca3af; cursor: pointer; font-size: 12px;">Cancel</button>
+            <button type="button" class="btn-confirm">Confirm ↵</button>
+          </div>
+        </footer>
+      </section>
+    </div>
+
+    <!-- 2. Read-Only Collapsible Session Q&A Card (Collapsed Digest State) -->
+    <div class="qa-card">
+      <div class="qa-header">
+        <span><strong style="color: #34d399;">✓</strong> <strong style="color: #e5e7eb;">Questions from the agent</strong> <span style="color: #525866;">·</span> <span style="color: #9ca3af; font-family: 'JetBrains Mono', monospace;">5 answered</span></span>
+        <span style="color: #9ca3af; font-size: 11px;">Expand ▾</span>
+      </div>
+      <div>
+        <div class="digest-row">
+          <span style="color: #d1d5db; font-weight: 500;">How should the preview work?</span>
+          <span style="color: #e5e7eb;">→ Holistic live preview (TranscriptRow + ComposerStatusLine pinned) <span style="color: #34d399;">✦</span></span>
+        </div>
+        <div class="digest-row">
+          <span style="color: #d1d5db; font-weight: 500;">What does the preview show?</span>
+          <span style="color: #e5e7eb;">→ Fixed canned sample conversation + status line (Deterministic) <span style="color: #34d399;">✦</span></span>
+        </div>
+        <div class="digest-row">
+          <span style="color: #d1d5db; font-weight: 500;">Slider alone, or slider plus a number field?</span>
+          <span style="color: #e5e7eb;">→ Slider (5% notches) + synced number field (ScaleControl pattern) <span style="color: #34d399;">✦</span></span>
+        </div>
+        <div class="digest-row">
+          <span style="color: #d1d5db; font-weight: 500;">Which fields, and how do the 5% notches behave?</span>
+          <span style="color: #e5e7eb;">→ Convert compaction &amp; idle % fields + Skip per-model table <span style="color: #fcd34d;">(Existing off-5% values preserved until moved.)</span> <span style="color: #34d399;">✦</span></span>
+        </div>
+        <div class="digest-row">
+          <span style="color: #d1d5db; font-weight: 500;">Priorities</span>
+          <span style="color: #e5e7eb;">→ Both p2 <span style="color: #34d399;">✦</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

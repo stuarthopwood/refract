@@ -69,6 +69,18 @@ All answers come from #1646's grilled block (Stuart, 2026-11-04, "all resolved, 
 - #1646 Q: Accessibility? -> A: The buttons are `tabIndex={-1}` and `aria-hidden`; ArrowUp/ArrowDown already step the focused input, so keyboard and screen reader users lose nothing and the tab order does not grow.
 - #1646 Q: Scope? -> A: Inside `NumberField.tsx` only; callers keep their props; built on the shared `Button`.
 
+### Session 2026-11-18 (Wave 5: #2002, #1940, #1765 save feedback)
+
+All answers come from the issues' "Grilled 2026-11-18 (Wave 5)" comments (Stuart) and the code. One lane and one implementation PR cover the three issues and close #1940 and #1765 (the spec PR only refers to them). Settings > Advanced is what the grill calls "Settings > OMP" (renamed in spec 036). Test rule: origin/main `AGENTS.md` (Testing, V1, 2026-11-11) replaces the older no-new-tests rule, so every changed module gets a co-located unit test.
+
+- #1940 Q: What does a row show while its write waits on the first-open migration lock? -> A: The new value with "Saving...", and that row's control is disabled until the write lands or fails. Other rows stay editable. When the write lands, the row shows the normal result or warning.
+- #2002 Q: Does opening Settings write config? -> A: It MUST NOT. If the lane finds that opening Settings writes the Advisor role, that write is removed. A row shows "Saving..." only for a save the user started.
+- #2002 Q: What is the root cause of "Saving..." on the Advisor row with no change? -> A: Found first, before any fix, and checked against both the fake omp and the real omp (task T064). The leading suspect is `isPending={pending || !loaded}` in `AdvisorModelRow.tsx:81`, which shows "Saving..." while the token guard store has not loaded, not for a save.
+- Q: One status component or several? -> A: One shared save-status component in `src/renderer/components/` (Saving..., Saved, error) replaces the inline spans in `RoleRow.tsx:118-123` and `RoleReasoningRadios.tsx:237-243` and is used by the token guard rows. No new inline copy.
+- #1765 Q: What is left? -> A: PR #1937 (live apply, FR-036) and #1935 (PR #1964, per-key live verdicts) are merged. Only #1940's pending feedback remains, so #1765 closes with the #1940 PR and has no lane of its own.
+- Assumption (not a grill answer): "Saved" stays visible for 3 seconds after a write lands and is announced politely; "Saving..." has no timer of its own and lasts until the write returns (FR-043). Flagged for review.
+- Assumption (not a grill answer): the migration already runs at every app launch (`src-tauri/src/lib.rs:250-253`), so `tokenGuard.get` need not start it (`src-tauri/src/ipc/token_guard.rs:238`). If the investigation confirms that start is a Settings-open write, `get` stops starting it and only reports `pending`; a failed launch migration then retries on the next launch (FR-035) or on the user's first save (`apply_change`, `token_guard.rs:178`).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Token-cost settings cannot drift for Refract Sessions (Priority: P1)
@@ -181,6 +193,9 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - A Session is stopped between settle and shake: the shake is dropped.
 - Hand off while a turn is running: the button is disabled until the Session is idle, with the reason in text.
 - The developer has several Sessions: each Conversation has its own counter and its own announcement.
+- A Settings load fails or is slow (for example `omp models`, which `context_windows(true)` runs at `token_guard.rs:235`): no row shows "Saving..." for it; the row shows no status until the user saves (FR-040).
+- A save waits on the first-open migration lock (observed at up to 120 s, #1765): its row shows the new value, "Saving..." and a disabled control; every other row stays editable and its own save queues behind the same lock.
+- A save fails: the row shows the error in text through the shared save status, the control is enabled again, and the row shows the stored value, not the value the user typed.
 
 ## Requirements *(mandatory)*
 
@@ -225,6 +240,12 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **FR-037** (#1767): Settings MUST list the effective compaction trigger for the Default model and the models of open Sessions (window, threshold, per-model entry, resulting tokens), from `tokenGuard.get` `effectiveTriggers`.
 - **FR-038** (#1767): When the open Project's `.omp/config.yml` sets a token guard key, that row MUST say so (read-only; Refract never edits repo files), from `projectOverrides`.
 - **FR-039** (#1767): `compaction.modelThresholds` entries MUST accept `120000` (tokens; 1-99 reads as a percent), `"f200000"` (fixed tokens) and `"80%"`.
+- **FR-040** (#2002): Opening Settings, or any Settings page that reads token guard or model role values, MUST NOT write the global OMP config, the legacy overlay, or any other file. No row MUST show "Saving..." unless the user started a save on that row.
+- **FR-041** (#2002): The cause of the Advisor row's "Saving..." with no user change MUST be found and recorded in `research.md` (section 12) before any fix, checked against the fake omp and the real omp. The recorded result MUST name each candidate cause as confirmed or ruled out: `isPending={pending || !loaded}` in `AdvisorModelRow.tsx:81`; the migration that `tokenGuard.get` starts when it is not done (`token_guard.rs:238`, `migrate.rs:243`) and that launch runs (`lib.rs:252`), whose wanted set includes `modelRoles.advisor` (`legacy.rs:68`, FR-004) and writes it through `migrate.rs:196-204` and `values.rs:287`.
+- **FR-042** (#1940): While a token guard or Advisor write is in flight, including while it waits on the migration lock (`migrate.rs:42`, `migrate.rs:217`), its row MUST show the new value, "Saving..." and a disabled control, and the control MUST become enabled again when the write lands or fails. Other rows MUST stay editable. When the write lands the row MUST show the normal result or the write's warning; when it fails the row MUST show the error text and the stored value.
+- **FR-043** (#2002, #1940): One shared save-status component in `src/renderer/components/` (building on `InlineStatus`) MUST render Saving..., Saved and error as text with an icon, with the error as an alert and the other two as polite status. "Saved" MUST stay visible for 3 seconds after a write lands; "Saving..." has no timer and lasts until the write returns. `RoleRow.tsx:118-123`, `RoleReasoningRadios.tsx:237-243`, `AdvisorModelRow.tsx` and the Advanced rows MUST use it; no inline "Saving" span remains in Settings.
+- **FR-044** (#1940): Per-row save state for token guard keys MUST live in `token-guard-store.ts` (the pending value, `saving`, `saved`, error), so it survives a row remounting and is testable without a DOM.
+- **FR-045**: New and changed logic MUST have co-located unit tests using the repo's vitest setup (`environment: 'node'`, no DOM): `token-guard-store.test.ts`, `model-roles-store.test.ts`, a pure save-status test beside the component, Rust tests in `token_guard_tests.rs` and `migrate.rs`; the live check uses the fake-omp harness.
 
 ### Key Entities
 
@@ -250,6 +271,8 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - **SC-007**: With all values at default, Settings > Advanced shows no impact warnings; raising a costlier value shows its warning, and the compaction rows show percentages with the "≈ N tokens" hint where the window is known.
 - **SC-008**: With any row changed, Optimise token usage lists exactly the changed rows (from and to) and writes nothing until confirmed; after confirming, every row equals its default, no warning shows, and the next Session's overlay carries the defaults; with all rows at default the button is disabled with "Already optimised".
 - **SC-009**: In Settings > Advanced every number field shows muted chevrons (no native grey spinner) with an 8px gap after the value in the dark and light themes; clicking a chevron steps the value by `step` within `min`/`max` and commits like typing; the chevrons are not in the tab order.
+- **SC-010**: Opening Settings > Models and Settings > Advanced on a scratch data dir with the fake omp, and on the real omp, shows no "Saving..." on any row and leaves `config.yml` and the fake omp's config store byte-identical (checked by a file hash and the fake's call log).
+- **SC-011**: With the first-open migration held, a save on one Advanced row shows the new value, "Saving..." and a disabled control; a second row stays editable; both rows end in Saved or error when the migration finishes.
 
 ## Assumptions
 
@@ -257,5 +280,5 @@ The overlay keeps tool-result imaging on, makes snapcompact the first compaction
 - Refract launches OMP in `rpc-ui` mode (the issue says `rpc`); the arguments are added for that mode.
 - Overlay values are persisted in a small separate Refract store, not the main settings file, to stay within the file-size cap; the issue's "Refract settings" is read as "Refract-owned stored values".
 - The shake is triggered with OMP's `/shake` command because RPC `compact` cannot select a method (research.md).
-- Tests: no new renderer or shared tests (prototyping rule); minimal Rust unit tests for the new module are allowed; verified live.
+- Tests: Phases 1 to 6 used the prototyping rule (no new renderer or shared tests, minimal Rust unit tests). From Phase 7 `AGENTS.md` on `origin/main` (Testing, V1, 2026-11-11) applies: every changed module gets a co-located unit test (FR-045). Verified live as well.
 - Whether `snapcompact.systemPrompt` should later become `agents-md` is decided from a separate one-week comparison, out of scope here.

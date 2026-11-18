@@ -139,6 +139,12 @@ _Avoid_: Telemetry dock
 One continuous exchange with the agent inside a **Session**. A **Session** has many **Conversations**, one of which is current; starting a fresh one keeps the same **Session** and **Worktree** and keeps the earlier ones reachable as history.
 _Avoid_: Session (in the agent's own sense), transcript
 
+**Handoff note**:
+The first message of a **Conversation** that an agent started on its own **Session**. The transcript labels it as coming from the previous **Conversation**.
+
+**Queued handoff**:
+A start or switch of a **Conversation** that an agent asked for while a turn was running. It waits for that turn to settle and is dropped if the turn or the **Session** stops first.
+
 **Status line**:
 The row between the transcript and the message box (spec 004), spanning the chat column's full width: one **Readout** per glanceable fact about a **Chat pane**'s **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Plain text, no boxes (2026-10-15 grill, issue #564): a read-only Readout is an icon plus text with no border or fill; one that opens something (Pull request, Subagents) is a quiet text button with a hover background and no border. Which kinds show is chosen per-kind in Settings; each pane of a **Split** reads its own Session's data independently. Two health readouts, "RPC slow" and "Agent memory high" (#561, spec 044), are degraded-only: they render nothing, and reserve no space, until the Session's agent is actually degraded, and have no Settings row.
 _Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
