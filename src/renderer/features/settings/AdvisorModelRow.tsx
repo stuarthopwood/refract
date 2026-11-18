@@ -28,8 +28,7 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
   const load = useTokenGuardStore((state) => state.load)
   const set = useTokenGuardStore((state) => state.set)
   const reset = useTokenGuardStore((state) => state.reset)
-  const [pending, setPending] = useState(false)
-  const [saveError, setSaveError] = useState<string | undefined>()
+  const save = useTokenGuardStore((state) => state.saves[ADVISOR_KEY])
   const [roster, setRoster] = useState<AdvisorRoster | null>(null)
 
   useEffect(() => {
@@ -46,26 +45,19 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
     if (!loaded) void load()
   }, [loaded, load])
 
-  const stored = values[ADVISOR_KEY] ?? defaults[ADVISOR_KEY]
+  // While the write is in flight (or waiting on the migration) the row shows the value being saved.
+  const saving = save?.state === 'saving'
+  const stored = saving ? save.pendingValue : (values[ADVISOR_KEY] ?? defaults[ADVISOR_KEY])
   const value = typeof stored === 'string' ? stored : undefined
 
   async function commit(next: string | null, announcement?: string): Promise<void> {
-    setPending(true)
-    setSaveError(undefined)
-    let ok = true
-    if (next === null) {
-      await reset(ADVISOR_KEY)
-      ok = !useTokenGuardStore.getState().error
+    if (next === null) await reset(ADVISOR_KEY)
+    else await set(ADVISOR_KEY, next)
+    const outcome = useTokenGuardStore.getState().saves[ADVISOR_KEY]
+    if (outcome?.state === 'error') {
+      announceAssertive(`Could not save Advisor: ${outcome.error}`)
     } else {
-      ok = await set(ADVISOR_KEY, next)
-    }
-    setPending(false)
-    if (ok) {
       announcePolite(announcement ?? (next === null ? 'Advisor reset to the Refract default' : 'Advisor saved; applies to new Sessions'))
-    } else {
-      const message = useTokenGuardStore.getState().error ?? 'unknown error'
-      setSaveError(message)
-      announceAssertive(`Could not save Advisor: ${message}`)
     }
   }
 
@@ -78,8 +70,10 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
       roles={roles}
       catalog={catalog}
       catalogError={catalogError}
-      isPending={pending || !loaded}
-      saveError={saveError}
+      // Not yet loaded disables the row without claiming a save; only the user's own write says Saving….
+      isPending={saving || !loaded}
+      saveState={saving ? 'saving' : save?.state === 'saved' ? 'saved' : 'idle'}
+      saveError={save?.state === 'error' ? save.error : undefined}
       warning={roster ? `${describeAdvisorRoster(roster)}. File: ${roster.path}` : undefined}
       selectedProvider={selectedProvider}
       unsetLabel="Refract's default"

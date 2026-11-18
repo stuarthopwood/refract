@@ -2,7 +2,9 @@
 // the current model as text, and the "Change" dropdown. Used for every role, including Advisor,
 // whose value lives in Refract's token guard store rather than OMP's config (`AdvisorModelRow`).
 import { useState } from 'react'
-import { Loader2Icon, OctagonXIcon, TriangleAlertIcon } from 'lucide-react'
+import { TriangleAlertIcon } from 'lucide-react'
+import { SaveStatus } from '@/components/SaveStatus'
+import type { SaveState } from '@/components/saveStatusView'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { Button } from '@/components/ui/button'
 import { ROLE_ICONS } from '@/components/icons/role-icons'
@@ -25,7 +27,10 @@ export interface RoleRowProps {
   roles: RoleValues
   catalog: ModelCatalogEntry[] | undefined
   catalogError: string | undefined
+  /** Disables the controls; unlike `saveState` it is also true while a row cannot be edited yet (nothing is being saved). */
   isPending: boolean
+  /** What the row's own write is doing; only a write the user started shows as Saving…. A failure comes in as `saveError`. */
+  saveState: Exclude<SaveState, 'error'>
   saveError?: string
   overrideNote?: string
   /** A roster or other override that makes the shown model not the effective one; rendered with a warning triangle. */
@@ -46,6 +51,7 @@ export function RoleRow({
   catalog,
   catalogError,
   isPending,
+  saveState,
   saveError,
   overrideNote,
   warning,
@@ -78,12 +84,7 @@ export function RoleRow({
   const note = (
     <>
       <RoleCurrentModel id={`${selectId}-current`} current={current} catalogLoaded={catalogStatus === 'loaded'} />
-      {saveError && (
-        <p id={saveErrorId} className="flex items-center gap-1 text-xs text-destructive">
-          <OctagonXIcon aria-hidden className="size-4 shrink-0" />
-          Could not save: {saveError}
-        </p>
-      )}
+      {saveError && <SaveStatus id={saveErrorId} state="error" error={saveError} />}
       {!saveError && overrideNote && (
         <p id={overrideNoteId} className="text-xs text-muted-foreground">
           Saved, but {overrideNote} still controls the effective model for this role.
@@ -115,12 +116,7 @@ export function RoleRow({
           >
             {changing ? 'Done' : 'Change'}
           </Button>
-          {isPending && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-              <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
-              Saving…
-            </span>
-          )}
+          <SaveStatus state={saveState} />
         </div>
       </SettingRow>
       {changing && (
@@ -149,6 +145,7 @@ export function RoleRow({
               catalogEntry={resolveCatalogEntry(value, catalog)}
               catalogStatus={catalogStatus}
               disabled={isPending}
+              saving={saveState === 'saving'}
               onPick={(nextValue) => onCommit(nextValue)}
               announcePolite={announcePolite}
             />
