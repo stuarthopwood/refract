@@ -21,8 +21,7 @@ import { useSidebarRgb } from './useSidebarRgb'
 import { projectColorCss } from '@/lib/projectColor'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { groupWaitingState } from './sessionDisplay'
-import { SessionRow } from './SessionRow'
-import { SessionTreeList } from './SessionTreeList'
+import { SessionFlatList, SessionTreeList } from './SessionTreeList'
 import { buildSessionTree } from './sessionTree'
 import { ContextActionItems, DropdownActionItems } from './SessionRowParts'
 import { buildRepositoryActions } from './repositoryActions'
@@ -291,11 +290,7 @@ export function RepositoryGroup({
           ) : nested ? (
             <SessionTreeList nodes={tree} repository={repository} label={`${repository.name} sessions`} />
           ) : (
-            <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0 py-1">
-              {active.map((session) => (
-                <SessionRow key={session.id} session={session} repository={repository} />
-              ))}
-            </ul>
+            <SessionFlatList sessions={active} repository={repository} label={`${repository.name} sessions`} />
           )}
         </CollapsibleContent>
       </Collapsible>

@@ -109,6 +109,40 @@ describe('buildSessionTree', () => {
   })
 })
 
+describe('a tree built from a filtered list', () => {
+  const all = [session('p'), session('c1', { parentSessionId: 'p' }), session('c2', { parentSessionId: 'p' }), session('g', { parentSessionId: 'c1' })]
+  const byId = new Map(all.map((s) => [s.id, s]))
+
+  it('shows a match whose parent is filtered out at the top level, still naming its parent', () => {
+    const filtered = all.filter((s) => s.id === 'c1' || s.id === 'g')
+    const tree = buildSessionTree(filtered)
+    expect(ids(tree)).toEqual(['c1'])
+    expect(tree[0]).toMatchObject({ level: 1, parentId: null })
+    expect(fromLabel(tree[0]!.session, byId)).toEqual({ name: 'Session p', suffix: null })
+    expect(ids(tree[0]!.children)).toEqual(['g'])
+  })
+
+  it('lists only the matches, with a lone orphan match as a plain root', () => {
+    const tree = buildSessionTree(all.filter((s) => s.id === 'c2'))
+    expect(ids(flattenVisible(tree, open))).toEqual(['c2'])
+    expect(tree[0]!.children).toEqual([])
+    expect(fromLabel(tree[0]!.session, byId)).not.toBeNull()
+  })
+
+  it('keeps the parent and child nested when both match', () => {
+    const tree = buildSessionTree(all.filter((s) => s.id !== 'g'))
+    expect(ids(tree)).toEqual(['p'])
+    expect(ids(tree[0]!.children)).toEqual(['c1', 'c2'])
+    expect(tree[0]!.children.map((n) => n.setSize)).toEqual([2, 2])
+  })
+
+  it('counts only the children that match', () => {
+    const tree = buildSessionTree(all.filter((s) => s.id !== 'c2'))
+    expect(ids(tree[0]!.children)).toEqual(['c1'])
+    expect(tree[0]!.children[0]!.setSize).toBe(1)
+  })
+})
+
 describe('flattenVisible and subtreeContains', () => {
   const tree = buildSessionTree([session('a'), session('b', { parentSessionId: 'a' }), session('c', { parentSessionId: 'b' }), session('d')])
 

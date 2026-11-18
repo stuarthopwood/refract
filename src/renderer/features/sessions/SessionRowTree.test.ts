@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/state', () => ({ useSettingsStore: () => undefined }))
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SessionSummary } from '../../../shared/ipc'
-import { buildSessionTree, type FromLabel, type SessionTreeNode } from './sessionTree'
+import { buildSessionTree, fromLabel, type FromLabel, type SessionTreeNode } from './sessionTree'
 import {
   TreeFromLine,
   TreeLineTwo,
@@ -161,6 +161,28 @@ describe('TreeLineTwo', () => {
     const html = line(props(idle, 'p', { open: false }))
     expect(html).toContain('1 child<')
     expect(html).toContain('b-p')
+  })
+})
+
+describe('a filtered tree', () => {
+  const all = [session('p', { archivedAt: null }), session('c', { parentSessionId: 'p' }), session('g', { parentSessionId: 'c' })]
+  const byId = new Map(all.map((s) => [s.id, s]))
+  const matches = all.filter((s) => s.id !== 'p')
+
+  it('describes an orphaned match by its parent, and counts only the matching children', () => {
+    const from = fromLabel(matches[0]!, byId)
+    expect(from).toEqual({ name: 'Session p', suffix: null })
+    expect(treeDescription(props(matches, 'c', { from }))).toBe('1 child. from Session p')
+  })
+
+  it('shows an orphaned match at level 1 with no indent', () => {
+    expect(treeItemAttributes(props(matches, 'c'), 'c')).toMatchObject({ 'aria-level': 1, 'aria-setsize': 1, 'aria-posinset': 1 })
+    expect(treeItemAttributes(props(matches, 'c'), 'c').style).toMatchObject({ '--tree-indent': '0px' })
+  })
+
+  it('draws the from line for an orphaned match', () => {
+    const html = render(createElement(TreeFromLine, { from: fromLabel(matches[0]!, byId)!, metaFg: 'meta' }))
+    expect(html).toContain('Session p')
   })
 })
 

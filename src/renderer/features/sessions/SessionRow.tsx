@@ -37,6 +37,7 @@ import {
   onContextMenuOpenChange,
   onDropdownOpenChange
 } from './SessionRowParts'
+import { fromLabelText, type FromLabel } from './sessionTree'
 import type { SessionRowSurface } from './sessionRowSurface'
 import {
   TreeFromLine,
@@ -101,7 +102,8 @@ function lineTwoKind(
 
 export type SessionRowProps =
   // `repository` is absent for the Personal Agent, which belongs to no Project.
-  | { layout?: 'list'; session: SessionSummary; repository?: Repository; tree?: SessionRowTreeProps; children?: ReactNode }
+  // `from` is the "from <parent>" line of a top-level row in a group that draws no tree (#1862); a tree row's own line comes from `tree`.
+  | { layout?: 'list'; session: SessionSummary; repository?: Repository; tree?: SessionRowTreeProps; from?: FromLabel | null; children?: ReactNode }
   // The table layout renders this row on Manage sessions (#934); `surface` supplies its focus, announcement
   // and open behaviour, and `repository` is `undefined` when the Project can't be resolved.
   | { layout: 'table'; session: SessionSummary; repository: Repository | undefined; projectName: string; surface: SessionRowSurface }
@@ -161,12 +163,13 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
             ? (activityText ?? undefined)
             : undefined,
     // The count and the "from" line are in the sr-only description, not the name, so the name stays short (FR-008).
-    props.tree ? treeDescription(props.tree) : null
+    props.tree ? treeDescription(props.tree) : props.from ? fromLabelText(props.from) : null
   ]
     .filter((part): part is string => Boolean(part))
     .join('. ') || undefined
 
   const { tree, children } = props
+  const from = tree ? tree.from : props.from
   const parentTree = tree && hasTreeChildren(tree) ? tree : null
   // A parent's count shares line 2 with the slot, so the slot drops its own indent there.
   const linePad = parentTree ? undefined : 'pl-6'
@@ -271,7 +274,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                     {session.hiddenAt && <HiddenMarker compact />}
                   </span>
                   {lineTwoNode}
-                  {tree?.from && <TreeFromLine from={tree.from} metaFg={metaFg} />}
+                  {from && <TreeFromLine from={from} metaFg={metaFg} />}
                 </button>
               </SessionDetailsCard>
             )}

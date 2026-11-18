@@ -39,14 +39,33 @@ function SessionTreeItem({
   )
 }
 
-export function SessionTreeList({ nodes, repository, label }: { nodes: readonly SessionTreeNode[]; repository: Repository; label: string }) {
+/** The unfiltered store list by id, so a child whose parent is archived, hidden or filtered out still names it. */
+function useSessionsById(): ReadonlyMap<string, SessionSummary> {
   const sessions = useSessionsStore((state) => state.sessions)
-  // The unfiltered store list, so a child whose parent is archived, hidden or filtered out still names it.
-  const sessionsById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions])
+  return useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions])
+}
+
+export function SessionTreeList({ nodes, repository, label }: { nodes: readonly SessionTreeNode[]; repository: Repository; label: string }) {
+  const sessionsById = useSessionsById()
   return (
     <ul role="tree" aria-label={label} className="flex flex-col gap-0 py-1">
       {nodes.map((node) => (
         <SessionTreeItem key={node.session.id} node={node} roots={nodes} repository={repository} sessionsById={sessionsById} />
+      ))}
+    </ul>
+  )
+}
+
+/**
+ * A group in which no listed Session has a listed child keeps its plain list, but a top-level row whose
+ * parent is archived, hidden or filtered out still shows its "from" line (FR-003).
+ */
+export function SessionFlatList({ sessions, repository, label }: { sessions: readonly SessionSummary[]; repository: Repository; label: string }) {
+  const sessionsById = useSessionsById()
+  return (
+    <ul aria-label={label} className="flex flex-col gap-0 py-1">
+      {sessions.map((session) => (
+        <SessionRow key={session.id} session={session} repository={repository} from={fromLabel(session, sessionsById)} />
       ))}
     </ul>
   )
