@@ -38,4 +38,4 @@
 ## Notes
 
 - The specify step records the four grilled decisions; the clarify step records the remaining choices as Decided (Skippy, delegated by Stuart 2026-11-18).
-- Verification is a live fake-omp screenshot run at the default and a narrow width; AGENTS.md adds no new tests.
+- Verification is co-located unit tests (AGENTS.md Testing, epic #1918) plus a live fake-omp screenshot run at the default and a narrow width.
