@@ -210,6 +210,26 @@ async fn the_legacy_overlay_is_left_alone_when_no_pre_migration_session_launched
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[tokio::test]
+async fn a_read_while_the_migration_is_pending_writes_nothing() {
+    let _serial = SERIAL.lock().await;
+    values::forget();
+    let dir = scratch("read-pending");
+    write_legacy(&dir, &values::defaults()).await.unwrap();
+    let before = std::fs::read_to_string(overlay_path(&dir)).unwrap();
+    let files = || std::fs::read_dir(&dir).unwrap().count();
+    let count = files();
+
+    let global = pending_global(&dir).await;
+    let _ = migrate::status(&dir).await;
+
+    assert_eq!(global.values, legacy::effective(&dir).await);
+    assert_eq!(files(), count, "a read must not create or retire any file");
+    assert!(!dir.join("token-guard-migration.json").exists());
+    assert_eq!(std::fs::read_to_string(overlay_path(&dir)).unwrap(), before);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn a_failed_legacy_refresh_becomes_a_warning_and_a_good_one_does_not() {
     assert_eq!(refresh_warning(Ok(())), None);

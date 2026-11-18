@@ -226,22 +226,26 @@ async fn write_change(
     Ok(full_snapshot(&state, &args, &applied.updated, &windows, &applied.warnings).await)
 }
 
+/// What a read reports while the migration has not finished: the legacy values, and no `omp` call.
+/// Only launch (`lib.rs`) and the first save run the migration, so opening Settings writes nothing (FR-040).
+async fn pending_global(dir: &Path) -> Global {
+    Global {
+        values: legacy::effective(dir).await,
+        default_model: None,
+    }
+}
+
 /// Only reports the migration notice: screens other than Settings > Advanced also load, and must
 /// not spend it. A migration still running is not awaited: the old values and `pending` come back
-/// at once, and the migration runs in the background.
+/// at once.
 fn token_guard_get(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let (global, windows) = if migrate::is_done(&state.data_dir).await {
             let (global, windows) = tokio::join!(values::load_global(), context_windows(true));
             (global.map_err(invalid_argument)?, windows)
         } else {
-            migrate::start(&state.data_dir);
-            let global = Global {
-                values: legacy::effective(&state.data_dir).await,
-                default_model: None,
-            };
             // Cached windows only: `omp models` would queue on the lock the migration is holding.
-            (global, context_windows(false).await)
+            (pending_global(&state.data_dir).await, context_windows(false).await)
         };
         Ok(full_snapshot(&state, &args, &global, &windows, &[]).await)
     })
