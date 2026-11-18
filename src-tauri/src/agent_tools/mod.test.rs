@@ -32,7 +32,7 @@ fn every_depth_registers_every_session_tool() {
         for tool in sessions::SESSION_TOOLS {
             assert!(names.contains(&tool), "depth {depth}: {tool}");
         }
-        assert_eq!(host_tool_defs(ToolAccess::for_depth(depth)).len(), 14);
+        assert_eq!(host_tool_defs(ToolAccess::for_depth(depth)).len(), 17);
     }
 }
 

@@ -21,14 +21,14 @@ Phase 2 (implementation) is a separate run. Each implementation task has a co-lo
 
 ## Phase C - tools
 
-- [ ] T007 Add `agent_tools/sessions_conversations.rs`: arguments, target plan (relationship, state, conversation lookup), `ConvHost` trait, card, post-card re-check, defer or run.
-- [ ] T007t Test in `agent_tools/sessions_conversations.test.rs`: target plan (relationship, state, lookup), fake `ConvHost`, card, post-card re-check, defer or run.
-- [ ] T008 Add `sessions_conversations_schema.rs` and register the three names in `sessions.rs` and `router_native.rs`.
-- [ ] T008t Test in `agent_tools/sessions_conversations_schema.test.rs`: argument schemas and `invalid_input` bounds; registration names in `sessions.test.rs`.
-- [ ] T009 Implement `list_conversations` over `ipc::conversations::list_conversations` with sorting, `limit` and preview clipping.
-- [ ] T009t Test in `agent_tools/sessions_conversations.test.rs`: `list_conversations` sorting, default 20, `limit` 100 and 101, 120-character preview clip.
-- [ ] T010 Wrap another Session's prompt with `envelope::wrap`; launch a Stopped target before the prompt.
-- [ ] T010t Test in `agent_tools/sessions_conversations.test.rs`: foreign prompt is wrapped by `envelope::wrap`; a Stopped target launches before the prompt.
+- [x] T007 Add `agent_tools/sessions_conversations.rs`: arguments, target plan (relationship, state, conversation lookup), `ConvHost` trait, card, post-card re-check, defer or run. (Written, uncompiled.)
+- [x] T007t Test in `agent_tools/sessions_conversations.test.rs`: target plan (relationship, state, lookup), fake `ConvHost`, card, post-card re-check, defer or run. (Written, uncompiled.)
+- [x] T008 Add `sessions_conversations_schema.rs` and register the three names in `sessions.rs` and `router_native.rs`. (Written, uncompiled; `new_conversation` and `switch_conversation` return `not_implemented` until D2 wires `open_gate`/`confirm`/`recheck`/`dispatch`.)
+- [x] T008t Test in `agent_tools/sessions_conversations_schema.test.rs`: argument schemas and `invalid_input` bounds; registration names in `sessions.test.rs`. (Written, uncompiled.)
+- [x] T009 Implement `list_conversations` over `ipc::conversations::list_conversations` with sorting, `limit` and preview clipping. (Written, uncompiled.)
+- [x] T009t Test in `agent_tools/sessions_conversations.test.rs`: `list_conversations` sorting, default 20, `limit` 100 and 101, 120-character preview clip. (Written, uncompiled.)
+- [ ] T010 Wrap another Session's prompt with `envelope::wrap`; launch a Stopped target before the prompt. (`dispatch` in `sessions_conversations.rs` does this, uncompiled; open until the `new_conversation` arm calls it.)
+- [ ] T010t Test in `agent_tools/sessions_conversations.test.rs`: foreign prompt is wrapped by `envelope::wrap`; a Stopped target launches before the prompt. (Covered through `dispatch`, uncompiled; open until D2.)
 
 ## Phase D - UI and storage
 

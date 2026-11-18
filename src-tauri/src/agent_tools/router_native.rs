@@ -6,8 +6,8 @@ use serde_json::Value;
 
 use super::router::ToolError;
 use super::{
-    sessions, sessions_create, sessions_end_schema, sessions_end_tools, sessions_send,
-    sessions_update,
+    sessions, sessions_conversations, sessions_conversations_schema, sessions_create,
+    sessions_end_schema, sessions_end_tools, sessions_send, sessions_update,
 };
 use crate::session::agent::SessionAgent;
 
@@ -23,6 +23,10 @@ pub(super) async fn run_native(
         sessions::GET_SESSION_STATUS => sessions::get_status(agent, args).await,
         sessions_create::CREATE_SESSION => sessions_create::create(agent, call_id, args).await,
         sessions_update::UPDATE_SESSION => sessions_update::update(agent, call_id, args).await,
+        other if sessions_conversations_schema::conv_tool(other).is_some() => {
+            let conv = sessions_conversations_schema::conv_tool(other).expect("checked by the guard");
+            sessions_conversations::run(agent, call_id, conv, args).await
+        }
         other if sessions_end_schema::end_tool(other).is_some() => {
             let end = sessions_end_schema::end_tool(other).expect("checked by the guard");
             sessions_end_tools::run(agent, call_id, end, args).await

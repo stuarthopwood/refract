@@ -5,6 +5,8 @@ use serde_json::{json, Map, Value};
 
 use super::panels;
 use super::router::{ToolError, INVALID_INPUT};
+use super::sessions_conversations::{LIST_CONVERSATIONS, NEW_CONVERSATION, SWITCH_CONVERSATION};
+use super::sessions_conversations_schema;
 use super::sessions_create::{self, CREATE_SESSION};
 use super::sessions_end::{
     ARCHIVE_SESSION, DELETE_SESSION, PAUSE_SESSION, RESUME_SESSION, STOP_SESSION, UNARCHIVE_SESSION,
@@ -17,7 +19,7 @@ use crate::session::agent::SessionAgent;
 pub const LIST_SESSIONS: &str = "refract_list_sessions";
 pub const GET_SESSION_STATUS: &str = "refract_get_session_status";
 pub const SEND_SESSION_MESSAGE: &str = "refract_send_session_message";
-pub const SESSION_TOOLS: [&str; 11] = [
+pub const SESSION_TOOLS: [&str; 14] = [
     LIST_SESSIONS,
     GET_SESSION_STATUS,
     SEND_SESSION_MESSAGE,
@@ -29,6 +31,9 @@ pub const SESSION_TOOLS: [&str; 11] = [
     PAUSE_SESSION,
     RESUME_SESSION,
     DELETE_SESSION,
+    LIST_CONVERSATIONS,
+    NEW_CONVERSATION,
+    SWITCH_CONVERSATION,
 ];
 
 pub const UNKNOWN_PROJECT: &str = "unknown_project";
@@ -64,7 +69,10 @@ and treats it as input from a peer Session, not from the developer."
         }
         CREATE_SESSION => sessions_create::description(),
         UPDATE_SESSION => sessions_update::description(),
-        other => sessions_end_schema::end_tool(other).map_or("", sessions_end_schema::description),
+        other => sessions_conversations_schema::conv_tool(other)
+            .map(sessions_conversations_schema::description)
+            .or_else(|| sessions_end_schema::end_tool(other).map(sessions_end_schema::description))
+            .unwrap_or(""),
     }
 }
 
@@ -95,10 +103,10 @@ pub fn parameters(name: &str) -> Value {
         }),
         CREATE_SESSION => sessions_create::parameters(),
         UPDATE_SESSION => sessions_update::parameters(),
-        other => sessions_end_schema::end_tool(other).map_or_else(
-            || json!({ "type": "object" }),
-            sessions_end_schema::parameters,
-        ),
+        other => sessions_conversations_schema::conv_tool(other)
+            .map(sessions_conversations_schema::parameters)
+            .or_else(|| sessions_end_schema::end_tool(other).map(sessions_end_schema::parameters))
+            .unwrap_or_else(|| json!({ "type": "object" })),
     }
 }
 
