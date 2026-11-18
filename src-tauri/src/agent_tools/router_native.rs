@@ -24,7 +24,8 @@ pub(super) async fn run_native(
         sessions_create::CREATE_SESSION => sessions_create::create(agent, call_id, args).await,
         sessions_update::UPDATE_SESSION => sessions_update::update(agent, call_id, args).await,
         other if sessions_conversations_schema::conv_tool(other).is_some() => {
-            let conv = sessions_conversations_schema::conv_tool(other).expect("checked by the guard");
+            let conv =
+                sessions_conversations_schema::conv_tool(other).expect("checked by the guard");
             sessions_conversations::run(agent, call_id, conv, args).await
         }
         other if sessions_end_schema::end_tool(other).is_some() => {

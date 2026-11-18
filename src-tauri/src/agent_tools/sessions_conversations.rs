@@ -81,7 +81,11 @@ pub fn parse_list(args: &Value) -> Result<(Option<String>, usize), ToolError> {
             .as_u64()
             .and_then(|n| usize::try_from(n).ok())
             .filter(|n| (1..=MAX_LIMIT).contains(n))
-            .ok_or_else(|| invalid(format!("limit must be a whole number from 1 to {MAX_LIMIT}")))?,
+            .ok_or_else(|| {
+                invalid(format!(
+                    "limit must be a whole number from 1 to {MAX_LIMIT}"
+                ))
+            })?,
     };
     Ok((optional_session_id(args)?, limit))
 }
@@ -312,7 +316,9 @@ pub(super) async fn recheck<H: ConvHost>(
     let now = open_gate(host, Some(&approved.target.id), true)
         .await
         .map_err(|e| match e.code.as_str() {
-            NOT_FOUND => invalid_state("the target Session was removed while the approval was open"),
+            NOT_FOUND => {
+                invalid_state("the target Session was removed while the approval was open")
+            }
             _ => e,
         })?;
     if !asked && needs_card(now.relationship, host.is_yolo().await) {
@@ -517,7 +523,9 @@ impl ConvHost for AppConvHost {
         crate::ipc::conversations_core::switch_core(&self.state, id, &file)
             .await
             .map_err(ipc_error)?;
-        self.agent.tool_events().emit_session_conversation_changed(id);
+        self.agent
+            .tool_events()
+            .emit_session_conversation_changed(id);
         Ok(())
     }
 }

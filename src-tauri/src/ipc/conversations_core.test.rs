@@ -259,7 +259,9 @@ async fn switch_core_refuses_a_file_that_is_not_one_of_the_sessions_conversation
 async fn switch_core_refuses_an_unknown_session() {
     let r = rig(SessionStatus::Idle).await;
 
-    let err = switch_core(&r.state, "missing", &r.first).await.unwrap_err();
+    let err = switch_core(&r.state, "missing", &r.first)
+        .await
+        .unwrap_err();
 
     assert_eq!(err.code, "not-found");
     r.finish().await;

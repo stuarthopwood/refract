@@ -18,11 +18,11 @@ pub fn register(d: &mut Dispatcher) {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ConversationInfo {
     pub(crate) file: String,
-    id: String,
-    created_at: String,
-    title: String,
-    preview: String,
-    is_current: bool,
+    pub(crate) id: String,
+    pub(crate) created_at: String,
+    pub(crate) title: String,
+    pub(crate) preview: String,
+    pub(crate) is_current: bool,
 }
 
 /// Builds the `SessionSnapshot` shared by `sessions.open`, `.recover`, `.resume`, and conversation switches.

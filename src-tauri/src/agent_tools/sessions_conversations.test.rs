@@ -77,7 +77,10 @@ impl ConvHost for ConvFake {
         Ok(())
     }
     async fn switch(&self, id: &str, file: String) -> Result<(), ToolError> {
-        self.calls.lock().unwrap().push(format!("switch:{id}:{file}"));
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("switch:{id}:{file}"));
         Ok(())
     }
 }
@@ -140,7 +143,10 @@ fn list_arguments_default_to_twenty_and_bound_the_limit() {
     for bad in [json!(0), json!(101), json!(-1), json!(1.5), json!("5")] {
         assert_eq!(code(parse_list(&json!({ "limit": bad }))), INVALID_INPUT);
     }
-    assert_eq!(code(parse_list(&json!({ "session_id": "" }))), INVALID_INPUT);
+    assert_eq!(
+        code(parse_list(&json!({ "session_id": "" }))),
+        INVALID_INPUT
+    );
     assert_eq!(code(parse_list(&json!({ "extra": 1 }))), INVALID_INPUT);
 }
 
@@ -160,8 +166,14 @@ fn switch_needs_both_ids() {
         parse_switch(&json!({ "session_id": "kid", "conversation_id": "c1" })).unwrap(),
         ("kid".to_string(), "c1".to_string())
     );
-    assert_eq!(code(parse_switch(&json!({ "session_id": "kid" }))), INVALID_INPUT);
-    assert_eq!(code(parse_switch(&json!({ "conversation_id": "c1" }))), INVALID_INPUT);
+    assert_eq!(
+        code(parse_switch(&json!({ "session_id": "kid" }))),
+        INVALID_INPUT
+    );
+    assert_eq!(
+        code(parse_switch(&json!({ "conversation_id": "c1" }))),
+        INVALID_INPUT
+    );
 }
 
 // Target resolution
@@ -174,7 +186,10 @@ fn the_target_defaults_to_the_caller_and_is_classified_by_id() {
     };
     assert_eq!(pick("me", None).unwrap(), ("me".into(), Relationship::Own));
     assert_eq!(pick("me", Some("me")).unwrap().1, Relationship::Own);
-    assert_eq!(pick("me", Some("grandkid")).unwrap().1, Relationship::Descendant);
+    assert_eq!(
+        pick("me", Some("grandkid")).unwrap().1,
+        Relationship::Descendant
+    );
     assert_eq!(pick("me", Some("side")).unwrap().1, Relationship::Sibling);
 }
 
@@ -211,8 +226,14 @@ async fn paused_archived_and_deleting_targets_are_refused_but_reads_pass() {
     fx.paused.lock().unwrap().insert("kid".into());
     fx.deleting.lock().unwrap().insert("side".into());
 
-    assert_eq!(code(open_gate(&fx, Some("kid"), true).await.map(|_| ())), INVALID_STATE);
-    assert_eq!(code(open_gate(&fx, Some("side"), true).await.map(|_| ())), INVALID_STATE);
+    assert_eq!(
+        code(open_gate(&fx, Some("kid"), true).await.map(|_| ())),
+        INVALID_STATE
+    );
+    assert_eq!(
+        code(open_gate(&fx, Some("side"), true).await.map(|_| ())),
+        INVALID_STATE
+    );
     assert!(open_gate(&fx, Some("kid"), false).await.is_ok());
     assert!(open_gate(&fx, Some("grandkid"), true).await.is_ok());
 
@@ -241,7 +262,9 @@ async fn a_sibling_raises_a_card_led_by_its_id_and_yolo_does_not() {
     let mut fx = fake(vec![]).await;
     let gate = open_gate(&fx, Some("side"), true).await.unwrap();
 
-    assert!(confirm(&fx, ConvTool::New, &gate, "do the thing").await.unwrap());
+    assert!(confirm(&fx, ConvTool::New, &gate, "do the thing")
+        .await
+        .unwrap());
     let card = fx.cards.lock().unwrap().remove(0);
     let (title, details) = parts(&card);
     assert!(title.contains("side"), "{title}");
@@ -259,7 +282,10 @@ async fn a_denied_card_stops_the_call() {
     fx.approve = false;
     let gate = open_gate(&fx, Some("side"), true).await.unwrap();
 
-    assert_eq!(code(confirm(&fx, ConvTool::Switch, &gate, "").await), DENIED);
+    assert_eq!(
+        code(confirm(&fx, ConvTool::Switch, &gate, "").await),
+        DENIED
+    );
 }
 
 #[tokio::test]
@@ -289,9 +315,17 @@ async fn a_call_that_showed_no_card_is_refused_when_the_target_moves_out_of_the_
 async fn a_target_removed_while_the_card_was_open_is_invalid_state() {
     let fx = fake(vec![]).await;
     let gate = open_gate(&fx, Some("side"), true).await.unwrap();
-    fx.registry.lock().await.remove_session("side").await.unwrap();
+    fx.registry
+        .lock()
+        .await
+        .remove_session("side")
+        .await
+        .unwrap();
 
-    assert_eq!(code(recheck(&fx, &gate, true).await.map(|_| ())), INVALID_STATE);
+    assert_eq!(
+        code(recheck(&fx, &gate, true).await.map(|_| ())),
+        INVALID_STATE
+    );
 }
 
 // Defer or run
@@ -301,9 +335,16 @@ async fn a_mid_turn_target_defers_and_nothing_starts() {
     let mut fx = fake(vec![]).await;
     fx.mid_turn = true;
 
-    let outcome = dispatch(&fx, "kid", HandoffAction::New { prompt: "go".into() }, None)
-        .await
-        .unwrap();
+    let outcome = dispatch(
+        &fx,
+        "kid",
+        HandoffAction::New {
+            prompt: "go".into(),
+        },
+        None,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(outcome, Dispatch::Scheduled);
     assert_eq!(fx.calls().len(), 1, "{:?}", fx.calls());
@@ -318,7 +359,9 @@ async fn a_foreign_prompt_is_wrapped_by_the_envelope() {
     let outcome = dispatch(
         &fx,
         "side",
-        HandoffAction::New { prompt: "build it".into() },
+        HandoffAction::New {
+            prompt: "build it".into(),
+        },
         sender,
     )
     .await
@@ -333,9 +376,16 @@ async fn a_foreign_prompt_is_wrapped_by_the_envelope() {
 async fn a_self_handoff_sends_the_raw_note_marked_as_a_handoff() {
     let fx = fake(vec![]).await;
 
-    dispatch(&fx, "me", HandoffAction::New { prompt: "note".into() }, None)
-        .await
-        .unwrap();
+    dispatch(
+        &fx,
+        "me",
+        HandoffAction::New {
+            prompt: "note".into(),
+        },
+        None,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(fx.calls()[1], "start:me:true:note");
 }
@@ -344,9 +394,16 @@ async fn a_self_handoff_sends_the_raw_note_marked_as_a_handoff() {
 async fn an_idle_switch_runs_at_once() {
     let fx = fake(vec![]).await;
 
-    let outcome = dispatch(&fx, "kid", HandoffAction::Switch { file: "b.jsonl".into() }, None)
-        .await
-        .unwrap();
+    let outcome = dispatch(
+        &fx,
+        "kid",
+        HandoffAction::Switch {
+            file: "b.jsonl".into(),
+        },
+        None,
+    )
+    .await
+    .unwrap();
 
     assert_eq!(outcome, Dispatch::Done);
     assert_eq!(fx.calls()[1], "switch:kid:b.jsonl");
@@ -376,9 +433,13 @@ async fn list_honours_the_limit_and_refuses_one_past_the_cap() {
     let convs = (1..=30).map(|n| conv(n, "hi")).collect();
     let fx = fake(convs).await;
 
-    let three = run_with(&fx, ConvTool::List, &json!({ "limit": 3 })).await.unwrap();
+    let three = run_with(&fx, ConvTool::List, &json!({ "limit": 3 }))
+        .await
+        .unwrap();
     assert_eq!(three["conversations"].as_array().unwrap().len(), 3);
-    assert!(run_with(&fx, ConvTool::List, &json!({ "limit": 100 })).await.is_ok());
+    assert!(run_with(&fx, ConvTool::List, &json!({ "limit": 100 }))
+        .await
+        .is_ok());
     let refused = run_with(&fx, ConvTool::List, &json!({ "limit": 101 })).await;
     assert_eq!(code(refused), INVALID_INPUT);
 }
@@ -415,7 +476,10 @@ async fn list_reads_a_sibling_without_a_card_and_still_refuses_other_projects() 
 async fn new_checks_its_arguments_before_touching_anything() {
     let fx = fake(vec![]).await;
 
-    assert_eq!(code(run_with(&fx, ConvTool::New, &json!({})).await), INVALID_INPUT);
+    assert_eq!(
+        code(run_with(&fx, ConvTool::New, &json!({})).await),
+        INVALID_INPUT
+    );
     assert!(fx.calls().is_empty());
 }
 
@@ -423,7 +487,9 @@ async fn new_checks_its_arguments_before_touching_anything() {
 async fn new_in_an_idle_own_session_starts_at_once_as_a_handoff() {
     let fx = fake(vec![]).await;
 
-    let result = run_with(&fx, ConvTool::New, &json!({ "prompt": "go" })).await.unwrap();
+    let result = run_with(&fx, ConvTool::New, &json!({ "prompt": "go" }))
+        .await
+        .unwrap();
 
     assert_eq!(result, json!({ "outcome": "started", "id": "me" }));
     assert_eq!(fx.calls()[1], "start:me:true:go");
@@ -434,7 +500,9 @@ async fn new_in_a_mid_turn_session_is_scheduled_and_nothing_starts() {
     let mut fx = fake(vec![]).await;
     fx.mid_turn = true;
 
-    let result = run_with(&fx, ConvTool::New, &json!({ "prompt": "go" })).await.unwrap();
+    let result = run_with(&fx, ConvTool::New, &json!({ "prompt": "go" }))
+        .await
+        .unwrap();
 
     assert_eq!(result, json!({ "outcome": "scheduled", "id": "me" }));
     assert_eq!(fx.calls().len(), 1, "{:?}", fx.calls());
@@ -449,7 +517,11 @@ async fn new_in_a_sibling_asks_first_and_sends_the_prompt_in_an_envelope() {
 
     assert_eq!(result, json!({ "outcome": "started", "id": "side" }));
     assert_eq!(fx.cards.lock().unwrap().len(), 1);
-    assert!(fx.calls()[1].starts_with("start:side:false:"), "{:?}", fx.calls());
+    assert!(
+        fx.calls()[1].starts_with("start:side:false:"),
+        "{:?}",
+        fx.calls()
+    );
     assert!(fx.calls()[1].contains("build it"));
 }
 
@@ -470,7 +542,10 @@ async fn new_in_a_paused_session_is_invalid_state() {
     fx.paused.lock().unwrap().insert("kid".into());
     let args = json!({ "prompt": "go", "session_id": "kid" });
 
-    assert_eq!(code(run_with(&fx, ConvTool::New, &args).await), INVALID_STATE);
+    assert_eq!(
+        code(run_with(&fx, ConvTool::New, &args).await),
+        INVALID_STATE
+    );
     assert!(fx.calls().is_empty());
 }
 
@@ -484,7 +559,9 @@ fn switch_args(session: &str, conversation: &str) -> serde_json::Value {
 async fn switch_to_another_listed_conversation_switches_at_once() {
     let fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
 
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c2")).await.unwrap();
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c2"))
+        .await
+        .unwrap();
 
     assert_eq!(
         result,
@@ -497,7 +574,9 @@ async fn switch_to_another_listed_conversation_switches_at_once() {
 async fn switch_to_the_current_conversation_is_unchanged_and_does_nothing() {
     let fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
 
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c1")).await.unwrap();
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c1"))
+        .await
+        .unwrap();
 
     assert_eq!(
         result,
@@ -511,7 +590,9 @@ async fn switch_mid_turn_is_scheduled() {
     let mut fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
     fx.mid_turn = true;
 
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c2")).await.unwrap();
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c2"))
+        .await
+        .unwrap();
 
     assert_eq!(
         result,

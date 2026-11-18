@@ -52,7 +52,10 @@ async fn the_sender_is_kept_for_the_envelope() {
     .unwrap();
 
     let queued = state.queued_handoff.clone().unwrap();
-    assert_eq!(queued.sender, Some(("Planner".to_string(), "s-1".to_string())));
+    assert_eq!(
+        queued.sender,
+        Some(("Planner".to_string(), "s-1".to_string()))
+    );
     drop(state);
     fx.finish().await;
 }
@@ -146,7 +149,14 @@ async fn queue_handoff_refuses_a_second_action() {
 
     assert_eq!(err.code, "invalid-state");
     assert_eq!(
-        fx.agent.state.lock().await.queued_handoff.clone().unwrap().action,
+        fx.agent
+            .state
+            .lock()
+            .await
+            .queued_handoff
+            .clone()
+            .unwrap()
+            .action,
         new_with("never")
     );
     fx.finish().await;

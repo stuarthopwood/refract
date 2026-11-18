@@ -107,12 +107,7 @@ impl Rig {
 
     /// Settles the queued turn and runs the action to its end, off the spawned task.
     async fn settle_and_run(&self) {
-        self.fx
-            .agent
-            .state
-            .lock()
-            .await
-            .turn_generation = 2;
+        self.fx.agent.state.lock().await.turn_generation = 2;
         self.fx
             .agent
             .set_status(SessionStatus::Idle, None, None)
