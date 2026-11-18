@@ -143,11 +143,12 @@ impl OmpExecutor for RealOmpExecutor {
 
 /// Lets a test prove the code under test never starts the real `omp`: while a `Forbid` is alive on the test's
 /// thread, `RealOmpExecutor` fails the call and counts it. Thread-local, so tests on other threads still run `omp`.
+/// It only covers calls on the current thread, so the test needs a current-thread runtime (the `#[tokio::test]` default).
 #[cfg(test)]
 pub(crate) mod refuse_real_omp {
     use std::cell::Cell;
 
-    use super::{OmpConfigError, OmpConfigErrorCode};
+    use super::{OmpConfigError, OmpConfigErrorCode, OmpExecutor};
 
     thread_local! {
         static REFUSED: Cell<Option<u32>> = const { Cell::new(None) };
@@ -182,6 +183,20 @@ pub(crate) mod refuse_real_omp {
                 "the real omp is forbidden in this test",
             ))
         })
+    }
+
+    #[tokio::test]
+    async fn forbid_refuses_a_real_omp_call_and_counts_it_until_dropped() {
+        let guard = Forbid::new();
+        let args = vec!["config".to_string(), "list".to_string()];
+        let result = super::RealOmpExecutor
+            .call(&args, "Could not read omp config.", &[])
+            .await;
+        let err = result.expect_err("the guard must refuse the call");
+        assert_eq!(err.code, OmpConfigErrorCode::OmpFailed);
+        assert_eq!(guard.refused(), 1);
+        drop(guard);
+        assert_eq!(Forbid::new().refused(), 0);
     }
 }
 
