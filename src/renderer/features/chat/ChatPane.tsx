@@ -7,9 +7,7 @@ import { PausedBody } from './PausedBody'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
-import { ArchiveParentDialog } from '@/features/sessions/ArchiveParentDialog'
-import { useArchiveSession } from '@/features/sessions/useArchiveSession'
-import { useChatAreaAnnouncer } from './chatAreaAnnouncer'
+import { useChatArchive } from './useChatArchive'
 import { cn } from '@/lib/utils'
 import { focusPaneContent, focusSessionsNav, isFocusStranded } from '@/lib/focus'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
@@ -85,10 +83,7 @@ interface ChatPaneProps {
 export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSession, showWatermark, showAmbientLoop }: ChatPaneProps) {
   const session = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId))
   const deleting = useSessionsStore((s) => s.deletingIds.has(sessionId))
-  const archiveParent = useArchiveSession(sessionId, {
-    announce: (message) => useChatAreaAnnouncer.getState().announce(message),
-    onClosed: () => false
-  })
+  const { archive: handleArchive, dialog: archiveDialog } = useChatArchive(sessionId)
   const startSeq = useSessionsStore((s) => s.startSeq[sessionId] ?? 0)
   const queued = useQueuedMessages(sessionId)
   const isPristine = useSplitStore((s) => s.pristineIds.has(sessionId))
@@ -588,12 +583,6 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     }
   }
 
-  async function handleArchive() {
-    if (archiveParent.request()) return
-    const result = await window.refract.sessions.archive(sessionId)
-    if (!result.ok) notify(result.error)
-  }
-
   return (
     <div
       ref={chatPaneRef}
@@ -690,7 +679,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
           else focusSessionsNav()
         }}
       />
-      <ArchiveParentDialog controls={archiveParent.controls} />
+      {archiveDialog}
       <PausedBody sessionId={sessionId}>
       <div className="relative isolate min-h-0 flex-1 overflow-hidden [container-type:size]">
         {showWatermark && <BrandWatermark variant="live" />}
