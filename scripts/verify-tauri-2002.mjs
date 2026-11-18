@@ -1,14 +1,10 @@
 #!/usr/bin/env node
-// Live CDP check for #2002 / #1940 / #1765 (T069): Settings rows show their own save status, and opening Settings writes nothing.
-// Drives the built debug exe (scratch copy) against the REAL `omp` CLI with PI_CODING_AGENT_DIR pointed at a scratch agent dir
-// and a legacy token-guard.json. A forwarding omp shim fails every `config set` while the app launches (so the launch migration
-// fails and Readiness passes), then holds every `config set` for 1 s: the first save then retries the migration, which holds
-// its lock for about a minute (the #1940 case). Without PI_CODING_AGENT_DIR a debug build skips the migration (FR-035). The
-// real ~/.omp is never read or written.
+// Live CDP check for #2002/#1940/#1765: Settings rows show their own save status, and opening Settings writes nothing.
+// Drives a scratch copy of the debug exe against the REAL omp with PI_CODING_AGENT_DIR on a scratch dir (the real ~/.omp is
+// never touched; without it a debug build skips the migration, FR-035). A forwarding omp shim fails every `config set` at
+// launch, then holds each for 1 s, so the first save retries the migration while it holds its lock (the #1940 case).
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_2002_DIR=<task dir> node scripts/verify-tauri-2002.mjs
-// Proves: (a) opening Settings > Models shows no "Saving..." and writes nothing (SC-010, FR-040); (b) a save made while the
-// migration holds the lock shows "Saving..." on that row only, for as long as the lock is held (SC-011); (c) it then lands,
-// "Saved" shows and clears; (d) reopening Settings afterwards leaves config.yml byte-identical.
+// Proves: no "Saving..." on open (SC-010); "Saving..." on that row only (SC-011); then "Saved", cleared; no config.yml write.
 
 import { mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync, readdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
