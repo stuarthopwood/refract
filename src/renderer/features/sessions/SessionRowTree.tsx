@@ -89,7 +89,7 @@ export function TreeToggle({
       onKeyDown={onKeyDown}
       // Sits in the row's existing 24 px gutter, at the row's own indent, so the status icon never moves.
       className={cn(
-        'absolute left-(--tree-indent) top-0.5 z-10 text-muted-foreground hover:bg-sidebar-border hover:text-foreground dark:hover:bg-sidebar-border',
+        'absolute left-(--tree-indent) top-1 z-10 text-muted-foreground hover:bg-sidebar-border hover:text-foreground dark:hover:bg-sidebar-border',
         COMPOSER_BUTTON_FOCUS_CLASS
       )}
     >
