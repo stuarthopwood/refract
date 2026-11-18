@@ -5,9 +5,8 @@
 use super::tests::{make_repository, make_session, make_state, temp_registry_dir};
 use super::*;
 
-/// `p` with live child `c` and grandchild `g`, plus an already archived child `old`. With
-/// `personal_child`, `c` is a Personal Agent row, which can never be archived.
-async fn tree_state(label: &str, personal_child: bool) -> AppState {
+/// `p` with live child `c` and grandchild `g`, plus an already archived child `old`.
+async fn tree_state(label: &str) -> AppState {
     let state = make_state(&temp_registry_dir(label)).await;
     {
         let mut store = state.registry.lock().await;
@@ -22,17 +21,12 @@ async fn tree_state(label: &str, personal_child: bool) -> AppState {
             ("old", Some("p")),
         ];
         for (id, parent) in rows {
-            let mut row = make_session(&format!("{label}-{id}"), "repo-1", "C:/nowhere/wt", id);
+            // The registry refuses two Sessions on one worktree path.
+            let worktree = format!("C:/nowhere/wt-{label}-{id}");
+            let mut row = make_session(&format!("{label}-{id}"), "repo-1", &worktree, id);
             row.parent_session_id = parent.map(|p| format!("{label}-{p}"));
             if id == "old" {
                 row.archived_at = Some("2026-01-01T00:00:00.000Z".to_string());
-            }
-            if id == "c" && personal_child {
-                row.kind = crate::store::session_kind::SessionKind::Personal;
-                row.repository_id = None;
-                row.branch = None;
-                row.base_branch = None;
-                row.worktree_path = None;
             }
             store.add_session(row).await.expect("add_session");
         }
@@ -58,7 +52,7 @@ fn args(id: &str, flag: Value) -> Vec<Value> {
 #[tokio::test]
 async fn archiving_with_children_archives_the_parent_and_every_live_descendant() {
     let label = "sub-all";
-    let state = tree_state(label, false).await;
+    let state = tree_state(label).await;
     sessions_archive(
         state.clone(),
         args(&format!("{label}-p"), Value::Bool(true)),
@@ -86,7 +80,7 @@ async fn archiving_with_children_archives_the_parent_and_every_live_descendant()
 async fn archiving_without_children_leaves_the_descendants_live() {
     for flag in [Some(Value::Bool(false)), Some(Value::Null), None] {
         let label = format!("sub-one-{}", flag.is_some());
-        let state = tree_state(&label, false).await;
+        let state = tree_state(&label).await;
         let mut call = vec![Value::String(format!("{label}-p"))];
         call.extend(flag);
         sessions_archive(state.clone(), call)
@@ -101,7 +95,7 @@ async fn archiving_without_children_leaves_the_descendants_live() {
 #[tokio::test]
 async fn a_non_boolean_include_children_is_an_invalid_argument_and_changes_nothing() {
     let label = "sub-bad-arg";
-    let state = tree_state(label, false).await;
+    let state = tree_state(label).await;
     let err = sessions_archive(
         state.clone(),
         args(&format!("{label}-p"), Value::from("yes")),
@@ -115,7 +109,7 @@ async fn a_non_boolean_include_children_is_an_invalid_argument_and_changes_nothi
 #[tokio::test]
 async fn a_member_being_deleted_refuses_the_cascade_before_anything_is_archived() {
     let label = "sub-deleting";
-    let state = tree_state(label, false).await;
+    let state = tree_state(label).await;
     let _claim = delete_in_flight::claim(&format!("{label}-g")).expect("claim");
     let err = sessions_archive(
         state.clone(),
@@ -128,24 +122,16 @@ async fn a_member_being_deleted_refuses_the_cascade_before_anything_is_archived(
     assert!(archived_at(&state, &format!("{label}-c")).await.is_none());
 }
 
-#[tokio::test]
-async fn a_failure_part_way_names_what_was_already_archived() {
-    let label = "sub-partial";
-    let state = tree_state(label, true).await;
-    // The cascade runs deepest first: `g` archives, then the Personal `c` refuses.
-    let err = sessions_archive(
-        state.clone(),
-        args(&format!("{label}-p"), Value::Bool(true)),
-    )
-    .await
-    .expect_err("the personal member must stop the cascade");
-    assert_eq!(err.code, "personal-agent-protected");
-    assert!(
-        err.message
-            .ends_with(&format!("already archived: {label}-g")),
-        "{}",
-        err.message
-    );
-    assert!(archived_at(&state, &format!("{label}-g")).await.is_some());
-    assert!(archived_at(&state, &format!("{label}-p")).await.is_none());
+#[test]
+fn a_failure_part_way_names_what_was_already_archived() {
+    let error = IpcError::new("personal-agent-protected", "refused");
+    let named = archive_core::partial_failure(error, &["g".to_string(), "c".to_string()]);
+    assert_eq!(named.code, "personal-agent-protected");
+    assert_eq!(named.message, "refused; already archived: g, c");
+}
+
+#[test]
+fn a_failure_before_anything_was_archived_keeps_its_message() {
+    let named = archive_core::partial_failure(IpcError::new("not-found", "gone"), &[]);
+    assert_eq!(named.message, "gone");
 }

@@ -49,7 +49,7 @@ pub(crate) async fn archive_core(state: &AppState, id: &str) -> Result<(), IpcEr
 }
 
 /// Names what was already archived when a cascade stops part way, so nothing is left unreported.
-fn partial_failure(error: IpcError, archived: &[String]) -> IpcError {
+pub(super) fn partial_failure(error: IpcError, archived: &[String]) -> IpcError {
     if archived.is_empty() {
         return error;
     }
