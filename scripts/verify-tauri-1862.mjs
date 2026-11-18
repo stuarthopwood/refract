@@ -171,10 +171,19 @@ async function main() {
       await sleep(250);
     };
     const activeSessionId = () => cdp.evaluate(`document.activeElement?.closest('[data-session-id]')?.getAttribute('data-session-id') ?? null`);
-    const useWidth = async (width) => {
-      if (width) await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 760, deviceScaleFactor: 1, mobile: false });
-      else await cdp.send('Emulation.clearDeviceMetricsOverride');
+    // A 320 px window collapses the session list panel (the chat panel's 360 px minimum wins), so the narrow case drags the
+    // panel towards its 220 px minimum instead: the narrowest list a user can see. Returns the resulting list width.
+    const listWidth = () => cdp.evaluate(`document.querySelector('[role="tree"]').getBoundingClientRect().width`);
+    const dragListTo = async (targetWidth) => {
+      const handle = await cdp.evaluate(`(() => { const r = document.querySelector('[aria-label="Resize session list"]').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
+      const endX = handle.x + (targetWidth - (await listWidth()));
+      const mouse = (type, x, buttons) => cdp.send('Input.dispatchMouseEvent', { type, x, y: handle.y, button: 'left', buttons, clickCount: 1 });
+      await mouse('mouseMoved', handle.x, 0);
+      await mouse('mousePressed', handle.x, 1);
+      for (let i = 1; i <= 8; i++) await mouse('mouseMoved', handle.x + ((endX - handle.x) * i) / 8, 1);
+      await mouse('mouseReleased', endX, 0);
       await sleep(500);
+      return listWidth();
     };
     // A control or row that pokes outside its tree list would be clipped by the pane; the list itself must not scroll sideways.
     const overflowProblems = () => cdp.evaluate(`(() => {
@@ -216,17 +225,19 @@ async function main() {
     const leaf = await cdp.evaluate(readItem(k2.id));
     check(leaf?.expanded === null, 'A leaf child carries no aria-expanded.', `leaf expanded attr: ${leaf?.expanded}`);
 
-    // ---- SC-007: default and 320 px widths, dark then light.
+    // ---- SC-007: default and minimum list widths, dark then light.
     for (const [themeId, themeName] of [['dark', 'Dark'], ['light', 'Light']]) {
       if (themeId === 'light') await switchTheme(cdp, themeId, themeName);
       await shot(`01-tree-default-${themeId}.png`);
       const wide = await overflowProblems();
       check(wide.length === 0, `Default width, ${themeName}: no list overflow and every row control sits inside the list.`, `default ${themeName} overflow: ${JSON.stringify(wide)}`);
-      await useWidth(320);
-      await shot(`02-tree-320-${themeId}.png`);
-      const narrow = await overflowProblems();
-      check(narrow.length === 0, `320 px, ${themeName}: no list overflow and every row control sits inside the list.`, `320 ${themeName} overflow: ${JSON.stringify(narrow)}`);
-      await useWidth(null);
+      for (const [targetWidth, label] of [[320, '320'], [230, 'narrow']]) {
+        const width = await dragListTo(targetWidth);
+        await shot(`02-tree-${label}-${themeId}.png`);
+        const narrow = await overflowProblems();
+        check(Math.abs(width - targetWidth) <= 30 && narrow.length === 0, `List at ${Math.round(width)} px (target ${targetWidth}), ${themeName}: no list overflow and every row control sits inside the list.`, `${label} ${themeName} (${width} px) overflow: ${JSON.stringify(narrow)}`);
+      }
+      await dragListTo(280);
     }
     await switchTheme(cdp, 'dark', 'Dark');
 
