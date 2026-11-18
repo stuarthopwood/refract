@@ -30,6 +30,11 @@ export function isNeedsYouSession(s: Pick<SessionSummary, 'status' | 'archivedAt
   return s.status === 'needs-you' && !s.archivedAt && !s.hiddenAt
 }
 
+/** A Session whose agent process is alive (anything but `stopped`): the ones archive-with-children stops, so the dialog names them (#1862). */
+export function isRunning(s: Pick<SessionSummary, 'status'>): boolean {
+  return s.status !== 'stopped'
+}
+
 /** A Session Home lists: a project Session that is neither archived nor hidden. */
 export function isHomeLiveSession(s: SessionSummary): boolean {
   return isProjectSession(s) && !s.archivedAt && !s.hiddenAt

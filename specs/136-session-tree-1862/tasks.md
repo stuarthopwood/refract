@@ -16,7 +16,7 @@ Test work is part of each task (AGENTS.md Testing rule, epic #1918: new and chan
 
 ## Phase 3: Pure tree model
 
-- [ ] T007 New `features/sessions/sessionTree.ts`: `buildSessionTree`, `flattenVisible`, `rollUp`, `fromLabel`, `liveDescendants`, `isRunning` (beside `isNeedsYouSession` in `sessionDisplay.tsx`), `treeKeyMove`. New `sessionTree.test.ts`: nesting, missing, self and cycle parents go top level, cross-Project parent goes top level, level clamp at 4, order kept, roll-up counts, "from" label with `(archived)` and `(hidden)`, `liveDescendants` at depth 3 skips archived, key moves (Down, Up, Home, End over visible rows, Right, Left, leaf Right, modifier ignored). (FR-001, FR-002, FR-003, FR-005, FR-009, FR-016)
+- [x] T007 New `features/sessions/sessionTree.ts`: `buildSessionTree`, `flattenVisible`, `rollUp`, `fromLabel`, `liveDescendants`, `isRunning` (beside `isNeedsYouSession` in `sessionDisplay.tsx`), `treeKeyMove`. See sessionTree.test.ts. (FR-001, FR-002, FR-003, FR-005, FR-009, FR-016)
 
 ## Phase 4: Rows and dialog
 
