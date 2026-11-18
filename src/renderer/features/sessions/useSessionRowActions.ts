@@ -14,7 +14,8 @@ import { createdSessionAnnouncement } from './createdSessionAnnouncement'
 import { useHideSession } from './useHideSession'
 import { useSurfaceArchiveActions } from './sessionRowSurface'
 import { useArchiveSession } from './useArchiveSession'
-import { flattenVisible, treeKeyMove } from './sessionTree'
+import { flattenVisible } from './sessionTree'
+import { decideTreeKey } from './treeKeyDecision'
 import type { SessionRowTreeProps } from './SessionRowTree'
 import type { SessionRowSurface } from './sessionRowSurface'
 import { setSessionPaused } from '@/features/chat/pauseActions'
@@ -147,15 +148,11 @@ export function useSessionRowActions(
   function handleTreeKeyDown(event: KeyboardEvent<HTMLElement>): boolean {
     if (!tree) return false
     const listState = useSessionListStore.getState()
-    const move = treeKeyMove(flattenVisible(tree.roots, listState.isParentOpen), session.id, event, listState.isParentOpen)
-    if (!move) return false
+    const decision = decideTreeKey(flattenVisible(tree.roots, listState.isParentOpen), session.id, event, listState.isParentOpen)
+    if (!decision.prevent) return false
     event.preventDefault()
-    if (move.kind === 'toggle') {
-      if (listState.isParentOpen(move.id) !== move.open) listState.toggleParent(move.id)
-      return true
-    }
-    const target = document.querySelector<HTMLElement>(`[data-session-id="${CSS.escape(move.id)}"] .session-open-button`)
-    target?.focus()
+    if (decision.toggleId) listState.toggleParent(decision.toggleId)
+    if (decision.focusId) document.querySelector<HTMLElement>(`[data-session-id="${CSS.escape(decision.focusId)}"] .session-open-button`)?.focus()
     return true
   }
 
