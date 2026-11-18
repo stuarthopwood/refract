@@ -245,7 +245,10 @@ fn token_guard_get(state: AppState, args: Vec<Value>) -> HandlerFuture {
             (global.map_err(invalid_argument)?, windows)
         } else {
             // Cached windows only: `omp models` would queue on the lock the migration is holding.
-            (pending_global(&state.data_dir).await, context_windows(false).await)
+            (
+                pending_global(&state.data_dir).await,
+                context_windows(false).await,
+            )
         };
         Ok(full_snapshot(&state, &args, &global, &windows, &[]).await)
     })
