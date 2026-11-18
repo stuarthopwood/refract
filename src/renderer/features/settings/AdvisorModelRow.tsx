@@ -8,6 +8,7 @@ import { describeAdvisorRoster } from '../../../shared/ipc-advisor-roster'
 import type { AdvisorRoster } from '../../../shared/ipc-advisor-roster'
 import type { RoleValues } from './modelRoleCurrent'
 import { RoleRow } from './RoleRow'
+import { deriveRowSave } from './advisorRowSave'
 
 const ADVISOR_KEY = 'modelRoles.advisor'
 
@@ -46,13 +47,19 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
   }, [loaded, load])
 
   // While the write is in flight (or waiting on the migration) the row shows the value being saved.
-  const saving = save?.state === 'saving'
-  const stored = saving ? save.pendingValue : (values[ADVISOR_KEY] ?? defaults[ADVISOR_KEY])
+  const rowSave = deriveRowSave(loaded, save)
+  const stored = rowSave.state === 'saving' ? rowSave.pendingValue : (values[ADVISOR_KEY] ?? defaults[ADVISOR_KEY])
   const value = typeof stored === 'string' ? stored : undefined
 
   async function commit(next: string | null, announcement?: string): Promise<void> {
-    if (next === null) await reset(ADVISOR_KEY)
-    else await set(ADVISOR_KEY, next)
+    try {
+      if (next === null) await reset(ADVISOR_KEY)
+      else await set(ADVISOR_KEY, next)
+    } catch (e) {
+      // The store already recorded the failure on the row; letting it escape would be an unhandled rejection from a fire-and-forget click.
+      announceAssertive(`Could not save Advisor: ${e instanceof Error ? e.message : String(e)}`)
+      return
+    }
     const outcome = useTokenGuardStore.getState().saves[ADVISOR_KEY]
     if (outcome?.state === 'error') {
       announceAssertive(`Could not save Advisor: ${outcome.error}`)
@@ -71,9 +78,9 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
       catalog={catalog}
       catalogError={catalogError}
       // Not yet loaded disables the row without claiming a save; only the user's own write says Saving….
-      isPending={saving || !loaded}
-      saveState={saving ? 'saving' : save?.state === 'saved' ? 'saved' : 'idle'}
-      saveError={save?.state === 'error' ? save.error : undefined}
+      isPending={rowSave.disabled}
+      saveState={rowSave.state === 'error' ? 'idle' : rowSave.state}
+      saveError={rowSave.error}
       warning={roster ? `${describeAdvisorRoster(roster)}. File: ${roster.path}` : undefined}
       selectedProvider={selectedProvider}
       unsetLabel="Refract's default"

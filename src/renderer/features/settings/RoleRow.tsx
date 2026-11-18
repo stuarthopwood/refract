@@ -116,7 +116,7 @@ export function RoleRow({
           >
             {changing ? 'Done' : 'Change'}
           </Button>
-          <SaveStatus state={saveState} />
+          {!(changing && isChat) && <SaveStatus state={saveState} />}
         </div>
       </SettingRow>
       {changing && (
@@ -145,7 +145,7 @@ export function RoleRow({
               catalogEntry={resolveCatalogEntry(value, catalog)}
               catalogStatus={catalogStatus}
               disabled={isPending}
-              saving={saveState === 'saving'}
+              saveState={saveState}
               onPick={(nextValue) => onCommit(nextValue)}
               announcePolite={announcePolite}
             />

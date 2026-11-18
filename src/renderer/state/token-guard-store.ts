@@ -54,25 +54,33 @@ export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
     }
     return result.ok
   }
-  // Rows that are not the key being written stay editable; only these keys carry a save entry.
   const savedTimers = new Map<string, ReturnType<typeof setTimeout>>()
   const forgetSaved = (key: string): void => {
     clearTimeout(savedTimers.get(key))
     savedTimers.delete(key)
   }
-  const startSave = (keys: string[], pendingFor: (key: string) => unknown): void => {
+  // A write that returns after a newer write for the same key started must not overwrite that write's Saving….
+  const writeSeq = new Map<string, number>()
+  // Rows that are not the key being written stay editable; only these keys carry a save entry.
+  const startSave = (keys: string[], pendingFor: (key: string) => unknown): Map<string, number> => {
     const saves = { ...get().saves }
+    const started = new Map<string, number>()
     for (const key of keys) {
       forgetSaved(key)
+      const seq = (writeSeq.get(key) ?? 0) + 1
+      writeSeq.set(key, seq)
+      started.set(key, seq)
       saves[key] = { state: 'saving', pendingValue: pendingFor(key) }
     }
     set({ saves })
+    return started
   }
   // `showSaved` is false for Reset all: its dialog reports the outcome, and N rows flashing "Saved" would be noise.
-  const endSave = (keys: string[], ok: boolean, showSaved: boolean): void => {
+  const endSave = (started: Map<string, number>, ok: boolean, showSaved: boolean): void => {
     const saves = { ...get().saves }
     const error = get().error ?? 'unknown error'
-    for (const key of keys) {
+    for (const [key, seq] of started) {
+      if (writeSeq.get(key) !== seq) continue
       if (!ok) saves[key] = { state: 'error', error }
       else if (showSaved) {
         saves[key] = { state: 'saved' }
@@ -91,17 +99,17 @@ export const useTokenGuardStore = create<TokenGuardState>((set, get) => {
     set({ saves })
   }
   const write = async (keys: string[], pendingFor: (key: string) => unknown, call: () => Promise<Result<TokenGuardSnapshot>>, showSaved: boolean): Promise<boolean> => {
-    startSave(keys, pendingFor)
+    const started = startSave(keys, pendingFor)
     let ok = false
     try {
       ok = apply(await call(), true)
     } catch (e) {
       // A rejected call must not leave the rows disabled as "Saving…".
       set({ error: e instanceof Error ? e.message : String(e), warnings: [] })
-      endSave(keys, false, showSaved)
+      endSave(started, false, showSaved)
       throw e
     }
-    endSave(keys, ok, showSaved)
+    endSave(started, ok, showSaved)
     return ok
   }
   return {
