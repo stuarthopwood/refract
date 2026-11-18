@@ -32,14 +32,14 @@ Phase 2 (implementation) is a separate run. Each implementation task has a co-lo
 
 ## Phase D - UI and storage
 
-- [ ] T011 Add `SESSION_CONVERSATION_SWITCHED` to `events.rs`, emit it after a started or switched Conversation, and listen in the renderer to reload panes and keep the draft.
-- [ ] T011t Test in `events.test.rs` (or the nearest existing test file) for the event payload, and a renderer listener test beside the listener file.
-- [ ] T012 Add the handoff-note list to the registry `Session` (`#[serde(default)]`) and label the first bubble through the shared chat-bubble component.
-- [ ] T012t Test in `store/registry.test.rs`: a registry file without the handoff-note list loads with an empty list (`serde(default)`); renderer bubble-label test beside the component.
+- [x] T011 Event `session:conversation-changed` (Rust `SESSION_CONVERSATION_CHANGED`, deviation, see analysis.md) in `events.rs`, emitted after a started or switched Conversation (`start_conversation_then_send`, the tool switch, the queued handoff run); the renderer listener `state/conversation-changed.ts` drops the old Conversation's scroll memory and leaves the draft alone.
+- [x] T011t Test in `events.rs` (`conversation_changed_event_name_and_payload_are_exact`); renderer listener test `state/conversation-changed.test.ts`.
+- [x] T012 Handoff-note store (deviation, see analysis.md): the existing sidecar `store/handoff_notes.rs` stays, no registry list; the first bubble is labelled by `HandoffNoteLine` (shared `SourceTag`) in `UserMessageRow`.
+- [x] T012t Tests in `store/handoff_notes.test.rs` (a missing or unreadable file reads empty, keys are file names, records accumulate) and `HandoffNoteLine.test.ts`.
 
 ## Phase E - docs and check
 
-- [ ] T013 Update `CONTEXT.md` terms and the `docs/PLAN.md` row.
+- [x] T013 Update `CONTEXT.md` terms and the `docs/PLAN.md` row.
 - [ ] T014 Run the 15 scenarios in `plan.md` with the fake omp; keep the evidence in scratch `evidence/`.
 
 Order: T001, T002 first; T003-T006 and T007-T010 can follow in parallel after T001-T002; T011-T012 after T005; T013-T014 last.
