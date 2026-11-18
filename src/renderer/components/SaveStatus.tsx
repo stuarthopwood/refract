@@ -18,6 +18,7 @@ export function SaveStatus({ state, error, className, ...props }: Omit<Component
   return (
     <>
       {/* `contents` keeps the idle region out of flex gaps; the text inside is tone `info` so it carries no nested live role. */}
+      {/* Refract renders in WebView2's evergreen Chromium, which keeps the role of `display: contents` elements in the accessibility tree. */}
       <div role="status" data-slot="save-status" className="contents">
         {view && !failed && (
           <InlineStatus tone="info" density="compact" leading={leading} className={cn('px-0 py-0', className)} {...props}>

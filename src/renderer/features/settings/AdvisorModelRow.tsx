@@ -8,7 +8,7 @@ import { describeAdvisorRoster } from '../../../shared/ipc-advisor-roster'
 import type { AdvisorRoster } from '../../../shared/ipc-advisor-roster'
 import type { RoleValues } from './modelRoleCurrent'
 import { RoleRow } from './RoleRow'
-import { deriveRowSave } from './advisorRowSave'
+import { advisorSaveAnnouncement, deriveRowSave } from './advisorRowSave'
 
 const ADVISOR_KEY = 'modelRoles.advisor'
 
@@ -19,10 +19,9 @@ interface AdvisorModelRowProps {
   catalogError: string | undefined
   selectedProvider: string | null
   announcePolite(message: string): void
-  announceAssertive(message: string): void
 }
 
-export function AdvisorModelRow({ description, roles, catalog, catalogError, selectedProvider, announcePolite, announceAssertive }: AdvisorModelRowProps) {
+export function AdvisorModelRow({ description, roles, catalog, catalogError, selectedProvider, announcePolite }: AdvisorModelRowProps) {
   const values = useTokenGuardStore((state) => state.values)
   const defaults = useTokenGuardStore((state) => state.defaults)
   const loaded = useTokenGuardStore((state) => state.loaded)
@@ -52,20 +51,17 @@ export function AdvisorModelRow({ description, roles, catalog, catalogError, sel
   const value = typeof stored === 'string' ? stored : undefined
 
   async function commit(next: string | null, announcement?: string): Promise<void> {
+    let rejected = false
     try {
       if (next === null) await reset(ADVISOR_KEY)
       else await set(ADVISOR_KEY, next)
-    } catch (e) {
+    } catch {
       // The store already recorded the failure on the row; letting it escape would be an unhandled rejection from a fire-and-forget click.
-      announceAssertive(`Could not save Advisor: ${e instanceof Error ? e.message : String(e)}`)
-      return
+      rejected = true
     }
-    const outcome = useTokenGuardStore.getState().saves[ADVISOR_KEY]
-    if (outcome?.state === 'error') {
-      announceAssertive(`Could not save Advisor: ${outcome.error}`)
-    } else {
-      announcePolite(announcement ?? (next === null ? 'Advisor reset to the Refract default' : 'Advisor saved; applies to new Sessions'))
-    }
+    // A failure reaches the user through the row's own alert, so only a success is announced here.
+    const message = advisorSaveAnnouncement(rejected, useTokenGuardStore.getState().saves[ADVISOR_KEY], next, announcement)
+    if (message) announcePolite(message)
   }
 
   return (

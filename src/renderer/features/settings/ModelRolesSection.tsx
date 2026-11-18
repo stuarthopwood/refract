@@ -234,7 +234,6 @@ export function ModelRolesSection() {
           catalogError={common.catalogError}
           selectedProvider={selectedProvider}
           announcePolite={announcePolite}
-          announceAssertive={announceAssertive}
         />
       )
     }

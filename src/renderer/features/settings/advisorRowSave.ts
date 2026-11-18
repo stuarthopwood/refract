@@ -24,3 +24,13 @@ export function deriveRowSave(loaded: boolean, save: KeySave | undefined): Advis
       return { disabled: !loaded, state: 'idle' }
   }
 }
+
+/**
+ * The polite message after the Advisor write settled, or `null` when it failed. A failure (the call rejected, or the
+ * store recorded an error) is already announced by the `alert` the row renders from the same store entry, so
+ * announcing it here too would read it twice.
+ */
+export function advisorSaveAnnouncement(rejected: boolean, outcome: KeySave | undefined, next: string | null, announcement?: string): string | null {
+  if (rejected || outcome?.state === 'error') return null
+  return announcement ?? (next === null ? 'Advisor reset to the Refract default' : 'Advisor saved; applies to new Sessions')
+}
