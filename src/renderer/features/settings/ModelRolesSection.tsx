@@ -234,7 +234,6 @@ export function ModelRolesSection() {
           catalogError={common.catalogError}
           selectedProvider={selectedProvider}
           announcePolite={announcePolite}
-          announceAssertive={announceAssertive}
         />
       )
     }
@@ -244,6 +243,7 @@ export function ModelRolesSection() {
         {...common}
         value={roles[role]}
         isPending={pendingRoles.has(role)}
+        saveState={pendingRoles.has(role) ? 'saving' : 'idle'}
         saveError={saveErrors[role]}
         overrideNote={overrideNotes[role]}
         unsetLabel={unsetLabelFor(role)}

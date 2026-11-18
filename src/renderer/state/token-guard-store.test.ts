@@ -1,8 +1,9 @@
 // `environment: 'node'` has no real `window`; a minimal `window.refract.tokenGuard` stub is installed
 // on `globalThis`, as in `model-roles-store.test.ts`.
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { TokenGuardSnapshot } from '../../shared/tokenGuard'
 import { useTokenGuardStore } from './token-guard-store'
+import { SAVED_VISIBLE_MS } from '../components/saveStatusView'
 
 function snapshot(warnings: string[] = []): TokenGuardSnapshot {
   return {
@@ -19,10 +20,21 @@ function stubTokenGuard(tokenGuard: Record<string, unknown>) {
   ;(globalThis as unknown as { window: unknown }).window = { refract: { tokenGuard } }
 }
 
+/** A promise the test settles by hand (`Promise.withResolvers` is not in the web lib). */
+function deferred() {
+  let resolve: (value: unknown) => void = () => {}
+  let reject: (reason: unknown) => void = () => {}
+  const promise = new Promise<unknown>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
 const STALE_OVERLAY = 'Saved, but a Session started before the migration may keep the old values: access denied'
 
 beforeEach(() => {
-  useTokenGuardStore.setState({ values: {}, defaults: {}, loaded: false, migration: null, effectiveTriggers: [], projectOverrides: [], warnings: [], error: null })
+  useTokenGuardStore.setState({ values: {}, defaults: {}, loaded: false, migration: null, effectiveTriggers: [], projectOverrides: [], warnings: [], error: null, saves: {} })
 })
 
 describe('useTokenGuardStore warnings', () => {
@@ -59,5 +71,143 @@ describe('useTokenGuardStore warnings', () => {
     expect(await useTokenGuardStore.getState().set('compaction.thresholdPercent', 30)).toBe(false)
     expect(useTokenGuardStore.getState().warnings).toEqual([])
     expect(useTokenGuardStore.getState().error).toBe('omp config set failed')
+  })
+})
+
+describe('useTokenGuardStore per-key save state', () => {
+  const KEY = 'compaction.thresholdPercent'
+  const OTHER = 'grep.contextBefore'
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('holds the pending value as saving until the write returns, for that key only', async () => {
+    const call = deferred()
+    stubTokenGuard({ set: vi.fn(() => call.promise) })
+    const write = useTokenGuardStore.getState().set(KEY, 55)
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 55 })
+    expect(useTokenGuardStore.getState().saves[OTHER]).toBeUndefined()
+    call.resolve({ ok: true, value: snapshot() })
+    await write
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('clears Saved after the visible window', async () => {
+    vi.useFakeTimers()
+    stubTokenGuard({ set: vi.fn(async () => ({ ok: true, value: snapshot() })) })
+    await useTokenGuardStore.getState().set(KEY, 55)
+    vi.advanceTimersByTime(SAVED_VISIBLE_MS - 1)
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+    vi.advanceTimersByTime(1)
+    expect(useTokenGuardStore.getState().saves[KEY]).toBeUndefined()
+  })
+
+  it('does not let an old Saved timer clear a newer save', async () => {
+    vi.useFakeTimers()
+    stubTokenGuard({ set: vi.fn(async () => ({ ok: true, value: snapshot() })) })
+    await useTokenGuardStore.getState().set(KEY, 55)
+    vi.advanceTimersByTime(SAVED_VISIBLE_MS - 1)
+    const call = deferred()
+    stubTokenGuard({ set: vi.fn(() => call.promise) })
+    const second = useTokenGuardStore.getState().set(KEY, 60)
+    vi.advanceTimersByTime(5)
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 60 })
+    call.resolve({ ok: true, value: snapshot() })
+    await second
+    vi.advanceTimersByTime(SAVED_VISIBLE_MS - 1)
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('keeps the stored value and records the error when the write fails, leaving the key editable', async () => {
+    useTokenGuardStore.setState({ values: { [KEY]: 30 } })
+    stubTokenGuard({ set: vi.fn(async () => ({ ok: false, error: { code: 'invalid-argument', message: 'omp config set failed' } })) })
+    await useTokenGuardStore.getState().set(KEY, 55)
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'error', error: 'omp config set failed' })
+    expect(useTokenGuardStore.getState().values[KEY]).toBe(30)
+  })
+
+  it('clears the saving state when the call rejects', async () => {
+    stubTokenGuard({ set: vi.fn(async () => Promise.reject(new Error('ipc down'))) })
+    await expect(useTokenGuardStore.getState().set(KEY, 55)).rejects.toThrow('ipc down')
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'error', error: 'ipc down' })
+  })
+
+  it('reset shows the default as pending and then Saved', async () => {
+    useTokenGuardStore.setState({ defaults: { [KEY]: 80 } })
+    const call = deferred()
+    stubTokenGuard({ reset: vi.fn(() => call.promise) })
+    const write = useTokenGuardStore.getState().reset(KEY)
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 80 })
+    call.resolve({ ok: true, value: snapshot() })
+    await write
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('resetAll marks only the changed keys as saving and shows no Saved afterwards', async () => {
+    useTokenGuardStore.setState({ values: { [KEY]: 30, [OTHER]: 1 }, defaults: { [KEY]: 80, [OTHER]: 1 } })
+    const call = deferred()
+    stubTokenGuard({ resetAll: vi.fn(() => call.promise) })
+    const write = useTokenGuardStore.getState().resetAll()
+    expect(Object.keys(useTokenGuardStore.getState().saves)).toEqual([KEY])
+    call.resolve({ ok: true, value: snapshot() })
+    await write
+    expect(useTokenGuardStore.getState().saves).toEqual({})
+  })
+
+  // #2002: a slow first write must not end the Saving… of the newer write that replaced it.
+  it('keeps the second write saving when the first write resolves after it started', async () => {
+    const first = deferred()
+    const second = deferred()
+    const set = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+    stubTokenGuard({ set })
+    const firstWrite = useTokenGuardStore.getState().set(KEY, 55)
+    const secondWrite = useTokenGuardStore.getState().set(KEY, 60)
+    first.resolve({ ok: true, value: snapshot() })
+    await firstWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 60 })
+    second.resolve({ ok: true, value: snapshot() })
+    await secondWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('does not let a failed first write put an error on the newer write', async () => {
+    const first = deferred()
+    const second = deferred()
+    stubTokenGuard({ set: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise) })
+    const firstWrite = useTokenGuardStore.getState().set(KEY, 55)
+    const secondWrite = useTokenGuardStore.getState().set(KEY, 60)
+    first.resolve({ ok: false, error: { code: 'invalid-argument', message: 'omp config set failed' } })
+    await firstWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 60 })
+    second.resolve({ ok: true, value: snapshot() })
+    await secondWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('does not let a rejected first write overwrite the newer write either', async () => {
+    const first = deferred()
+    const second = deferred()
+    stubTokenGuard({ set: vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise) })
+    const firstWrite = useTokenGuardStore.getState().set(KEY, 55)
+    const secondWrite = useTokenGuardStore.getState().set(KEY, 60)
+    const rejected = expect(firstWrite).rejects.toThrow('ipc down')
+    first.reject(new Error('ipc down'))
+    await rejected
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 60 })
+    second.resolve({ ok: true, value: snapshot() })
+    await secondWrite
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
+  })
+
+  it('leaves an in-flight save alone when a read loads the snapshot meanwhile', async () => {
+    const call = deferred()
+    stubTokenGuard({ set: vi.fn(() => call.promise), get: vi.fn(async () => ({ ok: true, value: snapshot() })) })
+    const write = useTokenGuardStore.getState().set(KEY, 55)
+    await useTokenGuardStore.getState().load()
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saving', pendingValue: 55 })
+    call.resolve({ ok: true, value: snapshot() })
+    await write
+    expect(useTokenGuardStore.getState().saves[KEY]).toEqual({ state: 'saved' })
   })
 })

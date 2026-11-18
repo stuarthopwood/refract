@@ -23,7 +23,7 @@ const ADVISOR_GROUP_HINT = 'Applies in review mode only.'
 const TRIGGERS_HEADING_ID = 'compaction-triggers-heading'
 
 export function AdvancedSection() {
-  const { values, defaults, loaded, migration, effectiveTriggers, projectOverrides, warnings, error, load, set, reset, dismissMigrationNotice } = useTokenGuardStore()
+  const { values, defaults, loaded, migration, effectiveTriggers, projectOverrides, warnings, error, saves, load, set, reset, dismissMigrationNotice } = useTokenGuardStore()
   const repositoryId = useDefaultRepositoryId()
   const roles = useModelRolesStore((state) => state.roles)
   const rolesLoaded = useModelRolesStore((state) => state.loaded)
@@ -121,6 +121,7 @@ export function AdvancedSection() {
                 seedPercent={seedPercent}
                 defaultWindow={defaultWindow}
                 catalogLoading={catalog === undefined && !catalogFailed}
+                save={saves[info.key]}
                 onChange={(next) => set(info.key, next)}
                 onReset={() => reset(info.key)}
               />

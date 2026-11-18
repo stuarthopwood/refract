@@ -4,7 +4,6 @@
 use std::ffi::OsString;
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -236,21 +235,6 @@ pub async fn ensure_with(executor: &dyn OmpExecutor, dir: &Path, config: Option<
     }
 }
 
-static STARTED: AtomicBool = AtomicBool::new(false);
-
-/// Runs `ensure` in the background (one run at a time) so a read never waits on the migration;
-/// `status` reports `pending` until it finishes.
-pub fn start(dir: &Path) {
-    if STARTED.swap(true, Ordering::AcqRel) {
-        return;
-    }
-    let dir = dir.to_path_buf();
-    tokio::spawn(async move {
-        ensure(&dir).await;
-        STARTED.store(false, Ordering::Release);
-    });
-}
-
 pub async fn status(dir: &Path) -> Status {
     if skipped() {
         return Status {
@@ -289,7 +273,9 @@ pub async fn dismiss_notice(dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::AtomicUsize;
+    use crate::omp::config::OmpConfigError;
+    use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn date_is_utc_calendar_day() {
@@ -439,6 +425,47 @@ mod tests {
         let written = written.lock().unwrap();
         assert!(!written.contains(&"task.maxConcurrency".to_string()));
         assert!(written.contains(&"task.softRequestBudget".to_string()));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An `omp` that must never be called: a run that finds the marker writes and reads nothing.
+    struct NeverCalled(AtomicUsize);
+
+    impl OmpExecutor for NeverCalled {
+        fn call<'a>(
+            &'a self,
+            _args: &'a [String],
+            _failure_message: &'a str,
+            _strip_env_vars: &'a [&'a str],
+        ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+            self.0.fetch_add(1, Ordering::SeqCst);
+            Box::pin(async { Ok("{}".to_string()) })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_second_run_waits_on_the_lock_then_finds_the_marker_and_writes_nothing() {
+        if skipped() {
+            return;
+        }
+        let dir = scratch("lock");
+        let held = RUN_LOCK.lock().await;
+        let omp = std::sync::Arc::new(NeverCalled(AtomicUsize::new(0)));
+        let waiting = {
+            let (omp, dir) = (std::sync::Arc::clone(&omp), dir.clone());
+            tokio::spawn(async move { ensure_with(&*omp, &dir, None).await })
+        };
+        // Yielding lets the spawned run execute as far as it can on this single-threaded runtime: a run that
+        // ignored the lock would finish (and call omp) long before the marker below exists.
+        for _ in 0..50 {
+            tokio::task::yield_now().await;
+        }
+        assert!(!waiting.is_finished(), "the run must wait on the lock");
+        assert_eq!(omp.0.load(Ordering::SeqCst), 0);
+        std::fs::write(marker_path(&dir), "{}").unwrap();
+        drop(held);
+        assert!(waiting.await.unwrap());
+        assert_eq!(omp.0.load(Ordering::SeqCst), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

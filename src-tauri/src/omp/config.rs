@@ -128,10 +128,75 @@ impl OmpExecutor for RealOmpExecutor {
         strip_env_vars: &'a [&'a str],
     ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
         Box::pin(async move {
+            #[cfg(test)]
+            {
+                if let Some(refusal) = refuse_real_omp::refuse() {
+                    return Err(refusal);
+                }
+            }
             let cwd = ensure_scratch_dir().await?;
             let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
             run_omp(&arg_refs, failure_message, strip_env_vars, &cwd).await
         })
+    }
+}
+
+/// Lets a test prove the code under test never starts the real `omp`: while a `Forbid` is alive on the test's
+/// thread, `RealOmpExecutor` fails the call and counts it. Thread-local, so tests on other threads still run `omp`.
+/// It only covers calls on the current thread, so the test needs a current-thread runtime (the `#[tokio::test]` default).
+#[cfg(test)]
+pub(crate) mod refuse_real_omp {
+    use std::cell::Cell;
+
+    use super::{OmpConfigError, OmpConfigErrorCode, OmpExecutor};
+
+    thread_local! {
+        static REFUSED: Cell<Option<u32>> = const { Cell::new(None) };
+    }
+
+    pub(crate) struct Forbid;
+
+    impl Forbid {
+        pub(crate) fn new() -> Self {
+            REFUSED.with(|refused| refused.set(Some(0)));
+            Self
+        }
+
+        /// How many times the real executor was asked to start `omp` since this guard was made.
+        pub(crate) fn refused(&self) -> u32 {
+            REFUSED.with(|refused| refused.get().unwrap_or(0))
+        }
+    }
+
+    impl Drop for Forbid {
+        fn drop(&mut self) {
+            REFUSED.with(|refused| refused.set(None));
+        }
+    }
+
+    pub(super) fn refuse() -> Option<OmpConfigError> {
+        REFUSED.with(|refused| {
+            let count = refused.get()?;
+            refused.set(Some(count + 1));
+            Some(OmpConfigError::new(
+                OmpConfigErrorCode::OmpFailed,
+                "the real omp is forbidden in this test",
+            ))
+        })
+    }
+
+    #[tokio::test]
+    async fn forbid_refuses_a_real_omp_call_and_counts_it_until_dropped() {
+        let guard = Forbid::new();
+        let args = vec!["config".to_string(), "list".to_string()];
+        let result = super::RealOmpExecutor
+            .call(&args, "Could not read omp config.", &[])
+            .await;
+        let err = result.expect_err("the guard must refuse the call");
+        assert_eq!(err.code, OmpConfigErrorCode::OmpFailed);
+        assert_eq!(guard.refused(), 1);
+        drop(guard);
+        assert_eq!(Forbid::new().refused(), 0);
     }
 }
 

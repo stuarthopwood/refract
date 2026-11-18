@@ -2,14 +2,16 @@
 // "Default: X" only when the value differs, and a Reset button that is always there but disabled at
 // the default (so the control never jumps). A dependent row
 // (`info.dependsOn` off) stays visible, indented, with every control disabled, and says why.
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { SaveStatus } from '@/components/SaveStatus'
 import { ImpactWarning } from '@/components/settings/ImpactWarning'
 import { SettingRow } from '@/components/settings/SettingRow'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { appliesToNewSessionsOnly } from '../../../../shared/tokenGuard'
 import type { TokenGuardKeyInfo, TokenGuardValue } from '../../../../shared/tokenGuard'
+import type { KeySave } from '@/state/token-guard-store'
 import { MAX_PERCENT, MIN_PERCENT, percentToTokens, tokensToPercent } from './contextWindow'
 import { MethodOrderChecklist } from './MethodOrderChecklist'
 import { formatCount, NumberUnitField, WINDOW_UNKNOWN_HINT } from './NumberUnitField'
@@ -33,16 +35,33 @@ interface AdvancedRowProps {
   catalogLoading: boolean
   onChange: (value: unknown) => Promise<boolean>
   onReset: () => Promise<void>
+  /** The key's write state in the token guard store: while it saves the row shows the pending value and every control is disabled. */
+  save?: KeySave
 }
 
 // The first control to focus after Reset (the Reset button itself is skipped).
 const FIRST_CONTROL = 'input:not(:disabled), [role="switch"], [role="radio"][aria-checked="true"], [role="checkbox"], button:not([data-reset]):not(:disabled)'
 
-export function AdvancedRow({ info, value, defaultValue, disabledReason, projectOverride, seedPercent, defaultWindow, catalogLoading, onChange, onReset }: AdvancedRowProps) {
+export function AdvancedRow({ info, value: storedValue, defaultValue, disabledReason, projectOverride, seedPercent, defaultWindow, catalogLoading, save, onChange, onReset }: AdvancedRowProps) {
   const id = `advanced-${info.key}`
+  const saving = save?.state === 'saving'
+  const value = saving ? (save.pendingValue as TokenGuardValue | undefined) : storedValue
   const isDefault = sameValue(value, defaultValue)
-  const disabled = disabledReason !== undefined
+  // A dependent row that is off explains why; a saving row is disabled without a reason, its own status says Saving….
+  const dependentOff = disabledReason !== undefined
+  const disabled = dependentOff || saving
   const rowRef = useRef<HTMLDivElement>(null)
+  // A disabled control drops focus, so a row that held it gets it back when the write ends.
+  const refocusRef = useRef(false)
+  useEffect(() => {
+    if (saving || !refocusRef.current) return
+    refocusRef.current = false
+    rowRef.current?.querySelector<HTMLElement>(FIRST_CONTROL)?.focus()
+  }, [saving])
+  const commit = (next: unknown): Promise<boolean> => {
+    refocusRef.current = rowRef.current?.contains(document.activeElement) ?? false
+    return onChange(next)
+  }
   const [tableOpen, setTableOpen] = useState(false)
   const impactId = `${id}-impact`
   const models: Record<string, string | number> = info.kind === 'record' && value !== null && typeof value === 'object' && !Array.isArray(value) ? value : {}
@@ -57,7 +76,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
   const summaryShown = costlier && !(info.kind === 'record' && tableOpen)
   const newSessionsOnly = appliesToNewSessionsOnly(info.key)
   const noteId = `${id}-status`
-  const describedBy = [`${id}-description`, summaryShown ? impactId : undefined, disabled ? `${id}-reason` : undefined, newSessionsOnly ? noteId : undefined, projectOverride ? `${noteId}-project` : undefined].filter(Boolean).join(' ')
+  const describedBy = [`${id}-description`, summaryShown ? impactId : undefined, dependentOff ? `${id}-reason` : undefined, newSessionsOnly ? noteId : undefined, projectOverride ? `${noteId}-project` : undefined].filter(Boolean).join(' ')
   const stacked = info.kind === 'order' || info.kind === 'record'
 
   const description: ReactNode = (
@@ -83,6 +102,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
   )
   const statusNotes = (
     <>
+      <SaveStatus id={`${id}-save`} state={save?.state ?? 'idle'} error={save?.state === 'error' ? save.error : undefined} />
       {newSessionsOnly && (
         <span id={noteId} className="text-xs text-muted-foreground">
           Applies to new Sessions
@@ -98,7 +118,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
   const note = (
     <>
       {info.impact && info.kind !== 'record' && <ImpactWarning id={impactId} text={info.impact.text} active={costlier} />}
-      {disabled && (
+      {dependentOff && (
         <span id={`${id}-reason`} className="text-xs text-muted-foreground">
           {disabledReason}
         </span>
@@ -120,7 +140,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
         actions={reset}
         disabled={disabled}
         describedBy={describedBy}
-        onChange={(next) => void onChange(next)}
+        onChange={(next) => void commit(next)}
       />
     )
   } else {
@@ -132,7 +152,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
           aria-describedby={describedBy}
           disabled={disabled}
           checked={value === true}
-          onCheckedChange={(next) => void onChange(next)}
+          onCheckedChange={(next) => void commit(next)}
         />
       )
     } else if (info.kind === 'count') {
@@ -150,7 +170,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
           labelId={`${id}-label`}
           describedBy={describedBy}
           disabled={disabled}
-          onCommit={percentWindow !== null ? (percent) => onChange(percentToTokens(percent, percentWindow)) : onChange}
+          onCommit={percentWindow !== null ? (percent) => commit(percentToTokens(percent, percentWindow)) : commit}
         />
       )
     } else if (info.kind === 'order') {
@@ -160,7 +180,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
           value={Array.isArray(value) ? value : []}
           disabled={disabled}
           describedBy={describedBy}
-          onChange={onChange}
+          onChange={commit}
         />
       )
     } else {
@@ -174,7 +194,7 @@ export function AdvancedRow({ info, value, defaultValue, disabledReason, project
           describedBy={describedBy}
           open={tableOpen}
           onOpenChange={setTableOpen}
-          onChange={onChange}
+          onChange={commit}
         />
       )
     }

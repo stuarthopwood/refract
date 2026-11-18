@@ -5,7 +5,8 @@
 // role it is refused outright, so a held level can never land against a different model. Held
 // levels are dropped on unmount.
 import { useLayoutEffect, useRef, useState } from 'react'
-import { Loader2Icon } from 'lucide-react'
+import { SaveStatus } from '@/components/SaveStatus'
+import type { SaveState } from '@/components/saveStatusView'
 import { RadioGroup, RadioGroupIndicator, RadioGroupItem, RADIO_DOT_CLASS, RADIO_RING_CLASS } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 import { COMPOSER_DISABLED_OPACITY_CLASS } from '../chat/pickerShared'
@@ -60,15 +61,17 @@ export interface RoleReasoningRadiosProps {
   catalogEntry: ModelCatalogEntry | undefined
   /** Whether the catalog itself is loading or failed; the caption stays silent then instead of guessing. */
   catalogStatus: 'loading' | 'loaded' | 'error'
-  /** True while a save for this role is in flight. */
+  /** True while a save for this role is in flight, or the row cannot be edited yet. */
   disabled: boolean
+  /** What the role's own write is doing; while this group is open it is the one place Saving… and Saved show. */
+  saveState: Exclude<SaveState, 'error'>
   onPick(nextValue: string): void
   /** Mirrors the Select's polite in-flight announcement region. */
   announcePolite(message: string): void
 }
 
 /** Inherit is always enabled; other levels only when the chosen model supports them, with one visible caption explaining any disabled item. */
-export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, catalogEntry, catalogStatus, disabled, onPick, announcePolite }: RoleReasoningRadiosProps) {
+export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, catalogEntry, catalogStatus, disabled, saveState, onPick, announcePolite }: RoleReasoningRadiosProps) {
   const { base, suffix } = currentValue ? splitThinkingSuffix(currentValue) : { base: '', suffix: null }
   const storedLevel = suffix ? suffix.slice(1) : INHERIT_VALUE // ':high' -> 'high'
   const hasValue = currentValue !== undefined
@@ -234,13 +237,8 @@ export function RoleReasoningRadios({ role, roleLabel, labelId, currentValue, ca
           />
         )}
       </RadioGroup>
-      {disabled && (
-        // Sits under the row the radio user just picked in; the Select has its own cue.
-        <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
-          Saving…
-        </p>
-      )}
+      {/* Sits under the radios; RoleRow hides its own Change-row status while this group is open so only one shows. */}
+      <SaveStatus state={saveState} className="mt-1" />
       {caption && (
         <p id={captionId} className="mt-1 text-xs text-muted-foreground">
           {caption}
