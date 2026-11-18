@@ -332,18 +332,23 @@ async function main() {
     const q1 = await create(Q, { prompt: 'Do q1', name: 'q1' });
     await waitForSessionStatus(cdp, q1.id, 'idle');
 
-    // ---- SC-006: an agent-created child is announced once, polite, without moving focus (yolo: no card).
-    const setAuto = await cdp.evaluate(`window.refract.settings.setApprovalMode('auto')`);
-    if (!setAuto?.ok) throw new Error(`setApprovalMode(auto) failed: ${JSON.stringify(setAuto)}`);
+    // ---- SC-006: an agent-created child is announced once, polite, without moving focus. Only `yolo` skips the approval card
+    // (spec 131 FR-003), so each create is approved with a DOM click, which unlike a pointer click leaves focus where it was.
+    await openSession(Q.id);
+    const approveByDom = `(() => { const b = Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === 'Approve'); b?.click(); return !!b; })()`;
     await cdp.evaluate(`(() => {
       window.__live = [];
       const seen = (node) => { const el = node.nodeType === 1 ? node : node.parentElement; const region = el?.closest('[aria-live]'); const text = region?.textContent?.trim(); if (text && text.includes('created under')) window.__live.push({ text, live: region.getAttribute('aria-live') }); };
       new MutationObserver((rs) => { for (const r of rs) { r.addedNodes.forEach(seen); if (r.type === 'characterData') seen(r.target); } }).observe(document.body, { childList: true, subtree: true, characterData: true });
       return true;
     })()`);
+    const postQ2 = post('refract_create_session', { prompt: 'Do q2', name: 'q2' }, Q.pid);
+    await cdp.waitFor(`${approveCount} > 0`, { timeoutMs: 20_000, label: 'q2 approval card' });
+    await sleep(300);
     await cdp.evaluate(`${openButton(Q.id)}.focus()`);
     const before = await activeSessionId();
-    const q2 = await resultFor(post('refract_create_session', { prompt: 'Do q2', name: 'q2' }, Q.pid));
+    await cdp.evaluate(approveByDom);
+    const q2 = await resultFor(postQ2);
     await pidAfter();
     await cdp.waitFor(`window.__live.length > 0`, { timeoutMs: 15_000, label: 'announcement for q2' });
     await sleep(1500);
@@ -355,7 +360,11 @@ async function main() {
     await cdp.click(toggleFor(Q.name));
     await cdp.waitFor(`document.querySelector(${q(Q.id)})?.getAttribute('aria-expanded') === 'false'`, { timeoutMs: 10_000, label: 'Q collapsed' });
     await cdp.evaluate(`window.__live.length = 0`);
-    const q3 = await resultFor(post('refract_create_session', { prompt: 'Do q3', name: 'q3' }, Q.pid));
+    const postQ3 = post('refract_create_session', { prompt: 'Do q3', name: 'q3' }, Q.pid);
+    await cdp.waitFor(`${approveCount} > 0`, { timeoutMs: 20_000, label: 'q3 approval card' });
+    await sleep(300);
+    await cdp.evaluate(approveByDom);
+    const q3 = await resultFor(postQ3);
     await pidAfter();
     await cdp.waitFor(`window.__live.length > 0`, { timeoutMs: 15_000, label: 'announcement for q3' });
     await sleep(1500);
