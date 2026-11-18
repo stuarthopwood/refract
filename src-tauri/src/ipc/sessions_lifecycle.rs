@@ -208,14 +208,32 @@ pub fn sessions_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
-/// `sessions.archive`: stops the live agent if any, then stamps `archivedAt`.
+/// `sessions.archive`: stops the live agent if any, then stamps `archivedAt`. A true second
+/// argument does the same for every live descendant, deepest first.
 pub fn sessions_archive(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let id = match arg_str(&args, 0) {
             Some(id) => id.to_string(),
-            None => return Err(invalid_argument("sessions.archive expects a string id")),
+            None => {
+                return Err(invalid_argument(
+                    "sessions.archive expects (id: string, includeChildren?: boolean)",
+                ))
+            }
         };
-        archive_core::archive_core(&state, &id).await?;
+        let include_children = match args.get(1) {
+            None | Some(Value::Null) => false,
+            Some(Value::Bool(flag)) => *flag,
+            Some(_) => {
+                return Err(invalid_argument(
+                    "sessions.archive expects (id: string, includeChildren?: boolean)",
+                ))
+            }
+        };
+        if include_children {
+            archive_core::archive_subtree_core(&state, &id).await?;
+        } else {
+            archive_core::archive_core(&state, &id).await?;
+        }
         Ok(Value::Null)
     })
 }
@@ -407,3 +425,7 @@ mod tests;
 #[cfg(test)]
 #[path = "sessions_lifecycle_gate_tests.rs"]
 mod gate_tests;
+
+#[cfg(test)]
+#[path = "sessions_lifecycle_subtree_tests.rs"]
+mod subtree_tests;

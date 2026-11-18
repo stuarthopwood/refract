@@ -74,45 +74,54 @@ pub(super) fn default_session_list_collapse() -> SessionListCollapse {
         collapsed_repository_ids: Vec::new(),
         archived_open: false,
         show_hidden: false,
+        collapsed_parent_ids: Vec::new(),
     }
 }
 
-/// De-dupes and caps `collapsedRepositoryIds`, shared by disk parser and IPC setter; `None` on
-/// a cap breach or non-string element.
+/// De-dupes and caps an id list (`collapsedRepositoryIds`, `collapsedParentIds`), shared by disk
+/// parser and IPC setter; `None` on a cap breach or non-string element.
 pub(crate) const SESSION_LIST_COLLAPSE_MAX_IDS: usize = 1000;
 pub(crate) const SESSION_LIST_COLLAPSE_MAX_ID_BYTES: usize = 256;
 
-pub(crate) fn sanitize_collapsed_repository_ids(ids_value: &[Value]) -> Option<Vec<String>> {
+pub(crate) fn sanitize_collapsed_ids(ids_value: &[Value]) -> Option<Vec<String>> {
     if ids_value.len() > SESSION_LIST_COLLAPSE_MAX_IDS {
         return None;
     }
     let mut seen: HashSet<&str> = HashSet::with_capacity(ids_value.len());
-    let mut collapsed_repository_ids: Vec<String> = Vec::with_capacity(ids_value.len());
+    let mut ids: Vec<String> = Vec::with_capacity(ids_value.len());
     for id in ids_value {
         let id = id.as_str()?;
         if id.len() > SESSION_LIST_COLLAPSE_MAX_ID_BYTES {
             return None;
         }
         if seen.insert(id) {
-            collapsed_repository_ids.push(id.to_string());
+            ids.push(id.to_string());
         }
     }
-    Some(collapsed_repository_ids)
+    Some(ids)
 }
 
 pub(super) fn parse_session_list_collapse(value: &Value) -> Option<SessionListCollapse> {
     let object = value.as_object()?;
     let ids_value = object.get("collapsedRepositoryIds")?.as_array()?;
-    let collapsed_repository_ids = sanitize_collapsed_repository_ids(ids_value)?;
+    let collapsed_repository_ids = sanitize_collapsed_ids(ids_value)?;
     let archived_open = object.get("archivedOpen")?.as_bool()?;
     let show_hidden = object
         .get("showHidden")
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    // Optional so a pre-#1862 file keeps its other collapse state; a malformed list only loses
+    // the parent state.
+    let collapsed_parent_ids = object
+        .get("collapsedParentIds")
+        .and_then(Value::as_array)
+        .and_then(|ids| sanitize_collapsed_ids(ids))
+        .unwrap_or_default();
     Some(SessionListCollapse {
         collapsed_repository_ids,
         archived_open,
         show_hidden,
+        collapsed_parent_ids,
     })
 }
 

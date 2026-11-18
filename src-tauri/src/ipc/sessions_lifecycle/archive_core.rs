@@ -48,6 +48,41 @@ pub(crate) async fn archive_core(state: &AppState, id: &str) -> Result<(), IpcEr
     Ok(())
 }
 
+/// Names what was already archived when a cascade stops part way, so nothing is left unreported.
+fn partial_failure(error: IpcError, archived: &[String]) -> IpcError {
+    if archived.is_empty() {
+        return error;
+    }
+    IpcError::new(
+        error.code,
+        format!("{}; already archived: {}", error.message, archived.join(", ")),
+    )
+}
+
+/// Archives `id` and every live descendant, deepest first, under the Project's tree gate so no
+/// child can be created or moved into the set between reading it and archiving it.
+pub(crate) async fn archive_subtree_core(state: &AppState, id: &str) -> Result<(), IpcError> {
+    let repository_id = match state.registry.lock().await.get_session(id) {
+        Some(session) => project_binding(session)?.repository_id.to_string(),
+        None => return Err(not_found(format!("Session not found: {id}"))),
+    };
+    let _gate = crate::agent_tools::tree_gate::lock(&repository_id).await;
+    let sessions = state.registry.lock().await.snapshot().sessions;
+    let ids = crate::store::session_tree::archive_subtree_ids(&sessions, id);
+    // Before the first archive, so a refusal never leaves the cascade half done.
+    for member in &ids {
+        delete_in_flight::refuse_if_deleting(member)?;
+    }
+    let mut archived = Vec::new();
+    for member in &ids {
+        archive_core(state, member)
+            .await
+            .map_err(|error| partial_failure(error, &archived))?;
+        archived.push(member.clone());
+    }
+    Ok(())
+}
+
 /// Clears `archivedAt` unless the parent already has its maximum of live children.
 pub(crate) async fn restore_core(state: &AppState, id: &str) -> Result<(), IpcError> {
     delete_in_flight::refuse_if_deleting(id)?;

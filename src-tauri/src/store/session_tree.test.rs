@@ -111,6 +111,34 @@ fn descendants_terminates_on_a_cycle_and_excludes_the_start() {
 }
 
 #[test]
+fn archive_subtree_ids_is_the_target_and_live_descendants_deepest_first() {
+    let rows = vec![
+        session("a", None),
+        session("b", Some("a")),
+        session("c", Some("b")),
+        session("b2", Some("a")),
+    ];
+    assert_eq!(archive_subtree_ids(&rows, "a"), ["c", "b2", "b", "a"]);
+    assert_eq!(archive_subtree_ids(&rows, "c"), ["c"]);
+}
+
+#[test]
+fn archive_subtree_ids_skips_archived_descendants() {
+    let rows = vec![
+        session("a", None),
+        archived(session("b", Some("a"))),
+        session("c", Some("a")),
+    ];
+    assert_eq!(archive_subtree_ids(&rows, "a"), ["c", "a"]);
+}
+
+#[test]
+fn archive_subtree_ids_terminates_on_a_cycle() {
+    let rows = vec![session("a", Some("b")), session("b", Some("a"))];
+    assert_eq!(archive_subtree_ids(&rows, "a"), ["b", "a"]);
+}
+
+#[test]
 fn in_tree_is_the_session_and_its_descendants_only() {
     let rows = vec![
         session("a", None),

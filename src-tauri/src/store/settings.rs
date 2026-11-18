@@ -39,7 +39,8 @@ pub struct SplitLayout {
 }
 
 /// Stores only the difference from the default: an id absent from `collapsed_repository_ids` is
-/// open; `archived_open` defaults `false` (#735).
+/// open; `archived_open` defaults `false` (#735). `collapsed_parent_ids` does the same for parent
+/// Sessions in the tree (#1862): absent means expanded.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionListCollapse {
@@ -48,6 +49,9 @@ pub struct SessionListCollapse {
     /// #748: the "Show hidden" toggle; absent in a pre-#748 file reads as `false`.
     #[serde(default)]
     pub show_hidden: bool,
+    /// Absent in a pre-#1862 file reads as empty, so every parent starts expanded.
+    #[serde(default)]
+    pub collapsed_parent_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,7 +119,7 @@ pub struct Settings {
 // Per-setting modules (#806); parse helpers are in `settings_parse.rs`.
 #[path = "settings_parse.rs"]
 mod settings_parse;
-pub(crate) use settings_parse::sanitize_collapsed_repository_ids;
+pub(crate) use settings_parse::sanitize_collapsed_ids;
 use settings_parse::{
     clamp_pull_requests_list_width_px, default_session_list_collapse, parse_session_list_collapse,
     parse_session_readout, parse_split_layout, PULL_REQUESTS_LIST_WIDTH_PX_DEFAULT,
