@@ -3,7 +3,6 @@
 // they refuse the same way; `ConvHost` lets a fake stand in for the running app in tests.
 // Order of checks: arguments, target, relationship, state, card, re-check under the Project's tree
 // gate, then defer or run.
-#![allow(dead_code)] // the gate helpers are first called by `new_conversation` and `switch_conversation`
 
 use std::future::Future;
 use std::sync::Arc;
@@ -29,7 +28,6 @@ pub const SWITCH_CONVERSATION: &str = "refract_switch_conversation";
 const DEFAULT_LIMIT: usize = 20;
 const MAX_LIMIT: usize = 100;
 const PREVIEW_CHARS: usize = 120;
-const NOT_IMPLEMENTED: &str = "not_implemented";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConvTool {
@@ -412,17 +410,9 @@ pub(super) async fn run_with<H: ConvHost>(
 ) -> Result<Value, ToolError> {
     match tool {
         ConvTool::List => list(host, args).await,
-        // The arguments are checked now; the action arrives with the next slice.
-        ConvTool::New => parse_new(args).and_then(|_| Err(not_implemented(tool))),
-        ConvTool::Switch => parse_switch(args).and_then(|_| Err(not_implemented(tool))),
+        ConvTool::New => flow::new_conversation(host, args).await,
+        ConvTool::Switch => flow::switch_conversation(host, args).await,
     }
-}
-
-fn not_implemented(tool: ConvTool) -> ToolError {
-    ToolError::new(
-        NOT_IMPLEMENTED,
-        format!("{} is not available yet", tool.name()),
-    )
 }
 
 /// The running app behind `ConvHost`.
@@ -531,6 +521,9 @@ impl ConvHost for AppConvHost {
         Ok(())
     }
 }
+
+#[path = "sessions_conversations_flow.rs"]
+mod flow;
 
 #[cfg(test)]
 #[path = "sessions_conversations.test.rs"]

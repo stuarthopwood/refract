@@ -409,20 +409,146 @@ async fn list_reads_a_sibling_without_a_card_and_still_refuses_other_projects() 
     assert_eq!(code(foreign), NOT_FOUND);
 }
 
-// new and switch until the action lands
+// new_conversation
 
 #[tokio::test]
-async fn new_and_switch_check_arguments_before_saying_they_are_not_available() {
+async fn new_checks_its_arguments_before_touching_anything() {
     let fx = fake(vec![]).await;
 
     assert_eq!(code(run_with(&fx, ConvTool::New, &json!({})).await), INVALID_INPUT);
+    assert!(fx.calls().is_empty());
+}
+
+#[tokio::test]
+async fn new_in_an_idle_own_session_starts_at_once_as_a_handoff() {
+    let fx = fake(vec![]).await;
+
+    let result = run_with(&fx, ConvTool::New, &json!({ "prompt": "go" })).await.unwrap();
+
+    assert_eq!(result, json!({ "outcome": "started", "id": "me" }));
+    assert_eq!(fx.calls()[1], "start:me:true:go");
+}
+
+#[tokio::test]
+async fn new_in_a_mid_turn_session_is_scheduled_and_nothing_starts() {
+    let mut fx = fake(vec![]).await;
+    fx.mid_turn = true;
+
+    let result = run_with(&fx, ConvTool::New, &json!({ "prompt": "go" })).await.unwrap();
+
+    assert_eq!(result, json!({ "outcome": "scheduled", "id": "me" }));
+    assert_eq!(fx.calls().len(), 1, "{:?}", fx.calls());
+}
+
+#[tokio::test]
+async fn new_in_a_sibling_asks_first_and_sends_the_prompt_in_an_envelope() {
+    let fx = fake(vec![]).await;
+    let args = json!({ "prompt": "build it", "session_id": "side" });
+
+    let result = run_with(&fx, ConvTool::New, &args).await.unwrap();
+
+    assert_eq!(result, json!({ "outcome": "started", "id": "side" }));
+    assert_eq!(fx.cards.lock().unwrap().len(), 1);
+    assert!(fx.calls()[1].starts_with("start:side:false:"), "{:?}", fx.calls());
+    assert!(fx.calls()[1].contains("build it"));
+}
+
+#[tokio::test]
+async fn new_in_a_sibling_the_developer_denies_changes_nothing() {
+    let mut fx = fake(vec![]).await;
+    fx.approve = false;
+    let args = json!({ "prompt": "build it", "session_id": "side" });
+
+    assert_eq!(code(run_with(&fx, ConvTool::New, &args).await), DENIED);
+    assert_eq!(fx.cards.lock().unwrap().len(), 1);
+    assert!(fx.calls().is_empty());
+}
+
+#[tokio::test]
+async fn new_in_a_paused_session_is_invalid_state() {
+    let fx = fake(vec![]).await;
+    fx.paused.lock().unwrap().insert("kid".into());
+    let args = json!({ "prompt": "go", "session_id": "kid" });
+
+    assert_eq!(code(run_with(&fx, ConvTool::New, &args).await), INVALID_STATE);
+    assert!(fx.calls().is_empty());
+}
+
+// switch_conversation
+
+fn switch_args(session: &str, conversation: &str) -> serde_json::Value {
+    json!({ "session_id": session, "conversation_id": conversation })
+}
+
+#[tokio::test]
+async fn switch_to_another_listed_conversation_switches_at_once() {
+    let fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
+
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c2")).await.unwrap();
+
     assert_eq!(
-        code(run_with(&fx, ConvTool::New, &json!({ "prompt": "go" })).await),
-        NOT_IMPLEMENTED
+        result,
+        json!({ "outcome": "switched", "id": "me", "conversation_id": "c2" })
     );
+    assert_eq!(fx.calls()[1], "switch:me:c2.jsonl");
+}
+
+#[tokio::test]
+async fn switch_to_the_current_conversation_is_unchanged_and_does_nothing() {
+    let fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
+
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c1")).await.unwrap();
+
     assert_eq!(
-        code(run_with(&fx, ConvTool::Switch, &json!({ "session_id": "me", "conversation_id": "c1" })).await),
-        NOT_IMPLEMENTED
+        result,
+        json!({ "outcome": "unchanged", "id": "me", "conversation_id": "c1" })
     );
+    assert!(fx.calls().is_empty());
+}
+
+#[tokio::test]
+async fn switch_mid_turn_is_scheduled() {
+    let mut fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
+    fx.mid_turn = true;
+
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c2")).await.unwrap();
+
+    assert_eq!(
+        result,
+        json!({ "outcome": "scheduled", "id": "me", "conversation_id": "c2" })
+    );
+    assert_eq!(fx.calls().len(), 1, "{:?}", fx.calls());
+}
+
+#[tokio::test]
+async fn switch_to_a_conversation_the_session_does_not_have_is_not_found() {
+    let fx = fake(vec![conv(1, "a")]).await;
+
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c9")).await;
+
+    assert_eq!(code(result), NOT_FOUND);
+    assert!(fx.calls().is_empty());
+}
+
+#[tokio::test]
+async fn switch_in_a_sibling_the_developer_denies_changes_nothing() {
+    let mut fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
+    fx.approve = false;
+
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("side", "c2")).await;
+
+    assert_eq!(code(result), DENIED);
+    assert_eq!(fx.cards.lock().unwrap().len(), 1);
+    assert!(fx.calls().is_empty());
+}
+
+#[tokio::test]
+async fn switch_in_a_paused_session_is_invalid_state() {
+    let fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
+    fx.paused.lock().unwrap().insert("kid".into());
+
+    let result = run_with(&fx, ConvTool::Switch, &switch_args("kid", "c2")).await;
+
+    assert_eq!(code(result), INVALID_STATE);
     assert!(fx.calls().is_empty());
 }
