@@ -55,6 +55,7 @@ function extractConstObject(source, constName) {
 const ipcSource = readFile(ipcTsPath);
 // `ipc.ts` is at its line cap, so the Usage channels live in `ipc-usage.ts`.
 const ipcUsageSource = readFile(path.join(repoRoot, 'src/shared/ipc-usage.ts'));
+const ipcConversationSource = readFile(path.join(repoRoot, 'src/shared/ipc-conversation-changed.ts'));
 const requests = [
   ...extractConstObject(ipcSource, 'IPC_REQUESTS'),
   ...extractConstObject(ipcUsageSource, 'IPC_USAGE_REQUESTS'),
@@ -62,6 +63,7 @@ const requests = [
 const events = [
   ...extractConstObject(ipcSource, 'IPC_EVENTS'),
   ...extractConstObject(ipcUsageSource, 'IPC_USAGE_EVENTS'),
+  ...extractConstObject(ipcConversationSource, 'IPC_CONVERSATION_EVENTS'),
 ];
 const bootstrapMatch = ipcSource.match(/export const THEME_BOOTSTRAP_CHANNEL = '([^']+)';/);
 if (!bootstrapMatch) throw new Error(`check-parity: could not find THEME_BOOTSTRAP_CHANNEL in ${relPath(ipcTsPath)}`);
@@ -369,6 +371,7 @@ const REQUEST_LANES = {
 const EVENT_LANES = {
   SESSION_STATUS: 'R3', // #786, agent start/stop state machine
   SESSION_LIST_CHANGED: 'R2', // #785, session lifecycle
+  SESSION_CONVERSATION_CHANGED: 'R2', // #1861, a tool moved a Session to another Conversation
   SESSION_DELETED: 'R2', // #1591, background delete finished
   SESSION_DELETE_FAILED: 'R2', // #1591, background delete failed
   TRANSCRIPT_PATCH: 'R4', // #787, chat send path streaming

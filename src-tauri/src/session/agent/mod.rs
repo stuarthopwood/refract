@@ -28,6 +28,7 @@ pub mod pause;
 mod pause_subagents;
 mod queued_handoff;
 mod requests;
+mod start_with_message;
 mod status;
 mod sync_from_state;
 mod tool_host;
@@ -39,6 +40,7 @@ pub use commands::{
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
 pub use requests::is_chat_answer;
+pub use start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 

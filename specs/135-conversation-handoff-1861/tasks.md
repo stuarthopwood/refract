@@ -4,8 +4,8 @@ Phase 2 (implementation) is a separate run. Each implementation task has a co-lo
 
 ## Phase A - shared helper
 
-- [ ] T001 Add `start_conversation_with(first_message)` in `src-tauri/src/session/agent/handoff.rs`; move `hand_off()` lines 51-65 onto it, keeping the `handoff-send-failed` wording.
-- [ ] T001t Test in `session/agent/handoff.test.rs`: `start_conversation_with` starts a Conversation with the first message; `hand_off()` keeps the `handoff-send-failed` wording.
+- [x] T001 Add the shared helper `start_conversation_then_send(FirstMessage)` in `src-tauri/src/session/agent/start_with_message.rs` (deviation, see analysis.md); `hand_off()` calls it and keeps the `handoff-send-failed` wording.
+- [x] T001t Test in `session/agent/start_with_message.test.rs`: 8 cases covering event order, note flag, failure stages, sidecar key.
 - [ ] T002 Extract `start_new_core` and `switch_core` into `src-tauri/src/ipc/conversations_core.rs` from the `conversations.startNew` and `conversations.open` arms; keep the IPC handlers as thin callers.
 - [ ] T002t Test in `ipc/conversations_core.test.rs`: `start_new_core` and `switch_core` cover started, switched, unchanged and unknown-id cases.
 

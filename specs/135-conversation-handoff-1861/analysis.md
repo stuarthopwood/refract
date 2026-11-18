@@ -26,3 +26,11 @@ Every scenario in the spec maps to a numbered live check in `plan.md`.
 - **Open 6 (spec number).** Number 135 was the next free on `origin/main`; parallel Wave 5 lanes may have picked the same number. The folder suffix `-1861` keeps the paths distinct; Main should renumber on merge if needed.
 - **Low (role gating).** Which roles and depths get the tools is assumed to match the other Session tools (A7); `agent_tools/mod.rs` registration should be checked at implementation.
 - No duplicated or contradictory requirements found inside the three documents. No requirement lacks a task.
+
+## Implementation findings (2026-11-18)
+
+- **Finding 3 (settle hook).** `handle_turn_settled` clears `turn_abort_requested` in its first lock block, before `set_status(Idle)`. The flag is therefore NOT readable after idle: the hook must read it in that first lock block and pass it on. The hook runs after `set_status(Idle)`, next to `token_guard::on_turn_settled`.
+- **Finding 5 (`conversations.startNew`).** A Stopped Session calls `start_with_conversation(None)`, any other status calls `start_new_conversation()` (which refuses with `not-idle` unless Idle with a process). It is not a no-op for a Stopped Session, so A5 holds.
+- **Finding 6 (role gating).** `ToolAccess::for_depth` always returns `Role::Root`; `tools_for` offers `SESSION_TOOLS` to every Root Session. Adding the three names to `SESSION_TOOLS` is the whole gating change.
+- **Deviation (T001).** The shared helper is `start_conversation_then_send(FirstMessage { text, handoff_note })` in `session/agent/start_with_message.rs` (staged errors `BeforeNew`/`AfterNew`, so a retry never starts a second Conversation), not `start_conversation_with` in `handoff.rs`; `hand_off()` calls it and keeps the `handoff-send-failed` wording.
+- **Deviation (T002).** `switch_core` does not return `unchanged`: the IPC `conversations.open` reloads the current Conversation, so that behaviour stays; the tool decides `unchanged` from `is_current` in its own lookup.

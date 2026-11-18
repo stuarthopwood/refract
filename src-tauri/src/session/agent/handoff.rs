@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use super::start_with_message::{FirstMessage, StartStage};
 use super::{AgentError, SessionAgent, SessionStatus};
 
 const SUMMARY_PROMPT: &str = "Write a handoff summary so a fresh conversation can continue this work: the goal, what is done, decisions made, files touched, open problems, and the exact next step. Reply with the summary only; do not call any tools.";
@@ -48,20 +49,20 @@ impl SessionAgent {
             )
         })?;
         let summary = truncate_summary(&summary);
-        self.start_new_conversation().await?;
-        self.send(
-            format!("Continuing from a previous conversation. Handoff summary:\n\n{summary}"),
-            None,
-        )
+        self.start_conversation_then_send(FirstMessage {
+            text: format!("Continuing from a previous conversation. Handoff summary:\n\n{summary}"),
+            handoff_note: false,
+        })
         .await
-        .map_err(|err| {
-            AgentError::new(
+        .map_err(|failed| match failed.stage {
+            StartStage::BeforeNew => failed.error,
+            StartStage::AfterNew => AgentError::new(
                 "handoff-send-failed",
                 format!(
                     "The new Conversation was started but the summary could not be sent: {}",
-                    err.message
+                    failed.error.message
                 ),
-            )
+            ),
         })?;
         Ok(())
     }

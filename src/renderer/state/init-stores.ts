@@ -18,6 +18,7 @@ import { initHolidayOverrides } from './holiday-store'
 import { notifyAlarm } from './notify'
 import { useAlarmFiredStore } from './alarm-fired-store'
 import { liveParentIds, useSessionsStore } from './sessions-store'
+import { handleConversationChanged } from './conversation-changed'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useAdvisorStore } from './advisor-store'
@@ -82,6 +83,7 @@ export function initStores(): void {
   window.refract.onSessionListChanged(() => {
     void useSessionsStore.getState().refresh()
   })
+  window.refract.onSessionConversationChanged(({ sessionId }) => handleConversationChanged(sessionId))
   window.refract.onSessionDeleted(({ sessionId }) => {
     const store = useSessionsStore.getState()
     // Read the name before the refresh drops the Session from the list.
