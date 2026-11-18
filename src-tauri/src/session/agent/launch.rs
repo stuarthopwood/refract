@@ -548,6 +548,7 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.stop_requested = true;
+            super::handoff_queue::clear(&mut state);
             // Bumped under this lock, before `start_lock` is awaited.
             state.shutdown_generation = state.shutdown_generation.wrapping_add(1);
         }

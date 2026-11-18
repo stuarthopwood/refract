@@ -103,3 +103,87 @@ async fn clear_empties_the_slot() {
     drop(state);
     fx.finish().await;
 }
+
+// Cancellation: a stopped turn must not hand off (#1861).
+
+/// A running turn with an action queued against it.
+async fn queued_mid_turn(fx: &crate::session::agent::pause_subagents::fixture::Fixture) {
+    let mut state = fx.agent.state.lock().await;
+    state.status = crate::session::agent::SessionStatus::Working;
+    state.turn_generation = 1;
+    try_queue(&mut state, new_with("never"), None).unwrap();
+}
+
+#[tokio::test]
+async fn chat_stop_empties_the_slot() {
+    let fx = fixture(&[], &[]).await;
+    queued_mid_turn(&fx).await;
+
+    // `stop` waits for the Session to settle, so run it aside and release it afterwards.
+    let agent = fx.agent.clone();
+    let stopping = tokio::spawn(async move { agent.stop().await });
+    for _ in 0..200 {
+        if fx.agent.state.lock().await.queued_handoff.is_none() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
+
+    fx.agent
+        .set_status(crate::session::agent::SessionStatus::Idle, None, None)
+        .await;
+    stopping.await.unwrap().unwrap();
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn shutdown_empties_the_slot() {
+    let fx = fixture(&[], &[]).await;
+    queued_mid_turn(&fx).await;
+
+    fx.agent.shutdown().await;
+
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
+}
+
+#[tokio::test]
+async fn a_process_exit_empties_the_slot() {
+    let fx = fixture(&[], &[]).await;
+    queued_mid_turn(&fx).await;
+    let proc = fx.agent.state.lock().await.process.clone().unwrap();
+
+    fx.agent.handle_exit(&proc, Some(1), false).await;
+
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
+    proc.stop().await;
+}
+
+#[tokio::test]
+async fn a_requested_stop_exit_empties_the_slot() {
+    let fx = fixture(&[], &[]).await;
+    queued_mid_turn(&fx).await;
+    let proc = fx.agent.state.lock().await.process.clone().unwrap();
+    fx.agent.state.lock().await.stop_requested = true;
+
+    fx.agent.handle_exit(&proc, Some(0), true).await;
+
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
+    proc.stop().await;
+}
+
+#[tokio::test]
+async fn an_aborted_turn_drops_the_action_at_settle() {
+    let fx = fixture(&[], &[]).await;
+    queued_mid_turn(&fx).await;
+    fx.agent.state.lock().await.turn_abort_requested = true;
+
+    fx.agent
+        .handle_frame(serde_json::json!({ "type": "session_settled" }))
+        .await;
+
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
+    // The flag was read before it was cleared, and nothing was started.
+    assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    fx.finish().await;
+}

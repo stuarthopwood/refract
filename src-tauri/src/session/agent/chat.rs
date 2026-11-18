@@ -148,6 +148,8 @@ impl SessionAgent {
             if proc.is_some() && turn_in_flight {
                 state.turn_abort_requested = true;
             }
+            // Stop cancels a handoff deferred to this turn's end, even if the abort RPC then fails. (#1861)
+            super::handoff_queue::clear(&mut state);
             (proc, status)
         };
         let Some(proc) = proc else {

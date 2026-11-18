@@ -14,10 +14,10 @@ Phase 2 (implementation) is a separate run. Each implementation task has a co-lo
 - [x] T003 Add `session/agent/handoff_queue.rs` with `QueuedHandoff`, `HandoffAction`, `try_queue`, `take_queued_handoff`, `clear`.
 - [x] T003t Test in `session/agent/handoff_queue.test.rs`: `try_queue` accepts one action and refuses a second; `take_queued_handoff` empties the slot; `clear` empties it.
 - [x] T004 Add the `queued_handoff` field to `AgentState` in `session/agent/mod.rs`.
-- [ ] T005 In `frame.rs` `handle_turn_settled`, take the slot after the Session is idle and spawn the run task: act, retry once, then the "Handoff failed" notice.
-- [ ] T005t Test in `session/agent/frame.test.rs`: settle takes the slot after idle, acts, retries once, then posts the "Handoff failed" notice.
-- [ ] T006 Clear the slot on `chat.stop` (`chat.rs`), `shutdown`, stop exits and `on_process_exit`; drop it when `turn_abort_requested` is set at settle.
-- [ ] T006t Test in `session/agent/handoff_queue.test.rs` (cancellation): the slot is empty after `chat.stop`, `shutdown`, stop exits and `on_process_exit`; a queued action is dropped when `turn_abort_requested` is set at settle.
+- [x] T005 In `frame.rs` `handle_turn_settled`, take the slot after the Session is idle and spawn the run task: act, retry once, then the "Handoff failed" notice. (Written, uncompiled: the run is `SessionAgent::run_settled_handoff` in `handoff_queue.rs`, spawned from the settle.)
+- [x] T005t Test in `session/agent/frame.test.rs`: settle takes the slot after idle, acts, retries once, then posts the "Handoff failed" notice.
+- [x] T006 Clear the slot on `chat.stop` (`chat.rs`), `shutdown`, stop exits and `on_process_exit`; drop it when `turn_abort_requested` is set at settle. (Written, uncompiled: process exit is `handle_exit` in `frame.rs`; there is no `on_process_exit`.)
+- [x] T006t Test in `session/agent/handoff_queue.test.rs` (cancellation): the slot is empty after `chat.stop`, `shutdown`, stop exits and `on_process_exit`; a queued action is dropped when `turn_abort_requested` is set at settle.
 
 ## Phase C - tools
 
