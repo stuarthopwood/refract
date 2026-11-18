@@ -10,9 +10,9 @@ Test work is part of each task (AGENTS.md Testing rule, epic #1918: new and chan
 
 ## Phase 2: Shared types, bridge and stores
 
-- [ ] T004 `src/shared/model.ts`: `SessionListCollapse.collapsedParentIds: string[]` and the default `[]`; `src/shared/ipc.ts` and `src/tauri-bridge/index.ts`: `sessions.archive(id, includeChildren?)` passes the flag. Tests: `shared/model.test.ts` (default). (FR-014, FR-015)
-- [ ] T005 `src/renderer/state/sessions-store.ts`: `archive(id, includeChildren?)` passes the flag through (default passes none; failure notifies and returns false). Test in `state/sessions-store.test.ts`. (FR-015)
-- [ ] T006 `src/renderer/state/session-list-store.ts`: `collapsedParentIds` set, `isParentOpen`, `toggleParent`, `pruneParents`, restore of the field, ephemeral search override `parents` map; `collapseAll` and `expandAll` untouched. Wire `pruneParents` where `pruneCollapsed` runs and after the sessions-store refresh settles. New test `state/session-list-store.test.ts`: default open, toggle persists the right payload, restore, prune, query writes only the override and clearing drops it, collapse all leaves parents alone. (FR-006, FR-007)
+- [x] T004 `src/shared/model.ts`: `SessionListCollapse.collapsedParentIds: string[]` and the default `[]`; `src/shared/ipc.ts` and `src/tauri-bridge/index.ts`: `sessions.archive(id, includeChildren?)` passes the flag. Tests: `shared/model.test.ts` (default). (FR-014, FR-015)
+- [x] T005 `src/renderer/state/sessions-store.ts`: `archive(id, includeChildren?)` passes the flag through (default passes none; failure notifies and returns false). Test in `state/sessions-store.test.ts`. (FR-015)
+- [x] T006 `src/renderer/state/session-list-store.ts`: `collapsedParentIds` set, `isParentOpen`, `toggleParent`, `pruneParents`, restore of the field, ephemeral search override `parents` map; `collapseAll` and `expandAll` untouched. Wire `pruneParents` where `pruneCollapsed` runs and after the sessions-store refresh settles. New test `state/session-list-store.test.ts`: default open, toggle persists the right payload, restore, prune, query writes only the override and clearing drops it, collapse all leaves parents alone. (FR-006, FR-007)
 
 ## Phase 3: Pure tree model
 
