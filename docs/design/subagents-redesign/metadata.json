@@ -1,0 +1,6 @@
+{
+  "name": "Sub-Agent DAG & Flow Studio",
+  "description": "Visual DAG flow visualizer and execution path simplifier for multi-stage sub-agent workflows with concurrency tracking, critical path analysis, and deep node inspection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
