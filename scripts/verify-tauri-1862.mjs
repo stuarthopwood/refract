@@ -153,8 +153,12 @@ async function main() {
       const res = await resultFor(id);
       return { ...res.body, pid: await pidAfter() };
     };
-    const quickRoot = async (exclude) => {
+    // The row count the quick-create helper waits on also rises when an earlier child's row mounts late, so every Session
+    // seeded so far must be on screen before the click, and the new root must be seen before its id is read.
+    const quickRoot = async (exclude, mounted = exclude) => {
+      for (const id of mounted) await cdp.waitFor(`!!${openButton(id)}`, { timeoutMs: 15_000, label: `seeded row ${id} mounted` });
       await createSessionViaQuickCreate(cdp, repoName);
+      await cdp.waitFor(`Array.from(document.querySelectorAll('[data-session-open]')).some((el) => !${JSON.stringify(exclude)}.includes(el.getAttribute('data-session-open')))`, { timeoutMs: 30_000, label: 'new root row mounted' });
       const s = await latestSessionIdAndName(cdp, repoName, exclude);
       s.pid = await pidAfter();
       await waitForSessionStatus(cdp, s.id, 'idle');
@@ -187,7 +191,7 @@ async function main() {
       return bad;
     })()`);
 
-    // ---- Seed: P with k1 (holding g1) and k2; P2 with m1; Q with q1.
+    // ---- Seed: P with k1 (holding g1) and k2; P2 with m1. Q with q1 is seeded after the archive checks.
     await addRepository(cdp, repoDir);
     const P = await quickRoot([]);
     const k1 = await create(P, { prompt: 'Do k1', name: 'k1' });
@@ -195,10 +199,8 @@ async function main() {
     const g1 = await create({ id: k1.id, pid: k1.pid }, { prompt: 'Do g1', name: 'g1' });
     const P2 = await quickRoot([P.id, k1.id, k2.id, g1.id]);
     const m1 = await create(P2, { prompt: 'Do m1', name: 'm1' });
-    const Q = await quickRoot([P.id, k1.id, k2.id, g1.id, P2.id, m1.id]);
-    const q1 = await create(Q, { prompt: 'Do q1', name: 'q1' });
     check(k1.parentId === P.id && k2.parentId === P.id && g1.parentId === k1.id, 'Seed: k1 and k2 are children of P and g1 a child of k1.', `seed parents: ${JSON.stringify({ k1, k2, g1 })}`);
-    for (const id of [k1.id, k2.id, g1.id, m1.id, q1.id]) await waitForSessionStatus(cdp, id, 'idle');
+    for (const id of [k1.id, k2.id, g1.id, m1.id]) await waitForSessionStatus(cdp, id, 'idle');
     await switchTheme(cdp, 'dark', 'Dark');
     await cdp.waitFor(`!!document.querySelector(${q(g1.id)})`, { timeoutMs: 15_000, label: 'grandchild row mounted in the tree' });
 
@@ -320,6 +322,11 @@ async function main() {
     await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && [${[P, k1, k2, g1].map((s) => JSON.stringify(s.id)).join(',')}].every((id) => !!r.value.find((s) => s.id === id)?.archivedAt))`, { timeoutMs: 30_000, label: 'P, k1, k2 and g1 archived' });
     check(true, 'Archive all archived P, k1, k2 and g1.', '');
     await shot('08-after-archive-all.png');
+
+    // The Project allows 6 live Sessions, so Q's tree is seeded only now that archiving P's tree has freed slots.
+    const Q = await quickRoot([P.id, k1.id, k2.id, g1.id, P2.id, m1.id], [m1.id]);
+    const q1 = await create(Q, { prompt: 'Do q1', name: 'q1' });
+    await waitForSessionStatus(cdp, q1.id, 'idle');
 
     // ---- SC-006: an agent-created child is announced once, polite, without moving focus (yolo: no card).
     const setAuto = await cdp.evaluate(`window.refract.settings.setApprovalMode('auto')`);
