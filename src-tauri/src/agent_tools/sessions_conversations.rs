@@ -290,7 +290,12 @@ pub(super) async fn confirm<H: ConvHost>(
     if !needs_card(gate.relationship, host.is_yolo().await) {
         return Ok(false);
     }
-    let label = labels_for(&gate.sessions, &[gate.target.id.clone()], &[false]).remove(0);
+    let label = labels_for(
+        &gate.sessions,
+        std::slice::from_ref(&gate.target.id),
+        &[false],
+    )
+    .remove(0);
     host.ask(card_for(
         tool,
         host.call_id(),
