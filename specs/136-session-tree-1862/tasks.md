@@ -27,18 +27,18 @@ Test work is part of each task (AGENTS.md Testing rule, epic #1918: new and chan
 
 ## Phase 5: UX review fold-in
 
-- [ ] T012 Check the built UI against every Decided entry in spec.md "UX review" (indent, toggle, line 2 and line 3 text, dialog order and focus, announcement text) while taking the T013 evidence; a mismatch is fixed in the owning task and its test first. (FR-010, FR-013)
+- [x] T012 Check the built UI against every Decided entry in spec.md "UX review" (indent, toggle, line 2 and line 3 text, dialog order and focus, announcement text) while taking the T013 evidence; a mismatch is fixed in the owning task and its test first. (FR-010, FR-013)
 
 ## Phase 6: Live check, docs, gate
 
-- [ ] T013 `scripts/verify-tauri-1862.mjs`: live check over CDP with the fake omp (pattern of `verify-tauri-1860.mjs`): a parent with two children and a grandchild, collapse and restart, a child waiting for approval, archive dialog with a running child (both buttons), keyboard moves, an agent-created child announced once. Never `pnpm dev`; scratch `REFRACT_DATA_DIR`; record head sha and `dirty: false`. (SC-001 to SC-006)
-- [ ] T014 Screenshots of the nested list at the default width and at 320 CSS pixels, in light and dark themes, kept under the scratch evidence folder. (SC-007)
-- [ ] T015 Build from a clean committed tree (`pnpm exec tauri build --debug --no-bundle`, `CARGO_TARGET_DIR=C:/Users/shopwood/.cargo-target/refract`) and run T013 against it; fix regressions only. (SC-009)
+- [x] T013 `scripts/verify-tauri-1862.mjs`: live check over CDP with the fake omp (pattern of `verify-tauri-1860.mjs`): a parent with two children and a grandchild, collapse and restart, a child waiting for approval, archive dialog with a running child (both buttons), keyboard moves, an agent-created child announced once. Never `pnpm dev`; scratch `REFRACT_DATA_DIR`; record head sha and `dirty: false`. (SC-001 to SC-006)
+- [x] T014 Screenshots of the nested list at the default width and at 320 CSS pixels, in light and dark themes, kept under the scratch evidence folder. (SC-007)
+- [x] T015 Build from a clean committed tree (`pnpm exec tauri build --debug --no-bundle`, `CARGO_TARGET_DIR=C:/Users/shopwood/.cargo-target/refract`) and run T013 against it; fix regressions only. (SC-009)
 - [ ] T016 Mutation proof: for each guard test in plan.md's test plan, remove the guard, watch the test fail, restore. (FR-018)
-- [ ] T017 `docs/PLAN.md` row 1c.6: mark #1862 built with PR and spec 136; `docs/adr/0009-session-tree-rules.md` one line that the list draws the tree and archive-with-children shares the cascade; `CONTEXT.md` terms already added in the spec PR stay.
-- [ ] T018 `pnpm check:file-size` and `pnpm check:comment-density` clean. (SC-008)
-- [ ] T019 Reusable-component check: no second disclosure, dialog or badge component was added under `features/sessions/`. (FR-016)
-- [ ] T020 `pnpm ci:local`; fix regressions only. (SC-008)
+- [x] T017 `docs/PLAN.md` row 1c.6: mark #1862 built with PR and spec 136; `docs/adr/0009-session-tree-rules.md` one line that the list draws the tree and archive-with-children shares the cascade; `CONTEXT.md` terms already added in the spec PR stay.
+- [x] T018 `pnpm check:file-size` and `pnpm check:comment-density` clean. (SC-008)
+- [x] T019 Reusable-component check: no second disclosure, dialog or badge component was added under `features/sessions/`. (FR-016)
+- [x] T020 `pnpm ci:local`; fix regressions only. (SC-008)
 
 ## Dependencies
 
