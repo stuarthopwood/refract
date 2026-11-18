@@ -1,7 +1,7 @@
 // Issue #455 quality-gate remediation (test-reviewer MEDIUM: "table tests for isModelRoleId/
 // isCatalogKind covering a known value, '__proto__', '' and a non-string").
 import { describe, expect, it } from 'vitest';
-import { isCatalogKind, isModelRoleId } from './model';
+import { DEFAULT_SESSION_LIST_COLLAPSE, isCatalogKind, isModelRoleId } from './model';
 
 describe('isModelRoleId', () => {
   it('accepts every known chat and model-kind role', () => {
@@ -53,5 +53,11 @@ describe('isCatalogKind', () => {
 
   it('rejects an unknown kind name', () => {
     expect(isCatalogKind('not-a-real-kind')).toBe(false);
+  });
+});
+
+describe('DEFAULT_SESSION_LIST_COLLAPSE', () => {
+  it('starts every parent expanded, so a fresh install shows the whole tree', () => {
+    expect(DEFAULT_SESSION_LIST_COLLAPSE.collapsedParentIds).toEqual([]);
   });
 });

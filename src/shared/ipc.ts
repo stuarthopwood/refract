@@ -491,7 +491,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     openPersonalAgent(): Promise<Result<Session>>;
     rename(id: string, name: string): Promise<Result<void>>;
     open(id: string, userAction?: boolean): Promise<Result<SessionSnapshot>>;
-    archive(id: string): Promise<Result<void>>;
+    /** `includeChildren` archives every live descendant too, deepest first (#1862). */
+    archive(id: string, includeChildren?: boolean): Promise<Result<void>>;
     restore(id: string): Promise<Result<void>>;
     setHidden(id: string, hidden: boolean): Promise<Result<void>>; // #748: view flag only, never stops the agent
     deleteCheck(id: string): Promise<Result<{ uncommittedFiles: number; unpushedCommits: number; hasUpstream: boolean }>>;

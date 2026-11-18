@@ -6,11 +6,20 @@ function overrideOpen(override: { repositories: Map<string, boolean> }, reposito
   return override.repositories.get(repositoryId) ?? true
 }
 
+interface SearchOverride {
+  repositories: Map<string, boolean>
+  archivedOpen: boolean
+  // #1862: a parent toggled during a search; absent means open.
+  parents: Map<string, boolean>
+}
+
 // Issue #735 (decision record): collapsed/expanded state for the session list's per-Repository
 // groups and the cross-repository Archived group (#527), persisted in
 // `Settings.sessionListCollapse`.
 interface SessionListState {
   collapsedRepositoryIds: Set<string>
+  // #1862: parents whose children are hidden; absent means expanded, so a new parent shows its tree.
+  collapsedParentIds: Set<string>
   archivedOpen: boolean
   // Issue #748: the Show hidden toggle; persisted with the rest of the list view state.
   showHidden: boolean
@@ -26,7 +35,7 @@ interface SessionListState {
   // never-persisted view of every group's open/closed state during a search, created empty (every
   // Project and Archived start open) the moment a query begins and discarded -- not merged back --
   // the moment it empties, so the saved layout returns exactly unchanged.
-  searchOverride: { repositories: Map<string, boolean>; archivedOpen: boolean } | null
+  searchOverride: SearchOverride | null
   setQuery(query: string): void
   // Decision 26: a selector so a later story (#559 search) can override it while a query is active
   // without this store ever writing that override back out as the saved state.
@@ -38,6 +47,11 @@ interface SessionListState {
   // Driven by Radix's own `onOpenChange` value, never a blind toggle -- a redundant call with the
   // current value must be a no-op, not an inversion.
   setRepositoryOpen(repositoryId: string, open: boolean): void
+  isParentOpen(sessionId: string): boolean
+  toggleParent(sessionId: string): void
+  // Called only after a successful sessions list load, with the ids that still have a live child
+  // -- never against a failure fallback, which would wipe the user's saved collapse.
+  pruneParents(liveParentIds: ReadonlySet<string>): void
   setArchivedOpen(open: boolean): void
   // The toolbar's two buttons (decisions 5, 11): every Project group, plus Archived while it is
   // currently shown (`archivedVisible` -- #527's own "hidden entirely while nothing anywhere is
@@ -70,11 +84,12 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       persistTimer = undefined
     }
     const run = (): void => {
-      const { collapsedRepositoryIds, archivedOpen, showHidden } = get()
+      const { collapsedRepositoryIds, collapsedParentIds, archivedOpen, showHidden } = get()
       const value: SessionListCollapse = {
         collapsedRepositoryIds: [...collapsedRepositoryIds],
         archivedOpen,
-        showHidden
+        showHidden,
+        collapsedParentIds: [...collapsedParentIds]
       }
       window.refract.settings.setSessionListCollapse(value).then(
         (result) => {
@@ -103,6 +118,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
 
   return {
     collapsedRepositoryIds: new Set(DEFAULT_SESSION_LIST_COLLAPSE.collapsedRepositoryIds),
+    collapsedParentIds: new Set(DEFAULT_SESSION_LIST_COLLAPSE.collapsedParentIds),
     archivedOpen: DEFAULT_SESSION_LIST_COLLAPSE.archivedOpen,
     showHidden: DEFAULT_SESSION_LIST_COLLAPSE.showHidden,
     setShowHidden: (show) => {
@@ -120,7 +136,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       const hasQuery = query.trim() !== ''
       const hadOverride = get().searchOverride !== null
       if (hasQuery && !hadOverride) {
-        set({ query, searchOverride: { repositories: new Map(), archivedOpen: true } })
+        set({ query, searchOverride: { repositories: new Map(), archivedOpen: true, parents: new Map() } })
       } else if (!hasQuery && hadOverride) {
         set({ query, searchOverride: null })
       } else {
@@ -154,6 +170,31 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       set({ collapsedRepositoryIds })
       persist()
     },
+    isParentOpen: (sessionId) => {
+      const override = get().searchOverride
+      if (override) return override.parents.get(sessionId) ?? true
+      return !get().collapsedParentIds.has(sessionId)
+    },
+    toggleParent: (sessionId) => {
+      const override = get().searchOverride
+      if (override) {
+        const parents = new Map(override.parents)
+        parents.set(sessionId, !(override.parents.get(sessionId) ?? true))
+        set({ searchOverride: { ...override, parents } })
+        return
+      }
+      const collapsedParentIds = new Set(get().collapsedParentIds)
+      if (!collapsedParentIds.delete(sessionId)) collapsedParentIds.add(sessionId)
+      set({ collapsedParentIds })
+      persist()
+    },
+    pruneParents: (liveParentIds) => {
+      const current = get().collapsedParentIds
+      const pruned = new Set([...current].filter((id) => liveParentIds.has(id)))
+      if (pruned.size === current.size) return
+      set({ collapsedParentIds: pruned })
+      persist()
+    },
     setArchivedOpen: (open) => {
       const override = get().searchOverride
       if (override) {
@@ -171,6 +212,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
         set({
           searchOverride: {
             repositories: new Map(repositoryIds.map((id) => [id, false])),
+            parents: override.parents,
             archivedOpen: archivedVisible ? false : override.archivedOpen
           }
         })
@@ -188,6 +230,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
         set({
           searchOverride: {
             repositories: new Map(repositoryIds.map((id) => [id, true])),
+            parents: override.parents,
             archivedOpen: archivedVisible ? true : override.archivedOpen
           }
         })
@@ -219,6 +262,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
     restore: (value) => {
       set({
         collapsedRepositoryIds: new Set(value.collapsedRepositoryIds),
+        collapsedParentIds: new Set(value.collapsedParentIds ?? []),
         archivedOpen: value.archivedOpen,
         showHidden: value.showHidden ?? false,
         restored: true
