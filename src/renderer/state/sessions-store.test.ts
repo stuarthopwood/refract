@@ -2,9 +2,11 @@
 // openPromises dedup key. `environment: 'node'` has no real `window`, so a minimal
 // `window.refract.sessions.open` stub is installed directly on `globalThis` before each call --
 // cheap enough that this store never needs a jsdom environment just for this one behaviour.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
+import type { SessionSummary } from '../../shared/ipc';
 import { notify } from './notify';
-import { useSessionsStore } from './sessions-store';
+import { useSessionListStore } from './session-list-store';
+import { liveParentIds, useSessionsStore } from './sessions-store';
 
 vi.mock('./notify', () => ({ notify: vi.fn() }));
 
@@ -94,5 +96,78 @@ describe('useSessionsStore.archive', () => {
     stubArchive({ ok: false, error });
     expect(await useSessionsStore.getState().archive('a', true)).toBe(false);
     expect(notify).toHaveBeenCalledWith(error);
+  });
+});
+
+// #1862 FR-006: only a collapsed parent that still has a live child keeps its saved collapse.
+function summary(id: string, over: Partial<SessionSummary> = {}): SessionSummary {
+  return { id, repositoryId: 'r1', archivedAt: null, parentSessionId: null, ...over } as SessionSummary;
+}
+
+describe('liveParentIds', () => {
+  it('keeps a parent that has a live child', () => {
+    expect([...liveParentIds([summary('p'), summary('c', { parentSessionId: 'p' })])]).toEqual(['p']);
+  });
+
+  it('drops a parent whose children are all archived', () => {
+    const sessions = [summary('p'), summary('c1', { parentSessionId: 'p', archivedAt: 't' }), summary('c2', { parentSessionId: 'p', archivedAt: 't' })];
+    expect(liveParentIds(sessions).size).toBe(0);
+  });
+
+  it('keeps a parent while at least one of its children is still live', () => {
+    const sessions = [summary('p'), summary('c1', { parentSessionId: 'p', archivedAt: 't' }), summary('c2', { parentSessionId: 'p' })];
+    expect([...liveParentIds(sessions)]).toEqual(['p']);
+  });
+
+  it('still counts a live child whose parent is missing from the list', () => {
+    // The id is what a saved collapse is keyed by; whether that parent exists is the tree builder's concern.
+    expect([...liveParentIds([summary('c', { parentSessionId: 'gone' })])]).toEqual(['gone']);
+  });
+
+  it('ignores a Session with no children', () => {
+    expect(liveParentIds([summary('solo')]).size).toBe(0);
+  });
+});
+
+describe('useSessionsStore.refresh pruning of saved parent collapse', () => {
+  const setSessionListCollapse = vi.fn(() => Promise.resolve({ ok: true, value: {} }));
+
+  function stubList(sessions: SessionSummary[]) {
+    (globalThis as unknown as { window: unknown }).window = {
+      refract: {
+        sessions: { list: () => Promise.resolve({ ok: true, value: sessions }), deleting: () => Promise.resolve({ ok: true, value: [] }) },
+        settings: { setSessionListCollapse },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    setSessionListCollapse.mockClear();
+    useSessionListStore.setState({ collapsedParentIds: new Set(['p']), searchOverride: null });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('keeps a collapsed parent that still has a live child', async () => {
+    stubList([summary('p'), summary('c', { parentSessionId: 'p' })]);
+    await useSessionsStore.getState().refresh();
+    expect([...useSessionListStore.getState().collapsedParentIds]).toEqual(['p']);
+  });
+
+  it('drops a collapsed parent that was deleted and persists the smaller set', async () => {
+    stubList([summary('other')]);
+    await useSessionsStore.getState().refresh();
+    expect(useSessionListStore.getState().collapsedParentIds.size).toBe(0);
+    vi.advanceTimersByTime(300);
+    expect(setSessionListCollapse).toHaveBeenCalledWith(expect.objectContaining({ collapsedParentIds: [] }));
+  });
+
+  it('drops a collapsed parent that lost its last live child', async () => {
+    stubList([summary('p'), summary('c', { parentSessionId: 'p', archivedAt: 't' })]);
+    await useSessionsStore.getState().refresh();
+    expect(useSessionListStore.getState().collapsedParentIds.size).toBe(0);
   });
 });
