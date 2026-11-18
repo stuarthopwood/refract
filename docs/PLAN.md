@@ -196,6 +196,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p3 later | #1941 | **Ask form card (p3, feature, chat):** name the live card and tighten its live-check evidence | `done`; PR open |
 | p3 later | #1992 | **UI Polish, First install (p3, `design`):** make the Add project button a ghost button (AddProjectMenu `first-run` variant → ghost) | `todo`; footer/toolbar already ghost |
 | p3 later | #2072 | **Chore, Chat pane (p3, `chore`):** one action state per pane (open, resume, recover, start new) and fix the Session open race | `todo`; grill decides XState or a typed reducer; renderer half of #706 |
+| p3 later | #2082 | **Test: tighten the Forbid guard drop assertion and other #2080 gate leftovers** (p3, chore): the `Forbid` test's last assertion cannot fail; three test-strength Lows | Filed 2026-11-18 from PR #2080's cycle-4 gate (Decided, Skippy, delegated by Stuart); needs #2080 merged |
 
 **Wave 2 (Stuart, 2026-11-12), in this order:** #1858 (P0, specify route, grill first), #1890, #1876 + #1877 (one PR), #1872, #1935. Rows marked `next W2.n` above (and row 1c.2 for #1858) are the active wave; take them in order.
 
