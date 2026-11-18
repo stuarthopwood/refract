@@ -1,6 +1,6 @@
 // The deferral slot: one action per agent, taken once the turn that queued it has settled.
 
-use super::{clear, take_queued_handoff, try_queue, HandoffAction, QueuedHandoff};
+use super::{clear, take_queued_handoff, try_queue, HandoffAction, QueueOutcome, QueuedHandoff};
 use crate::session::agent::pause_subagents::fixture::fixture;
 
 fn new_with(prompt: &str) -> HandoffAction {
@@ -101,6 +101,86 @@ async fn clear_empties_the_slot() {
     clear(&mut state);
     assert!(state.queued_handoff.is_none());
     drop(state);
+    fx.finish().await;
+}
+
+// `queue_handoff`: the public entry the tools use.
+
+#[tokio::test]
+async fn queue_handoff_queues_when_a_turn_is_running() {
+    let fx = fixture(&[], &[]).await;
+    {
+        let mut state = fx.agent.state.lock().await;
+        state.status = crate::session::agent::SessionStatus::Working;
+        state.turn_generation = 3;
+    }
+
+    let outcome = fx
+        .agent
+        .queue_handoff(new_with("go"), Some(("Planner".into(), "s-1".into())))
+        .await
+        .unwrap();
+
+    assert_eq!(outcome, QueueOutcome::Queued);
+    assert_eq!(
+        fx.agent.state.lock().await.queued_handoff,
+        Some(QueuedHandoff {
+            generation: 3,
+            action: new_with("go"),
+            sender: Some(("Planner".to_string(), "s-1".to_string())),
+        })
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn queue_handoff_refuses_a_second_action() {
+    let fx = fixture(&[], &[]).await;
+    queued_mid_turn(&fx).await;
+
+    let err = fx
+        .agent
+        .queue_handoff(new_with("second"), None)
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code, "invalid-state");
+    assert_eq!(
+        fx.agent.state.lock().await.queued_handoff.clone().unwrap().action,
+        new_with("never")
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn queue_handoff_reports_not_mid_turn_when_idle() {
+    let fx = fixture(&[], &[]).await;
+    {
+        let mut state = fx.agent.state.lock().await;
+        state.status = crate::session::agent::SessionStatus::Idle;
+        state.turn_generation = 4;
+    }
+
+    let outcome = fx.agent.queue_handoff(new_with("go"), None).await.unwrap();
+
+    assert_eq!(outcome, QueueOutcome::NotMidTurn);
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn queue_handoff_reports_not_mid_turn_when_stopped() {
+    let fx = fixture(&[], &[]).await;
+    {
+        let mut state = fx.agent.state.lock().await;
+        state.status = crate::session::agent::SessionStatus::Stopped;
+        state.turn_generation = 5;
+    }
+
+    let outcome = fx.agent.queue_handoff(new_with("go"), None).await.unwrap();
+
+    assert_eq!(outcome, QueueOutcome::NotMidTurn);
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
     fx.finish().await;
 }
 

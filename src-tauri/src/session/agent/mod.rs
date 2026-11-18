@@ -40,7 +40,7 @@ pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
-pub use handoff_queue::{HandoffAction, QueuedHandoff};
+pub use handoff_queue::{HandoffAction, QueueOutcome, QueuedHandoff};
 pub use requests::is_chat_answer;
 pub use start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use types::should_apply_crash_exit_verdict;

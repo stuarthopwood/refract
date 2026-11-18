@@ -21,9 +21,7 @@ pub struct QueuedHandoff {
     pub sender: Option<(String, String)>,
 }
 
-// The slot is filled by the tool (T007) and drained by `run_settled_handoff` and the stop paths.
 /// Fills the slot, or refuses when a handoff is already queued. Runs under the agent's state lock, so two callers cannot both win.
-#[allow(dead_code)]
 pub(super) fn try_queue(
     state: &mut AgentState,
     action: HandoffAction,
@@ -152,6 +150,33 @@ impl SessionAgent {
             }
         }
         Err(last_error.map_or_else(String::new, |error| error.message))
+    }
+}
+
+/// The result of asking a Session to queue a handoff.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueueOutcome {
+    /// The turn is running; the action waits for it to settle.
+    Queued,
+    /// The Session is between turns, so the caller runs the action itself.
+    NotMidTurn,
+}
+
+impl SessionAgent {
+    /// Queues a handoff when a turn is running. The mid-turn check and the queue happen under one
+    /// lock, so a settle cannot slip in between and strand the action.
+    pub async fn queue_handoff(
+        &self,
+        action: HandoffAction,
+        sender: Option<(String, String)>,
+    ) -> Result<QueueOutcome, AgentError> {
+        let mut state = self.state.lock().await;
+        // An odd generation is a running turn; a stopped Session has no turn left to wait for.
+        if state.turn_generation % 2 == 0 || state.status == SessionStatus::Stopped {
+            return Ok(QueueOutcome::NotMidTurn);
+        }
+        try_queue(&mut state, action, sender)?;
+        Ok(QueueOutcome::Queued)
     }
 }
 
