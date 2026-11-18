@@ -191,17 +191,15 @@ async function main() {
       return bad;
     })()`);
 
-    // ---- Seed: P with k1 (holding g1) and k2; P2 with m1. Q with q1 is seeded after the archive checks.
+    // ---- Seed: P with k1 (holding g1) and k2. P2 with m1 and Q with q1 are seeded later, inside the six-Session limit.
     await addRepository(cdp, repoDir);
     const P = await quickRoot([]);
     const k1 = await create(P, { prompt: 'Do k1', name: 'k1' });
     const k2 = await create(P, { prompt: 'Do k2', name: 'k2' });
     const g1 = await create({ id: k1.id, pid: k1.pid }, { prompt: 'Do g1', name: 'g1' });
-    const P2 = await quickRoot([P.id, k1.id, k2.id, g1.id]);
-    const m1 = await create(P2, { prompt: 'Do m1', name: 'm1' });
     check(k1.parentId === P.id && k2.parentId === P.id && g1.parentId === k1.id, 'Seed: k1 and k2 are children of P and g1 a child of k1.', `seed parents: ${JSON.stringify({ k1, k2, g1 })}`);
     // A parent that just called refract_create_session stays mid-turn in the fake omp, so only the leaves are awaited.
-    for (const id of [k2.id, g1.id, m1.id]) await waitForSessionStatus(cdp, id, 'idle');
+    for (const id of [k2.id, g1.id]) await waitForSessionStatus(cdp, id, 'idle');
     await switchTheme(cdp, 'dark', 'Dark');
     await cdp.waitFor(`!!document.querySelector(${q(g1.id)})`, { timeoutMs: 15_000, label: 'grandchild row mounted in the tree' });
 
@@ -279,6 +277,11 @@ async function main() {
     await cdp.clickByText('Deny');
     await resultFor(askId);
     await cdp.waitFor(`window.refract.sessions.list().then((r) => r.ok && r.value.find((s) => s.id === ${JSON.stringify(k1.id)})?.status !== 'needs-you')`, { timeoutMs: 30_000, label: 'k1 leaves needs-you after Deny' });
+
+    // Seeded only now: P's tree plus P2 and m1 would reach the six-Session Project limit before k1's request above.
+    const P2 = await quickRoot([P.id, k1.id, k2.id, g1.id]);
+    const m1 = await create(P2, { prompt: 'Do m1', name: 'm1' });
+    await waitForSessionStatus(cdp, m1.id, 'idle');
 
     // ---- SC-004: archive dialog. P2 has one running child: Escape, then Archive parent only.
     const archiveFromMenu = async (sessionId) => {
