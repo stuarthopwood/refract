@@ -2,7 +2,7 @@
 
 **Input**: Design documents from `specs/021-token-guard/` (plan.md, spec.md, research.md, data-model.md, contracts/ipc.md, quickstart.md)
 
-**Tests**: Rust unit tests inside `src-tauri/src/omp/token_guard/` only, kept minimal. No new tests in `src/renderer` or `src/shared` (prototyping rule). Existing gates plus a live check verify the work.
+**Tests**: Rust unit tests inside `src-tauri/src/omp/token_guard/` only, kept minimal. No new tests in `src/renderer` or `src/shared` (prototyping rule). Existing gates plus a live check verify the work. **Superseded from Phase 7**: every changed module gets a co-located unit test (FR-045).
 
 **Lanes**: two sequential implementation lanes. Lane A merges before Lane B starts. Each task is tagged `[A]` or `[B]`; the "Owns" line lists the files that lane may edit. Shared files (`src/shared/ipc.ts`, `src-tauri/src/session/agent/frame.rs`, `scripts/check-parity.mjs`) get small edits from both lanes, always A first.
 
@@ -139,3 +139,19 @@ FR-001..005 T001, T002, T005; FR-006..008, FR-022 T008; FR-009 T009; FR-010 T003
 - [x] T061 Co-located tests for the new logic, `pnpm ci:local`
 - [x] T062 Live check saving a value in Settings while a Session runs (`scripts/verify-tauri-1765.mjs`). Scenario A (main path: global config.yml holds the new value, 'Applies to new Sessions' label, reworded Optimise dialog) and scenario B (legacy overlay: seeded token-guard.json, migration made to fail at launch by a directory at `token-guard-migration-backup.json`, overlay rewritten after the Settings write) both pass against a debug build at the branch head; evidence in `C:/Users/shopwood/refract-live-check-1765/`
 - [x] T063 Reword the Optimise token usage confirm dialog (`OptimiseTokenUsage.tsx`) and mark FR-008 superseded by FR-036; the live check screenshots the dialog
+
+## Phase 7: Convergence
+
+**Scope**: #2002 Advisor row shows "Saving..." with no change, #1940 saving state while a write waits on the first-open migration, #1765 closes with this PR (spec 2026-11-18 Wave 5 clarifications, FR-040..FR-045, SC-010, SC-011). One implementation PR after the docs-only spec PR. Tests: `AGENTS.md` on `origin/main` requires a co-located unit test for every changed module; this supersedes the prototyping rule in the Tests line above for this phase. Vitest runs `environment: 'node'`, so renderer tests cover pure functions and stores, not a DOM.
+
+- [ ] T064 Root cause of the Advisor row "Saving..." (FR-041), before any fix: reproduce on the fake omp with a scratch `REFRACT_DATA_DIR` and a scratch `PI_CODING_AGENT_DIR` (without it the migration is skipped, FR-035), then on the real omp (scratch config home); record in `research.md` section 12 whether `isPending={pending || !loaded}` (`AdvisorModelRow.tsx:81`) and the migration start in `tokenGuard.get` (`token_guard.rs:238`) are each confirmed or ruled out, with the observable (first-paint text, fake omp call log, `config.yml` hash)
+- [ ] T065 Shared save-status component (FR-043): extend `src/renderer/components/InlineStatus.tsx` with Saving..., Saved (3 s, polite) and error (alert) states plus a pure state-to-text-and-tone function; replace the inline spans in `RoleRow.tsx:118-123` and `RoleReasoningRadios.tsx:237-243`; add a co-located pure test for the mapping and the 3 s timeout rule (FR-045)
+- [ ] T066 Per-key save state in `src/renderer/state/token-guard-store.ts` (`set`, `reset`, `resetAll`): pending value, `saving`, `saved`, error, cleared on success or failure; add `token-guard-store.test.ts` cases for saving, saved, error with the stored value kept, and a second key staying editable (FR-042, FR-044, FR-045). Depends on T064 only for naming
+- [ ] T067 Use the component and the store state in `AdvisorModelRow.tsx` and the Advanced rows (`AdvancedRow.tsx`): show the new value while saving, disable only the pending row, restore the stored value on error; drop `!loaded` from `isPending` if T064 confirms it (FR-040, FR-042, FR-043); extend `model-roles-store.test.ts` only if `pendingRoles` or `saveErrors` change (FR-045)
+- [ ] T068 Rust, no write on open (FR-040): if T064 confirms the migration start, remove the `migrate::start` call from `token_guard_get` (`token_guard.rs:238`) so it only reports `pending`; add a test in `token_guard_tests.rs` that `get` writes no file, and migration tests in `migrate.rs` that a save still waits on `RUN_LOCK`, that launch runs the migration, and that a failed launch migration retries on the first save (`token_guard.rs:178`)
+- [ ] T069 Live check with `scripts/verify-tauri-fake-omp.mjs`, a scratch `REFRACT_DATA_DIR` and a scratch `PI_CODING_AGENT_DIR`: opening Settings > Models and Settings > Advanced shows no "Saving..." and leaves `config.yml` and the fake omp call log byte-identical (SC-010); with the migration held, one row shows the new value, "Saving..." and a disabled control, a second row stays editable, and both end in Saved or error (SC-011); screenshots in the PR body
+- [ ] T070 Run `pnpm ci:local` (typecheck, `pnpm test`, the check scripts, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`); keep every file under 600 lines and baselines unchanged; mark T064 to T069 done; the PR body says `Closes #2002`, `Closes #1940`, `Closes #1765`
+
+Dependencies (Phase 7): T064 -> T067 and T068 (the fix depends on the cause); T065 and T066 -> T067; T067 and T068 -> T069; T069 -> T070. T065 and T066 are independent of each other and may run in parallel.
+
+Coverage (Phase 7): FR-040 T067, T068, T069; FR-041 T064; FR-042 T066, T067, T069; FR-043 T065, T067; FR-044 T066; FR-045 T065, T066, T067, T068; SC-010 T069; SC-011 T069.
