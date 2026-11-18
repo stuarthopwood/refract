@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { findNestingInversions, findOddIndentLines } from "./check-indent.mjs";
+import { findNestingInversions, findOddIndentLines, isVendoredDesignDir } from "./check-indent.mjs";
 
 test("findOddIndentLines ignores blank lines and lines already at 0 indent", () => {
   const lines = ["function foo() {", "", "  return 1;", "}"];
@@ -70,4 +70,16 @@ test("findNestingInversions does not flag a closing line indented back to its op
 test("findNestingInversions strips trailing line comments before counting brackets", () => {
   const lines = ["function foo() { // a comment with a stray {", "  return 1;", "}"];
   assert.deepEqual(findNestingInversions(lines), []);
+});
+
+test("isVendoredDesignDir matches exactly one segment under docs/design", () => {
+  assert.equal(isVendoredDesignDir("docs/design/x"), true);
+  // The predicate is string-only: walk() calls it solely for directory entries, so a loose
+  // file such as docs/design/a.js is never tested (and stays scanned). Asserted per contract:
+  // any single segment at that depth matches.
+  assert.equal(isVendoredDesignDir("docs/design/a.js"), true);
+  assert.equal(isVendoredDesignDir("docs/design/x/y"), false);
+  assert.equal(isVendoredDesignDir("docs/designs/x"), false);
+  assert.equal(isVendoredDesignDir("src/docs/design/x"), false);
+  assert.equal(isVendoredDesignDir("docs/design"), false);
 });

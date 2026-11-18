@@ -36,6 +36,18 @@ _Avoid_: Subtree, family
 A **Child Session** that is not archived. Stopped and hidden children are live and count toward a parent's limit of 4.
 _Avoid_: Active child
 
+**Parent Session**:
+The **Session** a **Child Session** is linked to. It shows its live child count and, while collapsed, a **Roll-up** in the session list. Archiving it with live children asks whether to archive them too (#1862).
+_Avoid_: Root session (a Parent Session can itself be a Child Session)
+
+**Session tree**:
+The nested rows a **Project** group draws from `parentSessionId` links: each **Child Session** is indented under its **Parent Session**, a parent can be collapsed, and a child whose parent is archived, hidden or in another Project shows at the top level with a "from <parent>" line (#1862). Not an **Own tree**, which is an approval scope.
+_Avoid_: Hierarchy, family
+
+**Roll-up**:
+The text on a collapsed **Parent Session** that counts hidden descendants needing the developer, for example "2 children, 1 needs you".
+_Avoid_: Badge, summary
+
 **Tool channel**:
 How Refract gives an agent its own tools (#1193, ADR 0007): each launch registers **Host tools** with OMP over the RPC stream, Refract routes each call to the renderer and back, and a failure returns to the agent as a tool error, never a toast. The tools a launch registers depend on the **Session**'s role and depth.
 _Avoid_: MCP server (the reserved fallback, not built), plugin, bridge
