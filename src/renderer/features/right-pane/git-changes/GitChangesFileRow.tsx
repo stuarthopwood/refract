@@ -7,6 +7,8 @@ import { useGitChangesStore } from '@/state'
 import { DiffStatCounts } from '@/features/sessions/sessionDisplay'
 import { STATUS_MARKS } from '../file-explorer/git-decoration'
 import { focusGitRow, focusNearestGroupTrigger } from './focus'
+import { enterActivation } from './diff-row-open'
+import type { RowActivation } from '../file-explorer/row-open'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import { IconButton } from '@/components/IconButton'
 
@@ -19,7 +21,7 @@ export function GitChangesFileRow({
   entry: GitChangesFileEntry
   group: GitChangesGroupKind
   sessionId: string
-  onOpenDiff: () => void
+  onOpenDiff: (activation?: RowActivation) => void
 }) {
   const mark = STATUS_MARKS[entry.mark]
   const isConflict = group === 'conflicts'
@@ -96,7 +98,14 @@ export function GitChangesFileRow({
       <button
         type="button"
         data-git-row-path={entry.path}
-        onClick={onOpenDiff}
+        onClick={() => onOpenDiff()}
+        // Chromium sends Ctrl+Enter to a native button as a keypress with "\n", which never clicks, so Enter is handled here.
+        onKeyDown={(event) => {
+          const activation = enterActivation(event)
+          if (!activation) return
+          event.preventDefault()
+          onOpenDiff(activation)
+        }}
         className="flex min-w-0 flex-1 items-center gap-2 rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
         {/* The kebab menu closes on select, so the row's status icon is the only place to show pending. */}
@@ -151,7 +160,7 @@ export function GitChangesFileRow({
               {`Unstage ${fileName}`}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem icon={EyeIcon} onSelect={onOpenDiff}>
+          <DropdownMenuItem icon={EyeIcon} onSelect={() => onOpenDiff()}>
             {`Open diff for ${fileName}`}
           </DropdownMenuItem>
           <DropdownMenuItem icon={Code2Icon} onSelect={() => void runOpenInVSCode()}>

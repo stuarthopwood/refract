@@ -56,8 +56,9 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
 
   const loading = sessionEntry?.loading ?? true
 
-  const openDiff = (entry: GitChangesFileEntry, group: GitChangesGroupKind) => {
-    openDiffFromRow(sessionId, group, entry.path, activationRef.current)
+  // A keyboard Enter brings its own activation; clicks and menu items fall back to the one captured from the click.
+  const openDiff = (entry: GitChangesFileEntry, group: GitChangesGroupKind, activation?: RowActivation) => {
+    openDiffFromRow(sessionId, group, entry.path, activation ?? activationRef.current)
   }
 
   return (

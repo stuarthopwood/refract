@@ -13,6 +13,7 @@ import { useGitChangesStore } from '@/state'
 import { GroupHeaderRow, GroupHeaderTrigger, HEADER_ACTION_BUTTON_CLASS } from '@/features/sessions/GroupHeader'
 import { cn } from '@/lib/utils'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
+import type { RowActivation } from '../file-explorer/row-open'
 import { GitChangesFileRow } from './GitChangesFileRow'
 import { focusNearestGroupTrigger } from './focus'
 
@@ -50,7 +51,7 @@ export function GitChangesGroup({
   sessionId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onOpenDiff: (entry: GitChangesFileEntry, group: GitChangesGroupKind) => void
+  onOpenDiff: (entry: GitChangesFileEntry, group: GitChangesGroupKind, activation?: RowActivation) => void
 }) {
   const label = GROUP_LABELS[kind]
   const bulk = BULK_ACTION[kind]
@@ -126,7 +127,7 @@ export function GitChangesGroup({
                   entry={entry}
                   group={kind}
                   sessionId={sessionId}
-                  onOpenDiff={() => onOpenDiff(entry, kind)}
+                  onOpenDiff={(activation) => onOpenDiff(entry, kind, activation)}
                 />
               </li>
             ))}

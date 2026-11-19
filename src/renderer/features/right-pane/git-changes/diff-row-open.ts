@@ -9,6 +9,11 @@ export function clickActivation(event: { detail: number; ctrlKey: boolean; metaK
   return (event.detail === 0 ? keyboardActivation : pointerActivation)(event)
 }
 
+/** Enter on a row's button; null for every other key, which keeps its native behaviour (Space still clicks). */
+export function enterActivation(event: { key: string; ctrlKey: boolean; metaKey: boolean }): RowActivation | null {
+  return event.key === 'Enter' ? keyboardActivation(event) : null
+}
+
 export function diffOpenAnnouncement(path: string, background: boolean): string | undefined {
   return background ? `Opened diff of ${path.split('/').pop() ?? path} in the background` : undefined
 }
