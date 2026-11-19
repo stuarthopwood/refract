@@ -3,6 +3,7 @@
 
 pub mod approval;
 pub mod envelope;
+pub(crate) mod handoff_target;
 pub mod overlay;
 pub mod panels;
 pub mod router;

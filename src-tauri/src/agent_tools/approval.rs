@@ -95,6 +95,13 @@ pub fn clip_line(text: &str) -> String {
 
 const MAX_ARGS_CHARS: usize = 200;
 
+/// The size of text a card line cuts short, so a long prompt is not read as the whole of it.
+pub fn clipped_size_line(label: &str, text: &str) -> Option<String> {
+    let chars = text.chars().count();
+    (chars > MAX_ARGS_CHARS)
+        .then(|| format!("{label}: {chars} characters (first {MAX_ARGS_CHARS} shown)"))
+}
+
 /// A padded path must not push the action off the card.
 fn truncated(input: &Value) -> String {
     let text = input.to_string();
@@ -218,6 +225,20 @@ mod tests {
         assert_eq!(
             flatten("\u{1F469}\u{200D}\u{1F4BB}"),
             "\u{1F469}\u{200D}\u{1F4BB}"
+        );
+    }
+
+    #[test]
+    fn a_clipped_line_reports_its_full_size_and_a_short_one_reports_nothing() {
+        let long = "x".repeat(MAX_ARGS_CHARS + 50);
+
+        assert_eq!(
+            clipped_size_line("Prompt", &long).as_deref(),
+            Some("Prompt: 250 characters (first 200 shown)")
+        );
+        assert_eq!(
+            clipped_size_line("Prompt", &"x".repeat(MAX_ARGS_CHARS)),
+            None
         );
     }
 }

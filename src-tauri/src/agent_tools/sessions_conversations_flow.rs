@@ -1,7 +1,13 @@
 // `new_conversation` and `switch_conversation` (#1861). Both walk the same gate in the same order,
 // and a child of `sessions_conversations` so it reaches that module's private helpers.
 
-use super::*;
+use serde_json::{json, Value};
+
+use super::{
+    confirm, dispatch, open_gate, parse_new, parse_switch, recheck, sender_for, ConvHost, ConvTool,
+    Dispatch, ToolError, NOT_FOUND,
+};
+use crate::session::agent::HandoffAction;
 
 /// What the caller is told: `done` is the word for an action that ran now.
 fn outcome_word(dispatch: Dispatch, done: &'static str) -> &'static str {
@@ -18,7 +24,7 @@ pub(super) async fn new_conversation<H: ConvHost>(
     let (session_id, prompt) = parse_new(args)?;
     let gate = open_gate(host, session_id.as_deref(), true).await?;
     let asked = confirm(host, ConvTool::New, &gate, &prompt).await?;
-    let gate = recheck(host, &gate, asked).await?;
+    let (gate, _tree) = recheck(host, &gate, asked).await?;
     let sender = sender_for(&gate, host.caller_id());
     let id = gate.target.id;
     let dispatched = dispatch(host, &id, HandoffAction::New { prompt }, sender).await?;
@@ -49,7 +55,7 @@ pub(super) async fn switch_conversation<H: ConvHost>(
         );
     }
     let asked = confirm(host, ConvTool::Switch, &gate, &chosen.title).await?;
-    let gate = recheck(host, &gate, asked).await?;
+    let (gate, _tree) = recheck(host, &gate, asked).await?;
     let sender = sender_for(&gate, host.caller_id());
     let id = gate.target.id;
     let action = HandoffAction::Switch { file: chosen.file };

@@ -3,6 +3,7 @@
 
 use super::start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use super::{AgentError, AgentState, SessionAgent, SessionStatus};
+use crate::agent_tools::handoff_target::check_target;
 
 /// What a queued handoff does once the turn has settled.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -91,10 +92,8 @@ fn failed_notice(reason: &str) -> String {
 }
 
 impl SessionAgent {
-    /// Runs the action queued during the turn that settled as `generation`. The slot is read under the
-    /// lock that checks the Session is still idle on that settle: a follow-up turn that already
-    /// started leaves the action for its own settle (A3), and a stop already emptied the slot.
-    /// A second failure leaves the old Conversation current and posts "Handoff failed" for the agent's next turn.
+    /// Runs the action queued during the turn that settled as `generation`; a follow-up turn that
+    /// already started leaves it for its own settle, and a stop already emptied the slot.
     pub(super) async fn run_settled_handoff(&self, generation: u64) {
         let queued = {
             let mut state = self.state.lock().await;
@@ -122,8 +121,8 @@ impl SessionAgent {
         }
     }
 
-    /// Why the action queued mid-turn may no longer run: the call-time target-state checks again,
-    /// since the Session can be paused, archived or deleted, or the sender moved, while the turn ran.
+    /// Why the action queued mid-turn may no longer run: the call-time target checks again, since
+    /// the Session can be paused, archived or deleted, or the sender moved, while the turn ran.
     async fn settle_refusal(&self, sender: Option<&(String, String)>) -> Option<String> {
         if crate::ipc::sessions_lifecycle::delete_in_flight::is_deleting(&self.session_id) {
             return Some("the Session is being deleted".to_string());
@@ -139,17 +138,9 @@ impl SessionAgent {
             return Some("the Session is archived".to_string());
         }
         let (_, caller_id) = sender?;
-        let Some(caller) = sessions.iter().find(|s| s.id == *caller_id) else {
-            return Some("the sending Session no longer exists".to_string());
-        };
-        if me.is_personal() || caller.repository_id != me.repository_id {
-            return Some("the Session is outside the sending Session's Project".to_string());
-        }
-        let ancestors = crate::agent_tools::sessions_end::ancestors_of(&sessions, caller_id);
-        if ancestors.contains(&self.session_id.as_str()) {
-            return Some("the Session is now an ancestor of the sending Session".to_string());
-        }
-        None
+        check_target(&sessions, caller_id, &self.session_id)
+            .err()
+            .map(|refusal| refusal.settle_reason().to_string())
     }
 
     async fn start_handoff_conversation(
@@ -157,15 +148,10 @@ impl SessionAgent {
         prompt: String,
         sender: Option<(String, String)>,
     ) -> Result<(), String> {
-        // Another Session's prompt travels in its envelope; a self-handoff is the raw note.
-        let handoff_note = sender.is_none();
-        let text = match &sender {
-            Some((name, id)) => crate::agent_tools::envelope::wrap(name, id, &prompt),
-            None => prompt,
-        };
+        let message = crate::agent_tools::envelope::first_message(sender.as_ref(), prompt);
         let first = || FirstMessage {
-            text: text.clone(),
-            handoff_note,
+            text: message.text.clone(),
+            handoff_note: message.handoff_note,
         };
         let mut conversation_started = false;
         let mut last_failure = None;

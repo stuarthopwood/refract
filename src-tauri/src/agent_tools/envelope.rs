@@ -1,6 +1,8 @@
 // The wrapper that marks a user turn as a message from another Session (#1858, ADR 0008).
 // `wrap` and `parse` share one escape table so the round trip is tested in one place.
 
+use crate::session::agent::FirstMessage;
+
 const OPEN_TAG: &str = "<session-message";
 const CLOSE_TAG: &str = "</session-message";
 const FROM_ATTR: &str = "<session-message from=\"";
@@ -24,6 +26,21 @@ pub fn wrap(name: &str, session_id: &str, body: &str) -> String {
         escape_attr(session_id),
         escape_body(body)
     )
+}
+
+/// The first message of a Conversation a handoff starts. Another Session's prompt travels in its
+/// envelope; a self-handoff is the agent's own note, sent raw and recorded as a handoff note.
+pub fn first_message(sender: Option<&(String, String)>, prompt: String) -> FirstMessage {
+    match sender {
+        Some((name, id)) => FirstMessage {
+            text: wrap(name, id, &prompt),
+            handoff_note: false,
+        },
+        None => FirstMessage {
+            text: prompt,
+            handoff_note: true,
+        },
+    }
 }
 
 /// Accepts only text that is exactly one envelope; anything else is a plain user turn.

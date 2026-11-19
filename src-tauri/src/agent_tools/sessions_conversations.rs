@@ -1,8 +1,5 @@
-// The Conversation tools (#1861): list, new and switch. This file holds what all three share, the
-// argument checks, target resolution, the state and approval gate, and the defer-or-run step, so
-// they refuse the same way; `ConvHost` lets a fake stand in for the running app in tests.
-// Order of checks: arguments, target, relationship, state, card, re-check under the Project's tree
-// gate, then defer or run.
+// The Conversation tools (#1861): list, new and switch, and what they share: argument checks,
+// target resolution, the state and approval gate, and the defer-or-run step.
 
 use std::future::Future;
 use std::sync::Arc;
@@ -10,11 +7,12 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use super::approval;
+use super::handoff_target::{check_target, Relationship};
 use super::panels;
-use super::router::{approval_outcome, ToolError, CANCELLED, INVALID_INPUT};
+use super::router::{approval_outcome, ToolError, INVALID_INPUT};
 use super::sessions::{manager_gone, NOT_FOUND};
-use super::sessions_end::{ancestors_of, ipc_error, labels_for, CardLabel, INVALID_STATE};
-use super::sessions_send::{INVALID_TARGET, MAX_TEXT_BYTES};
+use super::sessions_end::{ipc_error, labels_for, CardLabel, INVALID_STATE};
+use super::sessions_send::{MAX_TEXT_BYTES, SESSION_NOT_RUNNING};
 use super::tree_gate;
 use crate::session::agent::{
     FirstMessage, HandoffAction, PendingRequest, QueueOutcome, SessionAgent, SharedRegistry,
@@ -111,71 +109,19 @@ pub fn parse_switch(args: &Value) -> Result<(String, String), ToolError> {
     ))
 }
 
-/// How the target relates to the caller, derived from ids alone.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Relationship {
-    Own,
-    Descendant,
-    /// Any other Session of the caller's Project.
-    Sibling,
-}
-
-impl Relationship {
-    fn label(self) -> &'static str {
-        match self {
-            Relationship::Own => "The calling Session itself",
-            Relationship::Descendant => "Below the calling Session",
-            Relationship::Sibling => "Outside this Session's tree",
-        }
-    }
-}
-
 /// Only a Session outside the caller's own tree asks, and `yolo` skips even that.
 pub fn needs_card(relationship: Relationship, yolo: bool) -> bool {
     relationship == Relationship::Sibling && !yolo
 }
 
-/// The target row and its relationship. Unknown and other-Project ids are `not_found`; an
-/// ancestor, and the Personal Agent seen from another Session, are `invalid_target`.
+/// The target row and its relationship; see `check_target` for what is refused.
 pub fn resolve_target<'a>(
     sessions: &'a [Session],
     caller: &str,
     requested: Option<&str>,
 ) -> Result<(&'a Session, Relationship), ToolError> {
-    let caller_row = sessions
-        .iter()
-        .find(|s| s.id == caller)
-        .ok_or_else(|| ToolError::new(CANCELLED, "the calling Session no longer exists"))?;
     let target = requested.unwrap_or(caller);
-    let not_found = || ToolError::new(NOT_FOUND, format!("no Session has id {target}"));
-    let row = sessions
-        .iter()
-        .find(|s| s.id == target)
-        .ok_or_else(not_found)?;
-    if row.id == caller {
-        return Ok((row, Relationship::Own));
-    }
-    if row.is_personal() {
-        return Err(ToolError::new(
-            INVALID_TARGET,
-            "the Personal Agent cannot be changed with this tool",
-        ));
-    }
-    if row.repository_id != caller_row.repository_id {
-        return Err(not_found());
-    }
-    if ancestors_of(sessions, caller).contains(&target) {
-        return Err(ToolError::new(
-            INVALID_TARGET,
-            "the target is an ancestor of the calling Session; the developer can do it by hand",
-        ));
-    }
-    let relationship = if tree_gate::inside_own_tree(sessions, caller, target, None) {
-        Relationship::Descendant
-    } else {
-        Relationship::Sibling
-    };
-    Ok((row, relationship))
+    check_target(sessions, caller, target).map_err(|refusal| refusal.tool_error(target))
 }
 
 /// One of a Session's Conversations as the host reads it.
@@ -208,12 +154,11 @@ pub(super) trait ConvHost: Send + Sync + 'static {
         action: HandoffAction,
         sender: Option<(String, String)>,
     ) -> impl Future<Output = Result<QueueOutcome, ToolError>> + Send;
-    /// Starts a Conversation on a Stopped or idle Session and sends `text` as its first message.
+    /// Starts a Conversation on a Stopped or idle Session and sends `first` as its first message.
     fn start_new(
         &self,
         id: &str,
-        text: String,
-        handoff_note: bool,
+        first: FirstMessage,
     ) -> impl Future<Output = Result<(), ToolError>> + Send;
     fn switch(&self, id: &str, file: String) -> impl Future<Output = Result<(), ToolError>> + Send;
 }
@@ -277,6 +222,9 @@ pub fn card_for(
     if !extra.is_empty() {
         details.push(approval::clip_line(extra));
     }
+    if tool == ConvTool::New {
+        details.extend(approval::clipped_size_line("Prompt", extra));
+    }
     approval::session_card(call_id, tool.name(), title, details)
 }
 
@@ -307,14 +255,14 @@ pub(super) async fn confirm<H: ConvHost>(
     Ok(true)
 }
 
-/// The gate again after the card is answered, under the Project's tree gate because the tree can
-/// move while the card is open. A call that showed no card is refused if it would now need one.
+/// The gate again after the card is answered, because the tree can move while the card is open.
+/// The Project's tree gate comes back with it, so the action runs inside the gate (#1861).
 pub(super) async fn recheck<H: ConvHost>(
     host: &H,
     approved: &Gate,
     asked: bool,
-) -> Result<Gate, ToolError> {
-    let _tree = match approved.target.repository_id.as_deref() {
+) -> Result<(Gate, Option<tokio::sync::OwnedMutexGuard<()>>), ToolError> {
+    let tree = match approved.target.repository_id.as_deref() {
         Some(repository_id) => Some(tree_gate::lock(repository_id).await),
         None => None,
     };
@@ -331,7 +279,7 @@ pub(super) async fn recheck<H: ConvHost>(
             "the Session moved out of your own tree while the call ran; nothing was changed",
         ));
     }
-    Ok(now)
+    Ok((now, tree))
 }
 
 /// What became of the action.
@@ -349,8 +297,8 @@ pub fn sender_for(gate: &Gate, caller: &str) -> Option<(String, String)> {
     (gate.target.id != caller).then(|| (row.name.clone(), row.id.clone()))
 }
 
-/// Queues the action when the target is mid-turn; otherwise runs it, launching a Stopped target
-/// first. Another Session's prompt travels in its envelope; a self-handoff is sent raw.
+/// Queues the action when the target is mid-turn; otherwise runs it once, launching a Stopped
+/// target first, and tells the caller if that fails (the deferred run retries, see `handoff_queue`).
 pub(super) async fn dispatch<H: ConvHost>(
     host: &H,
     id: &str,
@@ -362,12 +310,8 @@ pub(super) async fn dispatch<H: ConvHost>(
     }
     match action {
         HandoffAction::New { prompt } => {
-            let handoff_note = sender.is_none();
-            let text = match sender {
-                Some((name, caller)) => super::envelope::wrap(&name, &caller, &prompt),
-                None => prompt,
-            };
-            host.start_new(id, text, handoff_note).await?;
+            let first = super::envelope::first_message(sender.as_ref(), prompt);
+            host.start_new(id, first).await?;
         }
         HandoffAction::Switch { file } => host.switch(id, file).await?,
     }
@@ -449,11 +393,13 @@ impl AppConvHost {
     }
 }
 
-/// The agent's codes use hyphens; the tool contract uses underscores.
+/// The agent's hyphenated codes become the tool contract's names; a stopped agent reads as
+/// `session_not_running`, as it does for `send_session_message`.
 fn agent_error(code: &'static str, message: String) -> ToolError {
     match code {
         "invalid-state" => ToolError::new(INVALID_STATE, message),
-        other => ToolError::new(other, message),
+        "agent-not-running" => ToolError::new(SESSION_NOT_RUNNING, message),
+        other => ToolError::new(&other.replace('-', "_"), message),
     }
 }
 
@@ -517,10 +463,10 @@ impl ConvHost for AppConvHost {
             .await
             .map_err(|e| agent_error(e.code, e.message))
     }
-    async fn start_new(&self, id: &str, text: String, handoff_note: bool) -> Result<(), ToolError> {
+    async fn start_new(&self, id: &str, first: FirstMessage) -> Result<(), ToolError> {
         self.manager
             .get_or_create_agent(id)
-            .start_conversation_then_send(FirstMessage { text, handoff_note })
+            .start_conversation_then_send(first)
             .await
             .map_err(|failed| agent_error(failed.error.code, failed.error.message))
     }
