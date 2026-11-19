@@ -6,8 +6,8 @@ use tokio::sync::OwnedMutexGuard;
 use super::{ConvHost, ToolError, OUTCOME_UNKNOWN};
 use crate::agent_tools::envelope;
 use crate::session::agent::{
-    finish_within, lost_reason, still_running_reason, HandoffAction, QueueOutcome, Waited,
-    ACTION_DEADLINE,
+    finish_within, lost_reason, still_running_reason, HandoffAction, LostAction, QueueOutcome,
+    Waited, ACTION_DEADLINE,
 };
 
 /// What became of the action.
@@ -36,10 +36,13 @@ pub(super) async fn dispatch<H: ConvHost + Clone>(
     let (target, late_target) = (id.to_string(), id.to_string());
     let run = async move { run_action(&runner, &target, action, sender, asked).await };
     // Only a failure after the caller stopped waiting needs the task to say so.
-    let tell_late = move |result: Result<Dispatch, ToolError>| async move {
-        if let Err(failed) = result {
-            reporter.late_failure(&late_target, &failed.message).await;
-        }
+    let tell_late = move |outcome: Result<Result<Dispatch, ToolError>, LostAction>| async move {
+        let reason = match outcome {
+            Ok(Ok(_)) => return,
+            Ok(Err(failed)) => failed.message,
+            Err(LostAction) => lost_reason(),
+        };
+        reporter.late_failure(&late_target, &reason).await;
     };
     match finish_within(ACTION_DEADLINE, tree, run, tell_late).await {
         Waited::Done(result) => result,

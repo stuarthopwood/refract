@@ -44,7 +44,7 @@ async fn a_late_action_still_finishes_and_its_result_goes_to_the_late_handler() 
     }
 
     assert_eq!(waited, Waited::StillRunning);
-    assert_eq!(*late.lock().await, Some(9));
+    assert_eq!(*late.lock().await, Some(Ok(9)));
 }
 
 #[tokio::test]
@@ -68,4 +68,53 @@ async fn the_gate_is_held_until_the_action_ends_not_until_the_caller_stops_waiti
 
     assert_eq!(waited, Waited::StillRunning);
     assert!(held_after_deadline);
+}
+
+#[tokio::test]
+async fn an_action_that_panics_before_the_deadline_is_lost_and_not_reported_late() {
+    let reports = Arc::new(Mutex::new(0));
+    let counter = reports.clone();
+
+    let waited = finish_within(
+        DEADLINE,
+        None,
+        async { panic!("boom") },
+        move |_: Result<(), LostAction>| async move { *counter.lock().await += 1 },
+    )
+    .await;
+    tokio::time::sleep(Duration::from_millis(50)).await;
+
+    assert_eq!(waited, Waited::Lost);
+    assert_eq!(*reports.lock().await, 0, "the waiting caller already knows");
+}
+
+#[tokio::test]
+async fn an_action_that_panics_after_the_deadline_reports_one_lost_action_late() {
+    let release = Arc::new(Notify::new());
+    let reports = Arc::new(Mutex::new(Vec::new()));
+    let (waiting, sink) = (release.clone(), reports.clone());
+    let gate = Arc::new(Mutex::new(())).lock_owned().await;
+    tokio::time::pause();
+
+    let waited = finish_within(
+        DEADLINE,
+        Some(gate),
+        async move {
+            waiting.notified().await;
+            panic!("boom")
+        },
+        move |outcome: Result<(), LostAction>| async move { sink.lock().await.push(outcome) },
+    )
+    .await;
+    release.notify_one();
+    for _ in 0..100 {
+        if !reports.lock().await.is_empty() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    assert_eq!(waited, Waited::StillRunning);
+    assert_eq!(*reports.lock().await, [Err(LostAction)]);
 }

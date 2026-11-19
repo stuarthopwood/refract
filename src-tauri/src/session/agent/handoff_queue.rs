@@ -5,7 +5,7 @@ use std::time::Duration;
 
 use tokio::sync::OwnedMutexGuard;
 
-use super::detached_action::{finish_within, Waited};
+use super::detached_action::{finish_within, LostAction, Waited};
 use super::start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use super::{AgentError, AgentState, SessionAgent, SessionStatus};
 use crate::agent_tools::handoff_target::{check_target, needs_card, MOVED_OUT_OF_TREE};
@@ -175,7 +175,11 @@ impl SessionAgent {
                     notice = Some(dropped_notice(&reason));
                     break;
                 }
-                Attempt::StillRunning => break,
+                Attempt::StillRunning => {
+                    // An earlier attempt's failure is stale: the action is still running and may succeed.
+                    notice = None;
+                    break;
+                }
                 Attempt::Lost => {
                     notice = Some(failed_notice(&lost_reason()));
                     break;
@@ -222,15 +226,20 @@ impl SessionAgent {
         {
             return Attempt::Dropped(reason);
         }
+        let entry_generation = self.state.lock().await.shutdown_generation;
         let runner = self.arc();
         let late = self.arc();
         let queued = queued.clone();
         let action = async move { runner.run_action(&queued, resend_only).await };
         // Only a failure that outlives the wait needs the task to say so; a waiting caller retries.
-        let tell_late = move |result: Result<(), ActionFailure>| async move {
-            if let Err(failed) = result {
-                late.tell_agent_why(failed_notice(&failed.reason)).await;
-            }
+        let tell_late = move |outcome: Result<Result<(), ActionFailure>, LostAction>| async move {
+            let reason = match outcome {
+                Ok(Ok(())) => return,
+                Ok(Err(failed)) => failed.reason,
+                Err(LostAction) => lost_reason(),
+            };
+            late.tell_late(failed_notice(&reason), entry_generation)
+                .await;
         };
         match finish_within(deadline, gate, action, tell_late).await {
             Waited::Done(Ok(())) => Attempt::Done,
@@ -254,9 +263,32 @@ impl SessionAgent {
         }
     }
 
-    /// A call-time action failed after its caller stopped waiting, so nobody else can say so.
+    /// A call-time action failed after its caller stopped waiting, so nobody else can say so; a
+    /// Session deleted meanwhile has nobody to tell.
     pub async fn report_late_handoff_failure(&self, reason: &str) {
-        self.tell_agent_why(failed_notice(reason)).await;
+        if self.still_exists().await {
+            self.tell_agent_why(failed_notice(reason)).await;
+        }
+    }
+
+    /// The late notice of a settled action, dropped once the Session is deleted or was shut down
+    /// since the action began, as its transcript is gone or no longer the one that was handed off.
+    async fn tell_late(&self, notice: String, entry_generation: u64) {
+        if self.still_exists().await
+            && self.state.lock().await.shutdown_generation == entry_generation
+        {
+            self.tell_agent_why(notice).await;
+        }
+    }
+
+    async fn still_exists(&self) -> bool {
+        !crate::ipc::sessions_lifecycle::delete_in_flight::is_deleting(&self.session_id)
+            && self
+                .registry
+                .lock()
+                .await
+                .get_session(&self.session_id)
+                .is_some()
     }
 
     /// Shows the developer the notice and keeps it for the agent's next prompt.

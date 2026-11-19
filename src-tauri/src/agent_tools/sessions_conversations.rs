@@ -458,10 +458,15 @@ impl ConvHost for AppConvHost {
         Ok(())
     }
     async fn late_failure(&self, id: &str, reason: &str) {
-        self.manager
-            .get_or_create_agent(id)
-            .report_late_handoff_failure(reason)
-            .await;
+        report_late(&self.manager, id, reason).await;
+    }
+}
+
+/// Tells the target's agent a detached action failed. A deleted Session's agent was removed and
+/// must not be recreated for a notice nobody will read.
+async fn report_late(manager: &crate::session::SessionManager, id: &str, reason: &str) {
+    if let Some(agent) = manager.get_agent(id) {
+        agent.report_late_handoff_failure(reason).await;
     }
 }
 
@@ -476,3 +481,7 @@ mod flow;
 #[cfg(test)]
 #[path = "sessions_conversations.test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "sessions_conversations_late.test.rs"]
+mod late_tests;

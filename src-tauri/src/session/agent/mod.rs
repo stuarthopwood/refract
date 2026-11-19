@@ -41,7 +41,7 @@ pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
-pub use detached_action::{finish_within, Waited};
+pub use detached_action::{finish_within, LostAction, Waited};
 pub use handoff_queue::{
     lost_reason, still_running_reason, HandoffAction, QueueOutcome, QueuedHandoff, ACTION_DEADLINE,
 };
