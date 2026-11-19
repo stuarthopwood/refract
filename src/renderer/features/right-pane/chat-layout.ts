@@ -39,15 +39,17 @@ export function chatPanelResizeAction(input: {
   view: MainView
   open: boolean
   chatCollapsed: boolean
+  hasSession: boolean
 }): ChatPanelResizeAction {
   if (input.prevSizePx === undefined) return 'none'
   const collapsed = input.sizePx <= 0
   if (collapsed === input.prevSizePx <= 0) return 'none'
+  const effective = effectiveChatCollapsed(input.chatCollapsed, input.view, input.hasSession)
   if (collapsed) {
-    if (effectiveChatCollapsed(input.chatCollapsed, input.view)) return 'none'
-    return input.view === 'chat' && input.open ? 'hide' : 'restore'
+    if (effective) return 'none'
+    return input.view === 'chat' && input.open && input.hasSession ? 'hide' : 'restore'
   }
-  return effectiveChatCollapsed(input.chatCollapsed, input.view) ? 'show' : 'none'
+  return effective ? 'show' : 'none'
 }
 
 /** The width the right pane gained from a chat collapse is not a width the user chose (FR-024). */

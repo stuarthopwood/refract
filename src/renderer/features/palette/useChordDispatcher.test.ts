@@ -212,8 +212,13 @@ describe('the "Hide or show chat" palette entry (FR-020)', () => {
 
   it('is offered while chat is hidden, so Show can never be stuck', () => {
     pane().setChatCollapsed(true)
-    useSplitStore.setState({ paneSessionIds: [] })
     expect(enabled()).toBe(true)
+  })
+
+  it('is not offered with a stored hidden preference and no Session, because Home is showing', () => {
+    pane().setChatCollapsed(true)
+    useSplitStore.setState({ paneSessionIds: [] })
+    expect(enabled()).toBe(false)
   })
 })
 

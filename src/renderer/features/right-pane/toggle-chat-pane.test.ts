@@ -34,21 +34,21 @@ afterEach(() => vi.unstubAllGlobals())
 
 describe('effectiveChatCollapsed', () => {
   it('applies the stored preference only in the chat view', () => {
-    expect(effectiveChatCollapsed(true, 'chat')).toBe(true)
-    expect(effectiveChatCollapsed(true, 'home')).toBe(false)
-    expect(effectiveChatCollapsed(false, 'chat')).toBe(false)
+    expect(effectiveChatCollapsed(true, 'chat', true)).toBe(true)
+    expect(effectiveChatCollapsed(true, 'home', true)).toBe(false)
+    expect(effectiveChatCollapsed(false, 'chat', true)).toBe(false)
+  })
+
+  it('keeps Home visible in the chat view while no Session is open', () => {
+    expect(effectiveChatCollapsed(true, 'chat', false)).toBe(false)
   })
 })
 
 describe('canToggleChat', () => {
-  it('refuses to hide with no Session or outside the chat view', () => {
-    expect(canToggleChat({ view: 'chat', hasSession: false, chatCollapsed: false })).toBe(false)
-    expect(canToggleChat({ view: 'issues', hasSession: true, chatCollapsed: false })).toBe(false)
-    expect(canToggleChat({ view: 'chat', hasSession: true, chatCollapsed: false })).toBe(true)
-  })
-
-  it('always allows showing a hidden chat', () => {
-    expect(canToggleChat({ view: 'home', hasSession: false, chatCollapsed: true })).toBe(true)
+  it('refuses with no Session or outside the chat view', () => {
+    expect(canToggleChat({ view: 'chat', hasSession: false })).toBe(false)
+    expect(canToggleChat({ view: 'issues', hasSession: true })).toBe(false)
+    expect(canToggleChat({ view: 'chat', hasSession: true })).toBe(true)
   })
 })
 

@@ -61,7 +61,7 @@ export function App() {
   const focusMoveButtonRef = useRef<HTMLButtonElement>(null)
   const chatPanelRef = useRef<PanelImperativeHandle>(null)
   const chatCollapsedPreference = useRightPaneStore((state) => state.chatCollapsed)
-  const chatHidden = effectiveChatCollapsed(chatCollapsedPreference, view)
+  const chatHidden = effectiveChatCollapsed(chatCollapsedPreference, view, paneSessionIds.length > 0)
   const [chatWidthPx, setChatWidthPx] = useState<number | null>(null)
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(false)
@@ -213,7 +213,8 @@ export function App() {
                   prevSizePx: prevSize?.inPixels,
                   view: useViewStore.getState().view,
                   open: paneState.open,
-                  chatCollapsed: paneState.chatCollapsed
+                  chatCollapsed: paneState.chatCollapsed,
+                  hasSession: useSplitStore.getState().paneSessionIds.length > 0
                 })
                 if (action === 'hide') syncChatCollapsedFromDrag(true)
                 else if (action === 'show') syncChatCollapsedFromDrag(false)
@@ -332,7 +333,8 @@ export function App() {
                 if (collapsed === wasCollapsed) {
                   if (!collapsed) {
                     const { chatCollapsed } = useRightPaneStore.getState()
-                    const chatNow = effectiveChatCollapsed(chatCollapsed, useViewStore.getState().view) || chatPanelRef.current?.isCollapsed() === true
+                    const hasSession = useSplitStore.getState().paneSessionIds.length > 0
+                    const chatNow = effectiveChatCollapsed(chatCollapsed, useViewStore.getState().view, hasSession) || chatPanelRef.current?.isCollapsed() === true
                     const widthPx = rightWidthToSync(size.inPixels, chatNow)
                     if (widthPx !== null) useRightPaneStore.getState().setWidth(widthPx)
                   }

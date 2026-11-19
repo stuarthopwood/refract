@@ -22,14 +22,14 @@ const TRANSCRIPT_SELECTOR = '[role="region"][aria-label="Transcript"]'
 const LAUNCHER_SELECTOR = '[data-panel-launcher] button'
 const RIGHT_PANE_SHELL_SELECTOR = '[data-right-pane-shell]'
 
-/** Home, Pull requests, Issues and Usage always show the chat area; the stored preference is untouched there (FR-013). */
-export function effectiveChatCollapsed(chatCollapsed: boolean, view: MainView): boolean {
-  return chatCollapsed && view === 'chat'
+/** Other views and a chat view with no Session (it renders Home) always show the chat area; the stored preference is untouched (FR-013). */
+export function effectiveChatCollapsed(chatCollapsed: boolean, view: MainView, hasSession: boolean): boolean {
+  return chatCollapsed && view === 'chat' && hasSession
 }
 
-/** Hiding needs a chat to hide; showing is always allowed so a hidden chat can never be stuck. */
-export function canToggleChat(input: { view: MainView; hasSession: boolean; chatCollapsed: boolean }): boolean {
-  return input.chatCollapsed || (input.view === 'chat' && input.hasSession)
+/** Only a chat view with an open Session has a chat to hide or show; with none it is Home, which never collapses. */
+export function canToggleChat(input: { view: MainView; hasSession: boolean }): boolean {
+  return input.view === 'chat' && input.hasSession
 }
 
 /** Where focus goes after a hide or show: only when it was lost, was in the hidden area, or the user used the keyboard. */
@@ -43,15 +43,15 @@ export function chatToggleFocus(input: { hiding: boolean; viaKeyboard: boolean; 
 export function useChatPaneHidden(): boolean {
   const chatCollapsed = useRightPaneStore((s) => s.chatCollapsed)
   const view = useViewStore((s) => s.view)
-  return effectiveChatCollapsed(chatCollapsed, view)
+  const hasSession = useSplitStore((s) => s.paneSessionIds.length > 0)
+  return effectiveChatCollapsed(chatCollapsed, view, hasSession)
 }
 
 /** False disables the rail toggle (no Session) and the shortcut's no-op cases. */
 export function useCanToggleChatPane(): boolean {
-  const chatCollapsed = useRightPaneStore((s) => s.chatCollapsed)
   const view = useViewStore((s) => s.view)
   const hasSession = useSplitStore((s) => s.paneSessionIds.length > 0)
-  return canToggleChat({ view, hasSession, chatCollapsed })
+  return canToggleChat({ view, hasSession })
 }
 
 function focusRightPane(): void {
@@ -83,7 +83,7 @@ function readFocus(): { focusInChat: boolean; focusLost: boolean } {
 export function hideChatPane(options: ChatPaneToggleOptions = {}): void {
   const store = useRightPaneStore.getState()
   const hasSession = useSplitStore.getState().paneSessionIds.length > 0
-  if (store.chatCollapsed || !canToggleChat({ view: useViewStore.getState().view, hasSession, chatCollapsed: false })) return
+  if (store.chatCollapsed || !canToggleChat({ view: useViewStore.getState().view, hasSession })) return
   const target = chatToggleFocus({ hiding: true, viaKeyboard: options.viaKeyboard === true, ...readFocus() })
   store.setChatCollapsed(true)
   useAgentAnnouncementStore.getState().announce('Chat hidden')

@@ -149,8 +149,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
       useViewStore.getState().view === 'chat' &&
       canToggleChat({
         view: 'chat',
-        hasSession: useSplitStore.getState().paneSessionIds.length > 0,
-        chatCollapsed: useRightPaneStore.getState().chatCollapsed
+        hasSession: useSplitStore.getState().paneSessionIds.length > 0
       }),
     run: () => toggleChatPane({ viaKeyboard: true })
   },
@@ -160,9 +159,11 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     label: 'Move focus to the other pane',
     group: 'Split view',
     chord: ['Ctrl', 'Shift', '\\'],
-    when: () =>
-      useSplitStore.getState().paneSessionIds.length === 2 &&
-      !effectiveChatCollapsed(useRightPaneStore.getState().chatCollapsed, useViewStore.getState().view),
+    when: () => {
+      const { paneSessionIds } = useSplitStore.getState()
+      const { chatCollapsed } = useRightPaneStore.getState()
+      return paneSessionIds.length === 2 && !effectiveChatCollapsed(chatCollapsed, useViewStore.getState().view, paneSessionIds.length > 0)
+    },
     run: () => useSplitStore.getState().focusOther()
   },
   {

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest'
 import { canShowSplit, chatPanelResizeAction, heldChatContentWidth, MIN_SPLIT_WIDTH_PX, nextChatWidth, rightWidthToSync, visibleSessionIds } from './chat-layout'
 
-const base = { sizePx: 0, prevSizePx: 900, view: 'chat', open: true, chatCollapsed: false } as const
+const base = { sizePx: 0, prevSizePx: 900, view: 'chat', open: true, chatCollapsed: false, hasSession: true } as const
 
 describe('nextChatWidth', () => {
   it('keeps the last real width when the collapsed panel reports 0', () => {
@@ -101,6 +101,14 @@ describe('chatPanelResizeAction', () => {
 
   it('leaves the stored preference alone while another view expands the panel', () => {
     expect(chatPanelResizeAction({ ...base, sizePx: 400, prevSizePx: 0, chatCollapsed: true, view: 'issues' })).toBe('none')
+  })
+
+  it('restores a panel dragged to zero while no Session is open, since that panel is Home', () => {
+    expect(chatPanelResizeAction({ ...base, hasSession: false })).toBe('restore')
+  })
+
+  it('leaves the stored preference alone when Home expands with no Session', () => {
+    expect(chatPanelResizeAction({ ...base, sizePx: 400, prevSizePx: 0, chatCollapsed: true, hasSession: false })).toBe('none')
   })
 })
 
