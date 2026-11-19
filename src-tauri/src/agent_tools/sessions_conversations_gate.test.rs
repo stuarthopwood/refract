@@ -51,26 +51,71 @@ async fn recheck_locks_for_another_session_and_not_for_its_own() {
     assert!(gate_is_free(&fx).await);
 }
 
-#[tokio::test]
-async fn an_action_that_outruns_the_deadline_fails_unretried_and_frees_the_gate() {
-    let mut fx = fake(vec![]).await;
-    fx.hang = true;
+/// Polls until `done`, so a task that outlives the call has time to finish.
+async fn eventually(mut done: impl FnMut() -> bool) {
+    for _ in 0..200 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("the detached action never finished");
+}
+
+fn started(fx: &ConvFake) -> bool {
+    fx.calls().iter().any(|c| c.starts_with("start:"))
+}
+
+/// Runs a call whose `start_new` waits for `release`, and returns what the caller was told once it
+/// stopped waiting at the deadline.
+async fn call_past_the_deadline(fx: &ConvFake) -> ToolError {
     let args = json!({ "prompt": "build it", "session_id": "kid" });
     // Set up first: the paused clock jumps ahead whenever the runtime idles on real I/O.
     tokio::time::pause();
+    // The outer timeout turns a regression that waits for the action into a failure, not a hang.
+    tokio::time::timeout(Duration::from_secs(120), run_with(fx, ConvTool::New, &args))
+        .await
+        .expect("the caller must return at the action deadline")
+        .unwrap_err()
+}
 
-    let err = run_with(&fx, ConvTool::New, &args).await.unwrap_err();
+#[tokio::test]
+async fn a_slow_action_outlives_the_deadline_and_keeps_the_gate_until_it_ends() {
+    let mut fx = fake(vec![]).await;
+    fx.hang = true;
+
+    let err = call_past_the_deadline(&fx).await;
 
     assert_eq!(err.code, OUTCOME_UNKNOWN);
     assert!(
-        err.message.contains("took longer than 90 seconds"),
+        err.message.contains("still running after 90 seconds"),
         "{}",
         err.message
     );
-    // One queue and one start were tried, and none was repeated under the gate.
-    assert_eq!(*fx.held.lock().unwrap(), [true, true]);
+    assert!(!started(&fx), "the action is still waiting on omp");
     assert!(
-        gate_is_free(&fx).await,
-        "a timed-out action must free the gate"
+        !gate_is_free(&fx).await,
+        "the action keeps the gate after its caller stopped waiting"
     );
+
+    fx.release.notify_one();
+    eventually(|| started(&fx)).await;
+    // The task frees the gate once the action is done, and it was never run a second time.
+    assert!(gate_is_free(&fx).await);
+    assert_eq!(*fx.held.lock().unwrap(), [true, true]);
+    assert!(fx.late.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_failure_after_the_caller_stopped_waiting_is_reported_by_the_task() {
+    let mut fx = fake(vec![]).await;
+    fx.hang = true;
+    fx.fail_start = true;
+
+    call_past_the_deadline(&fx).await;
+    fx.release.notify_one();
+
+    eventually(|| !fx.late.lock().unwrap().is_empty()).await;
+    assert_eq!(*fx.late.lock().unwrap(), ["kid:omp refused"]);
+    assert!(gate_is_free(&fx).await);
 }

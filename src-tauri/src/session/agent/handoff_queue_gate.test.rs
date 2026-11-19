@@ -127,31 +127,81 @@ async fn a_reparent_that_wins_the_gate_first_drops_the_uncarded_action() {
     fx.finish().await;
 }
 
-#[tokio::test]
-async fn an_action_that_outruns_its_deadline_fails_without_a_retry_and_frees_the_gate() {
-    let fx = gated_fixture().await;
-    queue_settled(&fx, planner()).await;
-
+/// Starts the settle with a short deadline and returns once the caller has stopped waiting, with the
+/// stub's `new_session` still unanswered.
+async fn settle_past_the_deadline(fx: &Fixture) {
     let agent = fx.agent.clone();
-    // The stub never answers `new_session` until released, so only the deadline ends the action.
     let task = tokio::spawn(async move {
         agent
             .run_settled_handoff_within(2, Duration::from_millis(500))
             .await
     });
     finished(task).await;
+    fx.until_rpc("new_session").await;
+}
+
+async fn until_gate_free(repo: &str) {
+    for _ in 0..200 {
+        if !gate_is_held(repo).await {
+            return;
+        }
+    }
+    panic!("the detached action never freed the gate");
+}
+
+async fn count_of(fx: &Fixture, kind: &str) -> usize {
+    fx.rpc_types().await.iter().filter(|t| *t == kind).count()
+}
+
+#[tokio::test]
+async fn an_action_past_its_deadline_keeps_the_gate_and_finishes_without_a_retry() {
+    let fx = gated_fixture().await;
+    queue_settled(&fx, planner()).await;
+
+    settle_past_the_deadline(&fx).await;
+    let held_after_deadline = gate_is_held(&fx.repo).await;
+    let notices_at_deadline = fx.notices().await;
+    fx.release().await;
+    until_gate_free(&fx.repo).await;
 
     assert!(
-        !gate_is_held(&fx.repo).await,
-        "the gate must be freed when the action times out"
+        held_after_deadline,
+        "the action keeps the gate until it ends"
     );
-    // At most one: a loaded run may time out before the stub logs the first, but none is a retry.
-    let new_sessions = fx.rpc_types().await;
-    assert!(new_sessions.iter().filter(|t| *t == "new_session").count() <= 1);
-    assert_eq!(
-        fx.notices().await,
-        [format!("Handoff failed: {}", super::timed_out_reason())]
+    assert!(notices_at_deadline.is_empty(), "{notices_at_deadline:?}");
+    assert_eq!(count_of(&fx, "new_session").await, 1);
+    let after_new: Vec<String> = fx
+        .rpc_types()
+        .await
+        .into_iter()
+        .skip_while(|t| t != "new_session")
+        .collect();
+    assert!(
+        after_new.len() > 1,
+        "the first message follows: {after_new:?}"
     );
+    assert!(fx.notices().await.is_empty());
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn an_action_that_fails_after_its_deadline_posts_the_notice_itself() {
+    let fx = fixture_with(Stub {
+        gated: Some("new_session"),
+        fail_once: Some("new_session"),
+        ..Stub::default()
+    })
+    .await;
+    queue_settled(&fx, planner()).await;
+
+    settle_past_the_deadline(&fx).await;
     fx.release().await;
+    fx.until_notices(1).await;
+    until_gate_free(&fx.repo).await;
+
+    let notices = fx.notices().await;
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(notices[0].starts_with("Handoff failed:"), "{notices:?}");
+    assert_eq!(count_of(&fx, "new_session").await, 1, "never retried");
     fx.finish().await;
 }

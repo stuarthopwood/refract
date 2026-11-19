@@ -1,6 +1,8 @@
 use std::collections::HashSet;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+use tokio::sync::Notify;
 
 use serde_json::json;
 
@@ -11,8 +13,25 @@ use crate::agent_tools::sessions_send::INVALID_TARGET;
 use crate::store::session_kind::SessionKind;
 
 /// Stands in for the running app: serves one fixed list of Conversations, records every action in
-/// order, and answers the queue the way a test sets it.
-struct ConvFake {
+/// order, and answers the queue the way a test sets it. Clones share one state, like the real host's handles.
+#[derive(Clone)]
+struct ConvFake(Arc<ConvFakeState>);
+
+impl std::ops::Deref for ConvFake {
+    type Target = ConvFakeState;
+    fn deref(&self) -> &ConvFakeState {
+        &self.0
+    }
+}
+
+/// Tests set fields before the first clone exists.
+impl std::ops::DerefMut for ConvFake {
+    fn deref_mut(&mut self) -> &mut ConvFakeState {
+        Arc::get_mut(&mut self.0).expect("set the fake up before running it")
+    }
+}
+
+struct ConvFakeState {
     caller: String,
     registry: SharedRegistry,
     yolo: bool,
@@ -27,8 +46,13 @@ struct ConvFake {
     held: Mutex<Vec<bool>>,
     /// This test's Project id, unique so another test holding the process-wide gate never matches.
     repo: String,
-    /// `start_new` never answers, like a stuck omp.
+    /// `start_new` waits for `release`, like a slow omp.
     hang: bool,
+    release: Notify,
+    /// `start_new` fails once it is released.
+    fail_start: bool,
+    /// Failures the host was asked to report after the caller stopped waiting.
+    late: Mutex<Vec<String>>,
 }
 
 impl ConvHost for ConvFake {
@@ -86,13 +110,19 @@ impl ConvHost for ConvFake {
     async fn start_new(&self, id: &str, first: FirstMessage) -> Result<(), ToolError> {
         self.note_gate().await;
         if self.hang {
-            std::future::pending::<()>().await;
+            self.release.notified().await;
         }
         self.calls
             .lock()
             .unwrap()
             .push(format!("start:{id}:{}:{}", first.handoff_note, first.text));
+        if self.fail_start {
+            return Err(ToolError::new(INVALID_STATE, "omp refused"));
+        }
         Ok(())
+    }
+    async fn late_failure(&self, id: &str, reason: &str) {
+        self.late.lock().unwrap().push(format!("{id}:{reason}"));
     }
     async fn switch(&self, id: &str, file: String) -> Result<(), ToolError> {
         self.calls
@@ -134,7 +164,7 @@ fn tree() -> Vec<Session> {
 async fn fake(convs: Vec<ConvRow>) -> ConvFake {
     let repo = format!("repo-{}", uuid::Uuid::new_v4());
     let end = host_in(&repo, tree_in(&repo)).await;
-    ConvFake {
+    ConvFake(Arc::new(ConvFakeState {
         caller: "me".into(),
         registry: end.registry.clone(),
         yolo: false,
@@ -148,7 +178,10 @@ async fn fake(convs: Vec<ConvRow>) -> ConvFake {
         held: Mutex::new(Vec::new()),
         repo,
         hang: false,
-    }
+        release: Notify::new(),
+        fail_start: false,
+        late: Mutex::new(Vec::new()),
+    }))
 }
 
 fn conv(n: u32, preview: &str) -> ConvRow {
@@ -376,6 +409,7 @@ async fn a_mid_turn_target_defers_and_nothing_starts() {
         },
         None,
         false,
+        None,
     )
     .await
     .unwrap();
@@ -398,6 +432,7 @@ async fn a_foreign_prompt_is_wrapped_by_the_envelope() {
         },
         sender,
         false,
+        None,
     )
     .await
     .unwrap();
@@ -419,6 +454,7 @@ async fn a_self_handoff_sends_the_raw_note_marked_as_a_handoff() {
         },
         None,
         false,
+        None,
     )
     .await
     .unwrap();
@@ -438,6 +474,7 @@ async fn an_idle_switch_runs_at_once() {
         },
         None,
         false,
+        None,
     )
     .await
     .unwrap();

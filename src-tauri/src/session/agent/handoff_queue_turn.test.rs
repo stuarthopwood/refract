@@ -1,4 +1,4 @@
-// A turn starts atomically: the generation and the status flip in one lock section (#1861).
+// Turn start and settle set the generation and the status together, so a queue sees one state (#1861).
 
 use serde_json::json;
 
@@ -13,7 +13,7 @@ fn action() -> HandoffAction {
 }
 
 #[tokio::test]
-async fn the_state_right_after_a_turn_starts_reads_mid_turn() {
+async fn begin_turn_leaves_a_working_session_at_an_odd_generation_that_queues() {
     let fx = fixture(&[], &[]).await;
     {
         let mut state = fx.agent.state.lock().await;
@@ -33,7 +33,7 @@ async fn the_state_right_after_a_turn_starts_reads_mid_turn() {
 }
 
 #[tokio::test]
-async fn the_first_turn_of_a_launched_session_reads_mid_turn_only_once_it_starts() {
+async fn a_launched_session_at_the_odd_starting_generation_queues_only_once_agent_start_arrives() {
     let fx = fixture(&[], &[]).await;
     {
         // A launched Session idles at the odd starting generation, which is not a running turn.
@@ -50,5 +50,41 @@ async fn the_first_turn_of_a_launched_session_reads_mid_turn_only_once_it_starts
 
     assert_eq!(before, QueueOutcome::NotMidTurn);
     assert_eq!(during, QueueOutcome::Queued);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn begin_turn_leaves_an_already_odd_generation_alone() {
+    let fx = fixture(&[], &[]).await;
+    {
+        let mut state = fx.agent.state.lock().await;
+        state.status = SessionStatus::Idle;
+        state.turn_generation = 1;
+
+        fx.agent.begin_turn(&mut state);
+
+        assert_eq!(state.turn_generation, 1);
+        assert_eq!(state.status, SessionStatus::Working);
+    }
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_settle_frame_makes_the_generation_even_and_the_status_idle_together() {
+    let fx = fixture(&[], &[]).await;
+    {
+        let mut state = fx.agent.state.lock().await;
+        state.status = SessionStatus::Working;
+        state.turn_generation = 3;
+    }
+
+    fx.agent
+        .handle_frame(json!({ "type": "session_settled" }))
+        .await;
+
+    let state = fx.agent.state.lock().await;
+    assert_eq!(state.turn_generation, 4);
+    assert_eq!(state.status, SessionStatus::Idle);
+    drop(state);
     fx.finish().await;
 }
