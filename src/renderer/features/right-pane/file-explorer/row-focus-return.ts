@@ -1,5 +1,6 @@
 import { useDocumentTabsStore } from '@/state/document-tabs-store'
 import { frontActiveTab, useRightPaneStore } from '@/state/right-pane-store'
+import { focusTook } from '../focus-took'
 
 export type FocusLocation = 'body' | 'tab-strip' | 'other'
 
@@ -54,8 +55,7 @@ function returnFocus(path: string): void {
         () => {
           if (!shouldReturnFocusToRow(explorerShowing(), focusLocation())) return true
           const row = document.querySelector<HTMLElement>(`[data-tree-row-path="${CSS.escape(path)}"]`)
-          row?.focus()
-          return row !== null
+          return row !== null && focusTook(row)
         },
         requestAnimationFrame,
         90
