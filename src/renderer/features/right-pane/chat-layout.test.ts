@@ -1,7 +1,7 @@
 // Spec 137 FR-017, FR-018, FR-024, FR-034 (#2075; C1, H2): pane B survives a chat collapse because the
 // width-0 report is ignored, so the split state and the visible-Session set stay as they were.
 import { describe, expect, it } from 'vitest'
-import { canShowSplit, chatPanelResizeAction, MIN_SPLIT_WIDTH_PX, nextChatWidth, rightWidthToSync, visibleSessionIds } from './chat-layout'
+import { canShowSplit, chatPanelResizeAction, heldChatContentWidth, MIN_SPLIT_WIDTH_PX, nextChatWidth, rightWidthToSync, visibleSessionIds } from './chat-layout'
 
 const base = { sizePx: 0, prevSizePx: 900, view: 'chat', open: true, chatCollapsed: false } as const
 
@@ -22,6 +22,24 @@ describe('canShowSplit', () => {
     expect(canShowSplit(null)).toBe(false)
     expect(canShowSplit(MIN_SPLIT_WIDTH_PX - 1)).toBe(false)
     expect(canShowSplit(MIN_SPLIT_WIDTH_PX)).toBe(true)
+  })
+})
+
+describe('heldChatContentWidth', () => {
+  it('holds the last real width once chat is hidden, before the panel reports 0', () => {
+    expect(heldChatContentWidth({ chatHidden: true, panelCollapsed: false, lastWidthPx: 538 })).toBe(538)
+  })
+
+  it('keeps holding after chat is shown until the panel reports a real width', () => {
+    expect(heldChatContentWidth({ chatHidden: false, panelCollapsed: true, lastWidthPx: 538 })).toBe(538)
+  })
+
+  it('lets the content follow the panel when chat is shown', () => {
+    expect(heldChatContentWidth({ chatHidden: false, panelCollapsed: false, lastWidthPx: 538 })).toBeUndefined()
+  })
+
+  it('holds nothing when no real width was ever seen', () => {
+    expect(heldChatContentWidth({ chatHidden: true, panelCollapsed: true, lastWidthPx: null })).toBeUndefined()
   })
 })
 

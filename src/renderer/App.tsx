@@ -33,7 +33,7 @@ import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
 import { RightPaneResizeHandle } from '@/features/right-pane/RightPaneResizeHandle'
 import { rightPaneRef } from '@/features/right-pane/right-pane-handle'
 import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
-import { canShowSplit as widthFitsSplit, chatPanelResizeAction, nextChatWidth, rightWidthToSync, visibleSessionIds } from '@/features/right-pane/chat-layout'
+import { canShowSplit as widthFitsSplit, chatPanelResizeAction, heldChatContentWidth, nextChatWidth, rightWidthToSync, visibleSessionIds } from '@/features/right-pane/chat-layout'
 import { CHAT_PANEL_DOM_ID } from '@/features/right-pane/chat-panel-id'
 import { effectiveChatCollapsed, syncChatCollapsedFromDrag } from '@/features/right-pane/toggle-chat-pane'
 import { fittingWidth, measurePaneLayout } from '@/features/right-pane/pane-width-model'
@@ -63,6 +63,7 @@ export function App() {
   const chatCollapsedPreference = useRightPaneStore((state) => state.chatCollapsed)
   const chatHidden = effectiveChatCollapsed(chatCollapsedPreference, view)
   const [chatWidthPx, setChatWidthPx] = useState<number | null>(null)
+  const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [liveDividerPercent, setLiveDividerPercent] = useState(dividerPercent)
   const isSplit = paneSessionIds.length === 2
@@ -205,6 +206,7 @@ export function App() {
               collapsedSize={0}
               onResize={(size, _id, prevSize) => {
                 setChatWidthPx((prev) => nextChatWidth(prev, size.inPixels))
+                setChatPanelCollapsed(size.inPixels <= 0)
                 const paneState = useRightPaneStore.getState()
                 const action = chatPanelResizeAction({
                   sizePx: size.inPixels,
@@ -218,7 +220,15 @@ export function App() {
                 else if (action === 'restore') chatPanelRef.current?.expand()
               }}
             >
-              <div id={CHAT_PANEL_DOM_ID} ref={viewRef} className="h-full" inert={chatHidden} aria-hidden={chatHidden || undefined}><ErrorBoundary>
+              <div
+                id={CHAT_PANEL_DOM_ID}
+                ref={viewRef}
+                className="h-full"
+                // Keeps the transcript from re-wrapping at 0 px, which loses its scroll position (SC-004).
+                style={{ width: heldChatContentWidth({ chatHidden, panelCollapsed: chatPanelCollapsed, lastWidthPx: chatWidthPx }) }}
+                inert={chatHidden}
+                aria-hidden={chatHidden || undefined}
+              ><ErrorBoundary>
                 {view === 'pull-requests' ? (
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : view === 'issues' ? (

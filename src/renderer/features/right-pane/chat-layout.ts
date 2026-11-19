@@ -15,6 +15,11 @@ export function canShowSplit(chatWidthPx: number | null): boolean {
   return chatWidthPx !== null && chatWidthPx >= MIN_SPLIT_WIDTH_PX
 }
 
+/** Holds the last real width while the panel is at 0, so the transcript does not re-wrap and lose its scroll position (SC-004). */
+export function heldChatContentWidth(input: { chatHidden: boolean; panelCollapsed: boolean; lastWidthPx: number | null }): number | undefined {
+  return (input.chatHidden || input.panelCollapsed) && input.lastWidthPx !== null ? input.lastWidthPx : undefined
+}
+
 /** The Sessions the main process keeps visible; hiding chat never shrinks this set, so none goes Unread (FR-034). */
 export function visibleSessionIds(input: { paneSessionIds: readonly string[]; splitFits: boolean; frontSessionId: string | null }): string[] {
   if (input.paneSessionIds.length === 2 && input.splitFits) return [...input.paneSessionIds]
