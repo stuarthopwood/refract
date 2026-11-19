@@ -79,7 +79,7 @@ function readFocus(): { focusInChat: boolean; focusLost: boolean } {
   return { focusInChat: Boolean(active?.closest(CHAT_AREA_SELECTOR)), focusLost: isFocusStranded(active, null) }
 }
 
-/** Hides the chat area; opens the right pane on its last active tab first when it is closed (FR-018). */
+/** Hides the chat area; `setChatCollapsed(true)` opens the right pane in the same update, so both are never hidden (FR-018). */
 export function hideChatPane(options: ChatPaneToggleOptions = {}): void {
   const store = useRightPaneStore.getState()
   const hasSession = useSplitStore.getState().paneSessionIds.length > 0
