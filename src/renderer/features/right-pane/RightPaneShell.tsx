@@ -16,6 +16,8 @@ import { PinnedIssuePanel } from './pinned/PinnedIssuePanel'
 import { PinnedPullRequestPanel } from './pinned/PinnedPullRequestPanel'
 import { resolveActiveTab } from '@/state/right-pane-store'
 import { useDocumentTabsStore, type DocumentTab } from '@/state/document-tabs-store'
+import { DocumentTabView } from '@/features/documents/DocumentTabView'
+import { useDiffTabLiveness } from '@/features/documents/useDiffTabLiveness'
 import { activeItemKey, buildTabItems, tabDomIds } from './tab-items'
 import { isGenuineOpen, shellLayout } from './shell-tabs'
 
@@ -37,6 +39,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
   const contentRef = useRef<HTMLDivElement>(null)
   const paneOpen = useRightPaneStore((s) => s.open)
+  useDiffTabLiveness(sessionId)
   // Panel size changes instantly (#678); only content fades and slides in; closing is ignored.
   const panelKey = paneOpen ? tabKey : null
   const launcherRef = useEnterOnSwitch<HTMLDivElement>(paneOpen ? 'launcher' : null, 'panel')
@@ -88,8 +91,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         id={isTabBar ? ids?.panelId : undefined}
         aria-labelledby={isTabBar && ids ? ids.tabId : 'right-pane-panel-title'}
       >
-        {/* Phase 3 (T011+) builds the file and diff views; until then a document tab shows this placeholder. */}
-        {activeKey?.kind === 'document' && <p className="p-4 text-sm text-muted-foreground">This document view is not available yet.</p>}
+        {activeKey?.kind === 'document' && <DocumentTabView sessionId={activeKey.sessionId} tabId={activeKey.id} />}
         {activePanelId === 'subagents' &&
           (subagentSessionId ? (
             <SubagentPanel sessionId={subagentSessionId} />

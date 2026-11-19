@@ -1,3 +1,4 @@
+import { GROUP_ORDER } from './focus'
 import type { Result } from '../../../../shared/ipc'
 import type { GitChangesFileEntry, GitChangesGroupKind, GitChangesSnapshot } from '../../../../shared/model'
 
@@ -10,9 +11,12 @@ export function findLiveEntry(snapshot: GitChangesSnapshot | null | undefined, g
   return snapshot?.groups[group].find((entry) => entry.path === path) ?? null
 }
 
-/** Only a loaded snapshot can say a file left its group; before that, absence means "not known yet". */
-export function isNoLongerChanged(snapshot: GitChangesSnapshot | null | undefined, group: GitChangesGroupKind, path: string): boolean {
-  return snapshot != null && findLiveEntry(snapshot, group, path) === null
+/**
+ * Only a loaded snapshot can say a file left every group; before that, absence means "not known yet". A file that moved to another
+ * group is still changed: its diff tab follows it (`planDiffRetargets`).
+ */
+export function isNoLongerChanged(snapshot: GitChangesSnapshot | null | undefined, path: string): boolean {
+  return snapshot != null && GROUP_ORDER.every((group) => findLiveEntry(snapshot, group, path) === null)
 }
 
 /** A change to any of these means the file's diff moved on, so it is fetched again. */

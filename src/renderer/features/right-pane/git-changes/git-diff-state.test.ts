@@ -19,17 +19,18 @@ const snapshot = (groups: Partial<GitChangesSnapshot['groups']>): GitChangesSnap
 
 describe('isNoLongerChanged', () => {
   it('is false until a snapshot has loaded', () => {
-    expect(isNoLongerChanged(null, 'changes', 'a.ts')).toBe(false)
-    expect(isNoLongerChanged(undefined, 'changes', 'a.ts')).toBe(false)
+    expect(isNoLongerChanged(null, 'a.ts')).toBe(false)
+    expect(isNoLongerChanged(undefined, 'a.ts')).toBe(false)
   })
 
-  it('is false while the file is still in its group', () => {
-    expect(isNoLongerChanged(snapshot({ changes: [entry('a.ts')] }), 'changes', 'a.ts')).toBe(false)
+  it('is false while any group still holds the file, including after it moved groups', () => {
+    expect(isNoLongerChanged(snapshot({ changes: [entry('a.ts')] }), 'a.ts')).toBe(false)
+    expect(isNoLongerChanged(snapshot({ staged: [entry('a.ts')] }), 'a.ts')).toBe(false)
   })
 
-  it('is true when the file left its group, even if it moved to another one', () => {
-    expect(isNoLongerChanged(snapshot({ staged: [entry('a.ts')] }), 'changes', 'a.ts')).toBe(true)
-    expect(isNoLongerChanged(snapshot({}), 'changes', 'a.ts')).toBe(true)
+  it('is true when no group holds the file', () => {
+    expect(isNoLongerChanged(snapshot({}), 'a.ts')).toBe(true)
+    expect(isNoLongerChanged(snapshot({ changes: [entry('b.ts')] }), 'a.ts')).toBe(true)
   })
 })
 
