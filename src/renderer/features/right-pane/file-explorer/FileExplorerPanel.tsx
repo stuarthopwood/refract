@@ -6,70 +6,19 @@ import { toast } from 'sonner'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
+import { fileExplorerWatch } from '@/state/watch-refs'
 import { Switch } from '@/components/ui/switch'
 import { isFocusStranded } from '@/lib/focus'
 import { notify, useFileExplorerStore, useSessionsStore } from '@/state'
 import type { ExpandableNode } from '../../../state/file-explorer-store'
 import { buildFolderRollup } from './git-decoration'
-import { FilePreviewPane } from './FilePreviewPane'
+import { flattenVisible, joinWorktreePath, type FlatRow } from './tree-rows'
+import { keyboardActivation, openFileFromRow, pointerActivation, type RowActivation } from './row-open'
 import { TreeNodeRow, type NodeRow } from './TreeNodeRow'
 
 interface FileExplorerPanelProps {
   sessionId: string | null
 }
-
-interface MoreRow {
-  kind: 'more'
-  depth: number
-  count: number
-  key: string
-  posinset: number
-  setsize: number
-}
-
-type FlatRow = NodeRow | MoreRow
-
-// Flattens `root`'s currently-EXPANDED subtree into the rows the tree actually renders: a
-// collapsed folder's own children are not in this array at all.
-function flattenVisible(root: ExpandableNode | null, showIgnored: boolean): FlatRow[] {
-  if (!root?.children) return []
-  const rows: FlatRow[] = []
-  let nodeCounter = 0
-  function walk(nodes: ExpandableNode[], depth: number, parentPath: string, truncatedHere: number | undefined): void {
-    const visible = nodes.filter((node) => showIgnored || node.gitStatus !== 'ignored')
-    const siblingCount = visible.length + (truncatedHere ? 1 : 0)
-    visible.forEach((node, i) => {
-      rows.push({ kind: 'node', node, depth, posinset: i + 1, setsize: siblingCount, nodeIndex: nodeCounter })
-      nodeCounter += 1
-      if (node.kind === 'folder' && node.expanded && node.children) {
-        walk(node.children, depth + 1, node.path, node.truncated)
-      }
-    })
-    if (truncatedHere) {
-      rows.push({ kind: 'more', depth, count: truncatedHere, key: `more:${parentPath}`, posinset: siblingCount, setsize: siblingCount })
-    }
-  }
-  walk(root.children, 0, root.path, root.truncated)
-  return rows
-}
-
-// Spec 015 Slice 3 (contracts/ipc.md `fileExplorer.copyPath`): joins `relativePath`'s own
-// POSIX-`/`-separated segments (`FileTreeNode.path`'s convention) onto `worktreePath`'s own
-// OS-native separator, for the renderer-side `navigator.clipboard.writeText` attempt only
-// (`useWorktreeActions.ts`'s own clipboard-first pattern) -- never the security boundary itself,
-// which stays server-side (`resolveInWorktree`, `fileExplorer.copyPath`'s own handler).
-function joinWorktreePath(worktreePath: string, relativePath: string): string {
-  const separator = worktreePath.includes('\\') ? '\\' : '/'
-  const trimmedRoot = worktreePath.replace(/[\\/]+$/, '')
-  return `${trimmedRoot}${separator}${relativePath.split('/').join(separator)}`
-}
-
-// `RightPaneShell.tsx` conditionally renders this component only while its tab is the ACTIVE one
-// (`activePanelId === 'file-explorer' && <FileExplorerPanel.../>`) -- switching to a different tab,
-// or closing the last open tab, genuinely unmounts it; switching to a DIFFERENT Session while
-// staying on this tab keeps the component mounted but changes `sessionId`.
-const watcherRefCounts = new Map<string, number>()
 
 export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const root = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.root ?? null) : null))
@@ -78,13 +27,10 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const error = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.error ?? null) : null))
   const showIgnored = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.showIgnored ?? false) : false))
   const selectedPath = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.selectedPath ?? null) : null))
-  const preview = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.preview ?? null) : null))
-  const previewLoading = useFileExplorerStore((s) => (sessionId ? (s.bySession[sessionId]?.previewLoading ?? false) : false))
   const loadDirectory = useFileExplorerStore((s) => s.loadDirectory)
   const toggleExpanded = useFileExplorerStore((s) => s.toggleExpanded)
   const setShowIgnored = useFileExplorerStore((s) => s.setShowIgnored)
   const setSelectedPath = useFileExplorerStore((s) => s.setSelectedPath)
-  const loadPreview = useFileExplorerStore((s) => s.loadPreview)
   const worktreePath = useSessionsStore((s) =>
     sessionId ? s.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
   )
@@ -131,30 +77,8 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   useEffect(() => {
     if (!sessionId) return
     const id = sessionId
-    const count = (watcherRefCounts.get(id) ?? 0) + 1
-    watcherRefCounts.set(id, count)
-    if (count === 1) {
-      window.refract.fileExplorer
-        .ensureWatching(id)
-        .then((result) => {
-          if (!result.ok) console.warn('FileExplorerPanel: ensureWatching failed', result.error)
-        })
-        .catch((err) => console.warn('FileExplorerPanel: ensureWatching rejected', err))
-    }
-    return () => {
-      const remaining = (watcherRefCounts.get(id) ?? 1) - 1
-      if (remaining <= 0) {
-        watcherRefCounts.delete(id)
-        window.refract.fileExplorer
-          .stopWatching(id)
-          .then((result) => {
-            if (!result.ok) console.warn('FileExplorerPanel: stopWatching failed', result.error)
-          })
-          .catch((err) => console.warn('FileExplorerPanel: stopWatching rejected', err))
-      } else {
-        watcherRefCounts.set(id, remaining)
-      }
-    }
+    fileExplorerWatch.acquire(id)
+    return () => fileExplorerWatch.release(id)
   }, [sessionId])
 
   // Reclaims focus onto the container ONLY when it is actually stranded -- never unconditionally,
@@ -185,8 +109,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     function performRescue(): void {
       const treeRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path][tabindex="0"]')
       const anyRow = treeContainerRef.current?.querySelector<HTMLElement>('[data-tree-row-path]')
-      const previewRegion = containerRef.current?.querySelector<HTMLElement>('[role="region"]')
-      const target = treeRow ?? anyRow ?? previewRegion ?? containerRef.current
+      const target = treeRow ?? anyRow ?? containerRef.current
       rescueFocusRef.current = true
       try {
         target?.focus({ preventScroll: true })
@@ -301,7 +224,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     }
   }, [sessionId])
 
-  function activateRow(node: ExpandableNode): void {
+  function activateRow(node: ExpandableNode, activation: RowActivation): void {
     if (!sessionId) return
     if (node.kind === 'folder') {
       if (node.children === undefined) {
@@ -311,15 +234,15 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
         toggleExpanded(sessionId, node.path)
       }
     } else if (node.kind === 'file') {
-      void loadPreview(sessionId, node.path)
+      openFileFromRow(sessionId, node.path, activation)
     }
     // `cannot-access`: nothing to activate.
   }
 
-  function selectAndActivate(node: ExpandableNode): void {
+  function selectAndActivate(node: ExpandableNode, activation: RowActivation): void {
     if (!sessionId) return
     setSelectedPath(sessionId, node.path)
-    activateRow(node)
+    activateRow(node, activation)
   }
 
   async function handleOpenInVSCode(path: string): Promise<boolean> {
@@ -404,7 +327,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
         event.preventDefault()
         if (node.kind !== 'folder') break
         if (!node.expanded) {
-          activateRow(node)
+          activateRow(node, keyboardActivation(event))
           break
         }
         const childRow = rows[absIndex + 1]
@@ -416,7 +339,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
       case 'ArrowLeft': {
         event.preventDefault()
         if (node.kind === 'folder' && node.expanded) {
-          activateRow(node)
+          activateRow(node, keyboardActivation(event))
           break
         }
         for (let i = absIndex - 1; i >= 0; i -= 1) {
@@ -474,13 +397,18 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
         if (targetAbs !== undefined) moveToRow(rows[targetAbs] as NodeRow, targetAbs)
         break
       }
-      case 'Enter': {
+      case 'Enter':
+      case ' ': {
         event.preventDefault()
-        selectAndActivate(node)
+        // A space inside a running type-ahead search is part of the name, not an activation.
+        if (event.key === ' ' && typeaheadRef.current.buffer) {
+          handleTypeahead(' ', row)
+          break
+        }
+        selectAndActivate(node, keyboardActivation(event))
         break
       }
       default: {
-        if (event.key === ' ') event.preventDefault()
         if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
           handleTypeahead(event.key, row)
         }
@@ -551,68 +479,56 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
               onCheckedChange={(checked) => sessionId && setShowIgnored(sessionId, checked)}
             />
           </div>
-          <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
-            <ResizablePanel defaultSize="60%" minSize="20%">
-              {rows.length === 0 ? (
-                <InlineStatus density="compact">
-                  Every entry here is ignored. Turn on "Show ignored files" above to see them.
-                </InlineStatus>
-              ) : (
-                <div ref={treeContainerRef} role="tree" aria-label="Files" className="h-full">
-                  <Virtuoso
-                    ref={virtuosoRef}
-                    style={{ height: '100%' }}
-                    data={rows}
-                    tabIndex={-1}
-                    initialTopMostItemIndex={selectedAbsIndex ?? 0}
-                    rangeChanged={setRenderedRange}
-                    computeItemKey={(_index, row) => (row.kind === 'node' ? row.node.path : row.key)}
-                    itemContent={(absIndex, row) =>
-                      row.kind === 'more' ? (
-                        <div
-                          role="treeitem"
-                          aria-disabled="true"
-                          aria-level={row.depth + 1}
-                          aria-setsize={row.setsize}
-                          aria-posinset={row.posinset}
-                          tabIndex={-1}
-                          data-tree-more-key={row.key}
-                          style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
-                          className="px-1 py-1 text-xs text-muted-foreground"
-                        >
-                          {row.count} more…
-                        </div>
-                      ) : (
-                        <TreeNodeRow
-                          row={row}
-                          absIndex={absIndex}
-                          selected={row.nodeIndex === selectedNodeIndex}
-                          tabbable={absIndex === tabbableAbsIndex}
-                          rollup={row.node.kind === 'folder' ? folderRollup.get(row.node.path) : undefined}
-                          onRowClick={selectAndActivate}
-                          onRowFocus={(node) => sessionId && !rescueFocusRef.current && setSelectedPath(sessionId, node.path)}
-                          onRowKeyDown={handleRowKeyDown}
-                          onOpenInVSCode={handleOpenInVSCode}
-                          onReveal={handleReveal}
-                          onCopyPath={handleCopyPath}
-                        />
-                      )
-                    }
-                  />
-                </div>
-              )}
-            </ResizablePanel>
-            <ResizableHandle withHandle aria-label="Resize file tree and preview" />
-            <ResizablePanel defaultSize="40%" minSize="15%">
-              <FilePreviewPane
-                preview={preview}
-                previewLoading={previewLoading}
-                onOpenInVSCode={handleOpenInVSCode}
-                onReveal={handleReveal}
-                onCopyPath={handleCopyPath}
-              />
-            </ResizablePanel>
-          </ResizablePanelGroup>
+          <div className="min-h-0 flex-1">
+            {rows.length === 0 ? (
+              <InlineStatus density="compact">
+                Every entry here is ignored. Turn on "Show ignored files" above to see them.
+              </InlineStatus>
+            ) : (
+              <div ref={treeContainerRef} role="tree" aria-label="Files" className="h-full">
+                <Virtuoso
+                  ref={virtuosoRef}
+                  style={{ height: '100%' }}
+                  data={rows}
+                  tabIndex={-1}
+                  initialTopMostItemIndex={selectedAbsIndex ?? 0}
+                  rangeChanged={setRenderedRange}
+                  computeItemKey={(_index, row) => (row.kind === 'node' ? row.node.path : row.key)}
+                  itemContent={(absIndex, row) =>
+                    row.kind === 'more' ? (
+                      <div
+                        role="treeitem"
+                        aria-disabled="true"
+                        aria-level={row.depth + 1}
+                        aria-setsize={row.setsize}
+                        aria-posinset={row.posinset}
+                        tabIndex={-1}
+                        data-tree-more-key={row.key}
+                        style={{ paddingLeft: `${row.depth * 16 + 4}px` }}
+                        className="px-1 py-1 text-xs text-muted-foreground"
+                      >
+                        {row.count} more…
+                      </div>
+                    ) : (
+                      <TreeNodeRow
+                        row={row}
+                        absIndex={absIndex}
+                        selected={row.nodeIndex === selectedNodeIndex}
+                        tabbable={absIndex === tabbableAbsIndex}
+                        rollup={row.node.kind === 'folder' ? folderRollup.get(row.node.path) : undefined}
+                        onRowClick={(node, event) => selectAndActivate(node, pointerActivation(event))}
+                        onRowFocus={(node) => sessionId && !rescueFocusRef.current && setSelectedPath(sessionId, node.path)}
+                        onRowKeyDown={handleRowKeyDown}
+                        onOpenInVSCode={handleOpenInVSCode}
+                        onReveal={handleReveal}
+                        onCopyPath={handleCopyPath}
+                      />
+                    )
+                  }
+                />
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>
