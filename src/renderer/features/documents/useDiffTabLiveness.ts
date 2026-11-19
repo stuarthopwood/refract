@@ -4,6 +4,7 @@ import { useDocumentTabsStore, type DocumentTab } from '@/state/document-tabs-st
 import { useDiffTabRetarget } from '../right-pane/git-changes/useDiffTabRetarget'
 import { useGitChangesWatch } from '../right-pane/git-changes/useGitChangesWatch'
 import { syncDiffTabLiveness } from './diff-liveness'
+import { snapshotForDiffTabs } from './diff-snapshot-selector'
 
 const NO_TABS: DocumentTab[] = []
 
@@ -14,7 +15,7 @@ const NO_TABS: DocumentTab[] = []
 export function useDiffTabLiveness(sessionId: string | null): void {
   const tabs = useDocumentTabsStore((s) => (sessionId ? s.bySession[sessionId]?.tabs : undefined)) ?? NO_TABS
   const hasDiffTab = tabs.some((tab) => tab.kind === 'diff')
-  const snapshot = useGitChangesStore((s) => (sessionId ? (s.bySession[sessionId]?.snapshot ?? null) : null))
+  const snapshot = useGitChangesStore((s) => snapshotForDiffTabs(s.bySession, sessionId, hasDiffTab))
 
   useGitChangesWatch(hasDiffTab ? sessionId : null)
   useEffect(() => {
