@@ -38,7 +38,7 @@ Test work is part of each task (AGENTS.md Testing rule): every guard's test must
 
 ## Phase 6: Verify
 - [x] T023 `pnpm ci:local`; fix only what fails (SC-005).
-- [ ] T024 Live check on a scratch build with isolated data: ten files and diffs, dedupe, the 21st-tab eviction announcement, overflow, restart restore, hide chat while a Session streams in a single chat and a Split with a scroll-position assertion, drag-collapse, width beyond 520 px, Ctrl+Shift+H in WebView2, keyboard-only pass; screenshots and notes under `evidence/` (SC-001 to SC-004; L5, H2).
+- [x] T024 Live check on a scratch build with isolated data: ten files and diffs, dedupe, the 21st-tab eviction announcement, overflow, restart restore, hide chat while a Session streams in a single chat and a Split with a scroll-position assertion, drag-collapse, width beyond 520 px, Ctrl+Shift+H in WebView2, keyboard-only pass; screenshots and notes under `evidence/` (SC-001 to SC-004; L5, H2). Done on exe `5494625e` (sha256 `71acbbe0…2782624`), 1920x1080, fake omp, scratch data: Ctrl+Enter on a Git row opens a background diff tab (Git panel and row focus kept), Enter opens and focuses it, Split of two Sessions keeps both scroll positions through hide and show, Home with no Session fills the area with the chat button disabled, selecting a Session shows chat (FR-020).
 - [ ] T025 Five-reviewer gate (code, security, test, a11y, performance), PR with `Closes #2075`; comment on #1102, #732 closed, #878 retarget note, epic #1135 updated.
 
 ## Coverage
