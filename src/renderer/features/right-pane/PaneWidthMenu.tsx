@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import {
   RIGHT_PANE_DEFAULT_WIDTH_PX,
-  RIGHT_PANE_MAX_WIDTH_PX,
+  RIGHT_PANE_INTERIM_CAP_PX,
   RIGHT_PANE_MIN_WIDTH_PX,
   useRightPaneStore,
   useViewStore
@@ -27,7 +27,7 @@ import { toggleRightPane } from './toggle-right-pane'
 export const PANE_WIDTH_CHOICES = [
   { label: 'Narrow', widthPx: RIGHT_PANE_MIN_WIDTH_PX, icon: Minimize2Icon },
   { label: 'Default', widthPx: RIGHT_PANE_DEFAULT_WIDTH_PX, icon: PanelRightIcon },
-  { label: 'Wide', widthPx: RIGHT_PANE_MAX_WIDTH_PX, icon: Maximize2Icon }
+  { label: 'Wide', widthPx: RIGHT_PANE_INTERIM_CAP_PX, icon: Maximize2Icon }
 ] as const
 
 /** Sets the pane to a preset width, opening it first when it is collapsed. */

@@ -20,7 +20,7 @@ import { UsageView } from '@/features/usage/UsageView'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import {
   RIGHT_PANE_DEFAULT_WIDTH_PX,
-  RIGHT_PANE_MAX_WIDTH_PX,
+  RIGHT_PANE_INTERIM_CAP_PX,
   RIGHT_PANE_MIN_WIDTH_PX,
   useRepositoriesStore,
   useRightPaneStore,
@@ -269,7 +269,7 @@ export function App() {
               panelRef={rightPaneRef}
               defaultSize={RIGHT_PANE_DEFAULT_WIDTH_PX}
               minSize={RIGHT_PANE_MIN_WIDTH_PX}
-              maxSize={RIGHT_PANE_MAX_WIDTH_PX}
+              maxSize={RIGHT_PANE_INTERIM_CAP_PX}
               collapsible
               collapsedSize={0}
               onResize={(size, _id, prevSize) => {

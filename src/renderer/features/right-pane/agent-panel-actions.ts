@@ -1,6 +1,7 @@
 import { useFileExplorerStore, useGitChangesStore, usePinnedPanelsStore, useReadoutStore, useSessionsStore, useSubagentPanelStore, EMPTY_READOUT_ENTRY } from '@/state'
 import type { ExpandableNode } from '@/state/file-explorer-store'
 import type { GitChangesGroupKind } from '../../../shared/model'
+import { normaliseRelativePath } from '../../../shared/rightPane'
 
 export type AgentToolErrorCode = 'unknown_panel' | 'unknown_action' | 'invalid_input' | 'panel_unavailable' | 'action_failed'
 
@@ -25,16 +26,6 @@ export function fail(code: AgentToolErrorCode, message: string): AgentToolOutcom
 
 function succeed(value: Record<string, unknown> = {}): AgentToolOutcome {
   return { ok: true, value }
-}
-
-/** Worktree-relative only: an absolute or parent-escaping path must never reach a store or IPC call. */
-export function normaliseRelativePath(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null
-  const path = raw.replaceAll('\\', '/')
-  if (path === '' || path.includes('\0') || path.startsWith('/') || /^[A-Za-z]:/.test(path)) return null
-  const segments = path.split('/')
-  if (segments.some((segment) => segment === '..' || segment === '.' || segment === '')) return null
-  return segments.join('/')
 }
 
 function badPath(raw: unknown): AgentToolOutcome {

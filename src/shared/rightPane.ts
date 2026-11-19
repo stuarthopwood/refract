@@ -7,6 +7,16 @@
 export const MAX_DOCUMENT_TABS_PER_SESSION = 20
 export const MAX_DOCUMENT_PATH_BYTES = 1024
 
+/** Worktree-relative only: an absolute or parent-escaping path must never reach a store, a tab or IPC. Backslashes become `/`. */
+export function normaliseRelativePath(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const path = raw.replaceAll('\\', '/')
+  if (path === '' || path.includes('\0') || path.startsWith('/') || /^[A-Za-z]:/.test(path)) return null
+  const segments = path.split('/')
+  if (segments.some((segment) => segment === '..' || segment === '.' || segment === '')) return null
+  return segments.join('/')
+}
+
 export type PersistedDiffGroup = 'conflicts' | 'staged' | 'changes' | 'untracked'
 
 /** `group` is set for a diff tab only. */

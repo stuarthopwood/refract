@@ -27,6 +27,7 @@ import { useSessionHealthStore } from './session-health-store'
 import { useSubagentPanelStore } from './subagent-store'
 import { useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
+import { useDocumentTabsStore } from './document-tabs-store'
 import { useGitChangesStore } from './git-changes-store'
 import { useSplitStore } from './split-store'
 import { usePullRequestsLayoutStore } from './pull-requests-layout-store'
@@ -315,6 +316,8 @@ export function initStores(): void {
     usePullRequestsLayoutStore.getState().restoreFromSettings(settingsLoad.value.pullRequestsListWidthPx)
     restoreRightPane(settingsLoad.value.rightPane)
     startRightPanePersistence()
+    // Only on a real load: the `[]` fallback would wipe every Session's saved tabs.
+    if (sessionsLoad.ok) useDocumentTabsStore.getState().pruneSessions(new Set(sessionsLoad.value.map((session) => session.id)))
     resolveRestored()
     // Only on a real load: the `[]` fallback would wipe the saved parent collapse.
     if (sessionsLoad.ok) useSessionListStore.getState().pruneParents(liveParentIds(sessionsLoad.value))

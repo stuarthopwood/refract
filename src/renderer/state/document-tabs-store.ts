@@ -19,7 +19,7 @@ export interface DocumentViewState {
   scrollTop?: number
 }
 
-interface SessionDocuments {
+export interface SessionDocuments {
   tabs: DocumentTab[]
   /** The Session's selected document tab; null while a panel tab is selected. */
   activeId: string | null
