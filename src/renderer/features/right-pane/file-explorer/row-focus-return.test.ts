@@ -4,7 +4,7 @@ import { focusExplorerRow } from './row-focus-return'
 function stubDocument(row: unknown) {
   const querySelector = vi.fn(() => row)
   vi.stubGlobal('document', { querySelector })
-  vi.stubGlobal('CSS', { escape: (value: string) => value.replace(/"/g, '\\"') })
+  vi.stubGlobal('CSS', { escape: (value: string) => value.replace(/["\\]/g, '\\$&') })
   return querySelector
 }
 
