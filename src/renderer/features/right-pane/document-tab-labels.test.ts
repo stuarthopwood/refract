@@ -1,9 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
-
-// GitChangesGroup pulls the whole store barrel, which needs a browser `window`; the labels need none of it.
-vi.mock('@/state', () => ({ useGitChangesStore: () => undefined }))
+import { describe, expect, it } from 'vitest'
 import { documentTabAccessibleName, documentTabLabels, splitDocumentPath } from './document-tab-labels'
-import { diffGroupLabel } from './git-changes/GitChangesGroup'
 
 const file = (path: string) => ({ kind: 'file' as const, path })
 
@@ -50,12 +46,6 @@ describe('documentTabAccessibleName', () => {
 
   it('does not call a live tab stale', () => {
     expect(documentTabAccessibleName({ kind: 'diff', group: 'changes', path: 'a.ts', dead: false }, 'a.ts')).not.toContain('no longer changed')
-  })
-})
-
-describe('diffGroupLabel', () => {
-  it('reads Staged, Unstaged, Untracked and Conflicts', () => {
-    expect(['staged', 'changes', 'untracked', 'conflicts'].map((group) => diffGroupLabel(group as 'staged'))).toEqual(['Staged', 'Unstaged', 'Untracked', 'Conflicts'])
   })
 })
 

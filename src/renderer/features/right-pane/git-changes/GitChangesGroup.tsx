@@ -15,21 +15,8 @@ import { cn } from '@/lib/utils'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import type { RowActivation } from '../file-explorer/row-open'
 import { GitChangesFileRow } from './GitChangesFileRow'
+import { GROUP_LABELS } from './diff-group-label'
 import { focusNearestGroupTrigger } from './focus'
-
-const GROUP_LABELS: Record<GitChangesGroupKind, string> = {
-  conflicts: 'Conflicts',
-  staged: 'Staged',
-  changes: 'Changes',
-  untracked: 'Untracked'
-}
-
-// A file's own state, as a diff tab and the diff header show it: a tracked unstaged change reads "Unstaged", not "Changes".
-const DIFF_GROUP_LABELS: Record<GitChangesGroupKind, string> = { ...GROUP_LABELS, changes: 'Unstaged' }
-
-export function diffGroupLabel(group: GitChangesGroupKind): string {
-  return DIFF_GROUP_LABELS[group]
-}
 
 const BULK_ACTION: Record<GitChangesGroupKind, { label: string; icon: LucideIcon } | null> = {
   conflicts: null,

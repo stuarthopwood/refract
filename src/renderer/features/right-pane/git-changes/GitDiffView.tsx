@@ -6,7 +6,7 @@ import { useGitChangesStore } from '@/state'
 import { useAgentAnnouncementStore } from '@/state/agent-announcement-store'
 import { useScrollMemory } from '@/features/documents/useScrollMemory'
 import type { GitChangesGroupKind } from '../../../../shared/model'
-import { diffGroupLabel } from './GitChangesGroup'
+import { diffGroupLabel } from './diff-group-label'
 import { DocumentPathActions, type PathActionCallbacks } from '../file-explorer/path-actions'
 import {
   DIFF_LOAD_ERROR,

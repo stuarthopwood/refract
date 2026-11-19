@@ -1,5 +1,5 @@
 import type { GitChangesGroupKind } from '../../../shared/model'
-import { diffGroupLabel } from './git-changes/GitChangesGroup'
+import { diffGroupLabel } from './git-changes/diff-group-label'
 
 export interface LabelledTab {
   kind: 'file' | 'diff'
