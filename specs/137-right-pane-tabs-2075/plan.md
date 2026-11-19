@@ -13,9 +13,9 @@ Add a per-Session document-tab model beside the existing panel tabs, extend `Pan
 | Tab strip | `PanelTabBar` extended with tab items; `COMPACT_HIDE` (line 16) | `features/right-pane/PanelTabBar.tsx` |
 | Tab look | `TAB_LOOK_CLASS` (no fill, pill or box; #1302) | `components/ui/tabs.tsx:9` |
 | Non-registry tabs | pinned panels precedent | `usePinnedPanelsStore`, `panel-registry.ts` `isPinnedPanelId` |
-| Pane store and width constants | `useRightPaneStore`; `RIGHT_PANE_MAX_WIDTH_PX` | `state/right-pane-store.ts:7` |
+| Pane store and width constants | `useRightPaneStore`; `RIGHT_PANE_MAX_WIDTH_PX` at `81ecabf4`, now `RIGHT_PANE_SANITY_MAX_WIDTH_PX` | `state/right-pane-store.ts:9` |
 | Persistence, debounce, snapshot | `startRightPanePersistence`, `restoreRightPane` | `features/right-pane/right-pane-persistence.ts` |
-| Rust settings row, clamp | `RightPaneState`, `WIDTH_MAX` (line 14, mirrors the renderer constant) | `src-tauri/src/store/right_pane.rs`; `shared/rightPane.ts` |
+| Rust settings row, clamp | `RightPaneState`, `WIDTH_MAX` (line 14, 4096, mirrors `RIGHT_PANE_SANITY_MAX_WIDTH_PX`) | `src-tauri/src/store/right_pane.rs`; `shared/rightPane.ts` |
 | Pane toggle (template for chat toggle) | `toggleRightPane` | `features/right-pane/toggle-right-pane.ts` |
 | Palette chord and guards | `toggle-right-pane` (line 129), `useChordDispatcher`, `chordMatches` | `features/palette/builtinActions.ts`, `useChordDispatcher.ts`, `actionRegistry.ts:87` |
 | Rail buttons | `IconRail.tsx`, `CountBadge` | `features/right-pane/IconRail.tsx`, `components/ui/count-badge.tsx` |

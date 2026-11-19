@@ -28,7 +28,7 @@ Consistent after the fixes below. No open gaps.
 |---|---|
 | Ctrl+Shift+H collides with an in-app chord | No. Existing chords: Ctrl+Shift+P, X, B, `\`, 0, and Ctrl+W, Ctrl+K, Ctrl+N. WebView2 behaviour stays a live check (T024). |
 | `builtinActions.ts:129` is `toggle-right-pane` | Right (the `id` sits at line 129). `close-chat-pane` is at 117, its `when()` at 122; `focus-other-pane`'s `when()` at 144. |
-| Rust `WIDTH_MAX` mirrors the renderer | Right: `right_pane.rs:14` is 520, mirroring `RIGHT_PANE_MAX_WIDTH_PX` (`right-pane-store.ts:7`). |
+| Rust `WIDTH_MAX` mirrors the renderer | Right at `81ecabf4`: `right_pane.rs:14` was 520, mirroring `RIGHT_PANE_MAX_WIDTH_PX` (`right-pane-store.ts:7`). Since T017 and T020 both are a 4096 sanity ceiling: Rust `WIDTH_MAX` (`right_pane.rs:14`) mirrors the renderer's `RIGHT_PANE_SANITY_MAX_WIDTH_PX`, a guard against a corrupt row, not a layout cap. |
 | M6: no window minimum | Confirmed. `tauri.conf.json` sets no `minWidth`; no `min_inner_size` anywhere in `src-tauri`. `lib.rs:280` opens at 1280 by 800, and `window_state.rs:17-18` (`MIN_WIDTH` 800, `MIN_HEIGHT` 500) clamps only a restored saved size at startup (line 91), so you can still resize below 800 px. The spec Grounding and edge cases say so. |
 | `previewRequestSeq` | `file-explorer-store.ts:176`, keyed by Session only; the spec now says file tabs key it by Session and path. |
 | `watcherRefCounts` | In both `GitChangesPanel.tsx:16` and `FileExplorerPanel.tsx:72`. |
