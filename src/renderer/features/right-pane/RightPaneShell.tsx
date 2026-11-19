@@ -15,14 +15,14 @@ import { SessionUsagePanel } from '@/features/usage/SessionUsagePanel'
 import { PinnedIssuePanel } from './pinned/PinnedIssuePanel'
 import { PinnedPullRequestPanel } from './pinned/PinnedPullRequestPanel'
 import { resolveActiveTab } from '@/state/right-pane-store'
-import { useDocumentTabsStore, type DocumentTab } from '@/state/document-tabs-store'
+import { useSessionDocumentTabs } from './useSessionDocumentTabs'
 import { DocumentTabView } from '@/features/documents/DocumentTabView'
 import { useDiffTabLiveness } from '@/features/documents/useDiffTabLiveness'
 import { activeItemKey, buildTabItems, tabDomIds } from './tab-items'
 import { isGenuineOpen, openFocusTarget, shellLayout } from './shell-tabs'
 import { focusDocumentTab } from './document-tab-focus'
-
-const NO_TABS: DocumentTab[] = []
+import { focusLocation } from './focus-return-tracker'
+import { isFocusStranded, shouldRestoreFocusAfterSwitch } from './pane-focus-targets'
 
 interface RightPaneShellProps {
   sessionId: string | null
@@ -31,8 +31,8 @@ interface RightPaneShellProps {
 export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
   const storePanelId = useRightPaneStore((s) => s.activePanelId)
-  const documents = useDocumentTabsStore((s) => (sessionId ? s.bySession[sessionId] : undefined))
-  const documentTabs = documents?.tabs ?? NO_TABS
+  const documents = useSessionDocumentTabs(sessionId)
+  const documentTabs = documents.tabs
   const activeKey = resolveActiveTab(sessionId, storePanelId, documents)
   const activePanelId = activeKey?.kind === 'panel' ? activeKey.id : null
   const activeKind = activeKey?.kind
@@ -40,6 +40,8 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const layout = shellLayout(openPanelIds.length + documentTabs.length)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
   const contentRef = useRef<HTMLDivElement>(null)
+  const focusInStripRef = useRef(false)
+  const prevSessionRef = useRef(sessionId)
   const paneOpen = useRightPaneStore((s) => s.open)
   useDiffTabLiveness(sessionId)
   // Panel size changes instantly (#678); only content fades and slides in; closing is ignored.
@@ -69,6 +71,17 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
     if (target !== 'none') contentRef.current?.focus()
   }, [openPanelIds, documentTabs, tabKey, activeKind, layout, sessionId])
 
+  // A Session switch unmounts the strip button that held focus, which drops it to the body; land on the new active tab, or the content when it has no button.
+  useEffect(() => {
+    if (prevSessionRef.current === sessionId) return
+    prevSessionRef.current = sessionId
+    const wasInStrip = focusInStripRef.current
+    focusInStripRef.current = false
+    if (!shouldRestoreFocusAfterSwitch(true, wasInStrip, isFocusStranded(document.activeElement, document.body))) return
+    const tab = activeKey ? document.getElementById(tabDomIds(activeKey).tabId) : null
+    ;(tab ?? contentRef.current)?.focus()
+  }, [sessionId, activeKey])
+
   if (layout === 'launcher') {
     return (
       <div data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
@@ -84,7 +97,18 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const ids = activeKey ? tabDomIds(activeKey) : null
 
   return (
-    <div id="right-pane-active-panel" data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
+    <div
+      id="right-pane-active-panel"
+      data-right-pane-shell
+      className="relative flex h-full flex-col overflow-hidden bg-sidebar-right"
+      onFocus={(event) => {
+        focusInStripRef.current = focusLocation(event.target, document.body) === 'tab-strip'
+      }}
+      onBlur={(event) => {
+        // A removed element reports a disconnected target; that is the case the Session-switch restore needs to remember.
+        if (event.target.isConnected && !event.currentTarget.contains(event.relatedTarget)) focusInStripRef.current = false
+      }}
+    >
       <PanelTabBar sessionId={sessionId} />
       <div
         ref={contentRef}
