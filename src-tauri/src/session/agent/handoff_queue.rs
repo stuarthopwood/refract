@@ -82,6 +82,14 @@ fn failure_reason(failed: StartThenSendError) -> String {
     }
 }
 
+/// The reason is flattened and capped, because it is prefixed onto the agent's next prompt.
+fn failed_notice(reason: &str) -> String {
+    format!(
+        "Handoff failed: {}",
+        crate::agent_tools::approval::clip_line(reason)
+    )
+}
+
 impl SessionAgent {
     /// Runs the action queued during the turn that settled as `generation`. The slot is read under the
     /// lock that checks the Session is still idle on that settle: a follow-up turn that already
@@ -96,6 +104,11 @@ impl SessionAgent {
             take_queued_handoff(&mut state, generation)
         };
         let Some(queued) = queued else { return };
+        if let Some(reason) = self.settle_refusal(queued.sender.as_ref()).await {
+            self.append_notice(format!("Handoff dropped: {reason}"), "error")
+                .await;
+            return;
+        }
         let outcome = match queued.action {
             HandoffAction::New { prompt } => {
                 self.start_handoff_conversation(prompt, queued.sender).await
@@ -103,10 +116,40 @@ impl SessionAgent {
             HandoffAction::Switch { file } => self.switch_handoff_conversation(file).await,
         };
         if let Err(reason) = outcome {
-            let notice = format!("Handoff failed: {reason}");
+            let notice = failed_notice(&reason);
             self.append_notice(notice.clone(), "error").await;
             self.state.lock().await.pending_agent_notice = Some(notice);
         }
+    }
+
+    /// Why the action queued mid-turn may no longer run: the call-time target-state checks again,
+    /// since the Session can be paused, archived or deleted, or the sender moved, while the turn ran.
+    async fn settle_refusal(&self, sender: Option<&(String, String)>) -> Option<String> {
+        if crate::ipc::sessions_lifecycle::delete_in_flight::is_deleting(&self.session_id) {
+            return Some("the Session is being deleted".to_string());
+        }
+        if self.is_paused().await {
+            return Some("the Session is paused".to_string());
+        }
+        let sessions = self.registry.lock().await.snapshot().sessions;
+        let Some(me) = sessions.iter().find(|s| s.id == self.session_id) else {
+            return Some("the Session no longer exists".to_string());
+        };
+        if me.archived_at.is_some() {
+            return Some("the Session is archived".to_string());
+        }
+        let (_, caller_id) = sender?;
+        let Some(caller) = sessions.iter().find(|s| s.id == *caller_id) else {
+            return Some("the sending Session no longer exists".to_string());
+        };
+        if me.is_personal() || caller.repository_id != me.repository_id {
+            return Some("the Session is outside the sending Session's Project".to_string());
+        }
+        let ancestors = crate::agent_tools::sessions_end::ancestors_of(&sessions, caller_id);
+        if ancestors.contains(&self.session_id.as_str()) {
+            return Some("the Session is now an ancestor of the sending Session".to_string());
+        }
+        None
     }
 
     async fn start_handoff_conversation(
@@ -182,8 +225,13 @@ impl SessionAgent {
         sender: Option<(String, String)>,
     ) -> Result<QueueOutcome, AgentError> {
         let mut state = self.state.lock().await;
-        // An odd generation is a running turn; a stopped Session has no turn left to wait for.
-        if state.turn_generation % 2 == 0 || state.status == SessionStatus::Stopped {
+        // A launched Session sits at an odd generation before any turn, so the generation alone
+        // cannot say a turn is running; only a busy status with an odd generation can.
+        let mid_turn = matches!(
+            state.status,
+            SessionStatus::Working | SessionStatus::NeedsYou
+        ) && state.turn_generation % 2 == 1;
+        if !mid_turn {
             return Ok(QueueOutcome::NotMidTurn);
         }
         try_queue(&mut state, action, sender)?;

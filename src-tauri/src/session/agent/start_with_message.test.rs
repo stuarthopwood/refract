@@ -223,3 +223,28 @@ async fn a_stopped_session_takes_the_launch_path() {
     assert_ne!(err.error.code, "not-idle");
     fx.finish().await;
 }
+
+#[tokio::test]
+async fn launching_from_stopped_discards_the_pending_notice() {
+    let fx = fixture_with(Stub {
+        stopped: true,
+        ..Stub::default()
+    })
+    .await;
+    let worktree = fx
+        .agent
+        .registry
+        .lock()
+        .await
+        .get_session(&fx.agent.session_id)
+        .and_then(|s| s.worktree_path.clone())
+        .unwrap();
+    tokio::fs::create_dir_all(&worktree).await.unwrap();
+    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: old".to_string());
+
+    // The launch itself may or may not succeed here; only the notice reset is under test.
+    let _ = fx.agent.start_with_conversation(None).await;
+
+    assert!(fx.agent.state.lock().await.pending_agent_notice.is_none());
+    fx.finish().await;
+}

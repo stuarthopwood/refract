@@ -194,6 +194,23 @@ async fn queue_handoff_reports_not_mid_turn_when_stopped() {
     fx.finish().await;
 }
 
+#[tokio::test]
+async fn queue_handoff_reports_not_mid_turn_for_an_idle_agent_with_the_launch_generation() {
+    let fx = fixture(&[], &[]).await;
+    {
+        let mut state = fx.agent.state.lock().await;
+        // A launched Session starts at the odd "not yet settled" generation and no turn has run.
+        state.status = crate::session::agent::SessionStatus::Idle;
+        assert_eq!(state.turn_generation % 2, 1);
+    }
+
+    let outcome = fx.agent.queue_handoff(new_with("go"), None).await.unwrap();
+
+    assert_eq!(outcome, QueueOutcome::NotMidTurn);
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
+    fx.finish().await;
+}
+
 // Cancellation: a stopped turn must not hand off (#1861).
 
 /// A running turn with an action queued against it.
@@ -319,5 +336,65 @@ async fn a_session_envelope_leaves_the_notice_for_the_users_prompt() {
 
     assert_eq!(sent_prompts(&fx).await, ["<envelope/>"]);
     assert!(fx.agent.state.lock().await.pending_agent_notice.is_some());
+    fx.finish().await;
+}
+
+// The failure reason reaches the agent's prompt, so it is one capped line.
+
+#[test]
+fn the_failure_notice_is_one_capped_line_without_bidi_characters() {
+    let notice = super::failed_notice(&format!("a\nb\u{202E}c{}", "x".repeat(500)));
+
+    assert!(notice.starts_with("Handoff failed: a b"));
+    assert!(!notice.contains(['\n', '\u{202E}']));
+    assert!(notice.chars().count() < 250);
+}
+
+// A deferred action is checked again when its turn settles (#1861).
+
+async fn settle_with_queued(
+    fx: &crate::session::agent::pause_subagents::fixture::Fixture,
+    sender: Option<(String, String)>,
+) {
+    {
+        let mut state = fx.agent.state.lock().await;
+        state.status = crate::session::agent::SessionStatus::Working;
+        state.turn_generation = 1;
+        try_queue(&mut state, new_with("later"), sender).unwrap();
+        // Settling moves the generation on to the next even number.
+        state.turn_generation = 2;
+        state.status = crate::session::agent::SessionStatus::Idle;
+    }
+    fx.agent.run_settled_handoff(2).await;
+}
+
+#[tokio::test]
+async fn a_deferred_action_is_dropped_when_the_session_is_being_deleted() {
+    let fx = fixture(&[], &[]).await;
+    let _claim =
+        crate::ipc::sessions_lifecycle::delete_in_flight::claim(&fx.agent.session_id).unwrap();
+
+    settle_with_queued(&fx, None).await;
+
+    assert!(fx.agent.state.lock().await.queued_handoff.is_none());
+    assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    assert_eq!(
+        fx.notices().await,
+        ["Handoff dropped: the Session is being deleted"]
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_deferred_action_is_dropped_when_the_sending_session_is_gone() {
+    let fx = fixture(&[], &[]).await;
+
+    settle_with_queued(&fx, Some(("Planner".into(), "no-such-session".into()))).await;
+
+    assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    assert_eq!(
+        fx.notices().await,
+        ["Handoff dropped: the sending Session no longer exists"]
+    );
     fx.finish().await;
 }

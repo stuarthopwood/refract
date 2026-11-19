@@ -18,6 +18,7 @@ const [log, gateFile, configJson] = process.argv.slice(2);
 const cfg = JSON.parse(configJson);
 const live = new Set(cfg.running);
 const uncancellable = new Set(cfg.stuck);
+let failedOnce = false;
 function reply(cmd, success, data, error) {
   const body = { id: cmd.id, type: 'response', command: cmd.type, success };
   if (success) body.data = data;
@@ -35,6 +36,10 @@ function answer(cmd) {
     const cancelled = (live.has(cmd.subagentId) || cmd.subagentId.startsWith('late-')) && !uncancellable.has(cmd.subagentId);
     if (cancelled) live.delete(cmd.subagentId);
     return reply(cmd, true, { cancelled });
+  }
+  if (cmd.type === cfg.failOnce && !failedOnce) {
+    failedOnce = true;
+    return reply(cmd, false, null, 'refused');
   }
   return reply(cmd, true, {});
 }
@@ -75,6 +80,8 @@ pub(in crate::session::agent) struct Stub<'a> {
     pub gated: Option<&'a str>,
     /// The agent has no process, like a stopped Session.
     pub stopped: bool,
+    /// The first command of this type answers `success:false`; later ones succeed.
+    pub fail_once: Option<&'a str>,
 }
 
 pub(in crate::session::agent) struct Fixture {
@@ -169,6 +176,7 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
         "listError": stub.list_error,
         "cancelErrors": stub.cancel_errors.iter().copied().collect::<std::collections::HashMap<_, _>>(),
         "gated": stub.gated,
+        "failOnce": stub.fail_once,
     });
     tokio::fs::write(&script, STUB).await.unwrap();
     let mut command = tokio::process::Command::new("node");

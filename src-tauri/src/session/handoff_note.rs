@@ -12,12 +12,14 @@ pub(super) fn marked_first_user(items: &[Arc<TranscriptItem>]) -> Option<(usize,
         .iter()
         .enumerate()
         .find(|(_, item)| matches!(item.as_ref(), TranscriptItem::User { .. }))?;
+    // Checked on the borrowed item: this runs after every streamed frame, and an unmarkable
+    // first message must not be cloned each time.
+    if !matches!(item.as_ref(), TranscriptItem::User { source: None, .. }) {
+        return None;
+    }
     let mut marked = item.as_ref().clone();
-    match &mut marked {
-        TranscriptItem::User { source, .. } if source.is_none() => {
-            *source = Some(MessageSource::Handoff);
-        }
-        _ => return None,
+    if let TranscriptItem::User { source, .. } = &mut marked {
+        *source = Some(MessageSource::Handoff);
     }
     Some((index, marked))
 }
