@@ -314,45 +314,56 @@ fn half_hour_zone_day_buckets_read_exact_rows() {
     assert_eq!((s.active_days, s.month_active_days), (1, 1));
 }
 
+/// Records one 100-token, $1 call in `file`, `ago` ms before NOW, as `agent` (#2070 fixtures).
+fn record_call(conn: &Connection, id: &str, file: &str, agent: &str, ago: i64) {
+    let row = MessageRow {
+        entry_id: id.into(),
+        ts: NOW - ago,
+        session_id: "s".into(),
+        provider: "github-copilot".into(),
+        model: "m1".into(),
+        agent_type: agent.into(),
+        project_label: "proj".into(),
+        total_tokens: 100,
+        cost_total: 1.0,
+        ..MessageRow::default()
+    };
+    assert!(record_message(conn, file, &row).unwrap());
+}
+
 #[test]
-fn session_file_matches_one_conversation_and_today_matches_the_usage_view() {
+fn session_file_matches_one_conversation_with_its_subagent_folder_and_today_matches_the_usage_view()
+{
     let conn = scratch_db();
-    for (id, file, ago) in [
-        ("a", "C:/s/a/one.jsonl", 60_000),
-        ("b", "C:/s/a/two.jsonl", 60_000),
-        ("c", "C:/s/a/one.jsonl", 3 * DAY_MS),
-        ("d", "C:/s/a/one.jsonl.bak", 60_000),
+    for (id, file, agent, ago) in [
+        ("a", "C:/s/a/one.jsonl", "main", 60_000),
+        ("b", "C:/s/a/two.jsonl", "main", 60_000),
+        ("c", "C:/s/a/one.jsonl", "main", 3 * DAY_MS),
+        ("d", "C:/s/a/one.jsonl.bak", "main", 60_000),
+        ("e", "C:/s/a/one/task/0.jsonl", "subagent", 60_000),
+        ("f", "C:/s/a/one/__advisor1.jsonl", "advisor", 60_000),
+        ("g", "C:/s/a/onex/y.jsonl", "subagent", 60_000),
+        ("h", "C:/s/a/two/task/0.jsonl", "subagent", 60_000),
     ] {
-        let row = MessageRow {
-            entry_id: id.into(),
-            ts: NOW - ago,
-            session_id: "s".into(),
-            provider: "github-copilot".into(),
-            model: "m1".into(),
-            agent_type: "main".into(),
-            project_label: "proj".into(),
-            total_tokens: 100,
-            cost_total: 1.0,
-            ..MessageRow::default()
-        };
-        assert!(record_message(&conn, file, &row).unwrap());
+        record_call(&conn, id, file, agent, ago);
     }
-    // Backslashes and case differ from the stored value; the match folds both.
+    // Backslashes and case differ from the stored value; the match folds both. The file, its
+    // subagent and its advisor count; `.bak`, the sibling `onex` folder and `two` do not.
     let one = Filters {
         session_file: Some(r"c:\S\A\One.jsonl".into()),
         ..filters("all")
     };
-    assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 2);
+    assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 4);
     let one_today = Filters {
         session_file: Some("C:/s/a/one.jsonl".into()),
         ..filters("today")
     };
-    assert_eq!(summary(&conn, &one_today, &ctx()).unwrap().calls, 1);
+    assert_eq!(summary(&conn, &one_today, &ctx()).unwrap().calls, 3);
     let dir_today = Filters {
         session_dir: Some("C:/s/a".into()),
         ..filters("today")
     };
-    assert_eq!(summary(&conn, &dir_today, &ctx()).unwrap().calls, 3);
+    assert_eq!(summary(&conn, &dir_today, &ctx()).unwrap().calls, 7);
     let empty = Filters {
         session_file: Some("  ".into()),
         ..filters("all")
@@ -361,4 +372,108 @@ fn session_file_matches_one_conversation_and_today_matches_the_usage_view() {
         summary(&conn, &empty, &ctx()),
         Err(QueryError::InvalidArgument(_))
     ));
+}
+
+#[test]
+fn single_conversation_session_total_equals_its_conversation_total() {
+    let conn = scratch_db();
+    for (id, file, agent) in [
+        ("a", "C:/s/a/one.jsonl", "main"),
+        ("b", "C:/s/a/one/task/0.jsonl", "subagent"),
+        ("c", "C:/s/a/one/__advisor1.jsonl", "advisor"),
+    ] {
+        record_call(&conn, id, file, agent, 60_000);
+    }
+    let session = Filters {
+        session_dir: Some("C:/s/a".into()),
+        ..filters("all")
+    };
+    let conversation = Filters {
+        session_file: Some("C:/s/a/one.jsonl".into()),
+        ..filters("all")
+    };
+    let (s, c) = (
+        summary(&conn, &session, &ctx()).unwrap(),
+        summary(&conn, &conversation, &ctx()).unwrap(),
+    );
+    assert_eq!((s.calls, s.total_tokens), (c.calls, c.total_tokens));
+    assert!((s.spend_usd - c.spend_usd).abs() < 1e-9);
+}
+
+#[test]
+fn main_agent_scope_is_the_conversation_file_alone() {
+    let conn = scratch_db();
+    // `e` and `f` are main-typed rows outside the file (a sibling's folder, a sibling-prefix folder):
+    // `agent_type = main` alone would count them, so only the file match excludes them.
+    for (id, file, agent) in [
+        ("a", "C:/s/a/one.jsonl", "main"),
+        ("b", "C:/s/a/one/task/0.jsonl", "subagent"),
+        ("c", "C:/s/a/one/__advisor1.jsonl", "advisor"),
+        ("d", "C:/s/a/two.jsonl", "main"),
+        ("e", "C:/s/a/two/main-like.jsonl", "main"),
+        ("f", "C:/s/a/onex/y.jsonl", "main"),
+    ] {
+        record_call(&conn, id, file, agent, 60_000);
+    }
+    let main = Filters {
+        session_file: Some("C:/s/a/one.jsonl".into()),
+        agent_type: Some("main".into()),
+        ..filters("all")
+    };
+    assert_eq!(summary(&conn, &main, &ctx()).unwrap().calls, 1);
+}
+
+#[test]
+fn posix_session_file_matches_its_subagent_folder() {
+    let conn = scratch_db();
+    for (id, file, agent) in [
+        ("a", "/s/a/one.jsonl", "main"),
+        ("b", "/s/a/one/task/0.jsonl", "subagent"),
+        ("c", "/s/a/two.jsonl", "main"),
+    ] {
+        record_call(&conn, id, file, agent, 60_000);
+    }
+    let one = Filters {
+        session_file: Some("/s/a/one.jsonl".into()),
+        ..filters("all")
+    };
+    assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 2);
+}
+
+#[test]
+fn session_file_wildcard_characters_match_literally() {
+    let conn = scratch_db();
+    for (id, file) in [
+        ("a", "C:/s/a_b/one.jsonl"),
+        ("b", "C:/s/aXb/one.jsonl"),
+        ("c", "C:/s/a%b/one.jsonl"),
+        ("d", "C:/s/aXXb/one.jsonl"),
+    ] {
+        record_call(&conn, id, file, "main", 60_000);
+    }
+    for file in ["C:/s/a_b/one.jsonl", "C:/s/a%b/one.jsonl"] {
+        let one = Filters {
+            session_file: Some(file.into()),
+            ..filters("all")
+        };
+        assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 1, "{file}");
+    }
+}
+
+#[test]
+fn session_file_without_jsonl_suffix_matches_itself_and_its_folder_only() {
+    let conn = scratch_db();
+    for (id, file) in [
+        ("a", "C:/s/a/one"),
+        ("b", "C:/s/a/one/task/0.jsonl"),
+        ("c", "C:/s/a/one.jsonl"),
+        ("d", "C:/s/a/onex/y.jsonl"),
+    ] {
+        record_call(&conn, id, file, "main", 60_000);
+    }
+    let one = Filters {
+        session_file: Some("C:/s/a/one".into()),
+        ..filters("all")
+    };
+    assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 2);
 }

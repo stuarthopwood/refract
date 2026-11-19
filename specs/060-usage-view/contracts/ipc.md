@@ -30,7 +30,7 @@ export interface UsageStatus { running: boolean; sessionsSeen: number; sessionsD
 | `usage.calls` | `filters, sort: {key, dir}, page: {index, size<=100}` | `{ rows, total }`; `key` from an allowlist |
 | `usage.frustration` | `filters` | `{ yelling, profanity, blame, messages, daily: {day, mood}[] }` |
 | `usage.budget` | none | `{ copilot: {percentUsed, creditsUsed, entitlement, remaining, resetsAt, burnPerDay, capDate} \| null, providers: {provider, label, used, limit, unit, resetsAt}[], unavailable?: string }` |
-| `usage.getPrefs` | none | `{ jokes: boolean, filters: UsageFilters, sessionScope: 'session' \| 'conversation', sessionRange: 'all' \| 'today' }` |
+| `usage.getPrefs` | none | `{ jokes: boolean, filters: UsageFilters, sessionScope: 'session' \| 'conversation' \| 'main', sessionRange: 'all' \| 'today' }` |
 | `usage.setPrefs` | `{ jokes?, filters?, sessionScope?, sessionRange? }` | the new prefs; `sessionScope` / `sessionRange` outside the allowlist is `invalid-argument` |
 
 Event `usage.progress` (`UsageStatus`) is emitted at most once a second while an ingest runs, and once when it ends.

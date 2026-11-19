@@ -31,9 +31,14 @@ pub(super) fn clause(w: &mut Where, dir: &str, column: &str) -> QueryResult<Stri
     ))
 }
 
-/// `column` equal to one conversation file, folded the same way as the directory match so a
-/// registry path and the stored `session_file` agree on separators and ASCII case.
+/// `column` is one conversation: its `.jsonl` file or anything under the sibling folder of the same
+/// base name (its subagent and advisor transcripts), folded like the directory match (#2070).
 pub(super) fn file_clause(w: &mut Where, file: &str, column: &str) -> QueryResult<String> {
-    let p = w.bind(Value::Text(normalise(file)?));
-    Ok(format!("lower(replace({column}, '/', '\\')) = {p}"))
+    let exact = normalise(file)?;
+    let base = exact.strip_suffix(".jsonl").unwrap_or(&exact).to_string();
+    let p = w.bind(Value::Text(exact));
+    let folder = clause(w, &base, column)?;
+    Ok(format!(
+        "(lower(replace({column}, '/', '\\')) = {p} OR {folder})"
+    ))
 }
