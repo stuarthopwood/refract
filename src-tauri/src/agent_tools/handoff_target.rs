@@ -27,6 +27,15 @@ impl Relationship {
     }
 }
 
+/// Only a Session outside the caller's own tree asks, and `yolo` skips even that.
+pub fn needs_card(relationship: Relationship, yolo: bool) -> bool {
+    relationship == Relationship::Sibling && !yolo
+}
+
+/// The notice for a deferred action queued without a card whose target has since left the caller's tree.
+pub const MOVED_OUT_OF_TREE: &str =
+    "the Session moved out of the sending Session's tree after the action was queued";
+
 /// Why a Session cannot be the target of the caller's handoff.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TargetRefusal {

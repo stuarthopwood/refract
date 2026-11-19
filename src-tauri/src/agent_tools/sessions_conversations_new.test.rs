@@ -38,6 +38,43 @@ async fn new_in_a_mid_turn_session_is_scheduled_and_nothing_starts() {
 }
 
 #[tokio::test]
+async fn new_in_a_descendant_queues_without_a_card_and_says_so() {
+    let mut fx = fake(vec![]).await;
+    fx.mid_turn = true;
+    let args = json!({ "prompt": "go", "session_id": "kid" });
+
+    run_with(&fx, ConvTool::New, &args).await.unwrap();
+
+    assert!(fx.cards.lock().unwrap().is_empty());
+    assert!(fx.calls()[0].ends_with(":asked=false"), "{:?}", fx.calls());
+}
+
+#[tokio::test]
+async fn new_in_a_mid_turn_sibling_queues_after_the_card_and_says_so() {
+    let mut fx = fake(vec![]).await;
+    fx.mid_turn = true;
+    let args = json!({ "prompt": "go", "session_id": "side" });
+
+    run_with(&fx, ConvTool::New, &args).await.unwrap();
+
+    assert_eq!(fx.cards.lock().unwrap().len(), 1);
+    assert!(fx.calls()[0].ends_with(":asked=true"), "{:?}", fx.calls());
+}
+
+#[tokio::test]
+async fn new_in_a_mid_turn_sibling_in_yolo_queues_without_a_card() {
+    let mut fx = fake(vec![]).await;
+    fx.mid_turn = true;
+    fx.yolo = true;
+    let args = json!({ "prompt": "go", "session_id": "side" });
+
+    run_with(&fx, ConvTool::New, &args).await.unwrap();
+
+    assert!(fx.cards.lock().unwrap().is_empty());
+    assert!(fx.calls()[0].ends_with(":asked=false"), "{:?}", fx.calls());
+}
+
+#[tokio::test]
 async fn new_in_a_sibling_asks_first_and_sends_the_prompt_in_an_envelope() {
     let fx = fake(vec![]).await;
     let args = json!({ "prompt": "build it", "session_id": "side" });

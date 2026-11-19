@@ -62,12 +62,13 @@ impl ConvHost for ConvFake {
         id: &str,
         action: HandoffAction,
         sender: Option<(String, String)>,
+        asked: bool,
     ) -> Result<QueueOutcome, ToolError> {
         self.note_gate().await;
         self.calls
             .lock()
             .unwrap()
-            .push(format!("queue:{id}:{action:?}:{sender:?}"));
+            .push(format!("queue:{id}:{action:?}:{sender:?}:asked={asked}"));
         Ok(if self.mid_turn {
             QueueOutcome::Queued
         } else {
@@ -354,6 +355,7 @@ async fn a_mid_turn_target_defers_and_nothing_starts() {
             prompt: "go".into(),
         },
         None,
+        false,
     )
     .await
     .unwrap();
@@ -375,6 +377,7 @@ async fn a_foreign_prompt_is_wrapped_by_the_envelope() {
             prompt: "build it".into(),
         },
         sender,
+        false,
     )
     .await
     .unwrap();
@@ -395,6 +398,7 @@ async fn a_self_handoff_sends_the_raw_note_marked_as_a_handoff() {
             prompt: "note".into(),
         },
         None,
+        false,
     )
     .await
     .unwrap();
@@ -413,6 +417,7 @@ async fn an_idle_switch_runs_at_once() {
             file: "b.jsonl".into(),
         },
         None,
+        false,
     )
     .await
     .unwrap();

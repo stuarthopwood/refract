@@ -27,7 +27,7 @@ pub(super) async fn new_conversation<H: ConvHost>(
     let (gate, _tree) = recheck(host, &gate, asked).await?;
     let sender = sender_for(&gate, host.caller_id());
     let id = gate.target.id;
-    let dispatched = dispatch(host, &id, HandoffAction::New { prompt }, sender).await?;
+    let dispatched = dispatch(host, &id, HandoffAction::New { prompt }, sender, asked).await?;
     Ok(json!({ "outcome": outcome_word(dispatched, "started"), "id": id }))
 }
 
@@ -59,7 +59,7 @@ pub(super) async fn switch_conversation<H: ConvHost>(
     let sender = sender_for(&gate, host.caller_id());
     let id = gate.target.id;
     let action = HandoffAction::Switch { file: chosen.file };
-    let dispatched = dispatch(host, &id, action, sender).await?;
+    let dispatched = dispatch(host, &id, action, sender, asked).await?;
     Ok(json!({
         "outcome": outcome_word(dispatched, "switched"),
         "id": id,

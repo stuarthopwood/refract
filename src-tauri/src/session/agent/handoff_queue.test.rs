@@ -16,13 +16,14 @@ async fn try_queue_accepts_one_action_and_refuses_a_second() {
     let mut state = fx.agent.state.lock().await;
     state.turn_generation = 3;
 
-    try_queue(&mut state, new_with("first"), None).unwrap();
+    try_queue(&mut state, new_with("first"), None, false).unwrap();
     let err = try_queue(
         &mut state,
         HandoffAction::Switch {
             file: "b.jsonl".into(),
         },
         None,
+        false,
     )
     .unwrap_err();
 
@@ -34,6 +35,7 @@ async fn try_queue_accepts_one_action_and_refuses_a_second() {
             generation: 3,
             action: new_with("first"),
             sender: None,
+            asked: false,
         })
     );
     drop(state);
@@ -49,6 +51,7 @@ async fn the_sender_is_kept_for_the_envelope() {
         &mut state,
         new_with("note"),
         Some(("Planner".into(), "s-1".into())),
+        true,
     )
     .unwrap();
 
@@ -57,6 +60,7 @@ async fn the_sender_is_kept_for_the_envelope() {
         queued.sender,
         Some(("Planner".to_string(), "s-1".to_string()))
     );
+    assert!(queued.asked);
     drop(state);
     fx.finish().await;
 }
@@ -66,7 +70,7 @@ async fn take_queued_handoff_empties_the_slot() {
     let fx = fixture(&[], &[]).await;
     let mut state = fx.agent.state.lock().await;
     state.turn_generation = 1;
-    try_queue(&mut state, new_with("go"), None).unwrap();
+    try_queue(&mut state, new_with("go"), None, false).unwrap();
 
     let taken = take_queued_handoff(&mut state, 2).unwrap();
 
@@ -74,7 +78,7 @@ async fn take_queued_handoff_empties_the_slot() {
     assert!(state.queued_handoff.is_none());
     assert!(take_queued_handoff(&mut state, 2).is_none());
     // The slot is free again for the next turn.
-    try_queue(&mut state, new_with("again"), None).unwrap();
+    try_queue(&mut state, new_with("again"), None, false).unwrap();
     drop(state);
     fx.finish().await;
 }
@@ -84,7 +88,7 @@ async fn take_queued_handoff_leaves_an_action_from_the_running_turn() {
     let fx = fixture(&[], &[]).await;
     let mut state = fx.agent.state.lock().await;
     state.turn_generation = 5;
-    try_queue(&mut state, new_with("later"), None).unwrap();
+    try_queue(&mut state, new_with("later"), None, false).unwrap();
 
     assert!(take_queued_handoff(&mut state, 4).is_none());
     assert!(take_queued_handoff(&mut state, 5).is_none());
@@ -97,7 +101,7 @@ async fn take_queued_handoff_leaves_an_action_from_the_running_turn() {
 async fn clear_empties_the_slot() {
     let fx = fixture(&[], &[]).await;
     let mut state = fx.agent.state.lock().await;
-    try_queue(&mut state, new_with("drop me"), None).unwrap();
+    try_queue(&mut state, new_with("drop me"), None, false).unwrap();
 
     clear(&mut state);
 
@@ -121,7 +125,7 @@ async fn queue_handoff_queues_when_a_turn_is_running() {
 
     let outcome = fx
         .agent
-        .queue_handoff(new_with("go"), Some(("Planner".into(), "s-1".into())))
+        .queue_handoff(new_with("go"), Some(("Planner".into(), "s-1".into())), true)
         .await
         .unwrap();
 
@@ -132,6 +136,7 @@ async fn queue_handoff_queues_when_a_turn_is_running() {
             generation: 3,
             action: new_with("go"),
             sender: Some(("Planner".to_string(), "s-1".to_string())),
+            asked: true,
         })
     );
     fx.finish().await;
@@ -144,7 +149,7 @@ async fn queue_handoff_refuses_a_second_action() {
 
     let err = fx
         .agent
-        .queue_handoff(new_with("second"), None)
+        .queue_handoff(new_with("second"), None, false)
         .await
         .unwrap_err();
 
@@ -172,7 +177,11 @@ async fn queue_handoff_reports_not_mid_turn_when_idle() {
         state.turn_generation = 4;
     }
 
-    let outcome = fx.agent.queue_handoff(new_with("go"), None).await.unwrap();
+    let outcome = fx
+        .agent
+        .queue_handoff(new_with("go"), None, false)
+        .await
+        .unwrap();
 
     assert_eq!(outcome, QueueOutcome::NotMidTurn);
     assert!(fx.agent.state.lock().await.queued_handoff.is_none());
@@ -188,7 +197,11 @@ async fn queue_handoff_reports_not_mid_turn_when_stopped() {
         state.turn_generation = 5;
     }
 
-    let outcome = fx.agent.queue_handoff(new_with("go"), None).await.unwrap();
+    let outcome = fx
+        .agent
+        .queue_handoff(new_with("go"), None, false)
+        .await
+        .unwrap();
 
     assert_eq!(outcome, QueueOutcome::NotMidTurn);
     assert!(fx.agent.state.lock().await.queued_handoff.is_none());
@@ -205,7 +218,11 @@ async fn queue_handoff_reports_not_mid_turn_for_an_idle_agent_with_the_launch_ge
         assert_eq!(state.turn_generation % 2, 1);
     }
 
-    let outcome = fx.agent.queue_handoff(new_with("go"), None).await.unwrap();
+    let outcome = fx
+        .agent
+        .queue_handoff(new_with("go"), None, false)
+        .await
+        .unwrap();
 
     assert_eq!(outcome, QueueOutcome::NotMidTurn);
     assert!(fx.agent.state.lock().await.queued_handoff.is_none());
@@ -219,7 +236,7 @@ async fn queued_mid_turn(fx: &crate::session::agent::pause_subagents::fixture::F
     let mut state = fx.agent.state.lock().await;
     state.status = crate::session::agent::SessionStatus::Working;
     state.turn_generation = 1;
-    try_queue(&mut state, new_with("never"), None).unwrap();
+    try_queue(&mut state, new_with("never"), None, false).unwrap();
 }
 
 #[tokio::test]
@@ -356,12 +373,13 @@ fn the_failure_notice_is_one_capped_line_without_bidi_characters() {
 async fn settle_with_queued(
     fx: &crate::session::agent::pause_subagents::fixture::Fixture,
     sender: Option<(String, String)>,
+    asked: bool,
 ) {
     {
         let mut state = fx.agent.state.lock().await;
         state.status = crate::session::agent::SessionStatus::Working;
         state.turn_generation = 1;
-        try_queue(&mut state, new_with("later"), sender).unwrap();
+        try_queue(&mut state, new_with("later"), sender, asked).unwrap();
         // Settling moves the generation on to the next even number.
         state.turn_generation = 2;
         state.status = crate::session::agent::SessionStatus::Idle;
@@ -375,7 +393,7 @@ async fn a_deferred_action_is_dropped_when_the_session_is_being_deleted() {
     let _claim =
         crate::ipc::sessions_lifecycle::delete_in_flight::claim(&fx.agent.session_id).unwrap();
 
-    settle_with_queued(&fx, None).await;
+    settle_with_queued(&fx, None, false).await;
 
     assert!(fx.agent.state.lock().await.queued_handoff.is_none());
     assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
@@ -390,7 +408,12 @@ async fn a_deferred_action_is_dropped_when_the_session_is_being_deleted() {
 async fn a_deferred_action_is_dropped_when_the_sending_session_is_gone() {
     let fx = fixture(&[], &[]).await;
 
-    settle_with_queued(&fx, Some(("Planner".into(), "no-such-session".into()))).await;
+    settle_with_queued(
+        &fx,
+        Some(("Planner".into(), "no-such-session".into())),
+        false,
+    )
+    .await;
 
     assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
     assert_eq!(
@@ -413,7 +436,7 @@ async fn a_deferred_action_is_dropped_when_the_session_is_archived() {
     )
     .await;
 
-    settle_with_queued(&fx, None).await;
+    settle_with_queued(&fx, None, false).await;
 
     assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
     assert_eq!(
@@ -436,12 +459,16 @@ async fn a_deferred_action_is_dropped_when_the_session_is_paused() {
     )
     .await;
 
-    settle_with_queued(&fx, None).await;
+    settle_with_queued(&fx, None, false).await;
 
     assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
     assert_eq!(
         fx.notices().await,
         ["Handoff dropped: the Session is paused"]
+    );
+    assert_eq!(
+        fx.agent.state.lock().await.pending_agent_notice.as_deref(),
+        Some("Handoff dropped: the Session is paused")
     );
     fx.finish().await;
 }
@@ -460,7 +487,7 @@ async fn a_deferred_action_is_dropped_when_the_target_is_now_the_senders_ancesto
     )
     .await;
 
-    settle_with_queued(&fx, Some(("Planner".into(), "sender".into()))).await;
+    settle_with_queued(&fx, Some(("Planner".into(), "sender".into())), false).await;
 
     assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
     assert_eq!(
@@ -478,4 +505,95 @@ async fn patch(fx: &Fixture, id: &str, patch: SessionPatch) {
         .update_session(id, patch)
         .await
         .unwrap();
+}
+
+// An action queued without a card must not run once its target has become a Sibling (#1861).
+
+/// The sender, with the agent under test as its Descendant; the sender runs in `yolo` when asked.
+async fn sender_with_descendant_target(fx: &Fixture, yolo: bool) {
+    fx.add_session("sender", &[], false).await;
+    patch(
+        fx,
+        &fx.agent.session_id,
+        SessionPatch {
+            parent_session_id: Some(Some("sender".into())),
+            ..Default::default()
+        },
+    )
+    .await;
+    if yolo {
+        let sender = fx.manager.get_or_create_agent("sender");
+        sender.state.lock().await.launched_mode = crate::store::settings::ApprovalMode::Auto;
+    }
+}
+
+async fn reparent_target_to_a_sibling(fx: &Fixture) {
+    patch(
+        fx,
+        &fx.agent.session_id,
+        SessionPatch {
+            parent_session_id: Some(None),
+            ..Default::default()
+        },
+    )
+    .await;
+}
+
+fn planner() -> Option<(String, String)> {
+    Some(("Planner".into(), "sender".into()))
+}
+
+#[tokio::test]
+async fn an_uncarded_action_is_dropped_when_the_target_became_a_sibling() {
+    let fx = fixture(&[], &[]).await;
+    sender_with_descendant_target(&fx, false).await;
+    reparent_target_to_a_sibling(&fx).await;
+
+    settle_with_queued(&fx, planner(), false).await;
+
+    assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    let reason = "Handoff dropped: the Session moved out of the sending Session's tree after the action was queued";
+    assert_eq!(fx.notices().await, [reason]);
+    assert_eq!(
+        fx.agent.state.lock().await.pending_agent_notice.as_deref(),
+        Some(reason)
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn an_uncarded_action_still_runs_while_the_target_is_a_descendant() {
+    let fx = fixture(&[], &[]).await;
+    sender_with_descendant_target(&fx, false).await;
+
+    settle_with_queued(&fx, planner(), false).await;
+
+    assert!(fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    assert!(fx.notices().await.is_empty());
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn an_uncarded_action_runs_on_a_sibling_when_the_sender_is_in_yolo() {
+    let fx = fixture(&[], &[]).await;
+    sender_with_descendant_target(&fx, true).await;
+    reparent_target_to_a_sibling(&fx).await;
+
+    settle_with_queued(&fx, planner(), false).await;
+
+    assert!(fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    assert!(fx.notices().await.is_empty());
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn an_approved_action_runs_on_a_sibling() {
+    let fx = fixture(&[], &[]).await;
+    sender_with_descendant_target(&fx, false).await;
+    reparent_target_to_a_sibling(&fx).await;
+
+    settle_with_queued(&fx, planner(), true).await;
+
+    assert!(fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    fx.finish().await;
 }

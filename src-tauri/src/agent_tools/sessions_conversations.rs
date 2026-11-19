@@ -7,7 +7,7 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use super::approval;
-use super::handoff_target::{check_target, Relationship};
+use super::handoff_target::{check_target, needs_card, Relationship};
 use super::panels;
 use super::router::{approval_outcome, ToolError, INVALID_INPUT};
 use super::sessions::{manager_gone, NOT_FOUND};
@@ -109,11 +109,6 @@ pub fn parse_switch(args: &Value) -> Result<(String, String), ToolError> {
     ))
 }
 
-/// Only a Session outside the caller's own tree asks, and `yolo` skips even that.
-pub fn needs_card(relationship: Relationship, yolo: bool) -> bool {
-    relationship == Relationship::Sibling && !yolo
-}
-
 /// The target row and its relationship; see `check_target` for what is refused.
 pub fn resolve_target<'a>(
     sessions: &'a [Session],
@@ -153,6 +148,7 @@ pub(super) trait ConvHost: Send + Sync + 'static {
         id: &str,
         action: HandoffAction,
         sender: Option<(String, String)>,
+        asked: bool,
     ) -> impl Future<Output = Result<QueueOutcome, ToolError>> + Send;
     /// Starts a Conversation on a Stopped or idle Session and sends `first` as its first message.
     fn start_new(
@@ -299,13 +295,19 @@ pub fn sender_for(gate: &Gate, caller: &str) -> Option<(String, String)> {
 
 /// Queues the action when the target is mid-turn; otherwise runs it once, launching a Stopped
 /// target first, and tells the caller if that fails (the deferred run retries, see `handoff_queue`).
+/// `asked` is whether a card was shown and approved, which the deferred run needs to check again.
 pub(super) async fn dispatch<H: ConvHost>(
     host: &H,
     id: &str,
     action: HandoffAction,
     sender: Option<(String, String)>,
+    asked: bool,
 ) -> Result<Dispatch, ToolError> {
-    if host.queue(id, action.clone(), sender.clone()).await? == QueueOutcome::Queued {
+    if host
+        .queue(id, action.clone(), sender.clone(), asked)
+        .await?
+        == QueueOutcome::Queued
+    {
         return Ok(Dispatch::Scheduled);
     }
     match action {
@@ -456,10 +458,11 @@ impl ConvHost for AppConvHost {
         id: &str,
         action: HandoffAction,
         sender: Option<(String, String)>,
+        asked: bool,
     ) -> Result<QueueOutcome, ToolError> {
         self.manager
             .get_or_create_agent(id)
-            .queue_handoff(action, sender)
+            .queue_handoff(action, sender, asked)
             .await
             .map_err(|e| agent_error(e.code, e.message))
     }

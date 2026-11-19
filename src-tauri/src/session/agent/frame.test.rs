@@ -76,7 +76,7 @@ async fn rig(cfg: Value) -> Rig {
 impl Rig {
     async fn queue(&self, action: HandoffAction, sender: Option<(String, String)>) {
         let mut state = self.fx.agent.state.lock().await;
-        try_queue(&mut state, action, sender).unwrap();
+        try_queue(&mut state, action, sender, false).unwrap();
     }
 
     async fn commands(&self) -> Vec<Value> {

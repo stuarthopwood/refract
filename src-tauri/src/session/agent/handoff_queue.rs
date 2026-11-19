@@ -3,7 +3,7 @@
 
 use super::start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use super::{AgentError, AgentState, SessionAgent, SessionStatus};
-use crate::agent_tools::handoff_target::check_target;
+use crate::agent_tools::handoff_target::{check_target, needs_card, MOVED_OUT_OF_TREE};
 
 /// What a queued handoff does once the turn has settled.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,6 +20,8 @@ pub struct QueuedHandoff {
     pub action: HandoffAction,
     /// `(name, id)` for the message envelope; `None` for a self-handoff.
     pub sender: Option<(String, String)>,
+    /// A card was shown and approved when the action was queued; the settle-time check needs it.
+    pub asked: bool,
 }
 
 /// Fills the slot, or refuses when a handoff is already queued. Runs under the agent's state lock, so two callers cannot both win.
@@ -27,6 +29,7 @@ pub(super) fn try_queue(
     state: &mut AgentState,
     action: HandoffAction,
     sender: Option<(String, String)>,
+    asked: bool,
 ) -> Result<(), AgentError> {
     if state.queued_handoff.is_some() {
         return Err(AgentError::new(
@@ -38,6 +41,7 @@ pub(super) fn try_queue(
         generation: state.turn_generation,
         action,
         sender,
+        asked,
     });
     Ok(())
 }
@@ -84,11 +88,19 @@ fn failure_reason(failed: StartThenSendError) -> String {
 }
 
 /// The reason is flattened and capped, because it is prefixed onto the agent's next prompt.
-fn failed_notice(reason: &str) -> String {
+fn notice_with(prefix: &str, reason: &str) -> String {
     format!(
-        "Handoff failed: {}",
+        "{prefix}: {}",
         crate::agent_tools::approval::clip_line(reason)
     )
+}
+
+fn failed_notice(reason: &str) -> String {
+    notice_with("Handoff failed", reason)
+}
+
+fn dropped_notice(reason: &str) -> String {
+    notice_with("Handoff dropped", reason)
 }
 
 impl SessionAgent {
@@ -103,9 +115,11 @@ impl SessionAgent {
             take_queued_handoff(&mut state, generation)
         };
         let Some(queued) = queued else { return };
-        if let Some(reason) = self.settle_refusal(queued.sender.as_ref()).await {
-            self.append_notice(format!("Handoff dropped: {reason}"), "error")
-                .await;
+        if let Some(reason) = self
+            .settle_refusal(queued.sender.as_ref(), queued.asked)
+            .await
+        {
+            self.tell_agent_why(dropped_notice(&reason)).await;
             return;
         }
         let outcome = match queued.action {
@@ -115,15 +129,24 @@ impl SessionAgent {
             HandoffAction::Switch { file } => self.switch_handoff_conversation(file).await,
         };
         if let Err(reason) = outcome {
-            let notice = failed_notice(&reason);
-            self.append_notice(notice.clone(), "error").await;
-            self.state.lock().await.pending_agent_notice = Some(notice);
+            self.tell_agent_why(failed_notice(&reason)).await;
         }
+    }
+
+    /// Shows the developer the notice and keeps it for the agent's next prompt.
+    async fn tell_agent_why(&self, notice: String) {
+        self.append_notice(notice.clone(), "error").await;
+        self.state.lock().await.pending_agent_notice = Some(notice);
     }
 
     /// Why the action queued mid-turn may no longer run: the call-time target checks again, since
     /// the Session can be paused, archived or deleted, or the sender moved, while the turn ran.
-    async fn settle_refusal(&self, sender: Option<&(String, String)>) -> Option<String> {
+    /// An action queued without a card must not run on a Session that is now outside the sender's tree.
+    async fn settle_refusal(
+        &self,
+        sender: Option<&(String, String)>,
+        asked: bool,
+    ) -> Option<String> {
         if crate::ipc::sessions_lifecycle::delete_in_flight::is_deleting(&self.session_id) {
             return Some("the Session is being deleted".to_string());
         }
@@ -138,9 +161,20 @@ impl SessionAgent {
             return Some("the Session is archived".to_string());
         }
         let (_, caller_id) = sender?;
-        check_target(&sessions, caller_id, &self.session_id)
-            .err()
-            .map(|refusal| refusal.settle_reason().to_string())
+        let relationship = match check_target(&sessions, caller_id, &self.session_id) {
+            Ok((_, relationship)) => relationship,
+            Err(refusal) => return Some(refusal.settle_reason().to_string()),
+        };
+        (!asked && needs_card(relationship, self.is_yolo_session(caller_id).await))
+            .then(|| MOVED_OUT_OF_TREE.to_string())
+    }
+
+    /// Whether the sending Session runs in `yolo`; unknown at shutdown, which reads as not.
+    async fn is_yolo_session(&self, id: &str) -> bool {
+        match self.tool_manager() {
+            Some(manager) => manager.get_or_create_agent(id).tool_is_yolo().await,
+            None => false,
+        }
     }
 
     async fn start_handoff_conversation(
@@ -209,6 +243,7 @@ impl SessionAgent {
         &self,
         action: HandoffAction,
         sender: Option<(String, String)>,
+        asked: bool,
     ) -> Result<QueueOutcome, AgentError> {
         let mut state = self.state.lock().await;
         // A launched Session sits at an odd generation before any turn, so the generation alone
@@ -220,7 +255,7 @@ impl SessionAgent {
         if !mid_turn {
             return Ok(QueueOutcome::NotMidTurn);
         }
-        try_queue(&mut state, action, sender)?;
+        try_queue(&mut state, action, sender, asked)?;
         Ok(QueueOutcome::Queued)
     }
 }
