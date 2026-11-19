@@ -16,7 +16,9 @@ import {
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
 import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore, useViewStore } from '@/state'
+import { useSplitStore } from '@/state/split-store'
 import { choiceDisabled, currentChoiceValue, measurePaneLayout } from './pane-width-model'
+import { choiceText, widthShowsOneChat } from './pane-width-choice'
 import { rightPaneRef } from './right-pane-handle'
 import { hideChatPane, showChatPane, useCanToggleChatPane, useChatPaneHidden } from './toggle-chat-pane'
 import { toggleRightPane } from './toggle-right-pane'
@@ -47,15 +49,12 @@ export function closePane(): void {
   if (useRightPaneStore.getState().open) toggleRightPane()
 }
 
-function choiceText(label: string, widthPx: number): string {
-  return `${label} (${widthPx} px)`
-}
-
 function usePaneWidthMenuState() {
   const widthPx = useRightPaneStore((s) => s.widthPx)
   const open = useRightPaneStore((s) => s.open)
   const chatHidden = useChatPaneHidden()
   const canToggleChat = useCanToggleChatPane()
+  const isSplit = useSplitStore((s) => s.paneSessionIds.length === 2)
   const canAct = useViewStore((s) => s.view) === 'chat'
   const layout = measurePaneLayout()
   return {
@@ -64,7 +63,9 @@ function usePaneWidthMenuState() {
     canAct,
     canToggleChat,
     current: currentChoiceValue({ open, chatHidden, widthPx, presets: PRESET_WIDTHS }),
-    isDisabled: (choiceWidthPx: number) => choiceDisabled({ widthPx: choiceWidthPx, canAct, layout })
+    isDisabled: (choiceWidthPx: number) => choiceDisabled({ widthPx: choiceWidthPx, canAct, layout }),
+    // A Split needs two 360 px chat panes; a width that leaves less shows one chat, so the menu says so.
+    choiceLabel: (choice: { label: string; widthPx: number }) => choiceText({ ...choice, shownAsOneChat: widthShowsOneChat({ widthPx: choice.widthPx, isSplit, layout }) })
   }
 }
 
@@ -80,7 +81,7 @@ export function PaneWidthContextMenuItems() {
           <ContextMenuRadioGroup value={state.current} onValueChange={(value) => setPaneWidth(Number(value))}>
             {PANE_WIDTH_CHOICES.map((choice) => (
               <ContextMenuRadioItem key={choice.widthPx} icon={choice.icon} value={String(choice.widthPx)} disabled={state.isDisabled(choice.widthPx)}>
-                {choiceText(choice.label, choice.widthPx)}
+                {state.choiceLabel(choice)}
               </ContextMenuRadioItem>
             ))}
           </ContextMenuRadioGroup>
@@ -106,7 +107,7 @@ export function PaneWidthDropdownItems() {
           <DropdownMenuRadioGroup value={state.current} onValueChange={(value) => setPaneWidth(Number(value))}>
             {PANE_WIDTH_CHOICES.map((choice) => (
               <DropdownMenuRadioItem key={choice.widthPx} icon={choice.icon} value={String(choice.widthPx)} disabled={state.isDisabled(choice.widthPx)}>
-                {choiceText(choice.label, choice.widthPx)}
+                {state.choiceLabel(choice)}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
