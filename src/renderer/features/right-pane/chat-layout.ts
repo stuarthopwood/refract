@@ -56,3 +56,34 @@ export function chatPanelResizeAction(input: {
 export function rightWidthToSync(sizePx: number, chatHidden: boolean): number | null {
   return sizePx > 0 && !chatHidden ? sizePx : null
 }
+
+export type RightPaneResizeAction =
+  | { kind: 'none' }
+  | { kind: 'resume' }
+  | { kind: 'sync-width'; widthPx: number }
+  | { kind: 'suspend'; syncClosed: boolean }
+  | { kind: 'sync-open'; widthPx: number }
+
+/**
+ * What a size report of the right pane means: the first report of an open pane resumes its panels, a
+ * resize within one side of zero syncs the user's width, and crossing zero suspends or resumes the pane.
+ */
+export function rightPaneResizeAction(input: {
+  sizePx: number
+  prevSizePx: number | undefined
+  view: MainView
+  open: boolean
+  chatCollapsed: boolean
+  hasSession: boolean
+  chatPanelCollapsed: boolean
+}): RightPaneResizeAction {
+  const collapsed = input.sizePx <= 0
+  if (input.prevSizePx === undefined) return !collapsed && input.view === 'chat' && input.open ? { kind: 'resume' } : { kind: 'none' }
+  if (collapsed === input.prevSizePx <= 0) {
+    if (collapsed) return { kind: 'none' }
+    const chatNow = effectiveChatCollapsed(input.chatCollapsed, input.view, input.hasSession) || input.chatPanelCollapsed
+    const widthPx = rightWidthToSync(input.sizePx, chatNow)
+    return widthPx === null ? { kind: 'none' } : { kind: 'sync-width', widthPx }
+  }
+  return collapsed ? { kind: 'suspend', syncClosed: input.view === 'chat' } : { kind: 'sync-open', widthPx: input.sizePx }
+}

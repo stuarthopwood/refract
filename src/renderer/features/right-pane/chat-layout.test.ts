@@ -1,7 +1,7 @@
 // Spec 137 FR-017, FR-018, FR-024, FR-034 (#2075; C1, H2): pane B survives a chat collapse because the
 // width-0 report is ignored, so the split state and the visible-Session set stay as they were.
 import { describe, expect, it } from 'vitest'
-import { canShowSplit, chatPanelResizeAction, heldChatContentWidth, MIN_SPLIT_WIDTH_PX, nextChatWidth, rightWidthToSync, visibleSessionIds } from './chat-layout'
+import { canShowSplit, chatPanelResizeAction, heldChatContentWidth, MIN_SPLIT_WIDTH_PX, nextChatWidth, rightPaneResizeAction, rightWidthToSync, visibleSessionIds } from './chat-layout'
 
 const base = { sizePx: 0, prevSizePx: 900, view: 'chat', open: true, chatCollapsed: false, hasSession: true } as const
 
@@ -123,5 +123,45 @@ describe('rightWidthToSync', () => {
 
   it('never reports a collapsed pane', () => {
     expect(rightWidthToSync(0, false)).toBeNull()
+  })
+})
+
+describe('rightPaneResizeAction', () => {
+  const open = { sizePx: 640, prevSizePx: 600, view: 'chat', open: true, chatCollapsed: false, hasSession: true, chatPanelCollapsed: false } as const
+
+  it('resumes the panels of a pane that mounts already open in the chat view', () => {
+    expect(rightPaneResizeAction({ ...open, prevSizePx: undefined })).toEqual({ kind: 'resume' })
+  })
+
+  it('ignores the mount report of a closed pane, a collapsed one, or another view', () => {
+    expect(rightPaneResizeAction({ ...open, prevSizePx: undefined, open: false })).toEqual({ kind: 'none' })
+    expect(rightPaneResizeAction({ ...open, prevSizePx: undefined, sizePx: 0 })).toEqual({ kind: 'none' })
+    expect(rightPaneResizeAction({ ...open, prevSizePx: undefined, view: 'home' })).toEqual({ kind: 'none' })
+  })
+
+  it('syncs a width the user dragged while the pane stays open', () => {
+    expect(rightPaneResizeAction(open)).toEqual({ kind: 'sync-width', widthPx: 640 })
+  })
+
+  it('does not sync the width the pane gains while chat is hidden, by store or by panel', () => {
+    expect(rightPaneResizeAction({ ...open, chatCollapsed: true })).toEqual({ kind: 'none' })
+    expect(rightPaneResizeAction({ ...open, chatPanelCollapsed: true })).toEqual({ kind: 'none' })
+  })
+
+  it('syncs a width outside the chat view, where the stored hidden preference does not apply', () => {
+    expect(rightPaneResizeAction({ ...open, chatCollapsed: true, view: 'issues' })).toEqual({ kind: 'sync-width', widthPx: 640 })
+  })
+
+  it('ignores a pane that stays collapsed', () => {
+    expect(rightPaneResizeAction({ ...open, sizePx: 0, prevSizePx: 0 })).toEqual({ kind: 'none' })
+  })
+
+  it('suspends a pane that collapsed and records it as closed only in the chat view', () => {
+    expect(rightPaneResizeAction({ ...open, sizePx: 0 })).toEqual({ kind: 'suspend', syncClosed: true })
+    expect(rightPaneResizeAction({ ...open, sizePx: 0, view: 'usage' })).toEqual({ kind: 'suspend', syncClosed: false })
+  })
+
+  it('records the width of a pane that opened from collapsed', () => {
+    expect(rightPaneResizeAction({ ...open, prevSizePx: 0 })).toEqual({ kind: 'sync-open', widthPx: 640 })
   })
 })

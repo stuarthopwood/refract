@@ -32,10 +32,11 @@ import { IconRail } from '@/features/right-pane/IconRail'
 import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
 import { RightPaneResizeHandle } from '@/features/right-pane/RightPaneResizeHandle'
 import { rightPaneRef } from '@/features/right-pane/right-pane-handle'
-import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
-import { canShowSplit as widthFitsSplit, chatPanelResizeAction, heldChatContentWidth, nextChatWidth, rightWidthToSync, visibleSessionIds } from '@/features/right-pane/chat-layout'
+import { canShowSplit as widthFitsSplit, heldChatContentWidth, visibleSessionIds } from '@/features/right-pane/chat-layout'
+import { useChatPanelResize } from '@/features/right-pane/useChatPanelResize'
+import { useRightPaneResize } from '@/features/right-pane/useRightPaneResize'
 import { CHAT_PANEL_DOM_ID } from '@/features/right-pane/chat-panel-id'
-import { effectiveChatCollapsed, syncChatCollapsedFromDrag } from '@/features/right-pane/toggle-chat-pane'
+import { effectiveChatCollapsed } from '@/features/right-pane/toggle-chat-pane'
 import { fittingWidth, measurePaneLayout } from '@/features/right-pane/pane-width-model'
 import { CommandPalette } from '@/features/palette/CommandPalette'
 import { StartSessionHost } from '@/features/sessions/StartSessionHost'
@@ -66,6 +67,8 @@ export function App() {
   const [chatPanelCollapsed, setChatPanelCollapsed] = useState(false)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [liveDividerPercent, setLiveDividerPercent] = useState(dividerPercent)
+  const onChatPanelResize = useChatPanelResize(chatPanelRef, { setChatWidthPx, setChatPanelCollapsed })
+  const onRightPaneResize = useRightPaneResize(chatPanelRef)
   const isSplit = paneSessionIds.length === 2
   const canShowSplit = widthFitsSplit(chatWidthPx)
   const showSplit = isSplit && canShowSplit
@@ -204,22 +207,7 @@ export function App() {
               minSize={360}
               collapsible
               collapsedSize={0}
-              onResize={(size, _id, prevSize) => {
-                setChatWidthPx((prev) => nextChatWidth(prev, size.inPixels))
-                setChatPanelCollapsed(size.inPixels <= 0)
-                const paneState = useRightPaneStore.getState()
-                const action = chatPanelResizeAction({
-                  sizePx: size.inPixels,
-                  prevSizePx: prevSize?.inPixels,
-                  view: useViewStore.getState().view,
-                  open: paneState.open,
-                  chatCollapsed: paneState.chatCollapsed,
-                  hasSession: useSplitStore.getState().paneSessionIds.length > 0
-                })
-                if (action === 'hide') syncChatCollapsedFromDrag(true)
-                else if (action === 'show') syncChatCollapsedFromDrag(false)
-                else if (action === 'restore') chatPanelRef.current?.expand()
-              }}
+              onResize={onChatPanelResize}
             >
               <div
                 id={CHAT_PANEL_DOM_ID}
@@ -320,37 +308,7 @@ export function App() {
               minSize={RIGHT_PANE_MIN_WIDTH_PX}
               collapsible
               collapsedSize={0}
-              onResize={(size, _id, prevSize) => {
-                if (prevSize === undefined) {
-                  const paneStore = useRightPaneStore.getState()
-                  if (size.inPixels > 0 && useViewStore.getState().view === 'chat' && paneStore.open) {
-                    resumeHostedPanels(paneStore.openPanelIds)
-                  }
-                  return
-                }
-                const collapsed = size.inPixels <= 0
-                const wasCollapsed = prevSize.inPixels <= 0
-                if (collapsed === wasCollapsed) {
-                  if (!collapsed) {
-                    const { chatCollapsed } = useRightPaneStore.getState()
-                    const hasSession = useSplitStore.getState().paneSessionIds.length > 0
-                    const chatNow = effectiveChatCollapsed(chatCollapsed, useViewStore.getState().view, hasSession) || chatPanelRef.current?.isCollapsed() === true
-                    const widthPx = rightWidthToSync(size.inPixels, chatNow)
-                    if (widthPx !== null) useRightPaneStore.getState().setWidth(widthPx)
-                  }
-                  return
-                }
-                const paneState = useRightPaneStore.getState()
-                if (collapsed) {
-                  suspendHostedPanels(paneState.openPanelIds)
-                  if (useViewStore.getState().view === 'chat') {
-                    paneState.syncRenderedState(false, paneState.widthPx)
-                  }
-                } else {
-                  paneState.syncRenderedState(true, size.inPixels)
-                  resumeHostedPanels(paneState.openPanelIds)
-                }
-              }}
+              onResize={onRightPaneResize}
             >
               <ErrorBoundary>
                 <div className="h-full" inert={!paneShown} aria-hidden={!paneShown || undefined}>
