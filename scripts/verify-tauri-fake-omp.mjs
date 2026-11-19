@@ -15,6 +15,7 @@ import { readFileSync, writeFileSync, appendFileSync as appendFileSyncTop, exist
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import readline from 'node:readline';
+import { createServe } from './verify-tauri-fake-omp-serve.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const FIXTURES_DIR = path.join(__dirname, 'fixtures', 'omp-frames');
@@ -165,6 +166,8 @@ async function main() {
     histPastYearAt: parseEnvMs('REFRACT_FAKE_OMP_HIST_PAST_YEAR_AT'),
   };
   let cursor = 0;
+  // Serve mode (#1861): once a tape hits `__serve__`, `verify-tauri-fake-omp-serve.mjs` answers every command.
+  let serve = null;
   // Commands the tape isn't waiting for are logged and dropped, never hung on: this is a fixed-script replay, not a model.
   let waitingFor = null;
 
@@ -186,6 +189,14 @@ async function main() {
         process.exitCode = line.__exit__.code ?? 0;
         process.stdin.pause();
         process.exit(process.exitCode);
+      }
+      if (line && typeof line === 'object' && line.__serve__) {
+        cursor++;
+        const root = process.env.REFRACT_FAKE_OMP_SERVE_ROOT;
+        if (!root) throw new Error('__serve__ needs REFRACT_FAKE_OMP_SERVE_ROOT');
+        serve = createServe({ emit, root, cwd: process.cwd(), pid: process.pid, env: process.env });
+        waitingFor = null;
+        return;
       }
       if (line && typeof line === 'object' && typeof line.__delay__ === 'number') {
         cursor++;
@@ -210,6 +221,10 @@ async function main() {
     if (hostToolRecord && (cmd.type === 'set_host_tools' || cmd.type === 'host_tool_result')) {
       appendFileSyncTop(hostToolRecord, `${JSON.stringify({ pid: process.pid, frame: cmd })}\n`);
       if (cmd.type === 'set_host_tools') emit({ id: cmd.id, type: 'response', command: 'set_host_tools', success: true });
+      return;
+    }
+    if (serve) {
+      serve.handle(cmd);
       return;
     }
     // The `set_ask_dialog{enabled:true}` probe (#572) is sent once per process, but most tapes never list it
@@ -262,7 +277,10 @@ async function main() {
       const lines = callLines();
       for (; seen < lines.length; seen++) {
         const { __pid: target, ...frame } = JSON.parse(lines[seen]);
-        if (target === undefined || target === process.pid) emit(frame);
+        if (target === undefined || target === process.pid) {
+          if (frame.__serve_settle__) serve?.settleHeld();
+          else emit(frame);
+        }
       }
     }, 100);
   }
