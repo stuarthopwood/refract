@@ -1,6 +1,6 @@
 // The Chat pane toggle: the second fixed rail button, under the Right pane toggle (spec 137 FR-015, FR-033).
 import { useEffect, useRef } from 'react'
-import { MessagesSquareIcon } from 'lucide-react'
+import { MessageSquareOffIcon, MessagesSquareIcon } from 'lucide-react'
 import { RailIconButton } from '@/components/RailIconButton'
 import { Kbd } from '@/components/ui/kbd'
 import { CountBadge } from '@/components/ui/count-badge'
@@ -12,20 +12,28 @@ import { CHAT_PANE_NAME, chatAttentionAnnouncement, chatBadgeCount, chatToggleLa
 import { toggleChatPane, useCanToggleChatPane, useChatPaneHidden } from './toggle-chat-pane'
 
 interface ChatPaneToggleButtonProps extends ChatAttention {
-  disabled: boolean
+  /** Why the toggle does nothing right now, or null when it works. Shown in the tooltip, so it stays focusable instead of natively disabled. */
+  disabledReason: string | null
   onToggle: () => void
 }
 
-/** Presentational half, so the markup is testable without stores. */
-export function ChatPaneToggleButton({ hidden, needsYou, disabled, onToggle }: ChatPaneToggleButtonProps) {
+/** The reason the toggle is inert: no Session to hide or show chat for, or a view with no chat area to collapse. */
+export function chatToggleDisabledReason(input: { canToggle: boolean; hasSession: boolean }): string | null {
+  if (input.canToggle) return null
+  return input.hasSession ? 'Switch to the chat view to hide or show chat' : 'Open a Session to show chat'
+}
+
+/** Presentational half, so the markup is testable without stores. The glyph swaps when chat is hidden, like the Right pane toggle's. */
+export function ChatPaneToggleButton({ hidden, needsYou, disabledReason, onToggle }: ChatPaneToggleButtonProps) {
   const badge = chatBadgeCount({ hidden, needsYou })
+  const Glyph = hidden ? MessageSquareOffIcon : MessagesSquareIcon
   return (
     <RailIconButton
       label={chatToggleLabel(badge)}
       tooltip={
         <>
           {CHAT_PANE_NAME} <Kbd>Ctrl+Shift+H</Kbd>
-          <span className="block">Pause and Stop stay in the command palette</span>
+          <span className="block">{disabledReason ?? 'Pause and Stop stay in the command palette'}</span>
         </>
       }
       data-chat-toggle
@@ -33,10 +41,10 @@ export function ChatPaneToggleButton({ hidden, needsYou, disabled, onToggle }: C
       aria-expanded={!hidden}
       aria-controls={CHAT_PANEL_DOM_ID}
       aria-keyshortcuts="Control+Shift+H"
-      disabled={disabled}
-      onClick={onToggle}
+      aria-disabled={disabledReason === null ? undefined : true}
+      onClick={disabledReason === null ? onToggle : undefined}
     >
-      <MessagesSquareIcon aria-hidden />
+      <Glyph aria-hidden />
       {badge > 0 && <CountBadge value={badge} tone="accent" />}
     </RailIconButton>
   )
@@ -55,7 +63,9 @@ export function ChatPaneToggle() {
   const hidden = useChatPaneHidden()
   const canToggle = useCanToggleChatPane()
   const paneSessionIds = useSplitStore((s) => s.paneSessionIds)
+  const hasSession = paneSessionIds.length > 0
   const needsYou = useSessionsStore((s) => needsYouInPanes(paneSessionIds, s.sessions))
   useAttentionAnnouncement({ hidden, needsYou })
-  return <ChatPaneToggleButton hidden={hidden} needsYou={needsYou} disabled={!canToggle} onToggle={() => toggleChatPane()} />
+  const disabledReason = chatToggleDisabledReason({ canToggle, hasSession })
+  return <ChatPaneToggleButton hidden={hidden} needsYou={needsYou} disabledReason={disabledReason} onToggle={() => toggleChatPane()} />
 }

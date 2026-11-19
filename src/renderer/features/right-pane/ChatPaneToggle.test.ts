@@ -6,10 +6,10 @@ import { describe, expect, it, vi } from 'vitest'
 // The rail pulls `sessionDisplay.tsx`, whose store barrel dev hook needs `window`.
 vi.mock('@/state', () => ({ useSettingsStore: () => undefined }))
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { ChatPaneToggleButton } from './ChatPaneToggle'
+import { ChatPaneToggleButton, chatToggleDisabledReason } from './ChatPaneToggle'
 
 function render(props: Partial<Parameters<typeof ChatPaneToggleButton>[0]> = {}): string {
-  const full = { hidden: false, needsYou: 0, disabled: false, onToggle: () => undefined, ...props }
+  const full = { hidden: false, needsYou: 0, disabledReason: null, onToggle: () => undefined, ...props }
   return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(ChatPaneToggleButton, full)))
 }
 
@@ -23,10 +23,12 @@ describe('ChatPaneToggleButton', () => {
     expect(html).not.toContain(' aria-pressed=')
   })
 
-  it('Given chat hidden, Then aria-expanded is false and the name does not change', () => {
+  it('Given chat hidden, Then aria-expanded is false, the name does not change and the glyph swaps to the off icon', () => {
     const html = render({ hidden: true })
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain('aria-label="Chat pane"')
+    expect(html).toContain('lucide-message-square-off')
+    expect(render({ hidden: false })).not.toContain('lucide-message-square-off')
   })
 
   it('Given chat hidden and one Session needs the developer, Then the name carries the count and the badge shows it', () => {
@@ -41,7 +43,27 @@ describe('ChatPaneToggleButton', () => {
     expect(html).not.toContain('tabular-nums')
   })
 
-  it('Given no Session, Then the button is disabled', () => {
-    expect(render({ disabled: true })).toContain('disabled=""')
+  it('Given the toggle is inert, Then it is aria-disabled and not natively disabled, so the tooltip can show', () => {
+    const html = render({ disabledReason: 'Open a Session to show chat' })
+    expect(html).toContain('aria-disabled="true"')
+    expect(html).not.toContain(' disabled=""')
+  })
+
+  it('Given the toggle works, Then it carries no aria-disabled', () => {
+    expect(render()).not.toContain('aria-disabled="')
+  })
+})
+
+describe('chatToggleDisabledReason', () => {
+  it('Given a chat view with a Session, Then there is no reason', () => {
+    expect(chatToggleDisabledReason({ canToggle: true, hasSession: true })).toBeNull()
+  })
+
+  it('Given no Session, Then the reason tells the user to open one', () => {
+    expect(chatToggleDisabledReason({ canToggle: false, hasSession: false })).toBe('Open a Session to show chat')
+  })
+
+  it('Given a Session but another view, Then the reason points back to the chat view', () => {
+    expect(chatToggleDisabledReason({ canToggle: false, hasSession: true })).toBe('Switch to the chat view to hide or show chat')
   })
 })
