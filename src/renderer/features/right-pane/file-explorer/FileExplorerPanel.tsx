@@ -5,7 +5,7 @@ import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { fileExplorerWatch } from '@/state/watch-refs'
+import { useFileExplorerWatch } from '../../documents/useFileExplorerWatch'
 import { Switch } from '@/components/ui/switch'
 import { isFocusStranded } from '@/lib/focus'
 import { useFileExplorerStore } from '@/state'
@@ -68,16 +68,8 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     void loadDirectory(sessionId, '')
   }, [sessionId, hasSessionEntry, loadDirectory])
 
-  // Keyed on `[sessionId]` alone, deliberately: this must re-run for a Session SWITCH while this
-  // tab stays active (the component instance survives, only the prop changes) exactly the same way
-  // it re-runs for a genuine mount/unmount, so the OLD Session's watcher is released and the NEW
-  // one's is (re)started either way.
-  useEffect(() => {
-    if (!sessionId) return
-    const id = sessionId
-    fileExplorerWatch.acquire(id)
-    return () => fileExplorerWatch.release(id)
-  }, [sessionId])
+  // Re-runs on a Session switch while this tab stays active, and restarts after a backend reset.
+  useFileExplorerWatch(sessionId)
 
   // Reclaims focus onto the container ONLY when it is actually stranded -- never unconditionally,
   // which would steal focus from somewhere the user deliberately moved it to (the sidebar row just
