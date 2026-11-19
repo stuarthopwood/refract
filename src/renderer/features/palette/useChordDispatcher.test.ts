@@ -184,6 +184,12 @@ describe('chords that must stay off while chat is hidden (FR-020)', () => {
     expect(host.press(CTRL_SHIFT_BACKSLASH)).toBe(true)
     expect(focusOther).toHaveBeenCalledTimes(1)
   })
+
+  it('Ctrl+W is not swallowed or run outside the chat view, even with a Session open and chat shown', () => {
+    useViewStore.setState({ view: 'home' })
+    expect(host.press(CTRL_W)).toBe(false)
+    expect(mocks.closeChatPane).not.toHaveBeenCalled()
+  })
 })
 
 describe('Ctrl+N while chat is hidden', () => {
@@ -218,6 +224,11 @@ describe('the "Hide or show chat" palette entry (FR-020)', () => {
   it('is not offered with a stored hidden preference and no Session, because Home is showing', () => {
     pane().setChatCollapsed(true)
     useSplitStore.setState({ paneSessionIds: [] })
+    expect(enabled()).toBe(false)
+  })
+
+  it('is not offered outside the chat view, even with a Session open', () => {
+    useViewStore.setState({ view: 'usage' })
     expect(enabled()).toBe(false)
   })
 })

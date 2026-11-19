@@ -20,6 +20,13 @@ function liveSessions() {
   return useSessionsStore.getState().sessions.filter((session) => !session.archivedAt)
 }
 
+/** The chat view's real state, so each chat chord guard reads the same view and Session count the toggle helpers do. */
+function chatAreaState() {
+  const view = useViewStore.getState().view
+  const hasSession = useSplitStore.getState().paneSessionIds.length > 0
+  return { view, hasSession, hidden: effectiveChatCollapsed(useRightPaneStore.getState().chatCollapsed, view, hasSession) }
+}
+
 const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   {
     id: 'open-palette',
@@ -121,7 +128,10 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     group: 'Chat pane',
     chord: ['Ctrl', 'W'],
     // Hidden chat keeps its Sessions mounted but inert, so this chord must not run on them (FR-020).
-    when: () => useViewStore.getState().view === 'chat' && useSplitStore.getState().paneSessionIds.length > 0 && !useRightPaneStore.getState().chatCollapsed,
+    when: () => {
+      const { view, hasSession, hidden } = chatAreaState()
+      return canToggleChat({ view, hasSession }) && !hidden
+    },
     run: () => {
       const { paneSessionIds, focusedIndex } = useSplitStore.getState()
       closeChatPane(paneSessionIds.length === 2 ? focusedIndex : 0)
@@ -145,12 +155,10 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     chord: ['Ctrl', 'Shift', 'H'],
     keywords: ['toggle', 'hide', 'show', 'collapse', 'chat'],
     // Same rule as the rail toggle: with no Session open there is nothing to hide, so no no-op entry (FR-020).
-    when: () =>
-      useViewStore.getState().view === 'chat' &&
-      canToggleChat({
-        view: 'chat',
-        hasSession: useSplitStore.getState().paneSessionIds.length > 0
-      }),
+    when: () => {
+      const { view, hasSession } = chatAreaState()
+      return canToggleChat({ view, hasSession })
+    },
     run: () => toggleChatPane({ viaKeyboard: true })
   },
   {
@@ -159,11 +167,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     label: 'Move focus to the other pane',
     group: 'Split view',
     chord: ['Ctrl', 'Shift', '\\'],
-    when: () => {
-      const { paneSessionIds } = useSplitStore.getState()
-      const { chatCollapsed } = useRightPaneStore.getState()
-      return paneSessionIds.length === 2 && !effectiveChatCollapsed(chatCollapsed, useViewStore.getState().view, paneSessionIds.length > 0)
-    },
+    when: () => useSplitStore.getState().paneSessionIds.length === 2 && !chatAreaState().hidden,
     run: () => useSplitStore.getState().focusOther()
   },
   {
