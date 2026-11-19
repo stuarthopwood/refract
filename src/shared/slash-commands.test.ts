@@ -1,6 +1,7 @@
 // #1812: Refract-native commands run without starting the agent; anything else must start it.
 import { describe, it, expect } from 'vitest';
-import { isLocalNativeCommand, parseSlashCommand } from './slash-commands';
+import type { SlashCommandDescriptor } from './frames';
+import { classifySlashInvocation, filterSupportedCommands, isLocalNativeCommand, parseSlashCommand } from './slash-commands';
 
 function local(text: string): boolean {
   const parsed = parseSlashCommand(text);
@@ -33,5 +34,30 @@ describe('isLocalNativeCommand', () => {
   it('is false for text that is not a slash command', () => {
     expect(local('new')).toBe(false);
     expect(local('/')).toBe(false);
+  });
+});
+
+// #2088: OMP's `extension` and `custom` sources are non-builtin, like `file` and `skill`; unknown sources stay builtin.
+describe('non-builtin slash command sources', () => {
+  it.each(['file', 'skill', 'extension', 'custom'])('passes a %s command through unpruned', (source) => {
+    const command: SlashCommandDescriptor = { name: 'skippy-banter', description: 'Trade insults', source };
+    expect(filterSupportedCommands([command])).toContainEqual(command);
+  });
+
+  it('drops an unknown-source command that is not a verified builtin', () => {
+    const command: SlashCommandDescriptor = { name: 'skippy-banter', description: 'x', source: 'mystery' };
+    expect(filterSupportedCommands([command])).not.toContainEqual(command);
+  });
+
+  it('accepts free-form arguments on an extension command', () => {
+    const commands: SlashCommandDescriptor[] = [{ name: 'skippy-banter', description: 'x', source: 'extension' }];
+    const parsed = parseSlashCommand('/skippy-banter status');
+    expect(parsed && classifySlashInvocation(parsed, commands)).toBe('supported');
+  });
+
+  it('refuses free-form arguments on an unknown-source command', () => {
+    const commands: SlashCommandDescriptor[] = [{ name: 'mystery', description: 'x', source: 'mystery' }];
+    const parsed = parseSlashCommand('/mystery anything');
+    expect(parsed && classifySlashInvocation(parsed, commands)).toBe('unsupported-arguments');
   });
 });

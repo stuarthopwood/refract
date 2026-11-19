@@ -51,6 +51,8 @@ fn is_builtin_source_table() {
     );
     assert!(!is_builtin_source(Some("file")));
     assert!(!is_builtin_source(Some("skill")));
+    assert!(!is_builtin_source(Some("extension")));
+    assert!(!is_builtin_source(Some("custom")));
 }
 
 #[test]
@@ -123,6 +125,63 @@ fn filter_supported_commands_passes_through_a_skill_sourced_command() {
     assert!(out
         .iter()
         .any(|c| c.get("name").and_then(Value::as_str) == Some("skill:my-skill")));
+}
+
+#[test]
+fn filter_supported_commands_passes_through_extension_and_custom_commands_unchanged() {
+    for source in ["extension", "custom"] {
+        let command = json!({
+            "name": "skippy-banter",
+            "source": source,
+            "description": "Trade insults",
+            "aliases": ["banter"],
+        });
+        let out = filter_supported_commands(std::slice::from_ref(&command));
+        let found = out
+            .iter()
+            .find(|c| c.get("name").and_then(Value::as_str) == Some("skippy-banter"))
+            .unwrap_or_else(|| panic!("{source} command listed"));
+        assert_eq!(
+            found, &command,
+            "{source} descriptor must pass through unchanged"
+        );
+    }
+}
+
+#[test]
+fn filter_supported_commands_drops_an_extension_command_shadowing_a_builtin_name() {
+    let raw = vec![
+        json!({ "name": "model", "source": "builtin" }),
+        json!({ "name": "model", "source": "extension" }),
+        json!({ "name": "skippy-banter", "source": "extension" }),
+    ];
+    let out = filter_supported_commands(&raw);
+    assert!(
+        !out.iter().any(|c| {
+            c.get("name").and_then(Value::as_str) == Some("model")
+                && c.get("source").and_then(Value::as_str) == Some("extension")
+        }),
+        "an extension command shadowing a builtin must not survive: {out:?}"
+    );
+    assert!(
+        out.iter()
+            .any(|c| c.get("name").and_then(Value::as_str) == Some("skippy-banter")),
+        "a non-colliding extension command must survive: {out:?}"
+    );
+}
+
+#[test]
+fn filter_supported_commands_drops_an_extension_command_whose_alias_is_a_builtin_name() {
+    let raw = vec![
+        json!({ "name": "model", "source": "builtin" }),
+        json!({ "name": "skippy-banter", "source": "extension", "aliases": ["model"] }),
+    ];
+    let out = filter_supported_commands(&raw);
+    assert!(
+        !out.iter()
+            .any(|c| c.get("name").and_then(Value::as_str) == Some("skippy-banter")),
+        "an extension command aliasing a builtin name must be dropped: {out:?}"
+    );
 }
 
 fn builtin(name: &str, subcommands: &[&str]) -> Value {
@@ -243,6 +302,33 @@ fn classify_a_skill_sourced_command_runs_with_free_form_arguments() {
     assert!(matches!(
         classify_slash_invocation("skill:my-skill", "arg1 arg2", &commands),
         SlashInvocationClassification::Supported
+    ));
+}
+
+#[test]
+fn classify_an_extension_sourced_command_runs_with_free_form_arguments() {
+    let commands = vec![json!({ "name": "skippy-banter", "source": "extension" })];
+    assert!(matches!(
+        classify_slash_invocation("skippy-banter", "status", &commands),
+        SlashInvocationClassification::Supported
+    ));
+}
+
+#[test]
+fn classify_a_custom_sourced_command_runs_with_free_form_arguments() {
+    let commands = vec![json!({ "name": "my-custom", "source": "custom" })];
+    assert!(matches!(
+        classify_slash_invocation("my-custom", "any free text", &commands),
+        SlashInvocationClassification::Supported
+    ));
+}
+
+#[test]
+fn classify_an_extension_command_absent_from_the_list_is_unknown() {
+    let commands = vec![builtin("usage", &["show"])];
+    assert!(matches!(
+        classify_slash_invocation("skippy-banter", "status", &commands),
+        SlashInvocationClassification::UnknownCommand
     ));
 }
 
