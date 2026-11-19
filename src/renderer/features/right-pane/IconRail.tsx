@@ -16,6 +16,7 @@ import { railCountLabel, usePanelCount, type HostedPanelDescriptor, type PanelId
 import { savePanelOrder, useOrderedPanels } from './panel-order'
 import { toggleHostedPanelFromRail } from './hosted-panel-actions'
 import { toggleRightPane } from './toggle-right-pane'
+import { ChatPaneToggle } from './ChatPaneToggle'
 
 interface IconRailProps {
   /** The focused chat pane's Session: the default target a rail click binds a per-Session panel to. */
@@ -74,6 +75,7 @@ export function IconRail({ sessionId }: IconRailProps) {
       >
         {rightPaneOpen ? <PanelRightCloseIcon aria-hidden /> : <PanelRightOpenIcon aria-hidden />}
       </RailIconButton>
+      <ChatPaneToggle />
       <div
         ref={(el) => {
           containerRef.current = el
