@@ -109,7 +109,7 @@ export function toggleChatPane(options: ChatPaneToggleOptions = {}): void {
   else hideChatPane(options)
 }
 
-/** For a drag of the chat panel to or from zero width: syncs the store and announces, never moves focus. */
+/** For a drag of the chat panel to or from zero width: syncs the store and announces. Focus stays here; `RightPaneResizeHandle` moves it off a handle that this disables. */
 export function syncChatCollapsedFromDrag(collapsed: boolean): void {
   const store = useRightPaneStore.getState()
   if (store.chatCollapsed === collapsed) return
