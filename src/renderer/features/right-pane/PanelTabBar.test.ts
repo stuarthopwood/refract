@@ -46,28 +46,52 @@ describe('PanelTabStrip', () => {
     expect(html).toContain('aria-label="Close Outline panel"')
   })
 
-  it('titles a lone document tab by its full path and names its close button from the kind', () => {
+  it('titles a lone document tab by its path with the folder muted ahead of the file name, and names its close button from the kind', () => {
     const html = render([], [file('src/deep/index.ts')])
-    expect(html).toContain('>src/deep/index.ts</h2>')
+    expect(html).toContain('title="src/deep/index.ts"')
+    expect(html).toMatch(/<span class="min-w-0 truncate text-muted-foreground">src\/deep\/<\/span><span class="max-w-full shrink-0 truncate">index\.ts<\/span><\/h2>/)
     expect(html).toContain('aria-label="Close index.ts file"')
   })
 
-  it('pins panel tabs before one aria-hidden separator and the scrolling document container', () => {
+  it('titles a lone root-level document tab by its name alone', () => {
+    const html = render([], [file('README.md')])
+    expect(html).not.toContain('truncate text-muted-foreground')
+    expect(html).toContain('>README.md</span></h2>')
+  })
+
+  it('pins panel tabs before one vertical separator and the document tabs', () => {
     const html = render(['outline', 'file-explorer'], [file('a.ts'), file('b.ts')])
-    expect(html.match(/aria-hidden="true" class="mx-1 h-4 w-px/g)).toHaveLength(1)
-    const separator = html.indexOf('mx-1 h-4 w-px')
+    expect(html.match(/data-slot="separator"/g)).toHaveLength(1)
+    const separator = html.indexOf('data-slot="separator"')
+    expect(html).toContain('data-orientation="vertical"')
     expect(html.indexOf('>Outline<')).toBeLessThan(separator)
     expect(html.indexOf('>a.ts<')).toBeGreaterThan(separator)
-    expect(html.indexOf('overflow-x-auto')).toBeGreaterThan(separator)
+  })
+
+  it('gives the strip one horizontal scroller, on the tablist, and lets panel tabs shrink while document tabs keep their width', () => {
+    const html = render(['outline', 'file-explorer'], [file('a.ts'), file('b.ts')])
+    expect(html.match(/overflow-x-auto/g)).toHaveLength(1)
+    expect(html).toMatch(/role="tablist"[^>]*class="[^"]*overflow-x-auto/)
+    expect(html).toMatch(/<div role="presentation" class="flex min-w-0 shrink items-center gap-1"><div role="presentation" class="flex min-w-0 shrink items-center">/)
+    expect(html).toMatch(/<div role="presentation" class="flex shrink-0 items-center gap-1"><div role="presentation" class="flex min-w-0 shrink items-center"><button[^>]*aria-label="File, a\.ts"/)
+    expect(html).toMatch(/class="[^"]*min-w-15 shrink[^"]*"/)
   })
 
   it('omits the separator when there are no document tabs', () => {
-    expect(render(['outline', 'file-explorer'], [])).not.toContain('mx-1 h-4 w-px')
+    expect(render(['outline', 'file-explorer'], [])).not.toContain('data-slot="separator"')
   })
 
   it('renders each tab and its close button as siblings inside a presentation wrapper', () => {
     const html = render(['outline'], [file('a.ts')])
-    expect(html).toMatch(/<div role="presentation" class="flex shrink-0 items-center"><button[^>]*role="tab"[^>]*>(?:(?!<\/button>)[^])*<\/button><button[^>]*aria-label="Close a\.ts file"/)
+    expect(html).toMatch(/<div role="presentation" class="flex min-w-0 shrink items-center"><button[^>]*role="tab"[^>]*>(?:(?!<\/button>)[^])*<\/button><button[^>]*aria-label="Close a\.ts file"/)
+  })
+
+  it('marks a no-longer-changed diff tab in its name and a muted colour, not by dimming', () => {
+    const dead: DocumentTab = { kind: 'diff', group: 'changes', path: 'a.ts', id: 'diff:a.ts', dead: true }
+    const html = render(['outline'], [dead])
+    expect(html).toContain('aria-label="Diff, a.ts, unstaged, no longer changed"')
+    expect(html).toMatch(/aria-label="Diff, a\.ts[^"]*"[^>]*class="[^"]*\bitalic\b[^"]*\btext-muted-foreground\b/)
+    expect(html).not.toContain('opacity-70')
   })
 
   it('sizes document tabs min-w-28 max-w-48 shrink-0 and leads with a type icon', () => {

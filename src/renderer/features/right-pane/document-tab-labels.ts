@@ -6,6 +6,8 @@ export interface LabelledTab {
   /** Set for a diff tab only. */
   group?: GitChangesGroupKind
   path: string
+  /** A diff whose file is no longer changed; named in the accessible name, since italics alone are not a cue. */
+  dead?: boolean
 }
 
 function lastSegments(path: string, depth: number): string {
@@ -37,11 +39,17 @@ export interface TabCounts {
   deletions: number
 }
 
-/** "Diff, Button.tsx, staged, +12 −3": type first, then group and counts for a diff (FR-026). */
+/** "Diff, Button.tsx, staged, +12 −3, no longer changed": type first, then group, counts and staleness (FR-026). */
 export function documentTabAccessibleName(tab: LabelledTab, label: string, counts?: TabCounts): string {
-  if (tab.kind === 'file') return `File, ${label}`
-  const parts = ['Diff', label]
-  if (tab.group) parts.push(diffGroupLabel(tab.group).toLowerCase())
-  if (counts) parts.push(`+${counts.additions} \u2212${counts.deletions}`)
+  const parts = tab.kind === 'file' ? ['File', label] : ['Diff', label]
+  if (tab.kind === 'diff' && tab.group) parts.push(diffGroupLabel(tab.group).toLowerCase())
+  if (tab.kind === 'diff' && counts) parts.push(`+${counts.additions} \u2212${counts.deletions}`)
+  if (tab.dead) parts.push('no longer changed')
   return parts.join(', ')
+}
+
+/** A path as its folder part (with the trailing slash, empty at the root) and file name, so a narrow title can shrink the folder first. */
+export function splitDocumentPath(path: string): { dir: string; name: string } {
+  const cut = path.lastIndexOf('/') + 1
+  return { dir: path.slice(0, cut), name: path.slice(cut) }
 }

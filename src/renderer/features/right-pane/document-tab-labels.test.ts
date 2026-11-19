@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 // GitChangesGroup pulls the whole store barrel, which needs a browser `window`; the labels need none of it.
 vi.mock('@/state', () => ({ useGitChangesStore: () => undefined }))
-import { documentTabAccessibleName, documentTabLabels } from './document-tab-labels'
+import { documentTabAccessibleName, documentTabLabels, splitDocumentPath } from './document-tab-labels'
 import { diffGroupLabel } from './git-changes/GitChangesGroup'
 
 const file = (path: string) => ({ kind: 'file' as const, path })
@@ -40,10 +40,31 @@ describe('documentTabAccessibleName', () => {
   it('leaves the counts out when none are known', () => {
     expect(documentTabAccessibleName({ kind: 'diff', group: 'changes', path: 'a.ts' }, 'a.ts')).toBe('Diff, a.ts, unstaged')
   })
+
+  it('ends a no-longer-changed diff with that fact, after the counts', () => {
+    expect(documentTabAccessibleName({ kind: 'diff', group: 'staged', path: 'a.ts', dead: true }, 'a.ts', { additions: 1, deletions: 2 })).toBe(
+      'Diff, a.ts, staged, +1 \u22122, no longer changed'
+    )
+    expect(documentTabAccessibleName({ kind: 'diff', group: 'changes', path: 'a.ts', dead: true }, 'a.ts')).toBe('Diff, a.ts, unstaged, no longer changed')
+  })
+
+  it('does not call a live tab stale', () => {
+    expect(documentTabAccessibleName({ kind: 'diff', group: 'changes', path: 'a.ts', dead: false }, 'a.ts')).not.toContain('no longer changed')
+  })
 })
 
 describe('diffGroupLabel', () => {
   it('reads Staged, Unstaged, Untracked and Conflicts', () => {
     expect(['staged', 'changes', 'untracked', 'conflicts'].map((group) => diffGroupLabel(group as 'staged'))).toEqual(['Staged', 'Unstaged', 'Untracked', 'Conflicts'])
+  })
+})
+
+describe('splitDocumentPath', () => {
+  it('keeps the trailing slash on the folder and the file name whole', () => {
+    expect(splitDocumentPath('src/deep/index.ts')).toEqual({ dir: 'src/deep/', name: 'index.ts' })
+  })
+
+  it('has no folder for a root file', () => {
+    expect(splitDocumentPath('README.md')).toEqual({ dir: '', name: 'README.md' })
   })
 })
