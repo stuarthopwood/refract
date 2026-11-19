@@ -10,7 +10,7 @@ export interface RowActivation {
 }
 
 export interface RowOpenOptions {
-  /** Ctrl+click and Ctrl+Enter: the tab opens while the list keeps its selection and focus. */
+  /** Ctrl+click and Ctrl+Enter: the tab opens in the background while the list keeps focus. */
   background: boolean
   /** A pointer click leaves focus on the row; only the keyboard moves it to the new tab. */
   focus: boolean
