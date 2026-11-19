@@ -30,7 +30,8 @@ export function moveOrigin(map: Map<string, string>, sessionId: string, fromId: 
 function focusLocation(): 'body' | 'tab-strip' | 'other' {
   const active = document.activeElement
   if (!active || active === document.body) return 'body'
-  return active.closest('[role="tablist"]') ? 'tab-strip' : 'other'
+  // A close that leaves one item focuses the single-item header's close button, which has no tablist.
+  return active.closest('[role="tablist"], [data-panel-close]') ? 'tab-strip' : 'other'
 }
 
 function gitPanelShowing(): boolean {
