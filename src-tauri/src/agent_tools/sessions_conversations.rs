@@ -15,8 +15,7 @@ use super::sessions_end::{ipc_error, labels_for, CardLabel, INVALID_STATE};
 use super::sessions_send::{MAX_TEXT_BYTES, SESSION_NOT_RUNNING};
 use super::tree_gate;
 use crate::session::agent::{
-    timed_out_reason, FirstMessage, HandoffAction, PendingRequest, QueueOutcome, SessionAgent,
-    SharedRegistry, ACTION_DEADLINE,
+    FirstMessage, HandoffAction, PendingRequest, QueueOutcome, SessionAgent, SharedRegistry,
 };
 use crate::store::registry::Session;
 
@@ -133,7 +132,7 @@ pub struct ConvRow {
 }
 
 /// What the Conversation tools need from the running app.
-pub(super) trait ConvHost: Send + Sync + 'static {
+pub(super) trait ConvHost: Clone + Send + Sync + 'static {
     fn caller_id(&self) -> &str;
     fn call_id(&self) -> &str;
     fn registry(&self) -> &SharedRegistry;
@@ -163,6 +162,8 @@ pub(super) trait ConvHost: Send + Sync + 'static {
         first: FirstMessage,
     ) -> impl Future<Output = Result<(), ToolError>> + Send;
     fn switch(&self, id: &str, file: String) -> impl Future<Output = Result<(), ToolError>> + Send;
+    /// Tells the target's agent that its action failed after the caller stopped waiting.
+    fn late_failure(&self, id: &str, reason: &str) -> impl Future<Output = ()> + Send;
 }
 
 /// The target as the call first saw it.
@@ -287,59 +288,10 @@ pub(super) async fn recheck<H: ConvHost>(
     Ok((now, tree))
 }
 
-/// What became of the action.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Dispatch {
-    /// Held until the target's turn settles.
-    Scheduled,
-    /// Done now: the target was between turns or Stopped.
-    Done,
-}
-
 /// `(name, id)` of the caller for the message envelope; `None` when the caller acts on itself.
 pub fn sender_for(gate: &Gate, caller: &str) -> Option<(String, String)> {
     let row = gate.sessions.iter().find(|s| s.id == caller)?;
     (gate.target.id != caller).then(|| (row.name.clone(), row.id.clone()))
-}
-
-/// Queues the action when the target is mid-turn; otherwise runs it once, launching a Stopped
-/// target first, and tells the caller if that fails (the deferred run retries, see `handoff_queue`).
-/// `asked` is whether a card was shown and approved, which the deferred run needs to check again.
-/// The caller holds the tree gate across this, so it is bounded by `ACTION_DEADLINE` and never retried.
-pub(super) async fn dispatch<H: ConvHost>(
-    host: &H,
-    id: &str,
-    action: HandoffAction,
-    sender: Option<(String, String)>,
-    asked: bool,
-) -> Result<Dispatch, ToolError> {
-    tokio::time::timeout(ACTION_DEADLINE, run_action(host, id, action, sender, asked))
-        .await
-        .map_err(|_| ToolError::new(OUTCOME_UNKNOWN, timed_out_reason()))?
-}
-
-async fn run_action<H: ConvHost>(
-    host: &H,
-    id: &str,
-    action: HandoffAction,
-    sender: Option<(String, String)>,
-    asked: bool,
-) -> Result<Dispatch, ToolError> {
-    if host
-        .queue(id, action.clone(), sender.clone(), asked)
-        .await?
-        == QueueOutcome::Queued
-    {
-        return Ok(Dispatch::Scheduled);
-    }
-    match action {
-        HandoffAction::New { prompt } => {
-            let first = super::envelope::first_message(sender.as_ref(), prompt);
-            host.start_new(id, first).await?;
-        }
-        HandoffAction::Switch { file } => host.switch(id, file).await?,
-    }
-    Ok(Dispatch::Done)
 }
 
 fn clip_chars(text: &str, max: usize) -> String {
@@ -395,6 +347,7 @@ pub(super) async fn run_with<H: ConvHost>(
 }
 
 /// The running app behind `ConvHost`.
+#[derive(Clone)]
 pub(super) struct AppConvHost {
     agent: Arc<SessionAgent>,
     call_id: String,
@@ -504,7 +457,18 @@ impl ConvHost for AppConvHost {
             .emit_session_conversation_changed(id);
         Ok(())
     }
+    async fn late_failure(&self, id: &str, reason: &str) {
+        self.manager
+            .get_or_create_agent(id)
+            .report_late_handoff_failure(reason)
+            .await;
+    }
 }
+
+#[path = "sessions_conversations_dispatch.rs"]
+mod detached;
+use detached::dispatch;
+pub use detached::Dispatch;
 
 #[path = "sessions_conversations_flow.rs"]
 mod flow;

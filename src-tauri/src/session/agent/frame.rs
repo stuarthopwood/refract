@@ -199,6 +199,8 @@ impl SessionAgent {
             if state.turn_generation % 2 == 0 {
                 return;
             }
+            // The generation goes even and the status goes `Idle` in one lock section, mirroring
+            // `begin_turn`, so `queue_handoff` never sees an idle Session at an odd generation. (#1861)
             state.turn_generation = state.turn_generation.wrapping_add(1);
             // A stopped turn cancels its deferred handoff. The flag is read here because it is cleared
             // just below, before the Session goes idle. (#1861)
@@ -207,10 +209,11 @@ impl SessionAgent {
             }
             // Clears the abort flag for this turn. A no-op if stop() was never called for it. (#911)
             state.turn_abort_requested = false;
+            self.write_status(&mut state, SessionStatus::Idle, None, None);
             (state.turn_generation, state.shutdown_generation)
         };
         self.settle_turn_pending().await;
-        self.set_status(SessionStatus::Idle, None, None).await;
+        self.emit_status().await;
         crate::session::token_guard::on_turn_settled(self, generation).await;
         crate::session::working_mode::on_turn_settled(self).await;
         // Spawned like the re-sync below: the run sends prompts whose replies this frame loop must keep

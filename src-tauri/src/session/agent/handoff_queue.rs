@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use tokio::sync::OwnedMutexGuard;
 
+use super::detached_action::{finish_within, Waited};
 use super::start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use super::{AgentError, AgentState, SessionAgent, SessionStatus};
 use crate::agent_tools::handoff_target::{check_target, needs_card, MOVED_OUT_OF_TREE};
@@ -86,12 +87,17 @@ const ATTEMPTS: usize = 2;
 /// re-parent, create or update for 90 s, not for the several minutes a chain of RPCs could take.
 pub const ACTION_DEADLINE: Duration = Duration::from_secs(90);
 
-/// Why an action that outran `ACTION_DEADLINE` failed; it may have partly run.
-pub fn timed_out_reason() -> String {
+/// Why a caller stopped waiting for an action that is still running past `ACTION_DEADLINE`.
+pub fn still_running_reason() -> String {
     format!(
-        "the action took longer than {} seconds and was abandoned; it may have partly run",
+        "the action is still running after {} seconds; it keeps going and its result will show in the transcript",
         ACTION_DEADLINE.as_secs()
     )
+}
+
+/// Why a caller got no result from an action whose task ended unexpectedly.
+pub fn lost_reason() -> String {
+    "the action stopped unexpectedly; it may have partly run".to_string()
 }
 
 /// A failed action: `resend_only` is set once the new Conversation exists, so a retry repeats the send only.
@@ -106,8 +112,11 @@ enum Attempt {
     /// Refused by the settle-time check; another try would be refused too.
     Dropped(String),
     Failed(ActionFailure),
-    /// Not retried: the action may already have changed the Session.
-    TimedOut,
+    /// Past the deadline and not retried: the action may already have changed the Session. Its task
+    /// posts the failure notice itself if it fails.
+    StillRunning,
+    /// The action's task ended without a result; not retried, for the same reason.
+    Lost,
 }
 
 fn failure_reason(failed: StartThenSendError) -> String {
@@ -166,8 +175,9 @@ impl SessionAgent {
                     notice = Some(dropped_notice(&reason));
                     break;
                 }
-                Attempt::TimedOut => {
-                    notice = Some(failed_notice(&timed_out_reason()));
+                Attempt::StillRunning => break,
+                Attempt::Lost => {
+                    notice = Some(failed_notice(&lost_reason()));
                     break;
                 }
                 Attempt::Failed(failed) => {
@@ -196,7 +206,8 @@ impl SessionAgent {
         Some(crate::agent_tools::tree_gate::lock(&repository_id).await)
     }
 
-    /// The settle-time check, then the action, under one hold of the tree gate and one deadline.
+    /// The settle-time check, then the action, under one hold of the tree gate. The action runs on its
+    /// own task that owns the gate, so a slow one is waited for at most `deadline`, never cancelled.
     async fn attempt_handoff(
         &self,
         queued: &QueuedHandoff,
@@ -204,17 +215,28 @@ impl SessionAgent {
         deadline: Duration,
     ) -> Attempt {
         // The check and the action share one hold, so a re-parent cannot land between them (#1861).
-        let _gate = self.hold_tree_gate(queued.sender.is_some()).await;
+        let gate = self.hold_tree_gate(queued.sender.is_some()).await;
         if let Some(reason) = self
             .settle_refusal(queued.sender.as_ref(), queued.asked)
             .await
         {
             return Attempt::Dropped(reason);
         }
-        match tokio::time::timeout(deadline, self.run_action(queued, resend_only)).await {
-            Ok(Ok(())) => Attempt::Done,
-            Ok(Err(failed)) => Attempt::Failed(failed),
-            Err(_) => Attempt::TimedOut,
+        let runner = self.arc();
+        let late = self.arc();
+        let queued = queued.clone();
+        let action = async move { runner.run_action(&queued, resend_only).await };
+        // Only a failure that outlives the wait needs the task to say so; a waiting caller retries.
+        let tell_late = move |result: Result<(), ActionFailure>| async move {
+            if let Err(failed) = result {
+                late.tell_agent_why(failed_notice(&failed.reason)).await;
+            }
+        };
+        match finish_within(deadline, gate, action, tell_late).await {
+            Waited::Done(Ok(())) => Attempt::Done,
+            Waited::Done(Err(failed)) => Attempt::Failed(failed),
+            Waited::StillRunning => Attempt::StillRunning,
+            Waited::Lost => Attempt::Lost,
         }
     }
 
@@ -230,6 +252,11 @@ impl SessionAgent {
             }
             HandoffAction::Switch { file } => self.switch_handoff_conversation(file.clone()).await,
         }
+    }
+
+    /// A call-time action failed after its caller stopped waiting, so nobody else can say so.
+    pub async fn report_late_handoff_failure(&self, reason: &str) {
+        self.tell_agent_why(failed_notice(reason)).await;
     }
 
     /// Shows the developer the notice and keeps it for the agent's next prompt.

@@ -19,6 +19,7 @@ mod chat_restore;
 mod command_wait;
 mod commands;
 mod conversations;
+mod detached_action;
 mod frame;
 mod handoff;
 mod handoff_queue;
@@ -40,8 +41,9 @@ pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
+pub use detached_action::{finish_within, Waited};
 pub use handoff_queue::{
-    timed_out_reason, HandoffAction, QueueOutcome, QueuedHandoff, ACTION_DEADLINE,
+    lost_reason, still_running_reason, HandoffAction, QueueOutcome, QueuedHandoff, ACTION_DEADLINE,
 };
 pub use requests::is_chat_answer;
 pub use start_with_message::{FirstMessage, StartStage, StartThenSendError};

@@ -24,10 +24,18 @@ pub(super) async fn new_conversation<H: ConvHost>(
     let (session_id, prompt) = parse_new(args)?;
     let gate = open_gate(host, session_id.as_deref(), true).await?;
     let asked = confirm(host, ConvTool::New, &gate, &prompt).await?;
-    let (gate, _tree) = recheck(host, &gate, asked).await?;
+    let (gate, tree) = recheck(host, &gate, asked).await?;
     let sender = sender_for(&gate, host.caller_id());
     let id = gate.target.id;
-    let dispatched = dispatch(host, &id, HandoffAction::New { prompt }, sender, asked).await?;
+    let dispatched = dispatch(
+        host,
+        &id,
+        HandoffAction::New { prompt },
+        sender,
+        asked,
+        tree,
+    )
+    .await?;
     Ok(json!({ "outcome": outcome_word(dispatched, "started"), "id": id }))
 }
 
@@ -55,11 +63,11 @@ pub(super) async fn switch_conversation<H: ConvHost>(
         );
     }
     let asked = confirm(host, ConvTool::Switch, &gate, &chosen.title).await?;
-    let (gate, _tree) = recheck(host, &gate, asked).await?;
+    let (gate, tree) = recheck(host, &gate, asked).await?;
     let sender = sender_for(&gate, host.caller_id());
     let id = gate.target.id;
     let action = HandoffAction::Switch { file: chosen.file };
-    let dispatched = dispatch(host, &id, action, sender, asked).await?;
+    let dispatched = dispatch(host, &id, action, sender, asked, tree).await?;
     Ok(json!({
         "outcome": outcome_word(dispatched, "switched"),
         "id": id,
