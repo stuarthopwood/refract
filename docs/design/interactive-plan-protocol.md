@@ -11,7 +11,7 @@ Claims cite a file and line as of `origin/main` at `dd56b639`. Anything not read
 - The agent **emits and updates** the plan with one new Refract host tool, `refract_plan`, answered natively in Rust. It uses the host tool channel of [ADR 0007](../adr/0007-agent-tool-channel.md). The tool takes no session id; it is bound to the calling Session.
 - The developer **mutates** the plan through new Refract IPC requests. Rust applies a tick or a value directly to the store, so these work with the agent stopped.
 - **Ask**, **give a value** and **complete this step** are real chat turns. Each is wrapped in a `<plan-item>` envelope, the way [ADR 0008](../adr/0008-session-message-envelope.md) wraps a Session message, and sent undecorated. The envelope carries the exact item id. A plain tick is stored and reaches the agent without a turn.
-- The agent has **bounded authority**. It cannot edit or remove what the developer wrote, cannot complete a human-owned step, and cannot change the flags that gate completion.
+- The agent has **bounded authority**. It cannot edit or remove what the developer wrote or edited, cannot complete a human-owned step, and cannot change the flags that gate completion.
 - Rust **owns the plan** and **persists** it per Session in the Refract data directory. The OMP transcript is not the source of truth.
 - The agent **learns of developer edits** from a persisted `agentSeenRev` watermark. A lost result frame never loses an edit.
 - Everything ships on **today's rpc-ui wire**. No OMP-upstream capability is required, so no upstream request is raised.
@@ -27,7 +27,7 @@ Claims cite a file and line as of `origin/main` at `dd56b639`. Anything not read
 | The `ask` tool is bidirectional but one-shot: `answer_request` resolves one pending request with one answer. | `src-tauri/src/session/agent/requests.rs:13-57` |
 | Refract registers its own host tools on every launch with `set_host_tools` and serves each `host_tool_call` on its own task. Tools use `loadMode: "essential"` and the `refract_` prefix. | `src-tauri/src/agent_tools/mod.rs:27`, `:77-95`, `:99-108`; `session/agent/launch.rs:333`; `router.rs:363-386` |
 | Every launched Session is `Root` and gets the tools; `Role::Child` is empty and reserved for #1859. | `agent_tools/mod.rs:34-40`, `:51-56`, `:65-74` |
-| Some Session tools are answered in Rust with no renderer round trip and no generic approval card. Each mutating one raises its own card. | `agent_tools/router_native.rs:14-37`; cards at `sessions_end.rs:381`, `approval.rs:56-69` |
+| Some Session tools are answered in Rust with no renderer round trip and no generic approval card. Each mutating one raises its own card. | `agent_tools/router_native.rs:14-37`; cards raised by the `ask` helper at `sessions_end.rs:376-383`, built with `approval.rs:56-69` |
 | A tool result is capped at 8 KiB (`MAX_RESULT_BYTES`). `ok_frame` turns a larger result into a `result_too_large` error; it never cuts it. | `agent_tools/mod.rs:31`, `router.rs:162-176` |
 | The approval overlay allows exactly the registered tool names, so a new tool joins it by joining `tools_for`. | `agent_tools/overlay.rs:13-19`, `mod.rs:65-74` |
 | A user prompt reaches the agent through `prompt`. While the agent works it goes out with `streamingBehavior: "followUp"`. A paused Session holds it. A stopped Session refuses it with `agent-not-running`. | `session/agent/chat.rs:36-156` |
@@ -106,7 +106,7 @@ Option A for the agent side. Rust owns the plan. The developer's direct edits us
 
 | # | Direction | Channel | Message shape | Item id mapping |
 |---|---|---|---|---|
-| 1 | Agent to Refract: emit | `host_tool_call` for `refract_plan`, `action: "create"` | `{ action, requestId, title, items: [{ text, owner?, requiresValue?, agentCompletable?, group? }], replace? }` | Rust assigns each id (`i1`, `i2`, ...) and returns them in the result. |
+| 1 | Agent to Refract: emit | `host_tool_call` for `refract_plan`, `action: "create"` | `{ action, requestId, title, items: [{ text, owner?, requiresValue?, agentCompletable?, group? }], replace? }` | Rust assigns each id (`i1`, `i2`, ...) and returns every one in a compact `ids` array. `items` in the result holds only the first page of compact items; the rest come from `get` with `after`. |
 | 2 | Agent to Refract: update | `host_tool_call`, `action: "update"` | `{ action, baseRev, requestId?, ops: [Op] }` | Each op names an item by id, or by `after: <id>` for placement. |
 | 3 | Agent to Refract: read | `host_tool_call`, `action: "get"` | `{ action, baseRev?, itemId?, full?, after? }` | Result returns compact items with their ids. |
 | 4 | Refract to agent: acknowledge | `host_tool_result` for the same call | See "Result shape and size" | Ids in the result are the ids the next call must use. |
@@ -114,7 +114,7 @@ Option A for the agent side. Rust owns the plan. The developer's direct edits us
 | 6 | Renderer to Refract: read | IPC request `plan.get` | `(sessionId)` returns the active plan or `null` | none |
 | 7 | Renderer to Refract: tick, value, edit | IPC request `plan.mutate` | `(sessionId, planId, baseRev, requestId?, op)` | `op` names the item id. |
 | 8 | Renderer to agent: ask / value / complete this step | IPC request `plan.itemMessage`, which sends an undecorated `prompt` | `(sessionId, planId, itemId, action: "ask" \| "value" \| "complete", text?)`, sent as a `<plan-item>` envelope | The envelope carries `plan`, `item` and `rev`. |
-| 9 | Refract to agent: developer edits it has not acknowledged | `userChanges` in every `refract_plan` result, plus a hint line in the `[Refract]` notice | list of `{ rev, itemId, op, ... }` | Same ids. |
+| 9 | Refract to agent: developer edits it has not acknowledged | `userChanges` in every `refract_plan` result, plus a hint line in the `[Refract]` notice | list of `{ rev, itemId, op, by, ... }`: the op and the changed field names only, never new text or values | Same ids. |
 | 10 | Refract to disk | Write-through to `<data_dir>/plans/<sessionId>.json` | See "Persistence" | Same ids. |
 
 The IPC names follow the existing `agentTools.result` pattern (`src-tauri/src/ipc/agent_tools.rs:10-13`). The renderer reaches them through the existing `refract_request` command (`src/tauri-bridge/index.ts:83-87`).
@@ -137,7 +137,7 @@ The agent calls `refract_plan` with `action: "create"`. Rust:
 
 If an active plan has unfinished items, `create` fails with `plan_exists`. The agent passes `replace: true` to archive it and start a new one. A fully complete active plan is archived by the next `create` with no flag.
 
-**Approval.** A plan call changes Refract-owned state only, and the developer sees it and can undo it, so `refract_plan` needs no generic file-change card. `router_native.rs:14-37` does not skip approval in general: each mutating Session tool raises its own card (`sessions_end.rs:381`). The plan tool raises one in a single case:
+**Approval.** A plan call changes Refract-owned state only, and the developer sees it and can undo it, so `refract_plan` needs no generic file-change card. `router_native.rs:14-37` does not skip approval in general: each mutating Session tool raises its own card through the `ask` helper (`sessions_end.rs:376-383`). The plan tool raises one in a single case:
 
 - `create` with `replace: true` raises a card, built with `approval::session_card` (`approval.rs:56-69`), when the active plan holds an unfinished item the developer wrote or filled in (`createdBy: developer`, or a developer-set value). The card names the count of such items and says their values are dropped from the archive. Unlike `needs_approval` (`approval.rs:21`), this card is not skipped in yolo, because it discards developer input. A denied card returns `denied`.
 
@@ -158,11 +158,11 @@ If an active plan has unfinished items, `create` fails with `plan_exists`. The a
 
 #### Authorship
 
-Every item records `createdBy` and `updatedBy` (`agent` or `developer`). A value records who set it (`valueBy`). A completed item records `completedBy`. The panel shows `updatedBy` on every completed item, so the developer can see who ticked it.
+Every item records `createdBy` and `updatedBy` (`agent` or `developer`). A value records who set it (`valueBy`). A completed item records `completedBy`. Any developer `edit` sets `editedByDeveloper` on the item, and it stays set. The panel shows `updatedBy` on every completed item, so the developer can see who ticked it.
 
 | Rule | Error |
 |---|---|
-| The agent cannot `edit` or `remove` an item with `createdBy: developer`, and cannot `remove` any item that holds a developer-set value. | `developer_item` |
+| The agent cannot `edit` or `remove` a developer-owned item (`createdBy: developer` or `editedByDeveloper: true`), and cannot `remove` any item that holds a developer-set value. | `developer_item` |
 | The agent cannot `setValue` on an item whose value is developer-set. | `developer_item` |
 | `owner`, `requiresValue` and `agentCompletable` are fixed at creation. The agent cannot change them with `edit`. Only the developer can change them afterwards. | `field_locked` |
 | The agent cannot complete an item with `owner: human`. | `human_owned` |
@@ -193,7 +193,7 @@ Whenever an item moves into `complete`, Rust stores its status just before as `p
 
 #### Concurrency
 
-Every accepted change by either party bumps the plan `rev` and stamps the touched items with that `rev`. An agent op is applied when every existing item it touches has an item `rev` at or below `baseRev`. Otherwise the whole call fails with `conflict`, and the error lists the current compact state of the conflicting items so the agent can re-plan without another `get`.
+Every accepted change by either party bumps the plan `rev` and stamps the touched items with that `rev`. An agent op is applied when every existing item it touches has an item `rev` at or below `baseRev`. Otherwise the whole call fails with `conflict`, and the error lists the current compact state of the conflicting items, within the error budget (see "Errors"), so the agent can re-plan without another `get`.
 
 #### Retries
 
@@ -229,38 +229,45 @@ A result must never reach `result_too_large`, because `ok_frame` would drop the 
 {
   "planId": "p2", "rev": 9, "seenRev": 9, "title": "...", "state": "active",
   "itemCount": 6, "duplicate": false,
+  "ids": ["i1", "i2", "i3"],
   "items": [{ "id": "i3", "status": "complete", "rev": 9, "text": "...", "textTruncated": true,
               "owner": "agent", "requiresValue": true, "agentCompletable": true,
-              "hasValue": true, "valueBytes": 28, "updatedBy": "developer" }],
+              "hasValue": true, "valueBytes": 28, "updatedBy": "developer",
+              "editedByDeveloper": true }],
   "moreItems": false,
-  "userChanges": [{ "rev": 9, "itemId": "i3", "op": "setStatus", "status": "complete",
-                    "by": "developer", "hasValue": true, "valueBytes": 28 }],
+  "userChanges": [{ "rev": 9, "itemId": "i3", "op": "setStatus", "status": "complete", "by": "developer" },
+                  { "rev": 9, "itemId": "i4", "op": "edit", "by": "developer", "fields": ["text"] }],
   "moreChanges": false
 }
 ```
 
 - Item text is cut to 60 bytes with `textTruncated: true`. A value is never inlined: only `hasValue` and `valueBytes`. The agent reads one in full with `get { itemId }`.
+- `create` returns `ids`, every id it assigned in order (at most 40, about 240 bytes). `update` returns `addedIds` the same way. The agent can then address every item even though `items` holds only the first page. The remaining items come from `get` with `after`.
 - `create` and `update` list in `items` only the items the call touched. `get` lists the plan in order from `after` (an item id; the first page when omitted).
 - `get { full: true }` returns full items (full text, group, value) in pages with the same budget. `get { itemId }` returns exactly one full item.
+- A `userChanges` entry names the op and the changed field names only, never new text or values. `setStatus` adds the new `status`, `setValue` adds `valueBytes`, `edit` adds `fields` (any of `text`, `group`, `owner`, `requiresValue`, `agentCompletable`), and `add`, `move` and `remove` add nothing. The agent reads the new content with `get { itemId }`. See "Change record" for where the entries come from.
 
 **Arithmetic.** Budget 7,168 bytes of the 8,192 (`MAX_RESULT_BYTES`):
 
 | Part | Worst case |
 |---|---|
 | Header (fixed keys about 180, title at most 120 bytes, at most 240 escaped) | 420 |
-| One compact item: fixed keys, ids, flags and a four-digit `rev` 201, plus text at most 60 bytes, at most 120 escaped | 321 |
-| One `userChanges` entry (`rev`, ids, `op`, `status`, `by`, `hasValue`, `valueBytes`) | 128 |
+| `ids` or `addedIds` (40 ids of up to three characters, or 20 ids of up to five) | 240 |
+| One compact item: fixed keys, ids, flags (including `editedByDeveloper`) and a four-digit `rev` 227, plus text at most 60 bytes, at most 120 escaped | 347 |
+| One `userChanges` entry (`rev`, ids, `op`, `by`, and `status`, `valueBytes` or at most five `fields` names) | 128 |
 | `userChanges` budget: 20 entries | 2,560 |
-| `items` budget: 13 compact items | 4,173 |
-| Total: 420 + 2,560 + 4,173 | **7,153** |
+| `items` budget: 7,168 - 420 - 240 - 2,560 = 3,948, which holds 11 compact items | 3,817 |
+| Total: 420 + 240 + 2,560 + 3,817 | **7,037** |
 | One full item: text 400 + group 120 + value 2,048 escaped + keys and flags at most 400 | 2,968 |
 
-The total, 7,153, is under both the 7,168 budget and the 8,192 cap, so the worst-case result fits. One full item (2,968) fits the 4,173-byte `items` budget, so a `full` page and a `get { itemId }` always return at least one item. A 40-item plan needs at most four compact pages in the worst case, and fewer when text is short, because each list fills by bytes, not by count.
+The total, 7,037, is under both the 7,168 budget and the 8,192 cap, so the worst-case result fits. One full item (2,968) fits the 3,948-byte `items` budget, so a `full` page and a `get { itemId }` always return at least one item. A 40-item plan needs at most four compact pages in the worst case, and fewer when text is short, because each list fills by bytes, not by count. A 40-item `create` returns all 40 ids and the first 11 compact items.
+
+**Errors.** An error payload uses the same `items` budget (3,948 bytes, 11 compact items) and sets `moreItems` when it stops. It never lists more. Worst case: error header 252 (code, a message of at most 160 bytes, `planId`, `rev`) + 3,817 = 4,069 bytes, under the 8 KiB cap. `conflict`, `item_changed`, `unknown_item` and `item_removed` all follow this rule.
 
 **Overflow.** A list that reaches its budget stops and sets its flag.
 
 - `items` stops and sets `moreItems: true`. The agent calls `get` with `after` set to the last id it received.
-- `userChanges` holds the **latest op per item** among developer changes with `rev` above the agent's `baseRev`, oldest `rev` first. It stops at 20 entries and sets `moreChanges: true`. `seenRev` is then the `rev` of the last entry returned. Otherwise `seenRev` equals `rev`. The tool description tells the agent to quote `seenRev`, not `rev`, as its next `baseRev`, so the remainder arrives on the next call.
+- `userChanges` holds the **latest op per item** among developer changes with `rev` above the agent's watermark, oldest `rev` first. It stops at 20 entries and sets `moreChanges: true`. `seenRev` is then the `rev` of the last entry returned. Otherwise `seenRev` equals `rev`. The tool description tells the agent to quote `seenRev`, not `rev`, as its next `baseRev`, so the remainder arrives on the next call. Rust enforces this with a clamp (see "Keeping the agent in sync").
 
 ### User mutate
 
@@ -277,13 +284,22 @@ Rust applies the op under the per-Session lock, bumps `rev`, persists, emits `pl
 
 Nothing here talks to the agent, so a tick or a value never interrupts a running turn.
 
+**Change record.** `userChanges` is read from two stored places, so the plan keeps no general change log:
+
+- Each item stores `lastDeveloperOp`: `{ op, rev, fields }`, where `op` is `setStatus`, `setValue`, `edit`, `add` or `move`, and `fields` lists the changed field names of an `edit`. A later developer op replaces it, except that a `setStatus`, `setValue` or `move` does not replace an `edit` or `add` whose `rev` is above `agentSeenRev`: the agent re-reads that item anyway, and the read shows the current status and value.
+- The plan keeps `removed: [{ id, rev, by }]`, at most 40 entries. An entry at or below `agentSeenRev` is pruned. If the cap forces out an entry the agent has not seen, the agent's next use of that id still fails with `item_removed`, because ids are never reused.
+
+The entries are the items' `lastDeveloperOp` records and the developer's `removed` entries, filtered by the op's own `rev` (the item's `rev` can be higher after an agent change), ordered by `rev`.
+
 ### Envelope
 
 The `<plan-item>` envelope and the `session-message` envelope share one parser and escape table in `agent_tools/envelope.rs`. Today that file knows only `session-message` (`envelope.rs:6-11`, `:100-131`), so the child that adds `<plan-item>` (#2013 for the send side, with #2014 for the transcript source) first **generalises it to a tag-parameterised escape and parser**:
 
 - **One escape for both tags.** A body escapes the tags of *both* envelopes. `</plan-item>` in an item's text, and `<session-message ...>` in a developer value, shift one level up with the existing bijective `&amp;`-prefix scheme and shift back on parse. Round-trip tests cover each tag inside each envelope.
 - **Exactly one envelope per turn.** `parse` accepts only a turn whose whole text is one envelope. A raw tag of either name left in the body is a second or forged envelope and is rejected, as `envelope.rs:52-55` does today.
-- **Parse `<plan-item>` only from a raw developer user turn.** `from_envelope` (`message_source.rs:21-30`) runs on the whole turn text and returns the body of a `session-message` without parsing it again, so a `<plan-item>` inside a Session message is only text. A test pins this.
+- **A `<plan-item>` becomes a card only when it matches a send record.** `send_plan_item` writes `{ planId, itemId, rev, action, textHash }` to the Session's plan store before it sends, where `textHash` hashes the whole turn text. The store keeps the newest 50 records. The transcript text alone cannot tell a developer turn from the agent's own words: `first_message` sends a self-handoff note raw as the first user turn (`envelope.rs:31-44`), so an agent could write a forged `<plan-item>` there. So `from_envelope` (`message_source.rs:21-30`) keeps handling only `session-message`, and a `<plan-item>` turn stays plain text in `build_user_item`. The Session-scoped pass that already labels handoff notes (`mark_note`, `queued_handoff.rs:14-21`, and `label_handoff_note`, `saved_history_cache.rs:31-48`) parses the turn and sets the `PlanItem` source only when a send record matches all five fields. With no match, or after a record is evicted, the turn stays plain text.
+- **Never parse the first turn of a handoff-note Conversation.** The pass skips the first user item when the Conversation opens with a note, the item `marked_first_user` labels (`handoff_note.rs:10-27`).
+- **A `<plan-item>` inside a Session message is only text.** `from_envelope` returns the body of a `session-message` without parsing it again. One test pins this, and one pins a forged `<plan-item>` in a handoff note as plain text. A forged `session-message` in a handoff note has the same hole today; this design does not change it.
 - **Attributes** (`plan`, `item`, `rev`, `action`) come from Rust. `plan` and `item` are escaped with `escape_attr` anyway.
 
 ### Ask, give a value, and complete this step
@@ -298,7 +314,7 @@ Does this step need the staging database?
 
 - **`action="ask"`** carries the developer's own typed text as the body. The body is capped at 4 KiB.
 - **`action="value"`** is the textarea in #2013. Rust first applies `setValue` (developer-authored) so the panel shows it at once and a stopped agent still keeps it. It then sends the turn with the value as the body. If the send is refused, the value stays stored and the developer sees the refusal. The envelope body is the developer's own value text and is not quoted back from the store.
-- **`action="complete"`** is allowed only when the item is `agentCompletable`, not complete and not `owner: human`. Otherwise the call fails with `not_agent_completable`. The body is **not** the developer's own words. Rust writes it from a fixed template that quotes the item text and labels its author:
+- **`action="complete"`** is allowed only when the item is `agentCompletable`, not complete, not `owner: human` and has no pending entry. Otherwise the call fails with `not_agent_completable`. On a `requiresValue` item with no developer-set value it fails with `value_required` before anything is sent, because the agent could never complete it (an agent-set value does not count, see "Authorship"). #2013 disables the control on such an item and shows the reason. The body is **not** the developer's own words. Rust writes it from a fixed template that quotes the item text and labels its author:
 
   ```text
   <plan-item plan="p1" item="i3" rev="9" action="complete">
@@ -307,27 +323,28 @@ Does this step need the staging database?
   </plan-item>
   ```
 
-  The label reads "you wrote" when `createdBy` is `agent` and "the developer wrote" otherwise. The quoted text is one line, because item text has no control characters. Rust accepts the turn, then sets the item to `in_progress` and records `previousStatus` before it sends. See the lifecycle below.
+  The first sentence says "this step you wrote" when `createdBy` is `agent` and `editedByDeveloper` is not set, and "this step the developer wrote" otherwise, so developer-edited text is never labelled as the agent's. Rust passes the item text through `approval::flatten` (`approval.rs:71-85`) before it quotes it. That drops bidi and zero-width format characters with `is_invisible_format` (`github/profile.rs:37-57`) and turns line breaks into spaces, including U+2028 and U+2029, which item validation does not reject because `char::is_control` does not cover them. The quote is therefore one line. Rust accepts the turn, then sets the item to `in_progress` and records `previousStatus` before it sends. See the lifecycle below.
 - A plain tick does not send a turn. It is stored and reaches the agent as described in "Keeping the agent in sync". `[INFERENCE]` This keeps ticking cheap and non-interrupting. #2013 can still offer "tick and tell the agent" by sending `action="value"` or `ask` with the tick, with no protocol change.
 - **Authority.** The turn is a developer request, sent undecorated, and nothing in it changes the approval model. For `ask` and `value` the body is the developer's own words. For `complete` the quoted item text, when the agent wrote it, carries no more authority than the agent already has: the agent acts under its own approval mode, and "complete this step" does not skip a card in a non-yolo Session. This is the rule of ADR 0008: "nothing in the text grants more authority than the recipient already has".
 - **Notice and working mode.** `decorate = false` means the pending `[Refract]` notice is not consumed (`chat.rs:105-110`) and the working-mode wrapper is not added (`chat.rs:113-117`). The notice stays pending for the developer's next ordinary prompt, and the item turn reaches the transcript as exactly one envelope, which the parser requires. A `complete` turn sent in Grill or Plan working mode therefore carries no mode instruction, as a Session message does today. The developer's click on "complete this step" is the instruction to proceed.
 - **Delivery** follows `chat.rs:36-156`: an idle Session sends at once; a working Session queues it as `followUp`; a paused Session holds it; a stopped Session refuses it with `agent-not-running`. The panel disables ask, value-to-agent and complete while the Session has no live agent.
-- **Transcript.** OMP stores the user turn as the envelope text, so a reload still shows it. `from_envelope` runs before the hidden-instruction cut (`file_attachment_markers.rs:162-175`), so an undecorated envelope parses. Refract sets a typed source on the user item, a new `MessageSource` variant `PlanItem { planId, itemId, action }` (`message_source.rs:11-18`).
+- **Transcript.** OMP stores the user turn as the envelope text, so a reload still shows it. The turn is undecorated, so its text is exactly one envelope. The Session-scoped pass (see "Envelope") sets a typed source on the user item, a new `MessageSource` variant `PlanItem { planId, itemId, action }` (`message_source.rs:11-18`), only when a send record matches.
 - The agent then acts through `refract_plan update`. It never has to guess which item the developer meant, because the envelope names it.
 
 #### Complete-this-step lifecycle
 
-1. Rust accepts the call, stores `previousStatus`, sets the item to `in_progress` and records `pendingComplete { itemId }` on the plan, under the lock, then sends the turn.
-2. If the send is refused (`agent-not-running`, `prompt-failed`), Rust restores the previous status and clears `pendingComplete` before the call returns an error.
-3. The agent's `setStatus` on that item, to any status, clears `pendingComplete`. `setStatus: complete` completes it. Another status, such as `blocked`, stays.
-4. If the turn settles with `pendingComplete` still set, Rust restores `previousStatus`, clears the flag and emits `plan:update`. The hook is the turn-settle step (`session/agent/frame.rs:195-231`), which an aborted turn also reaches (`turn_abort_requested`, `frame.rs:207-211`). A chat-only answer, an aborted turn and a stopped agent therefore all end with the item back where it was, never stuck. A process exit clears it the same way. On load, a stale flag is cleared when the Session is idle.
-5. `[INFERENCE]` A turn queued as a follow-up behind a running turn may settle once before it starts. #2011 verifies the ordering with a live check and clears the flag only on the settle that follows the envelope's own turn.
+1. Rust accepts the call, stores `previousStatus`, sets the item to `in_progress`, adds `{ itemId, turnMarker, started: false }` to `pendingComplete` and writes the send record, all under the lock, then sends the turn. `turnMarker` is the plan `rev` after that change, and the record and the envelope carry the same `rev`.
+2. If the send is refused (`agent-not-running`, `prompt-failed`), Rust restores the previous status and removes the entry and the record before the call returns an error.
+3. An entry is **cleared** with no revert by: the agent's `setStatus` on that item to any status (`complete` completes it, another status such as `blocked` stays); any developer status change, `edit`, `remove` or `replace` of that item, so a developer's tick while the agent works stays ticked; and `create` with `replace`, which archives the plan.
+4. An entry becomes **started** when the user item of its own turn reaches the transcript: after a `message_start` frame (`frame.rs:80-81`), the Session-scoped pass labels the item with a `PlanItem` source that matches a send record for that plan and item, and that marks the oldest unstarted entry for that item. This is what ties a settle to its own turn, whatever order queued turns run in.
+5. The settle hook (`handle_turn_settled`, `frame.rs:194-231`, run on `session_settled`, `frame.rs:39-40`) handles only started entries. For each, it removes the entry and restores `previousStatus` only if the item is still `in_progress` and its `rev` still equals `turnMarker`, so nothing has changed it since the entry set it. Otherwise it does nothing. An unstarted entry survives a settle. It then emits `plan:update`. An aborted turn also reaches the hook (`turn_abort_requested`, `frame.rs:207-211`), so a chat-only answer and an aborted turn both end with the item back where it was.
+6. An entry that never starts cannot wait forever. `stop()` withdraws the queued follow-ups (`abort_and_restore_queue`, `chat.rs:183-188`) and applies the step 5 restore rule to every unstarted entry. A process exit or relaunch applies it to every entry. On load, a stale entry is cleared when the Session is idle. Because the restore rule is a no-op on a changed item, an item the agent or the developer touched is left as they left it.
 
 ### Keeping the agent in sync with developer edits
 
 A tick or a value changes the plan without a turn. The agent finds out in two ways, and a loss of either never loses an edit.
 
-1. **Pull, from a persisted watermark.** The plan stores `agentSeenRev`. A `refract_plan` call that quotes `baseRev` first raises `agentSeenRev` to `baseRev` (never lowering it, never above `rev`), in the same write as the call's own op. The result's `userChanges` are developer changes with `rev` above `baseRev`, or above `agentSeenRev` when a `get` quotes none. The watermark never advances on reading: it advances only when a later call quotes a `seenRev` it was given. If a result is lost (the call is cancelled, `result_too_large`, a crash), the next call returns the same changes again.
+1. **Pull, from a persisted watermark.** The plan stores `agentSeenRev` and `issuedSeenRev`, the highest `seenRev` Rust has put in a result. `issuedSeenRev` is written before the result is sent, and a `get` writes only when it rises. A `refract_plan` call that quotes `baseRev` first raises `agentSeenRev` to `min(baseRev, issuedSeenRev)` (never lowering it, never above `rev`), in the same write as the call's own op. The clamp means an agent that quotes `rev` instead of `seenRev` after an overflow cannot move the watermark past changes Rust never delivered. The result's `userChanges` are developer changes with `rev` above that raised `agentSeenRev`, or above the stored `agentSeenRev` when a `get` quotes none. The watermark never advances on reading: it advances only when a later call quotes a `seenRev` it was given. If a result is lost (the call is cancelled, `result_too_large`, a crash), the next call returns the same changes again.
 2. **Hint with the next prompt.** When the developer sends a normal prompt and a plan has developer changes above `agentSeenRev`, Rust adds a hint line to the notice. It is built when the notice is taken, from the current `rev`, so it is never stale. It carries ids and ops only, never item text or values, because it is injected into the prompt unescaped: `Plan p1 changed by the developer after rev 8: tick i2, value i3. Call refract_plan get.`
 
 The notice is a hint only. The agent's `userChanges` is the record. A long working turn gets no hint, and the agent still sees every change on its next tool call.
@@ -362,16 +379,19 @@ Schema sketch (the #2011 model owns final field names; the keys below are the pr
   "sessionId": "s-1",
   "activePlanId": "p2",
   "nextPlanSeq": 3,
+  "sendRecords": [{ "planId": "p2", "itemId": "i4", "rev": 8, "action": "complete", "textHash": "9f2c..." }],
   "plans": [
     {
       "id": "p2",
       "title": "Step-by-step testing plan",
       "rev": 9,
       "agentSeenRev": 7,
+      "issuedSeenRev": 8,
       "nextItemSeq": 6,
       "createdInConversation": "c-1",
       "state": "active",
-      "pendingComplete": null,
+      "pendingComplete": [{ "itemId": "i4", "turnMarker": 8, "started": false }],
+      "removed": [{ "id": "i2", "rev": 8, "by": "developer" }],
       "recentRequests": [{ "requestId": "r-41", "rev": 8, "addedIds": ["i5"] }],
       "items": [
         {
@@ -387,13 +407,17 @@ Schema sketch (the #2011 model owns final field names; the keys below are the pr
           "rev": 9,
           "createdBy": "agent",
           "updatedBy": "developer",
-          "completedBy": "developer"
+          "completedBy": "developer",
+          "editedByDeveloper": false,
+          "lastDeveloperOp": { "op": "setStatus", "rev": 9 }
         }
       ]
     }
   ]
 }
 ```
+
+Bounds: `sendRecords` keeps the newest 50, `removed` 40, `recentRequests` 16, and `pendingComplete` holds at most one entry per item.
 
 ### Restart behaviour
 
@@ -411,11 +435,13 @@ Schema sketch (the #2011 model owns final field names; the keys below are the pr
 | `host_tool_defs` (`mod.rs:77-95`) | The `is_session_tool` branch (`:81-85`) sends every other name to `panels::tool_description`, so add a plan branch before the `else`, or `refract_plan` falls into the panels branch. |
 | `router::plan` (`router.rs:101-156`) | Add an arm that validates the arguments and returns `Plan::Native`. Today an unknown name returns `UNKNOWN_TOOL` (`:151-154`). |
 | `run_native` (`router_native.rs:15-37`) | Add an arm before `_ => sessions_send::send` (`:35`). Without it, a plan call is routed to `send` and fails there. |
-| `mod.test.rs:38` | The count of `host_tool_defs` goes from 17 to 18, and the names list at `:4-27` gains `refract_plan`. |
+| `mod.test.rs:38`, `:9-25` | The count of `host_tool_defs` (`:38`) goes from 17 to 18, and the names list (`:9-25`) gains `refract_plan`. |
 | `overlay.rs:38-41` | The golden string gains `refract_plan: allow`. |
 | `register_host_tools` (`mod.rs:99-108`) | Return the outcome, so a refused `set_host_tools` is shown (see "Failure cases"). |
 | `agent_tools/envelope.rs` | Generalise to a tag-parameterised escape and parser (see "Envelope"). |
 | `MessageSource` (`message_source.rs:11-18`) | Add the `PlanItem` variant. |
+| Send and settle (`chat.rs`, beside `send_session_message` at `:51-57`; `stop` at `:158-259`; `frame.rs:194-231`) | `send_plan_item` writes the send record and the `pendingComplete` entry. `stop` and the settle hook apply the lifecycle (see "Complete-this-step lifecycle"). |
+| Session-scoped transcript pass (`queued_handoff.rs:14-21`, `saved_history_cache.rs:31-48`) | Also validates `<plan-item>` turns against the send records, and skips a handoff note's first turn. |
 | Notice slot (`handoff_queue.rs:72-78`, `:295-298`; `chat.rs:136-141`) | Option to list. |
 | `delete_in_flight.rs:158` | Delete the plan file and tombstone the store. |
 
@@ -444,12 +470,13 @@ Nothing in the todo path changes: `todoPhases` ingestion (`readout.rs:118-129`),
 | Agent not running | Tick, value and edit work from the store. Ask, value-to-agent and complete are disabled; if called, they fail with `agent-not-running` (`chat.rs:92-100`). The value is still stored. |
 | Agent paused | A `plan.itemMessage` turn is held and sent on resume (`MessageDelivery::Held`). |
 | Agent working | Ticks apply at once. Ask, value and complete queue as follow-ups. The agent reads `userChanges` on its next call. |
-| Stale item id | `unknown_item` for an id that never existed. `item_removed` for a retired id. The error includes the current compact item list. |
-| Concurrent edit | `conflict` lists the items that changed after `baseRev`. Nothing is applied. |
+| Stale item id | `unknown_item` for an id that never existed. `item_removed` for a retired id. The error lists compact items within the error budget, with `moreItems` (see "Errors"). |
+| Concurrent edit | `conflict` lists the items that changed after `baseRev`, within the error budget. Nothing is applied. |
 | Developer op on an item the agent changed | `item_changed`; nothing is applied. |
-| Agent edits or removes a developer item or value | `developer_item`. |
+| Agent edits or removes a developer-owned item (created or edited by the developer) or a developer value | `developer_item`. |
 | Agent changes a fixed flag or owner | `field_locked`. |
 | Agent completes a human-owned item, or a `requiresValue` item with no developer value | `human_owned`, `value_required`. |
+| `plan.itemMessage` `complete` on a `requiresValue` item with no developer-set value | `value_required`; nothing is sent, and #2013 disables the control with a visible reason. |
 | Edit to a completed item by the agent (not one it completed itself) | `item_complete`. |
 | Retry of a structural call | `duplicate: true` with the recorded ids; not applied twice. |
 | Unknown plan id (old envelope, wrong Session) | The agent or the IPC gets `unknown_plan`; the card still renders from the transcript. |
@@ -488,7 +515,7 @@ Limits that are not blockers but are worth knowing:
 
 | Child | Builds, from this document |
 |---|---|
-| #2011 data model and store | The shared TS and Rust plan and item types (field names; the five-status set and the lifecycle above), the `plans/<sessionId>.json` store with a per-Session lock, detached apply and write-then-swap, id, `rev`, `agentSeenRev` and `requestId` handling, the op engine with the authorship, freeze, `value_required` and conflict rules, the byte caps and the compact result, quarantine cleanup, the delete hook, and the `refract_plan` tool schema and handler. Verifies whether host tools work in OMP plan mode. |
+| #2011 data model and store | The shared TS and Rust plan and item types (field names; the five-status set and the lifecycle above), the `plans/<sessionId>.json` store with a per-Session lock, detached apply and write-then-swap, id, `rev`, `agentSeenRev`, `issuedSeenRev` and `requestId` handling, the change record (`lastDeveloperOp`, `removed`), `editedByDeveloper`, the send records, the `pendingComplete` lifecycle, the op engine with the authorship, freeze, `value_required` and conflict rules, the byte caps, the compact result and the error budget, quarantine cleanup, the delete hook, and the `refract_plan` tool schema and handler. Verifies whether host tools work in OMP plan mode. |
 | #2012 right-pane panel | Subscribes to `plan:update`, opens on `opened: true`, calls `plan.get`, and renders the plan, `updatedBy` on completed items, and the "plan tool unavailable" state. Sends `plan.mutate` with `baseRev` for ticks and values. |
-| #2013 per-item controls | Ask, provide value and complete-this-step controls, calling `plan.mutate` and `plan.itemMessage`, disabled when the Session has no live agent. A plain tick calls `plan.mutate` only. **"The agent is told" means** the developer's change appears in the agent's next `refract_plan` result as `userChanges`, with a hint in the next prompt's notice; it does not interrupt a running turn. The value control carries the plaintext warning. Adds the generalised envelope and `send_plan_item`. |
-| #2014 chat card | Renders the `PlanItem` source. **The card is the developer turn** (the user item with that source). **Its replies are the assistant turns after it until the next developer turn**, which is the next user item of any kind, including another `<plan-item>` and a Session message. |
+| #2013 per-item controls | Ask, provide value and complete-this-step controls, calling `plan.mutate` and `plan.itemMessage`, disabled when the Session has no live agent. Complete-this-step is also disabled, with a visible reason, on a `requiresValue` item that has no developer-set value. A plain tick calls `plan.mutate` only. **"The agent is told" means** the developer's change appears in the agent's next `refract_plan` result as `userChanges`, with a hint in the next prompt's notice; it does not interrupt a running turn. The value control carries the plaintext warning. Adds the generalised envelope and `send_plan_item`. |
+| #2014 chat card | Renders the `PlanItem` source, which exists only for a turn that matches a send record; any other `<plan-item>` text shows as plain text. **The card is the developer turn** (the user item with that source). **Its replies are the assistant turns after it until the next developer turn**, which is the next user item of any kind, including another `<plan-item>` and a Session message. |
