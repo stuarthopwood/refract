@@ -55,8 +55,10 @@ export function AllTabsMenu({ sessionId, items, labels, activeKey, onSelect }: A
           <ChevronDownIcon aria-hidden className="size-4" />
         </IconButton>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+      <DropdownMenuContent align="end" className="flex max-h-80 flex-col">
+        {/* Only the tab list scrolls; the bulk close actions stay pinned below it. */}
         <DropdownMenuRadioGroup
+          className="min-h-0 overflow-y-auto"
           value={activeKey ?? ''}
           onValueChange={(key) => {
             const item = items.find((candidate) => candidate.key === key)
