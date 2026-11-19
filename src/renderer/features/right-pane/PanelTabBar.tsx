@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import type { ComponentProps, KeyboardEvent, RefObject } from 'react'
 import { XIcon } from 'lucide-react'
 import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
@@ -20,13 +20,20 @@ import { AllTabsMenu } from './AllTabsMenu'
 import { applyCloseResult } from './document-tab-actions'
 import { documentTabAccessibleName, documentTabLabels } from './document-tab-labels'
 import { EMPTY_PANE_FOCUS_SELECTORS, firstMatch } from './pane-focus-targets'
-import { scrollLeftToReveal } from './tab-strip-scroll'
+import { useRevealActiveTab } from './useRevealActiveTab'
 import { useSessionDocumentTabs } from './useSessionDocumentTabs'
 import { activeItemKey, buildTabItems, closeButtonLabel, tabDomIds, tabKeyAction, type TabItem } from './tab-items'
 
-const COMPACT_HIDE = '@max-[17.5rem]:hidden'
-// A panel item shrinks no lower than its tab's min-w-15 (60 px) plus the 24 px close button, so the two never overlap.
-const PANEL_ITEM_CLASS = 'min-w-21 shrink'
+// Below this tablist width (pane under about 424 px) panel tabs go icon-only and document tabs and counts shrink: 24rem is
+// what two full-label panel tabs (259 px) + separator (17 px) + the 96 px document floor need.
+const COMPACT_HIDE = '@max-[24rem]:hidden'
+// A panel item shrinks no lower than its tab's min-w-15 (60 px) plus the 24 px close button; icon-only it is 32 + 24 px and never shrinks.
+const PANEL_ITEM_CLASS = 'min-w-21 shrink @max-[24rem]:min-w-0 @max-[24rem]:shrink-0'
+// 96 px = the narrowest document item (min-w-18 tab, 72 px, plus its 24 px close button), so the active tab always fits whole.
+// Vertical overflow is clipped: the close buttons' enlarged hit areas would otherwise make the strip scroll up and down.
+const DOCUMENT_SCROLLER_CLASS = 'relative flex min-w-24 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]'
+// Panels give way before documents; the group scrolls on its own when even icon-only tabs do not fit.
+const PANEL_GROUP_CLASS = 'relative flex min-w-0 shrink items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]'
 // 24 px button; the pseudo-element stretches the hit area to the 40 px strip (FR-007).
 const CLOSE_BUTTON_CLASS =
   "relative after:absolute after:-inset-y-2 after:inset-x-0 after:content-[''] transition-none text-muted-foreground hover:text-foreground focus-visible:text-foreground " + INSET_FOCUS_OUTLINE_CLASS
@@ -54,23 +61,15 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   const activeKey = activeItemKey(resolveActiveTab(sessionId, activePanelId, documents))
   const tabListRef = useEnterOnSwitch<HTMLDivElement>(activeKey, 'tabs')
   const documentScrollerRef = useRef<HTMLDivElement>(null)
+  const panelScrollerRef = useRef<HTMLDivElement>(null)
+  const scrollerRefs = useMemo(() => [panelScrollerRef, documentScrollerRef], [])
   const items = useMemo(() => buildTabItems(openPanelIds, documentTabs), [openPanelIds, documentTabs])
   const labels = useMemo(() => {
     const labelList = documentTabLabels(documentTabs)
     return Object.fromEntries(documentTabs.map((tab, index) => [tab.id, labelList[index] ?? tab.path]))
   }, [documentTabs])
 
-  useLayoutEffect(() => {
-    if (!activeKey || !useRightPaneStore.getState().open) return
-    const scroller = documentScrollerRef.current
-    const tab = tabRefs.current[activeKey]
-    // The tab and its close button; only the document scroller moves, never the overflow-hidden shell.
-    const span = tab?.parentElement
-    // A pinned panel tab sits outside the scroller and is always in view.
-    if (!scroller || !span || !scroller.contains(span)) return
-    const next = scrollLeftToReveal({ scrollLeft: scroller.scrollLeft, viewWidth: scroller.clientWidth }, { start: span.offsetLeft, width: span.offsetWidth })
-    if (next !== scroller.scrollLeft) scroller.scrollLeft = next
-  }, [activeKey, items.length])
+  useRevealActiveTab({ activeKey, itemCount: items.length, tabRefs, scrollerRefs })
 
   function select(item: TabItem): void {
     if (item.kind === 'panel') activateTab({ kind: 'panel', id: item.id }, sessionId)
@@ -108,6 +107,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
       wrapperRef={wrapperRef}
       tabListRef={tabListRef}
       documentScrollerRef={documentScrollerRef}
+      panelScrollerRef={panelScrollerRef}
       tabRefs={tabRefs}
       onSelect={select}
       onClose={closeItem}
@@ -126,6 +126,8 @@ interface PanelTabStripProps {
   tabListRef: RefObject<HTMLDivElement | null>
   /** The document tabs' own scroller; panel tabs sit outside it, pinned left (FR-008). */
   documentScrollerRef: RefObject<HTMLDivElement | null>
+  /** The pinned panel group's own scroller, for when icon-only panel tabs still overflow. */
+  panelScrollerRef: RefObject<HTMLDivElement | null>
   tabRefs: RefObject<Record<string, HTMLButtonElement | null>>
   onSelect: (item: TabItem) => void
   onClose: (item: TabItem) => void
@@ -133,7 +135,7 @@ interface PanelTabStripProps {
 }
 
 /** Store-free view of the strip, so the layout renders without a DOM. */
-export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef, tabListRef, documentScrollerRef, tabRefs, onSelect, onClose, onKeyDown }: PanelTabStripProps) {
+export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef, tabListRef, documentScrollerRef, panelScrollerRef, tabRefs, onSelect, onClose, onKeyDown }: PanelTabStripProps) {
   const only = items.length === 1 ? items[0] : undefined
   if (only) {
     const title = only.kind === 'panel' ? tabItemName(only, labels) : null
@@ -181,7 +183,7 @@ export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef,
       }
     }
     return (
-      <div key={item.key} role="presentation" className={cn('flex items-center', item.kind === 'panel' ? PANEL_ITEM_CLASS : 'shrink-0')}>
+      <div key={item.key} role="presentation" className={cn('flex items-center', item.kind === 'panel' ? PANEL_ITEM_CLASS : 'max-w-full shrink-0')}>
         {item.kind === 'panel' ? (
           <PanelTabButton id={item.id} sessionId={sessionId} {...common} />
         ) : (
@@ -208,18 +210,17 @@ export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef,
     <div className="flex shrink-0 flex-col">
       <div ref={wrapperRef} className={cn('no-drag-region flex shrink-0 items-center gap-1 px-2', PANEL_HEADER_HEIGHT_CLASS)}>
         <div ref={tabListRef} role="tablist" aria-label="Open tabs" className="@container flex min-w-0 flex-1 items-center gap-1">
-          <div role="presentation" className="flex min-w-0 shrink items-center gap-1">
-            {panelItems.map(renderItem)}
-          </div>
-          {panelItems.length > 0 && documentItems.length > 0 && <Separator orientation="vertical" className="mx-1 h-4" />}
-          <div
-            ref={documentScrollerRef}
-            role="presentation"
-            // Vertical overflow is clipped: the close buttons' enlarged hit areas would otherwise make the strip scroll up and down.
-            className="relative flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
-          >
-            {documentItems.map(renderItem)}
-          </div>
+          {panelItems.length > 0 && (
+            <div ref={panelScrollerRef} role="presentation" className={PANEL_GROUP_CLASS}>
+              {panelItems.map(renderItem)}
+            </div>
+          )}
+          {panelItems.length > 0 && documentItems.length > 0 && <Separator orientation="vertical" className="mx-1 h-4 shrink-0" />}
+          {documentItems.length > 0 && (
+            <div ref={documentScrollerRef} role="presentation" className={DOCUMENT_SCROLLER_CLASS}>
+              {documentItems.map(renderItem)}
+            </div>
+          )}
         </div>
         <AllTabsMenu sessionId={sessionId} items={items} labels={labels} activeKey={activeKey} onSelect={onSelect} />
       </div>
@@ -274,7 +275,10 @@ function DocumentTabButton({ tab, label, sessionId, selected, tabRef, onSelect, 
           ids={ids}
           selected={selected}
           aria-label={documentTabAccessibleName(tab, label, counts ?? undefined)}
-          className={cn('min-w-28 max-w-48 shrink-0', tab.dead && 'italic text-muted-foreground aria-selected:text-muted-foreground')}
+          className={cn(
+            'min-w-18 max-w-48 shrink @min-[24rem]:min-w-28 @min-[24rem]:shrink-0',
+            tab.dead && 'italic text-muted-foreground aria-selected:text-muted-foreground'
+          )}
           onClick={onSelect}
           onKeyDown={onKeyDown}
           onAuxClick={onAuxClick}
@@ -321,13 +325,13 @@ function PanelTabButton({ id, sessionId, selected, tabRef, onSelect, onKeyDown, 
           ids={tabDomIds({ kind: 'panel', id })}
           selected={selected}
           aria-label={countText ? accessibleLabel : undefined}
-          className="min-w-15 shrink"
+          className="min-w-15 shrink @max-[24rem]:min-w-0 @max-[24rem]:shrink-0"
           onClick={onSelect}
           onKeyDown={onKeyDown}
           onAuxClick={onAuxClick}
         >
           <Icon aria-hidden className="size-4 shrink-0" />
-          <span className="min-w-0 shrink-[100] truncate">{descriptor.name}</span>
+          <span className="min-w-0 shrink-[100] truncate @max-[24rem]:sr-only">{descriptor.name}</span>
           {count?.kind === 'additions-deletions' ? (
             <span className={cn('shrink-0 text-xs', COMPACT_HIDE)}>
               <DiffStatCounts added={count.additions} removed={count.deletions} accessibleLabel />
@@ -337,7 +341,7 @@ function PanelTabButton({ id, sessionId, selected, tabRef, onSelect, onKeyDown, 
           )}
           {parts?.word && <span className={cn('min-w-0 shrink-[1000] truncate', COMPACT_HIDE, runningCls)}>{parts.word}</span>}
           {compactCount && (
-            <span aria-hidden className={cn('hidden shrink-0 text-xs tabular-nums @max-[17.5rem]:inline', runningCls)}>
+            <span aria-hidden className={cn('hidden shrink-0 text-xs tabular-nums @max-[24rem]:inline', runningCls)}>
               {compactCount}
             </span>
           )}

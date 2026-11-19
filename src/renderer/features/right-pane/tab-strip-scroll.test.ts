@@ -24,4 +24,14 @@ describe('scrollLeftToReveal', () => {
     expect(scrollLeftToReveal(view, { start: 100, width: 80 })).toBe(100)
     expect(scrollLeftToReveal(view, { start: 220, width: 80 })).toBe(100)
   })
+
+  it('leaves a view with no width where it is, since nothing can be revealed in it', () => {
+    expect(scrollLeftToReveal({ scrollLeft: 0, viewWidth: 0 }, { start: 80, width: 136 })).toBe(0)
+    expect(scrollLeftToReveal({ scrollLeft: 40, viewWidth: 0 }, { start: 10, width: 136 })).toBe(40)
+  })
+
+  it('reveals a panel tab in the pinned group the same way as a document tab', () => {
+    expect(scrollLeftToReveal({ scrollLeft: 0, viewWidth: 83 }, { start: 168, width: 56 })).toBe(141)
+    expect(scrollLeftToReveal({ scrollLeft: 141, viewWidth: 83 }, { start: 0, width: 56 })).toBe(0)
+  })
 })
