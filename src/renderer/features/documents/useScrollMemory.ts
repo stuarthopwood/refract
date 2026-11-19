@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, type UIEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type UIEvent } from 'react'
+import { createScrollMemory } from './scroll-memory'
 
 /**
  * Restores a scroller to `initial` once its content is `ready`, then hands the last position to `save` when the view unmounts.
@@ -6,8 +7,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, type UIEvent } from 'r
  */
 export function useScrollMemory<T extends HTMLElement>(ready: boolean, initial: number | undefined, save: (scrollTop: number) => void) {
   const ref = useRef<T>(null)
-  const lastRef = useRef(initial ?? 0)
-  const restoredRef = useRef(false)
+  const [memory] = useState(() => createScrollMemory(initial))
   const saveRef = useRef(save)
 
   useEffect(() => {
@@ -15,17 +15,13 @@ export function useScrollMemory<T extends HTMLElement>(ready: boolean, initial: 
   })
 
   useLayoutEffect(() => {
-    if (!ready || restoredRef.current || !ref.current) return
-    restoredRef.current = true
-    ref.current.scrollTop = lastRef.current
-  }, [ready])
+    const target = memory.restore(ready, ref.current !== null)
+    if (target !== null && ref.current) ref.current.scrollTop = target
+  }, [ready, memory])
 
-  useEffect(() => () => saveRef.current(lastRef.current), [])
+  useEffect(() => () => saveRef.current(memory.last()), [memory])
 
-  // Scroll events before the restore are the browser starting at the top, not the reader's position.
-  const onScroll = useCallback((event: UIEvent<T>) => {
-    if (restoredRef.current) lastRef.current = event.currentTarget.scrollTop
-  }, [])
+  const onScroll = useCallback((event: UIEvent<T>) => memory.track(event.currentTarget.scrollTop), [memory])
 
   return { ref, onScroll }
 }
