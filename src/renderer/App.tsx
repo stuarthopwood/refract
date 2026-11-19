@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { PanelImperativeHandle } from 'react-resizable-panels'
 import { ArrowLeftRightIcon } from 'lucide-react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { useEnterOnSwitch } from '@/components/useEnterOnSwitch'
@@ -20,7 +21,6 @@ import { UsageView } from '@/features/usage/UsageView'
 import { StatusBar } from '@/features/status-bar/StatusBar'
 import {
   RIGHT_PANE_DEFAULT_WIDTH_PX,
-  RIGHT_PANE_INTERIM_CAP_PX,
   RIGHT_PANE_MIN_WIDTH_PX,
   useRepositoriesStore,
   useRightPaneStore,
@@ -33,6 +33,9 @@ import { RightPaneShell } from '@/features/right-pane/RightPaneShell'
 import { RightPaneResizeHandle } from '@/features/right-pane/RightPaneResizeHandle'
 import { rightPaneRef } from '@/features/right-pane/right-pane-handle'
 import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/hosted-panel-actions'
+import { canShowSplit as widthFitsSplit, chatPanelResizeAction, nextChatWidth, rightWidthToSync, visibleSessionIds } from '@/features/right-pane/chat-layout'
+import { CHAT_PANEL_DOM_ID } from '@/features/right-pane/chat-panel-id'
+import { effectiveChatCollapsed, syncChatCollapsedFromDrag } from '@/features/right-pane/toggle-chat-pane'
 import { CommandPalette } from '@/features/palette/CommandPalette'
 import { StartSessionHost } from '@/features/sessions/StartSessionHost'
 import { ItemSessionDialogHost } from '@/features/sessions/ItemSessionDialogHost'
@@ -42,8 +45,6 @@ import { useChordDispatcher } from '@/features/palette/useChordDispatcher'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { AgentOpenedAnnouncer } from '@/features/right-pane/AgentOpenedAnnouncer'
 import { startAgentToolsBridge } from '@/features/right-pane/agent-tools-bridge'
-
-const MIN_SPLIT_WIDTH_PX = 360 * 2
 
 export function App() {
   const [ready, setReady] = useState(false)
@@ -57,11 +58,14 @@ export function App() {
   const focusedIndex = useSplitStore((state) => state.focusedIndex)
   const dividerPercent = useSplitStore((state) => state.dividerPercent)
   const focusMoveButtonRef = useRef<HTMLButtonElement>(null)
+  const chatPanelRef = useRef<PanelImperativeHandle>(null)
+  const chatCollapsedPreference = useRightPaneStore((state) => state.chatCollapsed)
+  const chatHidden = effectiveChatCollapsed(chatCollapsedPreference, view)
   const [chatWidthPx, setChatWidthPx] = useState<number | null>(null)
   const [navCollapsed, setNavCollapsed] = useState(false)
   const [liveDividerPercent, setLiveDividerPercent] = useState(dividerPercent)
   const isSplit = paneSessionIds.length === 2
-  const canShowSplit = chatWidthPx !== null && chatWidthPx >= MIN_SPLIT_WIDTH_PX
+  const canShowSplit = widthFitsSplit(chatWidthPx)
   const showSplit = isSplit && canShowSplit
   // Index 0 for a single pane (focusedIndex is meaningless then), the focused pane for a split.
   const [paneA, paneB] = paneSessionIds
@@ -87,14 +91,14 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    const visible = isSplit && canShowSplit ? paneSessionIds : frontSessionId ? [frontSessionId] : []
+    const visible = visibleSessionIds({ paneSessionIds, splitFits: canShowSplit, frontSessionId: frontSessionId ?? null })
     window.refract.sessions.setVisible(visible).then(
       (result) => {
         if (!result.ok) console.error('sessions.setVisible failed', result.error)
       },
       (err: unknown) => console.error('sessions.setVisible threw', err)
     )
-  }, [isSplit, canShowSplit, frontSessionId, paneSessionIds])
+  }, [canShowSplit, frontSessionId, paneSessionIds])
 
   useLayoutEffect(() => {
     const handle = rightPaneRef.current
@@ -107,6 +111,19 @@ export function App() {
       handle.resize(useRightPaneStore.getState().widthPx)
     } else if (!handle.isCollapsed()) handle.collapse()
   }, [paneShown, showReadiness, view])
+
+  // After the right-pane effect so a pane that mounts with chat hidden is sized before chat collapses.
+  // Showing chat expands it first, then the right pane returns to `widthPx` (FR-024).
+  useLayoutEffect(() => {
+    const chat = chatPanelRef.current
+    if (!chat) return
+    if (chatHidden) {
+      if (!chat.isCollapsed()) chat.collapse()
+    } else if (chat.isCollapsed()) {
+      chat.expand()
+      if (paneShown) rightPaneRef.current?.resize(useRightPaneStore.getState().widthPx)
+    }
+  }, [chatHidden, paneShown, showReadiness, view])
 
   useChordDispatcher(!showReadiness)
   usePaletteShortcut(!showReadiness)
@@ -179,8 +196,28 @@ export function App() {
               </ErrorBoundary>
             </ResizablePanel>
             <ResizableHandle withHandle aria-label="Resize session list" />
-            <ResizablePanel id="chat" minSize={360} onResize={(size) => setChatWidthPx(size.inPixels)}>
-              <div ref={viewRef} className="h-full"><ErrorBoundary>
+            <ResizablePanel
+              id="chat"
+              panelRef={chatPanelRef}
+              minSize={360}
+              collapsible
+              collapsedSize={0}
+              onResize={(size, _id, prevSize) => {
+                setChatWidthPx((prev) => nextChatWidth(prev, size.inPixels))
+                const paneState = useRightPaneStore.getState()
+                const action = chatPanelResizeAction({
+                  sizePx: size.inPixels,
+                  prevSizePx: prevSize?.inPixels,
+                  view: useViewStore.getState().view,
+                  open: paneState.open,
+                  chatCollapsed: paneState.chatCollapsed
+                })
+                if (action === 'hide') syncChatCollapsedFromDrag(true)
+                else if (action === 'show') syncChatCollapsedFromDrag(false)
+                else if (action === 'restore') chatPanelRef.current?.expand()
+              }}
+            >
+              <div id={CHAT_PANEL_DOM_ID} ref={viewRef} className="h-full" inert={chatHidden} aria-hidden={chatHidden || undefined}><ErrorBoundary>
                 {view === 'pull-requests' ? (
                   <PullRequestsView reservesWindowControls={!paneShown} />
                 ) : view === 'issues' ? (
@@ -269,7 +306,6 @@ export function App() {
               panelRef={rightPaneRef}
               defaultSize={RIGHT_PANE_DEFAULT_WIDTH_PX}
               minSize={RIGHT_PANE_MIN_WIDTH_PX}
-              maxSize={RIGHT_PANE_INTERIM_CAP_PX}
               collapsible
               collapsedSize={0}
               onResize={(size, _id, prevSize) => {
@@ -283,7 +319,12 @@ export function App() {
                 const collapsed = size.inPixels <= 0
                 const wasCollapsed = prevSize.inPixels <= 0
                 if (collapsed === wasCollapsed) {
-                  if (!collapsed) useRightPaneStore.getState().setWidth(size.inPixels)
+                  if (!collapsed) {
+                    const { chatCollapsed } = useRightPaneStore.getState()
+                    const chatNow = effectiveChatCollapsed(chatCollapsed, useViewStore.getState().view) || chatPanelRef.current?.isCollapsed() === true
+                    const widthPx = rightWidthToSync(size.inPixels, chatNow)
+                    if (widthPx !== null) useRightPaneStore.getState().setWidth(widthPx)
+                  }
                   return
                 }
                 const paneState = useRightPaneStore.getState()
