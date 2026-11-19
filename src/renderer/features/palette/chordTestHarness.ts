@@ -39,7 +39,8 @@ export function installKeyboardHost(): KeyboardHost {
     clearTimeout: () => undefined
   })
   const elsewhere = { isConnected: true, closest: () => null, matches: () => false }
-  vi.stubGlobal('document', { activeElement: elsewhere, body: {}, querySelector: () => (overlayOpen ? {} : null) })
+  // getElementById is null so the pane-width measurement (show chat) finds no layout and never blocks.
+  vi.stubGlobal('document', { activeElement: elsewhere, body: {}, querySelector: () => (overlayOpen ? {} : null), getElementById: () => null })
   vi.stubGlobal('requestAnimationFrame', (callback: () => void) => frames.push(callback))
   return {
     press: (init) => {
