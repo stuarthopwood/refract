@@ -11,10 +11,6 @@
     "commentLines": 19,
     "maxBlock": 11
   },
-  "src/renderer/features/right-pane/git-changes/GitChangesPanel.tsx": {
-    "commentLines": 17,
-    "maxBlock": 13
-  },
   "src/renderer/features/right-pane/git-changes/GitCommitBox.tsx": {
     "commentLines": 23,
     "maxBlock": 10

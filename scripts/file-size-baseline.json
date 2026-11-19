@@ -4,6 +4,5 @@
   "src-tauri/src/omp/transcript.rs": 1813,
   "src/renderer/features/chat/ChatPane.tsx": 1264,
   "src/renderer/features/chat/MessageInput.tsx": 1209,
-  "src/renderer/features/right-pane/file-explorer/FileExplorerPanel.tsx": 928,
   "src/shared/ipc.ts": 902
 }

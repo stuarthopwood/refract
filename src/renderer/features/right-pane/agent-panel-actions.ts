@@ -1,6 +1,8 @@
 import { useFileExplorerStore, useGitChangesStore, usePinnedPanelsStore, useReadoutStore, useSessionsStore, useSubagentPanelStore, EMPTY_READOUT_ENTRY } from '@/state'
 import type { ExpandableNode } from '@/state/file-explorer-store'
 import type { GitChangesGroupKind } from '../../../shared/model'
+import { openDocument } from '../documents/open-document'
+import { normaliseRelativePath } from '../../../shared/rightPane'
 
 export type AgentToolErrorCode = 'unknown_panel' | 'unknown_action' | 'invalid_input' | 'panel_unavailable' | 'action_failed'
 
@@ -25,16 +27,6 @@ export function fail(code: AgentToolErrorCode, message: string): AgentToolOutcom
 
 function succeed(value: Record<string, unknown> = {}): AgentToolOutcome {
   return { ok: true, value }
-}
-
-/** Worktree-relative only: an absolute or parent-escaping path must never reach a store or IPC call. */
-export function normaliseRelativePath(raw: unknown): string | null {
-  if (typeof raw !== 'string') return null
-  const path = raw.replaceAll('\\', '/')
-  if (path === '' || path.includes('\0') || path.startsWith('/') || /^[A-Za-z]:/.test(path)) return null
-  const segments = path.split('/')
-  if (segments.some((segment) => segment === '..' || segment === '.' || segment === '')) return null
-  return segments.join('/')
 }
 
 function badPath(raw: unknown): AgentToolOutcome {
@@ -100,7 +92,10 @@ async function reveal(context: PanelActionContext, input: Record<string, unknown
   if (!target) return fail('invalid_input', `${path} does not exist in the Worktree.`)
   context.open()
   store().setSelectedPath(sessionId, path)
-  if (target.kind === 'file') void store().loadPreview(sessionId, path)
+  if (target.kind === 'file') {
+    void store().loadPreview(sessionId, path)
+    openDocument(sessionId, { kind: 'file', path }, { focus: false, announce: `Agent opened ${path.split('/').pop()}` })
+  }
   return succeed({ path, kind: target.kind })
 }
 
@@ -128,10 +123,12 @@ async function openPullRequest(context: PanelActionContext, input: Record<string
 export async function showFile(context: PanelActionContext, input: Record<string, unknown>): Promise<AgentToolOutcome> {
   const path = normaliseRelativePath(input.path)
   if (!path) return badPath(input.path)
-  if (!(await changedFile(context.sessionId, path))) return fail('invalid_input', `${path} is not a changed file in this Session.`)
+  const group = await changedFile(context.sessionId, path)
+  if (!group) return fail('invalid_input', `${path} is not a changed file in this Session.`)
   context.open()
-  useGitChangesStore.getState().requestShowFile(context.sessionId, path)
-  return succeed({ path })
+  // After the panel opens, so the diff tab, not the panel, ends up active.
+  const { existed } = openDocument(context.sessionId, { kind: 'diff', group, path }, { focus: false, announce: `Agent opened diff of ${path.split('/').pop()}` })
+  return succeed({ path, existed })
 }
 
 /** Keyed `panelId` then action name; the contract JSON owns which names exist and Rust has already checked the input shape. */

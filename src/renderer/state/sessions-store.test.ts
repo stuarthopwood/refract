@@ -6,6 +6,9 @@ import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
 import type { SessionSummary } from '../../shared/ipc';
 import { notify } from './notify';
 import { useSessionListStore } from './session-list-store';
+import { useDocumentTabsStore } from './document-tabs-store';
+import { useGitChangesStore } from './git-changes-store';
+import { useSideChatStore } from './side-chat-store';
 import { liveParentIds, useSessionsStore } from './sessions-store';
 
 vi.mock('./notify', () => ({ notify: vi.fn() }));
@@ -169,5 +172,49 @@ describe('useSessionsStore.refresh pruning of saved parent collapse', () => {
     stubList([summary('p'), summary('c', { parentSessionId: 'p', archivedAt: 't' })]);
     await useSessionsStore.getState().refresh();
     expect(useSessionListStore.getState().collapsedParentIds.size).toBe(0);
+  });
+});
+
+describe('useSessionsStore.refresh dropping document tabs of deleted Sessions (#2075)', () => {
+  function stubList(sessions: SessionSummary[]) {
+    (globalThis as unknown as { window: unknown }).window = {
+      refract: { sessions: { list: () => Promise.resolve({ ok: true, value: sessions }), deleting: () => Promise.resolve({ ok: true, value: [] }) } },
+    };
+  }
+
+  beforeEach(() => {
+    useDocumentTabsStore.setState({ bySession: {} });
+    for (const id of ['kept', 'archived', 'deleted']) {
+      useDocumentTabsStore.getState().openDocumentTab(id, { kind: 'file', path: 'a.ts' }, { activate: true });
+    }
+  });
+
+  it('drops a Session that left the list but keeps an archived one, which stays listed', async () => {
+    stubList([summary('kept'), summary('archived', { archivedAt: 't' })]);
+    await useSessionsStore.getState().refresh();
+    expect(Object.keys(useDocumentTabsStore.getState().bySession).sort()).toEqual(['archived', 'kept']);
+  });
+
+  it('leaves every Session alone when the list call fails', async () => {
+    (globalThis as unknown as { window: unknown }).window = {
+      refract: { sessions: { list: () => Promise.resolve({ ok: false, error: { code: 'internal', message: 'x' } }), deleting: () => Promise.resolve({ ok: true, value: [] }) } },
+    };
+    await useSessionsStore.getState().refresh();
+    expect(Object.keys(useDocumentTabsStore.getState().bySession).sort()).toEqual(['archived', 'deleted', 'kept']);
+  });
+});
+
+describe('useSessionsStore.refresh dropping Session-keyed panel state (#2075 FR-028)', () => {
+  it('keeps group and Side chat draft state of a live Session and drops that of a Session that left the list', async () => {
+    (globalThis as unknown as { window: unknown }).window = {
+      refract: { sessions: { list: () => Promise.resolve({ ok: true, value: [summary('live')] }), deleting: () => Promise.resolve({ ok: true, value: [] }) } },
+    };
+    for (const id of ['live', 'gone']) {
+      useGitChangesStore.getState().setGroupOpen(id, 'staged', false);
+      useSideChatStore.getState().setDraft(id, 'question');
+    }
+    await useSessionsStore.getState().refresh();
+    expect(Object.keys(useGitChangesStore.getState().groupOpenBySession)).toEqual(['live']);
+    expect(Object.keys(useSideChatStore.getState().draftBySession)).toEqual(['live']);
   });
 });

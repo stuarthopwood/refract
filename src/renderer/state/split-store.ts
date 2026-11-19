@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { SplitLayout } from '../../shared/model'
 import { useViewStore } from './view-store'
+import { showChatPane } from '../features/right-pane/toggle-chat-pane'
 
 interface SplitState {
   /** 1 element = single pane; 2 = split. Index 0 is the left/first pane. */
@@ -31,6 +32,11 @@ interface SplitState {
   restoreFromSettings(split: SplitLayout | null): void
   /** FR-016: closes the panes of deleted sessions; called after every `sessions.list()` refresh. */
   pruneDeleted(existingIds: Set<string>): void
+}
+
+/** The Session in the focused pane (the only pane when not split), or null with no panes. */
+export function frontSessionIdOf({ paneSessionIds, focusedIndex }: Pick<SplitState, 'paneSessionIds' | 'focusedIndex'>): string | null {
+  return paneSessionIds[Math.min(focusedIndex, paneSessionIds.length - 1)] ?? null
 }
 
 /** Split-view pane state: which sessions are shown, focus, and divider position. */
@@ -95,8 +101,11 @@ export const useSplitStore = create<SplitState>((set, get) => {
   // second pane or replaces the lone one. Every path that focuses a session funnels through here,
   // so the view returns to chat from every other view, even on the no-op branches below; otherwise
   // a session opened while Issues, Usage, Settings or Pull Requests shows would stay hidden.
+  // Every caller is an explicit selection (list row, notification, New session), so a hidden chat
+  // shows too (spec 137 FR-020); startup restore goes through `restoreFromSettings`, never here.
   function targetSession(sessionId: string, replaceIndex: 0 | 1, mode: 'split' | 'replace'): void {
     if (useViewStore.getState().view !== 'chat') useViewStore.getState().openChat()
+    showChatPane()
     const { paneSessionIds, focusedIndex } = get()
     const pristineIds = withoutPristine(sessionId)
 

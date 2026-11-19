@@ -2,11 +2,11 @@ import { create } from 'zustand'
 import { toast } from 'sonner'
 import type { FilePreview, FileTreeNode, GitStatusMap, GitStatusMark } from '../../shared/model'
 import type { Result } from '../../shared/ipc'
+import { useDocumentTabsStore } from './document-tabs-store'
 
 type GetStatusResult = Result<{ status: GitStatusMap | null }>
 type ListDirectoryResult = Result<{ entries: FileTreeNode[]; truncated: number }>
 type ReadPreviewResult = Result<{ preview: FilePreview }>
-
 
 /** The tree's own per-node view-state shape: */
 export interface ExpandableNode extends FileTreeNode {
@@ -22,6 +22,13 @@ export interface FileExplorerPatch {
   truncated: number
 }
 
+export interface PreviewEntry {
+  preview: FilePreview | null
+  loading: boolean
+}
+
+type PreviewsBySession = Record<string, Record<string, PreviewEntry>>
+
 interface FileExplorerSessionState {
   root: ExpandableNode | null
   status: 'loading' | 'error' | 'ready'
@@ -29,18 +36,20 @@ interface FileExplorerSessionState {
   showIgnored: boolean
   selectedPath: string | null
   gitStatus: GitStatusMap
-  preview: FilePreview | null
-  previewLoading: boolean
 }
 
 interface FileExplorerStoreState {
   bySession: Record<string, FileExplorerSessionState>
+  /** File tab previews by Session then path, apart from the tree because a restored tab can preview before the tree loads. */
+  previews: PreviewsBySession
   loadDirectory(sessionId: string, relativePath: string): Promise<void>
   toggleExpanded(sessionId: string, relativePath: string): void
   applyPatch(sessionId: string, patch: FileExplorerPatch): void
   setShowIgnored(sessionId: string, value: boolean): void
   setSelectedPath(sessionId: string, path: string | null): void
   loadPreview(sessionId: string, relativePath: string): Promise<void>
+  /** Forgets one path's preview and cancels its load; a closed file tab triggers it (see the subscription below). */
+  clearPreview(sessionId: string, relativePath: string): void
   resetSession(sessionId: string): void
 }
 
@@ -167,18 +176,49 @@ function withSessionDefaults(
     ...patch,
     showIgnored: existing?.showIgnored ?? false,
     selectedPath: existing?.selectedPath ?? null,
-    gitStatus: existing?.gitStatus ?? {},
-    preview: existing?.preview ?? null,
-    previewLoading: existing?.previewLoading ?? false
+    gitStatus: existing?.gitStatus ?? {}
   }
 }
 
+/** Newest request per Session and path; clearing a path drops its entry, which discards any load still in flight. */
 const previewRequestSeq = new Map<string, number>()
+let nextPreviewSeq = 0 // global, so a path cleared and reloaded never reuses a number an old load still holds
+const previewKey = (sessionId: string, path: string): string => `${sessionId}\0${path}`
+
+function withPreview(previews: PreviewsBySession, sessionId: string, path: string, entry: PreviewEntry | null): PreviewsBySession {
+  const forSession = { ...previews[sessionId] }
+  if (entry) forSession[path] = entry
+  else delete forSession[path]
+  return { ...previews, [sessionId]: forSession }
+}
+
+function withGonePreviewsMarked(previews: PreviewsBySession, sessionId: string, patch: FileExplorerPatch): PreviewsBySession {
+  const forSession = previews[sessionId]
+  if (!forSession) return previews
+  const gone = Object.entries(forSession).filter(
+    ([path, entry]) => entry.preview !== null && entry.preview.kind !== 'deleted' && isPathGoneUnderPatch(path, patch.relativePath, patch.entries, patch.truncated)
+  )
+  if (gone.length === 0) return previews
+  const marked = { ...forSession }
+  for (const [path] of gone) marked[path] = { preview: { path, kind: 'deleted' }, loading: false }
+  return { ...previews, [sessionId]: marked }
+}
+
+/** An inactive file tab shows no preview, so the tab itself learns its file left the tree. */
+function markGoneFileTabs(sessionId: string, patch: FileExplorerPatch): void {
+  const documents = useDocumentTabsStore.getState()
+  for (const tab of documents.bySession[sessionId]?.tabs ?? []) {
+    if (tab.kind === 'file' && !tab.dead && isPathGoneUnderPatch(tab.path, patch.relativePath, patch.entries, patch.truncated)) {
+      documents.markDead(sessionId, tab.id, true)
+    }
+  }
+}
 
 const rootLoadSeq = new Map<string, number>()
 
 export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
   bySession: {},
+  previews: {},
 
   async loadDirectory(sessionId, relativePath) {
     const rootSeq = relativePath === '' ? (rootLoadSeq.get(sessionId) ?? 0) + 1 : 0
@@ -276,34 +316,26 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
   applyPatch(sessionId, patch) {
     set((state) => {
       const existing = state.bySession[sessionId]
-      if (!existing?.root) return state
-      const root = withPatchedChildren(existing.root, patch.relativePath, patch.entries, patch.truncated)
-      const previewPath = existing.preview?.path ?? null
-      const previewGone =
-        previewPath !== null && isPathGoneUnderPatch(previewPath, patch.relativePath, patch.entries, patch.truncated)
-      if (root === existing.root && !previewGone) return state
-      return {
-        bySession: {
-          ...state.bySession,
-          [sessionId]: {
-            ...existing,
-            root,
-            preview: previewGone ? { path: previewPath!, kind: 'deleted' } : existing.preview,
-            previewLoading: previewGone ? false : existing.previewLoading
-          }
-        }
-      }
+      const previews = withGonePreviewsMarked(state.previews, sessionId, patch)
+      const patchedRoot = existing?.root ? withPatchedChildren(existing.root, patch.relativePath, patch.entries, patch.truncated) : null
+      const bySession = existing && patchedRoot && patchedRoot !== existing.root ? { ...state.bySession, [sessionId]: { ...existing, root: patchedRoot } } : state.bySession
+      if (bySession === state.bySession && previews === state.previews) return state
+      return { bySession, previews }
     })
+    markGoneFileTabs(sessionId, patch)
     scheduleStatusFetch(sessionId, set)
   },
 
   resetSession(sessionId) {
     rootLoadSeq.set(sessionId, (rootLoadSeq.get(sessionId) ?? 0) + 1)
+    for (const key of previewRequestSeq.keys()) if (key.startsWith(`${sessionId}\0`)) previewRequestSeq.delete(key)
     set((state) => {
-      if (!(sessionId in state.bySession)) return state
+      if (!(sessionId in state.bySession) && !(sessionId in state.previews)) return state
       const bySession = { ...state.bySession }
+      const previews = { ...state.previews }
       delete bySession[sessionId]
-      return { bySession }
+      delete previews[sessionId]
+      return { bySession, previews }
     })
   },
 
@@ -324,40 +356,45 @@ export const useFileExplorerStore = create<FileExplorerStoreState>((set) => ({
   },
 
   async loadPreview(sessionId, relativePath) {
-    const seq = (previewRequestSeq.get(sessionId) ?? 0) + 1
-    previewRequestSeq.set(sessionId, seq)
-    set((state) => {
-      const existing = state.bySession[sessionId]
-      if (!existing) return state
-      return { bySession: { ...state.bySession, [sessionId]: { ...existing, previewLoading: true } } }
-    })
+    const key = previewKey(sessionId, relativePath)
+    const seq = ++nextPreviewSeq
+    previewRequestSeq.set(key, seq)
+    // A refresh keeps the last preview on screen; only a first load has nothing to show.
+    set((state) => ({ previews: withPreview(state.previews, sessionId, relativePath, { preview: state.previews[sessionId]?.[relativePath]?.preview ?? null, loading: true }) }))
+    const settle = (preview: FilePreview | null): void =>
+      set((state) => ({ previews: withPreview(state.previews, sessionId, relativePath, { preview, loading: false }) }))
     let result: ReadPreviewResult
     try {
       result = await window.refract.fileExplorer.readPreview(sessionId, relativePath)
     } catch {
-      if (previewRequestSeq.get(sessionId) !== seq) return // superseded by a newer selection
+      if (previewRequestSeq.get(key) !== seq) return // superseded by a newer load, or the tab left the screen
       toast.error(`Couldn't preview that file`)
-      set((state) => {
-        const existing = state.bySession[sessionId]
-        if (!existing) return state
-        return { bySession: { ...state.bySession, [sessionId]: { ...existing, preview: null, previewLoading: false } } }
-      })
+      settle(null)
       return
     }
-    if (previewRequestSeq.get(sessionId) !== seq) return // superseded by a newer selection
+    if (previewRequestSeq.get(key) !== seq) return // superseded by a newer load, or the tab left the screen
     if (!result.ok) {
       toast.error(result.error.message)
-      set((state) => {
-        const existing = state.bySession[sessionId]
-        if (!existing) return state
-        return { bySession: { ...state.bySession, [sessionId]: { ...existing, preview: null, previewLoading: false } } }
-      })
+      settle(null)
       return
     }
-    set((state) => {
-      const existing = state.bySession[sessionId]
-      if (!existing) return state
-      return { bySession: { ...state.bySession, [sessionId]: { ...existing, preview: result.value.preview, previewLoading: false } } }
-    })
+    settle(result.value.preview)
+  },
+
+  clearPreview(sessionId, relativePath) {
+    previewRequestSeq.delete(previewKey(sessionId, relativePath))
+    set((state) => (state.previews[sessionId]?.[relativePath] ? { previews: withPreview(state.previews, sessionId, relativePath, null) } : state))
   }
 }))
+
+// A closed or dropped file tab takes its cached preview with it; the tabs left open keep theirs for the next activation.
+useDocumentTabsStore.subscribe((state, prev) => {
+  for (const [sessionId, before] of Object.entries(prev.bySession)) {
+    const after = state.bySession[sessionId]?.tabs
+    if (after === before.tabs) continue
+    const stillOpen = new Set((after ?? []).filter((tab) => tab.kind === 'file').map((tab) => tab.path))
+    for (const tab of before.tabs) {
+      if (tab.kind === 'file' && !stillOpen.has(tab.path)) useFileExplorerStore.getState().clearPreview(sessionId, tab.path)
+    }
+  }
+})

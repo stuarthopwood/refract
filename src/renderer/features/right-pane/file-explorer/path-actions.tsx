@@ -2,6 +2,7 @@
 // Explorer and Copy path. Their labels, icons and handlers live here once; the tree row's inline
 // buttons (`TreeRowActions`), the preview header (`FilePreviewPane`) and the row's kebab/context
 // menu items (`TreeNodeRow`) are all built from them.
+import { useEffect, useState } from 'react'
 import { CopyIcon, Code2Icon, type LucideIcon } from 'lucide-react'
 import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { Button } from '@/components/ui/button'
@@ -73,6 +74,44 @@ export function PathActionButtons({ handlers, disabled, tabIndex, classNames }: 
           </Tooltip>
         )
       )}
+    </>
+  )
+}
+
+/** The callbacks a document view takes, bound to a path by `DocumentPathActions` (the shape `usePathActionHandlers` returns). */
+export interface PathActionCallbacks {
+  onOpenInVSCode: (path: string) => Promise<boolean>
+  onReveal: (path: string) => Promise<void>
+  onCopyPath: (path: string, confirm?: boolean) => Promise<boolean>
+}
+
+interface DocumentPathActionsProps extends PathActionCallbacks {
+  path: string
+  disabled?: boolean
+}
+
+/** The path buttons of a document header (file and diff tabs), with the transient "VS Code not found" status the tree row menu also shows. */
+export function DocumentPathActions({ path, disabled, onOpenInVSCode, onReveal, onCopyPath }: DocumentPathActionsProps) {
+  const [vscodeNotFound, setVscodeNotFound] = useState(false)
+  useEffect(() => {
+    if (!vscodeNotFound) return
+    const timer = setTimeout(() => setVscodeNotFound(false), 5000)
+    return () => clearTimeout(timer)
+  }, [vscodeNotFound])
+
+  const handlers: PathActionHandlers = {
+    openInVSCode: () => void onOpenInVSCode(path).then((opened) => setVscodeNotFound(!opened)),
+    reveal: () => void onReveal(path),
+    copyPath: (confirm) => onCopyPath(path, confirm)
+  }
+  return (
+    <>
+      {vscodeNotFound && (
+        <span role="status" className="shrink-0 text-xs text-muted-foreground">
+          VS Code not found
+        </span>
+      )}
+      <PathActionButtons handlers={handlers} disabled={disabled} />
     </>
   )
 }

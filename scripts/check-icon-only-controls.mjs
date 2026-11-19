@@ -12,7 +12,7 @@ const repoRoot = path.resolve(__dirname, '..');
 const BASELINE_PATH = path.join(__dirname, 'icon-only-controls-baseline.json');
 // A conditional size (`size={cond ? 'icon-sm' : 'sm'}`) counts too.
 const TOKEN = /<Button\b[^<]*?\bsize=(?:\{[^}]*?)?["']icon[^"']*["']/g;
-const EXEMPT_FILES = new Set(['src/renderer/components/IconButton.tsx', 'src/renderer/components/ui/button.tsx']);
+const EXEMPT_FILES = new Set(['src/renderer/components/IconButton.tsx', 'src/renderer/components/RailIconButton.tsx', 'src/renderer/components/ui/button.tsx'])
 
 export function countHandBuiltIconButtons(text) {
   return [...text.matchAll(TOKEN)].length;

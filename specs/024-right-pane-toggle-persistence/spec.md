@@ -4,6 +4,8 @@
 **Status**: Draft
 **Input**: Issue #538 (Right pane behaviour rules). Spec 013 (`specs/013-right-pane-shell/`) built the shell; this slice finishes what #538 still asks for. Decisions: the "Decided (Skippy, delegated by Stuart 2026-10-26)" comment on #538.
 
+> **Superseded in part by spec 137 (#2075, `specs/137-right-pane-tabs-2075/`):** the 520 px maximum width, the persisted `Settings.rightPane` shape (which gains `chatCollapsed` and `documentTabs`) and the rule that the pane is the only thing the toggle hides (the chat can now collapse too, so the pane and chat are never both hidden). The open, collapsed and tab-order rules here still stand.
+
 ## Clarifications
 
 ### Session 2026-10-26 (grill, delegated)

@@ -49,7 +49,11 @@ interface SideChatPanelProps {
 
 export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
   const unavailableHintId = useId()
-  const [draft, setDraft] = useState('')
+  const draft = useSideChatStore((s) => (sessionId ? (s.draftBySession[sessionId] ?? '') : ''))
+  const setStoredDraft = useSideChatStore((s) => s.setDraft)
+  const setDraft = (text: string): void => {
+    if (sessionId) setStoredDraft(sessionId, text)
+  }
   const [announcement, setAnnouncement] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const mdSegments = useComposerMarkdownSegments(draft, true) // #1170

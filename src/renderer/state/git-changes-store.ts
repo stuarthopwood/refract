@@ -1,9 +1,11 @@
 import { create } from 'zustand'
-import type { GitChangesSnapshot, SessionStatus } from '../../shared/model'
+import type { GitChangesGroupKind, GitChangesSnapshot, SessionStatus } from '../../shared/model'
 import type { Result } from '../../shared/ipc'
 
 type ListResult = Result<{ snapshot: GitChangesSnapshot | null }>
 
+/** Every group starts open; a stable reference so a selector never returns a fresh object. */
+export const DEFAULT_GROUP_OPEN: Record<GitChangesGroupKind, boolean> = { conflicts: true, staged: true, changes: true, untracked: true }
 
 interface GitChangesSessionState {
   snapshot: GitChangesSnapshot | null
@@ -15,10 +17,8 @@ interface GitChangesSessionState {
 interface GitChangesStoreState {
   bySession: Record<string, GitChangesSessionState>
   commitDraftsBySession: Record<string, { subject: string; body: string }>
-  /** An agent's request to show one file's diff; the mounted panel consumes it, so it survives a closed panel. */
-  showFileRequestBySession: Record<string, string>
-  requestShowFile(sessionId: string, path: string): void
-  clearShowFileRequest(sessionId: string): void
+  /** Held here, not in the panel, so a tab switch (unmount) keeps which groups the user collapsed (#2075 FR-028). */
+  groupOpenBySession: Record<string, Record<GitChangesGroupKind, boolean>>
   load(sessionId: string): Promise<void>
   /** `awaitRefresh: false` returns once git answers; the follow-up reload still runs. */
   stage(sessionId: string, paths: string[], options?: { awaitRefresh?: boolean }): Promise<Result<void>>
@@ -29,7 +29,9 @@ interface GitChangesStoreState {
   handleStatusTransition(sessionId: string, status: SessionStatus): void
   dismissActionError(sessionId: string): void
   setCommitDraft(sessionId: string, draft: { subject: string; body: string }): void
-  pruneCommitDrafts(keepIds: Set<string>): void
+  setGroupOpen(sessionId: string, group: GitChangesGroupKind, open: boolean): void
+  /** Drops the commit drafts and group state of every Session not in `keepIds`. */
+  pruneSessionUi(keepIds: Set<string>): void
   forgetSession(sessionId: string): void
 }
 
@@ -158,20 +160,7 @@ async function performLoad(
 export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
   bySession: {},
   commitDraftsBySession: {},
-  showFileRequestBySession: {},
-
-  requestShowFile(sessionId, path) {
-    set((state) => ({ showFileRequestBySession: { ...state.showFileRequestBySession, [sessionId]: path } }))
-  },
-
-  clearShowFileRequest(sessionId) {
-    set((state) => {
-      if (!(sessionId in state.showFileRequestBySession)) return state
-      const next = { ...state.showFileRequestBySession }
-      delete next[sessionId]
-      return { showFileRequestBySession: next }
-    })
-  },
+  groupOpenBySession: {},
 
   async load(sessionId) {
     const queued = loadQueued.get(sessionId)
@@ -249,17 +238,25 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
     set((state) => ({ commitDraftsBySession: { ...state.commitDraftsBySession, [sessionId]: draft } }))
   },
 
-  pruneCommitDrafts(keepIds) {
+  setGroupOpen(sessionId, group, open) {
     set((state) => {
-      const entries = Object.entries(state.commitDraftsBySession).filter(([id]) => keepIds.has(id))
-      if (entries.length === Object.keys(state.commitDraftsBySession).length) return state
-      return { commitDraftsBySession: Object.fromEntries(entries) }
+      const current = state.groupOpenBySession[sessionId] ?? DEFAULT_GROUP_OPEN
+      if (current[group] === open) return state
+      return { groupOpenBySession: { ...state.groupOpenBySession, [sessionId]: { ...current, [group]: open } } }
+    })
+  },
+
+  pruneSessionUi(keepIds) {
+    set((state) => {
+      const drafts = Object.entries(state.commitDraftsBySession).filter(([id]) => keepIds.has(id))
+      const groups = Object.entries(state.groupOpenBySession).filter(([id]) => keepIds.has(id))
+      if (drafts.length === Object.keys(state.commitDraftsBySession).length && groups.length === Object.keys(state.groupOpenBySession).length) return state
+      return { commitDraftsBySession: Object.fromEntries(drafts), groupOpenBySession: Object.fromEntries(groups) }
     })
   },
 
   forgetSession(sessionId) {
     loadGeneration.set(sessionId, (loadGeneration.get(sessionId) ?? 0) + 1)
-    get().clearShowFileRequest(sessionId)
     set((state) => {
       if (!(sessionId in state.bySession)) return state
       const bySession = { ...state.bySession }

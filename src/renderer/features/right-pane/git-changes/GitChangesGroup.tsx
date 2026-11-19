@@ -13,15 +13,10 @@ import { useGitChangesStore } from '@/state'
 import { GroupHeaderRow, GroupHeaderTrigger, HEADER_ACTION_BUTTON_CLASS } from '@/features/sessions/GroupHeader'
 import { cn } from '@/lib/utils'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
+import type { RowActivation } from '../file-explorer/row-open'
 import { GitChangesFileRow } from './GitChangesFileRow'
+import { GROUP_LABELS } from './diff-group-label'
 import { focusNearestGroupTrigger } from './focus'
-
-const GROUP_LABELS: Record<GitChangesGroupKind, string> = {
-  conflicts: 'Conflicts',
-  staged: 'Staged',
-  changes: 'Changes',
-  untracked: 'Untracked'
-}
 
 const BULK_ACTION: Record<GitChangesGroupKind, { label: string; icon: LucideIcon } | null> = {
   conflicts: null,
@@ -43,7 +38,7 @@ export function GitChangesGroup({
   sessionId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  onOpenDiff: (entry: GitChangesFileEntry, group: GitChangesGroupKind) => void
+  onOpenDiff: (entry: GitChangesFileEntry, group: GitChangesGroupKind, activation?: RowActivation) => void
 }) {
   const label = GROUP_LABELS[kind]
   const bulk = BULK_ACTION[kind]
@@ -119,7 +114,7 @@ export function GitChangesGroup({
                   entry={entry}
                   group={kind}
                   sessionId={sessionId}
-                  onOpenDiff={() => onOpenDiff(entry, kind)}
+                  onOpenDiff={(activation) => onOpenDiff(entry, kind, activation)}
                 />
               </li>
             ))}

@@ -3,8 +3,10 @@ import type { Result, SessionSnapshot, SessionStatusEvent, SessionSummary } from
 import type { Session } from '../../shared/model'
 import type { SessionActivity } from '../../shared/activity'
 import { notify } from './notify'
+import { useDocumentTabsStore } from './document-tabs-store'
 import { useSplitStore } from './split-store'
 import { useGitChangesStore } from './git-changes-store'
+import { useSideChatStore } from './side-chat-store'
 import { useSessionListStore } from './session-list-store'
 
 interface SessionsState {
@@ -110,9 +112,14 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       if (deleting.ok && epoch === deletingEpoch) set({ deletingIds: new Set([...deleting.value, ...pendingDeleteIds]) })
       // a session only ever leaves this list via `sessions.delete` (archiving keeps it listed);
       // prune any pane still pointing at an id that is now gone.
-      useSplitStore.getState().pruneDeleted(new Set(result.value.map((session) => session.id)))
+      const listedIds = new Set(result.value.map((session) => session.id))
+      useSplitStore.getState().pruneDeleted(listedIds)
+      // Delete is the only way out of the list, so this is the delete-not-archive drop of a Session's document tabs (#2075).
+      useDocumentTabsStore.getState().pruneSessions(listedIds)
       useSessionListStore.getState().pruneParents(liveParentIds(result.value))
-      useGitChangesStore.getState().pruneCommitDrafts(new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id)))
+      const liveIds = new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id))
+      useGitChangesStore.getState().pruneSessionUi(liveIds)
+      useSideChatStore.getState().pruneDrafts(liveIds)
     } else {
       notify(result.error)
     }

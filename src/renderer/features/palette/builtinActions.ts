@@ -1,12 +1,13 @@
-import { ArrowLeftRightIcon, BarChart3Icon, CommandIcon, PanelRightIcon, PauseIcon, PlayIcon, PlusIcon, RotateCcwIcon, SettingsIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowLeftRightIcon, BarChart3Icon, CommandIcon, MessagesSquareIcon, PanelRightIcon, PauseIcon, PlayIcon, PlusIcon, RotateCcwIcon, SettingsIcon, SquareIcon, XIcon } from 'lucide-react'
 import { canTogglePause, setAllPaused, setSessionPaused } from '@/features/chat/pauseActions'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { stopAndRestore } from '@/features/chat/restoreQueue'
+import { canToggleChat, effectiveChatCollapsed, toggleChatPane } from '@/features/right-pane/toggle-chat-pane'
 import { toggleRightPane } from '@/features/right-pane/toggle-right-pane'
 import { focusedPaneRepository, focusedPaneSessionId, newSessionInFocusedPane } from '@/features/sessions/newSessionInFocusedPane'
 import { useItemSessionDialogStore } from '@/features/sessions/ItemSessionDialogHost'
 import { focusSessionPane } from '@/lib/focus'
-import { useSessionsStore, useSplitStore, useThemeStore, useViewStore } from '@/state'
+import { useRightPaneStore, useSessionsStore, useSplitStore, useThemeStore, useViewStore } from '@/state'
 import { registerActions, type PaletteAction } from './actionRegistry'
 import { usePaletteStore } from './paletteStore'
 
@@ -17,6 +18,13 @@ function focusedSession() {
 
 function liveSessions() {
   return useSessionsStore.getState().sessions.filter((session) => !session.archivedAt)
+}
+
+/** The chat view's real state, so each chat chord guard reads the same view and Session count the toggle helpers do. */
+function chatAreaState() {
+  const view = useViewStore.getState().view
+  const hasSession = useSplitStore.getState().paneSessionIds.length > 0
+  return { view, hasSession, hidden: effectiveChatCollapsed(useRightPaneStore.getState().chatCollapsed, view, hasSession) }
 }
 
 const BUILTIN_ACTIONS: readonly PaletteAction[] = [
@@ -119,7 +127,11 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     label: 'Close chat pane',
     group: 'Chat pane',
     chord: ['Ctrl', 'W'],
-    when: () => useViewStore.getState().view === 'chat' && useSplitStore.getState().paneSessionIds.length > 0,
+    // Hidden chat keeps its Sessions mounted but inert, so this chord must not run on them (FR-020).
+    when: () => {
+      const { view, hasSession, hidden } = chatAreaState()
+      return canToggleChat({ view, hasSession }) && !hidden
+    },
     run: () => {
       const { paneSessionIds, focusedIndex } = useSplitStore.getState()
       closeChatPane(paneSessionIds.length === 2 ? focusedIndex : 0)
@@ -136,12 +148,26 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     run: toggleRightPane
   },
   {
+    id: 'toggle-chat-pane',
+    icon: MessagesSquareIcon,
+    label: 'Hide or show chat',
+    group: 'Chat pane',
+    chord: ['Ctrl', 'Shift', 'H'],
+    keywords: ['toggle', 'hide', 'show', 'collapse', 'chat'],
+    // Same rule as the rail toggle: with no Session open there is nothing to hide, so no no-op entry (FR-020).
+    when: () => {
+      const { view, hasSession } = chatAreaState()
+      return canToggleChat({ view, hasSession })
+    },
+    run: () => toggleChatPane({ viaKeyboard: true })
+  },
+  {
     id: 'focus-other-pane',
     icon: ArrowLeftRightIcon,
     label: 'Move focus to the other pane',
     group: 'Split view',
     chord: ['Ctrl', 'Shift', '\\'],
-    when: () => useSplitStore.getState().paneSessionIds.length === 2,
+    when: () => useSplitStore.getState().paneSessionIds.length === 2 && !chatAreaState().hidden,
     run: () => useSplitStore.getState().focusOther()
   },
   {

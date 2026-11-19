@@ -14,7 +14,15 @@ import { OutlinePanel } from './outline/OutlinePanel'
 import { SessionUsagePanel } from '@/features/usage/SessionUsagePanel'
 import { PinnedIssuePanel } from './pinned/PinnedIssuePanel'
 import { PinnedPullRequestPanel } from './pinned/PinnedPullRequestPanel'
-import type { PanelId } from './panel-registry'
+import { resolveActiveTab } from '@/state/right-pane-store'
+import { useSessionDocumentTabs } from './useSessionDocumentTabs'
+import { DocumentTabView } from '@/features/documents/DocumentTabView'
+import { useDiffTabLiveness } from '@/features/documents/useDiffTabLiveness'
+import { activeItemKey, buildTabItems, tabDomIds } from './tab-items'
+import { isGenuineOpen, openFocusTarget, shellLayout } from './shell-tabs'
+import { focusDocumentTab } from './document-tab-focus'
+import { focusLocation } from './focus-return-tracker'
+import { isFocusStranded, shouldRestoreFocusAfterSwitch } from './pane-focus-targets'
 
 interface RightPaneShellProps {
   sessionId: string | null
@@ -22,15 +30,28 @@ interface RightPaneShellProps {
 
 export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
-  const activePanelId = useRightPaneStore((s) => s.activePanelId)
+  const storePanelId = useRightPaneStore((s) => s.activePanelId)
+  const documents = useSessionDocumentTabs(sessionId)
+  const documentTabs = documents.tabs
+  const activeKey = resolveActiveTab(sessionId, storePanelId, documents)
+  const activePanelId = activeKey?.kind === 'panel' ? activeKey.id : null
+  const activeKind = activeKey?.kind
+  const tabKey = activeItemKey(activeKey)
+  const layout = shellLayout(openPanelIds.length + documentTabs.length)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
   const contentRef = useRef<HTMLDivElement>(null)
+  const focusInStripRef = useRef(false)
+  const prevSessionRef = useRef(sessionId)
   const paneOpen = useRightPaneStore((s) => s.open)
+  useDiffTabLiveness(sessionId)
   // Panel size changes instantly (#678); only content fades and slides in; closing is ignored.
-  const panelKey = paneOpen ? activePanelId : null
+  const panelKey = paneOpen ? tabKey : null
   const launcherRef = useEnterOnSwitch<HTMLDivElement>(paneOpen ? 'launcher' : null, 'panel')
   useEnterOnSwitch(panelKey, 'panel', contentRef)
-  const prevOpenPanelIdsRef = useRef<PanelId[]>(useRightPaneStore.getState().openPanelIds)
+  const prevTabsRef = useRef<{ sessionId: string | null; keys: ReadonlySet<string> }>({
+    sessionId,
+    keys: new Set(buildTabItems(openPanelIds, documentTabs).map((item) => item.key))
+  })
 
   useEffect(() => {
     if (paneOpen && sessionId && !subagentSessionId && openPanelIds.includes('subagents')) {
@@ -39,15 +60,29 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   }, [paneOpen, sessionId, subagentSessionId, openPanelIds])
 
   useEffect(() => {
-    const prevIds = prevOpenPanelIdsRef.current
-    const isGenuineOpen = activePanelId !== null && !prevIds.includes(activePanelId)
-    prevOpenPanelIdsRef.current = openPanelIds
+    const previous = prevTabsRef.current
+    const currentKeys = new Set(buildTabItems(openPanelIds, documentTabs).map((item) => item.key))
+    prevTabsRef.current = { sessionId, keys: currentKeys }
     const { suppressNextContentFocus } = useRightPaneStore.getState()
     if (suppressNextContentFocus) useRightPaneStore.setState({ suppressNextContentFocus: false })
-    if (isGenuineOpen && !suppressNextContentFocus) contentRef.current?.focus()
-  }, [openPanelIds, activePanelId])
+    // A Session switch swaps the document tabs; that is not a tab opening.
+    const target = openFocusTarget(isGenuineOpen(previous, sessionId, tabKey), suppressNextContentFocus, activeKind, layout)
+    if (target === 'tab' && sessionId && tabKey && focusDocumentTab(sessionId, tabKey)) return
+    if (target !== 'none') contentRef.current?.focus()
+  }, [openPanelIds, documentTabs, tabKey, activeKind, layout, sessionId])
 
-  if (openPanelIds.length === 0) {
+  // A Session switch unmounts the strip button that held focus, which drops it to the body; land on the new active tab, or the content when it has no button.
+  useEffect(() => {
+    if (prevSessionRef.current === sessionId) return
+    prevSessionRef.current = sessionId
+    const wasInStrip = focusInStripRef.current
+    focusInStripRef.current = false
+    if (!shouldRestoreFocusAfterSwitch(true, wasInStrip, isFocusStranded(document.activeElement, document.body))) return
+    const tab = activeKey ? document.getElementById(tabDomIds(activeKey).tabId) : null
+    ;(tab ?? contentRef.current)?.focus()
+  }, [sessionId, activeKey])
+
+  if (layout === 'launcher') {
     return (
       <div data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
         <div ref={launcherRef} className="min-h-0 flex-1 overflow-hidden">
@@ -58,10 +93,22 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
     )
   }
 
-  const isTabBar = openPanelIds.length >= 2
+  const isTabBar = layout === 'tab-bar'
+  const ids = activeKey ? tabDomIds(activeKey) : null
 
   return (
-    <div id="right-pane-active-panel" data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
+    <div
+      id="right-pane-active-panel"
+      data-right-pane-shell
+      className="relative flex h-full flex-col overflow-hidden bg-sidebar-right"
+      onFocus={(event) => {
+        focusInStripRef.current = focusLocation(event.target, document.body) === 'tab-strip'
+      }}
+      onBlur={(event) => {
+        // A removed element reports a disconnected target; that is the case the Session-switch restore needs to remember.
+        if (event.target.isConnected && !event.currentTarget.contains(event.relatedTarget)) focusInStripRef.current = false
+      }}
+    >
       <PanelTabBar sessionId={sessionId} />
       <div
         ref={contentRef}
@@ -69,9 +116,10 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         tabIndex={-1}
         className="flex min-h-0 flex-1 flex-col focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         role={isTabBar ? 'tabpanel' : 'region'}
-        id={isTabBar && activePanelId ? `panel-content-${activePanelId}` : undefined}
-        aria-labelledby={isTabBar && activePanelId ? `panel-tab-${activePanelId}` : 'right-pane-panel-title'}
+        id={isTabBar ? ids?.panelId : undefined}
+        aria-labelledby={isTabBar && ids ? ids.tabId : 'right-pane-panel-title'}
       >
+        {activeKey?.kind === 'document' && <DocumentTabView sessionId={activeKey.sessionId} tabId={activeKey.id} />}
         {activePanelId === 'subagents' &&
           (subagentSessionId ? (
             <SubagentPanel sessionId={subagentSessionId} />
