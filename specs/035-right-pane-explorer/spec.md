@@ -4,6 +4,8 @@
 **Status**: Draft
 **Input**: One PR for the wave 2 "Right pane and Explorer" bundle in `docs/PLAN.md`: #674, #800, #1126, #756, #768. Decisions: the 2026-10-29 grill (a comment on each issue; glossary terms Right pane surface and Git decoration in `CONTEXT.md`). Numbered 035 because 030 to 032 are taken and the two sibling wave 2 lanes (Settings, Session list) may take 033 and 034.
 
+> **Superseded in part by spec 137 (#2075, `specs/137-right-pane-tabs-2075/`):** the 520 px maximum width. The width menu is now Narrow 240, Default 320, Wide 640 and Close pane, and dragging has no fixed upper limit; while chat shows, only the window's free width limits the pane. The statements below that say 520 (the #674 "Max width stays 520 px" line, the drag range in the first user story and the Wide (520) menu entry) describe the wave 2 behaviour and no longer hold.
+
 ## Clarifications
 
 ### Session 2026-10-29 (wave 2 grill, Stuart)

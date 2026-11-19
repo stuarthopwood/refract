@@ -81,7 +81,7 @@ The **Session status** of a **Session** the developer paused. Refract holds its 
 _Avoid_: suspended, frozen
 
 **Unread response**:
-The **Session status** of an idle **Session** whose latest reply the developer has not seen, because it finished while the **Session** was not shown in a **Chat pane**. Clears when the **Session** is shown; drawn by the shared status icon in place of Idle.
+The **Session status** of an idle **Session** whose latest reply the developer has not seen, because it finished while the **Session** was not shown in a **Chat pane**. Clears when the **Session** is shown; drawn by the shared status icon in place of Idle. A **Chat collapse** does not count as "not shown": the **Session** stays marked as shown, so it never becomes an **Unread response** while chat is hidden (spec 137, FR-034).
 _Avoid_: response ready, unread dot, response indicator, new message
 
 **Archive**:
@@ -384,8 +384,16 @@ The user's saved order of the **Panel**s, shared by the **Icon rail** and the la
 _Avoid_: Rail order, button order
 
 **Right pane surface**:
-The background of the right pane and the **Icon rail**, one surface: the `--sidebar-right` token, a per-theme midpoint between `--background` and `--sidebar` (the left Session list), so the right edge reads as its own region, neither page nor left panel (decided 2026-10-29, issue #674). The pane has no Min / Default / Max buttons; width is set by dragging, double-click (reset to 320 px), the handle's context menu and the View menu (Narrow 240, Default 320, Wide 520, Close pane), which are the WCAG 2.5.7 non-drag alternative. Dragging below 240 px closes it.
+The background of the right pane and the **Icon rail**, one surface: the `--sidebar-right` token, a per-theme midpoint between `--background` and `--sidebar` (the left Session list), so the right edge reads as its own region, neither page nor left panel (decided 2026-10-29, issue #674). The pane has no Min / Default / Max buttons. Width is set by dragging, double-click (reset to 320 px), the handle's context menu and the "Right pane width" dropdown in the app menu bar (Narrow 240, Default 320, Wide 640, Close pane, plus Hide chat or Show chat), which are the WCAG 2.5.7 non-drag alternative. Wide is disabled where it cannot fit. The pane has no fixed upper width (spec 137, issue #2075, removed the 520 px cap): the window and the chat's 360 px minimum set the limit while chat shows, and 4096 px is a sanity ceiling only. Dragging below 240 px closes it.
 _Avoid_: width preset, sidebar background
+
+**Document tab**:
+A tab in the right pane's tab bar that shows one file or one diff for one **Session**, beside the **Panel** tabs (spec 137, issue #2075). A file tab is identified by **Session** and path; a diff tab by **Session**, Git changes group (conflicts, staged, changes or untracked) and path, so a file that is both staged and modified opens two diff tabs. **Panel** tabs are window-wide; **Document tabs** belong to a **Session** and swap when you switch **Session**. Opening one that already exists activates it. A **Session** keeps at most 20: opening a 21st closes a tab whose file is gone or no longer changed first, then the least recently active one, and announces it. They persist across restart in `Settings.rightPane.documentTabs`.
+_Avoid_: Preview tab, editor tab, main-area tab
+
+**Chat collapse**:
+The chat area at zero width so the right pane fills the window (spec 137, issue #2075). A preference (`Settings.rightPane.chatCollapsed`) that applies only in the chat view: Home, Pull requests, Issues and Usage always show the chat area. It hides both **Chat panes** of a **Split** together but keeps them mounted, so streams, scroll positions and drafts survive, and keeps their **Sessions** marked as shown. The right pane and chat are never both hidden: hiding chat opens the right pane, and closing the right pane shows chat. Toggled from the **Icon rail**'s Chat pane button, the palette ("Hide chat" or "Show chat"), the "Right pane width" dropdown and Ctrl+Shift+H.
+_Avoid_: Chat pane collapse (a **Chat pane** is one half of a **Split**), hide Split
 
 **Git decoration**:
 The colour a file or folder name and icon in the File explorer take from the `--git-*` tokens (modified, added, untracked, deleted, ignored, renamed, conflicted, staged), separate from the session-state colours. A folder takes the most significant status among its descendants (conflicted, deleted, modified, staged, renamed, added, untracked; ignored does not roll up). The trailing status icon and its screen-reader word stay (issue #768).
