@@ -9,13 +9,14 @@ use serde_json::{json, Value};
 use super::approval;
 use super::handoff_target::{check_target, needs_card, Relationship};
 use super::panels;
-use super::router::{approval_outcome, ToolError, INVALID_INPUT};
+use super::router::{approval_outcome, ToolError, INVALID_INPUT, OUTCOME_UNKNOWN};
 use super::sessions::{manager_gone, NOT_FOUND};
 use super::sessions_end::{ipc_error, labels_for, CardLabel, INVALID_STATE};
 use super::sessions_send::{MAX_TEXT_BYTES, SESSION_NOT_RUNNING};
 use super::tree_gate;
 use crate::session::agent::{
-    FirstMessage, HandoffAction, PendingRequest, QueueOutcome, SessionAgent, SharedRegistry,
+    timed_out_reason, FirstMessage, HandoffAction, PendingRequest, QueueOutcome, SessionAgent,
+    SharedRegistry, ACTION_DEADLINE,
 };
 use crate::store::registry::Session;
 
@@ -257,15 +258,18 @@ pub(super) async fn confirm<H: ConvHost>(
 }
 
 /// The gate again after the card is answered, because the tree can move while the card is open.
-/// The Project's tree gate comes back with it, so the action runs inside the gate (#1861).
+/// A cross-Session action gets the Project's tree gate back with it, so the action runs inside the
+/// gate (#1861); a self-handoff changes no tree link and takes none.
 pub(super) async fn recheck<H: ConvHost>(
     host: &H,
     approved: &Gate,
     asked: bool,
 ) -> Result<(Gate, Option<tokio::sync::OwnedMutexGuard<()>>), ToolError> {
     let tree = match approved.target.repository_id.as_deref() {
-        Some(repository_id) => Some(tree_gate::lock(repository_id).await),
-        None => None,
+        Some(repository_id) if approved.relationship != Relationship::Own => {
+            Some(tree_gate::lock(repository_id).await)
+        }
+        _ => None,
     };
     let now = open_gate(host, Some(&approved.target.id), true)
         .await
@@ -301,7 +305,20 @@ pub fn sender_for(gate: &Gate, caller: &str) -> Option<(String, String)> {
 /// Queues the action when the target is mid-turn; otherwise runs it once, launching a Stopped
 /// target first, and tells the caller if that fails (the deferred run retries, see `handoff_queue`).
 /// `asked` is whether a card was shown and approved, which the deferred run needs to check again.
+/// The caller holds the tree gate across this, so it is bounded by `ACTION_DEADLINE` and never retried.
 pub(super) async fn dispatch<H: ConvHost>(
+    host: &H,
+    id: &str,
+    action: HandoffAction,
+    sender: Option<(String, String)>,
+    asked: bool,
+) -> Result<Dispatch, ToolError> {
+    tokio::time::timeout(ACTION_DEADLINE, run_action(host, id, action, sender, asked))
+        .await
+        .map_err(|_| ToolError::new(OUTCOME_UNKNOWN, timed_out_reason()))?
+}
+
+async fn run_action<H: ConvHost>(
     host: &H,
     id: &str,
     action: HandoffAction,

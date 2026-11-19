@@ -62,7 +62,7 @@ async fn gate_is_held(repo: &str) -> bool {
 }
 
 async fn finished(task: tokio::task::JoinHandle<()>) {
-    tokio::time::timeout(Duration::from_secs(10), task)
+    tokio::time::timeout(Duration::from_secs(60), task)
         .await
         .expect("the settled handoff hung")
         .unwrap();
@@ -124,5 +124,34 @@ async fn a_reparent_that_wins_the_gate_first_drops_the_uncarded_action() {
         fx.notices().await,
         ["Handoff dropped: the Session moved out of the sending Session's tree after the action was queued"]
     );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn an_action_that_outruns_its_deadline_fails_without_a_retry_and_frees_the_gate() {
+    let fx = gated_fixture().await;
+    queue_settled(&fx, planner()).await;
+
+    let agent = fx.agent.clone();
+    // The stub never answers `new_session` until released, so only the deadline ends the action.
+    let task = tokio::spawn(async move {
+        agent
+            .run_settled_handoff_within(2, Duration::from_millis(500))
+            .await
+    });
+    finished(task).await;
+
+    assert!(
+        !gate_is_held(&fx.repo).await,
+        "the gate must be freed when the action times out"
+    );
+    // At most one: a loaded run may time out before the stub logs the first, but none is a retry.
+    let new_sessions = fx.rpc_types().await;
+    assert!(new_sessions.iter().filter(|t| *t == "new_session").count() <= 1);
+    assert_eq!(
+        fx.notices().await,
+        [format!("Handoff failed: {}", super::timed_out_reason())]
+    );
+    fx.release().await;
     fx.finish().await;
 }

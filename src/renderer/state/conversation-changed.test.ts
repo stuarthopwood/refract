@@ -6,7 +6,9 @@ import { useChatAreaAnnouncer } from '../features/chat/chatAreaAnnouncer'
 import { handleConversationChanged } from './conversation-changed'
 import { useChatScrollStore } from './scroll-store'
 import { useDraftStore } from './draft-store'
+import { useSessionsStore } from './sessions-store'
 import { useSplitStore } from './split-store'
+import { useViewStore } from './view-store'
 
 describe('handleConversationChanged', () => {
   const announce = vi.fn()
@@ -16,6 +18,7 @@ describe('handleConversationChanged', () => {
     useChatScrollStore.setState({ bySession: {}, inFlight: {} })
     useDraftStore.setState({ bySession: {} })
     useSplitStore.setState({ paneSessionIds: ['s1'], focusedIndex: 0 })
+    useViewStore.setState({ view: 'chat' })
     announce.mockClear()
     useChatAreaAnnouncer.setState({ announce })
   })
@@ -58,5 +61,29 @@ describe('handleConversationChanged', () => {
     handleConversationChanged('s2')
 
     expect(announce).not.toHaveBeenCalled()
+  })
+
+  it('does not announce while a view without chat panes is showing', () => {
+    useViewStore.setState({ view: 'settings' })
+
+    handleConversationChanged('s1')
+
+    expect(announce).not.toHaveBeenCalled()
+  })
+
+  it('opens no Session and fetches no snapshot or list', () => {
+    const { open, refresh } = useSessionsStore.getState()
+    const openSpy = vi.fn()
+    const refreshSpy = vi.fn()
+    useSessionsStore.setState({ open: openSpy, refresh: refreshSpy })
+
+    try {
+      handleConversationChanged('s1')
+
+      expect(openSpy).not.toHaveBeenCalled()
+      expect(refreshSpy).not.toHaveBeenCalled()
+    } finally {
+      useSessionsStore.setState({ open, refresh })
+    }
   })
 })

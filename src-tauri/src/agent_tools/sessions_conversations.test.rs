@@ -6,7 +6,7 @@ use serde_json::json;
 
 use super::*;
 use crate::agent_tools::router::DENIED;
-use crate::agent_tools::sessions_end::tests::{host, parts, row};
+use crate::agent_tools::sessions_end::tests::{host_in, parts, row};
 use crate::agent_tools::sessions_send::INVALID_TARGET;
 use crate::store::session_kind::SessionKind;
 
@@ -23,8 +23,12 @@ struct ConvFake {
     mid_turn: bool,
     cards: Mutex<Vec<PendingRequest>>,
     calls: Mutex<Vec<String>>,
-    /// Whether the Project's tree gate was held at each queue or start call.
+    /// Whether this test's Project tree gate was held at each queue or start call.
     held: Mutex<Vec<bool>>,
+    /// This test's Project id, unique so another test holding the process-wide gate never matches.
+    repo: String,
+    /// `start_new` never answers, like a stuck omp.
+    hang: bool,
 }
 
 impl ConvHost for ConvFake {
@@ -81,6 +85,9 @@ impl ConvHost for ConvFake {
     }
     async fn start_new(&self, id: &str, first: FirstMessage) -> Result<(), ToolError> {
         self.note_gate().await;
+        if self.hang {
+            std::future::pending::<()>().await;
+        }
         self.calls
             .lock()
             .unwrap()
@@ -102,24 +109,31 @@ impl ConvFake {
     }
 
     async fn note_gate(&self) {
-        let free = tokio::time::timeout(Duration::from_millis(50), tree_gate::lock("repo")).await;
+        let free =
+            tokio::time::timeout(Duration::from_millis(50), tree_gate::lock(&self.repo)).await;
         self.held.lock().unwrap().push(free.is_err());
     }
 }
 
 /// me -> kid -> grandkid, a root `side` beside `me`, and `foreign` in another Project.
-fn tree() -> Vec<Session> {
+fn tree_in(repo: &str) -> Vec<Session> {
     vec![
-        row("me", "repo", None),
-        row("kid", "repo", Some("me")),
-        row("grandkid", "repo", Some("kid")),
-        row("side", "repo", None),
+        row("me", repo, None),
+        row("kid", repo, Some("me")),
+        row("grandkid", repo, Some("kid")),
+        row("side", repo, None),
         row("foreign", "elsewhere", None),
     ]
 }
 
+/// For tests that never touch the process-wide tree gate.
+fn tree() -> Vec<Session> {
+    tree_in("repo")
+}
+
 async fn fake(convs: Vec<ConvRow>) -> ConvFake {
-    let end = host(tree()).await;
+    let repo = format!("repo-{}", uuid::Uuid::new_v4());
+    let end = host_in(&repo, tree_in(&repo)).await;
     ConvFake {
         caller: "me".into(),
         registry: end.registry.clone(),
@@ -132,6 +146,8 @@ async fn fake(convs: Vec<ConvRow>) -> ConvFake {
         cards: Mutex::new(Vec::new()),
         calls: Mutex::new(Vec::new()),
         held: Mutex::new(Vec::new()),
+        repo,
+        hang: false,
     }
 }
 
@@ -518,20 +534,8 @@ fn agent_error_codes_map_to_the_tool_contract() {
     assert_eq!(agent_error("invalid-state", "boom".into()).message, "boom");
 }
 
-// The tree gate
-
-#[tokio::test]
-async fn the_tree_gate_is_held_while_the_action_runs_and_freed_after() {
-    let fx = fake(vec![]).await;
-    let args = json!({ "prompt": "build it", "session_id": "side" });
-
-    run_with(&fx, ConvTool::New, &args).await.unwrap();
-
-    assert_eq!(*fx.held.lock().unwrap(), [true, true]);
-    let after = tokio::time::timeout(Duration::from_millis(50), tree_gate::lock("repo")).await;
-    assert!(after.is_ok(), "the gate must be released on return");
-}
-
+#[path = "sessions_conversations_gate.test.rs"]
+mod gate_tool;
 #[path = "sessions_conversations_new.test.rs"]
 mod new_tool;
 #[path = "sessions_conversations_router.test.rs"]

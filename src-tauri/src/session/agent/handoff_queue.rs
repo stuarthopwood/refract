@@ -1,6 +1,8 @@
 // The deferral slot (#1861): a handoff asked for mid-turn waits here and runs once the turn settles.
 // One slot per agent, so a Session holds at most one queued action.
 
+use std::time::Duration;
+
 use tokio::sync::OwnedMutexGuard;
 
 use super::start_with_message::{FirstMessage, StartStage, StartThenSendError};
@@ -79,6 +81,35 @@ pub(super) fn with_notice(notice: &str, text: &str) -> String {
 /// so a second Conversation never starts.
 const ATTEMPTS: usize = 2;
 
+/// The longest one action holds the Project's tree gate. One RPC may take its full 60 s timeout and
+/// the rest of a healthy action is quick, so 90 s covers a slow start; a stuck omp then blocks a
+/// re-parent, create or update for 90 s, not for the several minutes a chain of RPCs could take.
+pub const ACTION_DEADLINE: Duration = Duration::from_secs(90);
+
+/// Why an action that outran `ACTION_DEADLINE` failed; it may have partly run.
+pub fn timed_out_reason() -> String {
+    format!(
+        "the action took longer than {} seconds and was abandoned; it may have partly run",
+        ACTION_DEADLINE.as_secs()
+    )
+}
+
+/// A failed action: `resend_only` is set once the new Conversation exists, so a retry repeats the send only.
+struct ActionFailure {
+    reason: String,
+    resend_only: bool,
+}
+
+/// How one gated attempt ended.
+enum Attempt {
+    Done,
+    /// Refused by the settle-time check; another try would be refused too.
+    Dropped(String),
+    Failed(ActionFailure),
+    /// Not retried: the action may already have changed the Session.
+    TimedOut,
+}
+
 fn failure_reason(failed: StartThenSendError) -> String {
     match failed.stage {
         StartStage::BeforeNew => failed.error.message,
@@ -109,6 +140,11 @@ impl SessionAgent {
     /// Runs the action queued during the turn that settled as `generation`; a follow-up turn that
     /// already started leaves it for its own settle, and a stop already emptied the slot.
     pub(super) async fn run_settled_handoff(&self, generation: u64) {
+        self.run_settled_handoff_within(generation, ACTION_DEADLINE)
+            .await;
+    }
+
+    async fn run_settled_handoff_within(&self, generation: u64, deadline: Duration) {
         let queued = {
             let mut state = self.state.lock().await;
             if state.status != SessionStatus::Idle || state.turn_generation != generation {
@@ -117,12 +153,30 @@ impl SessionAgent {
             take_queued_handoff(&mut state, generation)
         };
         let Some(queued) = queued else { return };
-        let outcome = {
-            // The check and the action share one hold, so a re-parent cannot land between them (#1861).
-            let _gate = self.hold_tree_gate(queued.sender.is_some()).await;
-            self.settle_and_run(queued).await
-        };
-        if let Err(notice) = outcome {
+        let mut resend_only = false;
+        let mut notice = None;
+        for _ in 0..ATTEMPTS {
+            // Each attempt takes the gate and checks again, so a retry never holds the gate across the gap.
+            match self.attempt_handoff(&queued, resend_only, deadline).await {
+                Attempt::Done => {
+                    notice = None;
+                    break;
+                }
+                Attempt::Dropped(reason) => {
+                    notice = Some(dropped_notice(&reason));
+                    break;
+                }
+                Attempt::TimedOut => {
+                    notice = Some(failed_notice(&timed_out_reason()));
+                    break;
+                }
+                Attempt::Failed(failed) => {
+                    resend_only = failed.resend_only;
+                    notice = Some(failed_notice(&failed.reason));
+                }
+            }
+        }
+        if let Some(notice) = notice {
             self.tell_agent_why(notice).await;
         }
     }
@@ -142,21 +196,40 @@ impl SessionAgent {
         Some(crate::agent_tools::tree_gate::lock(&repository_id).await)
     }
 
-    /// The settle-time check, then the action; `Err` is the notice for the agent's next prompt.
-    async fn settle_and_run(&self, queued: QueuedHandoff) -> Result<(), String> {
+    /// The settle-time check, then the action, under one hold of the tree gate and one deadline.
+    async fn attempt_handoff(
+        &self,
+        queued: &QueuedHandoff,
+        resend_only: bool,
+        deadline: Duration,
+    ) -> Attempt {
+        // The check and the action share one hold, so a re-parent cannot land between them (#1861).
+        let _gate = self.hold_tree_gate(queued.sender.is_some()).await;
         if let Some(reason) = self
             .settle_refusal(queued.sender.as_ref(), queued.asked)
             .await
         {
-            return Err(dropped_notice(&reason));
+            return Attempt::Dropped(reason);
         }
-        match queued.action {
+        match tokio::time::timeout(deadline, self.run_action(queued, resend_only)).await {
+            Ok(Ok(())) => Attempt::Done,
+            Ok(Err(failed)) => Attempt::Failed(failed),
+            Err(_) => Attempt::TimedOut,
+        }
+    }
+
+    async fn run_action(
+        &self,
+        queued: &QueuedHandoff,
+        resend_only: bool,
+    ) -> Result<(), ActionFailure> {
+        match &queued.action {
             HandoffAction::New { prompt } => {
-                self.start_handoff_conversation(prompt, queued.sender).await
+                self.start_handoff_conversation(prompt.clone(), queued.sender.clone(), resend_only)
+                    .await
             }
-            HandoffAction::Switch { file } => self.switch_handoff_conversation(file).await,
+            HandoffAction::Switch { file } => self.switch_handoff_conversation(file.clone()).await,
         }
-        .map_err(|reason| failed_notice(&reason))
     }
 
     /// Shows the developer the notice and keeps it for the agent's next prompt.
@@ -207,49 +280,39 @@ impl SessionAgent {
         &self,
         prompt: String,
         sender: Option<(String, String)>,
-    ) -> Result<(), String> {
+        resend_only: bool,
+    ) -> Result<(), ActionFailure> {
         let message = crate::agent_tools::envelope::first_message(sender.as_ref(), prompt);
-        let first = || FirstMessage {
-            text: message.text.clone(),
+        let first = FirstMessage {
+            text: message.text,
             handoff_note: message.handoff_note,
         };
-        let mut conversation_started = false;
-        let mut last_failure = None;
-        for _ in 0..ATTEMPTS {
-            let attempt = if conversation_started {
-                self.resend_first_message(first())
-                    .await
-                    .map_err(|error| StartThenSendError {
-                        stage: StartStage::AfterNew,
-                        error,
-                    })
-            } else {
-                self.start_conversation_then_send(first()).await
-            };
-            match attempt {
-                Ok(()) => return Ok(()),
-                Err(failed) => {
-                    conversation_started = failed.stage == StartStage::AfterNew;
-                    last_failure = Some(failed);
-                }
-            }
-        }
-        Err(last_failure.map_or_else(String::new, failure_reason))
+        let sent = if resend_only {
+            self.resend_first_message(first)
+                .await
+                .map_err(|error| StartThenSendError {
+                    stage: StartStage::AfterNew,
+                    error,
+                })
+        } else {
+            self.start_conversation_then_send(first).await
+        };
+        sent.map_err(|failed| ActionFailure {
+            resend_only: failed.stage == StartStage::AfterNew,
+            reason: failure_reason(failed),
+        })
     }
 
-    async fn switch_handoff_conversation(&self, file: String) -> Result<(), String> {
-        let mut last_error: Option<AgentError> = None;
-        for _ in 0..ATTEMPTS {
-            match self.open_conversation(file.clone()).await {
-                Ok(()) => {
-                    self.events
-                        .emit_session_conversation_changed(&self.session_id);
-                    return Ok(());
-                }
-                Err(error) => last_error = Some(error),
-            }
-        }
-        Err(last_error.map_or_else(String::new, |error| error.message))
+    async fn switch_handoff_conversation(&self, file: String) -> Result<(), ActionFailure> {
+        self.open_conversation(file)
+            .await
+            .map_err(|error| ActionFailure {
+                reason: error.message,
+                resend_only: false,
+            })?;
+        self.events
+            .emit_session_conversation_changed(&self.session_id);
+        Ok(())
     }
 }
 
@@ -272,8 +335,8 @@ impl SessionAgent {
         asked: bool,
     ) -> Result<QueueOutcome, AgentError> {
         let mut state = self.state.lock().await;
-        // A launched Session sits at an odd generation before any turn, so the generation alone
-        // cannot say a turn is running; only a busy status with an odd generation can.
+        // A launched Session sits at an odd generation before any turn, so the generation alone cannot
+        // say a turn is running. `begin_turn` flips both together, so busy status plus odd is a turn.
         let mid_turn = matches!(
             state.status,
             SessionStatus::Working | SessionStatus::NeedsYou
@@ -293,3 +356,7 @@ mod tests;
 #[cfg(test)]
 #[path = "handoff_queue_gate.test.rs"]
 mod gate_tests;
+
+#[cfg(test)]
+#[path = "handoff_queue_turn.test.rs"]
+mod turn_tests;

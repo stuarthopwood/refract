@@ -13,21 +13,28 @@ use super::requests::{classify_dialog, DialogClassification};
 use super::{PendingRequest, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
+    /// Starts a turn: the generation goes odd and the status goes `Working` in one lock section, so
+    /// `queue_handoff` never sees a running turn that still reads idle (#1861).
+    pub(in crate::session::agent) fn begin_turn(&self, state: &mut super::AgentState) {
+        // Parity counter: odd is mid-turn, even is settled. Bumped only from even.
+        // A settle reply landing after this turn starts is dropped by sync_from_state.
+        if state.turn_generation.is_multiple_of(2) {
+            state.turn_generation = state.turn_generation.wrapping_add(1);
+        }
+        // Every new turn starts clean, including a queued follow-up after a stop. (#911)
+        state.turn_abort_requested = false;
+        self.write_status(state, SessionStatus::Working, None, None);
+    }
+
     pub(super) async fn handle_frame(&self, frame: Value) {
         let frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("");
         match frame_type {
             "agent_start" => {
                 {
                     let mut state = self.state.lock().await;
-                    // Parity counter: odd is mid-turn, even is settled. Bumped only from even.
-                    // A settle reply landing after this turn starts is dropped by sync_from_state.
-                    if state.turn_generation % 2 == 0 {
-                        state.turn_generation = state.turn_generation.wrapping_add(1);
-                    }
-                    // Every new turn starts clean, including a queued follow-up after a stop. (#911)
-                    state.turn_abort_requested = false;
+                    self.begin_turn(&mut state);
                 }
-                self.set_status(SessionStatus::Working, None, None).await;
+                self.emit_status().await;
             }
             "session_settled" => {
                 self.handle_turn_settled().await;

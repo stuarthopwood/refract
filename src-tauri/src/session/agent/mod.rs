@@ -40,7 +40,9 @@ pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
-pub use handoff_queue::{HandoffAction, QueueOutcome, QueuedHandoff};
+pub use handoff_queue::{
+    timed_out_reason, HandoffAction, QueueOutcome, QueuedHandoff, ACTION_DEADLINE,
+};
 pub use requests::is_chat_answer;
 pub use start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use types::should_apply_crash_exit_verdict;
@@ -273,7 +275,28 @@ impl SessionAgent {
         drop(state);
     }
 
-    /// Becomes `unread` only on `working` -> `idle` while the Session is hidden.
+    /// Writes the status under a lock the caller already holds, so a state change that must be atomic
+    /// with another field can share one section. The caller emits afterwards, with the lock released.
+    fn write_status(
+        &self,
+        state: &mut AgentState,
+        status: SessionStatus,
+        stop_reason: Option<&'static str>,
+        stop_detail: Option<String>,
+    ) {
+        // Becomes `unread` only on `working` -> `idle` while the Session is hidden.
+        let became_unread = state.status == SessionStatus::Working
+            && status == SessionStatus::Idle
+            && !self.is_visible();
+        state.status = status;
+        state.stop_reason = stop_reason;
+        state.stop_detail = stop_detail;
+        if became_unread {
+            state.unread = true;
+        }
+        let _ = self.status_tx.send(status);
+    }
+
     pub(super) async fn set_status(
         &self,
         status: SessionStatus,
@@ -282,16 +305,7 @@ impl SessionAgent {
     ) {
         {
             let mut state = self.state.lock().await;
-            let became_unread = state.status == SessionStatus::Working
-                && status == SessionStatus::Idle
-                && !self.is_visible();
-            state.status = status;
-            state.stop_reason = stop_reason;
-            state.stop_detail = stop_detail;
-            if became_unread {
-                state.unread = true;
-            }
-            let _ = self.status_tx.send(status);
+            self.write_status(&mut state, status, stop_reason, stop_detail);
         }
         self.emit_status().await;
     }
