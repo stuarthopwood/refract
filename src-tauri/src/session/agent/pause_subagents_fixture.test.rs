@@ -87,16 +87,18 @@ pub(in crate::session::agent) struct Stub<'a> {
 pub(in crate::session::agent) struct Fixture {
     pub agent: Arc<SessionAgent>,
     pub manager: Arc<crate::session::manager::SessionManager>,
+    /// Unique per fixture, so a test holding this Project's tree gate never meets another test's.
+    pub repo: String,
     dir: PathBuf,
     log: PathBuf,
     gate: PathBuf,
 }
 
-fn session_row(id: &str, dir: &std::path::Path) -> Session {
+fn session_row(id: &str, repo: &str, dir: &std::path::Path) -> Session {
     Session {
         id: id.to_string(),
         kind: crate::store::session_kind::SessionKind::Project,
-        repository_id: Some("repo".to_string()),
+        repository_id: Some(repo.to_string()),
         name: "test".to_string(),
         branch: Some(format!("feat/{id}")),
         base_branch: Some("main".to_string()),
@@ -135,6 +137,7 @@ pub(in crate::session::agent) async fn fixture(running: &[&str], stuck: &[&str])
 
 pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
     let session_id = format!("session-pause-subagents-{}", uuid::Uuid::new_v4());
+    let repo = format!("repo-{}", uuid::Uuid::new_v4());
     let dir =
         crate::test_scratch::path(format!("refract-pause-subagents-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
@@ -143,7 +146,7 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
         .unwrap();
     registry_store
         .add_repository(crate::store::registry::Repository {
-            id: "repo".to_string(),
+            id: repo.clone(),
             path: dir.join("repo").to_string_lossy().into_owned(),
             name: "repo".to_string(),
             default_branch: "main".to_string(),
@@ -153,7 +156,7 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
         .await
         .unwrap();
     registry_store
-        .add_session(session_row(&session_id, &dir))
+        .add_session(session_row(&session_id, &repo, &dir))
         .await
         .unwrap();
     let registry = Arc::new(tokio::sync::Mutex::new(registry_store));
@@ -193,6 +196,7 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
     Fixture {
         agent,
         manager,
+        repo,
         dir,
         log,
         gate,
@@ -202,7 +206,7 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
 impl Fixture {
     /// Another Session in the same registry, with no process and a worktree that does not exist.
     pub async fn add_session(&self, id: &str, held: &[&str], archived: bool) {
-        let mut row = session_row(id, &self.dir);
+        let mut row = session_row(id, &self.repo, &self.dir);
         row.paused_held = Some(held.iter().map(|text| text.to_string()).collect());
         row.archived_at = archived.then(|| "2026-11-12T00:00:00.000Z".to_string());
         let registry = self.agent.registry().clone();

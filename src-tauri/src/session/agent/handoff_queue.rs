@@ -1,6 +1,8 @@
 // The deferral slot (#1861): a handoff asked for mid-turn waits here and runs once the turn settles.
 // One slot per agent, so a Session holds at most one queued action.
 
+use tokio::sync::OwnedMutexGuard;
+
 use super::start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use super::{AgentError, AgentState, SessionAgent, SessionStatus};
 use crate::agent_tools::handoff_target::{check_target, needs_card, MOVED_OUT_OF_TREE};
@@ -115,22 +117,46 @@ impl SessionAgent {
             take_queued_handoff(&mut state, generation)
         };
         let Some(queued) = queued else { return };
+        let outcome = {
+            // The check and the action share one hold, so a re-parent cannot land between them (#1861).
+            let _gate = self.hold_tree_gate(queued.sender.is_some()).await;
+            self.settle_and_run(queued).await
+        };
+        if let Err(notice) = outcome {
+            self.tell_agent_why(notice).await;
+        }
+    }
+
+    /// The Project's tree gate for a cross-Session action; a self-handoff changes no tree link.
+    /// Taken with no agent lock held: the gate only ever sits above the state and registry locks.
+    async fn hold_tree_gate(&self, cross_session: bool) -> Option<OwnedMutexGuard<()>> {
+        if !cross_session {
+            return None;
+        }
+        let repository_id = self
+            .registry
+            .lock()
+            .await
+            .get_session(&self.session_id)
+            .and_then(|session| session.repository_id.clone())?;
+        Some(crate::agent_tools::tree_gate::lock(&repository_id).await)
+    }
+
+    /// The settle-time check, then the action; `Err` is the notice for the agent's next prompt.
+    async fn settle_and_run(&self, queued: QueuedHandoff) -> Result<(), String> {
         if let Some(reason) = self
             .settle_refusal(queued.sender.as_ref(), queued.asked)
             .await
         {
-            self.tell_agent_why(dropped_notice(&reason)).await;
-            return;
+            return Err(dropped_notice(&reason));
         }
-        let outcome = match queued.action {
+        match queued.action {
             HandoffAction::New { prompt } => {
                 self.start_handoff_conversation(prompt, queued.sender).await
             }
             HandoffAction::Switch { file } => self.switch_handoff_conversation(file).await,
-        };
-        if let Err(reason) = outcome {
-            self.tell_agent_why(failed_notice(&reason)).await;
         }
+        .map_err(|reason| failed_notice(&reason))
     }
 
     /// Shows the developer the notice and keeps it for the agent's next prompt.
@@ -263,3 +289,7 @@ impl SessionAgent {
 #[cfg(test)]
 #[path = "handoff_queue.test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "handoff_queue_gate.test.rs"]
+mod gate_tests;
