@@ -45,6 +45,7 @@ vi.mock('./paletteStore', () => ({ usePaletteStore: { getState: () => ({ setOpen
 import { registerBuiltinActions } from './builtinActions'
 import { installKeyboardHost, type KeyboardHost } from './chordTestHarness'
 import { useChordDispatcher } from './useChordDispatcher'
+import { findAction, isActionEnabled } from './actionRegistry'
 
 const CTRL_SHIFT_H = { key: 'H', code: 'KeyH', ctrlKey: true, shiftKey: true }
 const CTRL_W = { key: 'w', code: 'KeyW', ctrlKey: true }
@@ -190,6 +191,29 @@ describe('Ctrl+N while chat is hidden', () => {
     host.press(CTRL_SHIFT_H)
     expect(host.press(CTRL_N)).toBe(true)
     expect(mocks.newSession).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('the "Hide or show chat" palette entry (FR-020)', () => {
+  const enabled = () => {
+    const action = findAction('toggle-chat-pane')
+    return action !== undefined && isActionEnabled(action)
+  }
+
+  it('is offered with a Session open in the chat view', () => {
+    expect(enabled()).toBe(true)
+  })
+
+  it('is not offered, and the chord stays off, with no Session to hide', () => {
+    useSplitStore.setState({ paneSessionIds: [] })
+    expect(enabled()).toBe(false)
+    expect(host.press(CTRL_SHIFT_H)).toBe(false)
+  })
+
+  it('is offered while chat is hidden, so Show can never be stuck', () => {
+    pane().setChatCollapsed(true)
+    useSplitStore.setState({ paneSessionIds: [] })
+    expect(enabled()).toBe(true)
   })
 })
 

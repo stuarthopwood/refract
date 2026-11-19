@@ -2,7 +2,7 @@ import { ArrowLeftRightIcon, BarChart3Icon, CommandIcon, MessagesSquareIcon, Pan
 import { canTogglePause, setAllPaused, setSessionPaused } from '@/features/chat/pauseActions'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { stopAndRestore } from '@/features/chat/restoreQueue'
-import { effectiveChatCollapsed, toggleChatPane } from '@/features/right-pane/toggle-chat-pane'
+import { canToggleChat, effectiveChatCollapsed, toggleChatPane } from '@/features/right-pane/toggle-chat-pane'
 import { toggleRightPane } from '@/features/right-pane/toggle-right-pane'
 import { focusedPaneRepository, focusedPaneSessionId, newSessionInFocusedPane } from '@/features/sessions/newSessionInFocusedPane'
 import { useItemSessionDialogStore } from '@/features/sessions/ItemSessionDialogHost'
@@ -144,7 +144,14 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
     group: 'Chat pane',
     chord: ['Ctrl', 'Shift', 'H'],
     keywords: ['toggle', 'hide', 'show', 'collapse', 'chat'],
-    when: () => useViewStore.getState().view === 'chat',
+    // Same rule as the rail toggle: with no Session open there is nothing to hide, so no no-op entry (FR-020).
+    when: () =>
+      useViewStore.getState().view === 'chat' &&
+      canToggleChat({
+        view: 'chat',
+        hasSession: useSplitStore.getState().paneSessionIds.length > 0,
+        chatCollapsed: useRightPaneStore.getState().chatCollapsed
+      }),
     run: () => toggleChatPane({ viaKeyboard: true })
   },
   {
