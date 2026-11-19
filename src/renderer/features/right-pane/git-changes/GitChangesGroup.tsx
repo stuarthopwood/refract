@@ -23,6 +23,13 @@ const GROUP_LABELS: Record<GitChangesGroupKind, string> = {
   untracked: 'Untracked'
 }
 
+// A file's own state, as a diff tab and the diff header show it: a tracked unstaged change reads "Unstaged", not "Changes".
+const DIFF_GROUP_LABELS: Record<GitChangesGroupKind, string> = { ...GROUP_LABELS, changes: 'Unstaged' }
+
+export function diffGroupLabel(group: GitChangesGroupKind): string {
+  return DIFF_GROUP_LABELS[group]
+}
+
 const BULK_ACTION: Record<GitChangesGroupKind, { label: string; icon: LucideIcon } | null> = {
   conflicts: null,
   staged: { label: 'Unstage all', icon: MinusIcon },

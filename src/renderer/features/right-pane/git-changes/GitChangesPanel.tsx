@@ -8,7 +8,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import { useGitChangesStore } from '@/state'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
-import { GitChangesGroup } from './GitChangesGroup'
+import { GitChangesGroup, diffGroupLabel } from './GitChangesGroup'
 import { GitChangesHeader } from './GitChangesHeader'
 import { GitCommitBox } from './GitCommitBox'
 import { focusGitRow, focusGitRowInGroup, focusNearestGroupTrigger, GROUP_ORDER } from './focus'
@@ -293,10 +293,7 @@ function GitChangesDiffPane({
             {fileName}
           </span>
         </Button>
-        {/* Low item: an untracked file's own group is "Untracked", never "Unstaged" --
-            `staged`/`unstaged` only describes the index/working-tree distinction a TRACKED file
-            has; an untracked file has neither. */}
-        <span className="shrink-0 text-xs text-muted-foreground">{group === 'untracked' ? 'Untracked' : staged ? 'Staged' : 'Unstaged'}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{diffGroupLabel(group)}</span>
       </div>
       {state === 'loading' ? (
         <InlineStatus tone="loading">Loading diff…</InlineStatus>
