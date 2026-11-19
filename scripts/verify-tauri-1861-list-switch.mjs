@@ -95,6 +95,66 @@ const scenarios = [
       await ctx.sleep(400);
       rec.check(ctx.recvCount('switch_session') === before, 'No omp process received a switch_session.', `switch_session count ${before} -> ${ctx.recvCount('switch_session')}`);
     }
+  },
+  {
+    name: 'plan1-limit-bounds',
+    title: 'plan 1 (rest): limit 100 returns all 25 Conversations; limit 101 is invalid_input',
+    async run(ctx, rec) {
+      const a = await ctx.sessionA();
+      const all = await ctx.conversationsIpc(a.id);
+      const max = await ctx.call(LIST, { session_id: a.id, limit: 100 }, a.pid);
+      const rows = max.body.conversations ?? [];
+      rec.check(!max.isError && rows.length === 25, 'limit 100 returned all 25 Conversations.', `limit 100: isError ${max.isError}, ${rows.length} rows, expected 25`);
+      rec.check(JSON.stringify(rows.map((c) => c.id)) === JSON.stringify(all.map((c) => c.id)), 'The 25 rows match the IPC list, newest first.', `ids ${JSON.stringify(rows.map((c) => c.id))} differ from IPC ${JSON.stringify(all.map((c) => c.id))}`);
+      const over = await ctx.call(LIST, { session_id: a.id, limit: 101 }, a.pid);
+      ctx.evidence('plan1-limit-bounds.json', { limit100: { args: max.args, rowCount: rows.length }, limit101: { args: over.args, result: over.body } });
+      rec.check(over.isError && ctx.code(over) === 'invalid_input', 'limit 101 returned the error code invalid_input.', `limit 101 result: ${JSON.stringify(over)}`);
+    }
+  },
+  {
+    name: 'plan2-list-project-scope',
+    title: "plan 2: listing another Project's Session is not_found; listing a Session of the same Project works with no approval card",
+    async run(ctx, rec) {
+      const a = await ctx.sessionA();
+      const b = await ctx.sessionB();
+      const other = await ctx.otherProjectSession();
+      const foreign = await ctx.call(LIST, { session_id: other.id }, a.pid);
+      ctx.evidence('plan2-other-project.json', { caller: a.id, target: other.id, call: { tool: LIST, args: foreign.args }, result: foreign.body });
+      rec.check(foreign.isError && ctx.code(foreign) === 'not_found', "list_conversations on another Project's Session returned not_found.", `result: ${JSON.stringify(foreign)}`);
+      rec.check(foreign.body.conversations === undefined, "The refusal reveals none of that Session's Conversations.", `body: ${JSON.stringify(foreign.body)}`);
+      const sibling = await ctx.call(LIST, { session_id: b.id }, a.pid);
+      const siblingIpc = await ctx.conversationsIpc(b.id);
+      ctx.evidence('plan2-same-project.json', { caller: a.id, target: b.id, call: { tool: LIST, args: sibling.args }, result: sibling.body, ipcIds: siblingIpc.map((c) => c.id) });
+      rec.check(!sibling.isError && JSON.stringify((sibling.body.conversations ?? []).map((c) => c.id)) === JSON.stringify(siblingIpc.map((c) => c.id)), "list_conversations on a same-Project Session returned that Session's Conversations.", `result: ${JSON.stringify(sibling)}`);
+      const requests = [...(await ctx.transcript(a.id)), ...(await ctx.transcript(b.id))].filter((t) => t.kind === 'request');
+      rec.check(requests.length === 0, 'No approval card (request row) appeared in either Session.', `request rows: ${JSON.stringify(requests)}`);
+      await ctx.shot('plan2-after-list.png');
+    }
+  },
+  {
+    name: 'plan7-self-switch-mid-turn',
+    title: 'plan 7 (rest): switch_conversation on itself mid-turn returns scheduled; the switch happens only after the turn settles',
+    async run(ctx, rec) {
+      const s = await ctx.newSession('P7');
+      const target = 'seed-p7';
+      ctx.seedConversation(s.sessionDir, target, 1);
+      await ctx.holdTurn(s);
+      const before = ctx.recvCount('switch_session', s.pid);
+      const res = await ctx.call(SWITCH, { session_id: s.id, conversation_id: target }, s.pid);
+      ctx.evidence('plan7-scheduled.json', { call: { tool: SWITCH, args: res.args }, result: res.body });
+      rec.check(!res.isError && res.body.outcome === 'scheduled', 'switch_conversation mid-turn returned outcome "scheduled".', `result: ${JSON.stringify(res)}`);
+      await ctx.sleep(1_000);
+      const queued = await ctx.conversationsIpc(s.id);
+      rec.check(!currentOf(queued).includes(target) && ctx.recvCount('switch_session', s.pid) === before, 'While the turn runs nothing switched: the target is not current and omp got no switch_session.', `current ${JSON.stringify(currentOf(queued))}, switch_session ${before} -> ${ctx.recvCount('switch_session', s.pid)}`);
+      ctx.settleTurn(s.pid);
+      await waitCurrentIs(ctx, s, target).catch(() => {});
+      const ipc = await ctx.conversationsIpc(s.id);
+      rec.check(JSON.stringify(currentOf(ipc)) === JSON.stringify([target]), `After the turn settled, ${target} is the only current Conversation.`, `current ids ${JSON.stringify(currentOf(ipc))}`);
+      rec.check(ctx.recvCount('switch_session', s.pid) === before + 1, 'omp received exactly one switch_session.', `switch_session count ${before} -> ${ctx.recvCount('switch_session', s.pid)}`);
+      const row = await ctx.row(s.id);
+      rec.check(String(row?.currentConversation ?? '').endsWith(`_${target}.jsonl`), 'The Session row records the target file as its current Conversation.', `currentConversation ${row?.currentConversation}`);
+      await ctx.shot('plan7-after-settle.png');
+    }
   }
 ];
 

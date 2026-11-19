@@ -34,10 +34,12 @@ const argValue = (flag) => {
 };
 
 const SEED_PREFIX_MS = Date.UTC(2026, 0, 1);
+/** The second Project's folder name; it must not contain the first Project's name, which the UI helpers match by substring. */
+const OTHER_PROJECT = 'other-project-1861';
 /** `2026-01-01T00-00-00-000Z` as omp names files: `:` and `.` become `-`. */
 const fileStamp = (ms) => new Date(ms).toISOString().replace(/[:.]/g, '-');
 
-function createContext({ cdp, recordFile, callsFile, refusalsFile, debugLog, repoDir, shotsDir }) {
+function createContext({ cdp, recordFile, callsFile, refusalsFile, promptRefusalsFile, debugLog, repoDir, runDir, shotsDir }) {
   const records = () => readFileSync(recordFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const knownPids = [];
   const memo = {};
@@ -104,6 +106,10 @@ function createContext({ cdp, recordFile, callsFile, refusalsFile, debugLog, rep
     setRefusals(n) {
       writeFileSync(refusalsFile, String(n));
     },
+    /** The first `prompt` after each of the next `n` successful `new_session` commands fails in the fake omp. */
+    setPromptRefusals(n) {
+      writeFileSync(promptRefusalsFile, String(n));
+    },
     /** The text of the whole window, for what the panes show. */
     pageText: () => cdp.evaluate('document.body.innerText'),
     /** Counts the commands the fake omp received, by type, optionally for one pid. */
@@ -118,11 +124,11 @@ function createContext({ cdp, recordFile, callsFile, refusalsFile, debugLog, rep
         .filter((l) => l.startsWith(`pid=${pid} RECV {`) && l.includes('"type":"prompt"'))
         .map((l) => JSON.parse(l.slice(l.indexOf('RECV ') + 5, l.lastIndexOf(' (waitingFor='))).message);
     },
-    /** A Session with a first message sent, so its Conversation file is listable and Refract knows its directory. */
-    async newSession(label) {
+    /** A Session of the named Project (default: the scratch Project) with a first message sent, so its Conversation file is listable and Refract knows its directory. */
+    async newSession(label, repoName = path.basename(repoDir)) {
       const before = (await cdp.evaluate(`window.refract.sessions.list().then((r) => r.value.map((s) => s.id))`)) ?? [];
-      await createSessionViaQuickCreate(cdp, path.basename(repoDir));
-      const found = await latestSessionIdAndName(cdp, path.basename(repoDir), before);
+      await createSessionViaQuickCreate(cdp, repoName);
+      const found = await latestSessionIdAndName(cdp, repoName, before);
       const pid = await ctx.newPid();
       await waitForSessionStatus(cdp, found.id, 'idle');
       const sent = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(found.id)}, ${JSON.stringify(`First message of ${label}`)})`);
@@ -132,17 +138,31 @@ function createContext({ cdp, recordFile, callsFile, refusalsFile, debugLog, rep
       const row = await ctx.row(found.id);
       return { id: found.id, name: found.name, pid, sessionDir: row.sessionDir };
     },
+    /** Starts a turn that stays open (a `HOLD` prompt), and waits until Refract shows the Session working. */
+    async holdTurn(s) {
+      const sent = await cdp.evaluate(`window.refract.chat.send(${JSON.stringify(s.id)}, 'HOLD while I work')`);
+      if (!sent.ok) throw new Error(`chat.send failed: ${JSON.stringify(sent)}`);
+      await waitForSessionStatus(cdp, s.id, 'working', { timeoutMs: 30_000 });
+    },
+    /** Writes an older Conversation file `<dir>/<stamp>_<id>.jsonl` with a user message, so Refract lists it (a title-only file is hidden). */
+    seedConversation(dir, id, ordinal) {
+      const file = path.join(dir, `${fileStamp(SEED_PREFIX_MS + ordinal * 60_000)}_${id}.jsonl`);
+      const message = { role: 'user', content: [{ type: 'text', text: `Seeded Conversation ${ordinal}` }], timestamp: 0 };
+      writeFileSync(file, `${JSON.stringify({ type: 'title', title: `Seed ${ordinal}` })}\n${JSON.stringify({ type: 'message', message })}\n`);
+    },
     /** Session A with 25 Conversations in total: its own plus 24 seeded older ones named `seed-01`..`seed-24`. */
     async sessionA() {
       if (memo.a) return memo.a;
       const a = await ctx.newSession('A');
-      for (let i = 1; i <= 24; i++) {
-        const id = `seed-${String(i).padStart(2, '0')}`;
-        const file = path.join(a.sessionDir, `${fileStamp(SEED_PREFIX_MS + i * 60_000)}_${id}.jsonl`);
-        const message = { role: 'user', content: [{ type: 'text', text: `Seeded Conversation ${i}` }], timestamp: 0 };
-        writeFileSync(file, `${JSON.stringify({ type: 'title', title: `Seed ${i}` })}\n${JSON.stringify({ type: 'message', message })}\n`);
-      }
+      for (let i = 1; i <= 24; i++) ctx.seedConversation(a.sessionDir, `seed-${String(i).padStart(2, '0')}`, i);
       return (memo.a = a);
+    },
+    /** A Session of a second Project, added to Refract on first use. */
+    async otherProjectSession() {
+      if (memo.other) return memo.other;
+      const dir = makeScratchRepo(path.join(runDir, 'repo-other', OTHER_PROJECT), OTHER_PROJECT);
+      await addRepository(cdp, dir);
+      return (memo.other = await ctx.newSession('other Project', OTHER_PROJECT));
     },
     /** A second Session in the same Project, with a Conversation of its own. */
     async sessionB() {
@@ -188,8 +208,10 @@ async function main() {
     const recordFile = path.join(exeDir, 'host-tools.jsonl');
     const callsFile = path.join(exeDir, 'host-calls.jsonl');
     const refusalsFile = path.join(exeDir, 'new-session-refusals.txt');
+    const promptRefusalsFile = path.join(exeDir, 'prompt-after-new-refusals.txt');
     const debugLog = path.join(exeDir, 'fake-omp-invocations.log');
     writeFileSync(refusalsFile, '0');
+    writeFileSync(promptRefusalsFile, '0');
     writeFileSync(recordFile, '');
     writeFileSync(callsFile, '');
     const port = await getFreePort();
@@ -220,7 +242,8 @@ async function main() {
         REFRACT_FAKE_OMP_DEBUG_LOG: debugLog,
         REFRACT_FAKE_OMP_HOST_TOOL_RECORD: recordFile,
         REFRACT_FAKE_OMP_HOST_TOOL_CALLS: callsFile,
-        REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS: refusalsFile
+        REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS: refusalsFile,
+        REFRACT_FAKE_OMP_PROMPT_AFTER_NEW_REFUSALS: promptRefusalsFile
       }
     });
     child = launched.child;
@@ -230,7 +253,7 @@ async function main() {
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
     await addRepository(cdp, repoDir);
 
-    const ctx = createContext({ cdp, recordFile, callsFile, refusalsFile, debugLog, repoDir, shotsDir: exeDir });
+    const ctx = createContext({ cdp, recordFile, callsFile, refusalsFile, promptRefusalsFile, debugLog, repoDir, runDir, shotsDir: exeDir });
     for (const scenario of selected) {
       const rec = { findings: [], failures: [], check(ok, pass, fail) { (ok ? rec.findings : rec.failures).push(ok ? pass : fail); } };
       try {

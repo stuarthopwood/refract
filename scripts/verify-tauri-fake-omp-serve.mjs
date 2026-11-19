@@ -10,6 +10,8 @@
 // check appends `{"__serve_settle__":true,"__pid":<pid>}` to REFRACT_FAKE_OMP_HOST_TOOL_CALLS or the agent sends
 // `abort_and_restore_queue`; any other prompt answers "Noted." and settles at once.
 // `REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS` (scratch file holding a number) makes the next N `new_session` calls fail.
+// `REFRACT_FAKE_OMP_PROMPT_AFTER_NEW_REFUSALS` (same shape) makes the first `prompt` after each of the next N successful
+// `new_session` calls fail: the Conversation exists but its first message is refused.
 
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -39,14 +41,15 @@ export function createServe({ emit, root, cwd, pid, env }) {
   };
   current = newFile();
 
-  const refusalsFile = env.REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS;
-  const takeRefusal = () => {
-    if (!refusalsFile || !existsSync(refusalsFile)) return false;
-    const left = Number(readFileSync(refusalsFile, 'utf8').trim()) || 0;
+  const takeFrom = (file) => {
+    if (!file || !existsSync(file)) return false;
+    const left = Number(readFileSync(file, 'utf8').trim()) || 0;
     if (left <= 0) return false;
-    writeFileSync(refusalsFile, String(left - 1));
+    writeFileSync(file, String(left - 1));
     return true;
   };
+  const takeRefusal = () => takeFrom(env.REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS);
+  let refuseNextPrompt = false;
 
   const settle = (status) => {
     held = false;
@@ -78,6 +81,7 @@ export function createServe({ emit, root, cwd, pid, env }) {
         if (takeRefusal()) return refuse('fixture refused new_session');
         current = newFile();
         messageCount = 0;
+        refuseNextPrompt = takeFrom(env.REFRACT_FAKE_OMP_PROMPT_AFTER_NEW_REFUSALS);
         return reply({ data: { cancelled: false } });
       case 'switch_session':
         if (typeof cmd.sessionPath !== 'string' || !existsSync(cmd.sessionPath)) return refuse('no such Conversation file');
@@ -85,6 +89,10 @@ export function createServe({ emit, root, cwd, pid, env }) {
         messageCount = 1;
         return reply({ data: { cancelled: false } });
       case 'prompt': {
+        if (refuseNextPrompt) {
+          refuseNextPrompt = false;
+          return refuse('fixture refused the first prompt after new_session');
+        }
         turnId = cmd.id;
         reply();
         const text = typeof cmd.message === 'string' ? cmd.message : '';

@@ -24,13 +24,6 @@ async function typeDraft(ctx, s, text) {
 /** What the Session's composer currently holds. */
 const draftOf = (ctx, s) => ctx.cdp.evaluate(`${paneComposer(s)}?.value ?? null`);
 
-/** Starts a turn that stays open, and waits until Refract shows the Session working. */
-async function holdTurn(ctx, s) {
-  const sent = await ctx.cdp.evaluate(`window.refract.chat.send(${JSON.stringify(s.id)}, 'HOLD while I work')`);
-  if (!sent.ok) throw new Error(`chat.send failed: ${JSON.stringify(sent)}`);
-  await waitForSessionStatus(ctx.cdp, s.id, 'working', { timeoutMs: 30_000 });
-}
-
 const idsOf = (rows) => rows.map((c) => c.id);
 const currentOf = (rows) => rows.filter((c) => c.isCurrent).map((c) => c.id);
 
@@ -70,7 +63,7 @@ async function snapshot(ctx, s) {
 /** A Session mid-turn with a queued self-handoff: the precondition of scenarios 2 to 5. */
 async function queuedHandoff(ctx, label) {
   const s = await ctx.newSession(label);
-  await holdTurn(ctx, s);
+  await ctx.holdTurn(s);
   const before = await snapshot(ctx, s);
   const res = await ctx.call(NEW, { session_id: s.id, prompt: PROMPT }, s.pid);
   if (res.isError || res.body.outcome !== 'scheduled') throw new Error(`precondition: handoff not scheduled: ${JSON.stringify(res.body)}`);
@@ -83,7 +76,7 @@ const scenarios = [
     title: 'plan 3: mid-turn new_conversation returns scheduled; on settle a new Conversation exists with the unchanged prompt and the handoff label; panes moved; draft kept',
     async run(ctx, rec) {
       const s = await ctx.newSession('P3');
-      await holdTurn(ctx, s);
+      await ctx.holdTurn(s);
       const before = await snapshot(ctx, s);
       await typeDraft(ctx, s, DRAFT);
       rec.check((await draftOf(ctx, s)) === DRAFT, 'The unsent draft is in the composer before the handoff.', `composer value ${JSON.stringify(await draftOf(ctx, s))}`);
@@ -242,6 +235,63 @@ const scenarios = [
       const next = ctx.promptTexts(s.pid).slice(promptsBefore);
       ctx.evidence('plan8b-refused-twice.json', { before, notices, conversations: ipc, promptsToOmpAfterFailure: next });
       rec.check(next.some((t) => t.includes('Handoff failed')), 'The next prompt sent to omp carries the "Handoff failed" notice.', `prompts omp received after the failure: ${JSON.stringify(next)}`);
+    }
+  },
+  {
+    name: 'plan14a-new-summary-handoff',
+    title: 'plan 14: the /new summary handoff (#1212) asks for a summary, starts a fresh Conversation and sends it as the first message, unlabelled',
+    async run(ctx, rec) {
+      const s = await ctx.newSession('P14A');
+      const before = await snapshot(ctx, s);
+      const promptsBefore = ctx.promptTexts(s.pid).length;
+      const res = await ctx.cdp.evaluate(`window.refract.tokenGuard.handoff(${JSON.stringify(s.id)})`);
+      rec.check(res.ok && res.value.ok === true, 'tokenGuard.handoff returned ok.', `tokenGuard.handoff: ${JSON.stringify(res)}`);
+      await waitConversations(ctx, s, before.ids.length + 1).catch(() => {});
+      await waitForSessionStatus(ctx.cdp, s.id, 'idle');
+      await ctx.sleep(500);
+      const ipc = await ctx.conversationsIpc(s.id);
+      const fresh = ipc.filter((c) => !before.ids.includes(c.id));
+      rec.check(fresh.length === 1 && JSON.stringify(currentOf(ipc)) === JSON.stringify(idsOf(fresh)), 'Exactly one new Conversation exists and it is current.', `Conversations ${JSON.stringify(idsOf(ipc))}, before ${JSON.stringify(before.ids)}, current ${JSON.stringify(currentOf(ipc))}`);
+      rec.check(ctx.recvCount('new_session', s.pid) === before.newSessions + 1, 'omp received exactly one new_session.', `new_session count ${before.newSessions} -> ${ctx.recvCount('new_session', s.pid)}`);
+      const prompts = ctx.promptTexts(s.pid).slice(promptsBefore);
+      rec.check(prompts.length === 2 && prompts[0].startsWith('Write a handoff summary'), 'omp was first asked for a summary.', `prompts ${JSON.stringify(prompts)}`);
+      const first = `Continuing from a previous conversation. Handoff summary:\n\nNoted.`;
+      rec.check(prompts[1] === first, 'The second prompt is the summary, wrapped as the first message of the new Conversation.', `second prompt ${JSON.stringify(prompts[1])}`);
+      const newest = path.join(s.sessionDir, filesOf(s).at(-1));
+      rec.check(JSON.stringify(userTextsInFile(newest)) === JSON.stringify([first]), 'The new Conversation file holds that message as its only user message.', `newest file user messages ${JSON.stringify(userTextsInFile(newest))}`);
+      const users = (await ctx.transcript(s.id)).filter((t) => t.kind === 'user');
+      rec.check(users.length === 1 && users[0].text === first && users[0].source?.kind !== 'handoff', 'The panes show it as one ordinary user row, not a handoff note.', `user rows ${JSON.stringify(users)}`);
+      ctx.evidence('plan14a-new-summary-handoff.json', { before, result: res, conversations: ipc, prompts, newestFile: newest, transcriptUserRows: users });
+      await ctx.shot('plan14a-handed-off.png');
+    }
+  },
+  {
+    name: 'plan14b-new-summary-send-failed',
+    title: 'plan 14: the first message of the new Conversation is refused: handoff-send-failed wording, the new Conversation stays, no second one is started',
+    async run(ctx, rec) {
+      const s = await ctx.newSession('P14B');
+      const before = await snapshot(ctx, s);
+      ctx.setPromptRefusals(1);
+      let res;
+      try {
+        res = await ctx.cdp.evaluate(`window.refract.tokenGuard.handoff(${JSON.stringify(s.id)})`);
+        await waitForSessionStatus(ctx.cdp, s.id, 'idle');
+        await ctx.sleep(500);
+      } finally {
+        ctx.setPromptRefusals(0);
+      }
+      const reason = res?.value?.reason ?? '';
+      rec.check(res?.ok === true && res.value.ok === false, 'tokenGuard.handoff reported a failure, as a result and not an IPC error.', `tokenGuard.handoff: ${JSON.stringify(res)}`);
+      rec.check(reason.startsWith('The new Conversation was started but the summary could not be sent: ') && reason.includes('fixture refused the first prompt after new_session'), `The failure carries the handoff-send-failed wording: "${reason}".`, `reason ${JSON.stringify(reason)}`);
+      // omp started the Conversation, but its file holds no user message yet, so the list hides it (`read_conversation_file`).
+      const ipc = await ctx.conversationsIpc(s.id);
+      rec.check(filesOf(s).length === before.files + 1, 'omp started a new Conversation file.', `${filesOf(s).length} files, expected ${before.files + 1}`);
+      const newest = path.join(s.sessionDir, filesOf(s).at(-1));
+      rec.check(userTextsInFile(newest).length === 0, 'The new Conversation holds no user message: the summary was not delivered.', `newest file user messages ${JSON.stringify(userTextsInFile(newest))}`);
+      rec.check(JSON.stringify(idsOf(ipc)) === JSON.stringify(before.ids) && currentOf(ipc).length === 0, 'The old Conversation is no longer current, and the message-less new one stays out of the list.', `Conversations ${JSON.stringify(idsOf(ipc))}, current ${JSON.stringify(currentOf(ipc))}`);
+      rec.check(ctx.recvCount('new_session', s.pid) === before.newSessions + 1, 'No second new_session was sent after the send failed.', `new_session count ${before.newSessions} -> ${ctx.recvCount('new_session', s.pid)}`);
+      ctx.evidence('plan14b-new-summary-send-failed.json', { before, result: res, conversations: ipc });
+      await ctx.shot('plan14b-send-failed.png');
     }
   }
 ];
