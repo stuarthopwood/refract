@@ -40,7 +40,7 @@ describe('ChatPaneToggleButton', () => {
   it('Given chat showing and a waiting Session, Then there is no badge and the name stays plain', () => {
     const html = render({ hidden: false, needsYou: 2 })
     expect(html).toContain('aria-label="Chat pane"')
-    expect(html).not.toContain('tabular-nums')
+    expect(html).not.toContain('>2<')
   })
 
   it('Given the toggle is inert, Then it is aria-disabled and not natively disabled, so the tooltip can show', () => {

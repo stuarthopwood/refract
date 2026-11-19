@@ -50,13 +50,14 @@ export function ChatPaneToggleButton({ hidden, needsYou, disabledReason, onToggl
   )
 }
 
-function useAttentionAnnouncement(current: ChatAttention): void {
-  const previous = useRef(current)
+function useAttentionAnnouncement(hidden: boolean, needsYou: number): void {
+  const previous = useRef<ChatAttention>({ hidden, needsYou })
   useEffect(() => {
+    const current = { hidden, needsYou }
     const message = chatAttentionAnnouncement(previous.current, current)
     previous.current = current
     if (message) useAgentAnnouncementStore.getState().announce(message)
-  }, [current.hidden, current.needsYou])
+  }, [hidden, needsYou])
 }
 
 export function ChatPaneToggle() {
@@ -65,7 +66,7 @@ export function ChatPaneToggle() {
   const paneSessionIds = useSplitStore((s) => s.paneSessionIds)
   const hasSession = paneSessionIds.length > 0
   const needsYou = useSessionsStore((s) => needsYouInPanes(paneSessionIds, s.sessions))
-  useAttentionAnnouncement({ hidden, needsYou })
+  useAttentionAnnouncement(hidden, needsYou)
   const disabledReason = chatToggleDisabledReason({ canToggle, hasSession })
   return <ChatPaneToggleButton hidden={hidden} needsYou={needsYou} disabledReason={disabledReason} onToggle={() => toggleChatPane()} />
 }
