@@ -174,6 +174,14 @@ _Avoid_: Stage, step
 The muted list of the agent's pending **Todo phases** shown after a turn's **Stages** (issue #941). Live state only; a reopened Conversation does not show it.
 _Avoid_: Upcoming stages, queue
 
+**Plan**:
+A durable, ordered list of steps that the agent and the developer both edit, kept in the right pane (epic #2015, protocol in `docs/design/interactive-plan-protocol.md`, ADR 0011). One active **Plan** per **Session**; Refract stores it, the agent changes it through the `refract_plan` tool, and the developer ticks items, gives values, asks about a step or asks the agent to complete it. It is not the agent's own todo and does not replace the Todo panel.
+_Avoid_: Todo list, checklist, task list
+
+**Plan item**:
+One step of a **Plan**, with a stable id that is never reused, a status, an owner (agent, human or either), an optional value and a flag for whether the agent can complete it. Messages about a step name its id. A **Plan item** is not a **Todo task**.
+_Avoid_: Todo task, task, step (in UI text)
+
 **Subagent chain**:
 The per-turn summary row listing a turn's **Stages** and their agents with status and duration (issue #563); its stage-to-stage list is also connected by a **Spine** (issue #565).
 _Avoid_: DAG, gate topology, pipeline
