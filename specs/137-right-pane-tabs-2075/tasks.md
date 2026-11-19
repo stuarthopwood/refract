@@ -37,7 +37,7 @@ Test work is part of each task (AGENTS.md Testing rule): every guard's test must
 - [x] T022 Docs: `components.md:147` (Wide 640, no 520 range) and `:148` (tab bar with document tabs), `CONTEXT.md:371` ("Wide 520" and "no Min/Default/Max"), `CONTEXT.md` terms Document tab and Chat collapse, `docs/design/accessibility.md` (the 2.5.7 row at line 18 and the Open entry at line 121, now closed; WCAG 2.2 for 2.5.7 and 2.5.8), Tooltip and Diff stat sections, the "Reusable components first" inventory (`RailIconButton`, document tabs), "superseded by 137" notes in specs 024 and 035, `docs/PLAN.md` row 1d.2 status (FR-031; M7).
 
 ## Phase 6: Verify
-- [ ] T023 `pnpm ci:local`; fix only what fails (SC-005).
+- [x] T023 `pnpm ci:local`; fix only what fails (SC-005).
 - [ ] T024 Live check on a scratch build with isolated data: ten files and diffs, dedupe, the 21st-tab eviction announcement, overflow, restart restore, hide chat while a Session streams in a single chat and a Split with a scroll-position assertion, drag-collapse, width beyond 520 px, Ctrl+Shift+H in WebView2, keyboard-only pass; screenshots and notes under `evidence/` (SC-001 to SC-004; L5, H2).
 - [ ] T025 Five-reviewer gate (code, security, test, a11y, performance), PR with `Closes #2075`; comment on #1102, #732 closed, #878 retarget note, epic #1135 updated.
 
