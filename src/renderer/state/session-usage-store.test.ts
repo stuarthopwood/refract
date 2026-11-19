@@ -1,5 +1,5 @@
 // Scope helpers of the Session usage store (#2070): which filters each toggle sends, and the cache key.
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectiveScope, entryKey, scopeFilters, useSessionUsageStore, type SessionUsageTarget } from './session-usage-store'
 
 const withConversation: SessionUsageTarget = { sessionDir: 'C:/s/a', sessionFile: 'C:/s/a/one.jsonl' }
@@ -60,6 +60,13 @@ describe('entryKey', () => {
   })
 })
 
+// The node test environment has no `window`; the refresh test installs a fake one and this puts it back.
+const globalWithWindow = globalThis as unknown as { window?: unknown }
+const originalWindow = globalWithWindow.window
+afterEach(() => {
+  globalWithWindow.window = originalWindow
+})
+
 describe('refresh', () => {
   it('sends the scope filters, with the range, to every usage query', async () => {
     const ok = (value: unknown) => Promise.resolve({ ok: true, value })
@@ -72,7 +79,7 @@ describe('refresh', () => {
       breakdown: vi.fn(() => ok([])),
       calls: vi.fn(() => ok({ rows: [], total: 0 }))
     }
-    ;(globalThis as unknown as { window: unknown }).window = { refract: { usage } }
+    globalWithWindow.window = { refract: { usage } }
     await useSessionUsageStore.getState().refresh(withConversation)
     expect(summary).toHaveBeenCalledWith({ ...scopeFilters(withConversation, 'main'), range: 'all' }, expect.any(Number))
     expect(usage.calls).toHaveBeenCalledWith(

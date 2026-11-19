@@ -76,7 +76,7 @@ const SCOPE_LINES = {
 // The visible scope line and the id the scope group points at with aria-describedby.
 const scopeLine = (cdp) =>
   cdp.evaluate(`(() => { const g = ${PANEL}.querySelector('[aria-label="Usage scope"]'); const id = g?.getAttribute('aria-describedby'); const el = id ? document.getElementById(id) : null;
-    return { describedBy: id, text: el?.textContent.trim() ?? null, visible: !!el && el.getClientRects().length > 0, muted: !!el && el.classList.contains('text-xs') }; })()`);
+    return { describedBy: id, text: el?.textContent.trim() ?? null, visible: !!el && el.getClientRects().length > 0, muted: !!el && el.classList.contains('text-muted-foreground') }; })()`);
 const checkScopeLine = async (cdp, scope) => {
   const line = await scopeLine(cdp);
   record(`Scope line for ${scope} is visible and linked by aria-describedby`, line.visible && line.muted && line.text === SCOPE_LINES[scope], line);
