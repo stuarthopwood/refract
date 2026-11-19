@@ -2,7 +2,7 @@
 // context reduction, sent as the typed prompts `/shake`, `/shake thinking` and `/shake images`
 // (FINDINGS item 12). OMP's own `command_output` notice in the transcript is the visible result;
 // this menu only announces that the shake started. Thinking and images are not recoverable, so
-// they confirm first; elide keeps `artifact://` references and does not.
+// they confirm first; elide keeps `local://N.log` references and does not.
 import { Fragment, useRef, useState } from 'react'
 import type { ComponentType, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 import { BrainIcon, ExternalLinkIcon, ImageIcon, ScissorsIcon } from 'lucide-react'
