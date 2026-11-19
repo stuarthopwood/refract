@@ -9,6 +9,8 @@ import { getCurrentWebview } from '@tauri-apps/api/webview'
 import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import { chatPauseBridge } from './chatPause'
 import { usageBridge } from './usage'
+import { IPC_CONVERSATION_EVENTS } from '../shared/ipc-conversation-changed'
+import type { ConversationChangedPayload } from '../shared/ipc-conversation-changed'
 import type { AdvisorRoster, AdvisorRosterDetected } from '../shared/ipc-advisor-roster'
 import type { CloneProgressEvent, CloneStartResult, GitHubRepoListing } from '../shared/ipc-repositories-clone'
 import type { ClosedBranchesResult } from '../shared/ipc-home'
@@ -475,6 +477,7 @@ const refract: RefractApi = {
   onSessionActivity: (handler) =>
     on<{ sessionId: string; activity: SessionActivity | null }>(IPC_EVENTS.SESSION_ACTIVITY, handler),
   onSessionListChanged: (handler) => on<void>(IPC_EVENTS.SESSION_LIST_CHANGED, handler),
+  onSessionConversationChanged: (handler) => on<ConversationChangedPayload>(IPC_CONVERSATION_EVENTS.SESSION_CONVERSATION_CHANGED, handler),
   onSessionDeleted: (handler) => on<{ sessionId: string }>(IPC_EVENTS.SESSION_DELETED, handler),
   onSessionDeleteFailed: (handler) =>
     on<{ sessionId: string; error: { code: IpcErrorCode; message: string } }>(IPC_EVENTS.SESSION_DELETE_FAILED, handler),

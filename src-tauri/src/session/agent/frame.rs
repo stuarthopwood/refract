@@ -13,21 +13,28 @@ use super::requests::{classify_dialog, DialogClassification};
 use super::{PendingRequest, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 
 impl SessionAgent {
+    /// Starts a turn: the generation goes odd and the status goes `Working` in one lock section, so
+    /// `queue_handoff` never sees a running turn that still reads idle (#1861).
+    pub(in crate::session::agent) fn begin_turn(&self, state: &mut super::AgentState) {
+        // Parity counter: odd is mid-turn, even is settled. Bumped only from even.
+        // A settle reply landing after this turn starts is dropped by sync_from_state.
+        if state.turn_generation.is_multiple_of(2) {
+            state.turn_generation = state.turn_generation.wrapping_add(1);
+        }
+        // Every new turn starts clean, including a queued follow-up after a stop. (#911)
+        state.turn_abort_requested = false;
+        self.write_status(state, SessionStatus::Working, None, None);
+    }
+
     pub(super) async fn handle_frame(&self, frame: Value) {
         let frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("");
         match frame_type {
             "agent_start" => {
                 {
                     let mut state = self.state.lock().await;
-                    // Parity counter: odd is mid-turn, even is settled. Bumped only from even.
-                    // A settle reply landing after this turn starts is dropped by sync_from_state.
-                    if state.turn_generation % 2 == 0 {
-                        state.turn_generation = state.turn_generation.wrapping_add(1);
-                    }
-                    // Every new turn starts clean, including a queued follow-up after a stop. (#911)
-                    state.turn_abort_requested = false;
+                    self.begin_turn(&mut state);
                 }
-                self.set_status(SessionStatus::Working, None, None).await;
+                self.emit_status().await;
             }
             "session_settled" => {
                 self.handle_turn_settled().await;
@@ -192,15 +199,27 @@ impl SessionAgent {
             if state.turn_generation % 2 == 0 {
                 return;
             }
+            // The generation goes even and the status goes `Idle` in one lock section, mirroring
+            // `begin_turn`, so `queue_handoff` never sees an idle Session at an odd generation. (#1861)
             state.turn_generation = state.turn_generation.wrapping_add(1);
+            // A stopped turn cancels its deferred handoff. The flag is read here because it is cleared
+            // just below, before the Session goes idle. (#1861)
+            if state.turn_abort_requested {
+                super::handoff_queue::clear(&mut state);
+            }
             // Clears the abort flag for this turn. A no-op if stop() was never called for it. (#911)
             state.turn_abort_requested = false;
+            self.write_status(&mut state, SessionStatus::Idle, None, None);
             (state.turn_generation, state.shutdown_generation)
         };
         self.settle_turn_pending().await;
-        self.set_status(SessionStatus::Idle, None, None).await;
+        self.emit_status().await;
         crate::session::token_guard::on_turn_settled(self, generation).await;
         crate::session::working_mode::on_turn_settled(self).await;
+        // Spawned like the re-sync below: the run sends prompts whose replies this frame loop must keep
+        // reading, so awaiting it here would deadlock. Runs after idle, so the new Conversation can start.
+        let agent = self.arc();
+        tokio::spawn(async move { agent.run_settled_handoff(generation).await });
         // Spawned so the get_state round trip does not block the frame loop. Tagged with generation counters.
         // sync_from_state re-checks both counters before writing, so stale replies are dropped.
         let agent = self.arc();
@@ -281,6 +300,8 @@ impl SessionAgent {
                 state.process = None;
                 // Clears the abort flag so it cannot leak into a later launch. (#911)
                 state.turn_abort_requested = false;
+                // A dead process runs no turn, so its deferred handoff cannot fire. (#1861)
+                super::handoff_queue::clear(&mut state);
                 // Cancelled ids name subagents of the dead process; a later Resume must not report them.
                 state.pause.cancelled.clear();
             }
@@ -354,3 +375,7 @@ impl SessionAgent {
         )
     }
 }
+
+#[cfg(test)]
+#[path = "frame.test.rs"]
+mod tests;

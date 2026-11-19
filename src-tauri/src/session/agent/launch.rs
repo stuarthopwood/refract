@@ -10,6 +10,7 @@ use super::launch_support::{
     reattach_rebaseline_notice, registry_store_error_message, send_set_ask_dialog, to_process_mode,
     verify_reattach,
 };
+use super::queued_handoff;
 use super::{AgentError, SessionAgent, SessionStatus, DEFAULT_REQUEST_TIMEOUT_MS};
 use crate::git::worktree_validity::{worktree_is_valid, WorktreeValidity};
 use crate::omp::process::{OmpProcess, OmpProcessOptions, ProcessEvent};
@@ -193,6 +194,8 @@ impl SessionAgent {
                 .await
                 .map_err(|err| AgentError::new("git-failed", registry_store_error_message(err)))?;
             reset_after_start_with_conversation(self, file.as_deref(), Some(prev)).await;
+            // The same in-memory agent serves every launch, so a stale notice would reach the new Conversation (#1861).
+            self.state.lock().await.pending_agent_notice = None;
         }
         let session = self.require_session().await?;
         self.launch(&session, work_dir, pass_cwd_flag, "").await
@@ -349,6 +352,7 @@ impl SessionAgent {
         let conv = session.current_conversation.as_deref();
         let terminated_unexpectedly =
             complete && termination::detect_unexpected_termination_for_transcript(conv).await;
+        let note_live = queued_handoff::is_note_file(conv).await;
 
         // A concurrent exit may clear `process` during the history fetch.
         self.fail_if_process_changed(&proc, failure_prefix).await?;
@@ -365,9 +369,11 @@ impl SessionAgent {
             } else {
                 Some(current_mode)
             };
+            state.handoff.note_live = note_live;
             if complete {
                 let transcript = &mut state.transcript;
                 transcript.merge_from_history(&messages, terminated_unexpectedly);
+                queued_handoff::mark_note(&mut state);
             }
         }
         // After the merge above, so the notice is not dropped as unpersisted.
@@ -544,6 +550,7 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.stop_requested = true;
+            super::handoff_queue::clear(&mut state);
             // Bumped under this lock, before `start_lock` is awaited.
             state.shutdown_generation = state.shutdown_generation.wrapping_add(1);
         }

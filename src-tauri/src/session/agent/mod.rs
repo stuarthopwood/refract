@@ -19,14 +19,18 @@ mod chat_restore;
 mod command_wait;
 mod commands;
 mod conversations;
+mod detached_action;
 mod frame;
 mod handoff;
+mod handoff_queue;
 mod lane_support;
 mod launch;
 mod launch_support;
 pub mod pause;
 mod pause_subagents;
+mod queued_handoff;
 mod requests;
+mod start_with_message;
 mod status;
 mod sync_from_state;
 mod tool_host;
@@ -37,7 +41,12 @@ pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,
     SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
+pub use detached_action::{finish_within, LostAction, Waited};
+pub use handoff_queue::{
+    lost_reason, still_running_reason, HandoffAction, QueueOutcome, QueuedHandoff, ACTION_DEADLINE,
+};
 pub use requests::is_chat_answer;
+pub use start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 
@@ -92,6 +101,11 @@ struct AgentState {
     termination: crate::session::termination::State,
     token_guard: crate::session::token_guard::State,
     working_mode: crate::session::working_mode::State,
+    handoff: queued_handoff::State,
+    // Filled by the Session tools; run by the settle handler, dropped by the stop paths (#1861).
+    queued_handoff: Option<QueuedHandoff>,
+    // Told to the agent in front of the next user prompt, then cleared (#1861).
+    pending_agent_notice: Option<String>,
     pause: pause::State,
 }
 
@@ -184,6 +198,9 @@ impl SessionAgent {
                 termination: Default::default(),
                 token_guard: Default::default(),
                 working_mode: Default::default(),
+                handoff: Default::default(),
+                queued_handoff: None,
+                pending_agent_notice: None,
                 pause: Default::default(),
             }),
             status_tx,
@@ -226,6 +243,14 @@ impl SessionAgent {
             })
     }
 
+    /// Gives the agent a live process in `status`, for tests outside this module that cannot reach `AgentState`.
+    #[cfg(test)]
+    pub(crate) async fn adopt_process_for_test(&self, process: OmpProcess, status: SessionStatus) {
+        let mut state = self.state.lock().await;
+        state.process = Some(Arc::new(process));
+        state.status = status;
+    }
+
     /// Needs the registry row to record and clear the termination marker.
     pub(super) fn registry(&self) -> &SharedRegistry {
         &self.registry
@@ -252,7 +277,28 @@ impl SessionAgent {
         drop(state);
     }
 
-    /// Becomes `unread` only on `working` -> `idle` while the Session is hidden.
+    /// Writes the status under a lock the caller already holds, so a state change that must be atomic
+    /// with another field can share one section. The caller emits afterwards, with the lock released.
+    fn write_status(
+        &self,
+        state: &mut AgentState,
+        status: SessionStatus,
+        stop_reason: Option<&'static str>,
+        stop_detail: Option<String>,
+    ) {
+        // Becomes `unread` only on `working` -> `idle` while the Session is hidden.
+        let became_unread = state.status == SessionStatus::Working
+            && status == SessionStatus::Idle
+            && !self.is_visible();
+        state.status = status;
+        state.stop_reason = stop_reason;
+        state.stop_detail = stop_detail;
+        if became_unread {
+            state.unread = true;
+        }
+        let _ = self.status_tx.send(status);
+    }
+
     pub(super) async fn set_status(
         &self,
         status: SessionStatus,
@@ -261,16 +307,7 @@ impl SessionAgent {
     ) {
         {
             let mut state = self.state.lock().await;
-            let became_unread = state.status == SessionStatus::Working
-                && status == SessionStatus::Idle
-                && !self.is_visible();
-            state.status = status;
-            state.stop_reason = stop_reason;
-            state.stop_detail = stop_detail;
-            if became_unread {
-                state.unread = true;
-            }
-            let _ = self.status_tx.send(status);
+            self.write_status(&mut state, status, stop_reason, stop_detail);
         }
         self.emit_status().await;
     }
@@ -385,6 +422,7 @@ impl SessionAgent {
         let before = state.transcript.snapshot();
         let turn_abort_requested = state.turn_abort_requested;
         state.transcript.apply_frame(frame, turn_abort_requested);
+        queued_handoff::mark_note(state);
         let ops = diff_transcript(&before, state.transcript.items());
         // Queued under the state lock so a concurrent reset cannot supersede this upsert.
         if !ops.is_empty() {

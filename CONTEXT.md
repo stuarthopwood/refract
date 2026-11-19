@@ -137,7 +137,7 @@ A pinned, non-modal strip above the message box reporting routine, non-problem a
 _Avoid_: Telemetry dock
 
 **Conversation**:
-One continuous exchange with the agent inside a **Session**. A **Session** has many **Conversations**, one current; starting a fresh one keeps the same **Session** and **Worktree** and keeps earlier ones reachable as history.
+One continuous exchange with the agent inside a **Session**. A **Session** has many **Conversations**, one current; starting a fresh one keeps the same **Session** and **Worktree** and keeps earlier ones reachable as history. An agent lists, starts and switches Conversations in its own or another **Session** with the `list_conversations`, `new_conversation` and `switch_conversation` tools (#1861); a start or switch aimed at a running turn is a **Queued handoff**.
 _Avoid_: Session (in the agent's own sense), transcript
 
 **Handoff note**:

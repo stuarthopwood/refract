@@ -9,6 +9,8 @@ use crate::store::registry::RegistryStore;
 pub const SESSION_STATUS: &str = "session:status";
 pub const SESSION_ACTIVITY: &str = "session:activity";
 pub const SESSION_LIST_CHANGED: &str = "session:list-changed";
+/// A tool moved a Session to another Conversation (#1861): `{ sessionId }`, no transcript.
+pub const SESSION_CONVERSATION_CHANGED: &str = "session:conversation-changed";
 /// Background `sessions.delete` finished: `{ sessionId }`.
 pub const SESSION_DELETED: &str = "sessions:deleted";
 /// Background `sessions.delete` failed: `{ sessionId, error: { code, message } }`.
@@ -73,6 +75,8 @@ pub struct EventSink {
     registry: std::sync::Arc<tokio::sync::Mutex<RegistryStore>>,
     #[cfg(test)]
     status_probe: StatusProbe,
+    #[cfg(test)]
+    conversation_probe: StatusProbe,
 }
 
 impl EventSink {
@@ -85,6 +89,8 @@ impl EventSink {
             registry,
             #[cfg(test)]
             status_probe: Default::default(),
+            #[cfg(test)]
+            conversation_probe: Default::default(),
         }
     }
 
@@ -97,6 +103,12 @@ impl EventSink {
     #[cfg(test)]
     pub(crate) fn set_status_probe(&self, probe: impl Fn() + Send + Sync + 'static) {
         *self.status_probe.lock().unwrap() = Some(std::sync::Arc::new(probe));
+    }
+
+    /// Test seam: runs at every `session:conversation-changed` emit, to pin its order against RPCs.
+    #[cfg(test)]
+    pub(crate) fn set_conversation_probe(&self, probe: impl Fn() + Send + Sync + 'static) {
+        *self.conversation_probe.lock().unwrap() = Some(std::sync::Arc::new(probe));
     }
 
     pub(crate) fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
@@ -137,6 +149,18 @@ impl EventSink {
     pub fn emit_session_list_changed(&self) {
         self.send(SESSION_LIST_CHANGED, ());
         crate::shell::notifications::prune_deleted_sessions(self.registry.clone());
+    }
+
+    /// `session:conversation-changed`. Sent for hidden Sessions too; the transcript rides `emit_patch_reset`.
+    pub fn emit_session_conversation_changed(&self, session_id: &str) {
+        #[cfg(test)]
+        if let Some(probe) = self.conversation_probe.lock().unwrap().as_ref() {
+            probe();
+        }
+        self.send(
+            SESSION_CONVERSATION_CHANGED,
+            conversation_changed_payload(session_id),
+        );
     }
 
     /// `sessions:deleted`: the background removal finished and the registry entry is gone.
@@ -391,6 +415,10 @@ fn github_changed_payload(
     serde_json::json!({ "repositoryId": repository_id, "kind": kind, "number": number })
 }
 
+fn conversation_changed_payload(session_id: &str) -> serde_json::Value {
+    serde_json::json!({ "sessionId": session_id })
+}
+
 /// Same event for IPC handlers, which hold an `AppHandle` and no `EventSink`.
 pub fn emit_github_changed(app: &AppHandle, repository_id: Option<&str>, kind: &str, number: u64) {
     emit(
@@ -417,5 +445,14 @@ mod tests {
         );
         let payload = serde_json::json!({ "theme": "obsidian" });
         sink.emit_settings_changed(&payload);
+    }
+
+    #[test]
+    fn conversation_changed_event_name_and_payload_are_exact() {
+        assert_eq!(SESSION_CONVERSATION_CHANGED, "session:conversation-changed");
+        assert_eq!(
+            conversation_changed_payload("s-1").to_string(),
+            r#"{"sessionId":"s-1"}"#
+        );
     }
 }

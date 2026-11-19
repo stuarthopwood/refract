@@ -160,7 +160,7 @@ async fn end_tools_are_dispatched_to_their_own_handler() {
 }
 
 /// An agent whose manager was dropped: the app is quitting.
-async fn agent_of_a_dropped_manager() -> Arc<SessionAgent> {
+pub(crate) async fn agent_of_a_dropped_manager() -> Arc<SessionAgent> {
     let dir = crate::test_scratch::path(format!("refract-router-test-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let registry = Arc::new(tokio::sync::Mutex::new(

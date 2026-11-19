@@ -5,7 +5,7 @@ import { useSessionsStore, useSplitStore } from '@/state'
 import type { MessageSource } from '../../../shared/model'
 
 interface SessionSourceLineProps {
-  source: MessageSource
+  source: Extract<MessageSource, { kind: 'session' }>
   /** Names the line so the bubble can take its accessible name from it. */
   id: string
 }

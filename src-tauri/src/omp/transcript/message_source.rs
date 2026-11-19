@@ -1,4 +1,5 @@
-// The sender of a user turn that is not Stuart's own: another Session's message (#1858).
+// Who a user turn came from when it is not Stuart's own typing: another Session (#1858) or a
+// handoff note the agent wrote for its next Conversation (#1861).
 
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +10,11 @@ use crate::agent_tools::envelope;
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum MessageSource {
     #[serde(rename_all = "camelCase")]
-    Session { session_id: String, name: String },
+    Session {
+        session_id: String,
+        name: String,
+    },
+    Handoff,
 }
 
 /// The source and unescaped body when `text` is exactly one Session-message envelope.
@@ -93,5 +98,24 @@ mod tests {
         );
         let without = serde_json::to_value(user_item("hi")).unwrap();
         assert!(without.get("source").is_none());
+    }
+
+    #[test]
+    fn handoff_serialises_as_exactly_kind_handoff_and_round_trips() {
+        let wire = serde_json::to_value(MessageSource::Handoff).unwrap();
+        assert_eq!(wire, json!({ "kind": "handoff" }));
+        let back: MessageSource = serde_json::from_value(wire).unwrap();
+        assert_eq!(back, MessageSource::Handoff);
+    }
+
+    #[test]
+    fn session_source_still_round_trips() {
+        let source = MessageSource::Session {
+            session_id: "s".into(),
+            name: "A".into(),
+        };
+        let back: MessageSource =
+            serde_json::from_value(serde_json::to_value(&source).unwrap()).unwrap();
+        assert_eq!(back, source);
     }
 }

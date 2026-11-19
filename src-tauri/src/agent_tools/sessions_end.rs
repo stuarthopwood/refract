@@ -328,7 +328,7 @@ fn counts_as_running(status: crate::session::agent::SessionStatus, has_process: 
     status != crate::session::agent::SessionStatus::Stopped || has_process
 }
 
-fn ipc_error(error: crate::ipc::IpcError) -> ToolError {
+pub(super) fn ipc_error(error: crate::ipc::IpcError) -> ToolError {
     let code = if error.code == "not-found" {
         NOT_FOUND
     } else {

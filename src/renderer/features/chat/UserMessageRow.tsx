@@ -8,6 +8,7 @@ import { FileAttachmentChip } from './FileAttachmentChip'
 import { MessageImageGrid } from '@/components/MessageImageGrid'
 import { MessageMenu } from './MessageMenu'
 import { SessionSourceLine } from './SessionSourceLine'
+import { HandoffNoteLine } from './HandoffNoteLine'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -57,18 +58,20 @@ function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }
 /** Right-aligned user bubble; the timestamp is a sibling above the whole `Message`. */
 export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: UserMessageRowProps) {
   const source = item.source
+  const sender = source?.kind === 'session' ? source : undefined
   // A Session-sent turn is authored by that Session, not the user: no user avatar or name.
-  const author = source ? source.name : (userName ?? 'You')
+  const author = sender ? sender.name : (userName ?? 'You')
   const sourceLineId = React.useId()
   return (
     <>
       <UserMessageTime at={item.at} hide={hideTime} />
-      {source && <SessionSourceLine source={source} id={sourceLineId} />}
+      {source?.kind === 'session' && <SessionSourceLine source={source} id={sourceLineId} />}
+      {source?.kind === 'handoff' && <HandoffNoteLine id={sourceLineId} />}
       <MessageMenu id={item.id} text={item.text} align="end">
       <Message align="end">
         <MessageAvatar aria-hidden>
-          {source ? (
-            <UserAvatar name={source.name} fallback={<MessageSquareIcon aria-hidden className="size-4" />} />
+          {sender ? (
+            <UserAvatar name={sender.name} fallback={<MessageSquareIcon aria-hidden className="size-4" />} />
           ) : (
             <UserAvatar name={author} src={userAvatarUrl} />
           )}

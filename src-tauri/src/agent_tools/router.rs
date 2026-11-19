@@ -538,4 +538,4 @@ async fn wait_mutation_within(
 
 #[cfg(test)]
 #[path = "router.test.rs"]
-mod tests;
+pub(crate) mod tests;

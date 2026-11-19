@@ -77,7 +77,7 @@ impl SessionAgent {
         decorate: bool,
     ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
-        let (proc, working) = {
+        let (proc, working, notice) = {
             let idle_with_process = {
                 let state = self.state.lock().await;
                 state.status == SessionStatus::Idle && state.process.is_some()
@@ -102,12 +102,22 @@ impl SessionAgent {
                 state.status,
                 SessionStatus::Working | SessionStatus::NeedsYou
             );
-            (proc, working)
+            // Only the user's own prompts carry it; a Session envelope reaches its target verbatim.
+            let notice = if decorate {
+                super::handoff_queue::take_pending_notice(&mut state)
+            } else {
+                None
+            };
+            (proc, working, notice)
         };
         let text = if should_decorate(working, force_follow_up, decorate) {
             crate::session::working_mode::decorate_prompt(self, text).await
         } else {
             text
+        };
+        let text = match &notice {
+            Some(notice) => super::handoff_queue::with_notice(notice, &text),
+            None => text,
         };
         let mut cmd = json!({ "type": "prompt", "message": text });
         if let Some(images) = images {
@@ -118,11 +128,21 @@ impl SessionAgent {
         if working || force_follow_up {
             cmd["streamingBehavior"] = Value::String("followUp".to_string());
         }
-        let res = proc
-            .request(cmd, DEFAULT_REQUEST_TIMEOUT_MS)
-            .await
-            .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
-        if res.get("success").and_then(Value::as_bool) != Some(true) {
+        let sent = proc.request(cmd, DEFAULT_REQUEST_TIMEOUT_MS).await;
+        let accepted =
+            matches!(&sent, Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true));
+        if !accepted {
+            // The agent never saw it, so the next prompt carries it instead.
+            if let Some(notice) = notice {
+                self.state
+                    .lock()
+                    .await
+                    .pending_agent_notice
+                    .get_or_insert(notice);
+            }
+        }
+        let res = sent.map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        if !accepted {
             let err_message = res
                 .get("error")
                 .and_then(Value::as_str)
@@ -148,6 +168,8 @@ impl SessionAgent {
             if proc.is_some() && turn_in_flight {
                 state.turn_abort_requested = true;
             }
+            // Stop cancels a handoff deferred to this turn's end, even if the abort RPC then fails. (#1861)
+            super::handoff_queue::clear(&mut state);
             (proc, status)
         };
         let Some(proc) = proc else {

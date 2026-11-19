@@ -3,11 +3,14 @@
 
 pub mod approval;
 pub mod envelope;
+pub(crate) mod handoff_target;
 pub mod overlay;
 pub mod panels;
 pub mod router;
 mod router_native;
 pub mod sessions;
+mod sessions_conversations;
+mod sessions_conversations_schema;
 mod sessions_create;
 pub(crate) mod sessions_end;
 mod sessions_end_schema;
