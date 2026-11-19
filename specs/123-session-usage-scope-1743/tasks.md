@@ -14,8 +14,8 @@ Order is dependency order. One Rust test is added (T3); no TypeScript tests.
 ## Phase 2: Convergence (#2070)
 
 - [x] C-1 `queries_session.rs::file_clause` matches the file or its sibling folder (prefix on the base name), `queries.rs` comment. (FR-001 superseded)
-- [x] C-2 `queries.test.rs`: Conversation counts its subagent and advisor rows and not `.bak` or `onex`; single-Conversation Session equals its Conversation; Main thread is the file alone. Depends on C-1.
+- [x] C-2 `queries.test.rs`: Conversation counts its subagent and advisor rows and not `.bak` or `onex`; single-Conversation Session equals its Conversation; Main agent is the file alone. Depends on C-1.
 - [x] C-3 `usage_prefs.rs` allows `main`; `ipc-usage.ts` `UsageSessionScope` gains `main`; `specs/060-usage-view/contracts/ipc.md` row. (FR-002, FR-008)
 - [x] C-4 `session-usage-store.ts`: `scopeFilters`, `effectiveScope`, `entryKey` per scope; `session-usage-store.test.ts`. Depends on C-3. (FR-008)
-- [x] C-5 `SessionUsageToggles.tsx` Main thread segment and `SessionUsagePanel.tsx` empty-state noun. Depends on C-4. (FR-008)
+- [x] C-5 `SessionUsageToggles.tsx` Main agent segment with its visible scope line, and `SessionUsagePanel.tsx` empty-state noun. Depends on C-4. (FR-008)
 - [x] C-6 Verify (build phase): `cargo test usage`, `cargo clippy`, `pnpm ci:local`, live check that Session equals Conversation for the Personal Agent session and Main thread shows the old Conversation figure. Live check: `scripts/verify-tauri-2070.mjs` (16/16; Session and Conversation both 6 calls and $0.12, Main thread 2 calls; radio role, name "Main thread", ArrowRight and Space reach it).

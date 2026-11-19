@@ -69,7 +69,7 @@ const EMPTY: SessionUsageEntry = {
   loaded: false
 }
 
-/** Conversation and Main thread scopes need a Conversation file; without one the panel falls back to the Session. */
+/** Conversation and Main agent scopes need a Conversation file; without one the panel falls back to the Session. */
 export function effectiveScope(scope: UsageSessionScope, target: SessionUsageTarget): UsageSessionScope {
   return scope !== 'session' && target.sessionFile ? scope : 'session'
 }
@@ -80,7 +80,7 @@ export function entryKey(target: SessionUsageTarget, scope: UsageSessionScope, r
   return `${target.sessionDir}\n${effective}\n${file}\n${range}`
 }
 
-/** The range-free filters for a scope; Main thread adds the agent-type filter to the Conversation match. */
+/** The range-free filters for a scope; Main agent adds the agent-type filter to the Conversation match. */
 export function scopeFilters(target: SessionUsageTarget, scope: UsageSessionScope): UsageFilters {
   const effective = effectiveScope(scope, target)
   const base: UsageFilters = { range: 'all', sessionDir: target.sessionDir }

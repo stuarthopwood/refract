@@ -21,7 +21,7 @@ export const IPC_USAGE_EVENTS = {
 
 export type UsageRange = 'today' | '7d' | '30d' | 'all' | 'custom'
 
-/** The Session usage panel's scope toggle: the Session directory, the focused Conversation with its subagents and advisors, or that Conversation's main thread alone. */
+/** The Session usage panel's scope toggle: the Session directory, the focused Conversation with its subagents and advisors, or that Conversation's main agent alone. */
 export type UsageSessionScope = 'session' | 'conversation' | 'main'
 /** The Session usage panel's range toggle. */
 export type UsageSessionRange = 'all' | 'today'
