@@ -109,7 +109,7 @@ export function App() {
       // open starts at 320: apply the persisted width here (expand() alone returns to the library's
       // remembered size, not the restored width). A no-op when the size already matches.
       if (handle.isCollapsed()) handle.expand()
-      handle.resize(useRightPaneStore.getState().widthPx)
+      handle.resize(fittingWidth(useRightPaneStore.getState().widthPx, measurePaneLayout()))
     } else if (!handle.isCollapsed()) handle.collapse()
   }, [paneShown, showReadiness, view])
 
