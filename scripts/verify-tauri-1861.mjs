@@ -4,7 +4,7 @@
 // times and writes real-looking Conversation files. Each scenario drives the Host tools over the real wire: it appends
 // a `host_tool_call` frame and reads the recorded `host_tool_result`.
 //
-// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1861.mjs [--group list-switch|handoff|cross] [--scenario <name>] [--build]
+// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1861.mjs [--group list-switch|handoff|cross|cross-states] [--scenario <name>] [--build]
 // Groups live in `verify-tauri-1861-<group>.mjs` and are registered in GROUPS below. Evidence lands in
 // REFRACT_1861_SCRATCH/evidence (default C:/Users/shopwood/AppData/Local/Temp/scratch/driver-1861/evidence).
 
@@ -26,7 +26,9 @@ const EVIDENCE_DIR = path.join(SCRATCH, 'evidence');
 const GROUPS = {
   'list-switch': () => import('./verify-tauri-1861-list-switch.mjs'),
   handoff: () => import('./verify-tauri-1861-handoff.mjs'),
-  cross: () => import('./verify-tauri-1861-cross.mjs')
+  // `cross` is the shared world's scenarios (items 9, 10, 15) and the target-state scenarios (items 11-13); `cross-states` runs the latter alone.
+  cross: async () => ({ default: { scenarios: [...(await import('./verify-tauri-1861-cross.mjs')).default.scenarios, ...(await import('./verify-tauri-1861-cross-states.mjs')).default.scenarios] } }),
+  'cross-states': () => import('./verify-tauri-1861-cross-states.mjs')
 };
 
 const argValue = (flag) => {
