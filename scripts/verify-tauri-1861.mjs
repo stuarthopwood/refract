@@ -4,7 +4,7 @@
 // times and writes real-looking Conversation files. Each scenario drives the Host tools over the real wire: it appends
 // a `host_tool_call` frame and reads the recorded `host_tool_result`.
 //
-// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1861.mjs [--group list-switch] [--scenario <name>] [--build]
+// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1861.mjs [--group list-switch|handoff] [--scenario <name>] [--build]
 // Groups live in `verify-tauri-1861-<group>.mjs` and are registered in GROUPS below. Evidence lands in
 // REFRACT_1861_SCRATCH/evidence (default C:/Users/shopwood/AppData/Local/Temp/scratch/driver-1861/evidence).
 
@@ -24,7 +24,8 @@ const EVIDENCE_DIR = path.join(SCRATCH, 'evidence');
 
 // A group module default-exports `{ scenarios: [{ name, title, run(ctx, rec) }] }`; add new groups here.
 const GROUPS = {
-  'list-switch': () => import('./verify-tauri-1861-list-switch.mjs')
+  'list-switch': () => import('./verify-tauri-1861-list-switch.mjs'),
+  handoff: () => import('./verify-tauri-1861-handoff.mjs')
 };
 
 const argValue = (flag) => {
@@ -36,7 +37,7 @@ const SEED_PREFIX_MS = Date.UTC(2026, 0, 1);
 /** `2026-01-01T00-00-00-000Z` as omp names files: `:` and `.` become `-`. */
 const fileStamp = (ms) => new Date(ms).toISOString().replace(/[:.]/g, '-');
 
-function createContext({ cdp, recordFile, callsFile, debugLog, repoDir, shotsDir }) {
+function createContext({ cdp, recordFile, callsFile, refusalsFile, debugLog, repoDir, shotsDir }) {
   const records = () => readFileSync(recordFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const knownPids = [];
   const memo = {};
@@ -89,10 +90,33 @@ function createContext({ cdp, recordFile, callsFile, debugLog, repoDir, shotsDir
       if (!r.ok) throw new Error(`conversations.list failed: ${JSON.stringify(r)}`);
       return r.value;
     },
+    /** The Session's transcript rows as the renderer reads them (`sessions.open`). */
+    async transcript(id) {
+      const r = await cdp.evaluate(`window.refract.sessions.open(${JSON.stringify(id)}).then((r) => (r.ok ? r.value.runtime.transcript : null))`);
+      if (!r) throw new Error(`sessions.open failed for ${id}`);
+      return r;
+    },
+    /** Ends a held turn (a prompt containing HOLD) as completed, as if the agent finished. */
+    settleTurn(pid) {
+      appendFileSync(callsFile, `${JSON.stringify({ __serve_settle__: true, __pid: pid })}\n`);
+    },
+    /** The next `n` `new_session` commands fail in the fake omp. */
+    setRefusals(n) {
+      writeFileSync(refusalsFile, String(n));
+    },
+    /** The text of the whole window, for what the panes show. */
+    pageText: () => cdp.evaluate('document.body.innerText'),
     /** Counts the commands the fake omp received, by type, optionally for one pid. */
     recvCount(type, pid) {
       if (!existsSync(debugLog)) return 0;
       return readFileSync(debugLog, 'utf8').split('\n').filter((l) => l.includes(' RECV ') && l.includes(`"type":"${type}"`) && (pid === undefined || l.includes(`pid=${pid} `))).length;
+    },
+    /** The `message` of every `prompt` command the fake omp `pid` received, in order. */
+    promptTexts(pid) {
+      if (!existsSync(debugLog)) return [];
+      return readFileSync(debugLog, 'utf8').split('\n')
+        .filter((l) => l.startsWith(`pid=${pid} RECV {`) && l.includes('"type":"prompt"'))
+        .map((l) => JSON.parse(l.slice(l.indexOf('RECV ') + 5, l.lastIndexOf(' (waitingFor='))).message);
     },
     /** A Session with a first message sent, so its Conversation file is listable and Refract knows its directory. */
     async newSession(label) {
@@ -163,7 +187,9 @@ async function main() {
     const launcherDir = mk('launcher');
     const recordFile = path.join(exeDir, 'host-tools.jsonl');
     const callsFile = path.join(exeDir, 'host-calls.jsonl');
+    const refusalsFile = path.join(exeDir, 'new-session-refusals.txt');
     const debugLog = path.join(exeDir, 'fake-omp-invocations.log');
+    writeFileSync(refusalsFile, '0');
     writeFileSync(recordFile, '');
     writeFileSync(callsFile, '');
     const port = await getFreePort();
@@ -193,7 +219,8 @@ async function main() {
         REFRACT_FAKE_OMP_SERVE_ROOT: serveRoot,
         REFRACT_FAKE_OMP_DEBUG_LOG: debugLog,
         REFRACT_FAKE_OMP_HOST_TOOL_RECORD: recordFile,
-        REFRACT_FAKE_OMP_HOST_TOOL_CALLS: callsFile
+        REFRACT_FAKE_OMP_HOST_TOOL_CALLS: callsFile,
+        REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS: refusalsFile
       }
     });
     child = launched.child;
@@ -203,7 +230,7 @@ async function main() {
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 60_000, label: 'Readiness green' });
     await addRepository(cdp, repoDir);
 
-    const ctx = createContext({ cdp, recordFile, callsFile, debugLog, repoDir, shotsDir: exeDir });
+    const ctx = createContext({ cdp, recordFile, callsFile, refusalsFile, debugLog, repoDir, shotsDir: exeDir });
     for (const scenario of selected) {
       const rec = { findings: [], failures: [], check(ok, pass, fail) { (ok ? rec.findings : rec.failures).push(ok ? pass : fail); } };
       try {
