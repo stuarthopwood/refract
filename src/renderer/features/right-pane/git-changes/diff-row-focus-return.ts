@@ -1,12 +1,7 @@
-import { useDocumentTabsStore } from '@/state/document-tabs-store'
 import { frontActiveTab, useRightPaneStore } from '@/state/right-pane-store'
-import { pollUntilSettled, shouldReturnFocusToRow, takeClosedOrigins } from '../file-explorer/row-focus-return'
 import type { GitChangesGroupKind } from '../../../../shared/model'
+import { createOriginTracker } from '../focus-return-tracker'
 import { focusGitRow, focusGitRowInGroup, focusNearestGroupTrigger } from './focus'
-
-// The panel is unmounted while a diff tab is active, so the originating row is tracked here, not in the panel.
-const origins = new Map<string, string>()
-let watching = false
 
 const originKey = (sessionId: string, tabId: string): string => `${sessionId}\n${tabId}`
 
@@ -27,45 +22,31 @@ export function moveOrigin(map: Map<string, string>, sessionId: string, fromId: 
   if (!map.has(originKey(sessionId, toId))) map.set(originKey(sessionId, toId), encodeOrigin(group, decodeOrigin(value).path))
 }
 
-function focusLocation(): 'body' | 'tab-strip' | 'other' {
-  const active = document.activeElement
-  if (!active || active === document.body) return 'body'
-  // A close that leaves one item focuses the single-item header's close button, which has no tablist.
-  return active.closest('[role="tablist"], [data-panel-close]') ? 'tab-strip' : 'other'
-}
-
 function gitPanelShowing(): boolean {
   const tab = frontActiveTab()
   return useRightPaneStore.getState().open && tab?.kind === 'panel' && tab.id === 'git-changes'
 }
 
-function returnFocus(sessionId: string, value: string): void {
-  const { group, path } = decodeOrigin(value)
-  // Two frames: the tab strip's own focus move after a close runs in the next one. The panel can mount its rows later, so poll for the row before settling for a group trigger.
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() =>
-      pollUntilSettled(
-        () => !shouldReturnFocusToRow(gitPanelShowing(), focusLocation()) || focusGitRowInGroup(sessionId, group, path) || focusGitRow(sessionId, path),
-        requestAnimationFrame,
-        90,
-        () => {
-          if (shouldReturnFocusToRow(gitPanelShowing(), focusLocation())) focusNearestGroupTrigger(sessionId, group)
-        }
-      )
-    )
-  )
-}
+const tracker = createOriginTracker({
+  isShowing: gitPanelShowing,
+  // The row in its own group first; the same file in another group if a retarget moved it.
+  focusTarget(sessionId, value) {
+    const { group, path } = decodeOrigin(value)
+    return focusGitRowInGroup(sessionId, group, path) || focusGitRow(sessionId, path)
+  },
+  focusFallback(sessionId, value) {
+    focusNearestGroupTrigger(sessionId, decodeOrigin(value).group)
+  }
+})
 
 /** Remembers which Git changes row opened a diff tab, so closing it can send focus back (FR-006). */
 export function rememberDiffOrigin(sessionId: string, tabId: string, group: GitChangesGroupKind, path: string): void {
-  origins.set(originKey(sessionId, tabId), encodeOrigin(group, path))
-  if (watching) return
-  watching = true
-  useDocumentTabsStore.subscribe((state) => {
-    for (const { sessionId: closedSession, path: value } of takeClosedOrigins(origins, state.bySession)) returnFocus(closedSession, value)
-  })
+  tracker.remember(sessionId, tabId, encodeOrigin(group, path))
 }
 
 export function moveDiffOrigin(sessionId: string, fromId: string, toId: string, group: GitChangesGroupKind): void {
-  moveOrigin(origins, sessionId, fromId, toId, group)
+  moveOrigin(tracker.origins, sessionId, fromId, toId, group)
 }
+
+/** Forgets every origin and the store subscription; for tests. */
+export const resetDiffOrigins = tracker.reset
