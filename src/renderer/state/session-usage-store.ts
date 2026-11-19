@@ -69,14 +69,24 @@ const EMPTY: SessionUsageEntry = {
   loaded: false
 }
 
-/** Conversation scope needs a Conversation file; without one the panel falls back to the Session. */
+/** Conversation and Main thread scopes need a Conversation file; without one the panel falls back to the Session. */
 export function effectiveScope(scope: UsageSessionScope, target: SessionUsageTarget): UsageSessionScope {
-  return scope === 'conversation' && target.sessionFile ? 'conversation' : 'session'
+  return scope !== 'session' && target.sessionFile ? scope : 'session'
 }
 
 export function entryKey(target: SessionUsageTarget, scope: UsageSessionScope, range: UsageSessionRange): string {
-  const file = effectiveScope(scope, target) === 'conversation' ? target.sessionFile : ''
-  return `${target.sessionDir}\n${file}\n${range}`
+  const effective = effectiveScope(scope, target)
+  const file = effective === 'session' ? '' : target.sessionFile
+  return `${target.sessionDir}\n${effective}\n${file}\n${range}`
+}
+
+/** The range-free filters for a scope; Main thread adds the agent-type filter to the Conversation match. */
+export function scopeFilters(target: SessionUsageTarget, scope: UsageSessionScope): UsageFilters {
+  const effective = effectiveScope(scope, target)
+  const base: UsageFilters = { range: 'all', sessionDir: target.sessionDir }
+  if (effective !== 'session') base.sessionFile = target.sessionFile
+  if (effective === 'main') base.agentType = 'main'
+  return base
 }
 
 /** One calendar month before the reset instant, clamping a day that does not exist (31 Mar to 28 Feb). */
@@ -176,8 +186,7 @@ export const useSessionUsageStore = create<SessionUsageState>((set, get) => {
       const offset = new Date().getTimezoneOffset()
       const { scope, range } = get()
       const key = entryKey(target, scope, range)
-      const base: UsageFilters = { range: 'all', sessionDir: target.sessionDir }
-      if (effectiveScope(scope, target) === 'conversation') base.sessionFile = target.sessionFile
+      const base = scopeFilters(target, scope)
       const filters: UsageFilters = { ...base, range }
       const limit = get().entries[key]?.callsLimit ?? SESSION_CALLS_STEP
       const resetsAt = get().budget?.copilot?.resetsAt

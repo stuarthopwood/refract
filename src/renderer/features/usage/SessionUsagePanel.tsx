@@ -33,6 +33,8 @@ const breakdownItems = (rows: UsageBreakdownRow[], value: (row: UsageBreakdownRo
     value: value(row)
   }))
 
+const SCOPE_NOUN = { session: 'session', conversation: 'conversation', main: 'main thread' } as const
+
 export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
   const sessionDir = useSessionsStore((s) => (sessionId ? (s.sessions.find((x) => x.id === sessionId)?.sessionDir ?? null) : null))
   const sessionFile = useSessionsStore((s) => (sessionId ? (s.sessions.find((x) => x.id === sessionId)?.currentConversation ?? null) : null))
@@ -81,7 +83,7 @@ export function SessionUsagePanel({ sessionId }: { sessionId: string | null }) {
       <Empty>
         <EmptyHeader>
           <EmptyTitle>
-            No usage {range === 'today' ? 'today' : 'yet'} in this {effectiveScope(scope, target) === 'conversation' ? 'conversation' : 'session'}
+            No usage {range === 'today' ? 'today' : 'yet'} in this {SCOPE_NOUN[effectiveScope(scope, target)]}
           </EmptyTitle>
         </EmptyHeader>
       </Empty>

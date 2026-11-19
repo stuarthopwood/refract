@@ -40,7 +40,7 @@ pub struct Filters {
     pub agent_type: Option<String>,
     /// A Refract Session directory; matches every conversation file at or below it.
     pub session_dir: Option<String>,
-    /// One conversation file (a `session_file` value); matches that file only.
+    /// One conversation file (a `session_file` value); also matches its sibling subagent folder.
     pub session_file: Option<String>,
 }
 

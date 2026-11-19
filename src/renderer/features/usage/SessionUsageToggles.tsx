@@ -22,7 +22,7 @@ export function SessionUsageToggles({ scope, range, hasConversation, onScopeChan
         aria-label="Usage scope"
         value={hasConversation ? scope : 'session'}
         onValueChange={(next) => {
-          if (next === 'session' || next === 'conversation') onScopeChange(next)
+          if (next === 'session' || next === 'conversation' || next === 'main') onScopeChange(next)
         }}
       >
         <ToggleGroupItem value="session">Session</ToggleGroupItem>
@@ -32,6 +32,13 @@ export function SessionUsageToggles({ scope, range, hasConversation, onScopeChan
           title={hasConversation ? undefined : 'This session has no conversation yet'}
         >
           Conversation
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="main"
+          disabled={!hasConversation}
+          title={hasConversation ? 'Excludes subagents and advisors' : 'This session has no conversation yet'}
+        >
+          Main thread
         </ToggleGroupItem>
       </ToggleGroup>
       <ToggleGroup

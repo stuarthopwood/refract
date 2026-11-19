@@ -21,8 +21,8 @@ export const IPC_USAGE_EVENTS = {
 
 export type UsageRange = 'today' | '7d' | '30d' | 'all' | 'custom'
 
-/** The Session usage panel's scope toggle: the whole Session directory, or the focused Conversation. */
-export type UsageSessionScope = 'session' | 'conversation'
+/** The Session usage panel's scope toggle: the Session directory, the focused Conversation with its subagents and advisors, or that Conversation's main thread alone. */
+export type UsageSessionScope = 'session' | 'conversation' | 'main'
 /** The Session usage panel's range toggle. */
 export type UsageSessionRange = 'all' | 'today'
 
@@ -37,7 +37,7 @@ export interface UsageFilters {
   agentType?: 'main' | 'subagent' | 'advisor' | null
   /** A Refract Session directory; counts every conversation file at or below it. */
   sessionDir?: string | null
-  /** One conversation file (a stored `session_file`); counts that file only. */
+  /** One conversation file (a stored `session_file`); counts it and its sibling subagent/advisor folder. */
   sessionFile?: string | null
 }
 

@@ -12,7 +12,7 @@ const KEY_FILTERS: &str = "filters";
 // The Session usage panel's two toggles; the values are allowlisted so the table never holds free text.
 const KEY_SESSION_SCOPE: &str = "sessionScope";
 const KEY_SESSION_RANGE: &str = "sessionRange";
-const SESSION_SCOPES: [&str; 2] = ["session", "conversation"];
+const SESSION_SCOPES: [&str; 3] = ["session", "conversation", "main"];
 const SESSION_RANGES: [&str; 2] = ["all", "today"];
 
 pub fn register(d: &mut Dispatcher) {
