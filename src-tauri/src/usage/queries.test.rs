@@ -332,7 +332,8 @@ fn record_call(conn: &Connection, id: &str, file: &str, agent: &str, ago: i64) {
 }
 
 #[test]
-fn session_file_matches_one_conversation_with_its_subagent_folder_and_today_matches_the_usage_view() {
+fn session_file_matches_one_conversation_with_its_subagent_folder_and_today_matches_the_usage_view()
+{
     let conn = scratch_db();
     for (id, file, agent, ago) in [
         ("a", "C:/s/a/one.jsonl", "main", 60_000),
