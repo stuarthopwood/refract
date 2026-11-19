@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isGenuineOpen, shellLayout } from './shell-tabs'
+import { isGenuineOpen, openFocusTarget, shellLayout } from './shell-tabs'
 
 const before = (sessionId: string | null, ...keys: string[]) => ({ sessionId, keys: new Set(keys) })
 
@@ -32,5 +32,27 @@ describe('isGenuineOpen', () => {
 
   it('is false with no active tab', () => {
     expect(isGenuineOpen(before('s1'), 's1', null)).toBe(false)
+  })
+})
+
+describe('openFocusTarget', () => {
+  it('focuses the tab for a keyboard-opened document tab in the strip', () => {
+    expect(openFocusTarget(true, false, 'document', 'tab-bar')).toBe('tab')
+  })
+
+  it('keeps content focus for a panel open', () => {
+    expect(openFocusTarget(true, false, 'panel', 'tab-bar')).toBe('content')
+  })
+
+  it('falls back to content for a lone document tab, which has no strip button', () => {
+    expect(openFocusTarget(true, false, 'document', 'title-row')).toBe('content')
+  })
+
+  it('moves nothing for a background, pointer or agent open', () => {
+    expect(openFocusTarget(true, true, 'document', 'tab-bar')).toBe('none')
+  })
+
+  it('moves nothing when no tab was opened', () => {
+    expect(openFocusTarget(false, false, 'document', 'tab-bar')).toBe('none')
   })
 })

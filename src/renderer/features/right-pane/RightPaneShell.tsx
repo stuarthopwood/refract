@@ -19,7 +19,8 @@ import { useDocumentTabsStore, type DocumentTab } from '@/state/document-tabs-st
 import { DocumentTabView } from '@/features/documents/DocumentTabView'
 import { useDiffTabLiveness } from '@/features/documents/useDiffTabLiveness'
 import { activeItemKey, buildTabItems, tabDomIds } from './tab-items'
-import { isGenuineOpen, shellLayout } from './shell-tabs'
+import { isGenuineOpen, openFocusTarget, shellLayout } from './shell-tabs'
+import { focusDocumentTab } from './document-tab-focus'
 
 const NO_TABS: DocumentTab[] = []
 
@@ -34,6 +35,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const documentTabs = documents?.tabs ?? NO_TABS
   const activeKey = resolveActiveTab(sessionId, storePanelId, documents)
   const activePanelId = activeKey?.kind === 'panel' ? activeKey.id : null
+  const activeKind = activeKey?.kind
   const tabKey = activeItemKey(activeKey)
   const layout = shellLayout(openPanelIds.length + documentTabs.length)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
@@ -62,8 +64,10 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
     const { suppressNextContentFocus } = useRightPaneStore.getState()
     if (suppressNextContentFocus) useRightPaneStore.setState({ suppressNextContentFocus: false })
     // A Session switch swaps the document tabs; that is not a tab opening.
-    if (isGenuineOpen(previous, sessionId, tabKey) && !suppressNextContentFocus) contentRef.current?.focus()
-  }, [openPanelIds, documentTabs, tabKey, sessionId])
+    const target = openFocusTarget(isGenuineOpen(previous, sessionId, tabKey), suppressNextContentFocus, activeKind, layout)
+    if (target === 'tab' && sessionId && tabKey && focusDocumentTab(sessionId, tabKey)) return
+    if (target !== 'none') contentRef.current?.focus()
+  }, [openPanelIds, documentTabs, tabKey, activeKind, layout, sessionId])
 
   if (layout === 'launcher') {
     return (

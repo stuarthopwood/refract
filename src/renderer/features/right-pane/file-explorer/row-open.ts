@@ -1,5 +1,5 @@
 import { openDocument } from '../../documents/open-document'
-import { RIGHT_PANE_CONTENT_SELECTOR } from '@/lib/right-pane-selectors'
+import { focusExistingDocumentTab } from '../document-tab-focus'
 import { rememberRowOrigin } from './row-focus-return'
 
 export interface RowActivation {
@@ -26,7 +26,7 @@ export function rowOpenOptions(activation: RowActivation): RowOpenOptions {
 }
 
 /** The shell focuses a tab it adds, but not one that was already open, so the keyboard path has to do that itself. */
-export function needsContentFocus(options: RowOpenOptions, existed: boolean): boolean {
+export function needsExistingTabFocus(options: RowOpenOptions, existed: boolean): boolean {
   return existed && options.focus && !options.background
 }
 
@@ -36,5 +36,5 @@ export function openFileFromRow(sessionId: string, path: string, activation: Row
   const announce = options.background ? `Opened ${path.split('/').pop() ?? path} in the background` : undefined
   const result = openDocument(sessionId, { kind: 'file', path }, { background: options.background, focus: options.focus, announce })
   rememberRowOrigin(sessionId, result.id, path)
-  if (needsContentFocus(options, result.existed)) requestAnimationFrame(() => document.querySelector<HTMLElement>(RIGHT_PANE_CONTENT_SELECTOR)?.focus())
+  if (needsExistingTabFocus(options, result.existed)) focusExistingDocumentTab(sessionId, result.id)
 }

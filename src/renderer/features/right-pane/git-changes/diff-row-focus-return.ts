@@ -1,6 +1,6 @@
 import { useDocumentTabsStore } from '@/state/document-tabs-store'
 import { frontActiveTab, useRightPaneStore } from '@/state/right-pane-store'
-import { shouldReturnFocusToRow, takeClosedOrigins } from '../file-explorer/row-focus-return'
+import { pollUntilSettled, shouldReturnFocusToRow, takeClosedOrigins } from '../file-explorer/row-focus-return'
 import type { GitChangesGroupKind } from '../../../../shared/model'
 import { focusGitRow, focusGitRowInGroup, focusNearestGroupTrigger } from './focus'
 
@@ -40,12 +40,18 @@ function gitPanelShowing(): boolean {
 
 function returnFocus(sessionId: string, value: string): void {
   const { group, path } = decodeOrigin(value)
-  // Two frames: the tab strip's own focus move after a close runs in the next one.
+  // Two frames: the tab strip's own focus move after a close runs in the next one. The panel can mount its rows later, so poll for the row before settling for a group trigger.
   requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      if (!shouldReturnFocusToRow(gitPanelShowing(), focusLocation())) return
-      if (!focusGitRowInGroup(sessionId, group, path) && !focusGitRow(sessionId, path)) focusNearestGroupTrigger(sessionId, group)
-    })
+    requestAnimationFrame(() =>
+      pollUntilSettled(
+        () => !shouldReturnFocusToRow(gitPanelShowing(), focusLocation()) || focusGitRowInGroup(sessionId, group, path) || focusGitRow(sessionId, path),
+        requestAnimationFrame,
+        90,
+        () => {
+          if (shouldReturnFocusToRow(gitPanelShowing(), focusLocation())) focusNearestGroupTrigger(sessionId, group)
+        }
+      )
+    )
   )
 }
 

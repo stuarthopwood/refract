@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { shouldReturnFocusToRow, takeClosedOrigins } from './row-focus-return'
+import { describe, expect, it, vi } from 'vitest'
+import { pollUntilSettled, shouldReturnFocusToRow, takeClosedOrigins } from './row-focus-return'
 
 const tabs = (...ids: string[]) => ({ tabs: ids.map((id) => ({ id })) })
 
@@ -53,5 +53,45 @@ describe('shouldReturnFocusToRow', () => {
   it('never moves focus while another tab is showing', () => {
     expect(shouldReturnFocusToRow(false, 'body')).toBe(false)
     expect(shouldReturnFocusToRow(false, 'tab-strip')).toBe(false)
+  })
+})
+
+describe('pollUntilSettled', () => {
+  const frames = () => {
+    const queue: (() => void)[] = []
+    return { queue, nextFrame: (run: () => void) => void queue.push(run) }
+  }
+
+  it('keeps trying each frame until the row has mounted, then stops', () => {
+    const { queue, nextFrame } = frames()
+    let mountedAfter = 3
+    const step = vi.fn(() => --mountedAfter <= 0)
+    pollUntilSettled(step, nextFrame, 90)
+    while (queue.length > 0) queue.shift()?.()
+    expect(step).toHaveBeenCalledTimes(3)
+  })
+
+  it('gives up when the row never mounts', () => {
+    const { queue, nextFrame } = frames()
+    const step = vi.fn(() => false)
+    pollUntilSettled(step, nextFrame, 4)
+    while (queue.length > 0) queue.shift()?.()
+    expect(step).toHaveBeenCalledTimes(5)
+  })
+})
+
+describe('pollUntilSettled give-up', () => {
+  it('runs onGiveUp once when the step never settles', () => {
+    const queue: (() => void)[] = []
+    const onGiveUp = vi.fn()
+    pollUntilSettled(() => false, (run) => void queue.push(run), 2, onGiveUp)
+    while (queue.length > 0) queue.shift()?.()
+    expect(onGiveUp).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not run onGiveUp once the step settles', () => {
+    const onGiveUp = vi.fn()
+    pollUntilSettled(() => true, () => undefined, 2, onGiveUp)
+    expect(onGiveUp).not.toHaveBeenCalled()
   })
 })

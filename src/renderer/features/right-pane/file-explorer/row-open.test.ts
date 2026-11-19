@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { keyboardActivation, needsContentFocus, pointerActivation, rowOpenOptions } from './row-open'
+import { keyboardActivation, needsExistingTabFocus, pointerActivation, rowOpenOptions } from './row-open'
 
 const NONE = { ctrlKey: false, metaKey: false }
 const click = (modifiers: Partial<typeof NONE> = {}) => pointerActivation({ ...NONE, ...modifiers })
@@ -23,17 +23,17 @@ describe('rowOpenOptions', () => {
   })
 })
 
-describe('needsContentFocus', () => {
+describe('needsExistingTabFocus', () => {
   it('focuses an already open tab after keyboard activation, as the shell only focuses a new one', () => {
-    expect(needsContentFocus({ background: false, focus: true }, true)).toBe(true)
+    expect(needsExistingTabFocus({ background: false, focus: true }, true)).toBe(true)
   })
 
   it('leaves a new tab to the shell', () => {
-    expect(needsContentFocus({ background: false, focus: true }, false)).toBe(false)
+    expect(needsExistingTabFocus({ background: false, focus: true }, false)).toBe(false)
   })
 
   it('never takes focus for a click or a background open', () => {
-    expect(needsContentFocus({ background: false, focus: false }, true)).toBe(false)
-    expect(needsContentFocus({ background: true, focus: true }, true)).toBe(false)
+    expect(needsExistingTabFocus({ background: false, focus: false }, true)).toBe(false)
+    expect(needsExistingTabFocus({ background: true, focus: true }, true)).toBe(false)
   })
 })

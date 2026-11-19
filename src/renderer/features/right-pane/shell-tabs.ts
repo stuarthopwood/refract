@@ -14,3 +14,11 @@ export interface TabSnapshot {
 export function isGenuineOpen(previous: TabSnapshot, sessionId: string | null, activeKey: string | null): boolean {
   return activeKey !== null && previous.sessionId === sessionId && !previous.keys.has(activeKey)
 }
+
+export type OpenFocusTarget = 'tab' | 'content' | 'none'
+
+/** A keyboard-opened document tab takes focus itself, so Arrow keys and Delete work at once (FR-005); a panel keeps content focus, and a lone tab has no strip button to focus. */
+export function openFocusTarget(genuineOpen: boolean, suppressed: boolean, activeKind: 'panel' | 'document' | undefined, layout: ShellLayout): OpenFocusTarget {
+  if (!genuineOpen || suppressed) return 'none'
+  return activeKind === 'document' && layout === 'tab-bar' ? 'tab' : 'content'
+}

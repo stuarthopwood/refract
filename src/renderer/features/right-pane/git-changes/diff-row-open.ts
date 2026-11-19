@@ -1,6 +1,6 @@
 import { openDocument } from '../../documents/open-document'
-import { RIGHT_PANE_CONTENT_SELECTOR } from '@/lib/right-pane-selectors'
-import { keyboardActivation, needsContentFocus, pointerActivation, rowOpenOptions, type RowActivation } from '../file-explorer/row-open'
+import { focusExistingDocumentTab } from '../document-tab-focus'
+import { keyboardActivation, needsExistingTabFocus, pointerActivation, rowOpenOptions, type RowActivation } from '../file-explorer/row-open'
 import type { GitChangesGroupKind } from '../../../../shared/model'
 import { rememberDiffOrigin } from './diff-row-focus-return'
 
@@ -22,5 +22,5 @@ export function openDiffFromRow(sessionId: string, group: GitChangesGroupKind, p
     { background: options.background, focus: options.focus, announce: diffOpenAnnouncement(path, options.background) }
   )
   rememberDiffOrigin(sessionId, result.id, group, path)
-  if (needsContentFocus(options, result.existed)) requestAnimationFrame(() => document.querySelector<HTMLElement>(RIGHT_PANE_CONTENT_SELECTOR)?.focus())
+  if (needsExistingTabFocus(options, result.existed)) focusExistingDocumentTab(sessionId, result.id)
 }

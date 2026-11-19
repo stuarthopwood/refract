@@ -39,13 +39,28 @@ function explorerShowing(): boolean {
   return useRightPaneStore.getState().open && tab?.kind === 'panel' && tab.id === 'file-explorer'
 }
 
+/** Runs `step` each frame until it reports it is settled; `onGiveUp` runs once if `framesLeft` runs out first. */
+export function pollUntilSettled(step: () => boolean, nextFrame: (run: () => void) => void, framesLeft: number, onGiveUp?: () => void): void {
+  if (step()) return
+  if (framesLeft <= 0) return onGiveUp?.()
+  nextFrame(() => pollUntilSettled(step, nextFrame, framesLeft - 1, onGiveUp))
+}
+
 function returnFocus(path: string): void {
-  // Two frames: the strip's own focus move after a close runs in the next one, and the explorer mounts with the row selected.
+  // Two frames: the strip's own focus move after a close runs in the next one. The explorer mounts its rows later (~250 ms live), so poll for the row.
   requestAnimationFrame(() =>
-    requestAnimationFrame(() => {
-      if (!shouldReturnFocusToRow(explorerShowing(), focusLocation())) return
-      document.querySelector<HTMLElement>(`[data-tree-row-path="${CSS.escape(path)}"]`)?.focus()
-    })
+    requestAnimationFrame(() =>
+      pollUntilSettled(
+        () => {
+          if (!shouldReturnFocusToRow(explorerShowing(), focusLocation())) return true
+          const row = document.querySelector<HTMLElement>(`[data-tree-row-path="${CSS.escape(path)}"]`)
+          row?.focus()
+          return row !== null
+        },
+        requestAnimationFrame,
+        90
+      )
+    )
   )
 }
 
