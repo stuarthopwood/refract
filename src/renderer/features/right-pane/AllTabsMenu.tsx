@@ -1,4 +1,5 @@
-import { ChevronDownIcon, FileDiffIcon, FileIcon } from 'lucide-react'
+import { Fragment } from 'react'
+import { ChevronDownIcon } from 'lucide-react'
 import { IconButton } from '@/components/IconButton'
 import {
   DropdownMenu,
@@ -11,7 +12,7 @@ import {
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu'
 import { runBulkClose } from './document-tab-actions'
-import { getPanelDescriptor } from './panel-registry'
+import { tabItemIcon, tabItemName } from './panel-registry'
 import { bulkCloseEnabled, type TabItem } from './tab-items'
 
 interface AllTabsMenuProps {
@@ -23,6 +24,12 @@ interface AllTabsMenuProps {
   onSelect: (item: TabItem) => void
 }
 
+const SECTIONS: { label: string; group: TabItem['kind'][] }[] = [
+  { label: 'Panels', group: ['panel'] },
+  { label: 'Files', group: ['file'] },
+  { label: 'Diffs', group: ['diff'] }
+]
+
 /** Lists every tab, scrolled-off ones included, and holds the bulk close actions (FR-008, FR-029). */
 export function AllTabsMenu({ sessionId, items, labels, activeKey, onSelect }: AllTabsMenuProps) {
   const enabled = bulkCloseEnabled(items, activeKey, sessionId !== null)
@@ -30,23 +37,15 @@ export function AllTabsMenu({ sessionId, items, labels, activeKey, onSelect }: A
     items
       .filter((item) => group.includes(item.kind))
       .map((item) => {
-        const Icon = item.kind === 'panel' ? getPanelDescriptor(item.id)?.icon : item.kind === 'file' ? FileIcon : FileDiffIcon
-        const name = item.kind === 'panel' ? (getPanelDescriptor(item.id)?.name ?? item.id) : (labels[item.key] ?? item.tab.path)
+        const Icon = tabItemIcon(item)
         return (
           <DropdownMenuRadioItem key={item.key} value={item.key}>
             {Icon && <Icon aria-hidden className="size-4 text-muted-foreground" />}
-            <span className="min-w-0 truncate">{name}</span>
+            <span className="min-w-0 truncate">{tabItemName(item, labels)}</span>
           </DropdownMenuRadioItem>
         )
       })
-  const section = (label: string, group: TabItem['kind'][]) =>
-    items.some((item) => group.includes(item.kind)) && (
-      <>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>{label}</DropdownMenuLabel>
-        {radioItems(group)}
-      </>
-    )
+  const sections = SECTIONS.filter(({ group }) => items.some((item) => group.includes(item.kind)))
 
   return (
     <DropdownMenu>
@@ -65,9 +64,13 @@ export function AllTabsMenu({ sessionId, items, labels, activeKey, onSelect }: A
             if (item) onSelect(item)
           }}
         >
-          {section('Panels', ['panel'])}
-          {section('Files', ['file'])}
-          {section('Diffs', ['diff'])}
+          {sections.map(({ label, group }, index) => (
+            <Fragment key={label}>
+              {index > 0 && <DropdownMenuSeparator />}
+              <DropdownMenuLabel>{label}</DropdownMenuLabel>
+              {radioItems(group)}
+            </Fragment>
+          ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem disabled={!enabled.others} onSelect={() => sessionId && runBulkClose(sessionId, 'others', activeKey)}>

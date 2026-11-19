@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from 'react'
 import type { ComponentProps, KeyboardEvent, RefObject } from 'react'
-import { FileDiffIcon, FileIcon, XIcon } from 'lucide-react'
+import { XIcon } from 'lucide-react'
 import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
 import { IconButton } from '@/components/IconButton'
 import { TAB_LOOK_CLASS } from '@/components/ui/tabs'
@@ -13,7 +13,7 @@ import { useDocumentTabsStore, type DocumentTab } from '@/state/document-tabs-st
 import { useGitChangesStore } from '@/state/git-changes-store'
 import { resolveActiveTab, useRightPaneStore } from '@/state/right-pane-store'
 import { DiffStatCounts } from '../sessions/sessionDisplay'
-import { compactPanelCount, formatPanelCount, getPanelDescriptor, splitPanelCount, usePanelCount, type PanelId } from './panel-registry'
+import { compactPanelCount, documentTabIcon, formatPanelCount, getPanelDescriptor, splitPanelCount, tabItemName, usePanelCount, type PanelId } from './panel-registry'
 import { closeHostedPanel } from './hosted-panel-actions'
 import { AllTabsMenu } from './AllTabsMenu'
 import { applyCloseResult } from './document-tab-actions'
@@ -124,15 +124,11 @@ interface PanelTabStripProps {
   onKeyDown: (event: KeyboardEvent<HTMLElement>, item: TabItem) => void
 }
 
-function itemName(item: TabItem, labels: Readonly<Record<string, string>>): string {
-  return item.kind === 'panel' ? (getPanelDescriptor(item.id)?.name ?? item.id) : (labels[item.key] ?? item.tab.path)
-}
-
 /** Store-free view of the strip, so the layout renders without a DOM. */
 export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef, tabListRef, tabRefs, onSelect, onClose, onKeyDown }: PanelTabStripProps) {
   const only = items.length === 1 ? items[0] : undefined
   if (only) {
-    const title = only.kind === 'panel' ? itemName(only, labels) : null
+    const title = only.kind === 'panel' ? tabItemName(only, labels) : null
     const fullPath = only.kind === 'panel' ? null : only.tab.path
     const path = fullPath === null ? null : splitDocumentPath(fullPath)
     return (
@@ -140,7 +136,7 @@ export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef,
         <PanelHeader
           ref={wrapperRef}
           actions={
-            <IconButton label={closeButtonLabel(only, itemName(only, labels))} data-panel-close onClick={() => onClose(only)}>
+            <IconButton label={closeButtonLabel(only, tabItemName(only, labels))} data-panel-close onClick={() => onClose(only)}>
               <XIcon aria-hidden className="size-4" />
             </IconButton>
           }
@@ -184,7 +180,7 @@ export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef,
           <DocumentTabButton tab={item.tab} label={labels[item.key] ?? item.tab.path} sessionId={sessionId} {...common} />
         )}
         <IconButton
-          label={closeButtonLabel(item, itemName(item, labels))}
+          label={closeButtonLabel(item, tabItemName(item, labels))}
           shortcut={['Delete']}
           tabIndex={selected ? 0 : -1}
           data-panel-close
@@ -261,7 +257,7 @@ function DocumentTabButton({ tab, label, sessionId, selected, tabRef, onSelect, 
   const counts = useGitChangesStore((s) =>
     tab.kind === 'diff' && sessionId ? (s.bySession[sessionId]?.snapshot?.groups[tab.group].find((entry) => entry.path === tab.path) ?? null) : null
   )
-  const Icon = tab.kind === 'file' ? FileIcon : FileDiffIcon
+  const Icon = documentTabIcon(tab.kind)
   const ids = sessionId ? tabDomIds({ kind: 'document', sessionId, id: tab.id }) : null
   return (
     <Tooltip>

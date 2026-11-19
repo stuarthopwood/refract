@@ -1,6 +1,7 @@
-import { BotIcon, CircleDotIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, GitPullRequestIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
+import { BotIcon, CircleDotIcon, FileDiffIcon, FileIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, GitPullRequestIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/state'
 import panelContract from '../../../../specs/124-tool-channel-1193/contracts/panel-actions.json'
+import type { TabItem } from './tab-items'
 
 export type PanelId =
   | 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline' | 'session-usage'
@@ -67,6 +68,20 @@ export const ALL_PANELS: readonly HostedPanelDescriptor[] = [...HOSTED_PANELS, .
 
 export function getPanelDescriptor(id: PanelId): HostedPanelDescriptor | undefined {
   return HOSTED_PANELS.find((panel) => panel.id === id) ?? PINNED_PANELS.find((panel) => panel.id === id)
+}
+
+/** The icon a file or diff tab shows; panel tabs use their descriptor's icon. */
+export function documentTabIcon(kind: 'file' | 'diff'): LucideIcon {
+  return kind === 'file' ? FileIcon : FileDiffIcon
+}
+
+export function tabItemIcon(item: TabItem): LucideIcon | undefined {
+  return item.kind === 'panel' ? getPanelDescriptor(item.id)?.icon : documentTabIcon(item.kind)
+}
+
+/** What a tab is called: the panel name, or the document's disambiguated label with its path as the fallback. */
+export function tabItemName(item: TabItem, labels: Readonly<Record<string, string>>): string {
+  return item.kind === 'panel' ? (getPanelDescriptor(item.id)?.name ?? item.id) : (labels[item.key] ?? item.tab.path)
 }
 
 // data-model.md `PanelCount`: per-render, computed -- never stored on the descriptor itself.
