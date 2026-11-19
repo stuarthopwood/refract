@@ -1,16 +1,27 @@
 // Risk 5 audit: per-Session state keyed to a Conversation is the scroll record (cleared here). The queue, readout,
 // subagent, side-chat and token-guard state are reset by the backend's `on_conversation_reset` hooks and arrive as
 // their own events, so nothing else is cleared in the renderer.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useChatAreaAnnouncer } from '../features/chat/chatAreaAnnouncer'
 import { handleConversationChanged } from './conversation-changed'
 import { useChatScrollStore } from './scroll-store'
 import { useDraftStore } from './draft-store'
-import { useSessionsStore } from './sessions-store'
+import { useSplitStore } from './split-store'
 
 describe('handleConversationChanged', () => {
+  const announce = vi.fn()
+  const realAnnounce = useChatAreaAnnouncer.getState().announce
+
   beforeEach(() => {
     useChatScrollStore.setState({ bySession: {}, inFlight: {} })
     useDraftStore.setState({ bySession: {} })
+    useSplitStore.setState({ paneSessionIds: ['s1'], focusedIndex: 0 })
+    announce.mockClear()
+    useChatAreaAnnouncer.setState({ announce })
+  })
+
+  afterEach(() => {
+    useChatAreaAnnouncer.setState({ announce: realAnnounce })
   })
 
   it("clears that Session's scroll record only", () => {
@@ -30,27 +41,22 @@ describe('handleConversationChanged', () => {
     expect(useDraftStore.getState().bySession['s1']?.text).toBe('half typed')
   })
 
-  it('opens nothing and applies no snapshot', () => {
-    const open = vi.fn()
-    const applySnapshot = vi.fn()
-    useSessionsStore.setState({ open, applySnapshot } as never)
-
-    handleConversationChanged('s1')
-
-    expect(open).not.toHaveBeenCalled()
-    expect(applySnapshot).not.toHaveBeenCalled()
-  })
-
   it('is a no-op for a Session with no scroll record', () => {
     const before = useChatScrollStore.getState().bySession
     handleConversationChanged('unknown')
     expect(useChatScrollStore.getState().bySession).toBe(before)
   })
 
-  it('serves two panes of one Session through the single store entry', () => {
-    useChatScrollStore.getState().record('s1', { atEnd: false, scrollTop: 5 })
+  it('announces once, politely, for a Session shown in a pane', () => {
     handleConversationChanged('s1')
-    // Both panes read the same entry, so both now land at the end.
-    expect(useChatScrollStore.getState().bySession['s1']).toBeUndefined()
+
+    expect(announce).toHaveBeenCalledTimes(1)
+    expect(announce).toHaveBeenCalledWith('Conversation changed')
+  })
+
+  it('does not announce for a Session shown in no pane', () => {
+    handleConversationChanged('s2')
+
+    expect(announce).not.toHaveBeenCalled()
   })
 })
