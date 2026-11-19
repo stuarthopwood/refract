@@ -40,6 +40,6 @@ Phase 2 (implementation) is a separate run. Each implementation task has a co-lo
 ## Phase E - docs and check
 
 - [x] T013 Update `CONTEXT.md` terms and the `docs/PLAN.md` row.
-- [ ] T014 Run the 15 scenarios in `plan.md` with the fake omp; keep the evidence in scratch `evidence/`.
+- [x] T014 Run the 15 scenarios in `plan.md` with the fake omp; keep the evidence in scratch `evidence/`.
 
 Order: T001, T002 first; T003-T006 and T007-T010 can follow in parallel after T001-T002; T011-T012 after T005; T013-T014 last.
