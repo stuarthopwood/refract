@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { DocumentHeader } from '@/components/DocumentHeader'
 import { InlineStatus } from '@/components/InlineStatus'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
 import { useGitChangesStore } from '@/state'
@@ -6,6 +7,7 @@ import { useAgentAnnouncementStore } from '@/state/agent-announcement-store'
 import { useScrollMemory } from '@/features/documents/useScrollMemory'
 import type { GitChangesGroupKind } from '../../../../shared/model'
 import { diffGroupLabel } from './GitChangesGroup'
+import { DocumentPathActions, type PathActionCallbacks } from '../file-explorer/path-actions'
 import {
   DIFF_LOAD_ERROR,
   NO_LONGER_CHANGED,
@@ -19,7 +21,7 @@ import {
 } from './git-diff-state'
 import { useGitChangesWatch } from './useGitChangesWatch'
 
-interface GitDiffViewProps {
+interface GitDiffViewProps extends PathActionCallbacks {
   sessionId: string
   group: GitChangesGroupKind
   path: string
@@ -29,7 +31,7 @@ interface GitDiffViewProps {
 }
 
 /** One file's diff in one group: fetches it, refreshes it as the file changes, and says so when the file stops being changed. */
-export function GitDiffView({ sessionId, group, path, scrollTop, onScrollTopChange }: GitDiffViewProps) {
+export function GitDiffView({ sessionId, group, path, scrollTop, onScrollTopChange, onOpenInVSCode, onReveal, onCopyPath }: GitDiffViewProps) {
   const [state, setState] = useState<DiffState>('loading')
   const shownRef = useRef<string | null>(null)
   const entry = useGitChangesStore((s) => findLiveEntry(s.bySession[sessionId]?.snapshot, group, path))
@@ -70,17 +72,23 @@ export function GitDiffView({ sessionId, group, path, scrollTop, onScrollTopChan
   }, [gone, path])
 
   return (
-    <div ref={scroll.ref} onScroll={scroll.onScroll} className="flex h-full flex-col gap-2 overflow-auto p-1">
-      <span className="shrink-0 px-1 text-xs text-muted-foreground">{diffGroupLabel(group)}</span>
-      {gone ? (
-        <InlineStatus>{NO_LONGER_CHANGED}</InlineStatus>
-      ) : state === 'loading' ? (
-        <InlineStatus tone="loading">Loading diff…</InlineStatus>
-      ) : 'error' in state ? (
-        <InlineStatus tone="error">{state.error}</InlineStatus>
-      ) : (
-        <DiffViewFromPatch path={path} patch={state.patch} reason={state.reason} {...(entry ?? patchStats(state.patch))} />
-      )}
+    <div className="flex h-full flex-col">
+      <DocumentHeader
+        path={path}
+        meta={diffGroupLabel(group)}
+        actions={<DocumentPathActions path={path} onOpenInVSCode={onOpenInVSCode} onReveal={onReveal} onCopyPath={onCopyPath} />}
+      />
+      <div ref={scroll.ref} onScroll={scroll.onScroll} className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-2">
+        {gone ? (
+          <InlineStatus>{NO_LONGER_CHANGED}</InlineStatus>
+        ) : state === 'loading' ? (
+          <InlineStatus tone="loading">Loading diff…</InlineStatus>
+        ) : 'error' in state ? (
+          <InlineStatus tone="error">{state.error}</InlineStatus>
+        ) : (
+          <DiffViewFromPatch path={path} patch={state.patch} reason={state.reason} {...(entry ?? patchStats(state.patch))} />
+        )}
+      </div>
     </div>
   )
 }

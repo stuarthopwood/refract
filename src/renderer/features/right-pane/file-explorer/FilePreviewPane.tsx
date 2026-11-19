@@ -1,7 +1,8 @@
-// A file tab's preview: header with Open in VS Code/Reveal/Copy path, Wrap and Source toggles, then the content. Wrap, Source and
+// A file tab's preview: the shared header with Open in VS Code/Reveal/Copy path, Wrap and Source toggles, then the content. Wrap, Source and
 // scroll are the tab's own state, owned by the document store; `FileTabView` wires them and the handlers.
-import { useEffect, useState } from 'react'
 import { FileIcon, FileWarningIcon, TriangleAlertIcon, WrapTextIcon } from 'lucide-react'
+import { DocumentHeader } from '@/components/DocumentHeader'
+import { fileName } from '@/components/document-path'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -9,9 +10,9 @@ import { CodeBlock, Markdown } from '@/features/chat/Markdown'
 import { formatByteSize } from '@/features/chat/attachments'
 import type { FilePreview } from '../../../../shared/model'
 import { useScrollMemory } from '@/features/documents/useScrollMemory'
-import { PathActionButtons, type PathActionHandlers } from './path-actions'
+import { DocumentPathActions, type PathActionCallbacks } from './path-actions'
 
-interface FilePreviewPaneProps {
+interface FilePreviewPaneProps extends PathActionCallbacks {
   /** The tab's own path, so the header and actions stay right while a first load has no preview yet. */
   path: string
   preview: FilePreview | null
@@ -22,15 +23,6 @@ interface FilePreviewPaneProps {
   onWrapChange: (wrap: boolean) => void
   onSourceChange: (source: boolean) => void
   onScrollTopChange: (scrollTop: number) => void
-  onOpenInVSCode: (path: string) => Promise<boolean>
-  onReveal: (path: string) => Promise<void>
-  onCopyPath: (path: string, confirm?: boolean) => Promise<boolean>
-}
-
-/** Last path segment of a POSIX-`/`-separated `FileTreeNode.path`; never split on the OS separator. */
-function fileName(path: string): string {
-  const index = path.lastIndexOf('/')
-  return index === -1 ? path : path.slice(index + 1)
 }
 
 // Common source extensions only, matching Shiki's grammar ids; an unrecognised one maps to `null` (plain text).
@@ -110,13 +102,6 @@ export function FilePreviewPane({
   onReveal,
   onCopyPath
 }: FilePreviewPaneProps) {
-  // Same transient "VS Code not found" treatment as the tree row menu, with independent state.
-  const [vscodeNotFound, setVscodeNotFound] = useState(false)
-  useEffect(() => {
-    if (!vscodeNotFound) return
-    const timer = setTimeout(() => setVscodeNotFound(false), 5000)
-    return () => clearTimeout(timer)
-  }, [vscodeNotFound])
   const scroll = useScrollMemory<HTMLDivElement>(preview !== null, scrollTop, onScrollTopChange)
 
   // A refresh keeps the last content on screen, so only a first load has nothing to show.
@@ -124,44 +109,36 @@ export function FilePreviewPane({
   // The header stays for every state but a deleted file, where there is nothing left to open.
   const showHeader = preview?.kind !== 'deleted'
 
-  async function runOpenInVSCode(): Promise<void> {
-    const opened = await onOpenInVSCode(path)
-    setVscodeNotFound(!opened)
-  }
-
-  const handlers: PathActionHandlers = {
-    openInVSCode: () => void runOpenInVSCode(),
-    reveal: () => void onReveal(path),
-    copyPath: (confirm) => onCopyPath(path, confirm)
-  }
-
   // The shell's tabpanel is the one landmark; the header sits outside the scroller as one fixed row (#756).
   return (
     <div className="flex h-full flex-col">
       {showHeader && (
-        <div className="no-drag-region flex shrink-0 flex-nowrap items-center gap-1 px-2 pt-2">
-          <span title={path} className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-            {fileName(path)}
-          </span>
-          {vscodeNotFound && (
-            <span role="status" className="shrink-0 text-xs text-muted-foreground">
-              VS Code not found
-            </span>
-          )}
-          <PathActionButtons handlers={handlers} disabled={firstLoad} />
-          {preview?.kind === 'markdown' && (
-            // `aria-pressed` alone carries the toggle state; the accessible name stays "Source".
-            <Button type="button" variant="ghost" size="sm" className="shrink-0" aria-pressed={showSource} onClick={() => onSourceChange(!showSource)}>
-              Source
-            </Button>
-          )}
-          {preview?.kind === 'text' && (
-            <Button type="button" variant="ghost" size="sm" className="shrink-0" aria-pressed={wrap} aria-label="Wrap long lines" onClick={() => onWrapChange(!wrap)}>
-              <WrapTextIcon aria-hidden className="size-4" />
-              Wrap
-            </Button>
-          )}
-        </div>
+        <DocumentHeader
+          path={path}
+          actions={
+            <>
+              <DocumentPathActions
+                path={path}
+                disabled={firstLoad}
+                onOpenInVSCode={onOpenInVSCode}
+                onReveal={onReveal}
+                onCopyPath={onCopyPath}
+              />
+              {preview?.kind === 'markdown' && (
+                // `aria-pressed` alone carries the toggle state; the accessible name stays "Source".
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" aria-pressed={showSource} onClick={() => onSourceChange(!showSource)}>
+                  Source
+                </Button>
+              )}
+              {preview?.kind === 'text' && (
+                <Button type="button" variant="ghost" size="sm" className="shrink-0" aria-pressed={wrap} aria-label="Wrap long lines" onClick={() => onWrapChange(!wrap)}>
+                  <WrapTextIcon aria-hidden className="size-4" />
+                  Wrap
+                </Button>
+              )}
+            </>
+          }
+        />
       )}
       <div ref={scroll.ref} onScroll={scroll.onScroll} className="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
         {firstLoad ? (
