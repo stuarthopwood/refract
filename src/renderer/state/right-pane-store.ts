@@ -6,8 +6,6 @@ export const RIGHT_PANE_DEFAULT_WIDTH_PX = 320
 export const RIGHT_PANE_MIN_WIDTH_PX = 240
 /** Mirrors `WIDTH_MAX` in right_pane.rs: a ceiling against a corrupt row, not a layout cap. */
 export const RIGHT_PANE_SANITY_MAX_WIDTH_PX = 4096
-/** The layout cap and Wide preset until Phase 4 (#2075 T017, T020) lifts them; deleted with them. */
-export const RIGHT_PANE_INTERIM_CAP_PX = 520
 
 interface RightPaneState {
   open: boolean
