@@ -3,12 +3,13 @@ import { toast } from 'sonner'
 import { notify, useSessionsStore } from '@/state'
 import { joinWorktreePath } from '../right-pane/file-explorer/tree-rows'
 
-/** Open in VS Code, Reveal and Copy path for one file of a Session, as the explorer's own row actions do. */
-export function usePathActionHandlers(sessionId: string) {
+/** Open in VS Code, Reveal and Copy path for one file of a Session, shared by the explorer and the file tab. */
+export function usePathActionHandlers(sessionId: string | null) {
   const worktreePath = useSessionsStore((s) => s.sessions.find((session) => session.id === sessionId)?.worktreePath)
 
   const onOpenInVSCode = useCallback(
     async (path: string): Promise<boolean> => {
+      if (!sessionId) return true
       const result = await window.refract.fileExplorer.openInVSCode(sessionId, path)
       if (!result.ok) {
         notify(result.error)
@@ -22,6 +23,7 @@ export function usePathActionHandlers(sessionId: string) {
 
   const onReveal = useCallback(
     async (path: string): Promise<void> => {
+      if (!sessionId) return
       const result = await window.refract.fileExplorer.reveal(sessionId, path)
       if (!result.ok) notify(result.error)
     },
@@ -31,6 +33,7 @@ export function usePathActionHandlers(sessionId: string) {
   // Clipboard first for the absolute path, then the IPC fallback, as the explorer does.
   const onCopyPath = useCallback(
     async (path: string, confirm = false): Promise<boolean> => {
+      if (!sessionId) return false
       if (worktreePath) {
         try {
           await navigator.clipboard.writeText(joinWorktreePath(worktreePath, path))

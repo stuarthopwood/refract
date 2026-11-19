@@ -10,7 +10,6 @@ import { GitChangesHeader } from './GitChangesHeader'
 import { GitCommitBox } from './GitCommitBox'
 import { GROUP_ORDER } from './focus'
 import { clickActivation, openDiffFromRow } from './diff-row-open'
-import { useDiffTabRetarget } from './useDiffTabRetarget'
 import { useGitChangesWatch } from './useGitChangesWatch'
 
 export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
@@ -32,7 +31,6 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   }, [sessionId])
 
   const snapshot = sessionEntry?.snapshot ?? null
-  useDiffTabRetarget(sessionId, snapshot)
 
   useEffect(() => {
     if (snapshot) setHasEverLoadedSnapshot(true)

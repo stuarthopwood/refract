@@ -1,21 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { GitChangesFileEntry, GitChangesSnapshot } from '../../../../shared/model'
+import { gitSnapshot as snapshot } from '../../documents/documents-test-fixtures'
 import { entrySignature, findLiveEntry, isNoLongerChanged, nextDiffState, noLongerChangedAnnouncement, patchStats } from './git-diff-state'
-
-const entry = (path: string, over: Partial<GitChangesFileEntry> = {}): GitChangesFileEntry => ({
-  path,
-  folder: '',
-  mark: 'modified',
-  additions: 1,
-  deletions: 2,
-  partial: false,
-  ...over
-})
-
-const snapshot = (groups: Partial<GitChangesSnapshot['groups']>): GitChangesSnapshot => ({
-  header: { branch: 'main', baseBranch: 'main', aheadBehind: null },
-  groups: { conflicts: [], staged: [], changes: [], untracked: [], ...groups }
-})
+import { gitEntry as entry } from './git-changes-test-fixtures'
 
 describe('isNoLongerChanged', () => {
   it('is false until a snapshot has loaded', () => {

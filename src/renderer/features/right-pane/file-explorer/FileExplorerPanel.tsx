@@ -2,17 +2,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { FolderIcon, FolderOpenIcon, TriangleAlertIcon } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
-import { toast } from 'sonner'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { fileExplorerWatch } from '@/state/watch-refs'
 import { Switch } from '@/components/ui/switch'
 import { isFocusStranded } from '@/lib/focus'
-import { notify, useFileExplorerStore, useSessionsStore } from '@/state'
+import { useFileExplorerStore } from '@/state'
+import { usePathActionHandlers } from '../../documents/usePathActionHandlers'
 import type { ExpandableNode } from '../../../state/file-explorer-store'
 import { buildFolderRollup } from './git-decoration'
-import { flattenVisible, joinWorktreePath, type FlatRow } from './tree-rows'
+import { flattenVisible, type FlatRow } from './tree-rows'
 import { keyboardActivation, openFileFromRow, pointerActivation, type RowActivation } from './row-open'
 import { TreeNodeRow, type NodeRow } from './TreeNodeRow'
 
@@ -31,9 +31,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
   const toggleExpanded = useFileExplorerStore((s) => s.toggleExpanded)
   const setShowIgnored = useFileExplorerStore((s) => s.setShowIgnored)
   const setSelectedPath = useFileExplorerStore((s) => s.setSelectedPath)
-  const worktreePath = useSessionsStore((s) =>
-    sessionId ? s.sessions.find((session) => session.id === sessionId)?.worktreePath : undefined
-  )
+  const { onOpenInVSCode, onReveal, onCopyPath } = usePathActionHandlers(sessionId)
 
   const containerRef = useRef<HTMLDivElement>(null)
   const treeContainerRef = useRef<HTMLDivElement>(null)
@@ -243,42 +241,6 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
     if (!sessionId) return
     setSelectedPath(sessionId, node.path)
     activateRow(node, activation)
-  }
-
-  async function handleOpenInVSCode(path: string): Promise<boolean> {
-    if (!sessionId) return true
-    const result = await window.refract.fileExplorer.openInVSCode(sessionId, path)
-    if (!result.ok) {
-      notify(result.error)
-      return true
-    }
-    // `{ opened: false }` is a normal result (contracts/ipc.md), never an IPC error --
-    // `TreeNodeRow` shows the "VS Code not found" state inline, never a toast.
-    return result.value.opened
-  }
-
-  async function handleReveal(path: string): Promise<void> {
-    if (!sessionId) return
-    const result = await window.refract.fileExplorer.reveal(sessionId, path)
-    if (!result.ok) notify(result.error)
-  }
-
-  // Mirrors `useWorktreeActions.ts`'s own clipboard-first-then-IPC-fallback pattern, scoped to one
-  // file's own absolute path instead of the whole worktree root.
-  async function handleCopyPath(path: string, confirm = false): Promise<boolean> {
-    if (!sessionId) return false
-    if (worktreePath) {
-      try {
-        await navigator.clipboard.writeText(joinWorktreePath(worktreePath, path))
-        if (confirm) toast.success('Path copied')
-        return true
-      } catch {
-      }
-    }
-    const result = await window.refract.fileExplorer.copyPath(sessionId, path)
-    if (result.ok && confirm) toast.success('Path copied')
-    else if (!result.ok) notify(result.error)
-    return result.ok
   }
 
   function moveToRow(row: NodeRow, absIndex: number): void {
@@ -519,9 +481,9 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
                         onRowClick={(node, event) => selectAndActivate(node, pointerActivation(event))}
                         onRowFocus={(node) => sessionId && !rescueFocusRef.current && setSelectedPath(sessionId, node.path)}
                         onRowKeyDown={handleRowKeyDown}
-                        onOpenInVSCode={handleOpenInVSCode}
-                        onReveal={handleReveal}
-                        onCopyPath={handleCopyPath}
+                        onOpenInVSCode={onOpenInVSCode}
+                        onReveal={onReveal}
+                        onCopyPath={onCopyPath}
                       />
                     )
                   }
