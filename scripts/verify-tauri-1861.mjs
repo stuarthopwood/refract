@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for #1861 (agent Conversation handoff: list, start, switch). The scratch debug exe runs against the
-// recorded-frame fake `omp` in serve mode (`conversations-1861` tape), which answers start/switch/refuse any number of
-// times and writes real-looking Conversation files. Each scenario drives the Host tools over the real wire: it appends
-// a `host_tool_call` frame and reads the recorded `host_tool_result`.
-//
-// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1861.mjs [--group list-switch|handoff|cross|cross-states] [--scenario <name>] [--build]
-// Groups live in `verify-tauri-1861-<group>.mjs` and are registered in GROUPS below. Evidence lands in
-// REFRACT_1861_SCRATCH/evidence (default C:/Users/shopwood/AppData/Local/Temp/scratch/driver-1861/evidence).
+// Live CDP check for #1861: the scratch debug exe against the fake `omp` in serve mode; each scenario drives the
+// Host tools over the real wire. Groups live in `verify-tauri-1861-<group>.mjs` (registered in GROUPS).
+// Usage: CARGO_TARGET_DIR=<shared target> node scripts/verify-tauri-1861.mjs [--group <name>] [--scenario <name>] [--build]
 
 import { mkdirSync, mkdtempSync, writeFileSync, appendFileSync, copyFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';

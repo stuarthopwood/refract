@@ -1,17 +1,8 @@
-// Serve mode for the recorded-frame fake `omp` (#1861): a tape ending in `{"__serve__":"conversations"}` hands every
-// later command to this responder instead of replaying frames, so one fake process can start, switch and refuse
-// Conversations any number of times. A linear tape cannot loop, and the live check needs that.
-//
-// Conversation files live in `<REFRACT_FAKE_OMP_SERVE_ROOT>/<basename of the process cwd>/`, named like real omp files
-// (`<timestamp>_<id>.jsonl`), so Refract's own Conversation list reads them. Each process appends
-// `{pid,cwd,dir}` to `<root>/serve-procs.jsonl`, which is how a check finds the directory to seed.
-//
-// Turns: a `prompt` whose message contains `HOLD` stays open (agent_start, user message, nothing else) until the
-// check appends `{"__serve_settle__":true,"__pid":<pid>}` to REFRACT_FAKE_OMP_HOST_TOOL_CALLS or the agent sends
-// `abort_and_restore_queue`; any other prompt answers "Noted." and settles at once.
-// `REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS` (scratch file holding a number) makes the next N `new_session` calls fail.
-// `REFRACT_FAKE_OMP_PROMPT_AFTER_NEW_REFUSALS` (same shape) makes the first `prompt` after each of the next N successful
-// `new_session` calls fail: the Conversation exists but its first message is refused.
+// Serve mode for the fake `omp` (#1861): a tape ending in `{"__serve__":"conversations"}` hands later commands to this
+// responder, because a linear tape cannot start, switch and refuse Conversations any number of times.
+// Files go in `<REFRACT_FAKE_OMP_SERVE_ROOT>/<cwd basename>/`, named like real omp files; `serve-procs.jsonl` maps pid to dir.
+// A `prompt` containing `HOLD` stays open until a `__serve_settle__` call line or `abort_and_restore_queue`.
+// `REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS` / `..._PROMPT_AFTER_NEW_REFUSALS`: scratch files holding N refusals to make.
 
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
