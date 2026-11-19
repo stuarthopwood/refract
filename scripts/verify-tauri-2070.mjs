@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Live CDP check for #2070 (Conversation scope counts its subagent and advisor folder; Main thread is the file alone).
+// Live CDP check for #2070 (Conversation scope counts its subagent and advisor folder; Main agent is the file alone).
 // Usage: CARGO_TARGET_DIR=<shared target dir> SHOTS_DIR=<evidence dir> node scripts/verify-tauri-2070.mjs
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -35,7 +35,7 @@ const assistant = (id, ts, cost) =>
 const header = (id, ts) => entry({ type: 'session', id, timestamp: new Date(ts).toISOString(), cwd: 'C:\\Work\\verify2070proj' });
 
 // One Session, one Conversation (conv.jsonl) with its sibling folder: 2 main calls, 3 subagent calls, 1 advisor call.
-// Expected: Session 6, Conversation 6 (they must agree), Main thread 2 (the old Conversation figure).
+// Expected: Session 6, Conversation 6 (they must agree), Main agent 2 (the old Conversation figure).
 const MIN = 60_000;
 const EXPECT = { session: 6, conversation: 6, main: 2 };
 function writeSessions(root) {
@@ -68,6 +68,19 @@ const key = async (cdp, k, code, vk) => {
   await sleep(300);
 };
 const focusedLabel = (cdp) => cdp.evaluate(`(() => { const a = document.activeElement; return a ? (a.closest('[aria-label^="Usage "]')?.getAttribute('aria-label') ?? '') + '|' + a.textContent.trim() : null; })()`);
+const SCOPE_LINES = {
+  session: 'All conversations in this session, with their subagents and advisors.',
+  conversation: 'This conversation, with its subagents and advisors.',
+  main: "This conversation's main agent only. Excludes subagents and advisors."
+};
+// The visible scope line and the id the scope group points at with aria-describedby.
+const scopeLine = (cdp) =>
+  cdp.evaluate(`(() => { const g = ${PANEL}.querySelector('[aria-label="Usage scope"]'); const id = g?.getAttribute('aria-describedby'); const el = id ? document.getElementById(id) : null;
+    return { describedBy: id, text: el?.textContent.trim() ?? null, visible: !!el && el.getClientRects().length > 0, muted: !!el && el.classList.contains('text-xs') }; })()`);
+const checkScopeLine = async (cdp, scope) => {
+  const line = await scopeLine(cdp);
+  record(`Scope line for ${scope} is visible and linked by aria-describedby`, line.visible && line.muted && line.text === SCOPE_LINES[scope], line);
+};
 
 async function openUsagePanel(cdp) {
   const rail = `document.querySelector('[data-rail-button="session-usage"]')`;
@@ -128,6 +141,7 @@ async function main() {
     const sessionText = await panelText(cdp);
     record(`Session/All shows ${EXPECT.session} calls`, sessionOk, await callsShown(cdp));
     await shot('1-session-total');
+    await checkScopeLine(cdp, 'session');
 
     await clickSeg(cdp, 'Usage scope', 'Conversation');
     const convOk = await settleCalls(cdp, EXPECT.conversation, 'conversation/all');
@@ -136,22 +150,25 @@ async function main() {
     const spend = (t) => /Spend\s*\n?\s*(\$[\d.,]+)/.exec(t)?.[1] ?? null;
     record('Session total spend equals Conversation total spend', spend(sessionText) !== null && spend(sessionText) === spend(convText), { session: spend(sessionText), conversation: spend(convText) });
     await shot('2-conversation-total');
+    await checkScopeLine(cdp, 'conversation');
 
-    await clickSeg(cdp, 'Usage scope', 'Main thread');
-    record(`Main thread/All shows ${EXPECT.main} calls (the Conversation file alone)`, await settleCalls(cdp, EXPECT.main, 'main/all'), await callsShown(cdp));
-    record('Main thread segment is the selected scope', (await selected(cdp))?.scope === 'main thread', await selected(cdp));
-    await shot('3-main-thread');
+    await clickSeg(cdp, 'Usage scope', 'Main agent');
+    record(`Main agent/All shows ${EXPECT.main} calls (the Conversation file alone)`, await settleCalls(cdp, EXPECT.main, 'main/all'), await callsShown(cdp));
+    record('Main agent segment is the selected scope', (await selected(cdp))?.scope === 'main agent', await selected(cdp));
+    await checkScopeLine(cdp, 'main');
+    await shot('3-main-agent');
 
     const apiConv = await cdp.evaluate(`window.refract.usage.summary({ range: 'all', sessionDir: ${q(sessionDir)}, sessionFile: ${q(convFile)} }).then((r) => r.value?.calls)`);
     const apiMain = await cdp.evaluate(`window.refract.usage.summary({ range: 'all', sessionDir: ${q(sessionDir)}, sessionFile: ${q(convFile)}, agentType: 'main' }).then((r) => r.value?.calls)`);
-    record('usage.summary API agrees: Conversation 6, Main thread 2', apiConv === EXPECT.conversation && apiMain === EXPECT.main, { apiConv, apiMain });
+    record('usage.summary API agrees: Conversation 6, Main agent 2', apiConv === EXPECT.conversation && apiMain === EXPECT.main, { apiConv, apiMain });
 
-    const ax = await getAccessibleNameAndRole(cdp, `Array.from(${PANEL}.querySelectorAll('[aria-label="Usage scope"] [role="radio"],[aria-label="Usage scope"] button')).find((x) => x.textContent.trim() === 'Main thread')`);
-    record('Main thread has the accessible name "Main thread" and a radio role', ax.name === 'Main thread' && ax.role === 'radio', ax);
-    const attrs = await cdp.evaluate(`(() => { const b = Array.from(${PANEL}.querySelectorAll('[aria-label="Usage scope"] [role="radio"],[aria-label="Usage scope"] button')).find((x) => x.textContent.trim() === 'Main thread'); return b ? { role: b.getAttribute('role'), checked: b.getAttribute('aria-checked'), pressed: b.getAttribute('aria-pressed'), title: b.getAttribute('title'), disabled: b.disabled } : null; })()`);
-    record('Main thread segment is enabled, with an explanatory title', attrs && !attrs.disabled && /subagents and advisors/.test(attrs.title ?? ''), attrs);
+    const mainSeg = `Array.from(${PANEL}.querySelectorAll('[aria-label="Usage scope"] [role="radio"],[aria-label="Usage scope"] button')).find((x) => x.textContent.trim() === 'Main agent')`;
+    const ax = await getAccessibleNameAndRole(cdp, mainSeg);
+    record('Main agent has the accessible name "Main agent" and a radio role', ax.name === 'Main agent' && ax.role === 'radio', ax);
+    const attrs = await cdp.evaluate(`(() => { const b = ${mainSeg}; return b ? { role: b.getAttribute('role'), checked: b.getAttribute('aria-checked'), pressed: b.getAttribute('aria-pressed'), title: b.getAttribute('title'), disabled: b.disabled } : null; })()`);
+    record('Main agent segment is enabled and carries no title hint (the visible line replaces it)', attrs && !attrs.disabled && attrs.title === null, attrs);
 
-    // Keyboard: focus Session, ArrowRight twice reaches Main thread, Space selects it; Tab leaves the scope group.
+    // Keyboard: focus Session, ArrowRight twice reaches Main agent, Space selects it; Tab leaves the scope group.
     await clickSeg(cdp, 'Usage scope', 'Session');
     await cdp.evaluate(`(() => { const g = ${PANEL}.querySelector('[aria-label="Usage scope"]'); Array.from(g.querySelectorAll('button,[role="radio"]')).find((b) => b.textContent.trim() === 'Session').focus(); })()`);
     await key(cdp, 'ArrowRight', 'ArrowRight', 39);
@@ -160,8 +177,8 @@ async function main() {
     const afterTwo = await focusedLabel(cdp);
     await key(cdp, ' ', 'Space', 32);
     const scopeAfterSpace = (await selected(cdp))?.scope;
-    record('Keyboard: ArrowRight twice reaches Main thread and Space selects it', afterOne === 'Usage scope|Conversation' && afterTwo === 'Usage scope|Main thread' && scopeAfterSpace === 'main thread', { afterOne, afterTwo, scopeAfterSpace });
-    record('Keyboard-chosen Main thread shows 2 calls', await settleCalls(cdp, EXPECT.main, 'kb main'), await callsShown(cdp));
+    record('Keyboard: ArrowRight twice reaches Main agent and Space selects it', afterOne === 'Usage scope|Conversation' && afterTwo === 'Usage scope|Main agent' && scopeAfterSpace === 'main agent', { afterOne, afterTwo, scopeAfterSpace });
+    record('Keyboard-chosen Main agent shows 2 calls', await settleCalls(cdp, EXPECT.main, 'kb main'), await callsShown(cdp));
     await key(cdp, 'Tab', 'Tab', 9);
     let afterTab = await focusedLabel(cdp);
     const firstTab = afterTab;
@@ -173,7 +190,7 @@ async function main() {
       afterTab = await focusedLabel(cdp);
     }
     record('Keyboard: Tab leaves the scope group for the range group', /^Usage range\|(All time|Today)$/.test(afterTab ?? ''), { firstTab, afterTab });
-    await shot('4-keyboard-main-thread');
+    await shot('4-keyboard-main-agent');
 
     const prefs = await cdp.evaluate(`window.refract.usage.getPrefs().then((r) => r.value)`);
     record('Prefs store sessionScope=main', prefs?.sessionScope === 'main', prefs);

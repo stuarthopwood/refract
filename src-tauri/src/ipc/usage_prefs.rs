@@ -1,5 +1,7 @@
 // `usage.getPrefs`/`usage.setPrefs`. Only whitelisted keys in the `prefs` table are accepted.
 
+use std::path::Path;
+
 use serde_json::{json, Value};
 
 use super::usage::{filters_json, parse_filters};
@@ -54,8 +56,8 @@ fn patch_choice<'a>(
     }
 }
 
-fn read_prefs() -> HandlerResult {
-    let conn = schema::open_db(&paths::usage_db_path()).map_err(db_error)?;
+fn read_prefs(db: &Path) -> HandlerResult {
+    let conn = schema::open_db(db).map_err(db_error)?;
     let jokes = schema::prefs_get(&conn, KEY_JOKES)
         .map_err(db_error)?
         .is_none_or(|v| v != "false");
@@ -77,7 +79,7 @@ fn read_prefs() -> HandlerResult {
     }))
 }
 
-fn write_prefs(patch: &Value) -> HandlerResult {
+fn write_prefs(db: &Path, patch: &Value) -> HandlerResult {
     let obj = patch
         .as_object()
         .ok_or_else(|| invalid_argument("usage.setPrefs: expected an object"))?;
@@ -98,7 +100,7 @@ fn write_prefs(patch: &Value) -> HandlerResult {
         .transpose()?;
     let session_scope = patch_choice(obj, KEY_SESSION_SCOPE, &SESSION_SCOPES)?;
     let session_range = patch_choice(obj, KEY_SESSION_RANGE, &SESSION_RANGES)?;
-    let conn = schema::open_db(&paths::usage_db_path()).map_err(db_error)?;
+    let conn = schema::open_db(db).map_err(db_error)?;
     if let Some(b) = jokes {
         schema::prefs_set(&conn, KEY_JOKES, if b { "true" } else { "false" }).map_err(db_error)?;
     }
@@ -111,12 +113,12 @@ fn write_prefs(patch: &Value) -> HandlerResult {
     if let Some(s) = session_range {
         schema::prefs_set(&conn, KEY_SESSION_RANGE, s).map_err(db_error)?;
     }
-    read_prefs()
+    read_prefs(db)
 }
 
 fn usage_get_prefs(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        tokio::task::spawn_blocking(read_prefs)
+        tokio::task::spawn_blocking(|| read_prefs(&paths::usage_db_path()))
             .await
             .map_err(db_error)?
     })
@@ -125,8 +127,12 @@ fn usage_get_prefs(_state: AppState, _args: Vec<Value>) -> HandlerFuture {
 fn usage_set_prefs(_state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let patch = args.first().cloned().unwrap_or(Value::Null);
-        tokio::task::spawn_blocking(move || write_prefs(&patch))
+        tokio::task::spawn_blocking(move || write_prefs(&paths::usage_db_path(), &patch))
             .await
             .map_err(db_error)?
     })
 }
+
+#[cfg(test)]
+#[path = "usage_prefs.test.rs"]
+mod tests;

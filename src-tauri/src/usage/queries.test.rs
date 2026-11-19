@@ -401,13 +401,17 @@ fn single_conversation_session_total_equals_its_conversation_total() {
 }
 
 #[test]
-fn main_thread_scope_is_the_conversation_file_alone() {
+fn main_agent_scope_is_the_conversation_file_alone() {
     let conn = scratch_db();
+    // `e` and `f` are main-typed rows outside the file (a sibling's folder, a sibling-prefix folder):
+    // `agent_type = main` alone would count them, so only the file match excludes them.
     for (id, file, agent) in [
         ("a", "C:/s/a/one.jsonl", "main"),
         ("b", "C:/s/a/one/task/0.jsonl", "subagent"),
         ("c", "C:/s/a/one/__advisor1.jsonl", "advisor"),
         ("d", "C:/s/a/two.jsonl", "main"),
+        ("e", "C:/s/a/two/main-like.jsonl", "main"),
+        ("f", "C:/s/a/onex/y.jsonl", "main"),
     ] {
         record_call(&conn, id, file, agent, 60_000);
     }
@@ -417,4 +421,59 @@ fn main_thread_scope_is_the_conversation_file_alone() {
         ..filters("all")
     };
     assert_eq!(summary(&conn, &main, &ctx()).unwrap().calls, 1);
+}
+
+#[test]
+fn posix_session_file_matches_its_subagent_folder() {
+    let conn = scratch_db();
+    for (id, file, agent) in [
+        ("a", "/s/a/one.jsonl", "main"),
+        ("b", "/s/a/one/task/0.jsonl", "subagent"),
+        ("c", "/s/a/two.jsonl", "main"),
+    ] {
+        record_call(&conn, id, file, agent, 60_000);
+    }
+    let one = Filters {
+        session_file: Some("/s/a/one.jsonl".into()),
+        ..filters("all")
+    };
+    assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 2);
+}
+
+#[test]
+fn session_file_wildcard_characters_match_literally() {
+    let conn = scratch_db();
+    for (id, file) in [
+        ("a", "C:/s/a_b/one.jsonl"),
+        ("b", "C:/s/aXb/one.jsonl"),
+        ("c", "C:/s/a%b/one.jsonl"),
+        ("d", "C:/s/aXXb/one.jsonl"),
+    ] {
+        record_call(&conn, id, file, "main", 60_000);
+    }
+    for file in ["C:/s/a_b/one.jsonl", "C:/s/a%b/one.jsonl"] {
+        let one = Filters {
+            session_file: Some(file.into()),
+            ..filters("all")
+        };
+        assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 1, "{file}");
+    }
+}
+
+#[test]
+fn session_file_without_jsonl_suffix_matches_itself_and_its_folder_only() {
+    let conn = scratch_db();
+    for (id, file) in [
+        ("a", "C:/s/a/one"),
+        ("b", "C:/s/a/one/task/0.jsonl"),
+        ("c", "C:/s/a/one.jsonl"),
+        ("d", "C:/s/a/onex/y.jsonl"),
+    ] {
+        record_call(&conn, id, file, "main", 60_000);
+    }
+    let one = Filters {
+        session_file: Some("C:/s/a/one".into()),
+        ..filters("all")
+    };
+    assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 2);
 }

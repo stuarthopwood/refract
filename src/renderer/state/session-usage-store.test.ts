@@ -1,6 +1,6 @@
 // Scope helpers of the Session usage store (#2070): which filters each toggle sends, and the cache key.
-import { describe, expect, it } from 'vitest'
-import { effectiveScope, entryKey, scopeFilters, type SessionUsageTarget } from './session-usage-store'
+import { describe, expect, it, vi } from 'vitest'
+import { effectiveScope, entryKey, scopeFilters, useSessionUsageStore, type SessionUsageTarget } from './session-usage-store'
 
 const withConversation: SessionUsageTarget = { sessionDir: 'C:/s/a', sessionFile: 'C:/s/a/one.jsonl' }
 const noConversation: SessionUsageTarget = { sessionDir: 'C:/s/a', sessionFile: null }
@@ -18,7 +18,7 @@ describe('scopeFilters', () => {
     })
   })
 
-  it('main thread scope adds the main agent type to the conversation file', () => {
+  it('main agent scope adds the main agent type to the conversation file', () => {
     expect(scopeFilters(withConversation, 'main')).toEqual({
       range: 'all',
       sessionDir: 'C:/s/a',
@@ -45,7 +45,7 @@ describe('effectiveScope', () => {
 })
 
 describe('entryKey', () => {
-  it('gives conversation and main thread their own cache entries', () => {
+  it('gives conversation and main agent their own cache entries', () => {
     const keys = (['session', 'conversation', 'main'] as const).map((s) => entryKey(withConversation, s, 'all'))
     expect(new Set(keys).size).toBe(3)
   })
@@ -57,5 +57,29 @@ describe('entryKey', () => {
 
   it('separates ranges', () => {
     expect(entryKey(withConversation, 'main', 'all')).not.toBe(entryKey(withConversation, 'main', 'today'))
+  })
+})
+
+describe('refresh', () => {
+  it('sends the scope filters, with the range, to every usage query', async () => {
+    const ok = (value: unknown) => Promise.resolve({ ok: true, value })
+    const summary = vi.fn(() => ok({ calls: 0 }))
+    const usage = {
+      getPrefs: () => ok({ sessionScope: 'main', sessionRange: 'all' }),
+      summary,
+      timeseries: vi.fn(() => ok([])),
+      tokenMix: vi.fn(() => ok([])),
+      breakdown: vi.fn(() => ok([])),
+      calls: vi.fn(() => ok({ rows: [], total: 0 }))
+    }
+    ;(globalThis as unknown as { window: unknown }).window = { refract: { usage } }
+    await useSessionUsageStore.getState().refresh(withConversation)
+    expect(summary).toHaveBeenCalledWith({ ...scopeFilters(withConversation, 'main'), range: 'all' }, expect.any(Number))
+    expect(usage.calls).toHaveBeenCalledWith(
+      { ...scopeFilters(withConversation, 'main'), range: 'all' },
+      expect.anything(),
+      expect.anything(),
+      expect.any(Number)
+    )
   })
 })
