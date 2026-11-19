@@ -14,7 +14,13 @@ const git = vi.hoisted(() => ({
   }
 }))
 
-vi.mock('@/state', () => ({ useGitChangesStore: { getState: () => git.state } }))
+const docs = vi.hoisted(() => ({ openDocument: vi.fn() }))
+const explorer = vi.hoisted(() => ({
+  state: { loadDirectory: vi.fn(), loadPreview: vi.fn(), toggleExpanded: vi.fn(), setSelectedPath: vi.fn(), bySession: {} as Record<string, unknown> }
+}))
+
+vi.mock('@/state', () => ({ useGitChangesStore: { getState: () => git.state }, useFileExplorerStore: { getState: () => explorer.state } }))
+vi.mock('../documents/open-document', () => ({ openDocument: docs.openDocument }))
 
 function snapshotWith(group: 'staged' | 'changes', path: string) {
   const groups = { staged: [] as { path: string }[], changes: [] as { path: string }[], untracked: [] as { path: string }[] }
@@ -36,6 +42,8 @@ const stageFile = handler('git-changes', 'stage_file')
 const unstageFile = handler('git-changes', 'unstage_file')
 
 beforeEach(() => {
+  docs.openDocument.mockReset()
+  explorer.state.setSelectedPath.mockReset()
   calls.length = 0
   git.state.load.mockReset().mockImplementation(async () => {
     calls.push('load')
@@ -112,5 +120,56 @@ describe('unstage_file', () => {
   it('changes nothing when Rust refuses started', async () => {
     expect(await unstageFile(context(async () => false), { path: 'a.txt' })).toMatchObject({ ok: false, code: 'action_failed' })
     expect(git.state.unstage).not.toHaveBeenCalled()
+  })
+})
+
+describe('show_file', () => {
+  const showFileAction = handler('git-changes', 'show_file')
+
+  it('opens a diff tab without taking focus and announces it', async () => {
+    docs.openDocument.mockReturnValue({ existed: false })
+    git.state.bySession = snapshotWith('changes', 'src/foo.ts')
+    const outcome = await showFileAction(context(async () => true), { path: 'src/foo.ts' })
+    expect(outcome).toEqual({ ok: true, value: { path: 'src/foo.ts', existed: false } })
+    expect(docs.openDocument).toHaveBeenCalledWith('s1', { kind: 'diff', group: 'changes', path: 'src/foo.ts' }, { focus: false, announce: 'Agent opened diff of foo.ts' })
+  })
+
+  it('reports an already open tab as existed, so it is activated rather than duplicated', async () => {
+    docs.openDocument.mockReturnValue({ existed: true })
+    expect(await showFileAction(context(async () => true), { path: 'a.txt' })).toEqual({ ok: true, value: { path: 'a.txt', existed: true } })
+  })
+
+  it.each([
+    ['an unsafe path', { path: '../a.txt' }],
+    ['a file that is not changed', { path: 'other.txt' }]
+  ])('opens nothing for %s', async (_name, input) => {
+    expect(await showFileAction(context(async () => true), input)).toMatchObject({ ok: false, code: 'invalid_input' })
+    expect(docs.openDocument).not.toHaveBeenCalled()
+  })
+})
+
+describe('reveal', () => {
+  const revealAction = handler('file-explorer', 'reveal')
+  const tree = { path: '', kind: 'folder', expanded: true, children: [{ path: 'src', kind: 'folder', expanded: true, children: [{ path: 'src/foo.ts', kind: 'file' }] }] }
+
+  beforeEach(() => {
+    explorer.state.bySession = { s1: { root: tree } }
+  })
+
+  it('opens a file tab without taking focus', async () => {
+    docs.openDocument.mockReturnValue({ existed: false })
+    expect(await revealAction(context(async () => true), { path: 'src/foo.ts' })).toEqual({ ok: true, value: { path: 'src/foo.ts', kind: 'file' } })
+    expect(docs.openDocument).toHaveBeenCalledWith('s1', { kind: 'file', path: 'src/foo.ts' }, { focus: false, announce: 'Agent opened foo.ts' })
+  })
+
+  it('selects a folder without opening a tab', async () => {
+    expect(await revealAction(context(async () => true), { path: 'src' })).toEqual({ ok: true, value: { path: 'src', kind: 'folder' } })
+    expect(explorer.state.setSelectedPath).toHaveBeenCalledWith('s1', 'src')
+    expect(docs.openDocument).not.toHaveBeenCalled()
+  })
+
+  it('rejects an invalid path', async () => {
+    expect(await revealAction(context(async () => true), { path: '../x' })).toMatchObject({ ok: false, code: 'invalid_input' })
+    expect(docs.openDocument).not.toHaveBeenCalled()
   })
 })
