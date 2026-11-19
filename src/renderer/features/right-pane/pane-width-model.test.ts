@@ -6,6 +6,7 @@ import {
   choiceDisabled,
   closesPaneOnShowChat,
   currentChoiceValue,
+  fittingWidth,
   resizeHandleName,
   widthFits
 } from './pane-width-model'
@@ -32,6 +33,27 @@ describe('widthFits', () => {
 
   it('never blocks on an unmeasured layout', () => {
     expect(widthFits(4096, null)).toBe(true)
+  })
+})
+
+describe('fittingWidth', () => {
+  it('keeps a saved width that fits beside chat', () => {
+    expect(fittingWidth(640, defaultWindow)).toBe(640)
+  })
+
+  it('clamps a saved width wider than the room chat leaves', () => {
+    const room = defaultWindow.groupWidthPx - defaultWindow.sessionListPx - CHAT_MIN_WIDTH_PX
+    expect(fittingWidth(1240, defaultWindow)).toBe(room)
+    expect(fittingWidth(1240, { groupWidthPx: 1352, sessionListPx: 480 })).toBe(512)
+  })
+
+  it('never goes below the 240 px floor', () => {
+    expect(fittingWidth(1240, { groupWidthPx: 800, sessionListPx: 480 })).toBe(240)
+    expect(fittingWidth(100, defaultWindow)).toBe(240)
+  })
+
+  it('keeps the saved width when the layout is unmeasured', () => {
+    expect(fittingWidth(1240, null)).toBe(1240)
   })
 })
 

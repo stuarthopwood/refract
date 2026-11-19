@@ -36,6 +36,7 @@ import { resumeHostedPanels, suspendHostedPanels } from '@/features/right-pane/h
 import { canShowSplit as widthFitsSplit, chatPanelResizeAction, nextChatWidth, rightWidthToSync, visibleSessionIds } from '@/features/right-pane/chat-layout'
 import { CHAT_PANEL_DOM_ID } from '@/features/right-pane/chat-panel-id'
 import { effectiveChatCollapsed, syncChatCollapsedFromDrag } from '@/features/right-pane/toggle-chat-pane'
+import { fittingWidth, measurePaneLayout } from '@/features/right-pane/pane-width-model'
 import { CommandPalette } from '@/features/palette/CommandPalette'
 import { StartSessionHost } from '@/features/sessions/StartSessionHost'
 import { ItemSessionDialogHost } from '@/features/sessions/ItemSessionDialogHost'
@@ -121,7 +122,7 @@ export function App() {
       if (!chat.isCollapsed()) chat.collapse()
     } else if (chat.isCollapsed()) {
       chat.expand()
-      if (paneShown) rightPaneRef.current?.resize(useRightPaneStore.getState().widthPx)
+      if (paneShown) rightPaneRef.current?.resize(fittingWidth(useRightPaneStore.getState().widthPx, measurePaneLayout()))
     }
   }, [chatHidden, paneShown, showReadiness, view])
 

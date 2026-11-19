@@ -27,6 +27,12 @@ export function widthFits(widthPx: number, layout: PaneLayoutWidths | null): boo
   return layout === null || layout.groupWidthPx - layout.sessionListPx - CHAT_MIN_WIDTH_PX >= widthPx
 }
 
+/** The saved width clamped to the room chat leaves, never below the 240 px floor; `widthPx` itself stays authoritative (FR-024). */
+export function fittingWidth(widthPx: number, layout: PaneLayoutWidths | null): number {
+  if (layout === null) return widthPx
+  return Math.max(RIGHT_PANE_MIN_WIDTH_PX, Math.min(widthPx, layout.groupWidthPx - layout.sessionListPx - CHAT_MIN_WIDTH_PX))
+}
+
 /** Showing chat in a window too narrow for chat plus the 240 px floor closes the pane (M6). */
 export function closesPaneOnShowChat(layout: PaneLayoutWidths | null): boolean {
   return !widthFits(RIGHT_PANE_MIN_WIDTH_PX, layout)
