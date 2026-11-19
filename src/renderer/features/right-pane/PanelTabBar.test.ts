@@ -30,6 +30,7 @@ function render(panels: PanelId[], documents: DocumentTab[], activeKey: string |
     activeKey,
     wrapperRef: createRef<HTMLDivElement>(),
     tabListRef: createRef<HTMLDivElement>(),
+    documentScrollerRef: createRef<HTMLDivElement>(),
     tabRefs: { current: {} },
     onSelect: () => undefined,
     onClose: () => undefined,
@@ -68,13 +69,24 @@ describe('PanelTabStrip', () => {
     expect(html.indexOf('>a.ts<')).toBeGreaterThan(separator)
   })
 
-  it('gives the strip one horizontal scroller, on the tablist, and lets panel tabs shrink while document tabs keep their width', () => {
+  it('pins panel tabs outside the document scroller, which is the strip’s only horizontal scroller', () => {
     const html = render(['outline', 'file-explorer'], [file('a.ts'), file('b.ts')])
     expect(html.match(/overflow-x-auto/g)).toHaveLength(1)
-    expect(html).toMatch(/role="tablist"[^>]*class="[^"]*overflow-x-auto/)
-    expect(html).toMatch(/<div role="presentation" class="flex min-w-0 shrink items-center gap-1"><div role="presentation" class="flex min-w-0 shrink items-center">/)
-    expect(html).toMatch(/<div role="presentation" class="flex shrink-0 items-center gap-1"><div role="presentation" class="flex min-w-0 shrink items-center"><button[^>]*aria-label="File, a\.ts"/)
-    expect(html).toMatch(/class="[^"]*min-w-15 shrink[^"]*"/)
+    expect(html).not.toMatch(/role="tablist"[^>]*class="[^"]*overflow/)
+    const scroller = html.indexOf('<div role="presentation" class="relative flex min-w-0 flex-1 items-center gap-1 overflow-x-auto')
+    expect(scroller).toBeGreaterThan(-1)
+    expect(html.indexOf('>Outline<')).toBeLessThan(scroller)
+    expect(html.indexOf('>File Explorer<')).toBeLessThan(scroller)
+    expect(html.indexOf('data-slot="separator"')).toBeLessThan(scroller)
+    expect(html.indexOf('>a.ts<')).toBeGreaterThan(scroller)
+    expect(html.indexOf('>b.ts<')).toBeGreaterThan(scroller)
+    expect(html).toContain('</div></div></div><button')
+  })
+
+  it('floors a panel item at its tab plus close button so they cannot overlap, and keeps document items at their own width', () => {
+    const html = render(['outline', 'file-explorer'], [file('a.ts')])
+    expect(html).toMatch(/<div role="presentation" class="flex min-w-0 shrink items-center gap-1"><div role="presentation" class="flex items-center min-w-21 shrink"><button[^>]*class="[^"]*min-w-15 shrink[^"]*"/)
+    expect(html).toMatch(/overflow-x-auto[^>]*><div role="presentation" class="flex items-center shrink-0"><button[^>]*aria-label="File, a\.ts"/)
   })
 
   it('omits the separator when there are no document tabs', () => {
@@ -83,7 +95,7 @@ describe('PanelTabStrip', () => {
 
   it('renders each tab and its close button as siblings inside a presentation wrapper', () => {
     const html = render(['outline'], [file('a.ts')])
-    expect(html).toMatch(/<div role="presentation" class="flex min-w-0 shrink items-center"><button[^>]*role="tab"[^>]*>(?:(?!<\/button>)[^])*<\/button><button[^>]*aria-label="Close a\.ts file"/)
+    expect(html).toMatch(/<div role="presentation" class="flex items-center shrink-0"><button[^>]*role="tab"[^>]*>(?:(?!<\/button>)[^])*<\/button><button[^>]*aria-label="Close a\.ts file"/)
   })
 
   it('marks a no-longer-changed diff tab in its name and a muted colour, not by dimming', () => {

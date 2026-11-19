@@ -47,9 +47,3 @@ export function documentTabAccessibleName(tab: LabelledTab, label: string, count
   if (tab.dead) parts.push('no longer changed')
   return parts.join(', ')
 }
-
-/** A path as its folder part (with the trailing slash, empty at the root) and file name, so a narrow title can shrink the folder first. */
-export function splitDocumentPath(path: string): { dir: string; name: string } {
-  const cut = path.lastIndexOf('/') + 1
-  return { dir: path.slice(0, cut), name: path.slice(cut) }
-}

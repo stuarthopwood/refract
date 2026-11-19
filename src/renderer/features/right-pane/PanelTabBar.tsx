@@ -2,6 +2,7 @@ import { useLayoutEffect, useMemo, useRef } from 'react'
 import type { ComponentProps, KeyboardEvent, RefObject } from 'react'
 import { XIcon } from 'lucide-react'
 import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
+import { splitDocumentPath } from '@/components/document-path'
 import { IconButton } from '@/components/IconButton'
 import { TAB_LOOK_CLASS } from '@/components/ui/tabs'
 import { Separator } from '@/components/ui/separator'
@@ -17,13 +18,15 @@ import { compactPanelCount, documentTabIcon, formatPanelCount, getPanelDescripto
 import { closeHostedPanel } from './hosted-panel-actions'
 import { AllTabsMenu } from './AllTabsMenu'
 import { applyCloseResult } from './document-tab-actions'
-import { documentTabAccessibleName, documentTabLabels, splitDocumentPath } from './document-tab-labels'
+import { documentTabAccessibleName, documentTabLabels } from './document-tab-labels'
 import { EMPTY_PANE_FOCUS_SELECTORS, firstMatch } from './pane-focus-targets'
 import { scrollLeftToReveal } from './tab-strip-scroll'
 import { useSessionDocumentTabs } from './useSessionDocumentTabs'
 import { activeItemKey, buildTabItems, closeButtonLabel, tabDomIds, tabKeyAction, type TabItem } from './tab-items'
 
 const COMPACT_HIDE = '@max-[17.5rem]:hidden'
+// A panel item shrinks no lower than its tab's min-w-15 (60 px) plus the 24 px close button, so the two never overlap.
+const PANEL_ITEM_CLASS = 'min-w-21 shrink'
 // 24 px button; the pseudo-element stretches the hit area to the 40 px strip (FR-007).
 const CLOSE_BUTTON_CLASS =
   "relative after:absolute after:-inset-y-2 after:inset-x-0 after:content-[''] transition-none text-muted-foreground hover:text-foreground focus-visible:text-foreground " + INSET_FOCUS_OUTLINE_CLASS
@@ -50,6 +53,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
   const wrapperRef = useRef<HTMLDivElement>(null)
   const activeKey = activeItemKey(resolveActiveTab(sessionId, activePanelId, documents))
   const tabListRef = useEnterOnSwitch<HTMLDivElement>(activeKey, 'tabs')
+  const documentScrollerRef = useRef<HTMLDivElement>(null)
   const items = useMemo(() => buildTabItems(openPanelIds, documentTabs), [openPanelIds, documentTabs])
   const labels = useMemo(() => {
     const labelList = documentTabLabels(documentTabs)
@@ -58,14 +62,15 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
 
   useLayoutEffect(() => {
     if (!activeKey || !useRightPaneStore.getState().open) return
-    const scroller = tabListRef.current
+    const scroller = documentScrollerRef.current
     const tab = tabRefs.current[activeKey]
-    // The tab and its close button; only the strip's own scroller moves, never the overflow-hidden shell.
+    // The tab and its close button; only the document scroller moves, never the overflow-hidden shell.
     const span = tab?.parentElement
-    if (!scroller || !span) return
+    // A pinned panel tab sits outside the scroller and is always in view.
+    if (!scroller || !span || !scroller.contains(span)) return
     const next = scrollLeftToReveal({ scrollLeft: scroller.scrollLeft, viewWidth: scroller.clientWidth }, { start: span.offsetLeft, width: span.offsetWidth })
     if (next !== scroller.scrollLeft) scroller.scrollLeft = next
-  }, [activeKey, items.length, tabListRef])
+  }, [activeKey, items.length])
 
   function select(item: TabItem): void {
     if (item.kind === 'panel') activateTab({ kind: 'panel', id: item.id }, sessionId)
@@ -102,6 +107,7 @@ export function PanelTabBar({ sessionId }: PanelTabBarProps) {
       activeKey={activeKey}
       wrapperRef={wrapperRef}
       tabListRef={tabListRef}
+      documentScrollerRef={documentScrollerRef}
       tabRefs={tabRefs}
       onSelect={select}
       onClose={closeItem}
@@ -118,6 +124,8 @@ interface PanelTabStripProps {
   activeKey: string | null
   wrapperRef: RefObject<HTMLDivElement | null>
   tabListRef: RefObject<HTMLDivElement | null>
+  /** The document tabs' own scroller; panel tabs sit outside it, pinned left (FR-008). */
+  documentScrollerRef: RefObject<HTMLDivElement | null>
   tabRefs: RefObject<Record<string, HTMLButtonElement | null>>
   onSelect: (item: TabItem) => void
   onClose: (item: TabItem) => void
@@ -125,7 +133,7 @@ interface PanelTabStripProps {
 }
 
 /** Store-free view of the strip, so the layout renders without a DOM. */
-export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef, tabListRef, tabRefs, onSelect, onClose, onKeyDown }: PanelTabStripProps) {
+export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef, tabListRef, documentScrollerRef, tabRefs, onSelect, onClose, onKeyDown }: PanelTabStripProps) {
   const only = items.length === 1 ? items[0] : undefined
   if (only) {
     const title = only.kind === 'panel' ? tabItemName(only, labels) : null
@@ -144,7 +152,7 @@ export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef,
           {path ? (
             // The folder gives way first so the file name stays readable; the full path is the tooltip.
             <h2 id="right-pane-panel-title" title={fullPath ?? undefined} className="flex min-w-0 text-sm font-medium">
-              {path.dir && <span className="min-w-0 truncate text-muted-foreground">{path.dir}</span>}
+              {path.directory && <span className="min-w-0 truncate text-muted-foreground">{`${path.directory}/`}</span>}
               <span className="max-w-full shrink-0 truncate">{path.name}</span>
             </h2>
           ) : (
@@ -173,7 +181,7 @@ export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef,
       }
     }
     return (
-      <div key={item.key} role="presentation" className="flex min-w-0 shrink items-center">
+      <div key={item.key} role="presentation" className={cn('flex items-center', item.kind === 'panel' ? PANEL_ITEM_CLASS : 'shrink-0')}>
         {item.kind === 'panel' ? (
           <PanelTabButton id={item.id} sessionId={sessionId} {...common} />
         ) : (
@@ -199,18 +207,17 @@ export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef,
   return (
     <div className="flex shrink-0 flex-col">
       <div ref={wrapperRef} className={cn('no-drag-region flex shrink-0 items-center gap-1 px-2', PANEL_HEADER_HEIGHT_CLASS)}>
-        <div
-          ref={tabListRef}
-          role="tablist"
-          aria-label="Open tabs"
-          // Vertical overflow is clipped: the close buttons' enlarged hit areas would otherwise make the strip scroll up and down.
-          className="@container relative flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
-        >
+        <div ref={tabListRef} role="tablist" aria-label="Open tabs" className="@container flex min-w-0 flex-1 items-center gap-1">
           <div role="presentation" className="flex min-w-0 shrink items-center gap-1">
             {panelItems.map(renderItem)}
           </div>
           {panelItems.length > 0 && documentItems.length > 0 && <Separator orientation="vertical" className="mx-1 h-4" />}
-          <div role="presentation" className="flex shrink-0 items-center gap-1">
+          <div
+            ref={documentScrollerRef}
+            role="presentation"
+            // Vertical overflow is clipped: the close buttons' enlarged hit areas would otherwise make the strip scroll up and down.
+            className="relative flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]"
+          >
             {documentItems.map(renderItem)}
           </div>
         </div>
