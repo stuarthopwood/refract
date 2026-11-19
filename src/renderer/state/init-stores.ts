@@ -17,7 +17,7 @@ import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { initHolidayOverrides } from './holiday-store'
 import { notifyAlarm } from './notify'
 import { useAlarmFiredStore } from './alarm-fired-store'
-import { useSessionsStore } from './sessions-store'
+import { liveParentIds, useSessionsStore } from './sessions-store'
 import { useTranscriptStore } from './transcript-store'
 import { useReadoutStore } from './readout-store'
 import { useAdvisorStore } from './advisor-store'
@@ -314,6 +314,8 @@ export function initStores(): void {
     restoreRightPane(settingsLoad.value.rightPane)
     startRightPanePersistence()
     resolveRestored()
+    // Only on a real load: the `[]` fallback would wipe the saved parent collapse.
+    if (sessionsLoad.ok) useSessionListStore.getState().pruneParents(liveParentIds(sessionsLoad.value))
     // Restoring against the `[]` fallback would make panes see a deleted session and erase a valid persisted split.
     if (sessionsLoad.ok) {
       useSplitStore.getState().restoreFromSettings(settingsLoad.value.split)

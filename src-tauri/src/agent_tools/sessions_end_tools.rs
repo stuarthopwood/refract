@@ -16,7 +16,7 @@ use super::sessions_send::SESSION_NOT_RUNNING;
 use super::tree_gate;
 use crate::session::agent::SessionAgent;
 use crate::store::registry::Session;
-use crate::store::session_tree::{descendants, live_children, MAX_LIVE_CHILDREN};
+use crate::store::session_tree::{archive_subtree_ids, live_children, MAX_LIVE_CHILDREN};
 
 /// What a call acts on: the target first, then any cascaded descendants, and whether each sits in
 /// the caller's own tree. A rename while the card is open changes none of it.
@@ -89,18 +89,13 @@ async fn plan_for<H: EndHost>(
                 return Err(invalid_state("the target Session is already archived"));
             }
             if include_children {
-                for id in descendants(sessions, &target.id) {
-                    if host.is_deleting(&id) {
-                        return Err(invalid_state(format!(
-                            "Session {id} below the target is being deleted"
-                        )));
-                    }
-                    let archived = sessions
-                        .iter()
-                        .any(|s| s.id == id && s.archived_at.is_some());
-                    if !archived {
-                        ids.push(id);
-                    }
+                // Target first for the card and the result; the archive loop walks it in reverse.
+                ids = archive_subtree_ids(sessions, &target.id);
+                ids.reverse();
+                if let Some(id) = ids.iter().find(|id| host.is_deleting(id)) {
+                    return Err(invalid_state(format!(
+                        "Session {id} below the target is being deleted"
+                    )));
                 }
             }
         }

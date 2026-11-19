@@ -77,6 +77,20 @@ pub fn descendants(sessions: &[Session], id: &str) -> Vec<String> {
     found
 }
 
+/// What archiving `id` with its children acts on: `id` plus every live descendant, deepest first,
+/// so a parent is never archived above a live child. Archived descendants are left alone.
+pub fn archive_subtree_ids(sessions: &[Session], id: &str) -> Vec<String> {
+    let mut ids = vec![id.to_string()];
+    ids.extend(
+        descendants(sessions, id)
+            .into_iter()
+            .filter(|d| find(sessions, d).is_some_and(|s| s.archived_at.is_none())),
+    );
+    // `descendants` walks breadth first from the target, so reversing puts the deepest first.
+    ids.reverse();
+    ids
+}
+
 /// True when `id` is `root_id` itself or one of its descendants (the caller's own tree).
 pub fn in_tree(sessions: &[Session], root_id: &str, id: &str) -> bool {
     id == root_id || descendants(sessions, root_id).iter().any(|d| d == id)

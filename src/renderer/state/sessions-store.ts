@@ -33,7 +33,8 @@ interface SessionsState {
   open(id: string, userAction?: boolean): Promise<SessionSnapshot | null>
   create(repositoryId: string, baseBranch: string): Promise<Result<Session>>
   rename(id: string, name: string): Promise<void>
-  archive(id: string): Promise<boolean>
+  /** `includeChildren` archives the live subtree too (#1862); omitted, only this Session is archived. */
+  archive(id: string, includeChildren?: boolean): Promise<boolean>
   restore(id: string): Promise<boolean>
   stopAgent(id: string): Promise<boolean>
   setHidden(id: string, hidden: boolean): Promise<boolean>
@@ -51,6 +52,15 @@ const openPromises = new Map<string, Promise<SessionSnapshot | null>>()
 let deletingEpoch = 0
 // Marked locally with the delete IPC still in flight: the backend may not report them yet, so a refresh keeps them.
 const pendingDeleteIds = new Set<string>()
+
+/** Parents that still have a live (non-archived) child: the only ones whose collapse is worth keeping. */
+export function liveParentIds(sessions: readonly SessionSummary[]): Set<string> {
+  const ids = new Set<string>()
+  for (const session of sessions) {
+    if (!session.archivedAt && session.parentSessionId) ids.add(session.parentSessionId)
+  }
+  return ids
+}
 
 export const useSessionsStore = create<SessionsState>((set, get) => ({
   sessions: [],
@@ -101,6 +111,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       // a session only ever leaves this list via `sessions.delete` (archiving keeps it listed);
       // prune any pane still pointing at an id that is now gone.
       useSplitStore.getState().pruneDeleted(new Set(result.value.map((session) => session.id)))
+      useSessionListStore.getState().pruneParents(liveParentIds(result.value))
       useGitChangesStore.getState().pruneCommitDrafts(new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id)))
     } else {
       notify(result.error)
@@ -187,8 +198,11 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
     const result = await window.refract.sessions.rename(id, name)
     if (!result.ok) notify(result.error)
   },
-  archive: async (id) => {
-    const result = await window.refract.sessions.archive(id)
+  archive: async (id, includeChildren) => {
+    const result =
+      includeChildren === undefined
+        ? await window.refract.sessions.archive(id)
+        : await window.refract.sessions.archive(id, includeChildren)
     if (!result.ok) notify(result.error)
     return result.ok
   },

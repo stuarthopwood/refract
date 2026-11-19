@@ -10,6 +10,7 @@ import { IconButton } from '@/components/IconButton'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { DeleteDialog } from '@/features/sessions/DeleteDialog'
+import { ArchiveParentDialog } from './ArchiveParentDialog'
 import { cn } from '@/lib/utils'
 import type { SessionSummary } from '../../../shared/ipc'
 import { HiddenMarker } from './HiddenMarker'
@@ -147,6 +148,7 @@ export function SessionRowTable({
           else surface.fallbackFocus()
         }}
       />
+      <ArchiveParentDialog controls={row.archiveDialog} />
     </li>
   )
 }

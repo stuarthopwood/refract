@@ -22,7 +22,7 @@ import { RepositoryGroup } from './RepositoryGroup'
 import { ShowHiddenToggle } from './ShowHiddenToggle'
 import type { SessionSummary } from '../../../shared/ipc'
 import { searchSessions, showingCountLabel } from './sessionDisplay'
-import { createdSessionAnnouncement, wasHiddenByFilter } from './createdSessionAnnouncement'
+import { createdSessionAnnouncement, newSessionAnnouncements, wasHiddenByFilter } from './createdSessionAnnouncement'
 import { SESSION_FILTER_TOGGLE_ATTR, SESSION_SEARCH_INPUT_ATTR, focusSessionSearch } from './sessionSearchSelector'
 
 /** The session list: a collapsible group per Repository, plus one cross-repository Archived group; its header is part of the merged top row. */
@@ -118,20 +118,20 @@ export function SessionList() {
     setSearchOpen(false)
     filterToggleRef.current?.focus()
   }
-  // A Session created while a query is active may land outside the filter; announce it rather than reveal the row (#559).
+  // A Session created while a query is active may land outside the filter, and a child is announced under its parent (FR-012); neither reveals the row or moves focus (#559).
   // Detected from the Session list changing, so every creation path is covered.
   const previousSessionIdsRef = useRef(new Set(sessions.map((session) => session.id)))
   useEffect(() => {
     const previousIds = previousSessionIdsRef.current
-    const currentIds = new Set(sessions.map((session) => session.id))
-    previousSessionIdsRef.current = currentIds
-    if (!hasQuery) return
-    for (const session of sessions) {
-      if (session.archivedAt || previousIds.has(session.id)) continue
+    previousSessionIdsRef.current = new Set(sessions.map((session) => session.id))
+    const messages = newSessionAnnouncements(
+      previousIds,
+      sessions,
+      (parentId) => !useSessionListStore.getState().isParentOpen(parentId),
       // `createdSessionAnnouncement` already decides the match via `searchSessions`.
-      const announcement = createdSessionAnnouncement(session)
-      if (wasHiddenByFilter(announcement)) useChatAreaAnnouncer.getState().announce(announcement)
-    }
+      (session) => hasQuery && wasHiddenByFilter(createdSessionAnnouncement(session))
+    )
+    if (messages.length > 0) useChatAreaAnnouncer.getState().announce(messages.join('. '))
   }, [sessions, hasQuery, trimmedQuery])
   return (
     <nav

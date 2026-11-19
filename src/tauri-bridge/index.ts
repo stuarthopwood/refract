@@ -160,7 +160,8 @@ const refract: RefractApi = {
     openPersonalAgent: () => request<Session>(IPC_REQUESTS.SESSIONS_OPEN_PERSONAL_AGENT),
     rename: (id, name) => request<void>(IPC_REQUESTS.SESSIONS_RENAME, id, name),
     open: (id, userAction) => request<SessionSnapshot>(IPC_REQUESTS.SESSIONS_OPEN, id, userAction),
-    archive: (id) => request<void>(IPC_REQUESTS.SESSIONS_ARCHIVE, id),
+    archive: (id, includeChildren) =>
+      request<void>(IPC_REQUESTS.SESSIONS_ARCHIVE, id, ...(includeChildren === undefined ? [] : [includeChildren])),
     restore: (id) => request<void>(IPC_REQUESTS.SESSIONS_RESTORE, id),
     setHidden: (id, hidden) => request<void>(IPC_REQUESTS.SESSIONS_SET_HIDDEN, id, hidden),
     deleteCheck: (id) =>

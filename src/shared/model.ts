@@ -105,8 +105,8 @@ export interface Settings {
   wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; showScrollbarMap?: boolean; stackedPullRequests?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean;
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings;
 }
-export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; showHidden: boolean; }
-export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false, showHidden: false });
+export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; showHidden: boolean; collapsedParentIds: string[]; }
+export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false, showHidden: false, collapsedParentIds: [] });
 export { type TranscriptDisplaySettings, DEFAULT_TRANSCRIPT_DISPLAY } from './transcriptDisplay';
 
 /** OMP model-role ids: built-in chat roles plus model-kind roles. */

@@ -21,3 +21,5 @@ Rules:
 - Counting stopped or hidden children as not live. A parent could then exceed 4 children the developer can still see and resume.
 
 **Consequences:** `parent_session_id` is persisted in `registry.json` with a serde default, so older registries load with no parents. The tree UI (#1862) and the archive and delete tools (#1860) build on these rules and must not bypass the gate.
+
+**Update (#1862):** the Session list draws these trees, and archiving a parent with live descendants shares the archive cascade (`archive_subtree_ids`), so the list adds no gate of its own.

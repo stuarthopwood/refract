@@ -21,7 +21,8 @@ import { useSidebarRgb } from './useSidebarRgb'
 import { projectColorCss } from '@/lib/projectColor'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
 import { groupWaitingState } from './sessionDisplay'
-import { SessionRow } from './SessionRow'
+import { SessionFlatList, SessionTreeList } from './SessionTreeList'
+import { buildSessionTree } from './sessionTree'
 import { ContextActionItems, DropdownActionItems } from './SessionRowParts'
 import { buildRepositoryActions } from './repositoryActions'
 import { IconButton } from '@/components/IconButton'
@@ -36,6 +37,9 @@ export function RepositoryGroup({
   const createSession = useSessionsStore((state) => state.create)
   // Archived Sessions live in `ArchivedGroup`; the marker and bar must read only this group's listed Sessions (#527).
   const active = sessions.filter((session) => !session.archivedAt).sort((a, b) => b.lastActivityAt.localeCompare(a.lastActivityAt))
+  // `role="tree"` is for a group that actually nests; a flat group keeps its plain list.
+  const tree = buildSessionTree(active)
+  const nested = tree.some((node) => node.children.length > 0)
   // The marker and active bar are shown only while the group is closed (#735).
   const isOpen = useSessionListStore((state) => state.isGroupOpen(repository.id))
   const containsVisibleSession = useSplitStore((state) => active.some((session) => state.paneSessionIds.includes(session.id)))
@@ -283,12 +287,10 @@ export function RepositoryGroup({
             <InlineStatus density="compact" className="pl-6">
               {sessions.length === 0 ? 'No sessions yet' : 'No active sessions'}
             </InlineStatus>
+          ) : nested ? (
+            <SessionTreeList nodes={tree} repository={repository} label={`${repository.name} sessions`} />
           ) : (
-            <ul aria-label={`${repository.name} sessions`} className="flex flex-col gap-0 py-1">
-              {active.map((session) => (
-                <SessionRow key={session.id} session={session} repository={repository} />
-              ))}
-            </ul>
+            <SessionFlatList sessions={active} repository={repository} label={`${repository.name} sessions`} />
           )}
         </CollapsibleContent>
       </Collapsible>
