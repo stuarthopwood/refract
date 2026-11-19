@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { toast } from 'sonner'
 import { notify, useSessionsStore } from '@/state'
-import { joinWorktreePath } from '../right-pane/file-explorer/tree-rows'
+import { copyAbsolutePath } from './copy-path'
 
 /** Open in VS Code, Reveal and Copy path for one file of a Session, shared by the explorer and the file tab. */
 export function usePathActionHandlers(sessionId: string | null) {
@@ -30,24 +30,18 @@ export function usePathActionHandlers(sessionId: string | null) {
     [sessionId]
   )
 
-  // Clipboard first for the absolute path, then the IPC fallback, as the explorer does.
   const onCopyPath = useCallback(
-    async (path: string, confirm = false): Promise<boolean> => {
-      if (!sessionId) return false
-      if (worktreePath) {
-        try {
-          await navigator.clipboard.writeText(joinWorktreePath(worktreePath, path))
-          if (confirm) toast.success('Path copied')
-          return true
-        } catch {
-          // Fall through to the IPC copy below.
-        }
-      }
-      const result = await window.refract.fileExplorer.copyPath(sessionId, path)
-      if (result.ok && confirm) toast.success('Path copied')
-      else if (!result.ok) notify(result.error)
-      return result.ok
-    },
+    (path: string, confirm = false): Promise<boolean> =>
+      copyAbsolutePath({
+        sessionId,
+        worktreePath,
+        path,
+        confirm,
+        writeClipboard: (text) => navigator.clipboard.writeText(text),
+        copyViaIpc: (id, relativePath) => window.refract.fileExplorer.copyPath(id, relativePath),
+        notifyError: notify,
+        confirmCopied: () => toast.success('Path copied')
+      }),
     [sessionId, worktreePath]
   )
 
