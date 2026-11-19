@@ -182,6 +182,12 @@ async fn a_second_send_failure_posts_the_handoff_failed_notice() {
     assert_eq!(r.count("new_session").await, 1);
     assert_eq!(r.count("prompt").await, 2);
     assert_eq!(r.failure_notices().await.len(), 1);
+    // Read the notice before taking the state lock: `failure_notices` takes it too.
+    let notice = r.failure_notices().await.remove(0);
+    assert_eq!(
+        r.fx.agent.state.lock().await.pending_agent_notice,
+        Some(notice)
+    );
     r.fx.finish().await;
 }
 

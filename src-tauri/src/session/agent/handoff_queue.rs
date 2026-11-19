@@ -58,6 +58,16 @@ pub(super) fn clear(state: &mut AgentState) {
     state.queued_handoff = None;
 }
 
+/// Takes the one-shot notice meant for the agent's next user prompt.
+pub(super) fn take_pending_notice(state: &mut AgentState) -> Option<String> {
+    state.pending_agent_notice.take()
+}
+
+/// Puts the notice in front of the prompt text; the transcript keeps the user's own words.
+pub(super) fn with_notice(notice: &str, text: &str) -> String {
+    format!("[Refract] {notice}\n\n{text}")
+}
+
 /// The first try plus one retry. A failure after the Conversation started retries the send only,
 /// so a second Conversation never starts.
 const ATTEMPTS: usize = 2;
@@ -93,8 +103,9 @@ impl SessionAgent {
             HandoffAction::Switch { file } => self.switch_handoff_conversation(file).await,
         };
         if let Err(reason) = outcome {
-            self.append_notice(format!("Handoff failed: {reason}"), "error")
-                .await;
+            let notice = format!("Handoff failed: {reason}");
+            self.append_notice(notice.clone(), "error").await;
+            self.state.lock().await.pending_agent_notice = Some(notice);
         }
     }
 

@@ -277,3 +277,47 @@ async fn an_aborted_turn_drops_the_action_at_settle() {
     assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
     fx.finish().await;
 }
+
+// The agent hears about a failed handoff once, in front of the user's next prompt (#1861).
+
+async fn sent_prompts(
+    fx: &crate::session::agent::pause_subagents::fixture::Fixture,
+) -> Vec<String> {
+    fx.rpcs()
+        .await
+        .iter()
+        .filter(|cmd| cmd["type"] == "prompt")
+        .map(|cmd| cmd["message"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn the_failure_notice_prefixes_the_next_prompt_once_then_clears() {
+    let fx = fixture(&[], &[]).await;
+    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: boom".to_string());
+
+    fx.agent.send("hello".to_string(), None).await.unwrap();
+    fx.agent.send("again".to_string(), None).await.unwrap();
+
+    assert_eq!(
+        sent_prompts(&fx).await,
+        ["[Refract] Handoff failed: boom\n\nhello", "again"]
+    );
+    assert!(fx.agent.state.lock().await.pending_agent_notice.is_none());
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_session_envelope_leaves_the_notice_for_the_users_prompt() {
+    let fx = fixture(&[], &[]).await;
+    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: boom".to_string());
+
+    fx.agent
+        .send_session_message("<envelope/>".to_string())
+        .await
+        .unwrap();
+
+    assert_eq!(sent_prompts(&fx).await, ["<envelope/>"]);
+    assert!(fx.agent.state.lock().await.pending_agent_notice.is_some());
+    fx.finish().await;
+}
