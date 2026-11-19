@@ -18,16 +18,24 @@ let lastSaved = ''
 let timer: number | undefined
 let started = false
 
+// Until the document-tabs store lands (#2075 T002/T005) the renderer owns neither field, so the saved
+// values ride through unchanged and a width or panel save never wipes them.
+let carried: Pick<RightPaneSettings, 'documentTabs' | 'chatCollapsed'> = {
+  documentTabs: DEFAULT_RIGHT_PANE.documentTabs,
+  chatCollapsed: DEFAULT_RIGHT_PANE.chatCollapsed
+}
+
 function snapshot(): RightPaneSettings {
   const { open, widthPx, openPanelIds, activePanelId, panelOrder } = useRightPaneStore.getState()
   // Pinned panels are per-window and transient, so they never reach the saved row.
   const savedIds = openPanelIds.filter((id) => !isPinnedPanelId(id))
   const savedActive = activePanelId && !isPinnedPanelId(activePanelId) ? activePanelId : (savedIds.at(-1) ?? null)
-  return { open, widthPx: Math.round(widthPx), openPanelIds: savedIds, activePanelId: savedActive, panelOrder: [...panelOrder] }
+  return { open, widthPx: Math.round(widthPx), openPanelIds: savedIds, activePanelId: savedActive, panelOrder: [...panelOrder], ...carried }
 }
 
 export function restoreRightPane(saved: RightPaneSettings | undefined): void {
   const source = saved ?? DEFAULT_RIGHT_PANE
+  carried = { documentTabs: source.documentTabs ?? {}, chatCollapsed: source.open && source.chatCollapsed === true }
   const openPanelIds = Array.isArray(source.openPanelIds) ? source.openPanelIds.filter(isPanelId) : []
   const active = source.activePanelId
   useRightPaneStore.getState().restore({
