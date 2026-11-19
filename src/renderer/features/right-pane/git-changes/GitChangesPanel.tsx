@@ -1,107 +1,39 @@
-import { useEffect, useRef, useState } from 'react'
-import { ArrowLeftIcon, CheckCircle2Icon, FileWarningIcon, FolderIcon } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { CheckCircle2Icon, FileWarningIcon, FolderIcon } from 'lucide-react'
 import { InlineStatus } from '@/components/InlineStatus'
-import { Button } from '@/components/ui/button'
-import { cn } from '@/lib/utils'
-import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DEFAULT_GROUP_OPEN, useGitChangesStore } from '@/state'
-import { DiffViewFromPatch } from '@/features/chat/DiffView'
+import { openDocument } from '@/features/documents/open-document'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
-import { GitChangesGroup, diffGroupLabel } from './GitChangesGroup'
+import { GitChangesGroup } from './GitChangesGroup'
 import { GitChangesHeader } from './GitChangesHeader'
 import { GitCommitBox } from './GitCommitBox'
-import { focusGitRow, focusGitRowInGroup, focusNearestGroupTrigger, GROUP_ORDER } from './focus'
-
-const watcherRefCounts = new Map<string, number>()
-
-interface DiffSelection {
-  entry: GitChangesFileEntry
-  group: GitChangesGroupKind
-  agentOpened?: boolean
-}
+import { GROUP_ORDER } from './focus'
+import { useGitChangesWatch } from './useGitChangesWatch'
 
 export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
-  useEffect(() => {
-    if (!sessionId) return
-    const id = sessionId
-    const count = (watcherRefCounts.get(id) ?? 0) + 1
-    watcherRefCounts.set(id, count)
-    if (count === 1) {
-      window.refract.gitChanges
-        .ensureWatching(id)
-        .then((result) => {
-          if (!result.ok) console.warn('GitChangesPanel: ensureWatching failed', result.error)
-        })
-        .catch((err) => console.warn('GitChangesPanel: ensureWatching rejected', err))
-    }
-    return () => {
-      const remaining = (watcherRefCounts.get(id) ?? 1) - 1
-      if (remaining <= 0) {
-        watcherRefCounts.delete(id)
-        window.refract.gitChanges
-          .stopWatching(id)
-          .then((result) => {
-            if (!result.ok) console.warn('GitChangesPanel: stopWatching failed', result.error)
-          })
-          .catch((err) => console.warn('GitChangesPanel: stopWatching rejected', err))
-        useGitChangesStore.getState().forgetSession(id)
-      } else {
-        watcherRefCounts.set(id, remaining)
-      }
-    }
-  }, [sessionId])
-
-  useEffect(() => {
-    if (!sessionId) return
-    const id = sessionId
-    return window.refract.onFileExplorerReset(({ sessionId: resetSessionId }) => {
-      if (resetSessionId !== id) return
-      window.refract.gitChanges
-        .ensureWatching(id)
-        .then((result) => {
-          if (!result.ok) console.warn('GitChangesPanel: ensureWatching (post-reset) failed', result.error)
-        })
-        .catch((err) => console.warn('GitChangesPanel: ensureWatching (post-reset) rejected', err))
-    })
-  }, [sessionId])
+  useGitChangesWatch(sessionId)
 
   useEffect(() => {
     if (sessionId) void useGitChangesStore.getState().load(sessionId)
   }, [sessionId])
 
   const sessionEntry = useGitChangesStore((s) => (sessionId ? s.bySession[sessionId] : undefined))
-  const [selected, setSelected] = useState<DiffSelection | null>(null)
   const groupOpen = useGitChangesStore((s) => (sessionId ? s.groupOpenBySession[sessionId] : undefined)) ?? DEFAULT_GROUP_OPEN
   const [hasEverLoadedSnapshot, setHasEverLoadedSnapshot] = useState(false)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
-  const lastSelectionRef = useRef<DiffSelection | null>(null)
 
-  // A different Session's own selection never bleeds into this one.
   useEffect(() => {
-    setSelected(null)
-    lastSelectionRef.current = null
     setHasEverLoadedSnapshot(false)
     setHasLoadedOnce(false)
   }, [sessionId])
-
-  useEffect(() => {
-    if (selected !== null || !sessionId || !lastSelectionRef.current) return
-    const { entry, group } = lastSelectionRef.current
-    if (!focusGitRowInGroup(sessionId, group, entry.path) && !focusGitRow(sessionId, entry.path)) focusNearestGroupTrigger(sessionId, group)
-    lastSelectionRef.current = null
-  }, [selected, sessionId])
 
   const showFileRequest = useGitChangesStore((s) => (sessionId ? s.showFileRequestBySession[sessionId] : undefined))
   const requestSnapshot = sessionEntry?.snapshot ?? null
   useEffect(() => {
     if (!sessionId || !showFileRequest || !requestSnapshot) return
-    for (const group of GROUP_ORDER) {
-      const entry = requestSnapshot.groups[group].find((candidate) => candidate.path === showFileRequest)
-      if (!entry) continue
-      setSelected({ entry, group, agentOpened: true })
-      break
-    }
+    const group = GROUP_ORDER.find((kind) => requestSnapshot.groups[kind].some((candidate) => candidate.path === showFileRequest))
+    if (group) openDocument(sessionId, { kind: 'diff', group, path: showFileRequest }, { focus: false, announce: `Agent opened diff of ${showFileRequest.split('/').pop()}` })
     useGitChangesStore.getState().clearShowFileRequest(sessionId)
   }, [sessionId, showFileRequest, requestSnapshot])
 
@@ -114,11 +46,6 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     if (sessionEntry && !sessionEntry.loading) setHasLoadedOnce(true)
   }, [sessionEntry])
-
-  function openDiff(entry: GitChangesFileEntry, group: GitChangesGroupKind): void {
-    lastSelectionRef.current = { entry, group }
-    setSelected({ entry, group })
-  }
 
   if (!sessionId) {
     return (
@@ -136,6 +63,10 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
 
   const loading = sessionEntry?.loading ?? true
 
+  const openDiff = (entry: GitChangesFileEntry, group: GitChangesGroupKind) => {
+    openDocument(sessionId, { kind: 'diff', group, path: entry.path })
+  }
+
   return (
     <div data-git-changes-session={sessionId} className="flex h-full flex-col overflow-hidden">
       {snapshot && <GitChangesHeader header={snapshot.header} />}
@@ -147,9 +78,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
         </InlineStatus>
       )}
       <div className="flex-1 overflow-auto">
-        {selected ? (
-          <GitChangesDiffPane sessionId={sessionId} selection={selected} onBack={() => setSelected(null)} />
-        ) : !snapshot ? (
+        {!snapshot ? (
           loading && !hasLoadedOnce ? (
             <InlineStatus tone="loading">Loading…</InlineStatus>
           ) : (
@@ -189,111 +118,6 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
         )}
       </div>
       {(snapshot || hasEverLoadedSnapshot) && <GitCommitBox sessionId={sessionId} />}
-    </div>
-  )
-}
-
-type DiffState = 'loading' | { patch: string; reason?: string | null } | { error: string }
-
-function GitChangesDiffPane({
-  sessionId,
-  selection,
-  onBack
-}: {
-  sessionId: string
-  selection: DiffSelection
-  onBack: () => void
-}) {
-  const { entry: initialEntry, group } = selection
-  const staged = group === 'staged'
-  const [state, setState] = useState<DiffState>('loading')
-  const backButtonRef = useRef<HTMLButtonElement>(null)
-  const liveEntry = useGitChangesStore((s) => s.bySession[sessionId]?.snapshot?.groups[group].find((candidate) => candidate.path === initialEntry.path) ?? null)
-  const entry = liveEntry ?? initialEntry
-  const fileName = entry.path.slice(entry.folder ? entry.folder.length + 1 : 0)
-  const signature = `${entry.mark}:${entry.additions}:${entry.deletions}:${entry.partial}`
-  const identityRef = useRef<{ path: string; staged: boolean } | null>(null)
-
-  useEffect(() => {
-    if (!selection.agentOpened) backButtonRef.current?.focus()
-  }, [selection.agentOpened])
-
-  useEffect(() => {
-    let cancelled = false
-    const isNewDiff = identityRef.current?.path !== initialEntry.path || identityRef.current?.staged !== staged
-    identityRef.current = { path: initialEntry.path, staged }
-    if (isNewDiff) setState('loading')
-    window.refract.gitChanges
-      .diff(sessionId, initialEntry.path, staged, group === 'untracked')
-      .then((result) => {
-        if (cancelled) return
-        if (!result.ok) {
-          setState({ error: result.error.message })
-          return
-        }
-        setState((prev) =>
-          typeof prev === 'object' && 'patch' in prev && prev.patch === result.value.patch && prev.reason === result.value.reason
-            ? prev
-            : { patch: result.value.patch, reason: result.value.reason }
-        )
-      })
-      .catch(() => {
-        if (!cancelled) setState({ error: "Couldn't load this file's diff" })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [sessionId, initialEntry.path, staged, signature])
-
-  return (
-    <div
-      tabIndex={-1}
-      className="flex min-h-full flex-col gap-2 p-1 outline-none"
-      onKeyDown={(event) => {
-        if (event.key === 'Escape') {
-          event.preventDefault()
-          onBack()
-        }
-      }}
-    >
-      {/* Item 6 (#1101): `sticky top-0` keeps the Back button visible while the diff below it
-          scrolls (the panel's own scroll region is the parent `overflow-auto` div in the main
-          component above) -- a stop-gap until #732-dependent "Git diff opens in a main-area
-          tab" ships and this whole diff pane (Back button included) is removed. `bg-background`
-          (this hosted pane's own inherited base surface, set no closer than the app root) stops
-          scrolled-past diff text from showing through underneath it. Gate round 1 LOW 5 (#1101):
-          `py-1` gives the Back button's focus-visible ring clearance, so it does not clip
-          against the sticky bar's own edge.
-          #1111 item 4/Low "border-b": the arrow and the file name are now ONE ghost button
-          (`title={entry.path}` is the Low item's own actionable hover text, the accessible name
-          comes from the visible "Back to changes from <file>" label below) instead of a
-          separate name span beside an icon-only control -- also fixes the Low "file name shown
-          twice" item, since that separate span was the duplicate. `border-b border-divider`
-          (Low item) separates the bar from the diff without heavy chrome. */}
-      <div className="no-drag-region sticky top-0 z-10 flex items-center gap-2 border-b border-divider bg-background py-1">
-        <Button
-          ref={backButtonRef}
-          variant="ghost"
-          size="sm"
-          title={entry.path}
-          aria-label={`Back to changes from ${fileName}`}
-          onClick={onBack}
-          className={cn('min-w-0 flex-1 justify-start gap-2 px-1 focus-visible:ring-0', INSET_FOCUS_OUTLINE_CLASS)}
-        >
-          <ArrowLeftIcon aria-hidden className="size-4 shrink-0" />
-          <span aria-hidden className="min-w-0 truncate">
-            {fileName}
-          </span>
-        </Button>
-        <span className="shrink-0 text-xs text-muted-foreground">{diffGroupLabel(group)}</span>
-      </div>
-      {state === 'loading' ? (
-        <InlineStatus tone="loading">Loading diff…</InlineStatus>
-      ) : 'error' in state ? (
-        <InlineStatus tone="error">{state.error}</InlineStatus>
-      ) : (
-        <DiffViewFromPatch path={entry.path} patch={state.patch} reason={state.reason} additions={entry.additions} deletions={entry.deletions} hideFileName />
-      )}
     </div>
   )
 }
