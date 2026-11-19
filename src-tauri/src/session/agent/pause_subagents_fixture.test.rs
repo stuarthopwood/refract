@@ -19,6 +19,7 @@ const cfg = JSON.parse(configJson);
 const live = new Set(cfg.running);
 const uncancellable = new Set(cfg.stuck);
 let failedOnce = false;
+let gatedSeen = 0;
 function reply(cmd, success, data, error) {
   const body = { id: cmd.id, type: 'response', command: cmd.type, success };
   if (success) body.data = data;
@@ -53,7 +54,7 @@ process.stdin.on('data', (chunk) => {
     if (!line.trim()) continue;
     fs.appendFileSync(log, line + '\n');
     const cmd = JSON.parse(line);
-    if (cmd.type !== cfg.gated) {
+    if (cmd.type !== cfg.gated || gatedSeen++ < cfg.gateAfter) {
       answer(cmd);
       continue;
     }
@@ -82,6 +83,8 @@ pub(in crate::session::agent) struct Stub<'a> {
     pub stopped: bool,
     /// The first command of this type answers `success:false`; later ones succeed.
     pub fail_once: Option<&'a str>,
+    /// This many commands of the gated type are answered at once before the rest wait.
+    pub gate_after: usize,
 }
 
 pub(in crate::session::agent) struct Fixture {
@@ -180,6 +183,7 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
         "cancelErrors": stub.cancel_errors.iter().copied().collect::<std::collections::HashMap<_, _>>(),
         "gated": stub.gated,
         "failOnce": stub.fail_once,
+        "gateAfter": stub.gate_after,
     });
     tokio::fs::write(&script, STUB).await.unwrap();
     let mut command = tokio::process::Command::new("node");

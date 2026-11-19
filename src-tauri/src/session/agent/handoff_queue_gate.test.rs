@@ -1,5 +1,6 @@
 // A settled cross-Session handoff holds the Project's tree gate from its check to its action (#1861).
 
+use std::future::Future;
 use std::time::Duration;
 
 use super::{try_queue, HandoffAction};
@@ -130,12 +131,13 @@ async fn a_reparent_that_wins_the_gate_first_drops_the_uncarded_action() {
 /// Starts the settle with a short deadline and returns once the caller has stopped waiting, with the
 /// stub's `new_session` still unanswered.
 async fn settle_past_the_deadline(fx: &Fixture) {
+    settle_past(fx, Duration::from_millis(500)).await;
+}
+
+/// A longer deadline for a test whose first attempt must finish inside it on a loaded machine.
+async fn settle_past(fx: &Fixture, deadline: Duration) {
     let agent = fx.agent.clone();
-    let task = tokio::spawn(async move {
-        agent
-            .run_settled_handoff_within(2, Duration::from_millis(500))
-            .await
-    });
+    let task = tokio::spawn(async move { agent.run_settled_handoff_within(2, deadline).await });
     finished(task).await;
     fx.until_rpc("new_session").await;
 }
@@ -153,8 +155,13 @@ async fn count_of(fx: &Fixture, kind: &str) -> usize {
     fx.rpc_types().await.iter().filter(|t| *t == kind).count()
 }
 
+/// Lets a late task that wrongly acts show its effect: nothing here has a signal to wait for.
+async fn settle_briefly() {
+    tokio::time::sleep(Duration::from_millis(250)).await;
+}
+
 #[tokio::test]
-async fn an_action_past_its_deadline_keeps_the_gate_and_finishes_without_a_retry() {
+async fn an_action_past_its_deadline_keeps_the_gate_and_finishes() {
     let fx = gated_fixture().await;
     queue_settled(&fx, planner()).await;
 
@@ -184,24 +191,99 @@ async fn an_action_past_its_deadline_keeps_the_gate_and_finishes_without_a_retry
     fx.finish().await;
 }
 
-#[tokio::test]
-async fn an_action_that_fails_after_its_deadline_posts_the_notice_itself() {
-    let fx = fixture_with(Stub {
+async fn failing_fixture() -> Fixture {
+    fixture_with(Stub {
         gated: Some("new_session"),
         fail_once: Some("new_session"),
+        ..Stub::default()
+    })
+    .await
+}
+
+#[tokio::test]
+async fn an_action_that_fails_after_its_deadline_posts_the_notice_itself() {
+    let fx = failing_fixture().await;
+    queue_settled(&fx, planner()).await;
+
+    settle_past_the_deadline(&fx).await;
+    let notices_at_deadline = fx.notices().await;
+    fx.release().await;
+    fx.until_notices(1).await;
+    until_gate_free(&fx.repo).await;
+    settle_briefly().await;
+
+    let notices = fx.notices().await;
+    assert!(notices_at_deadline.is_empty(), "{notices_at_deadline:?}");
+    assert_eq!(notices.len(), 1, "{notices:?}");
+    assert!(notices[0].starts_with("Handoff failed:"), "{notices:?}");
+    assert!(notices[0].contains("refused"), "{notices:?}");
+    assert!(!notices[0].contains("took longer than"), "{notices:?}");
+    assert_eq!(count_of(&fx, "new_session").await, 1, "never retried");
+    fx.finish().await;
+}
+
+/// The action fails after the caller stopped waiting, then `disturb` happens, then the stub answers.
+async fn notices_after_a_late_failure_and(fx: &Fixture, disturb: impl Future<Output = ()>) {
+    queue_settled(fx, planner()).await;
+    settle_past_the_deadline(fx).await;
+    disturb.await;
+    fx.release().await;
+    until_gate_free(&fx.repo).await;
+    settle_briefly().await;
+}
+
+#[tokio::test]
+async fn a_late_failure_posts_no_notice_once_the_session_is_deleted() {
+    let fx = failing_fixture().await;
+    let id = fx.agent.session_id.clone();
+    let registry = fx.agent.registry().clone();
+
+    notices_after_a_late_failure_and(&fx, async {
+        registry.lock().await.remove_session(&id).await.unwrap();
+    })
+    .await;
+
+    assert!(fx.notices().await.is_empty(), "{:?}", fx.notices().await);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_late_failure_posts_no_notice_after_the_session_was_shut_down_meanwhile() {
+    let fx = failing_fixture().await;
+    let agent = fx.agent.clone();
+
+    notices_after_a_late_failure_and(&fx, async {
+        let mut state = agent.state.lock().await;
+        state.shutdown_generation += 1;
+    })
+    .await;
+
+    assert!(fx.notices().await.is_empty(), "{:?}", fx.notices().await);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_retry_still_running_past_the_deadline_does_not_post_the_first_attempts_failure() {
+    // The first prompt fails and the retry's prompt waits, so attempt 2 ends at the deadline.
+    let fx = fixture_with(Stub {
+        gated: Some("prompt"),
+        fail_once: Some("prompt"),
+        gate_after: 1,
         ..Stub::default()
     })
     .await;
     queue_settled(&fx, planner()).await;
 
-    settle_past_the_deadline(&fx).await;
+    settle_past(&fx, Duration::from_secs(10)).await;
+    let notices_at_deadline = fx.notices().await;
     fx.release().await;
-    fx.until_notices(1).await;
     until_gate_free(&fx.repo).await;
+    settle_briefly().await;
 
-    let notices = fx.notices().await;
-    assert_eq!(notices.len(), 1, "{notices:?}");
-    assert!(notices[0].starts_with("Handoff failed:"), "{notices:?}");
-    assert_eq!(count_of(&fx, "new_session").await, 1, "never retried");
+    assert_eq!(count_of(&fx, "prompt").await, 2, "one try and one retry");
+    // The transcript's own "prompt failed" line is not the agent's handoff notice.
+    let posted = |notices: &[String]| notices.iter().any(|n| n.starts_with("Handoff failed"));
+    assert!(!posted(&notices_at_deadline), "{notices_at_deadline:?}");
+    assert!(!posted(&fx.notices().await), "{:?}", fx.notices().await);
     fx.finish().await;
 }

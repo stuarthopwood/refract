@@ -70,7 +70,7 @@ async fn begin_turn_leaves_an_already_odd_generation_alone() {
 }
 
 #[tokio::test]
-async fn a_settle_frame_makes_the_generation_even_and_the_status_idle_together() {
+async fn a_settle_frame_leaves_an_even_generation_and_an_idle_status() {
     let fx = fixture(&[], &[]).await;
     {
         let mut state = fx.agent.state.lock().await;
