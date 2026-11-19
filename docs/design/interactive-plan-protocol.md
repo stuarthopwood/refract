@@ -189,7 +189,7 @@ The protocol needs these five statuses. #2011 owns the names but must not merge 
 | `blocked` | `setStatus` by either party. |
 | `complete` | The developer's tick, always. The agent's `setStatus`, subject to the authorship rules. |
 
-Whenever an item moves into `complete`, Rust stores its status just before as `previousStatus`. **Untick** restores `previousStatus` and clears it. Moving into any other status keeps the item's `previousStatus` unchanged.
+Whenever an item moves into `complete`, Rust stores its status just before as `previousStatus`. **Untick** restores `previousStatus` and clears it. Moving into any other status keeps the item's `previousStatus` unchanged. Each item also stores `statusRev`, the plan `rev` of its last accepted status change by either party. A value, text or position change does not touch it. The lifecycle below uses it.
 
 #### Concurrency
 
@@ -245,7 +245,7 @@ A result must never reach `result_too_large`, because `ok_frame` would drop the 
 - `create` returns `ids`, every id it assigned in order (at most 40, about 240 bytes). `update` returns `addedIds` the same way. The agent can then address every item even though `items` holds only the first page. The remaining items come from `get` with `after`.
 - `create` and `update` list in `items` only the items the call touched. `get` lists the plan in order from `after` (an item id; the first page when omitted).
 - `get { full: true }` returns full items (full text, group, value) in pages with the same budget. `get { itemId }` returns exactly one full item.
-- A `userChanges` entry names the op and the changed field names only, never new text or values. `setStatus` adds the new `status`, `setValue` adds `valueBytes`, `edit` adds `fields` (any of `text`, `group`, `owner`, `requiresValue`, `agentCompletable`), and `add`, `move` and `remove` add nothing. The agent reads the new content with `get { itemId }`. See "Change record" for where the entries come from.
+- A `userChanges` entry names the op and the changed field names only, never new text or values. `setStatus` adds `status`, `setValue` adds `valueBytes`, `edit` adds `fields` (any of `text`, `group`, `owner`, `requiresValue`, `agentCompletable`), and `add`, `move` and `remove` add nothing. `status` and `valueBytes` are the item's stored values at the time Rust builds the result, not the values at the time of the developer's op, so an agent change made since is reflected. The agent reads the new content with `get { itemId }`. See "Change record" for where the entries come from.
 
 **Arithmetic.** Budget 7,168 bytes of the 8,192 (`MAX_RESULT_BYTES`):
 
@@ -267,7 +267,7 @@ The total, 7,037, is under both the 7,168 budget and the 8,192 cap, so the worst
 **Overflow.** A list that reaches its budget stops and sets its flag.
 
 - `items` stops and sets `moreItems: true`. The agent calls `get` with `after` set to the last id it received.
-- `userChanges` holds the **latest op per item** among developer changes with `rev` above the agent's watermark, oldest `rev` first. It stops at 20 entries and sets `moreChanges: true`. `seenRev` is then the `rev` of the last entry returned. Otherwise `seenRev` equals `rev`. The tool description tells the agent to quote `seenRev`, not `rev`, as its next `baseRev`, so the remainder arrives on the next call. Rust enforces this with a clamp (see "Keeping the agent in sync").
+- `userChanges` holds every record in each item's `lastDeveloperOps` set (see "Change record") and every developer `removed` entry with `rev` above the agent's watermark, oldest `rev` first. It stops at 20 entries and sets `moreChanges: true`. `seenRev` is then the `rev` of the last entry returned. Otherwise `seenRev` equals `rev`. The tool description tells the agent to quote `seenRev`, not `rev`, as its next `baseRev`, so the remainder arrives on the next call. Rust enforces this with a clamp (see "Keeping the agent in sync").
 
 ### User mutate
 
@@ -286,10 +286,10 @@ Nothing here talks to the agent, so a tick or a value never interrupts a running
 
 **Change record.** `userChanges` is read from two stored places, so the plan keeps no general change log:
 
-- Each item stores `lastDeveloperOp`: `{ op, rev, fields }`, where `op` is `setStatus`, `setValue`, `edit`, `add` or `move`, and `fields` lists the changed field names of an `edit`. A later developer op replaces it, except that a `setStatus`, `setValue` or `move` does not replace an `edit` or `add` whose `rev` is above `agentSeenRev`: the agent re-reads that item anyway, and the read shows the current status and value.
+- Each item stores `lastDeveloperOps`, a set with at most one record per op kind (at most five): `{ op, rev, fields }`, where `op` is `setStatus`, `setValue`, `edit`, `add` or `move`, and `fields` lists the changed field names of an `edit`. A later developer op replaces only the record of its own kind. A `move` therefore never hides an unseen `setStatus` or `setValue`, and a later `edit` never hides an unseen tick.
 - The plan keeps `removed: [{ id, rev, by }]`, at most 40 entries. An entry at or below `agentSeenRev` is pruned. If the cap forces out an entry the agent has not seen, the agent's next use of that id still fails with `item_removed`, because ids are never reused.
 
-The entries are the items' `lastDeveloperOp` records and the developer's `removed` entries, filtered by the op's own `rev` (the item's `rev` can be higher after an agent change), ordered by `rev`.
+The entries are the records in the items' `lastDeveloperOps` sets and the developer's `removed` entries, filtered by each record's own `rev` (the item's `rev` can be higher after an agent change), ordered by `rev`. One item can appear more than once, once per op kind.
 
 ### Envelope
 
@@ -297,8 +297,8 @@ The `<plan-item>` envelope and the `session-message` envelope share one parser a
 
 - **One escape for both tags.** A body escapes the tags of *both* envelopes. `</plan-item>` in an item's text, and `<session-message ...>` in a developer value, shift one level up with the existing bijective `&amp;`-prefix scheme and shift back on parse. Round-trip tests cover each tag inside each envelope.
 - **Exactly one envelope per turn.** `parse` accepts only a turn whose whole text is one envelope. A raw tag of either name left in the body is a second or forged envelope and is rejected, as `envelope.rs:52-55` does today.
-- **A `<plan-item>` becomes a card only when it matches a send record.** `send_plan_item` writes `{ planId, itemId, rev, action, textHash }` to the Session's plan store before it sends, where `textHash` hashes the whole turn text. The store keeps the newest 50 records. The transcript text alone cannot tell a developer turn from the agent's own words: `first_message` sends a self-handoff note raw as the first user turn (`envelope.rs:31-44`), so an agent could write a forged `<plan-item>` there. So `from_envelope` (`message_source.rs:21-30`) keeps handling only `session-message`, and a `<plan-item>` turn stays plain text in `build_user_item`. The Session-scoped pass that already labels handoff notes (`mark_note`, `queued_handoff.rs:14-21`, and `label_handoff_note`, `saved_history_cache.rs:31-48`) parses the turn and sets the `PlanItem` source only when a send record matches all five fields. With no match, or after a record is evicted, the turn stays plain text.
-- **Never parse the first turn of a handoff-note Conversation.** The pass skips the first user item when the Conversation opens with a note, the item `marked_first_user` labels (`handoff_note.rs:10-27`).
+- **A `<plan-item>` becomes a card only when it matches a send record.** `send_plan_item` writes a hash-only record `{ planId, itemId, rev, action, textHash }` to the Session's plan store before it sends, where `textHash` is a hash of the whole turn text (about 40 bytes of data, about 90 bytes as JSON). No turn text is stored. The store keeps the newest 500 records per Session, so the records take about 45 KB at most. The transcript text alone cannot tell a developer turn from the agent's own words: `first_message` sends a self-handoff note raw as the first user turn (`envelope.rs:31-44`), so an agent could write a forged `<plan-item>` there. So `from_envelope` (`message_source.rs:21-30`) keeps handling only `session-message`, and a `<plan-item>` turn stays plain text in `build_user_item`. The Session-scoped pass that already labels handoff notes (`mark_note`, `queued_handoff.rs:14-21`, and `label_handoff_note`, `saved_history_cache.rs:31-48`) parses the turn and sets the `PlanItem` source only when a send record matches all five fields. With no match, the turn stays plain text. **Degradation past the cap:** after the 501st send in a Session, the oldest record is evicted, and that turn renders as plain `<plan-item>` text on reload. The plan and the agent are unaffected. A queued `complete` turn whose record is evicted can never start, so its entry is restored like an unstarted entry (see "Complete-this-step lifecycle").
+- **Never parse the handoff-note turn.** The pass skips the turn that carries the handoff-note marker, the item `marked_first_user` labels (`handoff_note.rs:10-27`). The skip is keyed on that marker, not on "the first user item". `marked_first_user` returns `None` when the first user item already has a source, so a Conversation with no note has no skipped turn. A developer `<plan-item>` sent as the first turn of a note-less Conversation therefore still gets its card when it matches a send record.
 - **A `<plan-item>` inside a Session message is only text.** `from_envelope` returns the body of a `session-message` without parsing it again. One test pins this, and one pins a forged `<plan-item>` in a handoff note as plain text. A forged `session-message` in a handoff note has the same hole today; this design does not change it.
 - **Attributes** (`plan`, `item`, `rev`, `action`) come from Rust. `plan` and `item` are escaped with `escape_attr` anyway.
 
@@ -323,7 +323,7 @@ Does this step need the staging database?
   </plan-item>
   ```
 
-  The first sentence says "this step you wrote" when `createdBy` is `agent` and `editedByDeveloper` is not set, and "this step the developer wrote" otherwise, so developer-edited text is never labelled as the agent's. Rust passes the item text through `approval::flatten` (`approval.rs:71-85`) before it quotes it. That drops bidi and zero-width format characters with `is_invisible_format` (`github/profile.rs:37-57`) and turns line breaks into spaces, including U+2028 and U+2029, which item validation does not reject because `char::is_control` does not cover them. The quote is therefore one line. Rust accepts the turn, then sets the item to `in_progress` and records `previousStatus` before it sends. See the lifecycle below.
+  The first sentence says "this step you wrote" when `createdBy` is `agent` and `editedByDeveloper` is not set, and "this step the developer wrote" otherwise, so developer-edited text is never labelled as the agent's. Rust passes the item text through `approval::flatten` (`approval.rs:74-86`) before it quotes it. That drops bidi and zero-width format characters with `is_invisible_format` (`github/profile.rs:37-57`) and turns line breaks into spaces, including U+2028 and U+2029, which item validation does not reject because `char::is_control` does not cover them. The quote is therefore one line. Rust accepts the turn, then sets the item to `in_progress` and records `previousStatus` before it sends. See the lifecycle below.
 - A plain tick does not send a turn. It is stored and reaches the agent as described in "Keeping the agent in sync". `[INFERENCE]` This keeps ticking cheap and non-interrupting. #2013 can still offer "tick and tell the agent" by sending `action="value"` or `ask` with the tick, with no protocol change.
 - **Authority.** The turn is a developer request, sent undecorated, and nothing in it changes the approval model. For `ask` and `value` the body is the developer's own words. For `complete` the quoted item text, when the agent wrote it, carries no more authority than the agent already has: the agent acts under its own approval mode, and "complete this step" does not skip a card in a non-yolo Session. This is the rule of ADR 0008: "nothing in the text grants more authority than the recipient already has".
 - **Notice and working mode.** `decorate = false` means the pending `[Refract]` notice is not consumed (`chat.rs:105-110`) and the working-mode wrapper is not added (`chat.rs:113-117`). The notice stays pending for the developer's next ordinary prompt, and the item turn reaches the transcript as exactly one envelope, which the parser requires. A `complete` turn sent in Grill or Plan working mode therefore carries no mode instruction, as a Session message does today. The developer's click on "complete this step" is the instruction to proceed.
@@ -333,18 +333,18 @@ Does this step need the staging database?
 
 #### Complete-this-step lifecycle
 
-1. Rust accepts the call, stores `previousStatus`, sets the item to `in_progress`, adds `{ itemId, turnMarker, started: false }` to `pendingComplete` and writes the send record, all under the lock, then sends the turn. `turnMarker` is the plan `rev` after that change, and the record and the envelope carry the same `rev`.
+1. Rust accepts the call, stores `previousStatus`, sets the item to `in_progress`, adds `{ itemId, turnMarker, started: false }` to `pendingComplete` and writes the send record, all under the lock, then sends the turn. `turnMarker` is the plan `rev` after that change, which is also the item's `statusRev`, and the record and the envelope carry the same `rev`.
 2. If the send is refused (`agent-not-running`, `prompt-failed`), Rust restores the previous status and removes the entry and the record before the call returns an error.
 3. An entry is **cleared** with no revert by: the agent's `setStatus` on that item to any status (`complete` completes it, another status such as `blocked` stays); any developer status change, `edit`, `remove` or `replace` of that item, so a developer's tick while the agent works stays ticked; and `create` with `replace`, which archives the plan.
-4. An entry becomes **started** when the user item of its own turn reaches the transcript: after a `message_start` frame (`frame.rs:80-81`), the Session-scoped pass labels the item with a `PlanItem` source that matches a send record for that plan and item, and that marks the oldest unstarted entry for that item. This is what ties a settle to its own turn, whatever order queued turns run in.
-5. The settle hook (`handle_turn_settled`, `frame.rs:194-231`, run on `session_settled`, `frame.rs:39-40`) handles only started entries. For each, it removes the entry and restores `previousStatus` only if the item is still `in_progress` and its `rev` still equals `turnMarker`, so nothing has changed it since the entry set it. Otherwise it does nothing. An unstarted entry survives a settle. It then emits `plan:update`. An aborted turn also reaches the hook (`turn_abort_requested`, `frame.rs:207-211`), so a chat-only answer and an aborted turn both end with the item back where it was.
-6. An entry that never starts cannot wait forever. `stop()` withdraws the queued follow-ups (`abort_and_restore_queue`, `chat.rs:183-188`) and applies the step 5 restore rule to every unstarted entry. A process exit or relaunch applies it to every entry. On load, a stale entry is cleared when the Session is idle. Because the restore rule is a no-op on a changed item, an item the agent or the developer touched is left as they left it.
+4. An entry becomes **started** when the user item of its own turn reaches the transcript: after a `message_start` frame (`frame.rs:80-81`), the Session-scoped pass labels the item with a `PlanItem` source that matches a send record, and that record has `action == complete` and `rev == turnMarker` of an unstarted entry for that plan and item. Only that entry starts. An `ask` or `value` turn for the same item never starts an entry, so a queued `complete` is not marked started early. This is what ties a settle to its own turn, whatever order queued turns run in.
+5. The settle hook (`handle_turn_settled`, `frame.rs:194-231`, run on `session_settled`, `frame.rs:39-40`) handles started entries, and entries whose send record has been evicted (see "Envelope"), which can never start. For each, it removes the entry and restores `previousStatus` only if the item's status is still `in_progress` and its `statusRev` still equals `turnMarker`, so no status change has happened since the entry set it. A value-only rev, such as a `setValue` by either party, does not change `statusRev` and does not block the restore. Otherwise it does nothing. Any other unstarted entry survives a settle. It then emits `plan:update`. An aborted turn also reaches the hook (`turn_abort_requested`, `frame.rs:207-211`), so a chat-only answer and an aborted turn both end with the item back where it was.
+6. An entry that never starts cannot wait forever. `stop()` withdraws the queued follow-ups (`abort_and_restore_queue`, `chat.rs:183-188`) and applies the step 5 restore rule to every unstarted entry. A process exit or relaunch applies it to every entry. On load, a stale entry is cleared when the Session is idle. Because the restore rule is a no-op on an item whose status changed, an item the agent or the developer re-statused is left as they left it.
 
 ### Keeping the agent in sync with developer edits
 
 A tick or a value changes the plan without a turn. The agent finds out in two ways, and a loss of either never loses an edit.
 
-1. **Pull, from a persisted watermark.** The plan stores `agentSeenRev` and `issuedSeenRev`, the highest `seenRev` Rust has put in a result. `issuedSeenRev` is written before the result is sent, and a `get` writes only when it rises. A `refract_plan` call that quotes `baseRev` first raises `agentSeenRev` to `min(baseRev, issuedSeenRev)` (never lowering it, never above `rev`), in the same write as the call's own op. The clamp means an agent that quotes `rev` instead of `seenRev` after an overflow cannot move the watermark past changes Rust never delivered. The result's `userChanges` are developer changes with `rev` above that raised `agentSeenRev`, or above the stored `agentSeenRev` when a `get` quotes none. The watermark never advances on reading: it advances only when a later call quotes a `seenRev` it was given. If a result is lost (the call is cancelled, `result_too_large`, a crash), the next call returns the same changes again.
+1. **Pull, from a persisted watermark.** The plan stores `agentSeenRev` and `issuedSeenRev`, the highest `seenRev` Rust has put in a result. `issuedSeenRev` is written before the result is sent, and a `get` writes only when it rises. A `refract_plan` call that quotes `baseRev` first raises `agentSeenRev` to `min(baseRev, issuedSeenRev)` (never lowering it, never above `rev`), in the same write as the call's own op. The clamp means an agent that quotes `rev` instead of `seenRev` after an overflow cannot move the watermark past changes Rust never delivered. The result's `userChanges` are developer changes with `rev` above that raised `agentSeenRev`, or above the stored `agentSeenRev` when a `get` quotes none. The watermark never advances on reading: it advances only when a later call quotes a `seenRev` it was given. If a result is lost (the call is cancelled, `result_too_large`, a crash), the next call returns the same changes again. **Accepted limit:** `issuedSeenRev` is raised before the result is sent, so if result B is lost and the agent then quotes the `seenRev` of an earlier result A, the clamp still allows B's value and the changes between A and B can be skipped. This needs a lost frame and an agent that ignores the tool description, which tells it to quote `seenRev`. The next `get` shows the true state.
 2. **Hint with the next prompt.** When the developer sends a normal prompt and a plan has developer changes above `agentSeenRev`, Rust adds a hint line to the notice. It is built when the notice is taken, from the current `rev`, so it is never stale. It carries ids and ops only, never item text or values, because it is injected into the prompt unescaped: `Plan p1 changed by the developer after rev 8: tick i2, value i3. Call refract_plan get.`
 
 The notice is a hint only. The agent's `userChanges` is the record. A long working turn gets no hint, and the agent still sees every change on its next tool call.
@@ -379,7 +379,7 @@ Schema sketch (the #2011 model owns final field names; the keys below are the pr
   "sessionId": "s-1",
   "activePlanId": "p2",
   "nextPlanSeq": 3,
-  "sendRecords": [{ "planId": "p2", "itemId": "i4", "rev": 8, "action": "complete", "textHash": "9f2c..." }],
+  "sendRecords": [{ "planId": "p2", "itemId": "i4", "rev": 8, "action": "complete", "textHash": "9f2c1a3b5d7e9f01" }],
   "plans": [
     {
       "id": "p2",
@@ -409,7 +409,8 @@ Schema sketch (the #2011 model owns final field names; the keys below are the pr
           "updatedBy": "developer",
           "completedBy": "developer",
           "editedByDeveloper": false,
-          "lastDeveloperOp": { "op": "setStatus", "rev": 9 }
+          "statusRev": 9,
+          "lastDeveloperOps": [{ "op": "setStatus", "rev": 9 }]
         }
       ]
     }
@@ -417,7 +418,7 @@ Schema sketch (the #2011 model owns final field names; the keys below are the pr
 }
 ```
 
-Bounds: `sendRecords` keeps the newest 50, `removed` 40, `recentRequests` 16, and `pendingComplete` holds at most one entry per item.
+Bounds: `sendRecords` keeps the newest 500 (hash-only, about 45 KB at most), `removed` 40, `recentRequests` 16, `pendingComplete` holds at most one entry per item, and `lastDeveloperOps` holds at most one record per op kind per item. Past 500 sends in a Session, the oldest card renders as plain text on reload (see "Envelope").
 
 ### Restart behaviour
 
@@ -441,7 +442,7 @@ Bounds: `sendRecords` keeps the newest 50, `removed` 40, `recentRequests` 16, an
 | `agent_tools/envelope.rs` | Generalise to a tag-parameterised escape and parser (see "Envelope"). |
 | `MessageSource` (`message_source.rs:11-18`) | Add the `PlanItem` variant. |
 | Send and settle (`chat.rs`, beside `send_session_message` at `:51-57`; `stop` at `:158-259`; `frame.rs:194-231`) | `send_plan_item` writes the send record and the `pendingComplete` entry. `stop` and the settle hook apply the lifecycle (see "Complete-this-step lifecycle"). |
-| Session-scoped transcript pass (`queued_handoff.rs:14-21`, `saved_history_cache.rs:31-48`) | Also validates `<plan-item>` turns against the send records, and skips a handoff note's first turn. |
+| Session-scoped transcript pass (`queued_handoff.rs:14-21`, `saved_history_cache.rs:31-48`) | Also validates `<plan-item>` turns against the send records, and skips the turn that carries the handoff-note marker. |
 | Notice slot (`handoff_queue.rs:72-78`, `:295-298`; `chat.rs:136-141`) | Option to list. |
 | `delete_in_flight.rs:158` | Delete the plan file and tombstone the store. |
 
@@ -479,7 +480,8 @@ Nothing in the todo path changes: `todoPhases` ingestion (`readout.rs:118-129`),
 | `plan.itemMessage` `complete` on a `requiresValue` item with no developer-set value | `value_required`; nothing is sent, and #2013 disables the control with a visible reason. |
 | Edit to a completed item by the agent (not one it completed itself) | `item_complete`. |
 | Retry of a structural call | `duplicate: true` with the recorded ids; not applied twice. |
-| Unknown plan id (old envelope, wrong Session) | The agent or the IPC gets `unknown_plan`; the card still renders from the transcript. |
+| Unknown plan id (old envelope, wrong Session) | The agent or the IPC gets `unknown_plan`; the turn shows as plain text unless a send record matches it (see "Envelope"). |
+| A send record evicted past the 500 cap | The card for that turn renders as plain text on reload. A queued `complete` whose record is gone is restored like an unstarted entry on settle or stop. |
 | Missing or deleting Session | `unknown_session`; nothing is written. |
 | Over a cap | `too_large`, naming the field. |
 | Write failure | `write_failed`; memory unchanged. |
@@ -499,7 +501,7 @@ Nothing in the todo path changes: `todoPhases` ingestion (`readout.rs:118-129`),
 | Developer mutates the plan | Refract IPC only, no OMP involvement | No dependency |
 | Ask, give a value, complete this step | `prompt` with `streamingBehavior: "followUp"` | Shipped (`chat.rs:128-130`) |
 | Persist | Refract data directory | No dependency |
-| Distinct card on reload | The envelope text in the OMP session file, parsed by Refract | Shipped pattern (ADR 0008) |
+| Distinct card on reload | The envelope text in the OMP session file, parsed by Refract only when a send record matches (ADR 0008 pattern) | Shipped pattern; the send-record check is new |
 
 Dependencies to watch, both covered by an existing check:
 
@@ -515,7 +517,7 @@ Limits that are not blockers but are worth knowing:
 
 | Child | Builds, from this document |
 |---|---|
-| #2011 data model and store | The shared TS and Rust plan and item types (field names; the five-status set and the lifecycle above), the `plans/<sessionId>.json` store with a per-Session lock, detached apply and write-then-swap, id, `rev`, `agentSeenRev`, `issuedSeenRev` and `requestId` handling, the change record (`lastDeveloperOp`, `removed`), `editedByDeveloper`, the send records, the `pendingComplete` lifecycle, the op engine with the authorship, freeze, `value_required` and conflict rules, the byte caps, the compact result and the error budget, quarantine cleanup, the delete hook, and the `refract_plan` tool schema and handler. Verifies whether host tools work in OMP plan mode. |
+| #2011 data model and store | The shared TS and Rust plan and item types (field names; the five-status set and the lifecycle above), the `plans/<sessionId>.json` store with a per-Session lock, detached apply and write-then-swap, id, `rev`, `statusRev`, `agentSeenRev`, `issuedSeenRev` and `requestId` handling, the change record (`lastDeveloperOps`, `removed`), `editedByDeveloper`, the hash-only send records (cap 500), the `pendingComplete` lifecycle, the op engine with the authorship, freeze, `value_required` and conflict rules, the byte caps, the compact result and the error budget, quarantine cleanup, the delete hook, and the `refract_plan` tool schema and handler. Verifies whether host tools work in OMP plan mode. |
 | #2012 right-pane panel | Subscribes to `plan:update`, opens on `opened: true`, calls `plan.get`, and renders the plan, `updatedBy` on completed items, and the "plan tool unavailable" state. Sends `plan.mutate` with `baseRev` for ticks and values. |
 | #2013 per-item controls | Ask, provide value and complete-this-step controls, calling `plan.mutate` and `plan.itemMessage`, disabled when the Session has no live agent. Complete-this-step is also disabled, with a visible reason, on a `requiresValue` item that has no developer-set value. A plain tick calls `plan.mutate` only. **"The agent is told" means** the developer's change appears in the agent's next `refract_plan` result as `userChanges`, with a hint in the next prompt's notice; it does not interrupt a running turn. The value control carries the plaintext warning. Adds the generalised envelope and `send_plan_item`. |
-| #2014 chat card | Renders the `PlanItem` source, which exists only for a turn that matches a send record; any other `<plan-item>` text shows as plain text. **The card is the developer turn** (the user item with that source). **Its replies are the assistant turns after it until the next developer turn**, which is the next user item of any kind, including another `<plan-item>` and a Session message. |
+| #2014 chat card | Renders the `PlanItem` source, which exists only for a turn that matches a send record; any other `<plan-item>` text shows as plain text, as does a turn whose record was evicted. **The card is the developer turn** (the user item with that source). **Its replies are the assistant turns after it until the next developer turn**, which is the next user item of any kind, including another `<plan-item>` and a Session message. Tests: (1) a handoff-note turn containing a forged `<plan-item>` stays plain text; (2) a developer `<plan-item>` that is the first turn of a Conversation with no note still renders its card. |
