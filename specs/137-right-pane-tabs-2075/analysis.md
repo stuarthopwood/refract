@@ -41,3 +41,7 @@ Consistent after the fixes below. No open gaps.
 ## Left for implement time
 
 Re-check every line number when the tasks start; the plan says so in its heading.
+
+## Deviations found at implement time
+
+- **T002 tab key (2026-11-19):** the plan says the tab id is a stable hash of the identity. The store keys tabs by the identity string itself (`file:<path>`, `diff:<group>:<path>`), so two identities can never collide on a hash. `documentTabDomId(id)` gives the DOM-safe hashed id (`doc-tab-<base36>`) for `aria-controls` and `aria-labelledby`, because a path can hold spaces and slashes. Later tasks use the identity string as the key and `documentTabDomId` only for DOM attributes.
