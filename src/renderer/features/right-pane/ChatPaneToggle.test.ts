@@ -43,9 +43,10 @@ describe('ChatPaneToggleButton', () => {
     expect(html).not.toContain('>2<')
   })
 
-  it('Given the toggle is inert, Then it is aria-disabled and not natively disabled, so the tooltip can show', () => {
+  it('Given the toggle is inert, Then it is aria-disabled with the dimming variant and not natively disabled, so the tooltip can show', () => {
     const html = render({ disabledReason: 'Open a Session to show chat' })
     expect(html).toContain('aria-disabled="true"')
+    expect(html).toContain('aria-disabled:opacity-50')
     expect(html).not.toContain(' disabled=""')
   })
 

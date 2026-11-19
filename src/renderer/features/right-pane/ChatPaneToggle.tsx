@@ -37,7 +37,8 @@ export function ChatPaneToggleButton({ hidden, needsYou, disabledReason, onToggl
         </>
       }
       data-chat-toggle
-      className="relative"
+      // The shared button dims only a native `disabled`; this toggle is aria-disabled so its tooltip stays reachable.
+      className="relative aria-disabled:opacity-50"
       aria-expanded={!hidden}
       aria-controls={CHAT_PANEL_DOM_ID}
       aria-keyshortcuts="Control+Shift+H"
