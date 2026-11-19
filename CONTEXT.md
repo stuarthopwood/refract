@@ -182,6 +182,14 @@ _Avoid_: Todo list, checklist, task list
 One step of a **Plan**, with a stable id that is never reused, a status, an owner (agent, human or either), an optional value and a flag for whether the agent can complete it. Ids are per **Session**. Messages about a step name its id. A **Plan item** is not a **Todo task**.
 _Avoid_: Todo task, task, step (in UI text)
 
+**Developer-owned item**:
+A **Plan item** the developer created or edited, or one holding a value the developer gave. The agent cannot edit or remove it, cannot overwrite its value, and cannot complete a human-owned one (spec 138, #2011).
+_Avoid_: Locked item, protected item
+
+**Plan revision**:
+The integer that rises by one on every accepted change to a **Plan**, by the agent or the developer. The agent quotes the revision it last saw so a stale edit is refused instead of overwriting newer work (spec 138, #2011).
+_Avoid_: Version, sequence number
+
 **Subagent chain**:
 The per-turn summary row listing a turn's **Stages** and their agents with status and duration (issue #563); its stage-to-stage list is also connected by a **Spine** (issue #565).
 _Avoid_: DAG, gate topology, pipeline
