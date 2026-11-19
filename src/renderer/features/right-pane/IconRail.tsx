@@ -4,11 +4,10 @@ import { useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { PanelRightCloseIcon, PanelRightOpenIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { RailIconButton } from '@/components/RailIconButton'
 import { Kbd } from '@/components/ui/kbd'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { CountBadge } from '@/components/ui/count-badge'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useRightPaneStore } from '@/state'
 import { RAIL_WIDTH_PX } from '../../../shared/layout'
 import { REORDER_MARKER_CLASS, useReorderable, type ReorderItemProps } from '@/components/reorder/use-reorderable'
@@ -61,26 +60,20 @@ export function IconRail({ sessionId }: IconRailProps) {
       className="flex shrink-0 flex-col items-center border-l border-divider bg-sidebar-right"
       style={{ width: RAIL_WIDTH_PX }}
     >
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xl"
-            data-rail-toggle
-            className="text-muted-foreground"
-            aria-label="Right pane"
-            aria-expanded={rightPaneOpen}
-            aria-keyshortcuts="Control+Shift+B"
-            onClick={() => toggleRightPane()}
-          >
-            {rightPaneOpen ? <PanelRightCloseIcon aria-hidden /> : <PanelRightOpenIcon aria-hidden />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">
-          Right pane <Kbd>Ctrl+Shift+B</Kbd>
-        </TooltipContent>
-      </Tooltip>
+      <RailIconButton
+        label="Right pane"
+        tooltip={
+          <>
+            Right pane <Kbd>Ctrl+Shift+B</Kbd>
+          </>
+        }
+        data-rail-toggle
+        aria-expanded={rightPaneOpen}
+        aria-keyshortcuts="Control+Shift+B"
+        onClick={() => toggleRightPane()}
+      >
+        {rightPaneOpen ? <PanelRightCloseIcon aria-hidden /> : <PanelRightOpenIcon aria-hidden />}
+      </RailIconButton>
       <div
         ref={(el) => {
           containerRef.current = el
@@ -130,35 +123,24 @@ function RailButton({ panel, sessionId, reorderProps, pressed, tabIndex, buttonR
   // in the name so it is announced while the pane is collapsed.
   const label = `${panel.name} panel${count ? `, ${count.phrase}` : ''}`
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          ref={buttonRef}
-          type="button"
-          variant="ghost"
-          size="icon-xl"
-          data-rail-button={panel.id}
-          aria-pressed={pressed}
-          aria-label={label}
-          tabIndex={tabIndex}
-          className={cn(
-            'relative text-muted-foreground aria-pressed:bg-muted aria-pressed:text-accent-text forced-colors:aria-pressed:border-2 forced-colors:aria-pressed:border-[Highlight] data-[reorder-dragging]:opacity-50',
-            REORDER_MARKER_CLASS
-          )}
-          onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
-          onFocus={onFocus}
-          {...reorderProps}
-          onKeyDown={(event) => {
-            reorderProps.onKeyDown(event)
-            if (!event.defaultPrevented) onKeyDown(event)
-          }}
-        >
-          <Icon aria-hidden />
-          {pressed && <ActiveIndicatorBar />}
-          {count && <CountBadge value={count.value} tone={panel.id === 'subagents' ? 'accent' : 'neutral'} />}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent side="left">{label}</TooltipContent>
-    </Tooltip>
+    <RailIconButton
+      ref={buttonRef}
+      label={label}
+      data-rail-button={panel.id}
+      aria-pressed={pressed}
+      tabIndex={tabIndex}
+      className={cn('relative data-[reorder-dragging]:opacity-50', REORDER_MARKER_CLASS)}
+      onClick={(event) => toggleHostedPanelFromRail(panel.id, sessionId, event.currentTarget)}
+      onFocus={onFocus}
+      {...reorderProps}
+      onKeyDown={(event) => {
+        reorderProps.onKeyDown(event)
+        if (!event.defaultPrevented) onKeyDown(event)
+      }}
+    >
+      <Icon aria-hidden />
+      {pressed && <ActiveIndicatorBar />}
+      {count && <CountBadge value={count.value} tone={panel.id === 'subagents' ? 'accent' : 'neutral'} />}
+    </RailIconButton>
   )
 }
