@@ -38,7 +38,7 @@ pub(super) async fn switch_conversation<H: ConvHost>(
     let (session_id, conversation_id) = parse_switch(args)?;
     let gate = open_gate(host, Some(&session_id), true).await?;
     let chosen = host
-        .conversations(&gate.target.id)
+        .conversations(&gate.target.id, None)
         .await
         .into_iter()
         .find(|c| c.id == conversation_id)

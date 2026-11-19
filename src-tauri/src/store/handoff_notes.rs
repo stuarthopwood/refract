@@ -1,7 +1,8 @@
 // Conversations whose first message is an agent's handoff note, in `<data_dir>/handoff-notes.json`
 // (#1861). omp's history cannot say who wrote a message, so the label is kept beside it.
+// The file is read once per directory and then served from memory; every change writes through.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,10 @@ use super::atomic_json::{read_json_file, write_json_file};
 
 const FILE_NAME: &str = "handoff-notes.json";
 
+/// The key is a bare file name, so the Session it belongs to is unknown and a missing file cannot be
+/// told from one in another Session dir. The oldest labels are dropped past this cap instead.
+const MAX_ENTRIES: usize = 500;
+
 #[derive(Serialize, Deserialize)]
 struct Entry {
     at: i64,
@@ -17,8 +22,9 @@ struct Entry {
 
 type Notes = BTreeMap<String, Entry>;
 
-// Serialises the read-modify-write: two Sessions can hand off at once.
-static WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+// The cache and the lock in one: two Sessions can hand off at once, and a load must not race a record.
+static CACHE: tokio::sync::Mutex<Option<HashMap<PathBuf, Notes>>> =
+    tokio::sync::Mutex::const_new(None);
 
 fn file_in(dir: &Path) -> PathBuf {
     dir.join(FILE_NAME)
@@ -29,24 +35,46 @@ fn key_of(file: &str) -> &str {
     file.rsplit(['/', '\\']).next().unwrap_or(file)
 }
 
-async fn read_in(dir: &Path) -> Notes {
-    read_json_file(&file_in(dir), Notes::new)
-        .await
-        .unwrap_or_default()
+/// Drops the oldest entries (by `at`, then name) until at most `max` remain.
+fn prune(notes: &mut Notes, max: usize) {
+    while notes.len() > max {
+        let Some(oldest) = notes
+            .iter()
+            .min_by(|a, b| a.1.at.cmp(&b.1.at).then_with(|| a.0.cmp(b.0)))
+            .map(|(key, _)| key.clone())
+        else {
+            return;
+        };
+        notes.remove(&oldest);
+    }
 }
 
-/// Marks `file` as opened by a handoff note. Entries are never pruned.
+/// The notes of `dir`, read from disk only the first time.
+async fn loaded<'a>(cache: &'a mut Option<HashMap<PathBuf, Notes>>, dir: &Path) -> &'a mut Notes {
+    let by_dir = cache.get_or_insert_with(HashMap::new);
+    if !by_dir.contains_key(dir) {
+        let notes = read_json_file(&file_in(dir), Notes::new)
+            .await
+            .unwrap_or_default();
+        by_dir.insert(dir.to_path_buf(), notes);
+    }
+    by_dir.get_mut(dir).expect("inserted above")
+}
+
+/// Marks `file` as opened by a handoff note. The oldest entries are dropped past `MAX_ENTRIES`.
 pub async fn record_in(dir: &Path, file: &str, at_ms: i64) {
-    let _guard = WRITE_LOCK.lock().await;
-    let mut notes = read_in(dir).await;
+    let mut guard = CACHE.lock().await;
+    let notes = loaded(&mut guard, dir).await;
     notes.insert(key_of(file).to_string(), Entry { at: at_ms });
-    if let Err(err) = write_json_file(&file_in(dir), &notes).await {
+    prune(notes, MAX_ENTRIES);
+    if let Err(err) = write_json_file(&file_in(dir), &*notes).await {
         log::warn!("handoff_notes: could not persist the sidecar: {err}");
     }
 }
 
 pub async fn contains_in(dir: &Path, file: &str) -> bool {
-    read_in(dir).await.contains_key(key_of(file))
+    let mut guard = CACHE.lock().await;
+    loaded(&mut guard, dir).await.contains_key(key_of(file))
 }
 
 pub async fn record(file: &str, at_ms: i64) {

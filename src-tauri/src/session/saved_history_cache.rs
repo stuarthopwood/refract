@@ -1,4 +1,5 @@
 // Caches saved-history items by path, mtime and length, so an unchanged file costs one stat.
+// Bounded by entry count and by the summed file length, so a few huge Conversations cannot pin memory.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -9,6 +10,8 @@ use super::saved_history::{contained_history_file, read_saved_history, SavedHist
 use crate::omp::transcript::TranscriptItem;
 
 const CAPACITY: usize = 4;
+/// The file length stands in for the parsed size, which costs a walk to measure.
+const MAX_BYTES: u64 = 32 * 1024 * 1024;
 
 type Key = (PathBuf, SystemTime, u64);
 type Items = Arc<Vec<Arc<TranscriptItem>>>;
@@ -75,10 +78,27 @@ fn store(key: Key, items: Items) {
     let Ok(mut cache) = CACHE.lock() else {
         return;
     };
+    insert_bounded(&mut cache, key, items, CAPACITY, MAX_BYTES);
+}
+
+/// Adds `key` as most recent, then evicts the least recent entries until both bounds hold.
+/// A file longer than `max_bytes` is not cached at all, so it cannot flush the rest for nothing.
+fn insert_bounded(
+    cache: &mut Vec<(Key, Items)>,
+    key: Key,
+    items: Items,
+    capacity: usize,
+    max_bytes: u64,
+) {
     cache.retain(|(k, _)| k.0 != key.0);
+    if key.2 > max_bytes {
+        return;
+    }
     cache.push((key, items));
-    if cache.len() > CAPACITY {
-        cache.remove(0);
+    let mut total: u64 = cache.iter().map(|(k, _)| k.2).sum();
+    while cache.len() > capacity || total > max_bytes {
+        let (evicted, _) = cache.remove(0);
+        total -= evicted.2;
     }
 }
 

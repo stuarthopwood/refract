@@ -141,7 +141,12 @@ pub(super) trait ConvHost: Send + Sync + 'static {
     /// Raises the card and waits: `Ok` only when the developer approved.
     fn ask(&self, card: PendingRequest) -> impl Future<Output = Result<(), ToolError>> + Send;
     fn is_paused(&self, id: &str) -> impl Future<Output = bool> + Send;
-    fn conversations(&self, id: &str) -> impl Future<Output = Vec<ConvRow>> + Send;
+    /// Newest first; `limit` caps the rows when only the first few are wanted.
+    fn conversations(
+        &self,
+        id: &str,
+        limit: Option<usize>,
+    ) -> impl Future<Output = Vec<ConvRow>> + Send;
     /// Holds the action for the end of the turn, or says the Session is not mid-turn.
     fn queue(
         &self,
@@ -331,7 +336,7 @@ fn clip_chars(text: &str, max: usize) -> String {
 async fn list<H: ConvHost>(host: &H, args: &Value) -> Result<Value, ToolError> {
     let (session_id, limit) = parse_list(args)?;
     let gate = open_gate(host, session_id.as_deref(), false).await?;
-    let mut rows = host.conversations(&gate.target.id).await;
+    let mut rows = host.conversations(&gate.target.id, Some(limit)).await;
     rows.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     let conversations: Vec<Value> = rows
         .into_iter()
@@ -432,7 +437,7 @@ impl ConvHost for AppConvHost {
     async fn is_paused(&self, id: &str) -> bool {
         self.manager.get_or_create_agent(id).is_paused().await
     }
-    async fn conversations(&self, id: &str) -> Vec<ConvRow> {
+    async fn conversations(&self, id: &str, limit: Option<usize>) -> Vec<ConvRow> {
         let (dir, current) = {
             let registry = self.registry.lock().await;
             match registry.get_session(id) {
@@ -440,7 +445,7 @@ impl ConvHost for AppConvHost {
                 None => return Vec::new(),
             }
         };
-        crate::ipc::conversations::list_conversations(dir.as_deref(), current.as_deref())
+        crate::ipc::conversations::list_conversations(dir.as_deref(), current.as_deref(), limit)
             .await
             .into_iter()
             .map(|c| ConvRow {

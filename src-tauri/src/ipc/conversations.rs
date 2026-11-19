@@ -56,6 +56,7 @@ pub(crate) async fn build_snapshot(
     let conversations = list_conversations(
         session.session_dir.as_deref(),
         session.current_conversation.as_deref(),
+        None,
     )
     .await;
     serde_json::json!({
@@ -118,8 +119,12 @@ pub fn conversations_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
                 session.current_conversation.clone(),
             )
         };
-        let conversations =
-            list_conversations(session_dir.as_deref(), current_conversation.as_deref()).await;
+        let conversations = list_conversations(
+            session_dir.as_deref(),
+            current_conversation.as_deref(),
+            None,
+        )
+        .await;
         Ok(serde_json::to_value(conversations)
             .expect("ConversationInfo is always JSON-serialisable"))
     })
@@ -271,11 +276,13 @@ pub(crate) fn same_file(a: &str, b: &str) -> bool {
     resolve(a) == resolve(b)
 }
 
-/// Lists every Conversation in `session_dir`, newest first. `session_dir == None` (no Conversation
-/// has ever been started) and an unreadable directory both yield an empty list, never a failure.
+/// Lists the Conversations in `session_dir`, newest first; `limit` stops the scan once that many are
+/// listed. `session_dir == None` (no Conversation has ever been started) and an unreadable directory
+/// both yield an empty list, never a failure.
 pub(crate) async fn list_conversations(
     session_dir: Option<&str>,
     current_conversation: Option<&str>,
+    limit: Option<usize>,
 ) -> Vec<ConversationInfo> {
     let Some(session_dir) = session_dir else {
         return Vec::new();
@@ -285,7 +292,8 @@ pub(crate) async fn list_conversations(
         Err(_) => return Vec::new(),
     };
 
-    let mut results = Vec::new();
+    // The file name carries the timestamp, so ordering needs no file read.
+    let mut candidates = Vec::new();
     loop {
         let entry = match entries.next_entry().await {
             Ok(Some(entry)) => entry,
@@ -298,7 +306,16 @@ pub(crate) async fn list_conversations(
         let Some((created_at, id)) = parse_file_name(&entry_name) else {
             continue;
         };
-        let file_path = entry.path();
+        candidates.push((created_at, id, entry.path()));
+    }
+    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+
+    // Empty and title-only files are skipped, so the cut is made on listed items, not candidates.
+    let mut results = Vec::new();
+    for (created_at, id, file_path) in candidates {
+        if limit.is_some_and(|limit| results.len() >= limit) {
+            break;
+        }
         let Ok(metadata) = tokio::fs::metadata(&file_path).await else {
             continue;
         };
@@ -319,7 +336,6 @@ pub(crate) async fn list_conversations(
             is_current,
         });
     }
-    results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
     results
 }
 
@@ -364,3 +380,7 @@ async fn snapshot_of(state: &AppState, session_id: &str) -> super::HandlerResult
     let agent = state.session_manager.get_or_create_agent(session_id);
     Ok(build_snapshot(&session, &agent, None).await)
 }
+
+#[cfg(test)]
+#[path = "conversations.test.rs"]
+mod tests;

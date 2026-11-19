@@ -1,6 +1,7 @@
-// The handoff label on saved history: applied to a copy, never to the cached list.
+// The handoff label on saved history is applied to a copy, never to the cached list; the cache is
+// bounded by entry count and by bytes.
 
-use super::{load_saved_history, CACHE};
+use super::{insert_bounded, load_saved_history, Items, Key, CACHE};
 use crate::omp::transcript::{MessageSource, TranscriptItem};
 use crate::session::saved_history::SavedHistory;
 use crate::store::handoff_notes;
@@ -63,4 +64,50 @@ async fn an_unlisted_file_is_untouched() {
     let history = load_saved_history(Some(&session_dir), Some(&file)).await;
 
     assert_eq!(first_source(&history), None);
+}
+
+fn entry(name: &str, len: u64) -> (Key, Items) {
+    let key = (
+        std::path::PathBuf::from(name),
+        std::time::SystemTime::UNIX_EPOCH,
+        len,
+    );
+    (key, std::sync::Arc::new(Vec::new()))
+}
+
+fn names(cache: &[(Key, Items)]) -> Vec<String> {
+    cache
+        .iter()
+        .map(|(key, _)| key.0.to_string_lossy().into_owned())
+        .collect()
+}
+
+#[test]
+fn the_oldest_entries_are_evicted_until_the_byte_total_fits() {
+    let mut cache = Vec::new();
+    for (name, len) in [("a", 40), ("b", 40), ("c", 40)] {
+        let (key, items) = entry(name, len);
+        insert_bounded(&mut cache, key, items, 10, 100);
+    }
+    assert_eq!(names(&cache), ["b", "c"]);
+}
+
+#[test]
+fn a_file_over_the_byte_bound_is_not_cached_and_keeps_the_rest() {
+    let mut cache = Vec::new();
+    let (key, items) = entry("small", 10);
+    insert_bounded(&mut cache, key, items, 10, 100);
+    let (key, items) = entry("huge", 101);
+    insert_bounded(&mut cache, key, items, 10, 100);
+    assert_eq!(names(&cache), ["small"]);
+}
+
+#[test]
+fn a_rewritten_file_replaces_its_old_entry_and_the_count_bound_still_holds() {
+    let mut cache = Vec::new();
+    for name in ["a", "b", "a", "c"] {
+        let (key, items) = entry(name, 1);
+        insert_bounded(&mut cache, key, items, 2, 100);
+    }
+    assert_eq!(names(&cache), ["a", "c"]);
 }

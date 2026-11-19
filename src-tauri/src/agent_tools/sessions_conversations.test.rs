@@ -54,8 +54,12 @@ impl ConvHost for ConvFake {
     async fn is_paused(&self, id: &str) -> bool {
         self.paused.lock().unwrap().contains(id)
     }
-    async fn conversations(&self, _id: &str) -> Vec<ConvRow> {
-        self.convs.clone()
+    async fn conversations(&self, _id: &str, limit: Option<usize>) -> Vec<ConvRow> {
+        // The real host lists newest first and stops at the limit.
+        let mut rows = self.convs.clone();
+        rows.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        rows.truncate(limit.unwrap_or(usize::MAX));
+        rows
     }
     async fn queue(
         &self,

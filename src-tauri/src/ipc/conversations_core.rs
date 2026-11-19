@@ -35,6 +35,7 @@ pub(crate) async fn switch_core(state: &AppState, id: &str, file: &str) -> Resul
     let own_conversations = list_conversations(
         session.session_dir.as_deref(),
         session.current_conversation.as_deref(),
+        None,
     )
     .await;
     let Some(matched) = own_conversations
