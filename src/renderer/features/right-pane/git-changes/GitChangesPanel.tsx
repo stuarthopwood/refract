@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { useGitChangesStore } from '@/state'
+import { DEFAULT_GROUP_OPEN, useGitChangesStore } from '@/state'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import { GitChangesGroup, diffGroupLabel } from './GitChangesGroup'
@@ -19,13 +19,6 @@ interface DiffSelection {
   entry: GitChangesFileEntry
   group: GitChangesGroupKind
   agentOpened?: boolean
-}
-
-const DEFAULT_GROUP_OPEN: Record<GitChangesGroupKind, boolean> = {
-  conflicts: true,
-  staged: true,
-  changes: true,
-  untracked: true
 }
 
 export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
@@ -79,7 +72,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
 
   const sessionEntry = useGitChangesStore((s) => (sessionId ? s.bySession[sessionId] : undefined))
   const [selected, setSelected] = useState<DiffSelection | null>(null)
-  const [groupOpen, setGroupOpen] = useState<Record<GitChangesGroupKind, boolean>>(DEFAULT_GROUP_OPEN)
+  const groupOpen = useGitChangesStore((s) => (sessionId ? s.groupOpenBySession[sessionId] : undefined)) ?? DEFAULT_GROUP_OPEN
   const [hasEverLoadedSnapshot, setHasEverLoadedSnapshot] = useState(false)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
   const lastSelectionRef = useRef<DiffSelection | null>(null)
@@ -88,7 +81,6 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   useEffect(() => {
     setSelected(null)
     lastSelectionRef.current = null
-    setGroupOpen(DEFAULT_GROUP_OPEN)
     setHasEverLoadedSnapshot(false)
     setHasLoadedOnce(false)
   }, [sessionId])
@@ -189,7 +181,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
                 entries={snapshot.groups[kind]}
                 sessionId={sessionId}
                 open={groupOpen[kind]}
-                onOpenChange={(next) => setGroupOpen((prev) => ({ ...prev, [kind]: next }))}
+                onOpenChange={(next) => sessionId && useGitChangesStore.getState().setGroupOpen(sessionId, kind, next)}
                 onOpenDiff={openDiff}
               />
             ))}

@@ -7,6 +7,8 @@ import type { SessionSummary } from '../../shared/ipc';
 import { notify } from './notify';
 import { useSessionListStore } from './session-list-store';
 import { useDocumentTabsStore } from './document-tabs-store';
+import { useGitChangesStore } from './git-changes-store';
+import { useSideChatStore } from './side-chat-store';
 import { liveParentIds, useSessionsStore } from './sessions-store';
 
 vi.mock('./notify', () => ({ notify: vi.fn() }));
@@ -199,5 +201,20 @@ describe('useSessionsStore.refresh dropping document tabs of deleted Sessions (#
     };
     await useSessionsStore.getState().refresh();
     expect(Object.keys(useDocumentTabsStore.getState().bySession).sort()).toEqual(['archived', 'deleted', 'kept']);
+  });
+});
+
+describe('useSessionsStore.refresh dropping Session-keyed panel state (#2075 FR-028)', () => {
+  it('keeps group and Side chat draft state of a live Session and drops that of a Session that left the list', async () => {
+    (globalThis as unknown as { window: unknown }).window = {
+      refract: { sessions: { list: () => Promise.resolve({ ok: true, value: [summary('live')] }), deleting: () => Promise.resolve({ ok: true, value: [] }) } },
+    };
+    for (const id of ['live', 'gone']) {
+      useGitChangesStore.getState().setGroupOpen(id, 'staged', false);
+      useSideChatStore.getState().setDraft(id, 'question');
+    }
+    await useSessionsStore.getState().refresh();
+    expect(Object.keys(useGitChangesStore.getState().groupOpenBySession)).toEqual(['live']);
+    expect(Object.keys(useSideChatStore.getState().draftBySession)).toEqual(['live']);
   });
 });

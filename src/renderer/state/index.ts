@@ -21,7 +21,7 @@ import { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore } from './readout-s
 import { useSubagentPanelStore } from './subagent-store'
 import { SIDE_CHAT_LOADING_HINT, useSideChatStore } from './side-chat-store'
 import { useFileExplorerStore } from './file-explorer-store'
-import { useGitChangesStore } from './git-changes-store'
+import { DEFAULT_GROUP_OPEN, useGitChangesStore } from './git-changes-store'
 import { usePinnedPanelsStore } from './pinned-panels-store'
 import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_INTERIM_CAP_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore } from './right-pane-store'
 import { useSplitStore } from './split-store'
@@ -61,7 +61,7 @@ export { EMPTY_READOUT, EMPTY_READOUT_ENTRY, useReadoutStore }
 export { useSubagentPanelStore }
 export { SIDE_CHAT_LOADING_HINT, useSideChatStore }
 export { useFileExplorerStore }
-export { useGitChangesStore }
+export { DEFAULT_GROUP_OPEN, useGitChangesStore }
 export { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_INTERIM_CAP_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore }
 export { usePinnedPanelsStore } from './pinned-panels-store'
 export { useSplitStore }

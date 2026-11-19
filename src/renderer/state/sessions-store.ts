@@ -6,6 +6,7 @@ import { notify } from './notify'
 import { useDocumentTabsStore } from './document-tabs-store'
 import { useSplitStore } from './split-store'
 import { useGitChangesStore } from './git-changes-store'
+import { useSideChatStore } from './side-chat-store'
 import { useSessionListStore } from './session-list-store'
 
 interface SessionsState {
@@ -116,7 +117,9 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       // Delete is the only way out of the list, so this is the delete-not-archive drop of a Session's document tabs (#2075).
       useDocumentTabsStore.getState().pruneSessions(listedIds)
       useSessionListStore.getState().pruneParents(liveParentIds(result.value))
-      useGitChangesStore.getState().pruneCommitDrafts(new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id)))
+      const liveIds = new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id))
+      useGitChangesStore.getState().pruneSessionUi(liveIds)
+      useSideChatStore.getState().pruneDrafts(liveIds)
     } else {
       notify(result.error)
     }

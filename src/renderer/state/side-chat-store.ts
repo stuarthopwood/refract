@@ -42,6 +42,11 @@ const EMPTY_SESSION_STATE: SideChatSessionState = {
 
 interface SideChatThreadState {
   bySession: Record<string, SideChatSessionState>
+  /** Held here, not in the panel, so a tab switch (unmount) keeps the unsent question (#2075 FR-028). Not cleared with the thread. */
+  draftBySession: Record<string, string>
+  setDraft(sessionId: string, text: string): void
+  /** Drops the drafts of every Session not in `keepIds`. */
+  pruneDrafts(keepIds: Set<string>): void
   loadHistory(sessionId: string): Promise<void>
   ask(sessionId: string, question: string): Promise<void>
   cancel(sessionId: string): Promise<void>
@@ -69,6 +74,24 @@ function stripInternalPrefix(message: string): string {
 
 export const useSideChatStore = create<SideChatThreadState>((set, get) => ({
   bySession: {},
+  draftBySession: {},
+
+  setDraft(sessionId, text) {
+    set((state) => {
+      if ((state.draftBySession[sessionId] ?? '') === text) return state
+      const draftBySession = { ...state.draftBySession, [sessionId]: text }
+      if (text === '') delete draftBySession[sessionId]
+      return { draftBySession }
+    })
+  },
+
+  pruneDrafts(keepIds) {
+    set((state) => {
+      const entries = Object.entries(state.draftBySession).filter(([id]) => keepIds.has(id))
+      if (entries.length === Object.keys(state.draftBySession).length) return state
+      return { draftBySession: Object.fromEntries(entries) }
+    })
+  },
 
   async loadHistory(sessionId) {
     // Captured before the await; a Conversation change bumps it, and the stale result must not be applied.
