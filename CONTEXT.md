@@ -392,7 +392,7 @@ A tab in the right pane's tab bar that shows one file or one diff for one **Sess
 _Avoid_: Preview tab, editor tab, main-area tab
 
 **Chat collapse**:
-The chat area at zero width so the right pane fills the window (spec 137, issue #2075). A preference (`Settings.rightPane.chatCollapsed`) that applies only in the chat view: Home, Pull requests, Issues and Usage always show the chat area. It hides both **Chat panes** of a **Split** together but keeps them mounted, so streams, scroll positions and drafts survive, and keeps their **Sessions** marked as shown. The right pane and chat are never both hidden: hiding chat opens the right pane, and closing the right pane shows chat. Toggled from the **Icon rail**'s Chat pane button, the palette ("Hide or show chat"), the handle's context menu, the "Right pane width" dropdown and Ctrl+Shift+H.
+The chat area at zero width so the right pane fills the window (spec 137, issue #2075). A preference (`Settings.rightPane.chatCollapsed`) that applies only in the chat view: Home, Pull requests, Issues and Usage always show the chat area. It hides both **Chat panes** of a **Split** together but keeps them mounted, so streams, scroll positions and drafts survive, and keeps their **Sessions** marked as shown. While it is on, Ctrl+W and Ctrl+Shift+\ are off, and selecting a **Session** by an explicit action shows chat. The right pane and chat are never both hidden: hiding chat opens the right pane, and closing the right pane shows chat. Toggled from the **Icon rail**'s Chat pane button, the palette ("Hide or show chat"), the handle's context menu, the "Right pane width" dropdown and Ctrl+Shift+H.
 _Avoid_: Chat pane collapse (a **Chat pane** is one half of a **Split**), hide Split
 
 **Git decoration**:
