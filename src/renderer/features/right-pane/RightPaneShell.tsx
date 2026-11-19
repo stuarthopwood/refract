@@ -14,7 +14,12 @@ import { OutlinePanel } from './outline/OutlinePanel'
 import { SessionUsagePanel } from '@/features/usage/SessionUsagePanel'
 import { PinnedIssuePanel } from './pinned/PinnedIssuePanel'
 import { PinnedPullRequestPanel } from './pinned/PinnedPullRequestPanel'
-import type { PanelId } from './panel-registry'
+import { resolveActiveTab } from '@/state/right-pane-store'
+import { useDocumentTabsStore, type DocumentTab } from '@/state/document-tabs-store'
+import { activeItemKey, buildTabItems, tabDomIds } from './tab-items'
+import { isGenuineOpen, shellLayout } from './shell-tabs'
+
+const NO_TABS: DocumentTab[] = []
 
 interface RightPaneShellProps {
   sessionId: string | null
@@ -22,15 +27,24 @@ interface RightPaneShellProps {
 
 export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   const openPanelIds = useRightPaneStore((s) => s.openPanelIds)
-  const activePanelId = useRightPaneStore((s) => s.activePanelId)
+  const storePanelId = useRightPaneStore((s) => s.activePanelId)
+  const documents = useDocumentTabsStore((s) => (sessionId ? s.bySession[sessionId] : undefined))
+  const documentTabs = documents?.tabs ?? NO_TABS
+  const activeKey = resolveActiveTab(sessionId, storePanelId, documents)
+  const activePanelId = activeKey?.kind === 'panel' ? activeKey.id : null
+  const tabKey = activeItemKey(activeKey)
+  const layout = shellLayout(openPanelIds.length + documentTabs.length)
   const subagentSessionId = useSubagentPanelStore((s) => s.sessionId)
   const contentRef = useRef<HTMLDivElement>(null)
   const paneOpen = useRightPaneStore((s) => s.open)
   // Panel size changes instantly (#678); only content fades and slides in; closing is ignored.
-  const panelKey = paneOpen ? activePanelId : null
+  const panelKey = paneOpen ? tabKey : null
   const launcherRef = useEnterOnSwitch<HTMLDivElement>(paneOpen ? 'launcher' : null, 'panel')
   useEnterOnSwitch(panelKey, 'panel', contentRef)
-  const prevOpenPanelIdsRef = useRef<PanelId[]>(useRightPaneStore.getState().openPanelIds)
+  const prevTabsRef = useRef<{ sessionId: string | null; keys: ReadonlySet<string> }>({
+    sessionId,
+    keys: new Set(buildTabItems(useRightPaneStore.getState().openPanelIds, documentTabs).map((item) => item.key))
+  })
 
   useEffect(() => {
     if (paneOpen && sessionId && !subagentSessionId && openPanelIds.includes('subagents')) {
@@ -39,15 +53,16 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   }, [paneOpen, sessionId, subagentSessionId, openPanelIds])
 
   useEffect(() => {
-    const prevIds = prevOpenPanelIdsRef.current
-    const isGenuineOpen = activePanelId !== null && !prevIds.includes(activePanelId)
-    prevOpenPanelIdsRef.current = openPanelIds
+    const previous = prevTabsRef.current
+    const currentKeys = new Set(buildTabItems(openPanelIds, documentTabs).map((item) => item.key))
+    prevTabsRef.current = { sessionId, keys: currentKeys }
     const { suppressNextContentFocus } = useRightPaneStore.getState()
     if (suppressNextContentFocus) useRightPaneStore.setState({ suppressNextContentFocus: false })
-    if (isGenuineOpen && !suppressNextContentFocus) contentRef.current?.focus()
-  }, [openPanelIds, activePanelId])
+    // A Session switch swaps the document tabs; that is not a tab opening.
+    if (isGenuineOpen(previous, sessionId, tabKey) && !suppressNextContentFocus) contentRef.current?.focus()
+  }, [openPanelIds, documentTabs, tabKey, sessionId])
 
-  if (openPanelIds.length === 0) {
+  if (layout === 'launcher') {
     return (
       <div data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
         <div ref={launcherRef} className="min-h-0 flex-1 overflow-hidden">
@@ -58,7 +73,8 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
     )
   }
 
-  const isTabBar = openPanelIds.length >= 2
+  const isTabBar = layout === 'tab-bar'
+  const ids = activeKey ? tabDomIds(activeKey) : null
 
   return (
     <div id="right-pane-active-panel" data-right-pane-shell className="relative flex h-full flex-col overflow-hidden bg-sidebar-right">
@@ -69,9 +85,11 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         tabIndex={-1}
         className="flex min-h-0 flex-1 flex-col focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         role={isTabBar ? 'tabpanel' : 'region'}
-        id={isTabBar && activePanelId ? `panel-content-${activePanelId}` : undefined}
-        aria-labelledby={isTabBar && activePanelId ? `panel-tab-${activePanelId}` : 'right-pane-panel-title'}
+        id={isTabBar ? ids?.panelId : undefined}
+        aria-labelledby={isTabBar && ids ? ids.tabId : 'right-pane-panel-title'}
       >
+        {/* Phase 3 (T011+) builds the file and diff views; until then a document tab shows this placeholder. */}
+        {activeKey?.kind === 'document' && <p className="p-4 text-sm text-muted-foreground">This document view is not available yet.</p>}
         {activePanelId === 'subagents' &&
           (subagentSessionId ? (
             <SubagentPanel sessionId={subagentSessionId} />
