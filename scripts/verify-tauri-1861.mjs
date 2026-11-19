@@ -4,7 +4,7 @@
 // times and writes real-looking Conversation files. Each scenario drives the Host tools over the real wire: it appends
 // a `host_tool_call` frame and reads the recorded `host_tool_result`.
 //
-// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1861.mjs [--group list-switch|handoff] [--scenario <name>] [--build]
+// Usage: CARGO_TARGET_DIR=<shared target dir> node scripts/verify-tauri-1861.mjs [--group list-switch|handoff|cross] [--scenario <name>] [--build]
 // Groups live in `verify-tauri-1861-<group>.mjs` and are registered in GROUPS below. Evidence lands in
 // REFRACT_1861_SCRATCH/evidence (default C:/Users/shopwood/AppData/Local/Temp/scratch/driver-1861/evidence).
 
@@ -25,7 +25,8 @@ const EVIDENCE_DIR = path.join(SCRATCH, 'evidence');
 // A group module default-exports `{ scenarios: [{ name, title, run(ctx, rec) }] }`; add new groups here.
 const GROUPS = {
   'list-switch': () => import('./verify-tauri-1861-list-switch.mjs'),
-  handoff: () => import('./verify-tauri-1861-handoff.mjs')
+  handoff: () => import('./verify-tauri-1861-handoff.mjs'),
+  cross: () => import('./verify-tauri-1861-cross.mjs')
 };
 
 const argValue = (flag) => {
