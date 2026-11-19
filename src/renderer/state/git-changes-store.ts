@@ -19,10 +19,6 @@ interface GitChangesStoreState {
   commitDraftsBySession: Record<string, { subject: string; body: string }>
   /** Held here, not in the panel, so a tab switch (unmount) keeps which groups the user collapsed (#2075 FR-028). */
   groupOpenBySession: Record<string, Record<GitChangesGroupKind, boolean>>
-  /** An agent's request to show one file's diff; the mounted panel consumes it, so it survives a closed panel. */
-  showFileRequestBySession: Record<string, string>
-  requestShowFile(sessionId: string, path: string): void
-  clearShowFileRequest(sessionId: string): void
   load(sessionId: string): Promise<void>
   /** `awaitRefresh: false` returns once git answers; the follow-up reload still runs. */
   stage(sessionId: string, paths: string[], options?: { awaitRefresh?: boolean }): Promise<Result<void>>
@@ -165,20 +161,6 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
   bySession: {},
   commitDraftsBySession: {},
   groupOpenBySession: {},
-  showFileRequestBySession: {},
-
-  requestShowFile(sessionId, path) {
-    set((state) => ({ showFileRequestBySession: { ...state.showFileRequestBySession, [sessionId]: path } }))
-  },
-
-  clearShowFileRequest(sessionId) {
-    set((state) => {
-      if (!(sessionId in state.showFileRequestBySession)) return state
-      const next = { ...state.showFileRequestBySession }
-      delete next[sessionId]
-      return { showFileRequestBySession: next }
-    })
-  },
 
   async load(sessionId) {
     const queued = loadQueued.get(sessionId)
@@ -275,7 +257,6 @@ export const useGitChangesStore = create<GitChangesStoreState>((set, get) => ({
 
   forgetSession(sessionId) {
     loadGeneration.set(sessionId, (loadGeneration.get(sessionId) ?? 0) + 1)
-    get().clearShowFileRequest(sessionId)
     set((state) => {
       if (!(sessionId in state.bySession)) return state
       const bySession = { ...state.bySession }

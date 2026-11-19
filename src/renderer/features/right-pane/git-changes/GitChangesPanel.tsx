@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2Icon, FileWarningIcon, FolderIcon } from 'lucide-react'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DEFAULT_GROUP_OPEN, useGitChangesStore } from '@/state'
-import { openDocument } from '@/features/documents/open-document'
+import { pointerActivation, type RowActivation } from '../file-explorer/row-open'
 import type { GitChangesFileEntry, GitChangesGroupKind } from '../../../../shared/model'
 import { GitChangesGroup } from './GitChangesGroup'
 import { GitChangesHeader } from './GitChangesHeader'
 import { GitCommitBox } from './GitCommitBox'
 import { GROUP_ORDER } from './focus'
+import { clickActivation, openDiffFromRow } from './diff-row-open'
+import { useDiffTabRetarget } from './useDiffTabRetarget'
 import { useGitChangesWatch } from './useGitChangesWatch'
 
 export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
@@ -20,6 +22,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
 
   const sessionEntry = useGitChangesStore((s) => (sessionId ? s.bySession[sessionId] : undefined))
   const groupOpen = useGitChangesStore((s) => (sessionId ? s.groupOpenBySession[sessionId] : undefined)) ?? DEFAULT_GROUP_OPEN
+  const activationRef = useRef<RowActivation>(pointerActivation({ ctrlKey: false, metaKey: false }))
   const [hasEverLoadedSnapshot, setHasEverLoadedSnapshot] = useState(false)
   const [hasLoadedOnce, setHasLoadedOnce] = useState(false)
 
@@ -28,16 +31,8 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
     setHasLoadedOnce(false)
   }, [sessionId])
 
-  const showFileRequest = useGitChangesStore((s) => (sessionId ? s.showFileRequestBySession[sessionId] : undefined))
-  const requestSnapshot = sessionEntry?.snapshot ?? null
-  useEffect(() => {
-    if (!sessionId || !showFileRequest || !requestSnapshot) return
-    const group = GROUP_ORDER.find((kind) => requestSnapshot.groups[kind].some((candidate) => candidate.path === showFileRequest))
-    if (group) openDocument(sessionId, { kind: 'diff', group, path: showFileRequest }, { focus: false, announce: `Agent opened diff of ${showFileRequest.split('/').pop()}` })
-    useGitChangesStore.getState().clearShowFileRequest(sessionId)
-  }, [sessionId, showFileRequest, requestSnapshot])
-
   const snapshot = sessionEntry?.snapshot ?? null
+  useDiffTabRetarget(sessionId, snapshot)
 
   useEffect(() => {
     if (snapshot) setHasEverLoadedSnapshot(true)
@@ -64,11 +59,18 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
   const loading = sessionEntry?.loading ?? true
 
   const openDiff = (entry: GitChangesFileEntry, group: GitChangesGroupKind) => {
-    openDocument(sessionId, { kind: 'diff', group, path: entry.path })
+    openDiffFromRow(sessionId, group, entry.path, activationRef.current)
   }
 
   return (
-    <div data-git-changes-session={sessionId} className="flex h-full flex-col overflow-hidden">
+    <div
+      data-git-changes-session={sessionId}
+      // The rows own their click handlers and pass no event up, so the modifiers are read here, before the row's own handler runs.
+      onClickCapture={(event) => {
+        activationRef.current = clickActivation(event)
+      }}
+      className="flex h-full flex-col overflow-hidden"
+    >
       {snapshot && <GitChangesHeader header={snapshot.header} />}
       {/* A background refresh failure over a stale-but-known snapshot: quiet, mounted only while it
           fails, and distinct from GitCommitBox's role="alert" for an action failure. */}
