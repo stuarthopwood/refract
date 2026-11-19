@@ -1,4 +1,5 @@
 import { notifyPersistentError, useRepositoriesStore, useSessionsStore, useSplitStore } from '@/state'
+import { frontSessionIdOf } from '@/state/split-store'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { focusSessionPane } from '@/lib/focus'
 import { announceQuickCreateFallback } from './quickCreateFallback'
@@ -6,9 +7,7 @@ import { createdSessionAnnouncement } from './createdSessionAnnouncement'
 
 /** Id of the Session in the focused pane (the only pane when not split), or null with no panes. */
 export function focusedPaneSessionId(): string | null {
-  const { paneSessionIds, focusedIndex } = useSplitStore.getState()
-  if (paneSessionIds.length === 0) return null
-  return paneSessionIds[Math.min(focusedIndex, paneSessionIds.length - 1)] ?? null
+  return frontSessionIdOf(useSplitStore.getState())
 }
 
 /** The focused pane's Project, or the only Project; undefined when ambiguous. */

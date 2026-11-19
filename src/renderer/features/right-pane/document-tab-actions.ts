@@ -11,13 +11,12 @@ export function bulkCloseAnnouncement(action: BulkCloseAction, count: number): s
   return `Closed ${count} ${SCOPE[action]} ${count === 1 ? 'tab' : 'tabs'}`
 }
 
-/** The store repoints a Session's active document; the pane's live selection follows it here. */
+/** The store repoints a Session's active document; the pane's panel selection follows it here. */
 export function applyCloseResult(sessionId: string, result: CloseResult): void {
   if (!result.activeChanged) return
   const { activePanelId, activateTab } = useRightPaneStore.getState()
   const target = result.next ?? (activePanelId ? { kind: 'panel' as const, id: activePanelId } : null)
   if (target) activateTab(target, sessionId)
-  else useRightPaneStore.setState({ activeTabKey: null })
 }
 
 export function runBulkClose(sessionId: string, action: BulkCloseAction, keepId: string | null): void {

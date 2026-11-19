@@ -1,5 +1,5 @@
 import { useDocumentTabsStore } from '@/state/document-tabs-store'
-import { useRightPaneStore } from '@/state/right-pane-store'
+import { frontActiveTab, useRightPaneStore } from '@/state/right-pane-store'
 import { shouldReturnFocusToRow, takeClosedOrigins } from '../file-explorer/row-focus-return'
 import type { GitChangesGroupKind } from '../../../../shared/model'
 import { focusGitRow, focusGitRowInGroup, focusNearestGroupTrigger } from './focus'
@@ -34,8 +34,8 @@ function focusLocation(): 'body' | 'tab-strip' | 'other' {
 }
 
 function gitPanelShowing(): boolean {
-  const { open, activeTabKey } = useRightPaneStore.getState()
-  return open && activeTabKey?.kind === 'panel' && activeTabKey.id === 'git-changes'
+  const tab = frontActiveTab()
+  return useRightPaneStore.getState().open && tab?.kind === 'panel' && tab.id === 'git-changes'
 }
 
 function returnFocus(sessionId: string, value: string): void {

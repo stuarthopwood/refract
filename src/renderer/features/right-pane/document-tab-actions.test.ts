@@ -4,7 +4,8 @@ const announce = vi.hoisted(() => vi.fn())
 vi.mock('@/state/agent-announcement-store', () => ({ useAgentAnnouncementStore: { getState: () => ({ announce }) } }))
 
 import { useDocumentTabsStore } from '@/state/document-tabs-store'
-import { useRightPaneStore } from '@/state/right-pane-store'
+import { frontActiveTab, useRightPaneStore } from '@/state/right-pane-store'
+import { useSplitStore } from '@/state/split-store'
 import { applyCloseResult, bulkCloseAnnouncement, runBulkClose } from './document-tab-actions'
 
 const open = (path: string, activate = false) => useDocumentTabsStore.getState().openDocumentTab('s1', { kind: 'file', path }, { activate })
@@ -12,7 +13,8 @@ const open = (path: string, activate = false) => useDocumentTabsStore.getState()
 beforeEach(() => {
   announce.mockReset()
   useDocumentTabsStore.setState({ bySession: {} })
-  useRightPaneStore.setState({ open: true, openPanelIds: ['outline'], activePanelId: 'outline', activeTabKey: { kind: 'panel', id: 'outline' } })
+  useSplitStore.setState({ paneSessionIds: ['s1'], focusedIndex: 0 })
+  useRightPaneStore.setState({ open: true, openPanelIds: ['outline'], activePanelId: 'outline' })
 })
 
 describe('bulkCloseAnnouncement', () => {
@@ -38,7 +40,7 @@ describe('runBulkClose', () => {
     const { id } = open('a.ts', true)
     useRightPaneStore.getState().activateTab({ kind: 'document', sessionId: 's1', id })
     runBulkClose('s1', 'all', null)
-    expect(useRightPaneStore.getState().activeTabKey).toEqual({ kind: 'panel', id: 'outline' })
+    expect(frontActiveTab()).toEqual({ kind: 'panel', id: 'outline' })
     expect(announce).toHaveBeenCalledWith('Closed 1 file and diff tab')
   })
 
@@ -60,6 +62,6 @@ describe('runBulkClose', () => {
 describe('applyCloseResult', () => {
   it('leaves the selection alone when the active tab did not change', () => {
     applyCloseResult('s1', { closed: [], activeChanged: false, next: null })
-    expect(useRightPaneStore.getState().activeTabKey).toEqual({ kind: 'panel', id: 'outline' })
+    expect(frontActiveTab()).toEqual({ kind: 'panel', id: 'outline' })
   })
 })

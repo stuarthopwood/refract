@@ -34,6 +34,11 @@ interface SplitState {
   pruneDeleted(existingIds: Set<string>): void
 }
 
+/** The Session in the focused pane (the only pane when not split), or null with no panes. */
+export function frontSessionIdOf({ paneSessionIds, focusedIndex }: Pick<SplitState, 'paneSessionIds' | 'focusedIndex'>): string | null {
+  return paneSessionIds[Math.min(focusedIndex, paneSessionIds.length - 1)] ?? null
+}
+
 /** Split-view pane state: which sessions are shown, focus, and divider position. */
 export const useSplitStore = create<SplitState>((set, get) => {
   // `App.tsx` is the sole caller of `sessions.setVisible`: a store-driven call would clear unread

@@ -1,24 +1,26 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { useDocumentTabsStore } from './document-tabs-store'
-import { resolveActiveTab, RIGHT_PANE_SANITY_MAX_WIDTH_PX, useRightPaneStore } from './right-pane-store'
+import { frontActiveTab, resolveActiveTab, RIGHT_PANE_SANITY_MAX_WIDTH_PX, useRightPaneStore } from './right-pane-store'
+import { useSplitStore } from './split-store'
 
 const pane = () => useRightPaneStore.getState()
 const docs = () => useDocumentTabsStore.getState()
-const openFile = (path: string) => docs().openDocumentTab('s1', { kind: 'file', path }, { activate: true })
+const openFile = (path: string, sessionId = 's1') => docs().openDocumentTab(sessionId, { kind: 'file', path }, { activate: true })
 
 beforeEach(() => {
   useDocumentTabsStore.setState({ bySession: {} })
-  useRightPaneStore.setState({ open: false, openPanelIds: [], activePanelId: null, activeTabKey: null, chatCollapsed: false })
+  useSplitStore.setState({ paneSessionIds: ['s1'], focusedIndex: 0 })
+  useRightPaneStore.setState({ open: false, openPanelIds: [], activePanelId: null, chatCollapsed: false })
 })
 
 describe('activateTab', () => {
-  it('selecting a document tab sets that Session\'s active document id and the live key', () => {
+  it('selecting a document tab sets that Session\'s active document id and the front tab', () => {
     pane().openPanel('git-changes')
     const { id } = openFile('a.ts')
     docs().setActiveDocument('s1', null)
     pane().activateTab({ kind: 'document', sessionId: 's1', id })
     expect(docs().bySession['s1']?.activeId).toBe(id)
-    expect(pane().activeTabKey).toEqual({ kind: 'document', sessionId: 's1', id })
+    expect(frontActiveTab()).toEqual({ kind: 'document', sessionId: 's1', id })
     // The panel half of the union survives, so closing the document tab can fall back to it.
     expect(pane().activePanelId).toBe('git-changes')
   })
@@ -30,7 +32,7 @@ describe('activateTab', () => {
     pane().activateTab({ kind: 'document', sessionId: 's1', id })
     pane().activateTab({ kind: 'panel', id: 'git-changes' }, 's1')
     expect(docs().bySession['s1']?.activeId).toBeNull()
-    expect(pane().activeTabKey).toEqual({ kind: 'panel', id: 'git-changes' })
+    expect(frontActiveTab()).toEqual({ kind: 'panel', id: 'git-changes' })
     expect(pane().activePanelId).toBe('git-changes')
   })
 
@@ -38,16 +40,38 @@ describe('activateTab', () => {
     pane().openPanel('git-changes')
     pane().activateTab({ kind: 'document', sessionId: 's1', id: 'file:missing.ts' })
     pane().activateTab({ kind: 'panel', id: 'outline' })
-    expect(pane().activeTabKey).toEqual({ kind: 'panel', id: 'git-changes' })
+    expect(frontActiveTab()).toEqual({ kind: 'panel', id: 'git-changes' })
     expect(pane().activePanelId).toBe('git-changes')
   })
 
-  it('opening a panel drops the selected document tab of the Session it was selected in', () => {
+  it('opening a panel drops the selected document tab of the front Session', () => {
     const { id } = openFile('a.ts')
     pane().activateTab({ kind: 'document', sessionId: 's1', id })
     pane().openPanel('outline')
     expect(docs().bySession['s1']?.activeId).toBeNull()
-    expect(pane().activeTabKey).toEqual({ kind: 'panel', id: 'outline' })
+    expect(frontActiveTab()).toEqual({ kind: 'panel', id: 'outline' })
+  })
+
+  it('after a Session switch, opening a panel clears the new front Session, not the previous one', () => {
+    const a = openFile('a.ts', 'sA')
+    const b = openFile('b.ts', 'sB')
+    useSplitStore.setState({ paneSessionIds: ['sA'], focusedIndex: 0 })
+    pane().activateTab({ kind: 'document', sessionId: 'sA', id: a.id })
+    useSplitStore.setState({ paneSessionIds: ['sB'], focusedIndex: 0 })
+    expect(frontActiveTab()).toEqual({ kind: 'document', sessionId: 'sB', id: b.id })
+    pane().openPanel('outline')
+    expect(docs().bySession['sB']?.activeId).toBeNull()
+    expect(docs().bySession['sA']?.activeId).toBe(a.id)
+    expect(frontActiveTab()).toEqual({ kind: 'panel', id: 'outline' })
+  })
+
+  it('the front tab follows the front Session as the split focus moves', () => {
+    pane().openPanel('file-explorer')
+    const b = openFile('b.ts', 'sB')
+    useSplitStore.setState({ paneSessionIds: ['sA', 'sB'], focusedIndex: 0 })
+    expect(frontActiveTab()).toEqual({ kind: 'panel', id: 'file-explorer' })
+    useSplitStore.setState({ focusedIndex: 1 })
+    expect(frontActiveTab()).toEqual({ kind: 'document', sessionId: 'sB', id: b.id })
   })
 
   it('keeps a selected document tab when a panel behind it closes', () => {
@@ -56,8 +80,17 @@ describe('activateTab', () => {
     const { id } = openFile('a.ts')
     pane().activateTab({ kind: 'document', sessionId: 's1', id })
     pane().closePanel('outline')
-    expect(pane().activeTabKey).toEqual({ kind: 'document', sessionId: 's1', id })
+    expect(frontActiveTab()).toEqual({ kind: 'document', sessionId: 's1', id })
     expect(pane().activePanelId).toBe('git-changes')
+  })
+})
+
+describe('restore', () => {
+  it('reports the front Session\'s persisted document tab, not the panel', () => {
+    const { id } = openFile('a.ts')
+    pane().restore({ open: true, widthPx: 320, openPanelIds: ['outline'], activePanelId: 'outline', panelOrder: [], chatCollapsed: false })
+    expect(docs().bySession['s1']?.activeId).toBe(id)
+    expect(frontActiveTab()).toEqual({ kind: 'document', sessionId: 's1', id })
   })
 })
 

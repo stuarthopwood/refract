@@ -15,7 +15,7 @@ const file = (path: string) => ({ kind: 'file', path })
 
 beforeEach(() => {
   useDocumentTabsStore.setState({ bySession: {} })
-  useRightPaneStore.setState({ open: false, openPanelIds: [], activePanelId: null, activeTabKey: null, panelOrder: [], chatCollapsed: false })
+  useRightPaneStore.setState({ open: false, openPanelIds: [], activePanelId: null, panelOrder: [], chatCollapsed: false })
 })
 
 describe('validateDocumentTabs', () => {

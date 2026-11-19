@@ -1,5 +1,5 @@
 import { useDocumentTabsStore } from '@/state/document-tabs-store'
-import { useRightPaneStore } from '@/state/right-pane-store'
+import { frontActiveTab, useRightPaneStore } from '@/state/right-pane-store'
 
 export type FocusLocation = 'body' | 'tab-strip' | 'other'
 
@@ -35,8 +35,8 @@ function focusLocation(): FocusLocation {
 }
 
 function explorerShowing(): boolean {
-  const { open, activeTabKey } = useRightPaneStore.getState()
-  return open && activeTabKey?.kind === 'panel' && activeTabKey.id === 'file-explorer'
+  const tab = frontActiveTab()
+  return useRightPaneStore.getState().open && tab?.kind === 'panel' && tab.id === 'file-explorer'
 }
 
 function returnFocus(path: string): void {

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { PanelId } from '../features/right-pane/panel-registry'
 import { useDocumentTabsStore, type SessionDocuments, type TabKey } from './document-tabs-store'
+import { frontSessionIdOf, useSplitStore } from './split-store'
 
 export const RIGHT_PANE_DEFAULT_WIDTH_PX = 320
 export const RIGHT_PANE_MIN_WIDTH_PX = 240
@@ -11,10 +12,8 @@ interface RightPaneState {
   open: boolean
   widthPx: number
   openPanelIds: PanelId[]
-  /** The panel half of the selection: the last active panel, still set while a document tab is selected. */
+  /** The panel half of the selection: the last active panel, still set while a document tab is selected. The selected tab itself is derived (`resolveActiveTab`), never stored. */
   activePanelId: PanelId | null
-  /** The live selection across panel and document tabs; `resolveActiveTab` derives the per-Session one. */
-  activeTabKey: TabKey | null
   panelOrder: string[]
   /** Never true while `open` is false: the chat and the pane are never both hidden (FR-018). */
   chatCollapsed: boolean
@@ -49,9 +48,11 @@ export function resolveActiveTab(sessionId: string | null, activePanelId: PanelI
   return panelKey(activePanelId)
 }
 
-/** A selected document tab goes stale once a panel is selected instead: drop it from that Session. */
-function clearSelectedDocument(key: TabKey | null): void {
-  if (key?.kind === 'document') useDocumentTabsStore.getState().setActiveDocument(key.sessionId, null)
+/** The tab selected in the front Session's pane, derived on every read so a Session switch can never leave it stale. */
+export function frontActiveTab(): TabKey | null {
+  const frontSessionId = frontSessionIdOf(useSplitStore.getState())
+  const documents = frontSessionId === null ? undefined : useDocumentTabsStore.getState().bySession[frontSessionId]
+  return resolveActiveTab(frontSessionId, useRightPaneStore.getState().activePanelId, documents)
 }
 
 export const useRightPaneStore = create<RightPaneState>((set, get) => ({
@@ -59,52 +60,47 @@ export const useRightPaneStore = create<RightPaneState>((set, get) => ({
   widthPx: RIGHT_PANE_DEFAULT_WIDTH_PX,
   openPanelIds: [],
   activePanelId: null,
-  activeTabKey: null,
   panelOrder: [],
   chatCollapsed: false,
   sideChatFocusRequestId: 0,
   suppressNextContentFocus: false,
   openPanel: (id, options) => {
-    const { openPanelIds, activePanelId, activeTabKey, sideChatFocusRequestId } = get()
+    const { openPanelIds, activePanelId, sideChatFocusRequestId } = get()
     const focus = options?.focus ?? true
     const listsChange = !openPanelIds.includes(id) || activePanelId !== id
-    clearSelectedDocument(activeTabKey)
+    // A panel selected over the front Session's document tab drops that selection; another Session's stays.
+    const frontSessionId = frontSessionIdOf(useSplitStore.getState())
+    if (frontSessionId !== null) useDocumentTabsStore.getState().setActiveDocument(frontSessionId, null)
     set({
       open: true,
       openPanelIds: openPanelIds.includes(id) ? openPanelIds : [...openPanelIds, id],
       activePanelId: id,
-      activeTabKey: panelKey(id),
       sideChatFocusRequestId: id === 'side-chat' && focus ? sideChatFocusRequestId + 1 : sideChatFocusRequestId,
       suppressNextContentFocus: listsChange ? !focus : get().suppressNextContentFocus && !focus
     })
   },
   closePanel: (id) => {
-    const { openPanelIds, activePanelId, activeTabKey } = get()
+    const { openPanelIds, activePanelId } = get()
     const index = openPanelIds.indexOf(id)
     const nextIds = openPanelIds.filter((openId) => openId !== id)
     const nextActive = activePanelId === id ? (nextIds[Math.min(index, nextIds.length - 1)] ?? null) : activePanelId
-    set({
-      openPanelIds: nextIds,
-      activePanelId: nextActive,
-      // A selected document tab stays selected when a panel behind it closes.
-      activeTabKey: activeTabKey?.kind === 'document' ? activeTabKey : panelKey(nextActive)
-    })
+    // The selected document tab lives in the documents store, so it stays selected when a panel behind it closes.
+    set({ openPanelIds: nextIds, activePanelId: nextActive })
   },
   activateTab: (key, sessionId) => {
     if (key.kind === 'panel') {
       if (!get().openPanelIds.includes(key.id)) return
       if (sessionId) useDocumentTabsStore.getState().setActiveDocument(sessionId, null)
-      set({ activePanelId: key.id, activeTabKey: key })
+      set({ activePanelId: key.id })
       return
     }
     if (!useDocumentTabsStore.getState().bySession[key.sessionId]?.tabs.some((tab) => tab.id === key.id)) return
     useDocumentTabsStore.getState().setActiveDocument(key.sessionId, key.id)
-    set({ activeTabKey: key })
   },
   setWidth: (widthPx) => set({ widthPx }),
   toggleCollapsed: () => set({ open: !get().open, chatCollapsed: get().open ? false : get().chatCollapsed }),
   setChatCollapsed: (collapsed) => set(collapsed ? { chatCollapsed: true, open: true } : { chatCollapsed: false }),
-  restore: (state) => set({ ...state, chatCollapsed: state.open && state.chatCollapsed, activeTabKey: panelKey(state.activePanelId) }),
+  restore: (state) => set({ ...state, chatCollapsed: state.open && state.chatCollapsed }),
   setPanelOrder: (panelOrder) => set({ panelOrder }),
   syncRenderedState: (open, widthPx) => set({ open, widthPx, chatCollapsed: open ? get().chatCollapsed : false })
 }))

@@ -7,7 +7,8 @@ vi.mock('sonner', () => ({ toast }))
 
 import { MAX_DOCUMENT_TABS_PER_SESSION } from '../../../shared/rightPane'
 import { useDocumentTabsStore } from '@/state/document-tabs-store'
-import { useRightPaneStore } from '@/state/right-pane-store'
+import { frontActiveTab, useRightPaneStore } from '@/state/right-pane-store'
+import { useSplitStore } from '@/state/split-store'
 import { evictionMessage, openDocument } from './open-document'
 
 const file = (path: string) => ({ kind: 'file' as const, path })
@@ -17,11 +18,11 @@ beforeEach(() => {
   announce.mockReset()
   toast.mockReset()
   useDocumentTabsStore.setState({ bySession: {} })
+  useSplitStore.setState({ paneSessionIds: ['s1'], focusedIndex: 0 })
   useRightPaneStore.setState({
     open: false,
     openPanelIds: ['file-explorer'],
     activePanelId: 'file-explorer',
-    activeTabKey: { kind: 'panel', id: 'file-explorer' },
     suppressNextContentFocus: false
   })
 })
@@ -29,7 +30,7 @@ beforeEach(() => {
 describe('openDocument', () => {
   it('opens and selects the tab, shows the pane and records the opener', () => {
     const { id } = openDocument('s1', file('a.ts'))
-    expect(useRightPaneStore.getState().activeTabKey).toEqual({ kind: 'document', sessionId: 's1', id })
+    expect(frontActiveTab()).toEqual({ kind: 'document', sessionId: 's1', id })
     expect(useRightPaneStore.getState().open).toBe(true)
     expect(useDocumentTabsStore.getState().bySession.s1?.openedFrom[id]).toEqual({ kind: 'panel', id: 'file-explorer' })
   })
@@ -39,13 +40,13 @@ describe('openDocument', () => {
     openDocument('s1', file('b.ts'))
     openDocument('s1', file('a.ts'))
     expect(tabs()).toEqual(['file:a.ts', 'file:b.ts'])
-    expect(useRightPaneStore.getState().activeTabKey).toMatchObject({ id: 'file:a.ts' })
+    expect(frontActiveTab()).toMatchObject({ id: 'file:a.ts' })
   })
 
   it('opens in the background without moving the selection', () => {
     openDocument('s1', file('a.ts'), { background: true })
     expect(tabs()).toEqual(['file:a.ts'])
-    expect(useRightPaneStore.getState().activeTabKey).toEqual({ kind: 'panel', id: 'file-explorer' })
+    expect(frontActiveTab()).toEqual({ kind: 'panel', id: 'file-explorer' })
     expect(useRightPaneStore.getState().open).toBe(false)
   })
 
