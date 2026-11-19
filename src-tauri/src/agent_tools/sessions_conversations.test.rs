@@ -1,11 +1,13 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use serde_json::json;
 
 use super::*;
 use crate::agent_tools::router::DENIED;
 use crate::agent_tools::sessions_end::tests::{host, parts, row};
+use crate::agent_tools::sessions_send::INVALID_TARGET;
 use crate::store::session_kind::SessionKind;
 
 /// Stands in for the running app: serves one fixed list of Conversations, records every action in
@@ -21,6 +23,8 @@ struct ConvFake {
     mid_turn: bool,
     cards: Mutex<Vec<PendingRequest>>,
     calls: Mutex<Vec<String>>,
+    /// Whether the Project's tree gate was held at each queue or start call.
+    held: Mutex<Vec<bool>>,
 }
 
 impl ConvHost for ConvFake {
@@ -59,6 +63,7 @@ impl ConvHost for ConvFake {
         action: HandoffAction,
         sender: Option<(String, String)>,
     ) -> Result<QueueOutcome, ToolError> {
+        self.note_gate().await;
         self.calls
             .lock()
             .unwrap()
@@ -69,11 +74,12 @@ impl ConvHost for ConvFake {
             QueueOutcome::NotMidTurn
         })
     }
-    async fn start_new(&self, id: &str, text: String, handoff_note: bool) -> Result<(), ToolError> {
+    async fn start_new(&self, id: &str, first: FirstMessage) -> Result<(), ToolError> {
+        self.note_gate().await;
         self.calls
             .lock()
             .unwrap()
-            .push(format!("start:{id}:{handoff_note}:{text}"));
+            .push(format!("start:{id}:{}:{}", first.handoff_note, first.text));
         Ok(())
     }
     async fn switch(&self, id: &str, file: String) -> Result<(), ToolError> {
@@ -88,6 +94,11 @@ impl ConvHost for ConvFake {
 impl ConvFake {
     fn calls(&self) -> Vec<String> {
         self.calls.lock().unwrap().clone()
+    }
+
+    async fn note_gate(&self) {
+        let free = tokio::time::timeout(Duration::from_millis(50), tree_gate::lock("repo")).await;
+        self.held.lock().unwrap().push(free.is_err());
     }
 }
 
@@ -115,6 +126,7 @@ async fn fake(convs: Vec<ConvRow>) -> ConvFake {
         mid_turn: false,
         cards: Mutex::new(Vec::new()),
         calls: Mutex::new(Vec::new()),
+        held: Mutex::new(Vec::new()),
     }
 }
 
@@ -470,166 +482,50 @@ async fn list_reads_a_sibling_without_a_card_and_still_refuses_other_projects() 
     assert_eq!(code(foreign), NOT_FOUND);
 }
 
-// new_conversation
+// Card text and error codes
 
 #[tokio::test]
-async fn new_checks_its_arguments_before_touching_anything() {
+async fn a_long_prompt_card_states_its_size_and_other_cards_do_not() {
     let fx = fake(vec![]).await;
+    let gate = open_gate(&fx, Some("side"), true).await.unwrap();
+    let long = "x".repeat(250);
+    confirm(&fx, ConvTool::New, &gate, &long).await.unwrap();
+    confirm(&fx, ConvTool::New, &gate, "short").await.unwrap();
+    confirm(&fx, ConvTool::Switch, &gate, &long).await.unwrap();
 
-    assert_eq!(
-        code(run_with(&fx, ConvTool::New, &json!({})).await),
-        INVALID_INPUT
-    );
-    assert!(fx.calls().is_empty());
+    let cards = fx.cards.lock().unwrap();
+    let size = "Prompt: 250 characters (first 200 shown)";
+    assert!(parts(&cards[0]).1.iter().any(|d| d == size));
+    assert!(!parts(&cards[1]).1.iter().any(|d| d.starts_with("Prompt:")));
+    assert!(!parts(&cards[2]).1.iter().any(|d| d.starts_with("Prompt:")));
 }
 
-#[tokio::test]
-async fn new_in_an_idle_own_session_starts_at_once_as_a_handoff() {
-    let fx = fake(vec![]).await;
-
-    let result = run_with(&fx, ConvTool::New, &json!({ "prompt": "go" }))
-        .await
-        .unwrap();
-
-    assert_eq!(result, json!({ "outcome": "started", "id": "me" }));
-    assert_eq!(fx.calls()[1], "start:me:true:go");
+#[test]
+fn agent_error_codes_map_to_the_tool_contract() {
+    let code_of = |code: &'static str| agent_error(code, "boom".into()).code;
+    assert_eq!(code_of("invalid-state"), INVALID_STATE);
+    assert_eq!(code_of("agent-not-running"), SESSION_NOT_RUNNING);
+    assert_eq!(code_of("prompt-failed"), "prompt_failed");
+    assert_eq!(agent_error("invalid-state", "boom".into()).message, "boom");
 }
 
-#[tokio::test]
-async fn new_in_a_mid_turn_session_is_scheduled_and_nothing_starts() {
-    let mut fx = fake(vec![]).await;
-    fx.mid_turn = true;
-
-    let result = run_with(&fx, ConvTool::New, &json!({ "prompt": "go" }))
-        .await
-        .unwrap();
-
-    assert_eq!(result, json!({ "outcome": "scheduled", "id": "me" }));
-    assert_eq!(fx.calls().len(), 1, "{:?}", fx.calls());
-}
+// The tree gate
 
 #[tokio::test]
-async fn new_in_a_sibling_asks_first_and_sends_the_prompt_in_an_envelope() {
+async fn the_tree_gate_is_held_while_the_action_runs_and_freed_after() {
     let fx = fake(vec![]).await;
     let args = json!({ "prompt": "build it", "session_id": "side" });
 
-    let result = run_with(&fx, ConvTool::New, &args).await.unwrap();
+    run_with(&fx, ConvTool::New, &args).await.unwrap();
 
-    assert_eq!(result, json!({ "outcome": "started", "id": "side" }));
-    assert_eq!(fx.cards.lock().unwrap().len(), 1);
-    assert!(
-        fx.calls()[1].starts_with("start:side:false:"),
-        "{:?}",
-        fx.calls()
-    );
-    assert!(fx.calls()[1].contains("build it"));
+    assert_eq!(*fx.held.lock().unwrap(), [true, true]);
+    let after = tokio::time::timeout(Duration::from_millis(50), tree_gate::lock("repo")).await;
+    assert!(after.is_ok(), "the gate must be released on return");
 }
 
-#[tokio::test]
-async fn new_in_a_sibling_the_developer_denies_changes_nothing() {
-    let mut fx = fake(vec![]).await;
-    fx.approve = false;
-    let args = json!({ "prompt": "build it", "session_id": "side" });
-
-    assert_eq!(code(run_with(&fx, ConvTool::New, &args).await), DENIED);
-    assert_eq!(fx.cards.lock().unwrap().len(), 1);
-    assert!(fx.calls().is_empty());
-}
-
-#[tokio::test]
-async fn new_in_a_paused_session_is_invalid_state() {
-    let fx = fake(vec![]).await;
-    fx.paused.lock().unwrap().insert("kid".into());
-    let args = json!({ "prompt": "go", "session_id": "kid" });
-
-    assert_eq!(
-        code(run_with(&fx, ConvTool::New, &args).await),
-        INVALID_STATE
-    );
-    assert!(fx.calls().is_empty());
-}
-
-// switch_conversation
-
-fn switch_args(session: &str, conversation: &str) -> serde_json::Value {
-    json!({ "session_id": session, "conversation_id": conversation })
-}
-
-#[tokio::test]
-async fn switch_to_another_listed_conversation_switches_at_once() {
-    let fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
-
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c2"))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        result,
-        json!({ "outcome": "switched", "id": "me", "conversation_id": "c2" })
-    );
-    assert_eq!(fx.calls()[1], "switch:me:c2.jsonl");
-}
-
-#[tokio::test]
-async fn switch_to_the_current_conversation_is_unchanged_and_does_nothing() {
-    let fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
-
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c1"))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        result,
-        json!({ "outcome": "unchanged", "id": "me", "conversation_id": "c1" })
-    );
-    assert!(fx.calls().is_empty());
-}
-
-#[tokio::test]
-async fn switch_mid_turn_is_scheduled() {
-    let mut fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
-    fx.mid_turn = true;
-
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c2"))
-        .await
-        .unwrap();
-
-    assert_eq!(
-        result,
-        json!({ "outcome": "scheduled", "id": "me", "conversation_id": "c2" })
-    );
-    assert_eq!(fx.calls().len(), 1, "{:?}", fx.calls());
-}
-
-#[tokio::test]
-async fn switch_to_a_conversation_the_session_does_not_have_is_not_found() {
-    let fx = fake(vec![conv(1, "a")]).await;
-
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("me", "c9")).await;
-
-    assert_eq!(code(result), NOT_FOUND);
-    assert!(fx.calls().is_empty());
-}
-
-#[tokio::test]
-async fn switch_in_a_sibling_the_developer_denies_changes_nothing() {
-    let mut fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
-    fx.approve = false;
-
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("side", "c2")).await;
-
-    assert_eq!(code(result), DENIED);
-    assert_eq!(fx.cards.lock().unwrap().len(), 1);
-    assert!(fx.calls().is_empty());
-}
-
-#[tokio::test]
-async fn switch_in_a_paused_session_is_invalid_state() {
-    let fx = fake(vec![conv(1, "a"), conv(2, "b")]).await;
-    fx.paused.lock().unwrap().insert("kid".into());
-
-    let result = run_with(&fx, ConvTool::Switch, &switch_args("kid", "c2")).await;
-
-    assert_eq!(code(result), INVALID_STATE);
-    assert!(fx.calls().is_empty());
-}
+#[path = "sessions_conversations_new.test.rs"]
+mod new_tool;
+#[path = "sessions_conversations_router.test.rs"]
+mod routing;
+#[path = "sessions_conversations_switch.test.rs"]
+mod switch_tool;

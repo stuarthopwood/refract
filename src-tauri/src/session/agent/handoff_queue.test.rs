@@ -1,7 +1,8 @@
 // The deferral slot: one action per agent, taken once the turn that queued it has settled.
 
 use super::{clear, take_queued_handoff, try_queue, HandoffAction, QueueOutcome, QueuedHandoff};
-use crate::session::agent::pause_subagents::fixture::fixture;
+use crate::session::agent::pause_subagents::fixture::{fixture, Fixture};
+use crate::store::registry::SessionPatch;
 
 fn new_with(prompt: &str) -> HandoffAction {
     HandoffAction::New {
@@ -397,4 +398,84 @@ async fn a_deferred_action_is_dropped_when_the_sending_session_is_gone() {
         ["Handoff dropped: the sending Session no longer exists"]
     );
     fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_deferred_action_is_dropped_when_the_session_is_archived() {
+    let fx = fixture(&[], &[]).await;
+    patch(
+        &fx,
+        &fx.agent.session_id,
+        SessionPatch {
+            archived_at: Some(Some("2026-11-12T00:00:00.000Z".into())),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    settle_with_queued(&fx, None).await;
+
+    assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    assert_eq!(
+        fx.notices().await,
+        ["Handoff dropped: the Session is archived"]
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_deferred_action_is_dropped_when_the_session_is_paused() {
+    let fx = fixture(&[], &[]).await;
+    patch(
+        &fx,
+        &fx.agent.session_id,
+        SessionPatch {
+            paused_held: Some(Some(Vec::new())),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    settle_with_queued(&fx, None).await;
+
+    assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    assert_eq!(
+        fx.notices().await,
+        ["Handoff dropped: the Session is paused"]
+    );
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_deferred_action_is_dropped_when_the_target_is_now_the_senders_ancestor() {
+    let fx = fixture(&[], &[]).await;
+    fx.add_session("sender", &[], false).await;
+    patch(
+        &fx,
+        "sender",
+        SessionPatch {
+            parent_session_id: Some(Some(fx.agent.session_id.clone())),
+            ..Default::default()
+        },
+    )
+    .await;
+
+    settle_with_queued(&fx, Some(("Planner".into(), "sender".into()))).await;
+
+    assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
+    assert_eq!(
+        fx.notices().await,
+        ["Handoff dropped: the Session is now an ancestor of the sending Session"]
+    );
+    fx.finish().await;
+}
+
+async fn patch(fx: &Fixture, id: &str, patch: SessionPatch) {
+    let registry = fx.agent.registry().clone();
+    registry
+        .lock()
+        .await
+        .update_session(id, patch)
+        .await
+        .unwrap();
 }
