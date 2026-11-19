@@ -50,7 +50,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
   useEnterOnSwitch(panelKey, 'panel', contentRef)
   const prevTabsRef = useRef<{ sessionId: string | null; keys: ReadonlySet<string> }>({
     sessionId,
-    keys: new Set(buildTabItems(useRightPaneStore.getState().openPanelIds, documentTabs).map((item) => item.key))
+    keys: new Set(buildTabItems(openPanelIds, documentTabs).map((item) => item.key))
   })
 
   useEffect(() => {
