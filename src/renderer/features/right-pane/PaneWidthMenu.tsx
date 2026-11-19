@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator
 } from '@/components/ui/dropdown-menu'
 import { RIGHT_PANE_DEFAULT_WIDTH_PX, RIGHT_PANE_MIN_WIDTH_PX, useRightPaneStore, useViewStore } from '@/state'
-import { choiceDisabled, closesPaneOnShowChat, currentChoiceValue, measurePaneLayout } from './pane-width-model'
+import { choiceDisabled, currentChoiceValue, measurePaneLayout } from './pane-width-model'
 import { rightPaneRef } from './right-pane-handle'
 import { hideChatPane, showChatPane, useCanToggleChatPane, useChatPaneHidden } from './toggle-chat-pane'
 import { toggleRightPane } from './toggle-right-pane'
@@ -47,13 +47,6 @@ export function closePane(): void {
   if (useRightPaneStore.getState().open) toggleRightPane()
 }
 
-/** Measured before chat expands: a window with no room left for the pane shows chat alone, tabs and `widthPx` kept. */
-export function showChatFromMenu(): void {
-  const closePaneToo = closesPaneOnShowChat(measurePaneLayout())
-  showChatPane()
-  if (closePaneToo) closePane()
-}
-
 function choiceText(label: string, widthPx: number): string {
   return `${label} (${widthPx} px)`
 }
@@ -76,7 +69,7 @@ function usePaneWidthMenuState() {
 }
 
 const chatToggleLabel = (chatHidden: boolean) => (chatHidden ? 'Show chat' : 'Hide chat')
-const toggleChatFromMenu = (chatHidden: boolean) => (chatHidden ? showChatFromMenu() : hideChatPane())
+const toggleChatFromMenu = (chatHidden: boolean) => (chatHidden ? showChatPane() : hideChatPane())
 
 export function PaneWidthContextMenuItems() {
   const state = usePaneWidthMenuState()

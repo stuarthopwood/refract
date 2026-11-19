@@ -16,13 +16,13 @@ import {
 
 const pane = () => useRightPaneStore.getState()
 const frames: (() => void)[] = []
+const elsewhere = { isConnected: true, closest: () => null, matches: () => false }
 
 beforeEach(() => {
   frames.length = 0
   vi.stubGlobal('window', { setTimeout: () => 0, clearTimeout: () => undefined })
   vi.stubGlobal('HTMLElement', class {})
-  const elsewhere = { isConnected: true, closest: () => null, matches: () => false }
-  vi.stubGlobal('document', { activeElement: elsewhere, body: {}, querySelector: () => null })
+  vi.stubGlobal('document', { activeElement: elsewhere, body: {}, querySelector: () => null, getElementById: () => null })
   vi.stubGlobal('requestAnimationFrame', (cb: () => void) => frames.push(cb))
   useRightPaneStore.setState({ open: false, chatCollapsed: false })
   useSplitStore.setState({ paneSessionIds: ['s1'] })
@@ -123,6 +123,58 @@ describe('toggleChatPane', () => {
     expect(pane().chatCollapsed).toBe(true)
     toggleChatPane()
     expect(pane().chatCollapsed).toBe(false)
+  })
+})
+
+describe('showing chat in a narrow window (FR-014)', () => {
+  const shellFocus = { isConnected: true, closest: (selector: string) => (selector === '[data-right-pane-shell]' ? {} : null), matches: () => false }
+
+  // The width model reads these two panels by id; chat needs 360 px, so the pane keeps 240 px only from a 880 px group beside a 280 px list.
+  function stubLayout(groupWidthPx: number, activeElement: object = elsewhere) {
+    const group = { clientWidth: groupWidthPx }
+    const byId: Record<string, object> = { 'right-pane': { closest: () => group }, 'session-list': { offsetWidth: 280 } }
+    vi.stubGlobal('document', { activeElement, body: {}, querySelector: () => null, getElementById: (id: string) => byId[id] ?? null })
+  }
+
+  beforeEach(() => useRightPaneStore.setState({ open: true, chatCollapsed: true, widthPx: 640 }))
+
+  it('closes the pane, keeping its width, when 240 px does not remain', () => {
+    stubLayout(879)
+    showChatPane()
+    expect(pane().chatCollapsed).toBe(false)
+    expect(pane().open).toBe(false)
+    expect(pane().widthPx).toBe(640)
+  })
+
+  it('closes the pane from the shared toggle too, so the rail and the shortcut match the menus', () => {
+    stubLayout(879)
+    toggleChatPane()
+    expect(pane().chatCollapsed).toBe(false)
+    expect(pane().open).toBe(false)
+  })
+
+  it('keeps the pane open when 240 px remains', () => {
+    stubLayout(880)
+    showChatPane()
+    expect(pane().chatCollapsed).toBe(false)
+    expect(pane().open).toBe(true)
+  })
+
+  it('keeps the pane open when the layout cannot be measured', () => {
+    showChatPane()
+    expect(pane().open).toBe(true)
+  })
+
+  it('moves focus to the composer when the closing pane held it', () => {
+    stubLayout(879, shellFocus)
+    showChatPane()
+    expect(frames).toHaveLength(1)
+  })
+
+  it('leaves focus alone when the pane stays open', () => {
+    stubLayout(880, shellFocus)
+    showChatPane()
+    expect(frames).toHaveLength(0)
   })
 })
 

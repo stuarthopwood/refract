@@ -7,6 +7,7 @@ import { useAgentAnnouncementStore } from '@/state/agent-announcement-store'
 import { useRightPaneStore } from '@/state/right-pane-store'
 import { useSplitStore } from '@/state/split-store'
 import { useViewStore, type MainView } from '@/state/view-store'
+import { closesPaneOnShowChat, measurePaneLayout } from './pane-width-model'
 
 export interface ChatPaneToggleOptions {
   /** True from the shortcut or the palette: focus always moves. A pointer click leaves it where it is. */
@@ -19,6 +20,7 @@ const CHAT_AREA_SELECTOR = '[data-session-pane], [data-chat-empty-state]'
 const COMPOSER_SELECTOR = '[aria-label="Message"]:not(:disabled)'
 const TRANSCRIPT_SELECTOR = '[role="region"][aria-label="Transcript"]'
 const LAUNCHER_SELECTOR = '[data-panel-launcher] button'
+const RIGHT_PANE_SHELL_SELECTOR = '[data-right-pane-shell]'
 
 /** Home, Pull requests, Issues and Usage always show the chat area; the stored preference is untouched there (FR-013). */
 export function effectiveChatCollapsed(chatCollapsed: boolean, view: MainView): boolean {
@@ -88,11 +90,16 @@ export function hideChatPane(options: ChatPaneToggleOptions = {}): void {
   moveFocus(target)
 }
 
+/** Chat takes its width first: a window with no room left for the pane shows chat alone, tabs and `widthPx` kept (FR-014). */
 export function showChatPane(options: ChatPaneToggleOptions = {}): void {
   const store = useRightPaneStore.getState()
   if (!store.chatCollapsed) return
-  const target = chatToggleFocus({ hiding: false, viaKeyboard: options.viaKeyboard === true, ...readFocus() })
+  const closePaneToo = store.open && closesPaneOnShowChat(measurePaneLayout())
+  const { focusInChat, focusLost } = readFocus()
+  const focusLeavesPane = closePaneToo && Boolean(document.activeElement?.closest(RIGHT_PANE_SHELL_SELECTOR))
+  const target = chatToggleFocus({ hiding: false, viaKeyboard: options.viaKeyboard === true, focusInChat, focusLost: focusLost || focusLeavesPane })
   store.setChatCollapsed(false)
+  if (closePaneToo) store.toggleCollapsed()
   useAgentAnnouncementStore.getState().announce('Chat shown')
   moveFocus(target)
 }
