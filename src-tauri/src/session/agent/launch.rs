@@ -194,7 +194,9 @@ impl SessionAgent {
                 .map_err(|err| AgentError::new("git-failed", registry_store_error_message(err)))?;
             reset_after_start_with_conversation(self, file.as_deref(), Some(prev)).await;
             // The same in-memory agent serves every launch, so a stale notice would reach the new Conversation (#1861).
-            self.state.lock().await.pending_agent_notice.clear();
+            let mut state = self.state.lock().await;
+            state.pending_agent_notice.clear();
+            state.checklist_line_due = true;
         }
         let session = self.require_session().await?;
         self.launch(&session, work_dir, pass_cwd_flag, "").await

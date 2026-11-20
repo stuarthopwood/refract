@@ -554,10 +554,7 @@ async fn an_uncarded_action_is_dropped_when_the_target_became_a_sibling() {
     assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
     let reason = "Handoff dropped: the Session moved out of the sending Session's tree after the action was queued";
     assert_eq!(fx.notices().await, [reason]);
-    assert_eq!(
-        fx.agent.state.lock().await.pending_agent_notice,
-        [reason]
-    );
+    assert_eq!(fx.agent.state.lock().await.pending_agent_notice, [reason]);
     fx.finish().await;
 }
 

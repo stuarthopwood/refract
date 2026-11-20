@@ -16,6 +16,7 @@ use crate::store::settings::{ApprovalMode, SettingsStore};
 
 mod chat;
 mod chat_restore;
+mod checklist_notice;
 mod command_wait;
 mod commands;
 mod conversations;
@@ -107,6 +108,8 @@ struct AgentState {
     queued_handoff: Option<QueuedHandoff>,
     // Told to the agent in front of the next user prompt, then cleared (#1861).
     pending_agent_notice: Vec<String>,
+    // A new or relaunched Conversation has not heard about the active checklist yet.
+    checklist_line_due: bool,
     pause: pause::State,
 }
 
@@ -202,6 +205,7 @@ impl SessionAgent {
                 handoff: Default::default(),
                 queued_handoff: None,
                 pending_agent_notice: Vec::new(),
+                checklist_line_due: true,
                 pause: Default::default(),
             }),
             status_tx,

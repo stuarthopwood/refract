@@ -77,7 +77,7 @@ impl SessionAgent {
         decorate: bool,
     ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
-        let (proc, working, notices) = {
+        let (proc, working, mut notices, line_due) = {
             let idle_with_process = {
                 let state = self.state.lock().await;
                 state.status == SessionStatus::Idle && state.process.is_some()
@@ -108,8 +108,19 @@ impl SessionAgent {
             } else {
                 Vec::new()
             };
-            (proc, working, notices)
+            (proc, working, notices, decorate && state.checklist_line_due)
         };
+        let handoff_count = notices.len();
+        let mut consumed_due = false;
+        if decorate {
+            if let Some(line) = self.checklist_line(line_due).await {
+                notices.push(line);
+                consumed_due = line_due;
+                if line_due {
+                    self.state.lock().await.checklist_line_due = false;
+                }
+            }
+        }
         let text = if should_decorate(working, force_follow_up, decorate) {
             crate::session::working_mode::decorate_prompt(self, text).await
         } else {
@@ -129,9 +140,12 @@ impl SessionAgent {
         let accepted =
             matches!(&sent, Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true));
         if !accepted {
-            // The agent never saw it, so the next prompt carries the lines instead, ahead of any newer one.
+            // The agent never saw them: the handoff lines go back ahead of any newer one, and the
+            // checklist line is built again from the store next time.
             let mut state = self.state.lock().await;
+            notices.truncate(handoff_count);
             state.pending_agent_notice.splice(0..0, notices);
+            state.checklist_line_due |= consumed_due;
         }
         let res = sent.map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         if !accepted {

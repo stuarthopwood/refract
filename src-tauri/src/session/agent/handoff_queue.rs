@@ -78,7 +78,10 @@ pub(super) fn with_notice(lines: &[String], text: &str) -> String {
     if lines.is_empty() {
         return text.to_string();
     }
-    let notice: Vec<String> = lines.iter().map(|line| format!("[Refract] {line}")).collect();
+    let notice: Vec<String> = lines
+        .iter()
+        .map(|line| format!("[Refract] {line}"))
+        .collect();
     format!("{}\n\n{text}", notice.join("\n"))
 }
 

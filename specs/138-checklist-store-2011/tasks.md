@@ -42,7 +42,7 @@ Test work is part of each task (AGENTS.md Testing rule, epic #1918): new and cha
 
 - [x] T022 `delete_in_flight.rs` and the `remove()` path: delete the checklist file after `remove_agent`, tombstone under the lock; archive keeps the file. Tests: `delete_in_flight.test.rs` or the existing remove test: `delete_removes_checklist_file_after_remove_agent`, `archive_keeps_checklist_file`, `restore_finds_checklist`. Literal-path rule: the path comes from the registry id and the data dir only. (FR-013)
 - [x] T023 `pending_agent_notice` to a list: `handoff_queue.rs:73` take all, `:297` append, `chat.rs:140` put taken lines back at the front, `launch.rs:198` and `conversations.rs:79,189` clear. Update the existing tests that set it to `Some(...)` (`chat.test.rs`, `conversations.test.rs`, `frame.test.rs`, `handoff_queue.test.rs`). New tests: `notice_lines_append_in_order`, `refused_send_restores_lines_at_front`, `hint_line_appended_after_handoff_line`, `relaunch_clears_all_lines`. (FR-018)
-- [ ] T024 Hook the hint and Conversation line into the notice take (reads the store, builds through `checklist/hint.rs`). Tests: `chat.test.rs :: checklist_hint_added_when_agent_behind`, `:: no_hint_when_seen`. (FR-018)
+- [x] T024 Hook the hint and Conversation line into the notice take (reads the store, builds through `checklist/hint.rs`). Tests: `chat.test.rs :: checklist_hint_added_when_agent_behind`, `:: no_hint_when_seen`. (FR-018)
 
 ## Phase 6: Live check and docs (FR-020, SC-005)
 
