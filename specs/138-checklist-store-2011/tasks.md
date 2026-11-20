@@ -46,7 +46,7 @@ Test work is part of each task (AGENTS.md Testing rule, epic #1918): new and cha
 
 ## Phase 6: Live check and docs (FR-020, SC-005)
 
-- [ ] T025 Live check with a fake omp (`verify-refract-tauri-build-live`, scratch evidence under `C:/Users/shopwood/AppData/Local/Temp/scratch/checklist2011/evidence/`): create, update, get, developer tick via `checklist.mutate`, restart keeps the checklist, delete removes the file.
+- [x] T025 Live check with a fake omp (`verify-refract-tauri-build-live`, `scripts/verify-tauri-2011.mjs`; scratch evidence under `C:/Users/shopwood/AppData/Local/Temp/scratch/refract-live-2011/evidence/`): create, update, get, developer tick via `checklist.mutate`, restart keeps the checklist, delete removes the file.
 - [ ] T026 Live check that `refract_checklist` is callable in OMP plan mode; set the tool description accordingly and record the result on #2011. (FR-020)
 - [ ] T027 `CHANGELOG.md` entry, `docs/PLAN.md` row to Done, ADR 0011 consequences line updated with the plan-mode result.
 - [ ] T028 Run `pnpm ci:local` and `cargo test` once; fix only what this feature's own files cause (file-size, comment-density, parity, clippy).
