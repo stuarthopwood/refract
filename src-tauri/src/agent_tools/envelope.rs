@@ -1,10 +1,12 @@
-// The wrapper that marks a user turn as a message from another Session (#1858, ADR 0008).
-// `wrap` and `parse` share one escape table so the round trip is tested in one place.
+// The wrappers that mark a user turn as a message from another Session (#1858, ADR 0008) or as a
+// developer's checklist item turn. Both share one escape table, here, so the round trip is tested
+// in one place; `checklist_envelope` builds the second wrapper on these helpers.
 
 use crate::session::agent::FirstMessage;
 
-const OPEN_TAG: &str = "<session-message";
-const CLOSE_TAG: &str = "</session-message";
+/// Every envelope tag name. A body escapes all of them, so a value quoting one envelope can never
+/// close or forge the other.
+const TAGS: [&str; 2] = ["session-message", "checklist-item"];
 const FROM_ATTR: &str = "<session-message from=\"";
 const SESSION_ATTR: &str = "\" session=\"";
 const HEADER_END: &str = "\">\n";
@@ -49,8 +51,9 @@ pub fn parse(text: &str) -> Option<Envelope> {
     let (name, rest) = rest.split_once(SESSION_ATTR)?;
     let (session_id, rest) = rest.split_once(HEADER_END)?;
     let body = rest.strip_suffix(FOOTER)?;
-    // A raw tag left in the body is a second or forged envelope, which `escape_body` never emits.
-    if body.contains(OPEN_TAG) || body.contains(CLOSE_TAG) {
+    // A raw tag of either name left in the body is a second or forged envelope, which
+    // `escape_body` never emits.
+    if has_raw_tag(body) {
         return None;
     }
     Some(Envelope {
@@ -60,7 +63,13 @@ pub fn parse(text: &str) -> Option<Envelope> {
     })
 }
 
-fn escape_attr(value: &str) -> String {
+/// Whether `body` holds a raw envelope tag of any name, open or close.
+pub(super) fn has_raw_tag(body: &str) -> bool {
+    body.match_indices('<')
+        .any(|(at, _)| tag_at(&body[at..]).is_some())
+}
+
+pub(super) fn escape_attr(value: &str) -> String {
     let mut out = String::with_capacity(value.len());
     for c in value.chars() {
         match c {
@@ -75,10 +84,10 @@ fn escape_attr(value: &str) -> String {
 }
 
 /// `None` when a raw `<`, `>` or `"` or an unknown entity is present, as `escape_attr` never emits them.
-fn unescape_attr(value: &str) -> Option<String> {
+pub(super) fn unescape_attr(value: &str) -> Option<String> {
     let mut out = String::with_capacity(value.len());
     let mut rest = value;
-    while let Some(pos) = rest.find(['&', '<', '>']) {
+    while let Some(pos) = rest.find(['&', '<', '>', '"']) {
         out.push_str(&rest[..pos]);
         let tail = &rest[pos..];
         let (decoded, len) = [
@@ -99,6 +108,7 @@ fn unescape_attr(value: &str) -> Option<String> {
 
 /// An envelope tag found in a body: `level` -1 is a raw `<tag`, n >= 0 is `&` + n `amp;` + `lt;tag`.
 struct TagMatch {
+    name: &'static str,
     level: i32,
     closing: bool,
     len: usize,
@@ -118,12 +128,12 @@ fn tag_at(text: &str) -> Option<TagMatch> {
         len += text[len..].strip_prefix("lt;").map(|_| 3)?;
     }
     let tag = &text[len..];
-    let closing = tag.starts_with("/session-message");
-    if !closing && !tag.starts_with("session-message") {
-        return None;
-    }
-    len += "session-message".len() + usize::from(closing);
+    let closing = tag.starts_with('/');
+    let named = tag.strip_prefix('/').unwrap_or(tag);
+    let name = TAGS.into_iter().find(|name| named.starts_with(name))?;
+    len += name.len() + usize::from(closing);
     Some(TagMatch {
+        name,
         level,
         closing,
         len,
@@ -145,10 +155,10 @@ fn shift_tags(text: &str, encode: bool) -> String {
         let slash = if tag.closing { "/" } else { "" };
         let level = if encode { tag.level + 1 } else { tag.level - 1 };
         if level < 0 {
-            out.push_str(&format!("<{slash}session-message"));
+            out.push_str(&format!("<{slash}{}", tag.name));
         } else {
             let amps = "amp;".repeat(level as usize);
-            out.push_str(&format!("&{amps}lt;{slash}session-message"));
+            out.push_str(&format!("&{amps}lt;{slash}{}", tag.name));
         }
         i += tag.len;
         copied = i;
@@ -157,11 +167,13 @@ fn shift_tags(text: &str, encode: bool) -> String {
     out
 }
 
-fn escape_body(body: &str) -> String {
+/// Escapes every envelope tag in a body one nesting level.
+pub(super) fn escape_body(body: &str) -> String {
     shift_tags(body, true)
 }
 
-fn unescape_body(body: &str) -> String {
+/// The inverse of `escape_body`.
+pub(super) fn unescape_body(body: &str) -> String {
     shift_tags(body, false)
 }
 
