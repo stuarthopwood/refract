@@ -37,7 +37,7 @@ mod tests {
     fn overlay_allows_exactly_the_registered_tools() {
         assert_eq!(
             render(ToolAccess::for_depth(1)),
-            "tools:\n  approval:\n    refract_list_panels: allow\n    refract_open_panel: allow\n    refract_invoke_panel_action: allow\n    refract_list_sessions: allow\n    refract_get_session_status: allow\n    refract_send_session_message: allow\n    refract_create_session: allow\n    refract_update_session: allow\n    refract_archive_session: allow\n    refract_unarchive_session: allow\n    refract_stop_session: allow\n    refract_pause_session: allow\n    refract_resume_session: allow\n    refract_delete_session: allow\n    refract_list_conversations: allow\n    refract_new_conversation: allow\n    refract_switch_conversation: allow\n"
+            "tools:\n  approval:\n    refract_list_panels: allow\n    refract_open_panel: allow\n    refract_invoke_panel_action: allow\n    refract_list_sessions: allow\n    refract_get_session_status: allow\n    refract_send_session_message: allow\n    refract_create_session: allow\n    refract_update_session: allow\n    refract_archive_session: allow\n    refract_unarchive_session: allow\n    refract_stop_session: allow\n    refract_pause_session: allow\n    refract_resume_session: allow\n    refract_delete_session: allow\n    refract_list_conversations: allow\n    refract_new_conversation: allow\n    refract_switch_conversation: allow\n    refract_checklist: allow\n"
         );
     }
 }

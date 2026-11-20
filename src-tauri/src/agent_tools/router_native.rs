@@ -32,6 +32,9 @@ pub(super) async fn run_native(
             let end = sessions_end_schema::end_tool(other).expect("checked by the guard");
             sessions_end_tools::run(agent, call_id, end, args).await
         }
+        super::checklist_schema::CHECKLIST => {
+            super::checklist_tool::checklist(agent, call_id, args).await
+        }
         _ => sessions_send::send(agent, args).await,
     }
 }

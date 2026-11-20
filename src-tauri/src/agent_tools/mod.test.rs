@@ -22,7 +22,8 @@ fn root_sessions_get_the_session_tools_and_the_panel_tools() {
             "refract_delete_session",
             "refract_list_conversations",
             "refract_new_conversation",
-            "refract_switch_conversation"
+            "refract_switch_conversation",
+            "refract_checklist"
         ]
     );
     assert!(names.iter().all(|n| n.starts_with(TOOL_PREFIX)));
@@ -35,7 +36,7 @@ fn every_depth_registers_every_session_tool() {
         for tool in sessions::SESSION_TOOLS {
             assert!(names.contains(&tool), "depth {depth}: {tool}");
         }
-        assert_eq!(host_tool_defs(ToolAccess::for_depth(depth)).len(), 17);
+        assert_eq!(host_tool_defs(ToolAccess::for_depth(depth)).len(), 18);
     }
 }
 
@@ -70,6 +71,25 @@ fn child_sessions_get_no_tools() {
     };
     assert!(tools_for(access).is_empty());
     assert!(host_tool_defs(access).is_empty());
+}
+
+#[test]
+fn child_role_gets_no_checklist_tool() {
+    let access = ToolAccess {
+        role: Role::Child,
+        depth: 2,
+    };
+    assert!(!tools_for(access).contains(&"refract_checklist"));
+    assert!(host_tool_defs(access)
+        .iter()
+        .all(|d| d["name"] != "refract_checklist"));
+    assert!(!overlay::render(access).contains("refract_checklist"));
+}
+
+#[test]
+fn router_plans_the_checklist_tool_as_native() {
+    let plan = router::plan("refract_checklist", &json!({ "action": "get" })).unwrap();
+    assert!(matches!(plan, router::Plan::Native { .. }));
 }
 
 #[test]

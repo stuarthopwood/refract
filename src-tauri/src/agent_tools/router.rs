@@ -143,6 +143,10 @@ pub fn plan(tool: &str, args: &Value) -> Result<Plan, ToolError> {
                 mutates: action.mutates,
             })
         }
+        super::checklist_schema::CHECKLIST => Ok(Plan::Native {
+            tool: tool.to_string(),
+            args: args.clone(),
+        }),
         other if sessions::is_session_tool(other) => {
             sessions::check_args(other, args)?;
             Ok(Plan::Native {
