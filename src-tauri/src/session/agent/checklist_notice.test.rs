@@ -106,3 +106,29 @@ async fn a_new_conversation_hears_the_checklist_once() {
     assert_eq!(last_prompt(&fx).await, "two");
     fx.finish().await;
 }
+
+#[tokio::test]
+async fn a_relaunch_hears_the_checklist_again() {
+    let fx = fixture_with(Stub {
+        stopped: true,
+        ..Stub::default()
+    })
+    .await;
+    let session = fx
+        .agent
+        .registry
+        .lock()
+        .await
+        .get_session(&fx.agent.session_id)
+        .cloned()
+        .unwrap();
+    let worktree = std::path::PathBuf::from(session.worktree_path.clone().unwrap());
+    tokio::fs::create_dir_all(&worktree).await.unwrap();
+    fx.agent.state.lock().await.checklist_line_due = false;
+
+    // The launch itself may or may not succeed here; only the re-arm is under test.
+    let _ = fx.agent.launch(&session, worktree, false, "").await;
+
+    assert!(fx.agent.state.lock().await.checklist_line_due);
+    fx.finish().await;
+}
