@@ -1,4 +1,5 @@
 // One agent per opened Session; split by concern across `session/agent/`.
+mod launch_listener;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex, Weak};
