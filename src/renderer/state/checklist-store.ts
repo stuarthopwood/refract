@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Checklist, ItemStatus } from '../../shared/checklist'
 import type { ChecklistUpdatePayload } from '../../shared/ipc-checklist'
 import { describeAgentChange, openedAnnouncement, REPLACED_ANNOUNCEMENT } from '../features/right-pane/checklist/checklist-announcements'
+import { needsValueToTick } from '../features/right-pane/checklist/checklist-tick'
 
 /** Why the Rust side declined an item change, with the status the agent holds the item at now. */
 export interface ItemRefusal {
@@ -121,7 +122,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (checklist === null || item === undefined || current.pending[itemId]) return
       const complete = item.status === 'complete'
       // Rust refuses a completion without a value; asking would only produce an error the row already explains.
-      if (!complete && item.requiresValue && !item.value) return
+      if (needsValueToTick(item)) return
       const status: ItemStatus = complete ? (item.previousStatus ?? 'upcoming') : 'complete'
       patch(sessionId, (state) => ({ pending: { ...state.pending, [itemId]: true } }))
       const withoutPending = (state: SessionChecklist): Record<string, true> => {
