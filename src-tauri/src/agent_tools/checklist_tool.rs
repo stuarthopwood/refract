@@ -6,7 +6,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::approval;
 use super::checklist_schema::CHECKLIST;
@@ -16,10 +16,11 @@ use crate::checklist::create::{
     check_request_id, create, is_structural, record_request, recorded_ids, CreateArgs,
     CreateOutcome,
 };
-use crate::checklist::model::{Checklist, ChecklistFile};
+use crate::checklist::model::{Actor, Checklist, ChecklistFile};
 use crate::checklist::ops::{decode_ops, ChecklistError, ErrorCode, NewItem};
 use crate::checklist::result::{build_result, error_payload, none_result, ResultInput};
 use crate::checklist::store::{ChecklistStore, LiveSession, StoreError};
+use crate::events::checklist_update_payload;
 
 /// Everything the handler needs from the app, so tests supply a fake.
 pub trait Host: Send + Sync {
@@ -58,8 +59,7 @@ enum Outcome {
     NeedsCard(usize),
     Done {
         value: Value,
-        checklist_id: String,
-        rev: u64,
+        checklist: Box<Checklist>,
         wrote: bool,
         opened: bool,
     },
@@ -104,8 +104,7 @@ fn full_result(
 fn done(list: &Checklist, value: Value, wrote: bool, opened: bool) -> Outcome {
     Outcome::Done {
         value,
-        checklist_id: list.id.clone(),
-        rev: list.rev,
+        checklist: Box::new(list.clone()),
         wrote,
         opened,
     }
@@ -251,18 +250,17 @@ fn finish(host: &impl Host, outcome: Outcome) -> Result<Value, ToolError> {
         Outcome::NeedsCard(_) => Err(ToolError::new(INVALID_INPUT, "unexpected approval request")),
         Outcome::Done {
             value,
-            checklist_id,
-            rev,
+            checklist,
             wrote,
             opened,
         } => {
             if wrote {
-                host.emit_update(json!({
-                    "sessionId": host.caller_id(),
-                    "checklistId": checklist_id,
-                    "rev": rev,
-                    "opened": opened,
-                }));
+                host.emit_update(checklist_update_payload(
+                    host.caller_id(),
+                    &checklist,
+                    Actor::Agent,
+                    opened,
+                ));
             }
             Ok(value)
         }

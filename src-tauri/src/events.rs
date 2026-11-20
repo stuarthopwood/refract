@@ -426,6 +426,24 @@ fn conversation_changed_payload(session_id: &str) -> serde_json::Value {
     serde_json::json!({ "sessionId": session_id })
 }
 
+/// The `checklist:update` body: the whole checklist, so the renderer never merges.
+pub fn checklist_update_payload(
+    session_id: &str,
+    checklist: &crate::checklist::model::Checklist,
+    by: crate::checklist::model::Actor,
+    opened: bool,
+) -> serde_json::Value {
+    let mut payload = serde_json::json!({
+        "sessionId": session_id,
+        "checklist": checklist,
+        "by": by,
+    });
+    if opened {
+        payload["opened"] = serde_json::json!(true);
+    }
+    payload
+}
+
 /// Same event for IPC handlers, which hold an `AppHandle` and no `EventSink`.
 pub fn emit_github_changed(app: &AppHandle, repository_id: Option<&str>, kind: &str, number: u64) {
     emit(
@@ -460,6 +478,24 @@ mod tests {
         assert_eq!(
             conversation_changed_payload("s-1").to_string(),
             r#"{"sessionId":"s-1"}"#
+        );
+    }
+
+    #[test]
+    fn checklist_update_payload_has_whole_checklist_by_and_opened_only_when_true() {
+        use crate::checklist::model::{Actor, Checklist};
+        let list = Checklist::empty("p1".into(), "plan".into(), "now".into());
+        let quiet = checklist_update_payload("s1", &list, Actor::Developer, false);
+        let opened = checklist_update_payload("s1", &list, Actor::Agent, true);
+        assert_eq!(quiet["checklist"], serde_json::json!(list));
+        assert_eq!(
+            (&quiet["sessionId"], &quiet["by"]),
+            (&"s1".into(), &"developer".into())
+        );
+        assert!(quiet.get("opened").is_none());
+        assert_eq!(
+            (&opened["by"], &opened["opened"]),
+            (&"agent".into(), &true.into())
         );
     }
 }

@@ -85,7 +85,7 @@ pub fn host_tool_defs(access: ToolAccess) -> Vec<Value> {
                 (sessions::description(name), sessions::parameters(name))
             } else if name == checklist_schema::CHECKLIST {
                 (
-                    checklist_schema::description().into(),
+                    checklist_schema::description(),
                     checklist_schema::parameters(),
                 )
             } else {

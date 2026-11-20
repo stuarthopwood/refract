@@ -22,6 +22,7 @@ pub mod app;
 pub mod attachments;
 pub mod chat;
 pub mod chat_pause;
+pub mod checklist;
 pub mod clipboard;
 pub mod conversations;
 pub mod conversations_core;
@@ -207,6 +208,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     token_guard::register(dispatcher);
     agent_tools::register(dispatcher);
     advisor_roster::register(dispatcher);
+    checklist::register(dispatcher);
     copilot_plan::register(dispatcher);
     usage::register(dispatcher);
     updates::register(dispatcher);

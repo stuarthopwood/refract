@@ -2,10 +2,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use serde_json::json;
 use tokio::sync::Notify;
 
 use super::*;
-use crate::checklist::model::Actor;
 use crate::session::agent::PendingRequest;
 
 struct FakeHost {
@@ -198,5 +198,7 @@ async fn checklist_update_emitted_after_write_only() {
     assert_eq!(emits.len(), 1);
     assert!(emits[0].1, "the file was on disk before the event");
     assert_eq!(emits[0].0["sessionId"], json!("s1"));
+    assert_eq!(emits[0].0["by"], json!("agent"));
     assert_eq!(emits[0].0["opened"], json!(true));
+    assert_eq!(emits[0].0["checklist"]["rev"], json!(1));
 }

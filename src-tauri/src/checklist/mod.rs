@@ -16,4 +16,4 @@ pub mod store_load;
 pub mod validate;
 
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
