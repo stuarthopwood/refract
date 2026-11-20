@@ -1366,11 +1366,12 @@ fn apply_frame_items(
                 return items;
             }
             let mut items = items;
-            let id = if has_user_acted {
-                format!("{COMMAND_OUTPUT_NOTICE_PREFIX}{}", items.len())
+            let prefix = if has_user_acted {
+                COMMAND_OUTPUT_NOTICE_PREFIX
             } else {
-                format!("{STARTUP_NOTICE_PREFIX}{}", items.len())
+                STARTUP_NOTICE_PREFIX
             };
+            let id = unused_notice_id(&items, prefix);
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Info,
@@ -1394,6 +1395,19 @@ fn apply_frame_items(
     }
 }
 
+/// First `{prefix}{n}` id, counting up from `items.len()`, that no item uses. A notice kept across
+/// the history merge keeps its old index, so `len()` alone can collide with it.
+fn unused_notice_id(items: &[Arc<TranscriptItem>], prefix: &str) -> String {
+    let mut index = items.len();
+    loop {
+        let candidate = format!("{prefix}{index}");
+        if !items.iter().any(|item| item.id() == candidate) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
 /// Appends a notice row, or bumps an identical earlier warning's `×N`. Only Refract's own code
 /// passes a `source`; no inbound OMP frame field can set it (#2114).
 fn push_notice(
@@ -1406,20 +1420,14 @@ fn push_notice(
     if level == NoticeLevel::Warning && collapse_repeated_warning(&mut items, &message) {
         return items;
     }
-    let prefix = if has_user_acted {
-        "notice-"
-    } else {
-        STARTUP_NOTICE_PREFIX
-    };
-    // A notice kept across the history merge keeps its old index, so `len()` alone can collide with it.
-    let mut index = items.len();
-    while items
-        .iter()
-        .any(|item| item.id() == format!("{prefix}{index}"))
-    {
-        index += 1;
-    }
-    let id = format!("{prefix}{index}");
+    let id = unused_notice_id(
+        &items,
+        if has_user_acted {
+            "notice-"
+        } else {
+            STARTUP_NOTICE_PREFIX
+        },
+    );
     items.push(Arc::new(TranscriptItem::Notice {
         id,
         level,

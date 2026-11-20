@@ -124,3 +124,29 @@ fn a_notice_after_the_merge_never_reuses_the_id_of_a_kept_extension_notice() {
     assert_eq!(ids.len(), 2);
     assert_ne!(ids[0], ids[1]);
 }
+
+#[test]
+fn command_output_frames_never_reuse_the_id_of_a_kept_high_index_extension_notice() {
+    let mut state = TranscriptState::new();
+    for message in ["a", "b", "c"] {
+        state.apply_frame(
+            &json!({ "type": "notice", "level": "info", "message": message }),
+            false,
+        );
+    }
+    state.apply_extension_notice(NoticeLevel::Info, "from an extension".to_string());
+    state.merge_from_history(&[], false);
+    assert_eq!(state.items().len(), 1);
+    for n in 0..4 {
+        state.apply_frame(
+            &json!({ "type": "command_output", "text": format!("out {n}") }),
+            false,
+        );
+    }
+
+    let mut ids: Vec<&str> = state.items().iter().map(|item| item.id()).collect();
+    assert_eq!(ids.len(), 5);
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), 5);
+}
