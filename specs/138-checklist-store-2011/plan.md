@@ -61,7 +61,7 @@ Each Rust file has a sibling `*.test.rs` of at most 600 lines; `result.test.rs` 
 
 `ChecklistItem { id, text, status, previousStatus?, owner, requiresValue, value?, valueBy?, agentCompletable, group?, rev, statusRev, createdBy, updatedBy, completedBy?, editedByDeveloper, lastDeveloperOps: { kind, rev, fields }[] }`.
 
-Enums: `ItemStatus = upcoming | next | in_progress | blocked | complete`; `ItemOwner = agent | human | either`; `Actor = agent | developer`.
+Enums: `ItemStatus = upcoming | next | in_progress | blocked | complete`; `ItemOwner = agent | human | either` (chosen per item by the agent in `create` and `add`, default `agent`; a developer `add` defaults to `human`; fixed after creation); `Actor = agent | developer`.
 
 ## Design notes that decide the shape
 
