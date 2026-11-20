@@ -186,7 +186,7 @@ async fn a_second_send_failure_posts_the_handoff_failed_notice() {
     let notice = r.failure_notices().await.remove(0);
     assert_eq!(
         r.fx.agent.state.lock().await.pending_agent_notice,
-        Some(notice)
+        vec![notice]
     );
     r.fx.finish().await;
 }

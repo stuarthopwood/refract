@@ -1,5 +1,6 @@
 // `tauri::Builder` assembly for the Tauri build of Refract.
 pub mod agent_tools;
+pub mod checklist;
 pub mod events;
 pub mod fs;
 pub mod git;

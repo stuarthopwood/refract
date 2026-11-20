@@ -156,6 +156,11 @@ async fn remove(
         .await
         .map_err(map_registry_error)?;
     state.session_manager.remove_agent(id);
+    // After the agent is gone, so nothing live can write the file back; the registry entry is
+    // already removed, so a failure here only leaves an orphan file and must not fail the delete.
+    if let Err(err) = state.session_manager.checklists().discard(id).await {
+        log::warn!("sessions.delete: could not remove the checklist file for {id}: {err}");
+    }
     // Drop this Session's absolute-path allow-list entry, so the map does not grow.
     crate::ipc::file_attachments::forget_session(id);
     // Disk-reclaim hook, as for archive (#657, #658). Success only.

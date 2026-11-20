@@ -240,11 +240,11 @@ async fn launching_from_stopped_discards_the_pending_notice() {
         .and_then(|s| s.worktree_path.clone())
         .unwrap();
     tokio::fs::create_dir_all(&worktree).await.unwrap();
-    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: old".to_string());
+    fx.agent.state.lock().await.pending_agent_notice = vec!["Handoff failed: old".to_string()];
 
     // The launch itself may or may not succeed here; only the notice reset is under test.
     let _ = fx.agent.start_with_conversation(None).await;
 
-    assert!(fx.agent.state.lock().await.pending_agent_notice.is_none());
+    assert!(fx.agent.state.lock().await.pending_agent_notice.is_empty());
     fx.finish().await;
 }

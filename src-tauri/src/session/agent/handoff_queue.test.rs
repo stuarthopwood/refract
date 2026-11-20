@@ -329,7 +329,7 @@ async fn sent_prompts(
 #[tokio::test]
 async fn the_failure_notice_prefixes_the_next_prompt_once_then_clears() {
     let fx = fixture(&[], &[]).await;
-    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: boom".to_string());
+    fx.agent.state.lock().await.pending_agent_notice = vec!["Handoff failed: boom".to_string()];
 
     fx.agent.send("hello".to_string(), None).await.unwrap();
     fx.agent.send("again".to_string(), None).await.unwrap();
@@ -338,14 +338,14 @@ async fn the_failure_notice_prefixes_the_next_prompt_once_then_clears() {
         sent_prompts(&fx).await,
         ["[Refract] Handoff failed: boom\n\nhello", "again"]
     );
-    assert!(fx.agent.state.lock().await.pending_agent_notice.is_none());
+    assert!(fx.agent.state.lock().await.pending_agent_notice.is_empty());
     fx.finish().await;
 }
 
 #[tokio::test]
 async fn a_session_envelope_leaves_the_notice_for_the_users_prompt() {
     let fx = fixture(&[], &[]).await;
-    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: boom".to_string());
+    fx.agent.state.lock().await.pending_agent_notice = vec!["Handoff failed: boom".to_string()];
 
     fx.agent
         .send_session_message("<envelope/>".to_string())
@@ -353,7 +353,7 @@ async fn a_session_envelope_leaves_the_notice_for_the_users_prompt() {
         .unwrap();
 
     assert_eq!(sent_prompts(&fx).await, ["<envelope/>"]);
-    assert!(fx.agent.state.lock().await.pending_agent_notice.is_some());
+    assert!(!fx.agent.state.lock().await.pending_agent_notice.is_empty());
     fx.finish().await;
 }
 
@@ -467,8 +467,8 @@ async fn a_deferred_action_is_dropped_when_the_session_is_paused() {
         ["Handoff dropped: the Session is paused"]
     );
     assert_eq!(
-        fx.agent.state.lock().await.pending_agent_notice.as_deref(),
-        Some("Handoff dropped: the Session is paused")
+        fx.agent.state.lock().await.pending_agent_notice,
+        ["Handoff dropped: the Session is paused"]
     );
     fx.finish().await;
 }
@@ -554,10 +554,7 @@ async fn an_uncarded_action_is_dropped_when_the_target_became_a_sibling() {
     assert!(!fx.rpc_types().await.iter().any(|t| t == "new_session"));
     let reason = "Handoff dropped: the Session moved out of the sending Session's tree after the action was queued";
     assert_eq!(fx.notices().await, [reason]);
-    assert_eq!(
-        fx.agent.state.lock().await.pending_agent_notice.as_deref(),
-        Some(reason)
-    );
+    assert_eq!(fx.agent.state.lock().await.pending_agent_notice, [reason]);
     fx.finish().await;
 }
 

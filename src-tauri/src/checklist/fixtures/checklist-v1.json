@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "nextChecklistSeq": 3,
+  "active": {
+    "id": "p2",
+    "title": "Step-by-step release plan",
+    "rev": 9,
+    "nextItemSeq": 7,
+    "agentSeenRev": 7,
+    "issuedSeenRev": 8,
+    "createdAt": "2026-11-20T09:30:00Z",
+    "items": [
+      {
+        "id": "i1",
+        "text": "Run the migrations",
+        "status": "complete",
+        "previousStatus": "in_progress",
+        "owner": "agent",
+        "requiresValue": true,
+        "value": "ran 12 migrations, 0 failed\nsecond line\twith a tab",
+        "valueBy": "developer",
+        "agentCompletable": true,
+        "group": "Release",
+        "rev": 9,
+        "statusRev": 9,
+        "createdBy": "agent",
+        "updatedBy": "developer",
+        "completedBy": "developer",
+        "editedByDeveloper": false,
+        "lastDeveloperOps": [
+          {
+            "kind": "setStatus",
+            "rev": 9,
+            "fields": [
+              "status"
+            ]
+          },
+          {
+            "kind": "setValue",
+            "rev": 8,
+            "fields": [
+              "value"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "i2",
+        "text": "Review the diff",
+        "status": "next",
+        "owner": "human",
+        "requiresValue": false,
+        "agentCompletable": false,
+        "rev": 3,
+        "statusRev": 3,
+        "createdBy": "agent",
+        "updatedBy": "agent",
+        "editedByDeveloper": false,
+        "lastDeveloperOps": []
+      },
+      {
+        "id": "i3",
+        "text": "Deploy to staging",
+        "status": "in_progress",
+        "previousStatus": "next",
+        "owner": "either",
+        "requiresValue": false,
+        "agentCompletable": true,
+        "rev": 6,
+        "statusRev": 6,
+        "createdBy": "developer",
+        "updatedBy": "developer",
+        "editedByDeveloper": true,
+        "lastDeveloperOps": [
+          {
+            "kind": "edit",
+            "rev": 6,
+            "fields": [
+              "text"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "i4",
+        "text": "Smoke test the build",
+        "status": "blocked",
+        "owner": "agent",
+        "requiresValue": false,
+        "agentCompletable": true,
+        "rev": 7,
+        "statusRev": 7,
+        "createdBy": "agent",
+        "updatedBy": "agent",
+        "editedByDeveloper": false,
+        "lastDeveloperOps": []
+      },
+      {
+        "id": "i5",
+        "text": "Write the changelog entry",
+        "status": "upcoming",
+        "owner": "agent",
+        "requiresValue": false,
+        "agentCompletable": true,
+        "group": "Docs",
+        "rev": 8,
+        "statusRev": 8,
+        "createdBy": "agent",
+        "updatedBy": "agent",
+        "editedByDeveloper": false,
+        "lastDeveloperOps": []
+      }
+    ],
+    "removed": [
+      {
+        "id": "i6",
+        "rev": 8,
+        "by": "developer"
+      }
+    ],
+    "recentRequests": [
+      {
+        "requestId": "r-41",
+        "rev": 8,
+        "addedIds": [
+          "i5"
+        ]
+      }
+    ]
+  },
+  "archived": [
+    {
+      "id": "p1",
+      "title": "Earlier plan",
+      "rev": 4,
+      "nextItemSeq": 3,
+      "agentSeenRev": 4,
+      "issuedSeenRev": 4,
+      "createdAt": "2026-11-19T16:00:00Z",
+      "items": [
+        {
+          "id": "i1",
+          "text": "Check the config",
+          "status": "complete",
+          "previousStatus": "upcoming",
+          "owner": "agent",
+          "requiresValue": true,
+          "agentCompletable": true,
+          "rev": 4,
+          "statusRev": 4,
+          "createdBy": "agent",
+          "updatedBy": "agent",
+          "completedBy": "agent",
+          "editedByDeveloper": false,
+          "lastDeveloperOps": []
+        }
+      ],
+      "removed": [],
+      "recentRequests": []
+    }
+  ],
+  "sendRecords": [
+    {
+      "checklistId": "p2",
+      "itemId": "i3",
+      "rev": 6,
+      "action": "complete",
+      "textHash": "9f2c1a3b5d7e9f019f2c1a3b5d7e9f019f2c1a3b5d7e9f019f2c1a3b5d7e9f01"
+    }
+  ],
+  "pendingComplete": [
+    {
+      "checklistId": "p2",
+      "itemId": "i3",
+      "turnMarker": 6,
+      "started": false
+    }
+  ]
+}

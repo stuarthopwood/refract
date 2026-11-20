@@ -2,6 +2,8 @@
 // Routing lives in `router`, approval in `approval`, the OMP approval overlay in `overlay`.
 
 pub mod approval;
+mod checklist_schema;
+mod checklist_tool;
 pub mod envelope;
 pub(crate) mod handoff_target;
 pub mod overlay;
@@ -67,6 +69,7 @@ pub fn tools_for(access: ToolAccess) -> Vec<&'static str> {
         Role::Root => {
             let mut names = vec![LIST_PANELS, OPEN_PANEL, INVOKE_PANEL_ACTION];
             names.extend(sessions::SESSION_TOOLS);
+            names.push(checklist_schema::CHECKLIST);
             names
         }
         Role::Child => Vec::new(),
@@ -80,6 +83,11 @@ pub fn host_tool_defs(access: ToolAccess) -> Vec<Value> {
         .map(|name| {
             let (description, parameters) = if sessions::is_session_tool(name) {
                 (sessions::description(name), sessions::parameters(name))
+            } else if name == checklist_schema::CHECKLIST {
+                (
+                    checklist_schema::description(),
+                    checklist_schema::parameters(),
+                )
             } else {
                 (tool_description(name), tool_parameters(name))
             };

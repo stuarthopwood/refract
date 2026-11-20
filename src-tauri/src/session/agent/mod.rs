@@ -16,6 +16,7 @@ use crate::store::settings::{ApprovalMode, SettingsStore};
 
 mod chat;
 mod chat_restore;
+mod checklist_notice;
 mod command_wait;
 mod commands;
 mod conversations;
@@ -25,6 +26,7 @@ mod handoff;
 mod handoff_queue;
 mod lane_support;
 mod launch;
+mod launch_listener;
 mod launch_support;
 pub mod pause;
 mod pause_subagents;
@@ -105,7 +107,9 @@ struct AgentState {
     // Filled by the Session tools; run by the settle handler, dropped by the stop paths (#1861).
     queued_handoff: Option<QueuedHandoff>,
     // Told to the agent in front of the next user prompt, then cleared (#1861).
-    pending_agent_notice: Option<String>,
+    pending_agent_notice: Vec<String>,
+    // A new or relaunched Conversation has not heard about the active checklist yet.
+    checklist_line_due: bool,
     pause: pause::State,
 }
 
@@ -200,7 +204,8 @@ impl SessionAgent {
                 working_mode: Default::default(),
                 handoff: Default::default(),
                 queued_handoff: None,
-                pending_agent_notice: None,
+                pending_agent_notice: Vec::new(),
+                checklist_line_due: true,
                 pause: Default::default(),
             }),
             status_tx,

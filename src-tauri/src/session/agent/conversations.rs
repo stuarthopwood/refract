@@ -76,7 +76,8 @@ impl SessionAgent {
             state.transcript = TranscriptState::new();
             state.handoff.note_live = false;
             // A failed-handoff notice belongs to the Conversation it failed in (#1861).
-            state.pending_agent_notice = None;
+            state.pending_agent_notice.clear();
+            state.checklist_line_due = true;
             state.pause.cancelled.clear();
         }
         self.emit_patch_reset().await;
@@ -186,7 +187,8 @@ impl SessionAgent {
         {
             let mut state = self.state.lock().await;
             state.handoff.note_live = note_live;
-            state.pending_agent_notice = None;
+            state.pending_agent_notice.clear();
+            state.checklist_line_due = true;
             state.pause.cancelled.clear();
             state.transcript = if complete {
                 let mut fresh = TranscriptState::from_history(&messages);
