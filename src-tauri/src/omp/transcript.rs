@@ -34,6 +34,8 @@ mod skill_prompt;
 use skill_prompt::try_build_skill_prompt;
 mod turn_error;
 use turn_error::{build_turn_error_item, current_turn_has_error};
+#[cfg(test)]
+mod notice_source_tests;
 
 /// One renderer-facing transcript row, wire-identical to `model.ts`'s `TranscriptItem`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -240,6 +242,17 @@ pub enum NoticeLevel {
     Info,
     Warning,
     Error,
+}
+
+impl NoticeLevel {
+    /// Maps an OMP level string; anything but `warning` and `error` reads as `info`.
+    pub fn from_wire(level: &str) -> Self {
+        match level {
+            "warning" => Self::Warning,
+            "error" => Self::Error,
+            _ => Self::Info,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -1367,40 +1380,53 @@ fn apply_frame_items(
             items
         }
         "notice" => {
-            let level_str = frame.get("level").and_then(Value::as_str).unwrap_or("info");
-            let level = match level_str {
-                "warning" => NoticeLevel::Warning,
-                "error" => NoticeLevel::Error,
-                _ => NoticeLevel::Info,
-            };
+            let level = NoticeLevel::from_wire(
+                frame.get("level").and_then(Value::as_str).unwrap_or("info"),
+            );
             let message = frame
                 .get("message")
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let mut items = items;
-            let notice_source = match frame.get("noticeSource").and_then(Value::as_str) {
-                Some("extension") => Some(NoticeSource::Extension),
-                _ => None,
-            };
-            if level == NoticeLevel::Warning && collapse_repeated_warning(&mut items, &message) {
-                return items;
-            }
-            let id = if has_user_acted {
-                format!("notice-{}", items.len())
-            } else {
-                format!("{STARTUP_NOTICE_PREFIX}{}", items.len())
-            };
-            items.push(Arc::new(TranscriptItem::Notice {
-                id,
-                level,
-                text: message,
-                source: notice_source,
-            }));
-            items
+            push_notice(items, has_user_acted, level, message, None)
         }
         _ => items,
     }
+}
+
+/// Appends a notice row, or bumps an identical earlier warning's `×N`. Only Refract's own code
+/// passes a `source`; no inbound OMP frame field can set it (#2114).
+fn push_notice(
+    mut items: Vec<Arc<TranscriptItem>>,
+    has_user_acted: bool,
+    level: NoticeLevel,
+    message: String,
+    source: Option<NoticeSource>,
+) -> Vec<Arc<TranscriptItem>> {
+    if level == NoticeLevel::Warning && collapse_repeated_warning(&mut items, &message) {
+        return items;
+    }
+    let prefix = if has_user_acted {
+        "notice-"
+    } else {
+        STARTUP_NOTICE_PREFIX
+    };
+    // A notice kept across the history merge keeps its old index, so `len()` alone can collide with it.
+    let mut index = items.len();
+    while items
+        .iter()
+        .any(|item| item.id() == format!("{prefix}{index}"))
+    {
+        index += 1;
+    }
+    let id = format!("{prefix}{index}");
+    items.push(Arc::new(TranscriptItem::Notice {
+        id,
+        level,
+        text: message,
+        source,
+    }));
+    items
 }
 
 fn attach_tool_result(
@@ -1633,6 +1659,19 @@ impl TranscriptState {
         let (settled, _) =
             settle_interrupted_tool_rows_items(history_items, terminated_unexpectedly);
         self.items = merge_history_with_live(&settled, &self.items);
+    }
+
+    /// Appends a notice an OMP extension raised through `ctx.ui.notify` (#2114). The source is set here,
+    /// never read from a wire frame, so only Refract's own code path can mark a notice as an extension's.
+    pub fn apply_extension_notice(&mut self, level: NoticeLevel, text: String) {
+        let items = std::mem::take(&mut self.items);
+        self.items = push_notice(
+            items,
+            self.has_user_acted,
+            level,
+            text,
+            Some(NoticeSource::Extension),
+        );
     }
 
     /// Applies one live frame in place; only touched items get a new `Arc`.

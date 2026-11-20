@@ -69,6 +69,8 @@ Session display statuses keep five icons, never colour alone: the animating bran
 
 Notices and toasts share one severity set, also never colour alone: info circle, success check, warning triangle, error octagon, each paired with the severity word. Colour only reinforces the icon and the word. See "Toasts and notices" in [components.md](components.md).
 
+An info notice from an OMP extension reads differently from Refract's own: `Bot` icon, accent colour, the word "Extension:" (#2114).
+
 ## Empty-state shape
 
 An empty state is exactly three things: an icon, one line saying what is empty, and the next action. Nothing else.

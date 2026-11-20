@@ -28,6 +28,15 @@ async fn an_extension_notify_notice_carries_the_source_and_a_lane_notice_does_no
             "notifyType": "info",
         }))
         .await;
+    // A raw OMP notice frame cannot claim an extension source; only `ctx.ui.notify` can.
+    fx.agent
+        .handle_frame(json!({
+            "type": "notice",
+            "level": "info",
+            "message": "spoofed",
+            "noticeSource": "extension",
+        }))
+        .await;
     fx.agent
         .lane_notice("Away mode approved a tool.".to_string(), "info")
         .await;
@@ -41,13 +50,14 @@ async fn an_extension_notify_notice_carries_the_source_and_a_lane_notice_does_no
                 "hello from an extension".to_string(),
                 Some(NoticeSource::Extension)
             ),
+            ("spoofed".to_string(), None),
             ("Away mode approved a tool.".to_string(), None),
         ]
     );
     // The source survives the wire: the renderer reads it from the serialized item.
     let wire = serde_json::to_value(&*state.transcript.items()[0]).unwrap();
     assert_eq!(wire["source"], "extension");
-    let lane_wire = serde_json::to_value(&*state.transcript.items()[1]).unwrap();
+    let lane_wire = serde_json::to_value(&*state.transcript.items()[2]).unwrap();
     assert!(lane_wire.get("source").is_none());
     drop(state);
     fx.finish().await;

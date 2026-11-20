@@ -10,7 +10,7 @@ use crate::events::EventSink;
 use crate::omp::diff::{diff_transcript, PatchCoalescer, TranscriptOp};
 use crate::omp::process::OmpProcess;
 use crate::omp::transcript::subagent_items::ProgressOutcome;
-use crate::omp::transcript::{RequestResolution, TranscriptItem, TranscriptState};
+use crate::omp::transcript::{NoticeLevel, RequestResolution, TranscriptItem, TranscriptState};
 use crate::store::registry::{RegistryStore, Session};
 use crate::store::settings::{ApprovalMode, SettingsStore};
 
@@ -419,9 +419,20 @@ impl SessionAgent {
 
     /// For a caller that checks state and writes the transcript in one lock hold.
     fn apply_frame_locked(&self, state: &mut AgentState, frame: &Value) {
+        self.mutate_transcript_locked(state, |transcript, turn_abort_requested| {
+            transcript.apply_frame(frame, turn_abort_requested)
+        });
+    }
+
+    /// Runs `mutate` on the transcript, then queues the diff; the shared tail of every live append.
+    fn mutate_transcript_locked(
+        &self,
+        state: &mut AgentState,
+        mutate: impl FnOnce(&mut TranscriptState, bool),
+    ) {
         let before = state.transcript.snapshot();
         let turn_abort_requested = state.turn_abort_requested;
-        state.transcript.apply_frame(frame, turn_abort_requested);
+        mutate(&mut state.transcript, turn_abort_requested);
         queued_handoff::mark_note(state);
         let ops = diff_transcript(&before, state.transcript.items());
         // Queued under the state lock so a concurrent reset cannot supersede this upsert.
@@ -437,13 +448,11 @@ impl SessionAgent {
 
     /// A notice an OMP extension raised through `ctx.ui.notify`; the transcript item records that source (#2114).
     async fn append_extension_notice(&self, text: String, level: &str) {
-        self.apply_transcript_frame(&json!({
-            "type": "notice",
-            "level": level,
-            "message": text,
-            "noticeSource": "extension",
-        }))
-        .await;
+        let level = NoticeLevel::from_wire(level);
+        let mut state = self.state.lock().await;
+        self.mutate_transcript_locked(&mut state, |transcript, _| {
+            transcript.apply_extension_notice(level, text)
+        });
     }
 
     /// Upserts a `kind: 'request'` row; the renderer draws approval cards from these.

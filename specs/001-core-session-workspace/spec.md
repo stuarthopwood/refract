@@ -960,8 +960,9 @@
   3. **Styling.** The recognised token gets a subtle pill: a neutral fill, a small radius
      following `--radius`, the token text in `--accent-text`, no border, no line-height change,
      no caret movement; arguments after the token stay normal text. **Fill, decided by
-     measurement (not #610's first-drafted `--muted`):** `--accent-text` still fails 4.5:1 on
-     `--muted` in Dark (4.00:1) and Obsidian (4.28:1), and clears only 6.60:1 on it in Dark (high
+     measurement (not #610's first-drafted `--muted`):** `--accent-text` failed 4.5:1 on
+     `--muted` in Dark (4.00:1) and Obsidian (4.28:1) when this was decided (both now 4.62:1 after
+     later retunes, and `check-theme-contrast.mjs` enforces 4.5:1 on that pair, #2114), and clears only 6.60:1 on it in Dark (high
      contrast) -- short of this issue's own enhanced 7:1 ask there. `--card` (the issue's own
      named fallback) clears 4.5:1 in every preset and clears 7:1 in Dark (high contrast)
      (8.46:1), so the pill's fill is `--card`, not `--muted`.
@@ -1386,7 +1387,7 @@
 - Q: Does an extension notice that arrives before the first user message in a new chat show at once? -> A: Yes (Decided, Stuart, 2026-11-20): a startup notice with source `extension` counts as conversation output, so the transcript renders it immediately; OMP's own startup banner (no source) stays hidden until the conversation starts, as today.
 - Q: What about an extension warning or error notice? -> A: Unchanged: it keeps its severity icon, colour and label. Only the info level takes the source style.
 - Q: Do Refract's own notices change? -> A: No. Lane, pause, startup and command-output notices keep `InfoIcon` and the muted info colour.
-- Q: Does the source survive a renderer reload? -> A: Yes. It lives on the Rust transcript item and serialises on the wire (`source`), so a snapshot re-read after a reload carries it. A repeated-warning collapse keeps it too.
+- Q: Does the source survive a reload? -> A: A renderer reload, yes; a full app restart or reopening a stopped conversation, no (narrowed after the gate, 2026-11-20). It lives on the Rust transcript item for the life of the session -- including the launch history merge -- and serialises on the wire (`source`), so a snapshot re-read after a renderer reload carries it. OMP never persists `notify`, and Refract keeps no transcript file of its own (saved history reads only OMP's file), so nothing can restore it after the process ends. A repeated-warning collapse keeps it too.
 - Q: Does OMP itself send built-in messages through `notify` in RPC mode? -> A: Recorded in the PR for #2114 after checking OMP's source; any such message takes the same style, since Refract cannot and must not tell them from an extension's.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -2315,7 +2316,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
   `get_state` has been applied, falling back to the configured `default` when the file names none, and
   emits `session_list_changed`; a pinned Session claims no role. The fix lives in Rust, not in a renderer
   fallback.
-- **FR-129** (new, 2026-11-20, issue #2114, Decided Stuart 2026-11-20; amends FR-047): A transcript notice MUST carry an optional source naming where it came from when Refract did not write it. Only a notice raised by an OMP `extension_ui_request` `notify` carries one (`extension`); Refract's own notices carry none. An info notice with source `extension` MUST render with the lucide `Bot` icon and `--accent-text`, and its screen reader level label MUST read "Extension:" instead of "Info:". A warning or error notice keeps its severity styling whatever its source. The source MUST persist on the Rust transcript item and serialise on the wire so a renderer reload re-reads it, and a repeated-warning collapse MUST keep it. The classification keys on the request's origin only: no extension name, no Skippy-specific code, and no text matching anywhere in the repo.
+- **FR-129** (new, 2026-11-20, issue #2114, Decided Stuart 2026-11-20; amends FR-047): A transcript notice MUST carry an optional source naming where it came from when Refract did not write it. Only a notice raised by an OMP `extension_ui_request` `notify` carries one (`extension`); Refract's own notices carry none. An info notice with source `extension` MUST render with the lucide `Bot` icon and `--accent-text`, and its screen reader level label MUST read "Extension:" instead of "Info:". A warning or error notice keeps its severity styling whatever its source. The source MUST persist on the Rust transcript item for the life of the session, including the launch history merge (`merge_history_with_live` keeps a live extension notice), and serialise on the wire so a renderer reload re-reads it; it does not survive a full app restart or reopening a stopped conversation, because OMP never persists `notify` and Refract keeps no transcript file of its own. A repeated-warning collapse MUST keep it. The classification keys on the request's origin only: no extension name, no Skippy-specific code, and no text matching anywhere in the repo.
 
 ### Key Entities
 

@@ -34,6 +34,8 @@ const LONG_NOTICE_CHARS = 160
 
 // An info notice an extension raised (#2114) uses the theme accent and the Bot icon; warning and error keep their severity styling.
 const EXTENSION_INFO_CLASS = 'text-accent-text'
+// The row hover fill is `muted`; hover swaps the accent summary to foreground, as Stepper.tsx does.
+const EXTENSION_HOVER_CLASS = 'group-hover/line:text-foreground'
 
 interface NoticeRowProps {
   level: NoticeLevel
@@ -65,6 +67,7 @@ export function NoticeRow({ level, text: rawText, source, commandOutput = false 
   const fromExtension = level === 'info' && source === 'extension'
   const Icon = fromExtension ? BotIcon : NOTICE_ICON[level]
   const toneClass = fromExtension ? EXTENSION_INFO_CLASS : NOTICE_CLASS[level]
+  const expandableToneClass = fromExtension ? cn(toneClass, EXTENSION_HOVER_CLASS) : toneClass
   const isLong = text.length > LONG_NOTICE_CHARS || text.includes('\n')
   const icon = (
     <>
@@ -79,7 +82,7 @@ export function NoticeRow({ level, text: rawText, source, commandOutput = false 
       <CollapsedLine
         icon={icon}
         summary={commandOutputSummary(text)}
-        summaryClassName={NOTICE_CLASS[level]}
+        summaryClassName={expandableToneClass}
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}
       >
         <div tabIndex={0} role="region" aria-label="Command output" className="max-h-60 overflow-y-auto [overflow-wrap:anywhere]">
@@ -104,7 +107,7 @@ export function NoticeRow({ level, text: rawText, source, commandOutput = false 
     <CollapsedLine
       icon={icon}
       summary={<LongSummary text={text} />}
-      summaryClassName={toneClass}
+      summaryClassName={expandableToneClass}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
       <div tabIndex={0} role="region" aria-label="Notice text" className={cn('max-h-60 overflow-y-auto text-xs whitespace-pre-wrap [overflow-wrap:anywhere]', fromExtension ? EXTENSION_INFO_CLASS : 'text-notice-info-fg')}>{text}</div>
