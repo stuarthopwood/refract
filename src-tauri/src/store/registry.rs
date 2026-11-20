@@ -230,6 +230,11 @@ impl RegistryStore {
         Ok(Self { file, data })
     }
 
+    /// The directory holding `registry.json`, where the other stores keep their files too.
+    pub fn data_dir(&self) -> &Path {
+        self.file.parent().unwrap_or(Path::new("."))
+    }
+
     /// Separate from `open`, which runs before the logger plugin and would drop the line.
     pub fn warn_duplicate_personal(&self) {
         warn_duplicate_personal(&self.data);

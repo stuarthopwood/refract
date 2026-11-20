@@ -64,6 +64,13 @@ async fn fetch_worktree_lists(
 
 impl SessionManager {
     pub fn new(registry: SharedRegistry, settings: SharedSettings, events: EventSink) -> Arc<Self> {
+        let checklists = Arc::new(ChecklistStore::new(
+            registry
+                .try_lock()
+                .expect("the registry is not shared yet")
+                .data_dir()
+                .join("checklists"),
+        ));
         Arc::new_cyclic(|self_ref| Self {
             registry,
             settings,
@@ -71,7 +78,7 @@ impl SessionManager {
             agents: StdMutex::new(HashMap::new()),
             visible_ids: Arc::new(StdMutex::new(HashSet::new())),
             self_ref: self_ref.clone(),
-            checklists: Arc::new(ChecklistStore::new(crate::data_dir().join("checklists"))),
+            checklists,
         })
     }
 
@@ -537,5 +544,17 @@ mod tests {
         assert_eq!(find("healthy")["stopReason"], "not-started");
         assert_eq!(find("hand-emptied")["stopReason"], "worktree-missing");
         assert_eq!(find("removed")["stopReason"], "worktree-missing");
+    }
+
+    #[tokio::test]
+    async fn checklist_store_lives_under_the_registry_dir() {
+        let dir = temp_dir("checklist-dir");
+        let registry = Arc::new(AsyncMutex::new(RegistryStore::open(&dir).await.unwrap()));
+        let settings = Arc::new(AsyncMutex::new(SettingsStore::open(&dir).await.unwrap()));
+        let slot: Arc<StdMutex<Option<tauri::AppHandle>>> = Arc::new(StdMutex::new(None));
+        let events = EventSink::new(slot, registry.clone());
+        let manager = SessionManager::new(registry, settings, events);
+        let file = manager.checklists().session_file("s1").unwrap();
+        assert_eq!(file, dir.join("checklists").join("s1.json"));
     }
 }
