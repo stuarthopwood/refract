@@ -8,8 +8,10 @@ struct FakeHost {
     store: Arc<ChecklistStore>,
     dir: tempfile::TempDir,
     live: bool,
+    entered: tokio::sync::Notify,
+    emitted: Arc<tokio::sync::Notify>,
     /// `(payload, whether the Session's file was on disk when the event was emitted)`.
-    emits: Mutex<Vec<(Value, bool)>>,
+    emits: Arc<Mutex<Vec<(Value, bool)>>>,
 }
 
 impl Host for FakeHost {
@@ -17,15 +19,20 @@ impl Host for FakeHost {
         &self.store
     }
     async fn is_live(&self, _id: &str) -> bool {
+        self.entered.notify_one();
         self.live
     }
     fn is_deleting(&self, _id: &str) -> bool {
         false
     }
-    fn emit_update(&self, payload: Value) {
+    fn emitter(&self) -> impl Fn(Value) + Send + 'static + use<> {
+        let (emits, emitted) = (Arc::clone(&self.emits), Arc::clone(&self.emitted));
         let path = self.dir.path().join("s1.json");
-        let written = std::fs::read_to_string(path).is_ok_and(|t| t.contains("\"complete\""));
-        self.emits.lock().unwrap().push((payload, written));
+        move |payload| {
+            let written = std::fs::read_to_string(&path).is_ok_and(|t| t.contains("\"complete\""));
+            emits.lock().unwrap().push((payload, written));
+            emitted.notify_one();
+        }
     }
 }
 
@@ -35,7 +42,9 @@ fn host(live: bool) -> FakeHost {
         store: Arc::new(ChecklistStore::new(dir.path().to_path_buf())),
         dir,
         live,
-        emits: Mutex::new(Vec::new()),
+        entered: tokio::sync::Notify::new(),
+        emitted: Arc::new(tokio::sync::Notify::new()),
+        emits: Arc::new(Mutex::new(Vec::new())),
     }
 }
 
@@ -124,6 +133,25 @@ async fn mutate_accepts_request_id() {
         (json!(2), json!(2))
     );
     assert_eq!(host.emits.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn dropped_mutate_still_emits_after_its_write_lands() {
+    let host = Arc::new(host(true));
+    seed(&host).await;
+    let task = {
+        let host = Arc::clone(&host);
+        tokio::spawn(async move { mutate_with(&*host, "s1", "p1", 1, None, &tick()).await })
+    };
+    host.entered.notified().await;
+    task.abort();
+
+    tokio::time::timeout(std::time::Duration::from_secs(10), host.emitted.notified())
+        .await
+        .expect("the dropped call's write was announced");
+    let emits = host.emits.lock().unwrap();
+    assert_eq!(emits.len(), 1);
+    assert!(emits[0].1, "the file was on disk before the event");
 }
 
 #[tokio::test]

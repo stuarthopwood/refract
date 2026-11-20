@@ -20,8 +20,8 @@ pub trait Host: Send + Sync {
     fn store(&self) -> &Arc<ChecklistStore>;
     fn is_live(&self, id: &str) -> impl Future<Output = bool> + Send;
     fn is_deleting(&self, id: &str) -> bool;
-    /// `checklist:update`; called only after the write reached disk.
-    fn emit_update(&self, payload: Value);
+    /// `checklist:update`, as an owned sender so it can run on the store's task after the write.
+    fn emitter(&self) -> impl Fn(Value) + Send + 'static + use<Self>;
 }
 
 fn store_error(error: StoreError, session_id: &str) -> IpcError {
@@ -89,46 +89,51 @@ pub async fn mutate_with(
         Err(e) => return refusal(host, session_id, &e).await,
     };
     let wanted = checklist_id.to_string();
+    let emit = host.emitter();
+    let session = session_id.to_string();
     let outcome = host
         .store()
-        .apply_detached(live, move |file| {
-            let list = match file.active.as_mut() {
-                Some(list) if list.id == wanted => list,
-                _ => {
-                    return Err(ChecklistError::field(
-                        ErrorCode::InvalidInput,
-                        "checklistId",
-                    ))
+        .apply_detached_then(
+            live,
+            move |file| {
+                let list = match file.active.as_mut() {
+                    Some(list) if list.id == wanted => list,
+                    _ => {
+                        return Err(ChecklistError::field(
+                            ErrorCode::InvalidInput,
+                            "checklistId",
+                        ))
+                    }
+                };
+                if request_id
+                    .as_deref()
+                    .is_some_and(|id| recorded_ids(list, id).is_some())
+                {
+                    return Ok((list.clone(), false));
                 }
-            };
-            if request_id
-                .as_deref()
-                .is_some_and(|id| recorded_ids(list, id).is_some())
-            {
-                return Ok((list.clone(), false));
-            }
-            let applied = apply_developer(list, base_rev, &op)?;
-            let mut next = applied.checklist;
-            if let Some(id) = request_id.as_deref() {
-                let rev = next.rev;
-                record_request(&mut next, id, rev, applied.added_ids);
-            }
-            *list = next.clone();
-            Ok((next, true))
-        })
+                let applied = apply_developer(list, base_rev, &op)?;
+                let mut next = applied.checklist;
+                if let Some(id) = request_id.as_deref() {
+                    let rev = next.rev;
+                    record_request(&mut next, id, rev, applied.added_ids);
+                }
+                *list = next.clone();
+                Ok((next, true))
+            },
+            move |(list, wrote)| {
+                if *wrote {
+                    emit(checklist_update_payload(
+                        &session,
+                        list,
+                        Actor::Developer,
+                        false,
+                    ));
+                }
+            },
+        )
         .await;
     match outcome {
-        Ok((list, wrote)) => {
-            if wrote {
-                host.emit_update(checklist_update_payload(
-                    session_id,
-                    &list,
-                    Actor::Developer,
-                    false,
-                ));
-            }
-            Ok(json!(list))
-        }
+        Ok((list, _)) => Ok(json!(list)),
         Err(StoreError::Op(e)) => refusal(host, session_id, &e).await,
         Err(other) => Err(store_error(other, session_id)),
     }
@@ -138,7 +143,7 @@ struct AppHost<'a> {
     state: &'a AppState,
 }
 
-impl Host for AppHost<'_> {
+impl<'a> Host for AppHost<'a> {
     fn store(&self) -> &Arc<ChecklistStore> {
         self.state.session_manager.checklists()
     }
@@ -148,9 +153,12 @@ impl Host for AppHost<'_> {
     fn is_deleting(&self, id: &str) -> bool {
         super::sessions_lifecycle::delete_in_flight::is_deleting(id)
     }
-    fn emit_update(&self, payload: Value) {
-        crate::events::EventSink::new(self.state.app_handle.clone(), self.state.registry.clone())
-            .emit_checklist_update(payload);
+    fn emitter(&self) -> impl Fn(Value) + Send + 'static + use<'a> {
+        let events = crate::events::EventSink::new(
+            self.state.app_handle.clone(),
+            self.state.registry.clone(),
+        );
+        move |payload| events.emit_checklist_update(payload)
     }
 }
 

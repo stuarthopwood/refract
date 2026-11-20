@@ -227,3 +227,37 @@ async fn checklist_update_emitted_after_write_only() {
     assert_eq!(emits[0].0["opened"], json!(true));
     assert_eq!(emits[0].0["checklist"]["rev"], json!(1));
 }
+
+#[tokio::test]
+async fn duplicate_update_issues_the_seen_rev_it_returns() {
+    let host = host(true);
+    let created = call(&host, create_args("r1", false)).await;
+    let set = |value: &str, base: &Value, request_id: &str| {
+        json!({
+            "action": "update", "baseRev": base, "requestId": request_id,
+            "ops": [{ "op": "setValue", "id": "i1", "value": value }],
+        })
+    };
+    call(&host, set("v", &created["seenRev"], "r2")).await;
+    let live = LiveSession::check("s1", |_| true, |_| false).unwrap();
+    host.store
+        .apply(&live, |file| {
+            let list = file.active.as_mut().unwrap();
+            let op = crate::checklist::ops::decode_op(
+                &json!({ "op": "setStatus", "id": "i1", "status": "next" }),
+            )
+            .unwrap();
+            *list = crate::checklist::developer_ops::apply_developer(list, 2, &op)?.checklist;
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    let duplicate = call(&host, set("v", &json!(2), "r2")).await;
+    assert_eq!(duplicate["duplicate"], json!(true));
+    assert_eq!(duplicate["seenRev"], json!(3));
+    let next = call(&host, set("w", &duplicate["seenRev"], "r3")).await;
+
+    assert!(next["error"].is_null(), "{next}");
+    assert_eq!(next["rev"], json!(4));
+}

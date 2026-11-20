@@ -159,8 +159,10 @@ fn do_create(
         CreateOutcome::Duplicate { ids } => {
             let list = file
                 .active
-                .as_ref()
+                .as_mut()
                 .expect("a duplicate has an active list");
+            let seen = user_changes(list).seen_rev;
+            issue_seen_rev(list, seen);
             let value = full_result(list, true, Some(("ids", &ids)));
             Ok(done(list, value, false, false))
         }
@@ -184,8 +186,13 @@ fn do_update(
     let Some(list) = file.active.as_mut() else {
         return Ok(Outcome::NoActive);
     };
-    if let Some(ids) = request_id.and_then(|id| recorded_ids(list, id)) {
-        let value = full_result(list, true, Some(("addedIds", ids)));
+    if let Some(ids) = request_id
+        .and_then(|id| recorded_ids(list, id))
+        .map(<[String]>::to_vec)
+    {
+        let seen = user_changes(list).seen_rev;
+        issue_seen_rev(list, seen);
+        let value = full_result(list, true, Some(("addedIds", &ids)));
         return Ok(done(list, value, false, false));
     }
     let applied = crate::checklist::agent_ops::apply_agent(list, base_rev, ops)?;
