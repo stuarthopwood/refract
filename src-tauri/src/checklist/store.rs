@@ -170,11 +170,19 @@ impl ChecklistStore {
         Ok(read(current))
     }
 
-    /// Taken under the Session lock by a delete, so an in-flight call that already holds a witness
-    /// cannot write the file back after it is removed.
-    pub async fn tombstone(&self, id: &str) {
+    /// Removes a deleted Session's file and tombstones its entry under the Session lock, so an
+    /// in-flight call that already holds a witness cannot write the file back afterwards.
+    pub async fn discard(&self, id: &str) -> io::Result<()> {
+        let path = self
+            .session_file(id)
+            .map_err(|_| io::Error::other("not a plain Session id"))?;
         let handle = self.slot(id);
-        *handle.lock().await = Slot::Tombstoned;
+        let mut slot = handle.lock().await;
+        *slot = Slot::Tombstoned;
+        match tokio::fs::remove_file(&path).await {
+            Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        }
     }
 }
 

@@ -429,3 +429,7 @@ mod gate_tests;
 #[cfg(test)]
 #[path = "sessions_lifecycle_subtree_tests.rs"]
 mod subtree_tests;
+
+#[cfg(test)]
+#[path = "sessions_lifecycle_checklist_tests.rs"]
+mod checklist_tests;

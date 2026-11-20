@@ -115,8 +115,7 @@ async fn tombstoned_entry_cannot_be_recreated() {
     let dir = tempfile::tempdir().unwrap();
     let store = ChecklistStore::new(dir.path().to_path_buf());
     store.apply(&live("s1"), bump).await.unwrap();
-    store.tombstone("s1").await;
-    std::fs::remove_file(dir.path().join("s1.json")).unwrap();
+    store.discard("s1").await.unwrap();
 
     let applied = store.apply(&live("s1"), bump).await;
     let read = store.read(&live("s1"), |_| ()).await;
