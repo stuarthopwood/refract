@@ -190,3 +190,9 @@ fn parse_rejects_raw_checklist_item_tag_in_body() {
         assert_eq!(parse(&forged), None, "tag {tag:?}");
     }
 }
+
+#[test]
+fn unescape_attr_rejects_raw_quote() {
+    assert_eq!(unescape_attr("a\"b"), None);
+    assert_eq!(unescape_attr("a&quot;b"), Some("a\"b".to_string()));
+}

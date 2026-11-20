@@ -162,6 +162,19 @@ fn complete_is_not_agent_completable_for_each_ineligible_item() {
 }
 
 #[test]
+fn a_pending_complete_is_refused_before_the_value_check() {
+    let mut file = file_with(vec![item("i1")]);
+    run(&mut file, SendAction::Complete, None).unwrap();
+    let list = file.active.as_mut().unwrap();
+    list.items[0].requires_value = true;
+    list.items[0].value_by = Some(Actor::Agent);
+
+    let err = refused(&mut file, SendAction::Complete, None);
+
+    assert_eq!(err.code, ErrorCode::NotAgentCompletable);
+}
+
+#[test]
 fn complete_requires_developer_value_not_agent_value() {
     let mut file = file_with(vec![needs_value(item("i1"), Actor::Agent)]);
     assert_eq!(
