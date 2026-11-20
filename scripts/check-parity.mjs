@@ -55,14 +55,17 @@ function extractConstObject(source, constName) {
 const ipcSource = readFile(ipcTsPath);
 // `ipc.ts` is at its line cap, so the Usage channels live in `ipc-usage.ts`.
 const ipcUsageSource = readFile(path.join(repoRoot, 'src/shared/ipc-usage.ts'));
+const ipcChecklistSource = readFile(path.join(repoRoot, 'src/shared/ipc-checklist.ts'));
 const ipcConversationSource = readFile(path.join(repoRoot, 'src/shared/ipc-conversation-changed.ts'));
 const requests = [
   ...extractConstObject(ipcSource, 'IPC_REQUESTS'),
   ...extractConstObject(ipcUsageSource, 'IPC_USAGE_REQUESTS'),
+  ...extractConstObject(ipcChecklistSource, 'IPC_CHECKLIST_REQUESTS'),
 ];
 const events = [
   ...extractConstObject(ipcSource, 'IPC_EVENTS'),
   ...extractConstObject(ipcUsageSource, 'IPC_USAGE_EVENTS'),
+  ...extractConstObject(ipcChecklistSource, 'IPC_CHECKLIST_EVENTS'),
   ...extractConstObject(ipcConversationSource, 'IPC_CONVERSATION_EVENTS'),
 ];
 const bootstrapMatch = ipcSource.match(/export const THEME_BOOTSTRAP_CHANNEL = '([^']+)';/);

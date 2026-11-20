@@ -1,5 +1,6 @@
 {
   "include": ["src/renderer/**/*", "src/renderer/**/*.tsx", "src/shared/**/*", "src/tauri-bridge/**/*"],
+  "exclude": ["src/shared/checklist.test.ts"],
   "compilerOptions": {
     "composite": true,
     "target": "ES2023",
