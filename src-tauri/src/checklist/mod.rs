@@ -5,6 +5,7 @@ pub mod agent_ops;
 pub mod changes;
 pub mod create;
 pub mod developer_ops;
+pub mod hint;
 pub mod ids;
 pub mod model;
 pub mod ops;
