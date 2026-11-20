@@ -111,6 +111,15 @@ describe('useChecklistStore.reveal', () => {
 describe('useChecklistStore.mutateItem', () => {
   const seed = (item = makeItem({ id: 'i1' }), sessionId = 's1') => update(sessionId, makeChecklist({ rev: 4, items: [item] }))
 
+  // The TS lib target predates `Promise.withResolvers`.
+  const deferred = (): { promise: Promise<unknown>; resolve: (value: unknown) => void } => {
+    let resolve: (value: unknown) => void = () => undefined
+    const promise = new Promise<unknown>((done) => {
+      resolve = done
+    })
+    return { promise, resolve }
+  }
+
   it('sends_base_rev_as_rendered', async () => {
     seed()
     mutate.mockResolvedValue({ ok: true, value: makeChecklist({ rev: 5 }) })
@@ -120,20 +129,20 @@ describe('useChecklistStore.mutateItem', () => {
 
   it('no_optimistic_status_before_result', async () => {
     seed()
-    const { promise, resolve: release } = Promise.withResolvers<unknown>()
+    const { promise, resolve: release } = deferred()
     mutate.mockReturnValue(promise)
     const pending = useChecklistStore.getState().mutateItem('s1', 'i1')
-    expect(read('s1').checklist?.items[0].status).toBe('upcoming')
+    expect(read('s1').checklist?.items[0]?.status).toBe('upcoming')
     expect(read('s1').pending).toEqual({ i1: true })
     release({ ok: true, value: makeChecklist({ rev: 5, items: [makeItem({ id: 'i1', status: 'complete' })] }) })
     await pending
-    expect(read('s1').checklist?.items[0].status).toBe('complete')
+    expect(read('s1').checklist?.items[0]?.status).toBe('complete')
     expect(read('s1').pending).toEqual({})
   })
 
   it('does_not_send_a_second_request_while_pending', async () => {
     seed()
-    mutate.mockReturnValue(Promise.withResolvers<unknown>().promise)
+    mutate.mockReturnValue(deferred().promise)
     void useChecklistStore.getState().mutateItem('s1', 'i1')
     await useChecklistStore.getState().mutateItem('s1', 'i1')
     expect(mutate).toHaveBeenCalledTimes(1)
@@ -176,7 +185,7 @@ describe('useChecklistStore.mutateItem', () => {
   it('late_result_lands_in_captured_session', async () => {
     seed(makeItem({ id: 'i1' }), 's1')
     update('s2', makeChecklist({ id: 'q1', rev: 1 }))
-    const { promise, resolve: release } = Promise.withResolvers<unknown>()
+    const { promise, resolve: release } = deferred()
     mutate.mockReturnValue(promise)
     const pending = useChecklistStore.getState().mutateItem('s1', 'i1')
     release({ ok: true, value: makeChecklist({ rev: 5, title: 'applied' }) })

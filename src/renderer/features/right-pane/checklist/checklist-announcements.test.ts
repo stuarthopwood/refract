@@ -25,12 +25,12 @@ describe('describeAgentChange', () => {
   })
 
   it('reports_a_status_change_with_the_status_word', () => {
-    const next = makeChecklist({ rev: 2, items: [makeItem({ id: 'a', text: 'Write', status: 'complete' }), base.items[1]] })
+    const next = makeChecklist({ rev: 2, items: [makeItem({ id: 'a', text: 'Write', status: 'complete' }), makeItem({ id: 'b', text: 'Ship' })] })
     expect(describeAgentChange(base, next)).toBe('Write is now complete')
   })
 
   it('reports_added_and_removed_items', () => {
-    const next = makeChecklist({ rev: 2, items: [base.items[0], makeItem({ id: 'c', text: 'Test' })] })
+    const next = makeChecklist({ rev: 2, items: [makeItem({ id: 'a', text: 'Write' }), makeItem({ id: 'c', text: 'Test' })] })
     expect(describeAgentChange(base, next)).toBe('Item added: Test. Item removed: Ship')
   })
 
