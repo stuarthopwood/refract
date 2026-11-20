@@ -34,7 +34,7 @@ const LONG_NOTICE_CHARS = 160
 
 // An info notice an extension raised (#2114) uses the theme accent and the Bot icon; warning and error keep their severity styling.
 const EXTENSION_INFO_CLASS = 'text-accent-text'
-// The row hover fill is `muted`; hover swaps the accent summary to foreground, as Stepper.tsx does.
+// The row hover fill is `--row-hover-bg` (`muted` at 50% in dark themes), so `muted` is the binding case; hover swaps the accent summary to foreground, as Stepper.tsx does.
 const EXTENSION_HOVER_CLASS = 'group-hover/line:text-foreground'
 
 interface NoticeRowProps {

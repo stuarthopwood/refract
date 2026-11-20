@@ -40,4 +40,4 @@ As a user reading a chat transcript, inline code chips (tool targets such as pat
 1. Prefix: `--md-*` for Markdown, `--syntax-*` and `--code-block-*` for code.
 2. Code block background: its own token `--code-block-bg`, default `--card`.
 3. Shiki css-variables theme exposes only keyword/constant/string/comment/function/parameter/punctuation/link, so the issue's longer token list (`number`, `type`, `variable`, `inserted`, `deleted`) collapses onto `constant` and `parameter`; diffs keep their own `--diff-*` tokens.
-4. `--accent-text` fails 4.5:1 on `--muted` (#610), so inline code and table header text use a lighter tint of the same hue, `--md-code-fg`, instead of `--accent-text` itself.
+4. Inline code and table header text use a lighter tint of the same hue, `--md-code-fg`, instead of `--accent-text` itself (#610). `--accent-text` now passes 4.5:1 on `--muted` (enforced by `check-theme-contrast`), but the tint was kept.

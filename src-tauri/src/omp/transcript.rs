@@ -1294,7 +1294,7 @@ fn apply_prompt_result_notice(
                     .to_string(),
                 None => "Prompt failed.".to_string(),
             };
-            let id = format!("notice-{}", items.len());
+            let id = unused_notice_id(&items, "notice-");
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Error,
@@ -1304,7 +1304,7 @@ fn apply_prompt_result_notice(
             items
         }
         "aborted" => {
-            let id = format!("notice-{}", items.len());
+            let id = unused_notice_id(&items, "notice-");
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Info,

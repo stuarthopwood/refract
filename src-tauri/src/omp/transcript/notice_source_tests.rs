@@ -150,3 +150,35 @@ fn command_output_frames_never_reuse_the_id_of_a_kept_high_index_extension_notic
     ids.dedup();
     assert_eq!(ids.len(), 5);
 }
+
+#[test]
+fn error_and_aborted_notices_never_reuse_the_id_of_a_kept_extension_notice_after_the_user_acted() {
+    let mut state = TranscriptState::new();
+    for message in ["a", "b", "c"] {
+        state.apply_frame(
+            &json!({ "type": "notice", "level": "info", "message": message }),
+            true,
+        );
+    }
+    state.apply_extension_notice(NoticeLevel::Info, "from an extension".to_string());
+    state.merge_from_history(&[], true);
+    assert_eq!(state.items().len(), 1);
+    let kept_id = state.items()[0].id().to_string();
+
+    state.apply_frame(&json!({ "type": "command_output", "text": "out" }), true);
+    state.apply_frame(
+        &json!({ "type": "prompt_result", "status": "error", "error": "boom" }),
+        true,
+    );
+    state.apply_frame(
+        &json!({ "type": "prompt_result", "status": "aborted" }),
+        true,
+    );
+
+    let mut ids: Vec<&str> = state.items().iter().map(|item| item.id()).collect();
+    assert_eq!(ids.len(), 4);
+    assert_eq!(ids[0], kept_id);
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), 4);
+}

@@ -1040,7 +1040,7 @@ samp {
   --severity-warning: oklch(0.769 0.188 70.08);
   --severity-error: oklch(0.74 0.191 22.216);
   --severity-info: #38BDF8;
-  /* #838/#1877: the accent text lightened a step: plain `--accent-text` is 4.28:1 on `--muted` (the trigger's hover fill), under the 4.5:1 floor. */
+  /* #838/#1877: agent-to-agent message identity (glyph + label only); the accent text lightened a step so it keeps headroom on `--muted` (the trigger's hover fill). */
   --agent-message: color-mix(in srgb, var(--accent-text) 94%, white);
   /* #925: diff-stat colouring -- same alias as `.theme-dark`'s own comment above. */
   --diff-added: var(--state-working);

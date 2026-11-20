@@ -21,7 +21,7 @@ const CIRCLE_CLASS: Record<StepStatus, string> = {
 
 const STATUS_TEXT_CLASS: Record<StepStatus, string> = {
   waiting: 'text-muted-foreground',
-  // The ghost button's hover fill is `muted`; hover swaps accent-text to foreground, the neutral text step, rather than keep the accent.
+  // The ghost button's hover fill is `--row-hover-bg` (`muted` at 50% in dark themes), so `muted` is the binding case; hover swaps accent-text to foreground, the neutral text step, rather than keep the accent.
   running: 'text-accent-text group-hover/button:text-foreground',
   passed: 'text-state-working',
   failed: 'text-destructive'
