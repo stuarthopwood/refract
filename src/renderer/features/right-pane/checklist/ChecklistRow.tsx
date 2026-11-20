@@ -33,7 +33,7 @@ export function ChecklistRow({ item, pending, refusal, onTick }: ChecklistRowPro
       data-slot="checklist-row"
       data-checklist-item={item.id}
       aria-current={item.status === 'next' ? 'step' : undefined}
-      className="flex items-start gap-2 border-b border-border px-3 py-2 text-sm last:border-b-0"
+      className="flex items-start gap-2 border-b border-border px-2 py-2 text-sm last:border-b-0"
     >
       <span className="grid size-6 shrink-0 place-items-center">
         <CheckboxItem

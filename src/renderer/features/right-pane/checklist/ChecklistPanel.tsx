@@ -27,7 +27,7 @@ export function ChecklistList({ checklist, pending, refusals, onTick }: Checklis
 
 function Notice({ title, children }: { title: string; children: string }) {
   return (
-    <div role="alert" className="mx-3 mt-2 rounded-lg border border-severity-error px-3 py-2 text-sm">
+    <div role="alert" className="mx-2 mt-2 rounded-lg border border-severity-error px-2 py-2 text-sm">
       <p className="font-medium">{title}</p>
       <p className="break-words text-muted-foreground">{children}</p>
     </div>
@@ -68,14 +68,14 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
         {toolUnavailable && <Notice title="Checklist tool unavailable">The agent's checklist tool was refused for this session, so it cannot create or update a checklist.</Notice>}
         {checklist !== null && (
           <>
-            <div className="px-3 pb-1 pt-2">
+            <div className="px-2 pb-1 pt-2">
               <h2 className="break-words text-sm font-medium">{checklist.title}</h2>
               <p className="text-xs text-muted-foreground">
                 {done} of {checklist.items.length} {checklist.items.length === 1 ? 'item' : 'items'} complete
               </p>
             </div>
             {checklist.items.length === 0 ? (
-              <p className="px-3 py-2 text-sm text-muted-foreground">This checklist has no items yet.</p>
+              <p className="px-2 py-2 text-sm text-muted-foreground">This checklist has no items yet.</p>
             ) : (
               <ChecklistList
                 checklist={checklist}
