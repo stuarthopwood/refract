@@ -1,5 +1,4 @@
 // One agent per opened Session; split by concern across `session/agent/`.
-mod launch_listener;
 
 use std::collections::HashSet;
 use std::sync::{Arc, Mutex as StdMutex, Weak};
@@ -26,6 +25,7 @@ mod handoff;
 mod handoff_queue;
 mod lane_support;
 mod launch;
+mod launch_listener;
 mod launch_support;
 pub mod pause;
 mod pause_subagents;
