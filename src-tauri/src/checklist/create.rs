@@ -1,5 +1,5 @@
-// Creating a checklist, archiving the one it replaces, and the `requestId` retry guard (spec 138
-// FR-008, FR-014). Pure: the result is a whole new file value the store swaps in, so a refused or
+// Creating a checklist, archiving the one it replaces, and the `requestId` retry guard.
+// Pure: the result is a whole new file value the store swaps in, so a refused or
 // failed call leaves the stored checklist as it was.
 
 use super::ids::take_checklist_id;
@@ -10,6 +10,7 @@ use super::model::{
 use super::ops::{add_item, ChecklistError, ChecklistOp, ErrorCode, NewItem};
 use super::validate::{validate, Field};
 
+/// Inputs for creating a checklist, including the replace flag and request id.
 pub struct CreateArgs<'a> {
     pub request_id: Option<&'a str>,
     pub title: &'a str,
@@ -17,6 +18,7 @@ pub struct CreateArgs<'a> {
     pub replace: bool,
 }
 
+/// Result of a create: made, or a replace that needs the developer's approval card.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CreateOutcome {
     Created {
@@ -30,6 +32,7 @@ pub enum CreateOutcome {
     NeedsCard { developer_items: usize },
 }
 
+/// Rejects a missing or malformed request id where one is required.
 pub fn check_request_id(request_id: Option<&str>, required: bool) -> Result<(), ChecklistError> {
     let invalid = || ChecklistError::field(ErrorCode::InvalidInput, "requestId");
     match request_id {
@@ -55,6 +58,7 @@ pub fn is_structural(ops: &[ChecklistOp]) -> bool {
     })
 }
 
+/// Looks up the item ids a repeated request id already produced.
 pub fn recorded_ids<'a>(list: &'a Checklist, request_id: &str) -> Option<&'a [String]> {
     list.recent_requests
         .iter()
@@ -62,6 +66,7 @@ pub fn recorded_ids<'a>(list: &'a Checklist, request_id: &str) -> Option<&'a [St
         .map(|r| r.added_ids.as_slice())
 }
 
+/// Remembers a request id and its added item ids so a retry is idempotent.
 pub fn record_request(list: &mut Checklist, request_id: &str, rev: u64, added_ids: Vec<String>) {
     list.recent_requests.push(RecentRequest {
         request_id: request_id.to_string(),
@@ -98,6 +103,7 @@ fn archive(file: &mut ChecklistFile, mut list: Checklist) {
     }
 }
 
+/// Creates the Session's active checklist, archiving or replacing the previous one as asked.
 pub fn create(
     file: &ChecklistFile,
     args: &CreateArgs,

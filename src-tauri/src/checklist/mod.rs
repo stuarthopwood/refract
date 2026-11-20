@@ -1,4 +1,4 @@
-// Checklist data model and per-Session store (spec 138, #2011). Pure engines over `model`; only the
+// Checklist data model and per-Session store (#2011). Pure engines over `model`; only the
 // store does I/O.
 
 pub mod agent_ops;

@@ -1,4 +1,4 @@
-// Result and error shaping for `refract_checklist` (spec 138 FR-010). A result that reaches
+// Result and error shaping for `refract_checklist`. A result that reaches
 // `MAX_RESULT_BYTES` is dropped whole by the router, `userChanges` included, so every field is
 // capped and every list stops at a byte budget with an overflow flag.
 
@@ -9,10 +9,13 @@ use super::changes::{ChangeSet, UserChange};
 use super::model::{Checklist, ChecklistItem};
 use super::ops::{ChecklistError, ErrorCode};
 
+/// Total byte budget of a tool result.
 pub const RESULT_BUDGET_BYTES: usize = 7168;
 /// The `items` list's share of `RESULT_BUDGET_BYTES` after the worst-case header, ids and changes.
 pub const ITEMS_BUDGET_BYTES: usize = 3948;
+/// Bytes of item text shown before it is cut.
 pub const TEXT_PREVIEW_BYTES: usize = 60;
+/// Byte cap for an error message.
 pub const MAX_MESSAGE_BYTES: usize = 160;
 
 fn tag<T: Serialize>(value: &T) -> Value {
@@ -102,6 +105,7 @@ fn change_json(change: &UserChange) -> Value {
     Value::Object(out)
 }
 
+/// Everything build_result needs to render a result.
 pub struct ResultInput<'a> {
     pub list: &'a Checklist,
     pub duplicate: bool,
@@ -112,6 +116,7 @@ pub struct ResultInput<'a> {
     pub changes: &'a ChangeSet,
 }
 
+/// Renders a bounded result for the agent from the checklist and changes.
 pub fn build_result(input: &ResultInput) -> Value {
     let list = input.list;
     let (items, more_items) = items_page(&input.items, input.full);

@@ -9,6 +9,7 @@ use super::model::{
 };
 use super::ops::{bump_rev, stamp};
 
+/// Hashes send text so a record never stores the text itself.
 pub fn text_hash(text: &str) -> String {
     format!("{:x}", Sha256::digest(text.as_bytes()))
 }
@@ -33,6 +34,7 @@ pub fn add_send_record(
     file.send_records.drain(..excess);
 }
 
+/// Whether a matching send record already exists.
 pub fn has_send_record(
     file: &ChecklistFile,
     checklist_id: &str,

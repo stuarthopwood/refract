@@ -17,6 +17,7 @@ use crate::store::atomic_json::write_json_file;
 
 const MAX_SESSION_ID_BYTES: usize = 128;
 
+/// Why a store call failed: unknown or ending Session, bad id, or a load or write error.
 #[derive(Debug)]
 pub enum StoreError {
     /// Not a live Session, or an id that cannot name a file.
@@ -38,6 +39,7 @@ pub struct LiveSession {
 }
 
 impl LiveSession {
+    /// Verifies a Session id is live before any file access.
     pub fn check(
         id: &str,
         is_live: impl FnOnce(&str) -> bool,
@@ -52,6 +54,7 @@ impl LiveSession {
         Ok(Self { id: id.to_string() })
     }
 
+    /// The Session id this witness was checked for.
     pub fn id(&self) -> &str {
         &self.id
     }
@@ -65,6 +68,7 @@ enum Slot {
 
 type SlotHandle = Arc<AsyncMutex<Slot>>;
 
+/// Per-Session checklist files with one lock each and clone-apply-write-swap updates.
 pub struct ChecklistStore {
     dir: PathBuf,
     slots: Mutex<HashMap<String, SlotHandle>>,
@@ -80,6 +84,7 @@ fn is_plain_id(id: &str) -> bool {
 }
 
 impl ChecklistStore {
+    /// A store rooted at the given directory.
     pub fn new(dir: PathBuf) -> Self {
         Self {
             dir,
@@ -87,6 +92,7 @@ impl ChecklistStore {
         }
     }
 
+    /// The file path for a Session id, refusing anything that is not a plain id.
     pub fn session_file(&self, id: &str) -> Result<PathBuf, StoreError> {
         if !is_plain_id(id) {
             return Err(StoreError::UnknownSession);
@@ -148,6 +154,7 @@ impl ChecklistStore {
             })
     }
 
+    /// Reads a Session's checklist under its lock.
     pub async fn read<R>(
         &self,
         live: &LiveSession,

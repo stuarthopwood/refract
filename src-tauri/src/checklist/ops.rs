@@ -12,6 +12,7 @@ use super::model::{
 };
 use super::validate::{validate, Field, FieldError, FieldErrorKind};
 
+/// Machine-readable reason an operation was refused.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorCode {
     InvalidInput,
@@ -29,6 +30,7 @@ pub enum ErrorCode {
 }
 
 impl ErrorCode {
+    /// Every error code, for exhaustive checks.
     pub const ALL: [Self; 12] = [
         Self::InvalidInput,
         Self::TooLarge,
@@ -44,6 +46,7 @@ impl ErrorCode {
         Self::ChecklistExists,
     ];
 
+    /// The wire name of the code.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InvalidInput => "invalid_input",
@@ -72,6 +75,7 @@ pub struct ChecklistError {
 }
 
 impl ChecklistError {
+    /// An error with no extra detail.
     pub fn new(code: ErrorCode) -> Self {
         Self {
             code,
@@ -80,6 +84,7 @@ impl ChecklistError {
         }
     }
 
+    /// An error naming the offending field.
     pub fn field(code: ErrorCode, field: &'static str) -> Self {
         Self {
             field: Some(field),
@@ -87,10 +92,12 @@ impl ChecklistError {
         }
     }
 
+    /// An error naming one item.
     pub fn item(code: ErrorCode, id: &str) -> Self {
         Self::items(code, vec![id.to_string()])
     }
 
+    /// An error naming several items.
     pub fn items(code: ErrorCode, item_ids: Vec<String>) -> Self {
         Self {
             item_ids,
@@ -109,6 +116,7 @@ impl From<FieldError> for ChecklistError {
     }
 }
 
+/// An item to add, as supplied by the caller.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NewItem {
@@ -128,6 +136,7 @@ pub struct NewItem {
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+/// One decoded edit operation on a checklist.
 pub enum ChecklistOp {
     Add {
         after: Option<String>,
@@ -172,11 +181,13 @@ impl ChecklistOp {
     }
 }
 
+/// Decodes a JSON op, rejecting unknown kinds and owners.
 pub fn decode_op(value: &Value) -> Result<ChecklistOp, ChecklistError> {
     ChecklistOp::deserialize(value)
         .map_err(|_| ChecklistError::field(ErrorCode::InvalidInput, "op"))
 }
 
+/// Rejects an empty or oversize op batch.
 pub fn check_op_count(count: usize) -> Result<(), ChecklistError> {
     if count == 0 {
         return Err(ChecklistError::field(ErrorCode::InvalidInput, "ops"));
@@ -207,6 +218,7 @@ pub fn bump_rev(list: &mut Checklist) -> u64 {
     list.rev
 }
 
+/// Marks an item as changed at a revision by the given actor.
 pub fn stamp(item: &mut ChecklistItem, rev: u64, actor: Actor) {
     item.rev = rev;
     item.updated_by = actor;

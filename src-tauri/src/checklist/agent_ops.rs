@@ -1,4 +1,4 @@
-// Agent authority and all-or-none apply (spec 138 FR-005, FR-007). The agent has bounded authority
+// Agent authority and all-or-none apply. The agent has bounded authority
 // over what the developer wrote or filled in, and a completed item is frozen for it.
 
 use super::model::{Actor, Checklist, ChecklistItem, ItemOwner, ItemStatus};
@@ -7,6 +7,7 @@ use super::ops::{
     set_status, set_value, Applied, ChecklistError, ChecklistOp, ErrorCode,
 };
 
+/// Applies an agent's op batch to a checklist all-or-none under agent authority.
 pub fn apply_agent(
     list: &Checklist,
     base_rev: u64,

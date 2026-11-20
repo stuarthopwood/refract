@@ -1,4 +1,4 @@
-// Developer apply (spec 138 FR-006, FR-007, FR-009). The same ops as the agent, without the freeze
+// Developer apply. The same ops as the agent, without the freeze
 // or the authorship limits; the developer can reopen a completed item and edit anything but the
 // three fields fixed at creation.
 

@@ -1,10 +1,11 @@
 // Byte caps and character rules shared by the agent and the developer, so the two parties cannot
-// drift (spec 138 FR-004). Caps are UTF-8 bytes, not characters.
+// drift. Caps are UTF-8 bytes, not characters.
 
 use super::model::{
     MAX_GROUP_BYTES, MAX_REQUEST_ID_BYTES, MAX_TEXT_BYTES, MAX_TITLE_BYTES, MAX_VALUE_BYTES,
 };
 
+/// A text field with its own byte cap.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Field {
     Text,
@@ -15,6 +16,7 @@ pub enum Field {
 }
 
 impl Field {
+    /// The field's wire name.
     pub fn name(self) -> &'static str {
         match self {
             Self::Text => "text",
@@ -25,6 +27,7 @@ impl Field {
         }
     }
 
+    /// The field's byte cap.
     pub fn max_bytes(self) -> usize {
         match self {
             Self::Text => MAX_TEXT_BYTES,
@@ -36,12 +39,14 @@ impl Field {
     }
 }
 
+/// How a field failed validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FieldErrorKind {
     TooLarge,
     InvalidInput,
 }
 
+/// A validation failure naming the field and kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FieldError {
     pub kind: FieldErrorKind,
@@ -56,6 +61,7 @@ fn is_banned(field: Field, c: char) -> bool {
     c.is_control() || c == '\u{2028}' || c == '\u{2029}'
 }
 
+/// Checks a string against the field's cap and character rules.
 pub fn validate(field: Field, input: &str) -> Result<(), FieldError> {
     if input.len() > field.max_bytes() {
         return Err(FieldError {

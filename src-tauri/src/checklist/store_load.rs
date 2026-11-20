@@ -11,6 +11,7 @@ use super::model::{ChecklistFile, FILE_VERSION};
 
 const KEEP_CORRUPT: usize = 3;
 
+/// Why a load failed: a file from a newer version, or an I/O error.
 #[derive(Debug)]
 pub enum LoadError {
     /// The file's `version` is above the one this build reads.
@@ -24,6 +25,7 @@ fn file_name(file: &Path) -> String {
         .unwrap_or_default()
 }
 
+/// Loads a Session's file, quarantining corrupt ones and treating a missing file as empty.
 pub async fn load(file: &Path) -> Result<ChecklistFile, LoadError> {
     let Some(dir) = file.parent() else {
         return Ok(ChecklistFile::empty());

@@ -1,4 +1,4 @@
-// The change record (spec 138 FR-009): what the developer changed since the agent last confirmed a
+// The change record: what the developer changed since the agent last confirmed a
 // `seenRev`. Nothing is logged separately; entries are read back from each item's
 // `lastDeveloperOps` and from `removed`, and the watermark only moves when the agent quotes one.
 
@@ -17,6 +17,7 @@ pub struct UserChange {
     pub fields: Vec<String>,
 }
 
+/// The developer edits an agent has not yet seen, plus whether more remain.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChangeSet {
     pub changes: Vec<UserChange>,

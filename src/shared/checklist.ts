@@ -1,24 +1,32 @@
-// Hand-written mirror of `src-tauri/src/checklist/model.rs` (spec 138). Rust is the source of
+// Hand-written mirror of `src-tauri/src/checklist/model.rs`. Rust is the source of
 // truth; `checklist.test.ts` reads the golden fixture and the Rust constants block so a key or cap
 // that drifts on either side fails a test. Standalone, like `todo.ts`: the OMP todo is a different thing.
 
+/** The five item statuses, in display order. */
 export const ITEM_STATUSES = ['upcoming', 'next', 'in_progress', 'blocked', 'complete'] as const;
+/** One of the item statuses. */
 export type ItemStatus = (typeof ITEM_STATUSES)[number];
 
 /** Who an item belongs to. The agent picks it per item at create and add; it is fixed after. */
 export const ITEM_OWNERS = ['agent', 'human', 'either'] as const;
+/** One of the item owners. */
 export type ItemOwner = (typeof ITEM_OWNERS)[number];
 
+/** Who made a change: the agent or the developer. */
 export type Actor = 'agent' | 'developer';
+/** Kind of operation applied to an item. */
 export type OpKind = 'add' | 'edit' | 'move' | 'remove' | 'setStatus' | 'setValue';
+/** What a developer send did with an item. */
 export type SendAction = 'complete' | 'ask' | 'value';
 
+/** A recent developer operation on an item, used to tell the agent what changed. */
 export interface LastDeveloperOp {
   kind: OpKind;
   rev: number;
   fields: string[];
 }
 
+/** One checklist entry with its status, owner, value and change stamps. */
 export interface ChecklistItem {
   id: string;
   text: string;
@@ -39,18 +47,21 @@ export interface ChecklistItem {
   lastDeveloperOps: LastDeveloperOp[];
 }
 
+/** A removed item's id, kept so the agent can be told it is gone. */
 export interface RemovedEntry {
   id: string;
   rev: number;
   by: Actor;
 }
 
+/** A remembered request id with the revision and ids it produced. */
 export interface RecentRequest {
   requestId: string;
   rev: number;
   addedIds: string[];
 }
 
+/** One checklist with its items and the bookkeeping that separates agent and developer edits. */
 export interface Checklist {
   id: string;
   title: string;
@@ -64,6 +75,7 @@ export interface Checklist {
   recentRequests: RecentRequest[];
 }
 
+/** A developer send already issued for an item, so a repeat is not sent twice. */
 export interface SendRecord {
   checklistId: string;
   itemId: string;
@@ -72,6 +84,7 @@ export interface SendRecord {
   textHash: string;
 }
 
+/** A send that completes an item once the agent's turn finishes. */
 export interface PendingComplete {
   checklistId: string;
   itemId: string;
@@ -79,6 +92,7 @@ export interface PendingComplete {
   started: boolean;
 }
 
+/** The per-Session checklist file: active checklist, archive and counters. */
 export interface ChecklistFile {
   version: number;
   nextChecklistSeq: number;
@@ -110,6 +124,7 @@ export const CHECKLIST_CAPS = {
 // until it is listed here, and the test compares the lists with the fixture's keys.
 const key = <T>(keys: Record<keyof T, true>): string[] => Object.keys(keys);
 
+/** Property names of the file object, checked against the fixture. */
 export const FILE_KEYS = key<ChecklistFile>({
   version: true,
   nextChecklistSeq: true,
@@ -118,6 +133,7 @@ export const FILE_KEYS = key<ChecklistFile>({
   sendRecords: true,
   pendingComplete: true,
 });
+/** Property names of a checklist, checked against the fixture. */
 export const CHECKLIST_KEYS = key<Checklist>({
   id: true,
   title: true,
@@ -130,6 +146,7 @@ export const CHECKLIST_KEYS = key<Checklist>({
   removed: true,
   recentRequests: true,
 });
+/** Property names of an item, checked against the fixture. */
 export const ITEM_KEYS = key<ChecklistItem>({
   id: true,
   text: true,
@@ -149,9 +166,13 @@ export const ITEM_KEYS = key<ChecklistItem>({
   editedByDeveloper: true,
   lastDeveloperOps: true,
 });
+/** Property names of a last-developer-op entry. */
 export const LAST_DEVELOPER_OP_KEYS = key<LastDeveloperOp>({ kind: true, rev: true, fields: true });
+/** Property names of a removed entry. */
 export const REMOVED_KEYS = key<RemovedEntry>({ id: true, rev: true, by: true });
+/** Property names of a recent request. */
 export const RECENT_REQUEST_KEYS = key<RecentRequest>({ requestId: true, rev: true, addedIds: true });
+/** Property names of a send record. */
 export const SEND_RECORD_KEYS = key<SendRecord>({
   checklistId: true,
   itemId: true,
@@ -159,6 +180,7 @@ export const SEND_RECORD_KEYS = key<SendRecord>({
   action: true,
   textHash: true,
 });
+/** Property names of a pending-complete entry. */
 export const PENDING_COMPLETE_KEYS = key<PendingComplete>({
   checklistId: true,
   itemId: true,
