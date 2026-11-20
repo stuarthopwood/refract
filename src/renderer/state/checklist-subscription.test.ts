@@ -87,4 +87,21 @@ describe('initChecklistSubscription', () => {
     useSessionsStore.setState({ sessions: [{ id: 's1', status: 'idle' } as never, { id: 's2', status: 'idle' } as never] })
     expect(get).toHaveBeenCalledTimes(1)
   })
+
+  it('a_front_change_is_not_refetched_again_by_the_status_subscription', () => {
+    useSessionsStore.setState({ sessions: [{ id: 's1', status: 'idle' } as never, { id: 's2', status: 'idle' } as never] })
+    get.mockClear()
+    useSplitStore.setState({ paneSessionIds: ['s1', 's2'], focusedIndex: 1 })
+    useSessionsStore.setState({ sessions: [{ id: 's1', status: 'idle' } as never, { id: 's2', status: 'idle' } as never] })
+    expect(get).toHaveBeenCalledTimes(1)
+    // The front Session changed and its status was recorded by that fetch, so an unrelated list change adds none.
+    useSessionsStore.setState({ sessions: [{ id: 's1', status: 'idle' } as never, { id: 's2', status: 'idle' } as never, { id: 's3', status: 'idle' } as never] })
+    expect(get).toHaveBeenCalledTimes(1)
+  })
+
+  it('a_rejected_stale_payload_does_not_open_the_panel', () => {
+    emit({ sessionId: 's1', checklist: makeChecklist({ rev: 5 }), by: 'agent' })
+    emit({ sessionId: 's1', checklist: makeChecklist({ rev: 2 }), by: 'agent', opened: true })
+    expect(pane().openPanelIds).toEqual([])
+  })
 })

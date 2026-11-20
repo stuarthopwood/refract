@@ -4,6 +4,7 @@ import type { Session } from '../../shared/model'
 import type { SessionActivity } from '../../shared/activity'
 import { notify } from './notify'
 import { useDocumentTabsStore } from './document-tabs-store'
+import { useChecklistStore } from './checklist-store'
 import { useSplitStore } from './split-store'
 import { useGitChangesStore } from './git-changes-store'
 import { useSideChatStore } from './side-chat-store'
@@ -116,6 +117,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       useSplitStore.getState().pruneDeleted(listedIds)
       // Delete is the only way out of the list, so this is the delete-not-archive drop of a Session's document tabs (#2075).
       useDocumentTabsStore.getState().pruneSessions(listedIds)
+      useChecklistStore.getState().pruneSessions(listedIds)
       useSessionListStore.getState().pruneParents(liveParentIds(result.value))
       const liveIds = new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id))
       useGitChangesStore.getState().pruneSessionUi(liveIds)

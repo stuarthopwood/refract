@@ -38,6 +38,10 @@ export interface SessionChecklist {
   pending: Record<string, true>
   refusals: Record<string, ItemRefusal>
   announcement: ChecklistAnnouncement | null
+  /** Checklist ids an agent replaced; a late `get` or an old payload must not bring one back. */
+  supersededIds: string[]
+  /** Bumped when a `get` starts and when an agent update lands, so only the newest `get` still applies. */
+  seq: number
 }
 
 interface ChecklistState {
@@ -46,6 +50,8 @@ interface ChecklistState {
   /** Stores one `checklist:update`; false when its rev is not above the one held for that checklist. */
   applyUpdate: (payload: ChecklistUpdatePayload) => boolean
   hydrate: (sessionId: string) => Promise<void>
+  /** Drops the state of Sessions that are gone, so a late result cannot bring one back. */
+  pruneSessions: (keepIds: ReadonlySet<string>) => void
   /** Ticks the item, or unticks it when it is complete; never changes the row before the result. */
   mutateItem: (sessionId: string, itemId: string) => Promise<void>
   takeAnnouncement: (sessionId: string) => ChecklistAnnouncement | null
@@ -53,7 +59,7 @@ interface ChecklistState {
   clearReveal: () => void
 }
 
-const EMPTY: SessionChecklist = { checklist: null, toolUnavailable: false, loaded: false, error: null, errorCode: null, pending: {}, refusals: {}, announcement: null }
+const EMPTY: SessionChecklist = { checklist: null, toolUnavailable: false, loaded: false, error: null, errorCode: null, pending: {}, refusals: {}, announcement: null, supersededIds: [], seq: 0 }
 
 /** The state for a Session, or the shared empty state before anything arrived. */
 export const selectSessionChecklist = (state: Pick<ChecklistState, 'bySession'>, sessionId: string | null): SessionChecklist =>
@@ -68,7 +74,7 @@ function keepRefusals(refusals: Record<string, ItemRefusal>, held: Checklist | n
     const after = incoming.items.find((item) => item.id === id)
     if (before !== undefined && after !== undefined && before.rev === after.rev) kept[id] = refusal
   }
-  return kept
+  return Object.keys(kept).length === Object.keys(refusals).length ? refusals : kept
 }
 
 function agentAnnouncement(held: Checklist | null, incoming: Checklist, opened: boolean): string | null {
@@ -81,15 +87,20 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
   const patch = (sessionId: string, change: (current: SessionChecklist) => Partial<SessionChecklist>): void =>
     set((state) => {
       const current = selectSessionChecklist(state, sessionId)
-      return { bySession: { ...state.bySession, [sessionId]: { ...current, ...change(current) } } }
+      const delta = change(current)
+      const keys = Object.keys(delta) as (keyof SessionChecklist)[]
+      if (keys.every((key) => Object.is(delta[key], current[key]))) return state
+      return { bySession: { ...state.bySession, [sessionId]: { ...current, ...delta } } }
     })
 
   /** Applies a checklist when it supersedes the held one; `announceAs` is set only for agent-driven updates. */
   const accept = (sessionId: string, incoming: Checklist, announceAs: { opened: boolean } | null): boolean => {
-    const held = selectSessionChecklist(get(), sessionId).checklist
+    const { checklist: held, supersededIds } = selectSessionChecklist(get(), sessionId)
+    if (supersededIds.includes(incoming.id)) return false
     // Another checklist always replaces the held one; the same one only with a higher rev.
     if (held !== null && held.id === incoming.id && incoming.rev <= held.rev) return false
     const message = announceAs === null ? null : agentAnnouncement(held, incoming, announceAs.opened)
+    const replacedId = held !== null && held.id !== incoming.id ? held.id : null
     patch(sessionId, (current) => ({
       checklist: incoming,
       // The agent only reaches a checklist it was allowed to call, so an update proves the tool works.
@@ -97,9 +108,12 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       loaded: true,
       error: null,
       errorCode: null,
-      pending: held !== null && held.id !== incoming.id ? {} : current.pending,
+      pending: replacedId !== null ? {} : current.pending,
       refusals: keepRefusals(current.refusals, held, incoming),
-      announcement: message === null ? current.announcement : { message, at: Date.now() }
+      supersededIds: replacedId !== null ? [...current.supersededIds, replacedId] : current.supersededIds,
+      seq: announceAs === null ? current.seq : current.seq + 1,
+      // Two quick updates merge, so the live region never drops the first.
+      announcement: message === null ? current.announcement : { message: current.announcement === null ? message : `${current.announcement.message}. ${message}`, at: Date.now() }
     }))
     return true
   }
@@ -109,9 +123,14 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
     revealRequest: null,
     applyUpdate: ({ sessionId, checklist, by, opened }) => accept(sessionId, checklist, by === 'agent' ? { opened: opened === true } : null),
     hydrate: async (sessionId) => {
+      patch(sessionId, (current) => ({ seq: current.seq + 1 }))
+      const seq = selectSessionChecklist(get(), sessionId).seq
       const result = await window.refract.checklist.get(sessionId)
+      // An answer is stale once a newer `get` started or the agent updated meanwhile, and moot once the Session is gone.
+      const now = get().bySession[sessionId]
+      if (now === undefined || now.seq !== seq) return
       if (!result.ok) {
-        patch(sessionId, () => ({ loaded: true, error: result.error.message, errorCode: result.error.code }))
+        patch(sessionId, () => ({ loaded: true, toolUnavailable: false, error: result.error.message, errorCode: result.error.code }))
         return
       }
       const { checklist, toolUnavailable } = result.value
@@ -127,13 +146,20 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       // Rust refuses a completion without a value; asking would only produce an error the row already explains.
       if (needsValueToTick(item)) return
       const status: ItemStatus = complete ? (item.previousStatus ?? 'upcoming') : 'complete'
-      patch(sessionId, (state) => ({ pending: { ...state.pending, [itemId]: true } }))
       const withoutPending = (state: SessionChecklist): Record<string, true> => {
         const { [itemId]: _done, ...rest } = state.pending
         return rest
       }
+      const withoutRefusal = (refusals: Record<string, ItemRefusal>): Record<string, ItemRefusal> => {
+        if (!(itemId in refusals)) return refusals
+        const { [itemId]: _cleared, ...rest } = refusals
+        return rest
+      }
+      patch(sessionId, (state) => ({ pending: { ...state.pending, [itemId]: true }, refusals: withoutRefusal(state.refusals) }))
       // The Session and rev are captured here: a late result belongs to the Session it was sent from.
       const result = await window.refract.checklist.mutate(sessionId, checklist.id, checklist.rev, null, { op: 'setStatus', id: itemId, status })
+      // A pruned Session stays gone: a late result must not recreate its entry.
+      if (get().bySession[sessionId] === undefined) return
       if (!result.ok) {
         patch(sessionId, (state) => ({
           pending: withoutPending(state),
@@ -158,6 +184,14 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (announcement !== null) patch(sessionId, () => ({ announcement: null }))
       return announcement
     },
+    pruneSessions: (keepIds) =>
+      set((state) => {
+        const gone = Object.keys(state.bySession).filter((id) => !keepIds.has(id))
+        if (gone.length === 0) return state
+        const bySession = Object.fromEntries(Object.entries(state.bySession).filter(([id]) => keepIds.has(id)))
+        const revealRequest = state.revealRequest !== null && keepIds.has(state.revealRequest.sessionId) ? state.revealRequest : null
+        return { bySession, revealRequest }
+      }),
     requestReveal: (request) => set({ revealRequest: request }),
     clearReveal: () => set({ revealRequest: null })
   }

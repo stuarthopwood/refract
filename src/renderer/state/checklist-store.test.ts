@@ -55,6 +55,31 @@ describe('useChecklistStore.applyUpdate', () => {
     update('s1', makeChecklist({ rev: 2 }), 'agent')
     expect(read('s1').toolUnavailable).toBe(false)
   })
+
+  it('an_archived_checklist_id_cannot_come_back', () => {
+    update('s1', makeChecklist({ id: 'p1', rev: 1 }))
+    update('s1', makeChecklist({ id: 'p2', rev: 1 }))
+    expect(update('s1', makeChecklist({ id: 'p1', rev: 9 }))).toBe(false)
+    expect(read('s1').checklist?.id).toBe('p2')
+  })
+
+  it('a_late_get_with_an_archived_id_does_not_replace_the_active_one', async () => {
+    update('s1', makeChecklist({ id: 'p1', rev: 1 }))
+    update('s1', makeChecklist({ id: 'p2', rev: 1 }))
+    get.mockResolvedValue({ ok: true, value: { checklist: makeChecklist({ id: 'p1', rev: 5 }), toolUnavailable: false } })
+    await useChecklistStore.getState().hydrate('s1')
+    expect(read('s1').checklist?.id).toBe('p2')
+  })
+
+  it('patch_keeps_the_state_object_when_nothing_changes', async () => {
+    await useChecklistStore.getState().hydrate('s1')
+    const seen = vi.fn()
+    const stop = useChecklistStore.subscribe(seen)
+    // The second answer repeats the first, so only the counter bump may notify.
+    await useChecklistStore.getState().hydrate('s1')
+    stop()
+    expect(seen).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('useChecklistStore announcements', () => {
@@ -74,6 +99,13 @@ describe('useChecklistStore announcements', () => {
     update('s1', makeChecklist({ rev: 1 }))
     update('s1', makeChecklist({ rev: 2, items: [makeItem({ id: 'i1', status: 'complete' })] }), 'developer')
     expect(read('s1').announcement).toBeNull()
+  })
+
+  it('two_quick_agent_updates_merge_into_one_announcement', () => {
+    update('s1', makeChecklist({ id: 'p1', rev: 1 }))
+    update('s1', makeChecklist({ id: 'p2', rev: 1 }))
+    update('s1', makeChecklist({ id: 'p3', rev: 1 }))
+    expect(useChecklistStore.getState().takeAnnouncement('s1')?.message).toBe('Checklist replaced. Checklist replaced')
   })
 })
 
@@ -96,6 +128,60 @@ describe('useChecklistStore.hydrate', () => {
     get.mockResolvedValue({ ok: true, value: { checklist: makeChecklist({ rev: 3 }), toolUnavailable: false } })
     await useChecklistStore.getState().hydrate('s1')
     expect(read('s1').checklist?.rev).toBe(7)
+  })
+
+  it('a_get_answered_after_an_agent_update_does_not_overwrite_it', async () => {
+    let answer: (value: unknown) => void = () => undefined
+    get.mockReturnValue(new Promise((done) => (answer = done)))
+    useChecklistStore.setState({ bySession: { s1: { ...read('s1'), toolUnavailable: true } } })
+    const pending = useChecklistStore.getState().hydrate('s1')
+    update('s1', makeChecklist({ rev: 2 }), 'agent')
+    answer({ ok: true, value: { checklist: makeChecklist({ rev: 1 }), toolUnavailable: true } })
+    await pending
+    expect(read('s1').toolUnavailable).toBe(false)
+    expect(read('s1').checklist?.rev).toBe(2)
+  })
+
+  it('only_the_latest_overlapping_get_applies', async () => {
+    const answers: Array<(value: unknown) => void> = []
+    get.mockImplementation(() => new Promise((done) => answers.push(done)))
+    const first = useChecklistStore.getState().hydrate('s1')
+    const second = useChecklistStore.getState().hydrate('s1')
+    answers[1]?.({ ok: true, value: { checklist: null, toolUnavailable: false } })
+    await second
+    answers[0]?.({ ok: true, value: { checklist: null, toolUnavailable: true } })
+    await first
+    expect(read('s1').toolUnavailable).toBe(false)
+  })
+
+  it('a_failed_get_clears_tool_unavailable', async () => {
+    useChecklistStore.setState({ bySession: { s1: { ...read('s1'), toolUnavailable: true } } })
+    get.mockResolvedValue({ ok: false, error: { code: 'store-failed', message: 'no' } })
+    await useChecklistStore.getState().hydrate('s1')
+    expect(read('s1')).toMatchObject({ toolUnavailable: false, errorCode: 'store-failed' })
+  })
+})
+
+describe('useChecklistStore.pruneSessions', () => {
+  it('drops_unlisted_sessions_and_keeps_the_object_when_nothing_goes', () => {
+    update('s1')
+    update('s2')
+    const before = useChecklistStore.getState().bySession
+    useChecklistStore.getState().pruneSessions(new Set(['s1', 's2']))
+    expect(useChecklistStore.getState().bySession).toBe(before)
+    useChecklistStore.getState().pruneSessions(new Set(['s2']))
+    expect(Object.keys(useChecklistStore.getState().bySession)).toEqual(['s2'])
+  })
+
+  it('a_late_mutate_result_for_a_pruned_session_creates_no_entry', async () => {
+    update('s1', makeChecklist({ rev: 4, items: [makeItem({ id: 'i1' })] }))
+    let answer: (value: unknown) => void = () => undefined
+    mutate.mockReturnValue(new Promise((done) => (answer = done)))
+    const pending = useChecklistStore.getState().mutateItem('s1', 'i1')
+    useChecklistStore.getState().pruneSessions(new Set())
+    answer({ ok: true, value: makeChecklist({ rev: 5 }) })
+    await pending
+    expect(useChecklistStore.getState().bySession).toEqual({})
   })
 })
 
@@ -125,6 +211,16 @@ describe('useChecklistStore.mutateItem', () => {
     mutate.mockResolvedValue({ ok: true, value: makeChecklist({ rev: 5 }) })
     await useChecklistStore.getState().mutateItem('s1', 'i1')
     expect(mutate).toHaveBeenCalledWith('s1', 'p1', 4, null, { op: 'setStatus', id: 'i1', status: 'complete' })
+  })
+
+  it('mutate_start_clears_that_items_refusal', async () => {
+    seed()
+    mutate.mockResolvedValueOnce({ ok: false, error: { code: 'x', message: 'no' } })
+    await useChecklistStore.getState().mutateItem('s1', 'i1')
+    expect(read('s1').refusals.i1).toBeDefined()
+    mutate.mockReturnValue(deferred().promise)
+    void useChecklistStore.getState().mutateItem('s1', 'i1')
+    expect(read('s1').refusals).toEqual({})
   })
 
   it('no_optimistic_status_before_result', async () => {

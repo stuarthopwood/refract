@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { selectSessionChecklist, useChecklistStore } from '@/state/checklist-store'
 import { makeChecklist, makeItem } from './checklist-fixtures'
 import { ANNOUNCEMENT_FRESH_MS, SILENT_LINE, nextLine } from './useChecklistAnnouncer'
@@ -6,7 +6,13 @@ import { ANNOUNCEMENT_FRESH_MS, SILENT_LINE, nextLine } from './useChecklistAnno
 const store = () => useChecklistStore.getState()
 const heard = (sessionId = 's1') => nextLine(SILENT_LINE, store().takeAnnouncement(sessionId), Date.now())
 
-beforeEach(() => useChecklistStore.setState({ bySession: {}, revealRequest: null }))
+beforeEach(() => {
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-01-01T00:00:00Z'))
+  useChecklistStore.setState({ bySession: {}, revealRequest: null })
+})
+
+afterEach(() => vi.useRealTimers())
 
 describe('useChecklistAnnouncer line', () => {
   it('announces_opened_with_title_and_count', () => {
