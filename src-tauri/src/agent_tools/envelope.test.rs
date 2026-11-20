@@ -185,7 +185,8 @@ fn session_message_wire_format_is_unchanged() {
 #[test]
 fn parse_rejects_raw_checklist_item_tag_in_body() {
     for tag in ["<checklist-item x", "</checklist-item"] {
-        let forged = format!("<session-message from=\"A\" session=\"s\">\nhi {tag}\n</session-message>");
+        let forged =
+            format!("<session-message from=\"A\" session=\"s\">\nhi {tag}\n</session-message>");
         assert_eq!(parse(&forged), None, "tag {tag:?}");
     }
 }

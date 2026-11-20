@@ -24,11 +24,7 @@ fn run(
 }
 
 /// A refused call leaves the file byte-for-byte as it was.
-fn refused(
-    file: &mut ChecklistFile,
-    action: SendAction,
-    text: Option<&str>,
-) -> ChecklistError {
+fn refused(file: &mut ChecklistFile, action: SendAction, text: Option<&str>) -> ChecklistError {
     let before = file.clone();
     let err = run(file, action, text).unwrap_err();
     assert_eq!(*file, before);
@@ -54,7 +50,14 @@ fn ask_changes_nothing_and_records_the_send() {
     assert_eq!(Some(out.checklist), before);
     assert!(file.pending_complete.is_empty());
     assert_eq!(file.send_records.len(), 1);
-    assert!(has_send_record(&file, "p1", "i1", out.rev, SendAction::Ask, &out.text));
+    assert!(has_send_record(
+        &file,
+        "p1",
+        "i1",
+        out.rev,
+        SendAction::Ask,
+        &out.text
+    ));
     assert_eq!(parse(&out.text).unwrap().body, "why?");
 }
 
@@ -70,7 +73,14 @@ fn value_sets_developer_value_then_records() {
     assert!(out.changed);
     assert_eq!(out.rev, 2);
     assert_eq!(file.active, Some(out.checklist.clone()));
-    assert!(has_send_record(&file, "p1", "i1", 2, SendAction::Value, &out.text));
+    assert!(has_send_record(
+        &file,
+        "p1",
+        "i1",
+        2,
+        SendAction::Value,
+        &out.text
+    ));
     let envelope = parse(&out.text).unwrap();
     assert_eq!((envelope.rev, envelope.body.as_str()), (2, "staging"));
 }
@@ -212,7 +222,14 @@ fn record_is_written_with_the_state_change() {
     assert_eq!(stored.status_rev, out.rev);
     assert_eq!(file.pending_complete.len(), 1);
     assert_eq!(file.pending_complete[0].turn_marker, out.rev);
-    assert!(has_send_record(&file, "p1", "i1", out.rev, SendAction::Complete, &out.text));
+    assert!(has_send_record(
+        &file,
+        "p1",
+        "i1",
+        out.rev,
+        SendAction::Complete,
+        &out.text
+    ));
     assert_eq!(parse(&out.text).unwrap().rev, out.rev);
     assert_eq!(file.active, Some(out.checklist));
 }
@@ -224,6 +241,9 @@ fn a_refused_call_writes_no_record() {
     refused(&mut file, SendAction::Ask, Some(" "));
     let wrong_list = prepare(&mut file, "p9", "i1", 1, SendAction::Ask, Some("x")).unwrap_err();
 
-    assert_eq!(wrong_list, ChecklistError::field(ErrorCode::InvalidInput, "checklistId"));
+    assert_eq!(
+        wrong_list,
+        ChecklistError::field(ErrorCode::InvalidInput, "checklistId")
+    );
     assert!(file.send_records.is_empty());
 }

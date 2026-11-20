@@ -82,7 +82,10 @@ fn parse_requires_exactly_one_envelope() {
 
 #[test]
 fn flattens_unicode_line_separators_in_quoted_text() {
-    let body = complete_body("run\u{2028}the\u{2029}migration\nnow\u{202e}!\u{200b}", true);
+    let body = complete_body(
+        "run\u{2028}the\u{2029}migration\nnow\u{202e}!\u{200b}",
+        true,
+    );
     let quote = body.lines().last().unwrap();
     assert_eq!(body.lines().count(), 2);
     assert_eq!(quote, "> run the migration now!");
@@ -90,7 +93,9 @@ fn flattens_unicode_line_separators_in_quoted_text() {
 
 #[test]
 fn complete_body_names_the_author_of_the_step() {
-    assert!(complete_body("x", true).starts_with("The developer asks you to do this step you wrote."));
+    assert!(
+        complete_body("x", true).starts_with("The developer asks you to do this step you wrote.")
+    );
     assert!(complete_body("x", false)
         .starts_with("The developer asks you to do this step the developer wrote."));
 }

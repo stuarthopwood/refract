@@ -122,7 +122,10 @@ fn complete(
         || item.status == ItemStatus::Complete
         || pending
     {
-        return Err(ChecklistError::item(ErrorCode::NotAgentCompletable, item_id));
+        return Err(ChecklistError::item(
+            ErrorCode::NotAgentCompletable,
+            item_id,
+        ));
     }
     // An agent-set value does not count: the agent could never complete such an item.
     if item.requires_value && item.value_by != Some(Actor::Developer) {

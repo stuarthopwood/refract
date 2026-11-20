@@ -196,7 +196,10 @@ fn not_agent_completable_has_a_message() {
     let text = message(ErrorCode::NotAgentCompletable);
     assert!(text.contains("complete"));
     assert!(text.len() <= MAX_MESSAGE_BYTES);
-    let out = error_payload(&ChecklistError::item(ErrorCode::NotAgentCompletable, "i1"), None);
+    let out = error_payload(
+        &ChecklistError::item(ErrorCode::NotAgentCompletable, "i1"),
+        None,
+    );
     assert_eq!(out["error"]["code"], "not_agent_completable");
     assert_eq!(out["error"]["message"], text);
 }

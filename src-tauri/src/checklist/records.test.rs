@@ -218,9 +218,26 @@ fn accept_complete_hashes_the_text_it_returns() {
     let (marker, text) = accept_complete(&mut file, "i1", |rev| format!("turn at {rev}")).unwrap();
 
     assert_eq!(text, format!("turn at {marker}"));
-    assert!(has_send_record(&file, "p1", "i1", marker, SendAction::Complete, &text));
-    assert!(!has_send_record(&file, "p1", "i1", marker, SendAction::Complete, "turn at 0"));
-    assert_eq!(file.send_records.last().unwrap().text_hash, text_hash(&text));
+    assert!(has_send_record(
+        &file,
+        "p1",
+        "i1",
+        marker,
+        SendAction::Complete,
+        &text
+    ));
+    assert!(!has_send_record(
+        &file,
+        "p1",
+        "i1",
+        marker,
+        SendAction::Complete,
+        "turn at 0"
+    ));
+    assert_eq!(
+        file.send_records.last().unwrap().text_hash,
+        text_hash(&text)
+    );
 }
 
 #[test]

@@ -38,13 +38,7 @@ fn action_from_name(name: &str) -> Option<SendAction> {
 }
 
 /// Wraps `body` for delivery; the ids and `rev` come from the checklist store, never the model.
-pub fn wrap(
-    checklist_id: &str,
-    item_id: &str,
-    rev: u64,
-    action: SendAction,
-    body: &str,
-) -> String {
+pub fn wrap(checklist_id: &str, item_id: &str, rev: u64, action: SendAction, body: &str) -> String {
     format!(
         "{OPEN}{}{ITEM_ATTR}{}{REV_ATTR}{rev}{ACTION_ATTR}{}{HEADER_END}{}{FOOTER}",
         escape_attr(checklist_id),
