@@ -373,6 +373,7 @@ const EVENT_LANES = {
   SESSION_LIST_CHANGED: 'R2', // #785, session lifecycle
   SESSION_CONVERSATION_CHANGED: 'R2', // #1861, a tool moved a Session to another Conversation
   SESSION_DELETED: 'R2', // #1591, background delete finished
+  CHECKLIST_UPDATE: 'R2', // #2011, the Session's checklist changed
   SESSION_DELETE_FAILED: 'R2', // #1591, background delete failed
   TRANSCRIPT_PATCH: 'R4', // #787, chat send path streaming
   QUEUE_UPDATE: 'R4', // "queue identity #540" in R4's own work description

@@ -2,6 +2,10 @@
 // Routing lives in `router`, approval in `approval`, the OMP approval overlay in `overlay`.
 
 pub mod approval;
+#[allow(dead_code)] // the tool is registered in `tools_for` and the router next
+mod checklist_schema;
+#[allow(dead_code)] // reached from the router once the tool is registered
+mod checklist_tool;
 pub mod envelope;
 pub(crate) mod handoff_target;
 pub mod overlay;

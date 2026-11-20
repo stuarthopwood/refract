@@ -1,5 +1,6 @@
 // Owns the live `SessionAgent` map and the registry-backed session summaries.
 
+use crate::checklist::store::ChecklistStore;
 use crate::events::EventSink;
 use crate::git::worktree_validity::{
     list_registered_worktrees, registered_validity, WorktreeValidity,
@@ -20,6 +21,8 @@ pub struct SessionManager {
     agents: StdMutex<HashMap<String, Arc<SessionAgent>>>,
     visible_ids: Arc<StdMutex<HashSet<String>>>,
     self_ref: std::sync::Weak<SessionManager>,
+    /// The one checklist store: the tool, the IPC, the delete hook and the notice take share it.
+    checklists: Arc<ChecklistStore>,
 }
 
 /// Caps concurrent `git worktree list` calls across repositories.
@@ -68,7 +71,13 @@ impl SessionManager {
             agents: StdMutex::new(HashMap::new()),
             visible_ids: Arc::new(StdMutex::new(HashSet::new())),
             self_ref: self_ref.clone(),
+            checklists: Arc::new(ChecklistStore::new(crate::data_dir().join("checklists"))),
         })
+    }
+
+    /// The shared checklist store, built once with the manager.
+    pub fn checklists(&self) -> &Arc<ChecklistStore> {
+        &self.checklists
     }
 
     pub fn get_agent(&self, session_id: &str) -> Option<Arc<SessionAgent>> {

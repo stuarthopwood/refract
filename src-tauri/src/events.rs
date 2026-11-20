@@ -13,6 +13,8 @@ pub const SESSION_LIST_CHANGED: &str = "session:list-changed";
 pub const SESSION_CONVERSATION_CHANGED: &str = "session:conversation-changed";
 /// Background `sessions.delete` finished: `{ sessionId }`.
 pub const SESSION_DELETED: &str = "sessions:deleted";
+/// The Session's checklist changed: `{ sessionId, checklistId, rev, opened }`, no item text.
+pub const CHECKLIST_UPDATE: &str = "checklist:update";
 /// Background `sessions.delete` failed: `{ sessionId, error: { code, message } }`.
 pub const SESSION_DELETE_FAILED: &str = "sessions:delete-failed";
 pub const TRANSCRIPT_PATCH: &str = "transcript:patch";
@@ -169,6 +171,11 @@ impl EventSink {
             SESSION_DELETED,
             serde_json::json!({ "sessionId": session_id }),
         );
+    }
+
+    /// `checklist:update`: a write reached disk; the renderer refetches through `checklist.get`.
+    pub fn emit_checklist_update(&self, payload: serde_json::Value) {
+        self.send(CHECKLIST_UPDATE, payload);
     }
 
     /// `github:changed`: the renderer refreshes its PR and issue lists in the background.
