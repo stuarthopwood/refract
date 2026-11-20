@@ -16,6 +16,8 @@ export const PAIRS = [
   ...Array.from({ length: 10 }, (_, i) => ({ fg: `project-${i + 1}`, bg: 'sidebar-accent', min: 4.5 })),
   { fg: 'active-indicator', bg: 'sidebar-right', min: 3 }, // #1126: the pressed IconRail's ActiveIndicatorBar (non-colour cue; its muted fill alone is only ~1.3:1 against the rail)
   { fg: 'foreground', bg: 'sidebar-right', min: 4.5 }, { fg: 'muted-foreground', bg: 'sidebar-right', min: 4.5 }, { fg: 'accent-text', bg: 'sidebar-right', min: 4.5 }, // #674: the right pane and rail surface
+  // Checklist panel rows on the right pane: complete (success) and in-progress (working) glyph + word, the warning-coloured refusal text, and the focus/flash ring.
+  { fg: 'severity-success', bg: 'sidebar-right', min: 4.5 }, { fg: 'state-working', bg: 'sidebar-right', min: 4.5 }, { fg: 'severity-warning', bg: 'sidebar-right', min: 4.5 }, { fg: 'ring', bg: 'sidebar-right', min: 3 },
   { fg: 'foreground', bg: 'background', min: 4.5 },
   { fg: 'card-foreground', bg: 'card', min: 4.5 },
   { fg: 'popover-foreground', bg: 'popover', min: 4.5 },

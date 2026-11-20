@@ -58,5 +58,8 @@ export const OPTION_RECOMMENDED_ROW_CLASS = OPTION_RECOMMENDED_FILL_CLASS + " " 
 /** Mark column for an option row: centred on the whole row, spanning label and description. */
 export const OPTION_MARK_CLASS = "row-span-2 self-center"
 export const CHECKBOX_BOX_CLASS = "grid size-4 shrink-0 place-items-center rounded-sm border border-muted-foreground"
+// `CheckboxItem` is a full-row button, so a row holding other controls passes this to shrink it to the box alone.
+export const CHECKBOX_BOX_ONLY_CLASS =
+  "size-4 shrink-0 items-center justify-center gap-0 rounded-sm border-muted-foreground bg-transparent p-0 hover:bg-transparent data-[state=checked]:border-muted-foreground data-[state=checked]:bg-transparent"
 
 export { CheckboxItem, CheckboxIndicator }
