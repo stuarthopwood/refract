@@ -144,14 +144,34 @@ impl ChecklistStore {
         R: Send + 'static,
         F: FnOnce(&mut ChecklistFile) -> Result<R, ChecklistError> + Send + 'static,
     {
+        self.apply_detached_then(live, apply, |_| {}).await
+    }
+
+    /// Like `apply_detached`, with `after_write` run on the same task once the apply succeeded, so
+    /// a write that landed is announced even when the caller was dropped meanwhile.
+    pub async fn apply_detached_then<R, F, H>(
+        self: &Arc<Self>,
+        live: LiveSession,
+        apply: F,
+        after_write: H,
+    ) -> Result<R, StoreError>
+    where
+        R: Send + 'static,
+        F: FnOnce(&mut ChecklistFile) -> Result<R, ChecklistError> + Send + 'static,
+        H: FnOnce(&R) + Send + 'static,
+    {
         let store = Arc::clone(self);
-        tokio::spawn(async move { store.apply(&live, apply).await })
-            .await
-            .unwrap_or_else(|_| {
-                Err(StoreError::StoreFailed(io::Error::other(
-                    "apply task failed",
-                )))
-            })
+        tokio::spawn(async move {
+            let out = store.apply(&live, apply).await?;
+            after_write(&out);
+            Ok(out)
+        })
+        .await
+        .unwrap_or_else(|_| {
+            Err(StoreError::StoreFailed(io::Error::other(
+                "apply task failed",
+            )))
+        })
     }
 
     /// Reads a Session's checklist under its lock.

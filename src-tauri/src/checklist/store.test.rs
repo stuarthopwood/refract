@@ -158,24 +158,23 @@ async fn agent_apply_completes_when_caller_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let store = Arc::new(ChecklistStore::new(dir.path().to_path_buf()));
     let held = store.slot("s1").lock_owned().await;
+    let written = Arc::new(tokio::sync::Notify::new());
+    let signal = Arc::clone(&written);
 
     // The lock is held, so the detached task is spawned but parked; the timeout then drops the caller.
     let caller = tokio::time::timeout(
         Duration::from_millis(50),
-        store.apply_detached(live("s1"), bump),
+        store.apply_detached_then(live("s1"), bump, move |_| signal.notify_one()),
     )
     .await;
     assert!(caller.is_err());
     assert!(!dir.path().join("s1.json").exists());
     drop(held);
 
-    let path = dir.path().join("s1.json");
-    for _ in 0..200 {
-        if path.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    assert!(path.exists());
+    // The hook runs on the detached task right after the write, so no polling is needed.
+    tokio::time::timeout(Duration::from_secs(10), written.notified())
+        .await
+        .expect("the detached apply finished");
+    assert!(dir.path().join("s1.json").exists());
     assert_eq!(seq(&store, "s1").await, 2);
 }

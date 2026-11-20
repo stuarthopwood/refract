@@ -34,8 +34,8 @@ pub trait Host: Send + Sync {
         &self,
         card: crate::session::agent::PendingRequest,
     ) -> impl Future<Output = Result<(), ToolError>> + Send;
-    /// `checklist:update`; called only after the write reached disk.
-    fn emit_update(&self, payload: Value);
+    /// Sends `checklist:update`. Owned and `'static` so the store's task can call it after a write.
+    fn emitter(&self) -> impl Fn(Value) + Send + 'static + use<Self>;
 }
 
 #[derive(Deserialize)]
@@ -67,6 +67,36 @@ enum Outcome {
 
 fn invalid(field: &'static str) -> Value {
     error_payload(&ChecklistError::field(ErrorCode::InvalidInput, field), None)
+}
+
+/// The top-level argument that failed to decode, so the agent fixes the right one.
+fn offending_field(args: &Value) -> &'static str {
+    let Some(map) = args.as_object() else {
+        return "args";
+    };
+    if map.get("action").is_none_or(|v| !v.is_string()) {
+        return "action";
+    }
+    type Check = (&'static str, fn(&Value) -> bool);
+    let checks: [Check; 9] = [
+        ("requestId", from::<Option<String>>),
+        ("title", from::<Option<String>>),
+        ("items", from::<Option<Vec<NewItem>>>),
+        ("replace", from::<Option<bool>>),
+        ("baseRev", from::<Option<u64>>),
+        ("ops", from::<Option<Vec<Value>>>),
+        ("itemId", from::<Option<String>>),
+        ("full", from::<Option<bool>>),
+        ("after", from::<Option<String>>),
+    ];
+    checks
+        .iter()
+        .find(|(key, bad)| map.get(*key).is_some_and(bad))
+        .map_or("args", |(key, _)| *key)
+}
+
+fn from<T: serde::de::DeserializeOwned>(v: &Value) -> bool {
+    serde_json::from_value::<T>(v.clone()).is_err()
 }
 
 fn store_error(error: StoreError) -> ToolError {
@@ -244,26 +274,33 @@ fn replace_card(call_id: &str, developer_items: usize) -> crate::session::agent:
     )
 }
 
-fn finish(host: &impl Host, outcome: Outcome) -> Result<Value, ToolError> {
+/// Runs on the store's task after a write, so a call dropped mid-flight still announces it.
+fn announce<T: Host>(host: &T) -> impl FnOnce(&Outcome) + Send + 'static + use<T> {
+    let emit = host.emitter();
+    let caller = host.caller_id().to_string();
+    move |outcome| {
+        if let Outcome::Done {
+            checklist,
+            wrote: true,
+            opened,
+            ..
+        } = outcome
+        {
+            emit(checklist_update_payload(
+                &caller,
+                checklist,
+                Actor::Agent,
+                *opened,
+            ));
+        }
+    }
+}
+
+fn finish(outcome: Outcome) -> Result<Value, ToolError> {
     match outcome {
         Outcome::NoActive => Ok(none_result()),
         Outcome::NeedsCard(_) => Err(ToolError::new(INVALID_INPUT, "unexpected approval request")),
-        Outcome::Done {
-            value,
-            checklist,
-            wrote,
-            opened,
-        } => {
-            if wrote {
-                host.emit_update(checklist_update_payload(
-                    host.caller_id(),
-                    &checklist,
-                    Actor::Agent,
-                    opened,
-                ));
-            }
-            Ok(value)
-        }
+        Outcome::Done { value, .. } => Ok(value),
     }
 }
 
@@ -275,7 +312,7 @@ pub async fn checklist_with(
 ) -> Result<Value, ToolError> {
     let args: Args = match serde_json::from_value(args.clone()) {
         Ok(args) => args,
-        Err(_) => return Ok(invalid("action")),
+        Err(_) => return Ok(invalid(offending_field(args))),
     };
     let live = live_session(host).await?;
     let store = host.store();
@@ -295,16 +332,20 @@ pub async fn checklist_with(
                     (args.request_id.clone(), title.clone(), items.clone());
                 let live_again = live_session(host).await?;
                 let outcome = store
-                    .apply_detached(live_again, move |file| {
-                        do_create(
-                            file,
-                            request_id.as_deref(),
-                            &title,
-                            &items,
-                            replace,
-                            approved,
-                        )
-                    })
+                    .apply_detached_then(
+                        live_again,
+                        move |file| {
+                            do_create(
+                                file,
+                                request_id.as_deref(),
+                                &title,
+                                &items,
+                                replace,
+                                approved,
+                            )
+                        },
+                        announce(host),
+                    )
                     .await;
                 match outcome {
                     Ok(Outcome::NeedsCard(n)) if !approved => {
@@ -328,9 +369,11 @@ pub async fn checklist_with(
             }
             let request_id = args.request_id.clone();
             store
-                .apply_detached(live_session(host).await?, move |file| {
-                    do_update(file, request_id.as_deref(), base_rev, &ops)
-                })
+                .apply_detached_then(
+                    live_session(host).await?,
+                    move |file| do_update(file, request_id.as_deref(), base_rev, &ops),
+                    announce(host),
+                )
                 .await
         }
         "get" => {
@@ -349,7 +392,7 @@ pub async fn checklist_with(
         _ => return Ok(invalid("action")),
     };
     match result {
-        Ok(outcome) => finish(host, outcome),
+        Ok(outcome) => finish(outcome),
         Err(StoreError::Op(e)) => Ok(error_payload(&e, active_of(host, &live).await.as_ref())),
         Err(other) => Err(store_error(other)),
     }
@@ -383,8 +426,9 @@ impl Host for AppHost {
         self.agent.tool_raise_approval(card).await;
         super::router::approval_outcome(rx.await.ok())
     }
-    fn emit_update(&self, payload: Value) {
-        self.agent.tool_events().emit_checklist_update(payload);
+    fn emitter(&self) -> impl Fn(Value) + Send + 'static + use<> {
+        let events = self.agent.tool_events().clone();
+        move |payload| events.emit_checklist_update(payload)
     }
 }
 

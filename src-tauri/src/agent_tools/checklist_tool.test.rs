@@ -15,8 +15,10 @@ struct FakeHost {
     approve: bool,
     asks: AtomicUsize,
     entered: Notify,
+    checks: AtomicUsize,
+    emitted: Arc<Notify>,
     /// `(payload, whether the Session's file was on disk when the event was emitted)`.
-    emits: Mutex<Vec<(Value, bool)>>,
+    emits: Arc<Mutex<Vec<(Value, bool)>>>,
 }
 
 impl Host for FakeHost {
@@ -27,7 +29,11 @@ impl Host for FakeHost {
         &self.store
     }
     async fn is_live(&self, _id: &str) -> bool {
-        self.entered.notify_one();
+        // The second check is the one just before the store call, so the caller is dropped after
+        // the apply task exists.
+        if self.checks.fetch_add(1, Ordering::SeqCst) == 1 {
+            self.entered.notify_one();
+        }
         true
     }
     fn is_deleting(&self, _id: &str) -> bool {
@@ -41,9 +47,13 @@ impl Host for FakeHost {
             Err(ToolError::new("denied", "the developer denied this action"))
         }
     }
-    fn emit_update(&self, payload: Value) {
-        let written = self.file_of(&self.caller).exists();
-        self.emits.lock().unwrap().push((payload, written));
+    fn emitter(&self) -> impl Fn(Value) + Send + 'static + use<> {
+        let (emits, emitted) = (Arc::clone(&self.emits), Arc::clone(&self.emitted));
+        let path = self.file_of(&self.caller);
+        move |payload| {
+            emits.lock().unwrap().push((payload, path.exists()));
+            emitted.notify_one();
+        }
     }
 }
 
@@ -62,7 +72,9 @@ fn host(approve: bool) -> Arc<FakeHost> {
         approve,
         asks: AtomicUsize::new(0),
         entered: Notify::new(),
-        emits: Mutex::new(Vec::new()),
+        checks: AtomicUsize::new(0),
+        emitted: Arc::new(Notify::new()),
+        emits: Arc::new(Mutex::new(Vec::new())),
     })
 }
 
@@ -170,16 +182,29 @@ async fn cancelled_call_does_not_half_apply() {
     host.entered.notified().await;
     task.abort();
 
-    let file = host.file_of("s1");
-    for _ in 0..100 {
-        if file.exists() {
-            break;
-        }
-        tokio::time::sleep(Duration::from_millis(50)).await;
+    // The event is sent after the write, from the store's own task, so it proves the write landed.
+    tokio::time::timeout(Duration::from_secs(10), host.emitted.notified())
+        .await
+        .expect("the dropped call's write was announced");
+    {
+        let emits = host.emits.lock().unwrap();
+        assert_eq!(emits.len(), 1);
+        assert!(emits[0].1, "the file was on disk before the event");
+        assert_eq!(emits[0].0["checklist"]["rev"], json!(1));
     }
     let got = call(&host, json!({ "action": "get" })).await;
     assert_eq!(got["state"], json!("active"));
     assert_eq!(got["itemCount"], json!(2));
+}
+
+#[tokio::test]
+async fn wrong_typed_base_rev_names_base_rev() {
+    let host = host(true);
+    let bad = json!({ "action": "update", "baseRev": "3", "ops": [] });
+    let out = call(&host, bad).await;
+    assert_eq!(out["error"]["field"], json!("baseRev"));
+    let not_object = call(&host, json!("nope")).await;
+    assert_eq!(not_object["error"]["field"], json!("args"));
 }
 
 #[tokio::test]
