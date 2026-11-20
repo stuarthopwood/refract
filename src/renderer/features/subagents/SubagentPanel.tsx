@@ -345,7 +345,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
                   // (`SessionAgent.reconcileSubagentsOnAttach`) has no tool-group/assistant-text
                   // at all, only this explanatory `notice` placeholder -- mapping it to `null`
                   // left the pane blank with no explanation once selected.
-                  <NoticeRow key={item.id} level={item.level} text={item.text} />
+                  <NoticeRow key={item.id} level={item.level} text={item.text} source={item.source} />
                 ) : null
               )}
             </div>

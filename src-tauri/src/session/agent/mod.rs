@@ -435,6 +435,17 @@ impl SessionAgent {
             .await;
     }
 
+    /// A notice an OMP extension raised through `ctx.ui.notify`; the transcript item records that source (#2114).
+    async fn append_extension_notice(&self, text: String, level: &str) {
+        self.apply_transcript_frame(&json!({
+            "type": "notice",
+            "level": level,
+            "message": text,
+            "noticeSource": "extension",
+        }))
+        .await;
+    }
+
     /// Upserts a `kind: 'request'` row; the renderer draws approval cards from these.
     async fn upsert_request_row(&self, request_id: &str, resolved: Option<RequestResolution>) {
         self.upsert_transcript_item(TranscriptItem::Request {

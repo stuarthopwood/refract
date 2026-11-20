@@ -26,6 +26,7 @@ pub(super) fn hidden_tool_failure_notice(
         id: format!("{HIDDEN_TOOL_NOTICE_PREFIX}{tool_call_id}"),
         level: NoticeLevel::Error,
         text,
+        source: None,
     }
 }
 

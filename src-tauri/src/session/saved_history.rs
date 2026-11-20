@@ -185,5 +185,6 @@ pub fn notice_for(history: &SavedHistory) -> Option<TranscriptItem> {
         id: "saved-history".to_string(),
         level: NoticeLevel::Info,
         text: text.to_string(),
+        source: None,
     })
 }

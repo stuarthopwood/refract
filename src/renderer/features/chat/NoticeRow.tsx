@@ -1,7 +1,7 @@
 import * as React from 'react'
-import { InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
+import { BotIcon, InfoIcon, OctagonAlertIcon, TriangleAlertIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { TranscriptItem } from '../../../shared/model'
+import type { NoticeSource, TranscriptItem } from '../../../shared/model'
 import { commandOutputSummary, parseUsageOutput } from '../../../shared/usageOutput'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { Markdown } from './Markdown'
@@ -32,9 +32,14 @@ const NOTICE_LABEL = {
 // Longer notices (or any with a line break) render expandable, e.g. OMP's one-line MCP tool list.
 const LONG_NOTICE_CHARS = 160
 
+// An info notice an extension raised (#2114) uses the theme accent and the Bot icon; warning and error keep their severity styling.
+const EXTENSION_INFO_CLASS = 'text-accent-text'
+
 interface NoticeRowProps {
   level: NoticeLevel
   text: string
+  /** Set when an OMP extension raised the notice (#2114); only an info notice changes its look. */
+  source?: NoticeSource
   /** True for a user-run slash command's reply (`command-output:` id): rendered as Markdown, `/usage` as a card. */
   commandOutput?: boolean
 }
@@ -52,17 +57,19 @@ function LongSummary({ text }: { text: string }) {
 }
 
 // A muted one-line notice; a long one expands to the full text, capped at about 12 lines.
-export function NoticeRow({ level, text: rawText, commandOutput = false }: NoticeRowProps) {
+export function NoticeRow({ level, text: rawText, source, commandOutput = false }: NoticeRowProps) {
   // Guards against a malformed producer sending a non-string, which would crash the pane on `.length`.
   const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText)
   const usage = React.useMemo(() => (commandOutput ? parseUsageOutput(text) : null), [commandOutput, text])
   const markdownId = React.useId()
-  const Icon = NOTICE_ICON[level]
+  const fromExtension = level === 'info' && source === 'extension'
+  const Icon = fromExtension ? BotIcon : NOTICE_ICON[level]
+  const toneClass = fromExtension ? EXTENSION_INFO_CLASS : NOTICE_CLASS[level]
   const isLong = text.length > LONG_NOTICE_CHARS || text.includes('\n')
   const icon = (
     <>
-      <Icon className={cn('size-4 shrink-0', NOTICE_CLASS[level])} />
-      <span className="sr-only">{NOTICE_LABEL[level]}</span>
+      <Icon className={cn('size-4 shrink-0', toneClass)} />
+      <span className="sr-only">{fromExtension ? 'Extension:' : NOTICE_LABEL[level]}</span>
     </>
   )
 
@@ -87,7 +94,7 @@ export function NoticeRow({ level, text: rawText, commandOutput = false }: Notic
       <CollapsedLine
         icon={icon}
         summary={text}
-        summaryClassName={NOTICE_CLASS[level]}
+        summaryClassName={toneClass}
         summaryWrap
       />
     )
@@ -97,10 +104,10 @@ export function NoticeRow({ level, text: rawText, commandOutput = false }: Notic
     <CollapsedLine
       icon={icon}
       summary={<LongSummary text={text} />}
-      summaryClassName={NOTICE_CLASS[level]}
+      summaryClassName={toneClass}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
-      <div tabIndex={0} role="region" aria-label="Notice text" className="max-h-60 overflow-y-auto text-xs whitespace-pre-wrap text-notice-info-fg [overflow-wrap:anywhere]">{text}</div>
+      <div tabIndex={0} role="region" aria-label="Notice text" className={cn('max-h-60 overflow-y-auto text-xs whitespace-pre-wrap [overflow-wrap:anywhere]', fromExtension ? EXTENSION_INFO_CLASS : 'text-notice-info-fg')}>{text}</div>
     </CollapsedLine>
   )
 }

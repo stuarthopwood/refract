@@ -5601,3 +5601,11 @@ Settings > Sessions section, or "Agent stopped" bar exists; `ChatPane.tsx:205`
   unchecked), shows the icon and text, is named "SQLite, Recommended", is preselected and focused, Enter and "Use
   Recommended" answer it without an early submit; run it on a built app before and after, update `docs/PLAN.md`, then
   `node scripts/ci-local.mjs` per FR-066
+
+## Phase 97: Convergence (2026-11-20, #2114 extension notify notices use the accent and a Bot icon, FR-129; clarification "Session 2026-11-20 (extension notify notices, #2114)", US1 scenario 19)
+
+- [x] T464 [US1] Rust: `NoticeSource::Extension` on the transcript notice item, set by `append_extension_notice` in `session/agent/mod.rs` for an `extension_ui_request` `notify` and by no Refract-written notice; serialised as `source`, kept through the transcript build, saved history and the repeated-warning collapse, per FR-129 (missing)
+- [x] T465 [US1] `NoticeRow.tsx` (`TranscriptRow.tsx`, `SubagentPanel.tsx` pass `source`): an info notice with source `extension` shows `BotIcon`, `text-accent-text` and the sr-only label "Extension:"; warning, error and sourceless notices unchanged, per FR-129 (missing)
+- [x] T466 `frame_notice.test.rs` (an extension notify carries the source, a lane notice does not) and `NoticeRow.test.ts` (Bot icon and "Extension:" for an extension info notice; Info icon and "Info:" with no source; an extension warning unchanged), per FR-129
+- [x] T468 [US1] `isConversationStarted.ts` counts a startup notice with source `extension` as conversation output, so an extension notice that arrives before the first user message shows at once while OMP's own sourceless startup banner stays hidden; `isConversationStarted.test.ts` covers both, per FR-129
+- [ ] T467 Live check on a built app (code-verified only so far): an extension `notify` info notice shows the Bot icon in the accent colour and reads "Extension:" in every theme including high contrast at 4.5:1 or better; a lane notice stays muted; then `node scripts/ci-local.mjs`, per FR-129

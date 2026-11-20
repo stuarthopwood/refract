@@ -179,6 +179,9 @@ pub enum TranscriptItem {
         id: String,
         level: NoticeLevel,
         text: String,
+        /// Set when the notice came from somewhere other than Refract itself (#2114).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<NoticeSource>,
     },
     /// #1284: the end-of-turn model error (`turn_error.rs`); `text` is OMP's untrusted `errorMessage`.
     TurnError { id: String, text: String },
@@ -201,6 +204,14 @@ impl TranscriptItem {
             | TranscriptItem::TurnError { id, .. } => id,
         }
     }
+}
+
+/// Where a notice came from when Refract did not write it (#2114). Wire-identical to `model.ts`'s `NoticeSource`.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum NoticeSource {
+    /// An OMP extension's `ctx.ui.notify` request.
+    Extension,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -761,6 +772,7 @@ fn try_build_advisory_items(
         id: message_id.to_string(),
         level: NoticeLevel::Info,
         text: content.to_string(),
+        source: None,
     }])
 }
 
@@ -1047,6 +1059,7 @@ fn apply_message_snapshot(
                         id: message_id.to_string(),
                         level: NoticeLevel::Info,
                         text: content.to_string(),
+                        source: None,
                     })],
                 );
             }
@@ -1273,6 +1286,7 @@ fn apply_prompt_result_notice(
                 id,
                 level: NoticeLevel::Error,
                 text,
+                source: None,
             }));
             items
         }
@@ -1282,6 +1296,7 @@ fn apply_prompt_result_notice(
                 id,
                 level: NoticeLevel::Info,
                 text: "Turn stopped.".to_string(),
+                source: None,
             }));
             items
         }
@@ -1347,6 +1362,7 @@ fn apply_frame_items(
                 id,
                 level: NoticeLevel::Info,
                 text: text.to_string(),
+                source: None,
             }));
             items
         }
@@ -1363,6 +1379,10 @@ fn apply_frame_items(
                 .unwrap_or("")
                 .to_string();
             let mut items = items;
+            let notice_source = match frame.get("noticeSource").and_then(Value::as_str) {
+                Some("extension") => Some(NoticeSource::Extension),
+                _ => None,
+            };
             if level == NoticeLevel::Warning && collapse_repeated_warning(&mut items, &message) {
                 return items;
             }
@@ -1375,6 +1395,7 @@ fn apply_frame_items(
                 id,
                 level,
                 text: message,
+                source: notice_source,
             }));
             items
         }
@@ -1559,6 +1580,7 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
                         id: message_id,
                         level: NoticeLevel::Info,
                         text: content.to_string(),
+                        source: None,
                     }));
                 }
             }
