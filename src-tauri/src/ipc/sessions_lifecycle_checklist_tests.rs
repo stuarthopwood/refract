@@ -46,7 +46,7 @@ async fn add_archived_session(state: &AppState, id: &str, archived: bool) {
 }
 
 #[tokio::test]
-async fn delete_removes_checklist_file_after_remove_agent() {
+async fn delete_removes_checklist_file_and_tombstones_the_session() {
     let dir = temp_registry_dir("checklist-delete");
     let state = make_state(&dir).await;
     let repo = init_repo().await;

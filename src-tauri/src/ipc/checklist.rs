@@ -7,7 +7,7 @@ use std::sync::Arc;
 use serde_json::{json, Value};
 
 use super::{arg_str, invalid_argument, not_found, AppState, Dispatcher, HandlerFuture, IpcError};
-use crate::checklist::create::{record_request, recorded_ids};
+use crate::checklist::create::{check_request_id, record_request, recorded_ids};
 use crate::checklist::developer_ops::apply_developer;
 use crate::checklist::model::Actor;
 use crate::checklist::ops::{decode_op, ChecklistError, ErrorCode};
@@ -81,6 +81,9 @@ pub async fn mutate_with(
     op: &Value,
 ) -> Result<Value, IpcError> {
     let live = live_session(host, session_id).await?;
+    if let Err(e) = check_request_id(request_id.as_deref(), false) {
+        return refusal(host, session_id, &e).await;
+    }
     let op = match decode_op(op) {
         Ok(op) => op,
         Err(e) => return refusal(host, session_id, &e).await,

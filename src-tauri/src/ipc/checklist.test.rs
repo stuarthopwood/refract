@@ -125,3 +125,17 @@ async fn mutate_accepts_request_id() {
     );
     assert_eq!(host.emits.lock().unwrap().len(), 1);
 }
+
+#[tokio::test]
+async fn mutate_refuses_an_empty_or_oversized_request_id() {
+    let host = host(true);
+    seed(&host).await;
+    for bad in [String::new(), "x".repeat(65)] {
+        let out = mutate_with(&host, "s1", "p1", 1, Some(bad), &tick())
+            .await
+            .unwrap();
+        assert!(out["error"].is_object(), "{out}");
+        assert_eq!(out["checklist"]["items"][0]["status"], json!("upcoming"));
+    }
+    assert!(host.emits.lock().unwrap().is_empty());
+}
