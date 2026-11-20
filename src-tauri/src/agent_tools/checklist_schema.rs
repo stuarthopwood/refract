@@ -33,7 +33,7 @@ fn new_item() -> Value {
             "text": { "type": "string", "description": "What the step is." },
             "owner": owner(),
             "requiresValue": { "type": "boolean", "description": "The developer must supply a value before it can be completed." },
-            "agentCompletable": { "type": "boolean", "description": "Whether you may mark it complete." },
+            "agentCompletable": { "type": "boolean", "description": "Marks a step the developer may ask you to finish with a \"complete this step\" send; it does not stop you setting it complete yourself." },
             "group": { "type": "string", "description": "Optional heading to group steps under." }
         },
         "required": ["text"],
@@ -54,7 +54,7 @@ fn op() -> Value {
             "requiresValue": { "type": "boolean" },
             "agentCompletable": { "type": "boolean" },
             "group": { "type": "string" },
-            "status": { "type": "string", "enum": ["upcoming", "in_progress", "complete"] },
+            "status": { "type": "string", "enum": ["upcoming", "next", "in_progress", "blocked", "complete"] },
             "value": { "type": "string" }
         },
         "required": ["op"],

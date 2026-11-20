@@ -63,3 +63,19 @@ fn parameters_expose_owner_enum_on_create_items_and_add() {
     assert_eq!(create_item["enum"], expected);
     assert_eq!(add_item["enum"], expected);
 }
+
+#[test]
+fn status_enum_matches_item_status_all() {
+    let schema = parameters();
+    let listed = &schema["properties"]["ops"]["items"]["properties"]["status"]["enum"];
+    assert_eq!(listed, &json!(crate::checklist::model::ItemStatus::ALL));
+}
+
+#[test]
+fn agent_completable_description_names_the_complete_this_step_send() {
+    let schema = parameters();
+    let item = &schema["properties"]["items"]["items"]["properties"]["agentCompletable"];
+    let text = item["description"].as_str().unwrap();
+    assert!(text.contains("complete this step"));
+    assert!(!text.contains("Whether you may"));
+}
