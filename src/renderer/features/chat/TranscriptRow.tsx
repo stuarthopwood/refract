@@ -144,7 +144,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
       return <RequestItemRow item={item} sessionId={sessionId} pending={pending} resolvedAsk={resolvedAsk} />
 
     case 'notice':
-      return <NoticeRow level={item.level} text={item.text} commandOutput={item.id.startsWith(COMMAND_OUTPUT_NOTICE_PREFIX)} />
+      return <NoticeRow level={item.level} text={item.text} source={item.source} commandOutput={item.id.startsWith(COMMAND_OUTPUT_NOTICE_PREFIX)} />
 
     case 'turn-error':
       return <TurnErrorRow item={item} sessionId={sessionId} />

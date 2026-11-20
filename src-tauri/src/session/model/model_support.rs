@@ -99,7 +99,12 @@ pub(in crate::session) async fn post_notice(
 ) {
     let id = next_notice_id(agent).await;
     agent
-        .upsert_transcript_item(TranscriptItem::Notice { id, level, text })
+        .upsert_transcript_item(TranscriptItem::Notice {
+            id,
+            level,
+            text,
+            source: None,
+        })
         .await;
 }
 

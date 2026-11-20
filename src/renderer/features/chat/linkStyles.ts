@@ -7,9 +7,10 @@
 export const linkClassName =
   'text-accent-text underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
-// Issue #610, decision 9: `--accent-text` does not clear 4.5:1 on `bg-muted` (check-theme-
-// contrast.mjs's own `accent-text`/`muted` pair), so a link on a muted surface drops the accent
-// colour and relies on the ambient (already-passing) text colour it already inherits, instead.
+// Issue #610, decision 9: `--accent-text` did not clear 4.5:1 on `bg-muted` then (Dark 4.00:1, Obsidian
+// 4.28:1), so a link on a muted surface drops the accent colour and relies on the ambient text colour it
+// inherits. Later token retunes lifted the pair to 4.62:1 and `check-theme-contrast.mjs` now enforces 4.5:1
+// on it (#2114); the muted look is kept as it is.
 export const mutedLinkClassName =
   'underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 

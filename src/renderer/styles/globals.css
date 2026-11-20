@@ -1040,7 +1040,7 @@ samp {
   --severity-warning: oklch(0.769 0.188 70.08);
   --severity-error: oklch(0.74 0.191 22.216);
   --severity-info: #38BDF8;
-  /* #838/#1877: the accent text lightened a step: plain `--accent-text` is 4.28:1 on `--muted` (the trigger's hover fill), under the 4.5:1 floor. */
+  /* #838/#1877: agent-to-agent message identity (glyph + label only); the accent text lightened a step so it keeps headroom on `--muted` (the trigger's hover fill). */
   --agent-message: color-mix(in srgb, var(--accent-text) 94%, white);
   /* #925: diff-stat colouring -- same alias as `.theme-dark`'s own comment above. */
   --diff-added: var(--state-working);
@@ -1384,7 +1384,7 @@ samp {
    * ordinary 4.5:1 text floor (the enhanced 7:1 this preset's own design intent calls for is
    * also cleared, incidentally, but is not the floor this story enforces -- see above). */
   --accent-text: oklch(0.75 0.17 264);
-  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue. */
   --md-heading: var(--accent-text);
   --md-marker: var(--accent-text);
   --md-quote-bar: var(--accent-text);
@@ -1627,7 +1627,7 @@ samp {
   /* ---- Layer 2 continued: surface ladder, severity, accent-text ------------------------- */
   --surface-hover: var(--surface-3);
   --accent-text: #1ad1d1;
-  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue. */
   --md-heading: var(--accent-text);
   --md-marker: var(--accent-text);
   --md-quote-bar: var(--accent-text);
@@ -1915,7 +1915,7 @@ samp {
 
   --surface-hover: var(--surface-3);
   --accent-text: #fb923c;
-  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue because --accent-text itself does not clear 4.5:1 on --muted. */
+  /* #456 Markdown and code tokens, valued from this preset's own accent (--accent-text). --md-code-fg is a lighter tint of the accent hue. */
   --md-heading: var(--accent-text);
   --md-marker: var(--accent-text);
   --md-quote-bar: var(--accent-text);

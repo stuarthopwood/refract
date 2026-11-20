@@ -87,7 +87,8 @@ export const PAIRS = [
   { fg: 'accent-text', bg: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'card', min: 4.5 },
   { fg: 'accent-text', bg: 'popover', min: 4.5 },
-  { fg: 'accent-text', bg: 'muted', min: 3 }, // #1125, #1126: also the pressed IconRail glyph on its bg-muted fill
+  { fg: 'accent-text', bg: 'muted', min: 4.5 }, // #1125, #1126: also the pressed IconRail glyph on its bg-muted fill; #2114: the extension notice's Bot icon on a hovered row
+  { fg: 'foreground', bg: 'muted', min: 4.5 }, // #2114: a hovered extension notice summary and the Stepper status word (accent swaps to foreground)
   { fg: 'accent-text', bg: 'surface-hover', min: 4.5 }, // #1873: the "+N" label chip on a hovered issue row
   { fg: 'accent-text', bg: 'accent', min: 4.5 }, // #1873: the same chip on the selected issue row
   // The four role colours, as swatches beside the role names in Models (spec 036).

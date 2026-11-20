@@ -251,6 +251,8 @@ Status and feedback (agenda item 7) define one severity set across notices and t
 
 Colour only reinforces the icon and the word; it is never the only signal (WCAG 1.4.1). `Toaster` (`src/renderer/components/ui/sonner.tsx`) already maps this set to lucide icons (`CircleCheckIcon`, `InfoIcon`, `TriangleAlertIcon`, `OctagonXIcon`, plus `Loader2Icon` for loading).
 
+An info notice raised by an OMP extension (`ctx.ui.notify`, #2114) is the one exception to the Info row: the lucide `Bot` icon, `text-accent-text`, and the screen reader word "Extension:" instead of "Info:". Extension warnings and errors keep their own severity icon and word.
+
 | Channel | Scope | Dismissal |
 |---|---|---|
 | Banner | A Session- or pane-scoped problem | Stays until the problem is fixed. Built from `PaneBanner` (see "Banners"). |

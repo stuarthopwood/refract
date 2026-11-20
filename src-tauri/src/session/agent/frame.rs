@@ -136,7 +136,7 @@ impl SessionAgent {
         match classify_dialog(frame) {
             DialogClassification::Ignore => {}
             DialogClassification::Notify { message, level } => {
-                self.append_notice(message, &level).await
+                self.append_extension_notice(message, &level).await
             }
             DialogClassification::Cancel(target) => {
                 let (became_working, cancelled_request) = {
@@ -379,3 +379,7 @@ impl SessionAgent {
 #[cfg(test)]
 #[path = "frame.test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "frame_notice.test.rs"]
+mod notice_tests;

@@ -54,7 +54,8 @@ pub fn diff_transcript(
     ops
 }
 
-/// Appends live items that history cannot contain (unresolved requests, running or streaming items).
+/// Appends live items that history cannot contain (unresolved requests, running or streaming items,
+/// and extension notices, which OMP never persists; #2114).
 // `start()`/`restart()` refetch history; a plain replace would drop frames that arrived meanwhile.
 pub fn merge_history_with_live(
     history: &[Arc<TranscriptItem>],
@@ -71,6 +72,7 @@ pub fn merge_history_with_live(
             TranscriptItem::Subagent { status, .. } => *status == SubagentStatus::Running,
             TranscriptItem::AssistantText { streaming, .. } => *streaming,
             TranscriptItem::Thinking { streaming, .. } => *streaming,
+            TranscriptItem::Notice { source, .. } => source.is_some(),
             _ => false,
         }
     };

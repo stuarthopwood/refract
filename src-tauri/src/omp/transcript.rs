@@ -34,6 +34,8 @@ mod skill_prompt;
 use skill_prompt::try_build_skill_prompt;
 mod turn_error;
 use turn_error::{build_turn_error_item, current_turn_has_error};
+#[cfg(test)]
+mod notice_source_tests;
 
 /// One renderer-facing transcript row, wire-identical to `model.ts`'s `TranscriptItem`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -179,6 +181,9 @@ pub enum TranscriptItem {
         id: String,
         level: NoticeLevel,
         text: String,
+        /// Set when the notice came from somewhere other than Refract itself (#2114).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        source: Option<NoticeSource>,
     },
     /// #1284: the end-of-turn model error (`turn_error.rs`); `text` is OMP's untrusted `errorMessage`.
     TurnError { id: String, text: String },
@@ -201,6 +206,14 @@ impl TranscriptItem {
             | TranscriptItem::TurnError { id, .. } => id,
         }
     }
+}
+
+/// Where a notice came from when Refract did not write it (#2114). Wire-identical to `model.ts`'s `NoticeSource`.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum NoticeSource {
+    /// An OMP extension's `ctx.ui.notify` request.
+    Extension,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -229,6 +242,17 @@ pub enum NoticeLevel {
     Info,
     Warning,
     Error,
+}
+
+impl NoticeLevel {
+    /// Maps an OMP level string; anything but `warning` and `error` reads as `info`.
+    pub fn from_wire(level: &str) -> Self {
+        match level {
+            "warning" => Self::Warning,
+            "error" => Self::Error,
+            _ => Self::Info,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -761,6 +785,7 @@ fn try_build_advisory_items(
         id: message_id.to_string(),
         level: NoticeLevel::Info,
         text: content.to_string(),
+        source: None,
     }])
 }
 
@@ -1047,6 +1072,7 @@ fn apply_message_snapshot(
                         id: message_id.to_string(),
                         level: NoticeLevel::Info,
                         text: content.to_string(),
+                        source: None,
                     })],
                 );
             }
@@ -1268,20 +1294,22 @@ fn apply_prompt_result_notice(
                     .to_string(),
                 None => "Prompt failed.".to_string(),
             };
-            let id = format!("notice-{}", items.len());
+            let id = unused_notice_id(&items, "notice-");
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Error,
                 text,
+                source: None,
             }));
             items
         }
         "aborted" => {
-            let id = format!("notice-{}", items.len());
+            let id = unused_notice_id(&items, "notice-");
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Info,
                 text: "Turn stopped.".to_string(),
+                source: None,
             }));
             items
         }
@@ -1338,48 +1366,75 @@ fn apply_frame_items(
                 return items;
             }
             let mut items = items;
-            let id = if has_user_acted {
-                format!("{COMMAND_OUTPUT_NOTICE_PREFIX}{}", items.len())
+            let prefix = if has_user_acted {
+                COMMAND_OUTPUT_NOTICE_PREFIX
             } else {
-                format!("{STARTUP_NOTICE_PREFIX}{}", items.len())
+                STARTUP_NOTICE_PREFIX
             };
+            let id = unused_notice_id(&items, prefix);
             items.push(Arc::new(TranscriptItem::Notice {
                 id,
                 level: NoticeLevel::Info,
                 text: text.to_string(),
+                source: None,
             }));
             items
         }
         "notice" => {
-            let level_str = frame.get("level").and_then(Value::as_str).unwrap_or("info");
-            let level = match level_str {
-                "warning" => NoticeLevel::Warning,
-                "error" => NoticeLevel::Error,
-                _ => NoticeLevel::Info,
-            };
+            let level = NoticeLevel::from_wire(
+                frame.get("level").and_then(Value::as_str).unwrap_or("info"),
+            );
             let message = frame
                 .get("message")
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string();
-            let mut items = items;
-            if level == NoticeLevel::Warning && collapse_repeated_warning(&mut items, &message) {
-                return items;
-            }
-            let id = if has_user_acted {
-                format!("notice-{}", items.len())
-            } else {
-                format!("{STARTUP_NOTICE_PREFIX}{}", items.len())
-            };
-            items.push(Arc::new(TranscriptItem::Notice {
-                id,
-                level,
-                text: message,
-            }));
-            items
+            push_notice(items, has_user_acted, level, message, None)
         }
         _ => items,
     }
+}
+
+/// First `{prefix}{n}` id, counting up from `items.len()`, that no item uses. A notice kept across
+/// the history merge keeps its old index, so `len()` alone can collide with it.
+fn unused_notice_id(items: &[Arc<TranscriptItem>], prefix: &str) -> String {
+    let mut index = items.len();
+    loop {
+        let candidate = format!("{prefix}{index}");
+        if !items.iter().any(|item| item.id() == candidate) {
+            return candidate;
+        }
+        index += 1;
+    }
+}
+
+/// Appends a notice row, or bumps an identical earlier warning's `×N`. Only Refract's own code
+/// passes a `source`; no inbound OMP frame field can set it (#2114).
+fn push_notice(
+    mut items: Vec<Arc<TranscriptItem>>,
+    has_user_acted: bool,
+    level: NoticeLevel,
+    message: String,
+    source: Option<NoticeSource>,
+) -> Vec<Arc<TranscriptItem>> {
+    if level == NoticeLevel::Warning && collapse_repeated_warning(&mut items, &message) {
+        return items;
+    }
+    let id = unused_notice_id(
+        &items,
+        if has_user_acted {
+            "notice-"
+        } else {
+            STARTUP_NOTICE_PREFIX
+        },
+    );
+    items.push(Arc::new(TranscriptItem::Notice {
+        id,
+        level,
+        text: message,
+        source,
+    }));
+    items
 }
 
 fn attach_tool_result(
@@ -1559,6 +1614,7 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
                         id: message_id,
                         level: NoticeLevel::Info,
                         text: content.to_string(),
+                        source: None,
                     }));
                 }
             }
@@ -1611,6 +1667,19 @@ impl TranscriptState {
         let (settled, _) =
             settle_interrupted_tool_rows_items(history_items, terminated_unexpectedly);
         self.items = merge_history_with_live(&settled, &self.items);
+    }
+
+    /// Appends a notice an OMP extension raised through `ctx.ui.notify` (#2114). The source is set here,
+    /// never read from a wire frame, so only Refract's own code path can mark a notice as an extension's.
+    pub fn apply_extension_notice(&mut self, level: NoticeLevel, text: String) {
+        let items = std::mem::take(&mut self.items);
+        self.items = push_notice(
+            items,
+            self.has_user_acted,
+            level,
+            text,
+            Some(NoticeSource::Extension),
+        );
     }
 
     /// Applies one live frame in place; only touched items get a new `Arc`.

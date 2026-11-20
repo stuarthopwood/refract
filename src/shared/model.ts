@@ -335,6 +335,9 @@ export type MessageSource =
   | { kind: 'session'; sessionId: string; name: string }
   | { kind: 'handoff' };
 
+/** Where a notice came from when Refract did not write it (#2114): an OMP extension's `notify` request. Absent for Refract's own notices. */
+export type NoticeSource = 'extension';
+
 /** Built in the main process from OMP frames; the renderer only renders items. */
 export type TranscriptItem =
   | { kind: 'user'; id: string; text: string; at: number; fileAttachments?: FileAttachmentRef[]; images?: TranscriptImageRef[]; source?: MessageSource }
@@ -401,7 +404,7 @@ export type TranscriptItem =
       text: string;
     }
   | { kind: 'request'; id: string; requestId: string; resolved?: 'approved' | 'denied' | 'answered' | 'cancelled' }
-  | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string }
+  | { kind: 'notice'; id: string; level: 'info' | 'warning' | 'error'; text: string; source?: NoticeSource }
   | { kind: 'turn-error'; id: string; text: string }
   | {
       kind: 'skill-prompt';

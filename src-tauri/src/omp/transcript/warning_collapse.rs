@@ -20,7 +20,13 @@ pub(super) fn collapse_repeated_warning(items: &mut [Arc<TranscriptItem>], messa
     }) else {
         return false;
     };
-    let TranscriptItem::Notice { id, level, text } = &*items[index] else {
+    let TranscriptItem::Notice {
+        id,
+        level,
+        text,
+        source,
+    } = &*items[index]
+    else {
         return false;
     };
     let merged = TranscriptItem::Notice {
@@ -30,6 +36,7 @@ pub(super) fn collapse_repeated_warning(items: &mut [Arc<TranscriptItem>], messa
             "{message} \u{d7}{}",
             split_repeat_count(text).1.saturating_add(1)
         ),
+        source: *source,
     };
     items[index] = Arc::new(merged);
     true
