@@ -15,11 +15,26 @@ fn description_says_not_checklist_mode_and_todo_for_scratch() {
     assert!(text.contains("`owner` to `human`"));
 }
 
+fn collect_property_keys(node: &Value, out: &mut Vec<String>) {
+    match node {
+        Value::Object(map) => {
+            if let Some(Value::Object(props)) = map.get("properties") {
+                out.extend(props.keys().cloned());
+            }
+            map.values().for_each(|v| collect_property_keys(v, out));
+        }
+        Value::Array(items) => items.iter().for_each(|v| collect_property_keys(v, out)),
+        _ => {}
+    }
+}
+
 #[test]
 fn parameters_have_no_session_or_checklist_id() {
     let schema = parameters();
-    let properties = schema["properties"].as_object().unwrap();
-    for key in properties.keys() {
+    let mut keys = Vec::new();
+    collect_property_keys(&schema, &mut keys);
+    assert!(keys.iter().any(|k| k == "requiresValue"));
+    for key in keys {
         let lower = key.to_lowercase();
         assert!(
             !lower.contains("session") && !lower.contains("checklistid"),
