@@ -72,7 +72,10 @@ async fn get_returns_flag_with_null_checklist() {
 
     host.store.set_tool_unavailable("s1");
     let flagged = get_with(&host, "s1").await.unwrap();
-    assert_eq!(flagged, json!({ "checklist": null, "toolUnavailable": true }));
+    assert_eq!(
+        flagged,
+        json!({ "checklist": null, "toolUnavailable": true })
+    );
 }
 
 #[tokio::test]
