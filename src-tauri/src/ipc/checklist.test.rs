@@ -64,11 +64,31 @@ fn tick() -> Value {
 }
 
 #[tokio::test]
-async fn get_returns_null_without_checklist() {
+async fn get_returns_flag_with_null_checklist() {
     let host = host(true);
-    assert_eq!(get_with(&host, "s1").await.unwrap(), Value::Null);
+
+    let got = get_with(&host, "s1").await.unwrap();
+    assert_eq!(got, json!({ "checklist": null, "toolUnavailable": false }));
+
+    host.store.set_tool_unavailable("s1");
+    let flagged = get_with(&host, "s1").await.unwrap();
+    assert_eq!(flagged, json!({ "checklist": null, "toolUnavailable": true }));
+}
+
+#[tokio::test]
+async fn get_returns_flag_with_checklist() {
+    let host = host(true);
     seed(&host).await;
-    assert_eq!(get_with(&host, "s1").await.unwrap()["id"], json!("p1"));
+
+    let got = get_with(&host, "s1").await.unwrap();
+
+    assert_eq!(got["checklist"]["id"], json!("p1"));
+    assert_eq!(got["toolUnavailable"], json!(false));
+    host.store.set_tool_unavailable("s1");
+    assert_eq!(
+        get_with(&host, "s1").await.unwrap()["toolUnavailable"],
+        json!(true)
+    );
 }
 
 #[tokio::test]

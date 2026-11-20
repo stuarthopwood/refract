@@ -5,13 +5,13 @@ Test work is part of each task (AGENTS.md Testing rule V1): new or changed logic
 Format: ID, files, tests, verification.
 
 ## Phase 0: Re-ground
-- [ ] T001 Re-read every `file:line` cite in spec.md and plan.md (`right-pane-store.ts:67-81`, `agent_tools/mod.rs:114`, `ipc-checklist.ts:42-48`, `ipc/checklist.rs` get/mutate, `RightPaneShell.tsx:151`, `globals.css:2577`, `chat-nav/highlightRow.ts`, `checkbox.tsx`, design 371/519-520). Fix drifted cites in spec/plan only. Verify: a short list in the commit body.
+- [x] T001 Re-read every `file:line` cite in spec.md and plan.md (`right-pane-store.ts:67-81`, `agent_tools/mod.rs:114`, `ipc-checklist.ts:42-48`, `ipc/checklist.rs` get/mutate, `RightPaneShell.tsx:151`, `globals.css:2577`, `chat-nav/highlightRow.ts`, `checkbox.tsx`, design 371/519-520). Fix drifted cites in spec/plan only. Verify: a short list in the commit body.
 
 ## Phase 1: Backend `toolUnavailable` (lands before #2013)
-- [ ] T002 `src-tauri/src/checklist/store.rs` (+ its test file): per-Session flag with set, clear, query, dropped on Session removal. Tests `store.test.rs :: tool_unavailable_set_then_cleared`, `:: tool_unavailable_dropped_with_session`. Verify: `cargo test -p <crate> checklist::store` (name per T001).
-- [ ] T003 `src-tauri/src/agent_tools/mod.rs`: set the flag at the refusal warn site (line 114), clear it on a successful `refract_checklist` call. Tests in `agent_tools` test file: `refusal_sets_tool_unavailable`, `next_success_clears_tool_unavailable`. Verify: scoped cargo test.
-- [ ] T004 `src-tauri/src/ipc/checklist.rs`, `checklist.test.rs`: `get_with` returns `{checklist, toolUnavailable}`. Tests: `get_returns_flag_with_checklist`, `get_returns_flag_with_null_checklist`, existing get tests updated. Verify: scoped cargo test.
-- [ ] T005 `src/shared/ipc-checklist.ts` (`ChecklistGetResult`), `src/renderer/tauri-bridge/checklist.ts` (get wrapper), every caller and test found by grep for `checklist.get` and the get wrapper, plus the parity script/test that names get's shape. Tests: `ipc-checklist.test.ts :: get_result_has_flag_key`. Verify: scoped vitest for those files and `pnpm typecheck`. Commit and push phase 1.
+- [x] T002 `src-tauri/src/checklist/store.rs` (+ its test file): per-Session flag with set, clear, query, dropped on Session removal. Tests `store.test.rs :: tool_unavailable_set_then_cleared`, `:: tool_unavailable_dropped_with_session`. Verify: `cargo test -p <crate> checklist::store` (name per T001).
+- [x] T003 `src-tauri/src/agent_tools/mod.rs`: set the flag at the refusal warn site (line 114), clear it on a successful `refract_checklist` call. Tests in `agent_tools` test file: `refusal_sets_tool_unavailable`, `next_success_clears_tool_unavailable`. Verify: scoped cargo test.
+- [x] T004 `src-tauri/src/ipc/checklist.rs`, `checklist.test.rs`: `get_with` returns `{checklist, toolUnavailable}`. Tests: `get_returns_flag_with_checklist`, `get_returns_flag_with_null_checklist`, existing get tests updated. Verify: scoped cargo test.
+- [x] T005 `src/shared/ipc-checklist.ts` (`ChecklistGetResult`), `src/renderer/tauri-bridge/checklist.ts` (get wrapper), every caller and test found by grep for `checklist.get` and the get wrapper, plus the parity script/test that names get's shape. Tests: `ipc-checklist.test.ts :: get_result_has_flag_key`. Verify: scoped vitest for those files and `pnpm typecheck`. Commit and push phase 1.
 
 ## Phase 2: Shared components and registration
 - [ ] T006 `src/renderer/components/ui/checkbox.tsx`: export `CHECKBOX_BOX_ONLY_CLASS` (box only, no row button chrome). Test `checkbox.test.tsx :: box_only_class_has_no_row_chrome`. Verify: scoped vitest.

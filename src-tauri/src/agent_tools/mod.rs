@@ -24,6 +24,7 @@ pub mod tree_gate;
 
 use serde_json::{json, Value};
 
+use crate::checklist::store::ChecklistStore;
 use panels::{tool_description, tool_parameters, INVOKE_PANEL_ACTION, LIST_PANELS, OPEN_PANEL};
 
 pub const TOOL_PREFIX: &str = "refract_";
@@ -103,8 +104,13 @@ pub fn host_tool_defs(access: ToolAccess) -> Vec<Value> {
 }
 
 /// Registers the tools for this launch. A later call replaces the set, so a relaunch never doubles.
-/// A failure leaves the Session without Refract tools; it still works as a plain agent.
-pub async fn register_host_tools(proc: &crate::omp::process::OmpProcess, access: ToolAccess) {
+/// A failure leaves the Session without Refract tools; it still works as a plain agent, and the
+/// checklist store remembers the refusal so the panel can say so.
+pub async fn register_host_tools(
+    proc: &crate::omp::process::OmpProcess,
+    access: ToolAccess,
+    checklists: Option<(&ChecklistStore, &str)>,
+) {
     let request = json!({ "type": "set_host_tools", "tools": host_tool_defs(access) });
     let ok = match proc.request(request, REGISTER_TIMEOUT_MS).await {
         Ok(response) => response.get("success").and_then(Value::as_bool) == Some(true),
@@ -112,6 +118,18 @@ pub async fn register_host_tools(proc: &crate::omp::process::OmpProcess, access:
     };
     if !ok {
         log::warn!("agent tools: omp did not accept set_host_tools");
+    }
+    if let Some((store, session_id)) = checklists {
+        note_registration(store, session_id, ok);
+    }
+}
+
+/// A refused registration marks the Session's checklist tool unavailable; an accepted one clears it.
+fn note_registration(store: &ChecklistStore, session_id: &str, accepted: bool) {
+    if accepted {
+        store.clear_tool_unavailable(session_id);
+    } else {
+        store.set_tool_unavailable(session_id);
     }
 }
 

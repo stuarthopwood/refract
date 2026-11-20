@@ -52,9 +52,14 @@ async fn active_of(host: &impl Host, session_id: &str) -> Result<Value, IpcError
         .map_err(|e| store_error(e, session_id))
 }
 
-/// `checklist.get`: the active checklist, or `null` when the Session has none.
+/// `checklist.get`: the active checklist (`null` when the Session has none) and whether the agent
+/// was refused the checklist tool, so the panel can say so without a second call.
 pub async fn get_with(host: &impl Host, session_id: &str) -> Result<Value, IpcError> {
-    active_of(host, session_id).await
+    let checklist = active_of(host, session_id).await?;
+    Ok(json!({
+        "checklist": checklist,
+        "toolUnavailable": host.store().tool_unavailable(session_id),
+    }))
 }
 
 /// A refused change is data for the panel, not a transport failure: it carries the checklist as it

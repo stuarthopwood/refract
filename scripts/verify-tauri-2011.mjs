@@ -122,7 +122,7 @@ async function main() {
     const addedIds = created.body.addedIds ?? created.body.createdIds ?? created.body.ids;
     check(!created.isError && created.body.state === 'active' && created.body.itemCount === 2 && Array.isArray(addedIds) && addedIds.length === 2, 'agent create returned 2 item ids, state active', created.body);
     const [agentItem, humanItem] = addedIds;
-    const afterCreate = (await get()).value;
+    const afterCreate = (await get()).value?.checklist;
     const humanRow = afterCreate?.items.find((i) => i.id === humanItem);
     check(afterCreate?.id === created.body.checklistId && humanRow?.owner === 'human' && afterCreate.items.find((i) => i.id === agentItem)?.owner === 'agent', 'owner human kept on the created item, default agent on the other', afterCreate?.items.map((i) => [i.id, i.owner]));
     check(existsSync(filePath), 'checklist file written on create', filePath);
@@ -160,7 +160,8 @@ async function main() {
     second = await launch(env, shimDir, launcherExe, dataDir, importDir, 'second');
     const cdp2 = second.cdp;
     await cdp2.waitFor(`!!document.querySelector('[data-session-open=${JSON.stringify(session.id)}]')`, { timeoutMs: 60_000, label: 'Session row after restart' });
-    const reloaded = (await cdp2.evaluate(`window.refract.checklist.get(${JSON.stringify(session.id)})`));
+    const reloadedRaw = await cdp2.evaluate(`window.refract.checklist.get(${JSON.stringify(session.id)})`);
+    const reloaded = reloadedRaw.ok ? { ok: true, value: reloadedRaw.value.checklist } : reloadedRaw;
     check(reloaded.ok === true && reloaded.value?.id === created.body.checklistId && reloaded.value.rev === tick.value.rev && reloaded.value.items.find((i) => i.id === humanItem)?.status === 'complete' && reloaded.value.items.length === 3, 'after restart on the same data dir the checklist persists (id, rev, tick)', reloaded.ok ? { id: reloaded.value?.id, rev: reloaded.value?.rev, items: reloaded.value?.items.map((i) => [i.id, i.status]) } : reloaded);
     const canon = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === 'object' && !Array.isArray(x) ? Object.fromEntries(Object.entries(x).sort(([a], [b]) => (a < b ? -1 : 1))) : x));
     check(canon(reloaded.value) === canon(fileBefore.active), 'reloaded checklist deep-equals the active checklist in the file written before the restart (keys sorted)', null);
@@ -173,7 +174,7 @@ async function main() {
     while (existsSync(filePath) && Date.now() < deadline) await sleep(300);
     check(!existsSync(filePath), 'checklist file is gone after the Session delete', { filePath, remaining: existsSync(path.join(dataDir, 'checklists')) ? readdirSync(path.join(dataDir, 'checklists')) : 'no dir' });
     const afterDelete = await cdp2.evaluate(`window.refract.checklist.get(${JSON.stringify(session.id)})`);
-    check(afterDelete.ok === false || afterDelete.value === null, 'checklist.get for the deleted Session no longer returns a checklist', afterDelete);
+    check(afterDelete.ok === false || afterDelete.value?.checklist === null, 'checklist.get for the deleted Session no longer returns a checklist', afterDelete);
     cdp2.close();
   } catch (err) {
     failures.push(`exception: ${err?.stack ?? err}`);
