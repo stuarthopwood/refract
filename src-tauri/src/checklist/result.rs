@@ -161,6 +161,7 @@ pub fn message(code: ErrorCode) -> &'static str {
         ErrorCode::ValueRequired => "This item needs a value set by the developer before it can be completed.",
         ErrorCode::ItemComplete => "A completed item is frozen for the agent. Only the developer can reopen it.",
         ErrorCode::ChecklistExists => "An unfinished checklist is active. Pass replace: true to archive it and start a new one.",
+        ErrorCode::NotAgentCompletable => "The agent cannot be asked to complete this item: it is human-owned, not agent-completable, complete or already queued.",
     }
 }
 

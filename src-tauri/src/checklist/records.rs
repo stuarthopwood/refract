@@ -63,9 +63,15 @@ fn has_complete_record(file: &ChecklistFile, entry: &PendingComplete) -> bool {
 }
 
 /// Under the Session lock, before the turn goes out: the item becomes `in_progress`, an entry and
-/// the send record are added. Returns the `turnMarker`, or `None` when there is nothing to start
-/// (the caller checks owner and value rules).
-pub fn accept_complete(file: &mut ChecklistFile, item_id: &str, text: &str) -> Option<u64> {
+/// the send record are added. `build` receives the new `rev` and returns the turn text, so the
+/// envelope carries the `rev` it is recorded under and the record hashes the text actually sent.
+/// Returns the `turnMarker` and that text, or `None` when there is nothing to start (the caller
+/// checks owner and value rules).
+pub fn accept_complete(
+    file: &mut ChecklistFile,
+    item_id: &str,
+    build: impl FnOnce(u64) -> String,
+) -> Option<(u64, String)> {
     let list = file.active.as_mut()?;
     let idx = list.items.iter().position(|i| i.id == item_id)?;
     let checklist_id = list.id.clone();
@@ -77,6 +83,7 @@ pub fn accept_complete(file: &mut ChecklistFile, item_id: &str, text: &str) -> O
         return None;
     }
     let rev = bump_rev(list);
+    let text = build(rev);
     let item = &mut list.items[idx];
     item.previous_status = Some(item.status);
     item.status = ItemStatus::InProgress;
@@ -94,9 +101,9 @@ pub fn accept_complete(file: &mut ChecklistFile, item_id: &str, text: &str) -> O
         item_id,
         rev,
         SendAction::Complete,
-        text,
+        &text,
     );
-    Some(rev)
+    Some((rev, text))
 }
 
 fn restore_previous(list: &mut Checklist, idx: usize) {
