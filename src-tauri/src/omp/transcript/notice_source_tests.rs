@@ -154,6 +154,7 @@ fn command_output_frames_never_reuse_the_id_of_a_kept_high_index_extension_notic
 #[test]
 fn error_and_aborted_notices_never_reuse_the_id_of_a_kept_extension_notice_after_the_user_acted() {
     let mut state = TranscriptState::new();
+    state.mark_user_acted();
     for message in ["a", "b", "c"] {
         state.apply_frame(
             &json!({ "type": "notice", "level": "info", "message": message }),
@@ -164,6 +165,7 @@ fn error_and_aborted_notices_never_reuse_the_id_of_a_kept_extension_notice_after
     state.merge_from_history(&[], true);
     assert_eq!(state.items().len(), 1);
     let kept_id = state.items()[0].id().to_string();
+    assert_eq!(kept_id, "notice-3");
 
     state.apply_frame(&json!({ "type": "command_output", "text": "out" }), true);
     state.apply_frame(
