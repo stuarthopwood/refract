@@ -2,6 +2,7 @@
 // store does I/O.
 
 pub mod agent_ops;
+pub mod developer_ops;
 pub mod ids;
 pub mod model;
 pub mod ops;
