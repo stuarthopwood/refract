@@ -32,6 +32,8 @@ export interface SessionChecklist {
   /** False until the first `checklist.get` answers, so "no checklist yet" is never shown while loading. */
   loaded: boolean
   error: string | null
+  /** The code of the failed `checklist.get`, so the panel can tell a missing tool from a failed read. */
+  errorCode: string | null
   /** Item ids with a `checklist.mutate` in flight. */
   pending: Record<string, true>
   refusals: Record<string, ItemRefusal>
@@ -51,7 +53,7 @@ interface ChecklistState {
   clearReveal: () => void
 }
 
-const EMPTY: SessionChecklist = { checklist: null, toolUnavailable: false, loaded: false, error: null, pending: {}, refusals: {}, announcement: null }
+const EMPTY: SessionChecklist = { checklist: null, toolUnavailable: false, loaded: false, error: null, errorCode: null, pending: {}, refusals: {}, announcement: null }
 
 /** The state for a Session, or the shared empty state before anything arrived. */
 export const selectSessionChecklist = (state: Pick<ChecklistState, 'bySession'>, sessionId: string | null): SessionChecklist =>
@@ -94,6 +96,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       toolUnavailable: announceAs === null ? current.toolUnavailable : false,
       loaded: true,
       error: null,
+      errorCode: null,
       pending: held !== null && held.id !== incoming.id ? {} : current.pending,
       refusals: keepRefusals(current.refusals, held, incoming),
       announcement: message === null ? current.announcement : { message, at: Date.now() }
@@ -108,12 +111,12 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
     hydrate: async (sessionId) => {
       const result = await window.refract.checklist.get(sessionId)
       if (!result.ok) {
-        patch(sessionId, () => ({ loaded: true, error: result.error.message }))
+        patch(sessionId, () => ({ loaded: true, error: result.error.message, errorCode: result.error.code }))
         return
       }
       const { checklist, toolUnavailable } = result.value
       if (checklist !== null) accept(sessionId, checklist, null)
-      patch(sessionId, () => ({ toolUnavailable, loaded: true, error: null }))
+      patch(sessionId, () => ({ toolUnavailable, loaded: true, error: null, errorCode: null }))
     },
     mutateItem: async (sessionId, itemId) => {
       const current = selectSessionChecklist(get(), sessionId)
