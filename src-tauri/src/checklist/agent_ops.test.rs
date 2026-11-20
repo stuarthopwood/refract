@@ -47,6 +47,8 @@ fn agent_cannot_reopen_own_completed_item() {
     )
     .unwrap()
     .checklist;
+    let mut done = done;
+    done.issued_seen_rev = done.rev;
     assert_eq!(get(&done, "i1").completed_by, Some(Actor::Agent));
     assert_eq!(
         code(run(
@@ -184,7 +186,8 @@ fn one_bad_op_applies_nothing() {
 fn stale_base_rev_conflict_applies_nothing() {
     let mut moved = item("i2");
     moved.rev = 5;
-    let list = checklist(vec![item("i1"), moved]);
+    let mut list = checklist(vec![item("i1"), moved]);
+    list.issued_seen_rev = 3;
     let before = list.clone();
     let ops = vec![
         op(json!({"op": "edit", "id": "i1", "text": "x"})),
@@ -196,6 +199,20 @@ fn stale_base_rev_conflict_applies_nothing() {
         (ErrorCode::Conflict, vec!["i2".to_string()])
     );
     assert_eq!(list, before);
+}
+
+#[test]
+fn base_rev_above_issued_seen_rev_still_conflicts_on_unseen_change() {
+    let mut unseen = item("i2");
+    unseen.rev = 5;
+    let mut list = checklist(vec![item("i1"), unseen]);
+    list.issued_seen_rev = 3;
+    let ops = vec![op(json!({"op": "setStatus", "id": "i2", "status": "next"}))];
+    let err = apply_agent(&list, 99, &ops).unwrap_err();
+    assert_eq!(
+        (err.code, err.item_ids),
+        (ErrorCode::Conflict, vec!["i2".to_string()])
+    );
 }
 
 #[test]
@@ -230,6 +247,8 @@ fn agent_cannot_complete_item_it_added_for_human() {
     )
     .unwrap()
     .checklist;
+    let mut added = added;
+    added.issued_seen_rev = added.rev;
     assert_eq!(
         code(run(
             &added,

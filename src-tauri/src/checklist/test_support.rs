@@ -52,6 +52,7 @@ pub fn completed(id: &str, by: Actor) -> ChecklistItem {
 pub fn checklist(items: Vec<ChecklistItem>) -> Checklist {
     let mut list = Checklist::empty("p1".into(), "plan".into(), "now".into());
     list.rev = items.iter().map(|i| i.rev).max().unwrap_or(0);
+    list.issued_seen_rev = list.rev;
     list.next_item_seq = items.len() as u64 + 1;
     list.items = items;
     list

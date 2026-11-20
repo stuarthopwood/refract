@@ -28,13 +28,16 @@ pub fn apply_agent(
     })
 }
 
-/// Checked against the checklist as the agent last saw it: an item stamped above `base_rev` was
-/// changed by someone since, and the whole call fails listing every such item.
+/// Checked against the checklist as the agent last saw it: an item stamped above `base_rev` (capped
+/// at the rev actually issued to the agent) was changed by someone since, and the whole call fails
+/// listing every such item.
 fn check_conflicts(
     list: &Checklist,
     base_rev: u64,
     ops: &[ChecklistOp],
 ) -> Result<(), ChecklistError> {
+    // A rev the agent was never told about must not hide a change it has not seen.
+    let base_rev = base_rev.min(list.issued_seen_rev);
     let mut changed: Vec<String> = Vec::new();
     for id in ops.iter().filter_map(ChecklistOp::target_id) {
         let stale = list.items.iter().any(|i| i.id == id && i.rev > base_rev);

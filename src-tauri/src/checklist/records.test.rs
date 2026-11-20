@@ -155,8 +155,14 @@ fn accepted(status: ItemStatus) -> (ChecklistFile, u64) {
 }
 
 fn agent(file: &mut ChecklistFile, value: serde_json::Value) {
-    let list = file.active.as_ref().unwrap();
-    file.active = Some(apply_agent(list, list.rev, &[op(value)]).unwrap().checklist);
+    let mut list = file.active.clone().unwrap();
+    // The agent has read every rev so far, so its `baseRev` is not clamped below an item's rev.
+    list.issued_seen_rev = list.rev;
+    file.active = Some(
+        apply_agent(&list, list.rev, &[op(value)])
+            .unwrap()
+            .checklist,
+    );
 }
 
 fn developer(file: &mut ChecklistFile, value: serde_json::Value) {
