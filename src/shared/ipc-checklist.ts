@@ -21,7 +21,7 @@ export interface ChecklistNewItem {
   group?: string
 }
 
-/** One developer edit; `after` null or absent places the item first. */
+/** One developer edit; `after` null or absent places the item last. */
 export type ChecklistOp =
   | { op: 'add'; after?: string | null; item: ChecklistNewItem }
   | {
@@ -47,7 +47,11 @@ export interface ChecklistRefusal {
 /** The applied checklist, or a refusal. */
 export type ChecklistMutateResult = Checklist | ChecklistRefusal
 
-/** `checklist:update`: the whole checklist, never a delta; `opened` is set only when the agent created it. */
+/**
+ * `checklist:update`: the whole checklist, never a delta; `opened` is set only when the agent created it.
+ * Payloads can arrive out of order across writers: drop one whose `checklist.rev` is not above the rev
+ * already held for that `checklistId`.
+ */
 export interface ChecklistUpdatePayload {
   sessionId: string
   checklist: Checklist

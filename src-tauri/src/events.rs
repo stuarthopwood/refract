@@ -13,7 +13,7 @@ pub const SESSION_LIST_CHANGED: &str = "session:list-changed";
 pub const SESSION_CONVERSATION_CHANGED: &str = "session:conversation-changed";
 /// Background `sessions.delete` finished: `{ sessionId }`.
 pub const SESSION_DELETED: &str = "sessions:deleted";
-/// The Session's checklist changed: `{ sessionId, checklistId, rev, opened }`, no item text.
+/// The Session's checklist changed: `{ sessionId, checklist, by, opened? }`; carries item text.
 pub const CHECKLIST_UPDATE: &str = "checklist:update";
 /// Background `sessions.delete` failed: `{ sessionId, error: { code, message } }`.
 pub const SESSION_DELETE_FAILED: &str = "sessions:delete-failed";
@@ -426,7 +426,9 @@ fn conversation_changed_payload(session_id: &str) -> serde_json::Value {
     serde_json::json!({ "sessionId": session_id })
 }
 
-/// The `checklist:update` body: the whole checklist, so the renderer never merges.
+/// The `checklist:update` body: the whole checklist, so the renderer never merges. Writers race, so
+/// payloads can arrive out of order: a consumer drops one whose `checklist.rev` is not above the
+/// rev it already holds for that `checklistId`.
 pub fn checklist_update_payload(
     session_id: &str,
     checklist: &crate::checklist::model::Checklist,
