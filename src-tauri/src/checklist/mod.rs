@@ -8,7 +8,10 @@ pub mod developer_ops;
 pub mod ids;
 pub mod model;
 pub mod ops;
+pub mod records;
 pub mod result;
+pub mod store;
+pub mod store_load;
 pub mod validate;
 
 #[cfg(test)]
