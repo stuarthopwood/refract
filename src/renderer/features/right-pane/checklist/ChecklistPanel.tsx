@@ -4,6 +4,7 @@ import { selectSessionChecklist, useChecklistStore, type ItemRefusal } from '@/s
 import type { Checklist } from '../../../../shared/checklist'
 import { ChecklistRow } from './ChecklistRow'
 import { containsFocus, focusFollowsReplace, type PanelView } from './checklist-focus'
+import { useRevealRequest } from './reveal'
 import { useChecklistAnnouncer } from './useChecklistAnnouncer'
 
 interface ChecklistListProps {
@@ -38,6 +39,7 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
   const state = useChecklistStore((s) => selectSessionChecklist(s, sessionId))
   const line = useChecklistAnnouncer(sessionId)
   const regionRef = useRef<HTMLElement>(null)
+  const scrollerRef = useRef<HTMLDivElement>(null)
   const { checklist, toolUnavailable, loaded, error, pending, refusals } = state
 
   const view: PanelView = { sessionId, checklistId: checklist?.id ?? null }
@@ -52,6 +54,8 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
     regionRef.current?.focus()
   }, [view.checklistId])
 
+  useRevealRequest({ sessionId, checklistId: view.checklistId, loaded }, scrollerRef)
+
   const done = checklist?.items.filter((item) => item.status === 'complete').length ?? 0
   const explained = error !== null || toolUnavailable
   return (
@@ -59,7 +63,7 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         <span key={line.serial}>{line.message}</span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto pb-2">
+      <div ref={scrollerRef} className="min-h-0 flex-1 overflow-y-auto pb-2">
         {error !== null && <Notice title="Couldn't load the checklist">{error}</Notice>}
         {toolUnavailable && <Notice title="Checklist tool unavailable">The agent's checklist tool was refused for this session, so it cannot create or update a checklist.</Notice>}
         {checklist !== null && (
