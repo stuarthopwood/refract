@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChecklistUpdatePayload } from '../../shared/ipc-checklist'
 import { makeChecklist } from '../features/right-pane/checklist/checklist-fixtures'
 import { initChecklistSubscription } from './checklist-subscription'
+import { useSessionsStore } from './sessions-store'
 import { selectSessionChecklist, useChecklistStore } from './checklist-store'
 import { useDocumentTabsStore } from './document-tabs-store'
 import { useRightPaneStore } from './right-pane-store'
@@ -73,5 +74,17 @@ describe('initChecklistSubscription', () => {
     get.mockClear()
     useSplitStore.setState({ dividerPercent: 40 })
     expect(get).not.toHaveBeenCalled()
+  })
+
+  it('refetches_the_front_session_when_its_status_changes', () => {
+    // A launch registers host tools after the first hydrate, so a refusal only shows on a later fetch.
+    useSessionsStore.setState({ sessions: [{ id: 's1', status: 'starting' } as never] })
+    get.mockClear()
+    useSessionsStore.setState({ sessions: [{ id: 's1', status: 'idle' } as never] })
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get).toHaveBeenCalledWith('s1')
+    // Same status again, or another Session's change, must not refetch.
+    useSessionsStore.setState({ sessions: [{ id: 's1', status: 'idle' } as never, { id: 's2', status: 'idle' } as never] })
+    expect(get).toHaveBeenCalledTimes(1)
   })
 })

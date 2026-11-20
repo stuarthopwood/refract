@@ -220,7 +220,9 @@ async function main() {
     debugLog(`pid=${process.pid} RECV ${JSON.stringify(cmd)} (waitingFor=${JSON.stringify(waitingFor)})`);
     if (hostToolRecord && (cmd.type === 'set_host_tools' || cmd.type === 'host_tool_result')) {
       appendFileSyncTop(hostToolRecord, `${JSON.stringify({ pid: process.pid, frame: cmd })}\n`);
-      if (cmd.type === 'set_host_tools') emit({ id: cmd.id, type: 'response', command: 'set_host_tools', success: true });
+      // Refusal is opt-in per launch by the file's existence at registration time, so one app run can hold an accepted and a refused Session (#2012).
+      const refuse = process.env.REFRACT_FAKE_OMP_HOST_TOOL_REFUSE_FILE && existsSync(process.env.REFRACT_FAKE_OMP_HOST_TOOL_REFUSE_FILE);
+      if (cmd.type === 'set_host_tools') emit({ id: cmd.id, type: 'response', command: 'set_host_tools', success: !refuse, ...(refuse ? { error: 'refused by fake omp' } : {}) });
       return;
     }
     if (serve) {
