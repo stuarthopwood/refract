@@ -174,21 +174,29 @@ _Avoid_: Stage, step
 The muted list of the agent's pending **Todo phases** shown after a turn's **Stages** (issue #941). Live state only; a reopened Conversation does not show it.
 _Avoid_: Upcoming stages, queue
 
-**Plan**:
-A durable, ordered list of steps that the agent and the developer both edit, kept in the right pane (epic #2015, protocol in `docs/design/interactive-plan-protocol.md`, ADR 0011). One active **Plan** per **Session**; Refract stores it, the agent changes it through the `refract_plan` tool within limits (it cannot edit what the developer wrote, and cannot complete a human-owned step), and the developer ticks items, gives values, asks about a step or asks the agent to complete it. It is not the agent's own todo, does not replace the Todo panel, and is not a working mode (**Plan** mode).
-_Avoid_: Todo list, checklist, task list
+**Checklist**:
+A durable, ordered list of steps that the agent and the developer both edit, kept in the right pane (epic #2015, protocol in `docs/design/checklist-protocol.md`, ADR 0011). One active **Checklist** per **Session**; Refract stores it, the agent changes it through the **Checklist tool** within limits (it cannot edit what the developer wrote, cannot complete a human-owned step, and cannot change a completed item), and the developer ticks items, gives values, asks about a step or asks the agent to complete it. It is not the agent's own todo, does not replace the Todo panel, and is not a **Working mode**.
+_Avoid_: Plan (for the Checklist), todo list, task list
 
-**Plan item**:
-One step of a **Plan**, with a stable id that is never reused, a status, an owner (agent, human or either), an optional value and a flag for whether the agent can complete it. Ids are per **Session**. Messages about a step name its id. A **Plan item** is not a **Todo task**.
-_Avoid_: Todo task, task, step (in UI text)
+**Checklist item**:
+One step of a **Checklist**, with a stable id that is never reused, a status, an owner (agent, human or either), an optional value and a flag for whether the agent can complete it. The owner, the value requirement and the agent-completable flag are fixed when the item is created; to change one, remove the item and add it again. A completed item is frozen for the agent, and only the developer can reopen it. Ids are per **Session**. Messages about a step name its id. A **Checklist item** is not a **Todo task**.
+_Avoid_: Todo task, task, step (in UI text), plan item
 
 **Developer-owned item**:
-A **Plan item** the developer created or edited, or one holding a value the developer gave. The agent cannot edit or remove it, cannot overwrite its value, and cannot complete a human-owned one (spec 138, #2011).
+A **Checklist item** the developer created or edited, or one holding a value the developer gave. The agent cannot edit or remove it, cannot overwrite its value, and cannot complete a human-owned one (spec 138, #2011).
 _Avoid_: Locked item, protected item
 
-**Plan revision**:
-The integer that rises by one on every accepted change to a **Plan**, by the agent or the developer. The agent quotes the revision it last saw so a stale edit is refused instead of overwriting newer work (spec 138, #2011).
+**Checklist revision**:
+The integer that rises by one on every accepted change to a **Checklist**, by the agent or the developer. The agent quotes the revision it last saw so a stale edit is refused instead of overwriting newer work (spec 138, #2011).
 _Avoid_: Version, sequence number
+
+**Checklist tool**:
+`refract_checklist`, the Refract host tool through which the agent creates, updates and reads the **Checklist** (epic #2015, ADR 0011). It takes no session id; it is bound to the calling **Session**. The developer never goes through it: ticks and values use Refract IPC.
+_Avoid_: Plan tool, todo tool
+
+**Working mode**:
+How a **Session** is told to work: Refract's `WorkingMode` in `src/shared/workingMode.ts`, one of `interactive`, `plan`, `grill` or `away`. Plan mode is one value of it. "Plan" means only this mode; the **Checklist** is a separate feature. OMP also has its own plan mode, which is a different thing from Refract's.
+_Avoid_: Plan (for the Checklist), OMP plan mode (for Refract's plan mode), agent mode
 
 **Subagent chain**:
 The per-turn summary row listing a turn's **Stages** and their agents with status and duration (issue #563); its stage-to-stage list is also connected by a **Spine** (issue #565).
