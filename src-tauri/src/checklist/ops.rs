@@ -25,9 +25,25 @@ pub enum ErrorCode {
     HumanOwned,
     ValueRequired,
     ItemComplete,
+    ChecklistExists,
 }
 
 impl ErrorCode {
+    pub const ALL: [Self; 12] = [
+        Self::InvalidInput,
+        Self::TooLarge,
+        Self::UnknownItem,
+        Self::ItemRemoved,
+        Self::Conflict,
+        Self::ItemChanged,
+        Self::DeveloperItem,
+        Self::FieldLocked,
+        Self::HumanOwned,
+        Self::ValueRequired,
+        Self::ItemComplete,
+        Self::ChecklistExists,
+    ];
+
     pub fn as_str(self) -> &'static str {
         match self {
             Self::InvalidInput => "invalid_input",
@@ -41,6 +57,7 @@ impl ErrorCode {
             Self::HumanOwned => "human_owned",
             Self::ValueRequired => "value_required",
             Self::ItemComplete => "item_complete",
+            Self::ChecklistExists => "checklist_exists",
         }
     }
 }
