@@ -17,6 +17,7 @@ use crate::store::settings::{ApprovalMode, SettingsStore};
 mod chat;
 mod chat_restore;
 mod checklist_notice;
+mod checklist_pending;
 mod command_wait;
 mod commands;
 mod conversations;

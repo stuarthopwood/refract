@@ -79,6 +79,9 @@ impl SessionAgent {
             "extension_ui_request" => self.handle_extension_ui_request(&frame).await,
             "message_start" | "message_update" | "message_end" => {
                 self.apply_transcript_frame(&frame).await;
+                if frame_type == "message_start" {
+                    self.start_from_frame(&frame).await;
+                }
             }
             // The advisor module decides whether a command_output is a silent probe reply to swallow. (#937)
             "command_output" => {
@@ -213,6 +216,7 @@ impl SessionAgent {
             (state.turn_generation, state.shutdown_generation)
         };
         self.settle_turn_pending().await;
+        self.settle_checklist_turn().await;
         self.emit_status().await;
         crate::session::token_guard::on_turn_settled(self, generation).await;
         crate::session::working_mode::on_turn_settled(self).await;

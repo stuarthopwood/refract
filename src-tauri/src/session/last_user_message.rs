@@ -26,7 +26,7 @@ pub fn one_line(text: &str) -> Option<String> {
     Some(format!("{}…", cut.trim_end()))
 }
 
-fn user_text(content: &Value) -> String {
+pub(crate) fn user_text(content: &Value) -> String {
     match content {
         Value::String(text) => text.clone(),
         Value::Array(parts) => parts
