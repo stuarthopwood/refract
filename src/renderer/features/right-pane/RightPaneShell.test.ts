@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useRightPaneStore, useSessionsStore } from '@/state'
-import type { PersonalSession } from '../../../shared/model'
+import type { SessionSummary } from '../../../shared/ipc'
 import { RightPaneShell } from './RightPaneShell'
 
 // The state barrel registers dev stores on `window` as it loads; hoisting runs this before the imports above.
@@ -15,7 +15,7 @@ vi.hoisted(() => {
 
 // Server rendering reads the initial snapshot, so patch that as well as the live state.
 function seed(): void {
-  const personal: PersonalSession = {
+  const personal: SessionSummary = {
     id: 'personal-1',
     name: 'Personal',
     kind: 'personal',
@@ -28,7 +28,11 @@ function seed(): void {
     lastMessageCount: null,
     createdAt: '2026-11-20T00:00:00.000Z',
     lastActivityAt: '2026-11-20T00:00:00.000Z',
-    archivedAt: null
+    archivedAt: null,
+    status: 'idle',
+    unread: false,
+    launchedMode: 'ask',
+    pendingMode: null
   }
   const panes = { open: true, openPanelIds: ['checklist' as const], activePanelId: 'checklist' as const }
   const sessions = { sessions: [personal] }
