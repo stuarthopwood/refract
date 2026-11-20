@@ -46,13 +46,13 @@ async fn a_rejected_prompt_keeps_the_notice_for_the_next_send() {
         ..Stub::default()
     })
     .await;
-    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: boom".to_string());
+    fx.agent.state.lock().await.pending_agent_notice = vec!["Handoff failed: boom".to_string()];
 
     let err = fx.agent.send("first".to_string(), None).await.unwrap_err();
     assert_eq!(err.code, "prompt-failed");
     assert_eq!(
-        fx.agent.state.lock().await.pending_agent_notice.as_deref(),
-        Some("Handoff failed: boom")
+        fx.agent.state.lock().await.pending_agent_notice,
+        ["Handoff failed: boom"]
     );
 
     fx.agent.send("second".to_string(), None).await.unwrap();
@@ -67,6 +67,6 @@ async fn a_rejected_prompt_keeps_the_notice_for_the_next_send() {
     // The agent never saw the first prompt, so the second one carries the notice.
     assert_eq!(prompts.len(), 2);
     assert_eq!(prompts[1], "[Refract] Handoff failed: boom\n\nsecond");
-    assert!(fx.agent.state.lock().await.pending_agent_notice.is_none());
+    assert!(fx.agent.state.lock().await.pending_agent_notice.is_empty());
     fx.finish().await;
 }

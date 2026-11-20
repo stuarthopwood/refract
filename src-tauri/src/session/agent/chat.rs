@@ -77,7 +77,7 @@ impl SessionAgent {
         decorate: bool,
     ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
-        let (proc, working, notice) = {
+        let (proc, working, notices) = {
             let idle_with_process = {
                 let state = self.state.lock().await;
                 state.status == SessionStatus::Idle && state.process.is_some()
@@ -103,22 +103,19 @@ impl SessionAgent {
                 SessionStatus::Working | SessionStatus::NeedsYou
             );
             // Only the user's own prompts carry it; a Session envelope reaches its target verbatim.
-            let notice = if decorate {
+            let notices = if decorate {
                 super::handoff_queue::take_pending_notice(&mut state)
             } else {
-                None
+                Vec::new()
             };
-            (proc, working, notice)
+            (proc, working, notices)
         };
         let text = if should_decorate(working, force_follow_up, decorate) {
             crate::session::working_mode::decorate_prompt(self, text).await
         } else {
             text
         };
-        let text = match &notice {
-            Some(notice) => super::handoff_queue::with_notice(notice, &text),
-            None => text,
-        };
+        let text = super::handoff_queue::with_notice(&notices, &text);
         let mut cmd = json!({ "type": "prompt", "message": text });
         if let Some(images) = images {
             if !images.is_empty() {
@@ -132,14 +129,9 @@ impl SessionAgent {
         let accepted =
             matches!(&sent, Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true));
         if !accepted {
-            // The agent never saw it, so the next prompt carries it instead.
-            if let Some(notice) = notice {
-                self.state
-                    .lock()
-                    .await
-                    .pending_agent_notice
-                    .get_or_insert(notice);
-            }
+            // The agent never saw it, so the next prompt carries the lines instead, ahead of any newer one.
+            let mut state = self.state.lock().await;
+            state.pending_agent_notice.splice(0..0, notices);
         }
         let res = sent.map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         if !accepted {

@@ -68,14 +68,18 @@ pub(super) fn clear(state: &mut AgentState) {
     state.queued_handoff = None;
 }
 
-/// Takes the one-shot notice meant for the agent's next user prompt.
-pub(super) fn take_pending_notice(state: &mut AgentState) -> Option<String> {
-    state.pending_agent_notice.take()
+/// Takes every line meant for the agent's next user prompt, oldest first.
+pub(super) fn take_pending_notice(state: &mut AgentState) -> Vec<String> {
+    std::mem::take(&mut state.pending_agent_notice)
 }
 
-/// Puts the notice in front of the prompt text; the transcript keeps the user's own words.
-pub(super) fn with_notice(notice: &str, text: &str) -> String {
-    format!("[Refract] {notice}\n\n{text}")
+/// Puts the lines in front of the prompt text; the transcript keeps the user's own words.
+pub(super) fn with_notice(lines: &[String], text: &str) -> String {
+    if lines.is_empty() {
+        return text.to_string();
+    }
+    let notice: Vec<String> = lines.iter().map(|line| format!("[Refract] {line}")).collect();
+    format!("{}\n\n{text}", notice.join("\n"))
 }
 
 /// The first try plus one retry. A failure after the Conversation started retries the send only,
@@ -294,7 +298,7 @@ impl SessionAgent {
     /// Shows the developer the notice and keeps it for the agent's next prompt.
     async fn tell_agent_why(&self, notice: String) {
         self.append_notice(notice.clone(), "error").await;
-        self.state.lock().await.pending_agent_notice = Some(notice);
+        self.state.lock().await.pending_agent_notice.push(notice);
     }
 
     /// Why the action queued mid-turn may no longer run: the call-time target checks again, since
@@ -419,3 +423,7 @@ mod gate_tests;
 #[cfg(test)]
 #[path = "handoff_queue_turn.test.rs"]
 mod turn_tests;
+
+#[cfg(test)]
+#[path = "notice_lines.test.rs"]
+mod notice_tests;

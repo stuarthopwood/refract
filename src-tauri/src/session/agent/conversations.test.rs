@@ -147,24 +147,24 @@ async fn opening_an_unlisted_file_leaves_the_flag_false() {
 #[tokio::test]
 async fn starting_a_new_conversation_drops_a_pending_handoff_notice() {
     let (fx, _dir) = idle_on("a.jsonl").await;
-    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: boom".to_string());
+    fx.agent.state.lock().await.pending_agent_notice = vec!["Handoff failed: boom".to_string()];
 
     fx.agent.start_new_conversation().await.unwrap();
 
-    assert!(fx.agent.state.lock().await.pending_agent_notice.is_none());
+    assert!(fx.agent.state.lock().await.pending_agent_notice.is_empty());
     fx.finish().await;
 }
 
 #[tokio::test]
 async fn opening_a_conversation_drops_a_pending_handoff_notice() {
     let (fx, _dir) = idle_on("plain.jsonl").await;
-    fx.agent.state.lock().await.pending_agent_notice = Some("Handoff failed: boom".to_string());
+    fx.agent.state.lock().await.pending_agent_notice = vec!["Handoff failed: boom".to_string()];
 
     fx.agent
         .open_conversation("plain.jsonl".into())
         .await
         .unwrap();
 
-    assert!(fx.agent.state.lock().await.pending_agent_notice.is_none());
+    assert!(fx.agent.state.lock().await.pending_agent_notice.is_empty());
     fx.finish().await;
 }

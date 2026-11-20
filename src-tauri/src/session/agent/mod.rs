@@ -106,7 +106,7 @@ struct AgentState {
     // Filled by the Session tools; run by the settle handler, dropped by the stop paths (#1861).
     queued_handoff: Option<QueuedHandoff>,
     // Told to the agent in front of the next user prompt, then cleared (#1861).
-    pending_agent_notice: Option<String>,
+    pending_agent_notice: Vec<String>,
     pause: pause::State,
 }
 
@@ -201,7 +201,7 @@ impl SessionAgent {
                 working_mode: Default::default(),
                 handoff: Default::default(),
                 queued_handoff: None,
-                pending_agent_notice: None,
+                pending_agent_notice: Vec::new(),
                 pause: Default::default(),
             }),
             status_tx,
