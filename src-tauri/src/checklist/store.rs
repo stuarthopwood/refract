@@ -11,6 +11,7 @@ use tokio::sync::Mutex as AsyncMutex;
 
 use super::model::ChecklistFile;
 use super::ops::ChecklistError;
+use super::records::settle_all;
 use super::store_load::{load, LoadError};
 use crate::store::atomic_json::write_json_file;
 
@@ -175,10 +176,12 @@ async fn ensure_loaded(slot: &mut Slot, path: &std::path::Path) -> Result<(), St
         Slot::Tombstoned => Err(StoreError::Tombstoned),
         Slot::Loaded(_) => Ok(()),
         Slot::Unloaded => {
-            let file = load(path).await.map_err(|e| match e {
+            let mut file = load(path).await.map_err(|e| match e {
                 LoadError::Unsupported => StoreError::StoreUnsupported,
                 LoadError::Io(err) => StoreError::StoreFailed(err),
             })?;
+            // A first load means the process just started, so no turn can still be pending.
+            settle_all(&mut file);
             *slot = Slot::Loaded(Box::new(file));
             Ok(())
         }
