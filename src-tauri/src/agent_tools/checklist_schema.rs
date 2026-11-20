@@ -14,7 +14,8 @@ developer changes in `userChanges` reach you. This is not the working mode's pla
 replace it; the OMP todo is for your own scratch tracking. Give the developer the items only they \
 can do by setting `owner` to `human` when you create or add them (`agent` is the default, `either` \
 lets both complete it). You cannot edit or remove what the developer wrote, or complete a step \
-that is theirs."
+that is theirs. If this Session is in plan mode and the call is refused or fails, leave plan mode to \
+edit the checklist; the developer can still tick it in the panel."
 }
 
 fn owner() -> Value {
