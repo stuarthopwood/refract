@@ -1,5 +1,51 @@
 # Changelog
 
+## v0.38.0 (2026-11-19)
+
+### Features
+
+- feat(sessions): agent tools to archive, stop, pause, resume and delete Sessions (#1860) (https://github.com/stuarthopwood/refract/pull/2057)
+- feat(themes): add Amber Obsidian theme (#fcc527 accents on the Obsidian palette) (https://github.com/stuarthopwood/refract/pull/2086)
+- feat(sessions): show nested Sessions as a collapsible tree in the Session list (https://github.com/stuarthopwood/refract/pull/2084)
+- feat(agent-tools): list, start and switch Conversations with a handoff (#1861) (https://github.com/stuarthopwood/refract/pull/2102)
+- feat(right-pane): open files and diffs as tabs, collapsible chat, wider pane (https://github.com/stuarthopwood/refract/pull/2107)
+
+### Fixes
+
+- fix(scripts): skip docs/design mockup bundles in check:indent (https://github.com/stuarthopwood/refract/pull/2077)
+- fix(settings): show real save status on Settings rows and while the migration holds the lock (https://github.com/stuarthopwood/refract/pull/2080)
+- fix(usage): count a Conversation's subagent and advisor spend in its total (#2070) (https://github.com/stuarthopwood/refract/pull/2103)
+
+### Other
+
+- docs(plan): add #2041 spellcheck, #2042 watermark upload, #2043 ref-link hash, #2044 inference icon (https://github.com/stuarthopwood/refract/pull/2045)
+- docs(plan): add pre-installed commands/skills/hooks epic #2050 and children #2046-#2049 (https://github.com/stuarthopwood/refract/pull/2051)
+- docs(plan): add #2053 tool-call error categorisation and refract_* auto-repair (https://github.com/stuarthopwood/refract/pull/2054)
+- docs(plan): add #2055 consistent chat card transparency for watermark (https://github.com/stuarthopwood/refract/pull/2056)
+- docs(plan): add #2058 fix code-snippet ligature overlap (https://github.com/stuarthopwood/refract/pull/2059)
+- docs(plan): add #2062 restyle child-Session preamble as chip and trim tokens (https://github.com/stuarthopwood/refract/pull/2063)
+- docs(sessions): spec for #1861 conversation handoff tools (https://github.com/stuarthopwood/refract/pull/2064)
+- docs/plan 2026 11 18 reprioritise (https://github.com/stuarthopwood/refract/pull/2065)
+- docs(settings): spec for #2002 #1940 #1765 save status on Settings rows (https://github.com/stuarthopwood/refract/pull/2066)
+- docs: add Ask redesign design reference bundle (https://github.com/stuarthopwood/refract/pull/2067)
+- docs(sessions): spec for #1862 session list tree for nested Sessions (https://github.com/stuarthopwood/refract/pull/2068)
+- docs(design): add subagents chat card redesign reference bundle for #1931 (https://github.com/stuarthopwood/refract/pull/2069)
+- docs/plan 2026 11 18 usage bug (https://github.com/stuarthopwood/refract/pull/2071)
+- docs(plan): close #706 as superseded and add #2072 (https://github.com/stuarthopwood/refract/pull/2073)
+- docs(plan): bump #2070 above DD themes (daily-driver usage bug) (https://github.com/stuarthopwood/refract/pull/2074)
+- docs(plan): add #2075 right-pane file/diff tabs; supersede #1102 and #732 (https://github.com/stuarthopwood/refract/pull/2076)
+- docs/plan 2026 11 18 personas (https://github.com/stuarthopwood/refract/pull/2079)
+- docs(context): tighten CONTEXT.md wording (maintenance sweep, every entry preserved) (https://github.com/stuarthopwood/refract/pull/2081)
+- docs(plan): add #2082 Forbid guard test follow-up (https://github.com/stuarthopwood/refract/pull/2083)
+- docs(plan): add #2085 Session tree review follow-ups (https://github.com/stuarthopwood/refract/pull/2087)
+- docs(plan): add #2088 extension and custom slash commands refused (https://github.com/stuarthopwood/refract/pull/2089)
+- fix/2088 extension slash commands (https://github.com/stuarthopwood/refract/pull/2090)
+- docs: file OMP v19.0.0 review outcomes and fix stale artifact:// comment (https://github.com/stuarthopwood/refract/pull/2092)
+- docs(plan): file extension UI epic #2093 with slices, glossary, and ADR (https://github.com/stuarthopwood/refract/pull/2100)
+- docs(plan-protocol): design the interactive plan protocol (#2010) (https://github.com/stuarthopwood/refract/pull/2104)
+- docs(plan-store): plan the interactive plan store (#2011) (https://github.com/stuarthopwood/refract/pull/2105)
+- docs(plan): add #2106 right pane tab strip follow-ups (https://github.com/stuarthopwood/refract/pull/2108)
+
 ## v0.37.0 (2026-11-17)
 
 ### Features
