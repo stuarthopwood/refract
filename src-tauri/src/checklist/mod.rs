@@ -3,4 +3,8 @@
 
 pub mod ids;
 pub mod model;
+pub mod ops;
 pub mod validate;
+
+#[cfg(test)]
+mod test_support;
