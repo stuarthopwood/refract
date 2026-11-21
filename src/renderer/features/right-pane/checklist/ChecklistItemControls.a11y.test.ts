@@ -49,11 +49,11 @@ const focusables = (markup: string): Focusable[] => {
   const found: Focusable[] = []
   const pattern = /<(button|textarea|input|a)\b([^>]*)>([\s\S]*?)(?=<(?:button|textarea|input|a)\b|<\/form>|$)/g
   for (const match of markup.matchAll(pattern)) {
-    const attrs = match[2]
+    const attrs = match[2] ?? ''
     if (/\baria-hidden="true"/.test(attrs) && /tabindex="-1"/.test(attrs)) continue
     const label = /aria-label="([^"]*)"/.exec(attrs)?.[1]
-    const inner = textOf(match[3].split(/<\/button>|<\/textarea>/)[0]).trim()
-    found.push({ tag: match[1], name: label ?? inner })
+    const inner = textOf((match[3] ?? '').split(/<\/button>|<\/textarea>/)[0] ?? '').trim()
+    found.push({ tag: match[1] ?? '', name: label ?? inner })
   }
   return found
 }
