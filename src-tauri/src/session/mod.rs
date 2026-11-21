@@ -3,6 +3,7 @@
 pub mod advisor;
 pub mod agent;
 mod ai_credits;
+pub(crate) mod checklist_source;
 pub(crate) mod github_writes;
 mod handoff_note;
 pub mod health;
