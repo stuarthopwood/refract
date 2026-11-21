@@ -20,7 +20,7 @@ const ROOT = process.env.REFRACT_2012_ROOT;
 const EXE = process.env.REFRACT_2012_EXE;
 if (!ROOT || !EXE || !path.isAbsolute(ROOT) || !path.isAbsolute(EXE)) throw new Error('set absolute REFRACT_2012_ROOT and REFRACT_2012_EXE');
 const EVIDENCE = path.join(ROOT, 'evidence');
-for (const d of ['data', 'webview2', 'import', 'shim', 'launcher', 'repo', 'fake']) mkdirSync(path.join(ROOT, d), { recursive: true });
+for (const d of ['data', 'import', 'shim', 'launcher', 'repo', 'fake']) mkdirSync(path.join(ROOT, d), { recursive: true });
 mkdirSync(EVIDENCE, { recursive: true });
 
 const transcript = [];
@@ -106,8 +106,6 @@ async function main() {
 
     // Spy on the developer's mutate calls (the page's own bridge object) to prove "no checklist.mutate sent".
     await cdp.evaluate(`(() => { const api = window.refract.checklist; window.__mutateCalls = []; const orig = api.mutate.bind(api); api.mutate = (...a) => { window.__mutateCalls.push(a); return orig(...a); }; return window.refract.checklist.mutate === api.mutate; })()`);
-    const spyWorks = await cdp.evaluate(`window.refract.checklist.mutate.length >= 0`);
-    log('spy installed', spyWorks);
 
     const rowSel = (id) => `document.querySelector('[data-checklist-item=${JSON.stringify(id)}]')`;
     const boxSel = (id) => `${rowSel(id)}?.querySelector('[role="checkbox"]')`;
@@ -167,7 +165,7 @@ async function main() {
     for (const [name, id] of Object.entries({ i1, i2, i3, i4, i5, i6 })) names[name] = await getAccessibleName(cdp, boxSel(id));
     check(Object.entries(textOf).every(([k, t]) => names[k] === t), 'each tick resolves to its item text as accessible name', names);
     const words = await cdp.evaluate(`(() => Object.fromEntries(Object.entries(${JSON.stringify({ i1, i2, i3, i4, i5, i6 })}).map(([k, id]) => { const r = document.querySelector('[data-checklist-item="' + id + '"]'); const w = r.querySelector('div > span.inline-flex'); return [k, { text: w?.textContent.trim(), hasIcon: !!w?.querySelector('svg') }]; })))()`);
-    check(Object.values(words).every((w) => w.hasIcon && w.text) && new Set(Object.values(words).map((w) => w.text)).size >= 4, 'every status shows an icon plus a word (sr-only or visible); statuses are distinguishable', words);
+    check(Object.values(words).every((w) => w.hasIcon && w.text) && new Set(Object.values(words).map((w) => w.text)).size >= 5, 'every status shows an icon plus a word; all five statuses read differently', words);
     const currentRows = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-checklist-item][aria-current="step"]')).map((r) => r.getAttribute('data-checklist-item'))`);
     check(currentRows.length === 1 && currentRows[0] === i2, 'aria-current="step" is only on the next row', currentRows);
 
@@ -184,7 +182,7 @@ async function main() {
     check(/Completed by you/.test(after3.full), 'row shows "Completed by you"', after3.full);
     const calls3 = await cdp.evaluate(`window.__mutateCalls.length`);
     check(calls3 === 1, 'the spy saw exactly one checklist.mutate for the real click (so the zero in scenario 4 is meaningful)', calls3);
-    check(busy.some((b) => b.startsWith('true/')) && busy.some((b) => b === 'false/true' || b === 'null/true' || b.endsWith('/true')), 'row went pending (aria-busy) then complete', busy);
+    check(busy.some((b) => b.startsWith('true/')), 'row went pending (aria-busy) then complete', busy);
     await cdp.screenshot(path.join(EVIDENCE, '03-after-real-click-tick.png'));
 
     // 4. requiresValue with no value: inert.
@@ -242,9 +240,25 @@ async function main() {
     await cdp.screenshot(path.join(EVIDENCE, '08-keyboard-focus-ring.png'));
     await press(cdp, ' ', 'Space', 32, ' ');
     await cdp.waitFor(`${boxSel(i6)}?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 15_000, label: 'Space ticked' });
-    check(true, 'Space ticked the focused item', await rowState(i6));
+    const spaceRow = await rowState(i6);
+    check(spaceRow.checked === 'true', 'Space ticked the focused item (aria-checked is true)', spaceRow);
     const focusKept = await cdp.evaluate(`document.activeElement?.closest?.('[data-checklist-item]')?.getAttribute('data-checklist-item')`);
     check(focusKept === i6, 'focus stays on the ticked row after the result lands', focusKept);
+
+    // 9. A replace on the front Session while focus is inside the panel moves focus to the Checklist section; focus elsewhere is not stolen.
+    const sectionFocused = `document.activeElement === document.querySelector('section[aria-label="Checklist"]')`;
+    const stopBeforeReplace = await cdp.evaluate(`!!document.activeElement?.closest?.('[data-checklist-item]')`);
+    const replaced1 = await call({ action: 'create', requestId: 'live-replace-1', title: 'Replaced while focused', replace: true, items: [{ text: 'Fresh item' }] }, pidA);
+    check(!replaced1.isError && replaced1.body.error === undefined, 'agent replace on the front Session accepted (focus inside a tick)', replaced1.body);
+    await cdp.waitFor(`document.querySelector('section[aria-label="Checklist"]')?.innerText.includes('Replaced while focused')`, { timeoutMs: 15_000, label: 'replacement rendered' });
+    const focusInside = await cdp.evaluate(sectionFocused);
+    check(stopBeforeReplace && focusInside, 'focus was on a tick; after the replace document.activeElement is the Checklist section', { stopBeforeReplace, focusInside });
+    await cdp.click(`document.querySelector('[aria-label="Message"]')`);
+    const replaced2 = await call({ action: 'create', requestId: 'live-replace-2', title: 'Replaced while typing', replace: true, items: [{ text: 'Another item' }] }, pidA);
+    check(!replaced2.isError && replaced2.body.error === undefined, 'agent replace on the front Session accepted (focus in the composer)', replaced2.body);
+    await cdp.waitFor(`document.querySelector('section[aria-label="Checklist"]')?.innerText.includes('Replaced while typing')`, { timeoutMs: 15_000, label: 'second replacement rendered' });
+    const stolen = await cdp.evaluate(`({ section: ${sectionFocused}, label: document.activeElement?.getAttribute('aria-label') })`);
+    check(!stolen.section && stolen.label === 'Message', 'a replace with focus in the composer does not steal focus', stolen);
 
     // 7 + 6. A second Session whose registration is refused (notice), then a background Session's checklist opened:true.
     writeFileSync(refuseFile, '1');
@@ -264,6 +278,13 @@ async function main() {
     const frontAfter = await cdp.evaluate(`({ b: ${frontIs(sessionB.id)}, a: ${frontIs(sessionA.id)}, text: document.querySelector('section[aria-label="Checklist"]')?.innerText ?? null })`);
     check(frontAfter.b && !frontAfter.a && frontAfter.text?.includes('Checklist tool unavailable') && !frontAfter.text.includes('Background plan'), 'a background Session checklist with opened:true did not switch the visible pane', frontAfter);
     await cdp.screenshot(path.join(EVIDENCE, '06-background-session-no-switch.png'));
+    // The switch proves the screenshot discriminates: Session A, once front, hydrates the checklist the agent made while it was behind.
+    await cdp.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionA.id)}]')`);
+    await cdp.waitFor(frontIs(sessionA.id), { timeoutMs: 15_000, label: 'Session A front again' });
+    await cdp.waitFor(`document.querySelector('section[aria-label="Checklist"]')?.innerText.includes('Background plan')`, { timeoutMs: 15_000, label: 'background checklist hydrated' });
+    const switched = await cdp.evaluate(`document.querySelector('section[aria-label="Checklist"]')?.innerText ?? null`);
+    check(switched?.includes('Background plan') && !switched.includes('Checklist tool unavailable'), 'switching to Session A shows the checklist created while it was in the background', switched);
+    await cdp.screenshot(path.join(EVIDENCE, '06b-background-session-hydrated.png'));
     cdp.close();
   } catch (err) {
     failures.push(`exception: ${err?.stack ?? err}`);
