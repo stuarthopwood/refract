@@ -207,7 +207,7 @@ async function main() {
     const valueMode = await cdp.evaluate(`${form(i3)}.querySelector('[role="radio"][aria-checked="true"]')?.textContent.trim()`);
     check(valueMode === 'Provide a value', '"Needs a value" opens the form on Provide a value', valueMode);
     const doBefore = await doState(i3);
-    check(doBefore?.ariaDisabled === 'true' && /Add a value first/.test(await cdp.evaluate(`${row(i3)}.innerText`)), 'before a value "Do this item" is aria-disabled with the reason beside it', doBefore);
+    check(doBefore?.ariaDisabled === 'true' && /needs a value before it can be ticked/i.test(await cdp.evaluate(`${row(i3)}.innerText`)), 'before a value "Do this item" is aria-disabled with the row\'s own needs-a-value line beside it', doBefore);
     await type(i3, 'tok-live-2013');
     await ctrlEnter();
     const valuePrompts = await waitPrompts(pid, 2, 'value');
@@ -270,8 +270,8 @@ async function main() {
     await shot('06-held-line.png');
     await cdp.evaluate(`window.refract.chat.resume(${JSON.stringify(sid)})`);
     const resumed = await waitPrompts(pid, countPaused + 1, 'after resume');
-    // A held turn is delivered with the working-mode note ahead of it (#1858); the envelope itself stays whole at the end.
-    check(/\n<checklist-item checklist="p1" item="i1" rev="\d+" action="ask">\nAsk while paused\n<\/checklist-item>$/.test(resumed[countPaused].message), 'resume delivered the held ask to omp (the envelope intact after the working-mode note)', resumed[countPaused]);
+    // A held turn resumes verbatim: the envelope is the whole message (#2013 fix 73bfee03).
+    check(/^<checklist-item checklist="p1" item="i1" rev="\d+" action="ask">\nAsk while paused\n<\/checklist-item>$/.test(resumed[countPaused].message), 'resume delivered the held ask to omp verbatim (the envelope is the whole message)', resumed[countPaused]);
     await waitForSessionStatus(cdp, sid, 'idle', { timeoutMs: 30_000 });
 
     // 7. Refusals: omp refuses; the draft stays, the alert names what is safe.
@@ -283,7 +283,7 @@ async function main() {
     await ctrlEnter();
     await cdp.waitFor(`/Not sent/.test(${row(i1)}?.innerText ?? '')`, { timeoutMs: 15_000, label: 'refusal line' });
     const refused = await cdp.evaluate(`(() => { const f = ${form(i1)}; return { formOpen: !!f, draft: f?.querySelector('textarea').value, note: ${row(i1)}.querySelector('[data-slot="checklist-item-note"]').innerText.trim(), alert: !!${row(i1)}.querySelector('[data-slot="checklist-item-note"] [role="alert"]') }; })()`);
-    check(refused.formOpen && refused.draft === 'This one is refused' && /Not sent\. Your question is still in the box\./.test(refused.note) && /fixture refused the prompt/.test(refused.note), 'a refused ask keeps the form and the draft and says "Not sent. Your question is still in the box." with the reason', refused);
+    check(refused.formOpen && refused.draft === 'This one is refused' && /Not sent\. Your question is still in the box\./.test(refused.note) && /The agent did not take it\./.test(refused.note), 'a refused ask keeps the form and the draft and says "Not sent. Your question is still in the box." with the reason', refused);
     check(prompts(pid).length === countRefuse + 1 && refused.alert, 'the refused prompt reached omp once (so the refusal was real) and the line is an alert', { count: prompts(pid).length - countRefuse, alert: refused.alert });
     await shot('07-refusal-keeps-draft.png');
     await cdp.evaluate(`${sendBtn(i1)}.click(); 1`);
@@ -360,7 +360,11 @@ async function main() {
     const noAgent = await cdp.evaluate(`(() => { const f = ${form(i1)}; const radios = Array.from(f.querySelectorAll('[role="radio"]')); return { checked: f.querySelector('[role="radio"][aria-checked="true"]')?.textContent.trim(), askDisabled: radios.find((r) => r.textContent.trim() === 'Ask the agent').disabled || radios.find((r) => r.textContent.trim() === 'Ask the agent').getAttribute('aria-disabled'), reason: /The agent is not running, so it cannot be asked/.test(f.innerText), button: f.querySelector('button[type="submit"]').textContent.trim() }; })()`);
     check(noAgent.checked === 'Provide a value' && noAgent.askDisabled && noAgent.reason && noAgent.button === 'Save value', 'with no agent the form opens on Provide a value, Ask is off with its reason beside it, the button reads "Save value"', noAgent);
     const doNoAgent = await doState(i3);
-    check(doNoAgent?.ariaDisabled === 'true' && /The agent is not running, so it cannot do this item/.test(await cdp.evaluate(`${row(i3)}.innerText`)), '"Do this item" is aria-disabled with the not-running reason', doNoAgent);
+    // The not-running hint shows only where the developer is working, so focus the button first.
+    await cdp.evaluate(`${doBtn(i3)}.focus(); 1`);
+    await cdp.waitFor(`/The agent is not running, so it cannot do this item/.test(${row(i3)}.innerText)`, { timeoutMs: 5000, label: 'not-running hint on focus' });
+    check(doNoAgent?.ariaDisabled === 'true', '"Do this item" is aria-disabled with the not-running reason shown on focus', doNoAgent);
+    await cdp.evaluate(`${form(i1)}.querySelector('textarea').focus(); 1`);
     await type(i1, 'saved-with-no-agent');
     await cdp.click(sendBtn(i1));
     await cdp.waitFor(`/Value saved on the item/.test(${row(i1)}?.innerText ?? '')`, { timeoutMs: 15_000, label: 'saved line' });
