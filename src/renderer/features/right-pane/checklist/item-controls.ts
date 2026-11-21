@@ -28,12 +28,16 @@ export const IN_PROGRESS_LABEL = 'Agent is doing this item'
 /** What "Do this item" says on its face; an item the agent is on stays shown, with its state in words. */
 export const doItemLabel = (item: ChecklistItem): string => (item.status === 'in_progress' ? IN_PROGRESS_LABEL : DO_ITEM_LABEL)
 
-/** Why "Do this item" cannot go, shown as text beside it; null when it can, or when the label already says the agent has it. */
+/** Why "Do this item" cannot go, shown as text beside it; null when it can, or when the label or the row's own needs-value line already says so. */
 export const doItemHint = (item: ChecklistItem, agentRunning: boolean): string | null => {
   if (item.status === 'in_progress') return null
   if (!agentRunning) return 'The agent is not running, so it cannot do this item.'
+  if (needsValueToTick(item)) return null
   return canDoItem(item) ? null : 'Add a value first, then the agent can do this item.'
 }
+
+/** The hint is shown only where the developer is working, so a stopped agent is not repeated on every row. */
+export const showsDoItemHint = (hint: string | null, open: boolean, focused: boolean): boolean => hint !== null && (open || focused)
 
 const encoder = new TextEncoder()
 
@@ -56,24 +60,40 @@ export const deliveryLine = (delivery: ChecklistItemDelivery | 'saved' | 'not_ru
 export const ASK_UNAVAILABLE_REASON = 'The agent is not running, so it cannot be asked. You can still save a value on the item.'
 
 /** Why Send cannot go yet, or null; asking needs a live agent, a value does not. */
-export const sendBlock = (mode: ItemFormMode, text: string, agentRunning: boolean): string | null => {
+export const sendBlock = (mode: ItemFormMode, text: string, agentRunning: boolean, bytes: number = byteLength(text)): string | null => {
   if (text.trim() === '') return 'Type something to send.'
-  if (byteLength(text) > capFor(mode)) return 'Too long to send.'
+  if (bytes > capFor(mode)) return 'Too long to send.'
   if (mode === 'ask' && !agentRunning) return ASK_UNAVAILABLE_REASON
   return null
 }
 
+/** With no agent there is nobody to ask, so a kept or still-open `ask` shows as `value`. */
+export const effectiveMode = (mode: ItemFormMode, agentRunning: boolean): ItemFormMode => (mode === 'ask' && !agentRunning ? 'value' : mode)
+
+// Only `prompt-failed` is a failure after the store write; every earlier refusal stored nothing.
+const REFUSAL_SENTENCES: Readonly<Record<string, string>> = {
+  'prompt-failed': 'The agent did not take it.',
+  'agent-not-running': 'The agent is not running.',
+  'not-found': 'This item or Session no longer exists.',
+  'invalid-argument': 'This cannot be sent as it is.',
+  'session-archived': 'This Session is archived.'
+}
+
+const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1)
+
 /** The alert after a send that did not go; it says what the developer kept so they know what is safe. */
-export const refusalLine = (action: ChecklistItemAction, reason: string, valueStored = true): string => {
+export const refusalLine = (action: ChecklistItemAction, error: { code: string; message: string }): string => {
   const kept =
     action === 'value'
-      ? valueStored
+      ? error.code === 'prompt-failed'
         ? 'Your value is saved on the item.'
         : 'Your value is still in the box.'
       : action === 'ask'
         ? 'Your question is still in the box.'
         : 'The item is unchanged.'
-  return reason === '' ? `Not sent. ${kept}` : `Not sent. ${kept} ${reason}`
+  if (Object.hasOwn(REFUSAL_SENTENCES, error.code)) return `Not sent. ${kept} ${REFUSAL_SENTENCES[error.code]}`
+  const reason = error.message.trim()
+  return reason === '' ? `Not sent. ${kept}` : `Not sent. ${kept} Reason: ${capitalise(reason)}`
 }
 
 interface KeyLike {
@@ -113,7 +133,29 @@ export const dismissForm = (close: () => void, target: FocusTarget | null): void
   target?.focus()
 }
 
-/** Runs the send; focus returns to the disclosure only when it went, since a refused send keeps the form open. */
-export const submitAndRefocus = async (send: () => Promise<boolean>, target: FocusTarget | null): Promise<void> => {
-  if (await send()) target?.focus()
+export interface RefocusState {
+  openKey: string | null
+  key: string
+  focusInsideItem: boolean
+  focusOnBody: boolean
 }
+
+/** After a send, focus goes back to the disclosure only if the developer has not moved on to another item or control meanwhile. */
+export const canRefocusAfterSend = ({ openKey, key, focusInsideItem, focusOnBody }: RefocusState): boolean =>
+  (openKey === key || openKey === null) && (focusInsideItem || focusOnBody)
+
+/** Runs the send; focus returns to the disclosure only when it went and `stillWanted` agrees, since a refused send keeps the form open. */
+export const submitAndRefocus = async (send: () => Promise<boolean>, target: FocusTarget | null, stillWanted: () => boolean = () => true): Promise<void> => {
+  if ((await send()) && stillWanted()) target?.focus()
+}
+
+/** Focus goes to the textarea only when the form opens, never when an already-open form remounts. */
+export const shouldFocusOnOpen = (wasOpen: boolean, open: boolean): boolean => open && !wasOpen
+
+/** The row facts a note was recorded against; a note outlives neither a new revision nor a new status. */
+export interface NoteStamp {
+  rev: number
+  status: ChecklistItem['status']
+}
+
+export const isNoteStale = (stamp: NoteStamp, item: NoteStamp): boolean => stamp.rev !== item.rev || stamp.status !== item.status

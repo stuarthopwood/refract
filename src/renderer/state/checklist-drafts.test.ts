@@ -4,6 +4,7 @@ import { draftKey, selectItemDraft, useChecklistDraftsStore } from './checklist-
 const store = useChecklistDraftsStore
 const a = draftKey({ sessionId: 's1', checklistId: 'p1', itemId: 'a' })
 const b = draftKey({ sessionId: 's1', checklistId: 'p1', itemId: 'b' })
+const stamp = { rev: 1, status: 'upcoming' as const }
 
 beforeEach(() => {
   store.setState({ openKey: null, drafts: {}, inFlight: {}, notes: {} })
@@ -14,22 +15,22 @@ describe('useChecklistDraftsStore', () => {
     store.getState().open(a)
     store.getState().setText(a, 'my question')
     store.getState().beginSend(a)
-    store.getState().refuse(a, 'Not sent.')
+    store.getState().refuse(a, 'Not sent.', stamp)
     expect(store.getState().drafts[a]).toEqual({ mode: 'ask', text: 'my question' })
     expect(store.getState().openKey).toBe(a)
     expect(store.getState().inFlight[a]).toBeUndefined()
-    expect(store.getState().notes[a]).toEqual({ kind: 'refusal', message: 'Not sent.' })
+    expect(store.getState().notes[a]).toEqual({ kind: 'refusal', message: 'Not sent.', stamp })
   })
 
   it('draft_cleared_on_success', () => {
     store.getState().open(a, 'value')
     store.getState().setText(a, 'v')
     store.getState().beginSend(a)
-    store.getState().succeed(a, { kind: 'delivery', delivery: 'queued' })
+    store.getState().succeed(a, { kind: 'delivery', delivery: 'queued' }, stamp)
     expect(store.getState().drafts[a]).toBeUndefined()
     expect(store.getState().openKey).toBeNull()
     expect(store.getState().inFlight[a]).toBeUndefined()
-    expect(store.getState().notes[a]).toEqual({ kind: 'delivery', delivery: 'queued' })
+    expect(store.getState().notes[a]).toEqual({ kind: 'delivery', delivery: 'queued', stamp })
   })
 
   it('opening_another_item_closes_the_first', () => {
@@ -81,7 +82,7 @@ describe('useChecklistDraftsStore', () => {
   })
 
   it('a_new_send_clears_the_last_note', () => {
-    store.getState().refuse(a, 'no')
+    store.getState().refuse(a, 'no', stamp)
     store.getState().beginSend(a)
     expect(store.getState().notes[a]).toBeUndefined()
     expect(store.getState().inFlight[a]).toBe(true)
@@ -94,28 +95,28 @@ describe('useChecklistDraftsStore', () => {
     store.getState().open(b)
     store.getState().setText(b, 'two')
     store.getState().beginSend(b)
-    store.getState().succeed(b, null)
+    store.getState().succeed(b, null, stamp)
     expect(selectItemDraft(store.getState(), a)).toBe(before)
   })
 
   it('a_delivery_line_goes_when_the_form_opens_but_a_refusal_stays', () => {
-    store.getState().succeed(a, { kind: 'delivery', delivery: 'held' })
+    store.getState().succeed(a, { kind: 'delivery', delivery: 'held' }, stamp)
     store.getState().open(a)
     expect(store.getState().notes[a]).toBeUndefined()
-    store.getState().refuse(a, 'no')
+    store.getState().refuse(a, 'no', stamp)
     store.getState().close()
     store.getState().open(a)
-    expect(store.getState().notes[a]).toEqual({ kind: 'refusal', message: 'no' })
+    expect(store.getState().notes[a]).toEqual({ kind: 'refusal', message: 'no', stamp })
   })
 
   it('settle_keeps_the_draft_and_the_open_form', () => {
     store.getState().open(a)
     store.getState().setText(a, 'typed')
     store.getState().beginSend(a)
-    store.getState().settle(a, { kind: 'delivery', delivery: 'sent' })
+    store.getState().settle(a, { kind: 'delivery', delivery: 'sent' }, stamp)
     expect(store.getState().drafts[a]?.text).toBe('typed')
     expect(store.getState().openKey).toBe(a)
     expect(store.getState().inFlight[a]).toBeUndefined()
-    expect(store.getState().notes[a]).toEqual({ kind: 'delivery', delivery: 'sent' })
+    expect(store.getState().notes[a]).toEqual({ kind: 'delivery', delivery: 'sent', stamp })
   })
 })

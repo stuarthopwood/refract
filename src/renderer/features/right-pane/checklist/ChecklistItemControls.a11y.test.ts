@@ -22,6 +22,7 @@ const controls = (item: ChecklistItem, overrides: Partial<Props> = {}): string =
       agentRunning: true,
       inFlight: false,
       note: undefined,
+      focused: false,
       onToggle: () => {},
       onNeedsValue: () => {},
       onDoItem: () => {},
@@ -34,7 +35,7 @@ const controls = (item: ChecklistItem, overrides: Partial<Props> = {}): string =
   )
 
 const row = (item: ChecklistItem): string =>
-  renderToStaticMarkup(createElement('ol', null, createElement(ChecklistRow, { item, sessionId: 's1', checklistId: 'p1', pending: false, onTick: () => {} })))
+  renderToStaticMarkup(createElement('ol', null, createElement(ChecklistRow, { item, sessionId: 's1', checklistId: 'p1', agentRunning: true, pending: false, onTick: () => {} })))
 
 const textOf = (markup: string): string => markup.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
 const note = (n: ItemNote): string => renderToStaticMarkup(createElement(ItemNoteLine, { note: n }))
@@ -82,13 +83,13 @@ describe('ChecklistItemControls accessibility', () => {
   })
 
   it('live_regions_announce_outcomes_and_stay_mounted', () => {
-    expect(note({ kind: 'delivery', delivery: 'queued' })).toMatch(/<p role="status"[^>]*>Queued after the current turn<\/p>/)
+    expect(note({ kind: 'delivery', delivery: 'queued' })).toMatch(/<div[^>]*role="status"[^>]*>.*Queued after the current turn/)
     expect(note({ kind: 'delivery', delivery: 'held' })).toContain('Held until you resume')
     const refused = note({ kind: 'refusal', message: 'Not sent. Your question is still in the box.' })
     expect(refused).toMatch(/role="alert"[^>]*><svg[^>]*aria-hidden="true".*Error: <\/span>Not sent\. Your question is still in the box\./)
     const idle = renderToStaticMarkup(createElement(ItemNoteLine, { note: undefined }))
-    expect(idle).toContain('data-slot="checklist-item-note"')
-    expect(idle).not.toMatch(/role="(?:status|alert)"/)
+    expect(idle).toMatch(/<div data-slot="checklist-item-note" role="status"><\/div>/)
+    expect(idle).not.toContain('role="alert"')
   })
 
   it('agent_status_changes_are_spoken_as_words', () => {

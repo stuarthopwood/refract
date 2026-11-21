@@ -34,7 +34,7 @@ describe('sendItemAction', () => {
     expect(itemMessage).not.toHaveBeenCalled()
     expect(selectSessionChecklist(useChecklistStore.getState(), 's1').checklist?.rev).toBe(4)
     expect(drafts.getState().drafts[key]).toBeUndefined()
-    expect(drafts.getState().notes[key]).toEqual({ kind: 'delivery', delivery: 'saved' })
+    expect(drafts.getState().notes[key]).toMatchObject({ kind: 'delivery', delivery: 'saved' })
   })
 
   it('a_refused_save_keeps_the_draft_and_resyncs_the_checklist', async () => {
@@ -45,7 +45,7 @@ describe('sendItemAction', () => {
 
     expect(selectSessionChecklist(useChecklistStore.getState(), 's1').checklist?.rev).toBe(5)
     expect(drafts.getState().drafts[key]?.text).toBe('typed')
-    expect(drafts.getState().notes[key]).toEqual({ kind: 'refusal', message: 'Not saved. The item changed.' })
+    expect(drafts.getState().notes[key]).toMatchObject({ kind: 'refusal', message: 'Not saved. The item changed.' })
     expect(drafts.getState().inFlight[key]).toBeUndefined()
   })
 
@@ -56,17 +56,17 @@ describe('sendItemAction', () => {
 
     expect(itemMessage).toHaveBeenCalledWith('s1', 'p1', 'a', 3, 'ask', 'why?')
     expect(drafts.getState().drafts[key]).toBeUndefined()
-    expect(drafts.getState().notes[key]).toEqual({ kind: 'delivery', delivery: 'queued' })
+    expect(drafts.getState().notes[key]).toMatchObject({ kind: 'delivery', delivery: 'queued' })
   })
 
-  it('a_send_the_session_refused_keeps_the_draft_and_says_the_value_is_saved', async () => {
+  it('a_precheck_refusal_keeps_the_draft_and_says_the_value_is_still_in_the_box', async () => {
     itemMessage.mockResolvedValue({ ok: false, error: { code: 'agent-not-running', message: 'No agent.' } })
     drafts.getState().setMode(key, 'value')
 
     expect(await send('value', 'v', true)).toBe(false)
 
     expect(drafts.getState().drafts[key]).toEqual({ mode: 'value', text: 'typed' })
-    expect(drafts.getState().notes[key]).toEqual({ kind: 'refusal', message: 'Not sent. Your value is saved on the item. No agent.' })
+    expect(drafts.getState().notes[key]).toMatchObject({ kind: 'refusal', message: 'Not sent. Your value is still in the box. The agent is not running.' })
   })
 
   it('an_engine_refusal_says_the_value_was_not_stored', async () => {
@@ -75,7 +75,7 @@ describe('sendItemAction', () => {
 
     expect(await send('value', 'v', true)).toBe(false)
 
-    expect(drafts.getState().notes[key]).toEqual({ kind: 'refusal', message: 'Not sent. Your value is still in the box. Changed.' })
+    expect(drafts.getState().notes[key]).toMatchObject({ kind: 'refusal', message: 'Not sent. Your value is still in the box. Reason: Changed.' })
     expect(selectSessionChecklist(useChecklistStore.getState(), 's1').checklist?.rev).toBe(6)
   })
 

@@ -60,9 +60,10 @@ describe('item-controls', () => {
   })
 
   it('refusal_line_says_what_was_kept', () => {
-    expect(refusalLine('value', '')).toBe('Not sent. Your value is saved on the item.')
-    expect(refusalLine('ask', 'Agent is busy.')).toBe('Not sent. Your question is still in the box. Agent is busy.')
-    expect(refusalLine('complete', '')).toBe('Not sent. The item is unchanged.')
+    expect(refusalLine('value', { code: 'prompt-failed', message: '' })).toBe('Not sent. Your value is saved on the item. The agent did not take it.')
+    expect(refusalLine('value', { code: 'agent-not-running', message: '' })).toBe('Not sent. Your value is still in the box. The agent is not running.')
+    expect(refusalLine('ask', { code: 'odd', message: 'agent is busy.' })).toBe('Not sent. Your question is still in the box. Reason: Agent is busy.')
+    expect(refusalLine('complete', { code: 'odd', message: '' })).toBe('Not sent. The item is unchanged.')
   })
 
   it('send_chord_needs_enter_with_ctrl_or_meta', () => {
@@ -99,7 +100,7 @@ describe('item-controls', () => {
     expect(doItemLabel(makeItem({ id: 'a', status: 'in_progress' }))).toBe('Agent is doing this item')
     expect(doItemHint(plain, true)).toBeNull()
     expect(doItemHint(plain, false)).toContain('not running')
-    expect(doItemHint(makeItem({ id: 'a', requiresValue: true }), true)).toContain('Add a value first')
+    expect(doItemHint(makeItem({ id: 'a', requiresValue: true }), true)).toBeNull()
     expect(doItemHint(makeItem({ id: 'a', status: 'in_progress' }), false)).toBeNull()
   })
 })

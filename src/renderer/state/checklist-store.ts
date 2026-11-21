@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Checklist, ItemStatus } from '../../shared/checklist'
 import type { ChecklistUpdatePayload } from '../../shared/ipc-checklist'
 import { describeAgentChange, openedAnnouncement, REPLACED_ANNOUNCEMENT } from '../features/right-pane/checklist/checklist-announcements'
+import { useChecklistDraftsStore } from './checklist-drafts'
 import { needsValueToTick } from '../features/right-pane/checklist/checklist-tick'
 
 /** Why the Rust side declined an item change, with the status the agent holds the item at now. */
@@ -117,6 +118,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       // Two quick updates merge, so the live region never drops the first.
       announcement: message === null ? current.announcement : { message: current.announcement === null ? message : `${current.announcement.message}. ${message}`, at: Date.now() }
     }))
+    if (replacedId !== null) useChecklistDraftsStore.getState().pruneChecklists(sessionId, incoming.id)
     return true
   }
 

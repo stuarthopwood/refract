@@ -1,6 +1,6 @@
 import type { Checklist } from '../../shared/checklist'
 import type { ChecklistItemAction } from '../../shared/ipc-checklist'
-import { refusalLine } from '../features/right-pane/checklist/item-controls'
+import { refusalLine, type NoteStamp } from '../features/right-pane/checklist/item-controls'
 import { draftKey, useChecklistDraftsStore } from './checklist-drafts'
 import { selectSessionChecklist, useChecklistStore } from './checklist-store'
 
@@ -27,14 +27,18 @@ export async function sendItemAction({ sessionId, itemId, action, text, agentRun
   if (drafts.inFlight[key]) return false
   drafts.beginSend(key)
   const fromForm = action !== 'complete'
+  const stamp = (): NoteStamp => {
+    const item = selectSessionChecklist(useChecklistStore.getState(), sessionId).checklist?.items.find((candidate) => candidate.id === itemId)
+    return { rev: item?.rev ?? 0, status: item?.status ?? 'upcoming' }
+  }
   const finish = (note: Parameters<typeof drafts.succeed>[1]): boolean => {
     const store = useChecklistDraftsStore.getState()
-    if (fromForm) store.succeed(key, note)
-    else store.settle(key, note)
+    if (fromForm) store.succeed(key, note, stamp())
+    else store.settle(key, note, stamp())
     return true
   }
   const refuse = (message: string): boolean => {
-    useChecklistDraftsStore.getState().refuse(key, message)
+    useChecklistDraftsStore.getState().refuse(key, message, stamp())
     return false
   }
 
@@ -52,10 +56,10 @@ export async function sendItemAction({ sessionId, itemId, action, text, agentRun
 
   const result = await window.refract.checklist.itemMessage(sessionId, checklist.id, itemId, checklist.rev, action, text)
   // The Session refused the send after Rust stored a value, so a value stays saved only on this branch.
-  if (!result.ok) return refuse(refusalLine(action, result.error.message))
+  if (!result.ok) return refuse(refusalLine(action, result.error))
   if ('error' in result.value) {
     adopt(sessionId, result.value.checklist)
-    return refuse(refusalLine(action, result.value.error.message, false))
+    return refuse(refusalLine(action, result.value.error))
   }
   adopt(sessionId, result.value.checklist)
   return finish({ kind: 'delivery', delivery: result.value.delivery })

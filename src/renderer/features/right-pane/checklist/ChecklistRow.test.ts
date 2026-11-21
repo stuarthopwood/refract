@@ -10,7 +10,7 @@ import { makeItem } from './checklist-fixtures'
 
 const render = (item: ChecklistItem, extra: { pending?: boolean; refusal?: ItemRefusal } = {}): string =>
   renderToStaticMarkup(
-    createElement('ol', null, createElement(ChecklistRow, { item, sessionId: 's1', checklistId: 'p1', pending: extra.pending ?? false, onTick: () => {}, refusal: extra.refusal }))
+    createElement('ol', null, createElement(ChecklistRow, { item, sessionId: 's1', checklistId: 'p1', agentRunning: true, pending: extra.pending ?? false, onTick: () => {}, refusal: extra.refusal }))
   )
 
 const tickTag = (html: string): string => /<button[^>]*role="checkbox"[^>]*>/.exec(html)?.[0] ?? ''
@@ -146,7 +146,7 @@ describe('ChecklistRow', () => {
 describe('ChecklistRow controls', () => {
   const html = (...items: ChecklistItem[]): string =>
     renderToStaticMarkup(
-      createElement('ol', null, ...items.map((item) => createElement(ChecklistRow, { key: item.id, item, sessionId: 's1', checklistId: 'p1', pending: false, onTick: () => {} })))
+      createElement('ol', null, ...items.map((item) => createElement(ChecklistRow, { key: item.id, item, sessionId: 's1', checklistId: 'p1', agentRunning: true, pending: false, onTick: () => {} })))
     )
 
   beforeEach(() => useChecklistDraftsStore.setState({ openKey: null, drafts: {}, inFlight: {}, notes: {} }))
@@ -172,8 +172,7 @@ describe('ChecklistRow controls', () => {
     expect(useChecklistDraftsStore.getState().inFlight[b]).toBeUndefined()
     const out = html(makeItem({ id: 'a' }), makeItem({ id: 'b' }))
     expect(out.match(/aria-controls=/g)).toBeNull()
-    expect(out).toContain('checklist-item-form-a-do-hint')
-    expect(out).toContain('checklist-item-form-b-do-hint')
+    expect(out).not.toContain('-do-hint')
   })
 })
 
@@ -182,7 +181,7 @@ describe('ChecklistRow memo comparator', () => {
   // React's memo type does not expose its comparator, but the memo object carries it.
   const compare = (ChecklistRow as unknown as { compare: (a: Props, b: Props) => boolean }).compare
   const onTick = (): void => {}
-  const base: Props = { item: makeItem({ id: 'a', rev: 1 }), sessionId: 's1', checklistId: 'p1', pending: false, onTick, refusal: undefined }
+  const base: Props = { item: makeItem({ id: 'a', rev: 1 }), sessionId: 's1', checklistId: 'p1', agentRunning: true, pending: false, onTick, refusal: undefined }
 
   it('same_rev_pending_refusal_and_onTick_skip_the_render', () => {
     expect(compare(base, { ...base, item: { ...base.item } })).toBe(true)
@@ -194,7 +193,8 @@ describe('ChecklistRow memo comparator', () => {
     ['refusal', { refusal: { code: 'item_changed', message: 'm', op: 'tick' as const } }],
     ['onTick', { onTick: () => {} }],
     ['sessionId', { sessionId: 's2' }],
-    ['checklistId', { checklistId: 'p2' }]
+    ['checklistId', { checklistId: 'p2' }],
+    ['agentRunning', { agentRunning: false }]
   ])('a_changed_%s_re_renders', (_name, change) => {
     expect(compare(base, { ...base, ...change })).toBe(false)
   })

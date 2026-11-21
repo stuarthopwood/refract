@@ -16,6 +16,7 @@ const baseProps = (item: ChecklistItem, overrides: Partial<Props> = {}): Props =
   agentRunning: true,
   inFlight: false,
   note: undefined,
+  focused: false,
   onToggle: () => {},
   onNeedsValue: () => {},
   onDoItem: () => {},
@@ -115,7 +116,8 @@ describe('ChecklistItemControls', () => {
   })
 
   it('hint_is_text_linked_by_aria_describedby', () => {
-    const markup = html(makeItem({ id: 'a' }), { agentRunning: false })
+    const markup = html(makeItem({ id: 'a' }), { agentRunning: false, focused: true })
+    expect(html(makeItem({ id: 'a' }), { agentRunning: false })).not.toContain('The agent is not running')
     const describedBy = /aria-describedby="([^"]+)"/.exec(markup)?.[1] ?? ''
     expect(describedBy).not.toBe('')
     expect(markup).toContain(`<p id="${describedBy}"`)

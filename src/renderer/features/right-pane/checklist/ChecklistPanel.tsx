@@ -4,6 +4,7 @@ import { InlineStatus } from '@/components/InlineStatus'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { selectSessionChecklist, useChecklistStore, type ItemRefusal } from '@/state/checklist-store'
+import { useSessionsStore } from '@/state/sessions-store'
 import type { Checklist } from '../../../../shared/checklist'
 import { ChecklistRow } from './ChecklistRow'
 import { blurLeavesRegion, containsFocus, shouldRefocus } from './checklist-focus'
@@ -14,13 +15,14 @@ import { useChecklistAnnouncer } from './useChecklistAnnouncer'
 interface ChecklistListProps {
   sessionId: string
   checklist: Checklist
+  agentRunning: boolean
   pending: Record<string, true>
   refusals: Record<string, ItemRefusal>
   onTick: (itemId: string) => void
 }
 
 /** The active checklist's rows, keyed by item id so a row keeps its focus and state across updates. */
-export function ChecklistList({ sessionId, checklist, pending, refusals, onTick }: ChecklistListProps) {
+export function ChecklistList({ sessionId, checklist, agentRunning, pending, refusals, onTick }: ChecklistListProps) {
   return (
     // Item ids restart at i1 per checklist, so a replace must remount the rows past the memo.
     <ol key={checklist.id} aria-label={checklist.title}>
@@ -30,6 +32,7 @@ export function ChecklistList({ sessionId, checklist, pending, refusals, onTick 
           item={item}
           sessionId={sessionId}
           checklistId={checklist.id}
+          agentRunning={agentRunning}
           pending={pending[item.id] === true}
           refusal={refusals[item.id]}
           onTick={onTick}
@@ -74,6 +77,7 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
   const regionRef = useRef<HTMLElement>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const { checklist, toolUnavailable, loaded, error, errorCode, pending, refusals } = state
+  const agentRunning = useSessionsStore((s) => (s.sessions.find((x) => x.id === sessionId)?.status ?? 'stopped') !== 'stopped')
 
   const focusInside = useRef(false)
   const previousSession = useRef(sessionId)
@@ -148,7 +152,9 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
           itemCount === 0 ? (
             <InlineStatus>This checklist has no items yet.</InlineStatus>
           ) : (
-            sessionId !== null && <ChecklistList sessionId={sessionId} checklist={checklist} pending={pending} refusals={refusals} onTick={onTick} />
+            sessionId !== null && (
+              <ChecklistList sessionId={sessionId} checklist={checklist} agentRunning={agentRunning} pending={pending} refusals={refusals} onTick={onTick} />
+            )
           )
         ) : (
           error === null && !toolUnavailable && <NoChecklist sessionId={sessionId} loaded={loaded} />

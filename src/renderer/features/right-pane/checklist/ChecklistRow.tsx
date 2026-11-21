@@ -15,6 +15,8 @@ interface ChecklistRowProps {
   /** Item ids restart per checklist, so the controls' drafts are keyed by both. */
   sessionId: string
   checklistId: string
+  /** Whether the Session's agent is up; computed once by the panel. */
+  agentRunning: boolean
   /** A `checklist.mutate` for this item is in flight. */
   pending: boolean
   refusal?: ItemRefusal
@@ -24,7 +26,7 @@ interface ChecklistRowProps {
 const PLAIN_TEXT = 'whitespace-pre-wrap break-words'
 
 /** One checklist item: tick, text, status with icon and word, who completed it, its value, and why a tick was refused. */
-function ChecklistRowView({ item, sessionId, checklistId, pending, refusal, onTick }: ChecklistRowProps) {
+function ChecklistRowView({ item, sessionId, checklistId, agentRunning, pending, refusal, onTick }: ChecklistRowProps) {
   const id = useId()
   const textId = `${id}-text`
   const reasonId = `${id}-reason`
@@ -84,7 +86,7 @@ function ChecklistRowView({ item, sessionId, checklistId, pending, refusal, onTi
             {refusalMessage(refusal)}
           </InlineStatus>
         )}
-        <ChecklistItemControls sessionId={sessionId} checklistId={checklistId} item={item} />
+        <ChecklistItemControls sessionId={sessionId} checklistId={checklistId} item={item} agentRunning={agentRunning} />
       </div>
     </li>
   )
@@ -99,5 +101,6 @@ export const ChecklistRow = memo(
     a.refusal === b.refusal &&
     a.onTick === b.onTick &&
     a.sessionId === b.sessionId &&
-    a.checklistId === b.checklistId
+    a.checklistId === b.checklistId &&
+    a.agentRunning === b.agentRunning
 )
