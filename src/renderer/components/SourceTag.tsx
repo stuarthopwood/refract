@@ -1,10 +1,9 @@
 // The shared "where did this come from" tag (ADR 0003; issue #1041, spec 040 FR-008): a muted icon
 // plus word, with an optional hover tooltip. By default it is inert chrome: the icon is hidden from
-// assistive technology, it never takes focus, and it adds no layout box of its own beyond its
-// content, so a row's own accessible name (set by the row) carries the same information.
-// The optional `action` (#1858) adds a real link-styled button after the word, for a tag that names
-// something the reader can jump to; only then does the tag hold a tab stop. The optional `detail`
-// is quoted text that wraps and clamps to two lines instead of forcing the tag wider than its row.
+// assistive technology, it never takes focus, and it adds no layout box of its own, so a row's
+// own accessible name carries the same information.
+// The optional `action` (#1858) adds a link-styled button, the only tab stop; the optional `detail`
+// is quoted text that wraps and clamps to two lines instead of widening the tag.
 import type { ComponentType, SVGProps } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
