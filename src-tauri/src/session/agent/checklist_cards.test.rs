@@ -140,3 +140,50 @@ async fn conversation_reset_clears_map() {
     assert_eq!(first_user(&fx).await, (turn(), None));
     fx.finish().await;
 }
+
+#[tokio::test]
+async fn live_and_reload_produce_equal_items() {
+    use crate::checklist::records::text_hash;
+    use crate::session::saved_history::SavedHistory;
+    let fx = fixture(&[], &[]).await;
+    record_send(&fx, &turn()).await;
+    fx.agent
+        .apply_transcript_frame(&user_frame("message_end", &turn()))
+        .await;
+    let live = first_user(&fx).await;
+
+    let dir = crate::test_scratch::path("card-parity");
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let path = dir.join("c.jsonl");
+    let entry = json!({"type": "message", "id": "e1", "message": {
+        "role": "user", "content": [{"type": "text", "text": turn()}], "timestamp": 1}});
+    tokio::fs::write(&path, format!("{entry}\n")).await.unwrap();
+    let records = [crate::checklist::model::SendRecord {
+        checklist_id: "c1".into(),
+        item_id: "i1".into(),
+        rev: 3,
+        action: SendAction::Ask,
+        text_hash: text_hash(&turn()),
+    }];
+    let session_dir = dir.to_string_lossy().into_owned();
+    let file = path.to_string_lossy().into_owned();
+    let history = crate::session::saved_history_cache::load_saved_history(
+        Some(&session_dir),
+        Some(&file),
+        &records,
+    )
+    .await;
+    let SavedHistory::Items(items) = history else {
+        panic!("expected items");
+    };
+    let reloaded = items
+        .iter()
+        .find_map(|item| match &**item {
+            TranscriptItem::User { text, source, .. } => Some((text.clone(), source.clone())),
+            _ => None,
+        })
+        .unwrap();
+
+    assert_eq!(live, reloaded);
+    fx.finish().await;
+}
