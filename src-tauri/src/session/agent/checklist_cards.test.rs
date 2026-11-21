@@ -353,7 +353,8 @@ async fn a_stopped_sessions_snapshot_labels_its_saved_card() {
     let dir = crate::test_scratch::path(format!("card-snapshot-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let file = dir.join("c.jsonl");
-    let entry = json!({ "type": "message", "id": "e1", "message": stored_message(&turn()) });
+    let entry_type = "message";
+    let entry = json!({ "type": entry_type, "id": "e1", "message": stored_message(&turn()) });
     tokio::fs::write(&file, format!("{entry}\n")).await.unwrap();
     crate::store::handoff_notes::use_dir_for_test(dir.clone());
     let patch = crate::store::registry::SessionPatch {
