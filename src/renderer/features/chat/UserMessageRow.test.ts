@@ -184,8 +184,11 @@ describe('UserMessageRow checklist source', () => {
   })
 
   it('complete_shows_fixed_phrase', () => {
-    const html = render({ ...base, text: '', source: complete })
+    // The real stored text is the agent-facing envelope, quoted step included; the bubble must not show it.
+    const envelope = 'The developer asks you to do this step yourself.\n> Run the migration'
+    const html = render({ ...base, text: envelope, source: complete })
     expect(html).toContain('Asked the agent to complete this step')
+    expect(html).not.toContain('Run the migration')
     expect(html).not.toContain('Image attached')
     expect(mocks.menuText).toHaveBeenCalledWith('Asked the agent to complete this step')
   })

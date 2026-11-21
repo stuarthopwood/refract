@@ -1,3 +1,4 @@
+import { userTurnText } from '../chat/userTurnText'
 import type { TranscriptItem } from '../../../shared/model'
 
 export type NavMessageKind = 'user' | 'agent'
@@ -51,13 +52,14 @@ export function buildMessageIndex(items: readonly TranscriptItem[]): NavMessage[
     if (item.kind === 'user') {
       if (turnHasItems) turnIndex += 1
       turnHasItems = true
+      const text = userTurnText(item)
       messages.push({
         id: item.id,
         kind: 'user',
         turnIndex,
-        firstLine: extractFirstLine(item.text),
+        firstLine: extractFirstLine(text),
         ...(item.at > 0 ? { at: item.at } : {}),
-        length: item.text.length
+        length: text.length
       })
       continue
     }

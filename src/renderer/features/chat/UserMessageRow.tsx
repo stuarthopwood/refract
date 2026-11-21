@@ -10,6 +10,7 @@ import { MessageMenu } from './MessageMenu'
 import { SessionSourceLine } from './SessionSourceLine'
 import { HandoffNoteLine } from './HandoffNoteLine'
 import { ChecklistItemSourceLine } from './ChecklistItemSourceLine'
+import { userTurnText } from './userTurnText'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -58,9 +59,6 @@ function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }
   )
 }
 
-// The Rust side sends an empty body for a complete, so the bubble says what the click did.
-const CHECKLIST_COMPLETE_COPY = 'Asked the agent to complete this step'
-
 /** Right-aligned user bubble; the timestamp is a sibling above the whole `Message`. */
 export function UserMessageRow({ item, sessionId, userName, userAvatarUrl, hideTime }: UserMessageRowProps) {
   const source = item.source
@@ -68,7 +66,7 @@ export function UserMessageRow({ item, sessionId, userName, userAvatarUrl, hideT
   // A Session-sent turn is authored by that Session, not the user: no user avatar or name.
   const author = sender ? sender.name : (userName ?? 'You')
   const sourceLineId = React.useId()
-  const bodyText = source?.kind === 'checklist-item' && source.action === 'complete' ? CHECKLIST_COMPLETE_COPY : item.text
+  const bodyText = userTurnText(item)
   return (
     <>
       <UserMessageTime at={item.at} hide={hideTime} />

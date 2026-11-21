@@ -66,4 +66,25 @@ describe('SourceTag', () => {
     expect(html).toContain('</svg>From Session</span>')
     expect(html).not.toContain('line-clamp')
   })
+
+  it('aligns to the top when there is detail, so a two-line clamp hangs under the label', () => {
+    const html = renderToStaticMarkup(createElement(SourceTag, { icon: MessageSquareIcon, label: 'Checklist item 2', detail: 'Write the migration' }))
+    expect(html).toMatch(/data-slot="source-tag" class="[^"]*\bitems-start\b/)
+    expect(html).not.toMatch(/data-slot="source-tag" class="[^"]*\bitems-center\b/)
+  })
+
+  it('puts nameId on a span around the label and detail only, not the action', () => {
+    const html = renderToStaticMarkup(
+      createElement(SourceTag, { icon: MessageSquareIcon, label: 'Checklist item 2', detail: 'Write the migration', nameId: 'n1', action: { label: 'Show', onActivate: () => {} } }),
+    )
+    const named = /<span id="n1"[^>]*>(.*?)<\/span><\/span>/.exec(html)?.[1] ?? ''
+    expect(named).toContain('Write the migration')
+    expect(named).not.toContain('Show')
+    expect(html).toContain('Show</button>')
+  })
+
+  it('puts nameId on the label when there is no detail', () => {
+    const html = renderToStaticMarkup(createElement(SourceTag, { icon: MessageSquareIcon, label: 'Checklist item (removed)', nameId: 'n2' }))
+    expect(html).toContain('<span id="n2">Checklist item (removed)</span>')
+  })
 })

@@ -14,6 +14,7 @@ import {
   type SearchOutcome
 } from './findMatcher'
 import { clearPane, paintPane } from './findPainter'
+import { sourceTextById } from './sourceText'
 import { revealMatchWhenLanded } from './revealMatch'
 
 const DEBOUNCE_MS = 150
@@ -62,8 +63,7 @@ function startIndex(list: readonly FlatMatch[], sessionId: string): number {
 /** Rendered rows contribute their DOM text; windowed-out ones contribute transcript source text. */
 function messageReader(sessionId: string, index: ReturnType<typeof navIndex>) {
   const items = useTranscriptStore.getState().bySession[sessionId]?.items ?? EMPTY_TRANSCRIPT.items
-  const sourceText = new Map<string, string>()
-  for (const item of items) if (item.kind === 'user' || item.kind === 'assistant-text') sourceText.set(item.id, item.text)
+  const sourceText = sourceTextById(items)
   const pane = getPane(sessionId)
   const rows = pane ? mountedRows(pane) : new Map<string, HTMLElement>()
   return (i: number): SearchMessage | null => {

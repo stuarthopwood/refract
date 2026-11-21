@@ -2,9 +2,8 @@ import { useEffect } from 'react'
 import { ListChecksIcon } from 'lucide-react'
 import { SourceTag, type SourceTagAction } from '@/components/SourceTag'
 import { selectSessionChecklist, useChecklistStore } from '@/state/checklist-store'
-import { useRightPaneStore } from '@/state/right-pane-store'
-import { useSplitStore } from '@/state/split-store'
 import type { MessageSource } from '../../../shared/model'
+import { hydrateIfUnseen, showInChecklist } from './checklistItemActions'
 import { resolveChecklistItemLine, type ChecklistItemLine } from './checklistItemLine'
 
 interface ChecklistItemSourceLineProps {
@@ -22,19 +21,6 @@ function labelFor(line: ChecklistItemLine): string {
   return 'Checklist item'
 }
 
-/** Only the focused Session is hydrated app-wide, so a card in the other split pane asks for its own checklist once. */
-export function hydrateIfUnseen(sessionId: string): void {
-  const store = useChecklistStore.getState()
-  if (selectSessionChecklist(store, sessionId).seq === 0) void store.hydrate(sessionId)
-}
-
-/** Activates the card's own Session, then opens the panel and asks it to reveal the item. */
-export function showInChecklist(sessionId: string, checklistId: string, itemId: string): void {
-  useSplitStore.getState().replaceFocused(sessionId)
-  useRightPaneStore.getState().openPanel('checklist', { focus: false })
-  useChecklistStore.getState().requestReveal({ sessionId, checklistId, itemId })
-}
-
 /** "Checklist item N: <text>" above a user turn the developer sent from a checklist item. */
 export function ChecklistItemSourceLine({ source, sessionId, id }: ChecklistItemSourceLineProps) {
   // Subscribed here, not in the row, so ordinary user turns never read the checklist store.
@@ -47,9 +33,11 @@ export function ChecklistItemSourceLine({ source, sessionId, id }: ChecklistItem
     line.kind === 'item' && sessionId !== null
       ? { label: 'Show in checklist', onActivate: () => showInChecklist(sessionId, source.checklistId, source.itemId) }
       : undefined
+  const detail = line.kind === 'item' ? line.text : undefined
   return (
-    <div id={id} className="mb-1 flex min-w-0 justify-end text-xs">
-      <SourceTag icon={ListChecksIcon} label={labelFor(line)} detail={line.kind === 'item' ? line.text : undefined} action={action} />
+    <div className="mb-1 flex min-w-0 justify-end text-xs">
+      {/* The id names the bubble, so it sits on the words alone and leaves "Show in checklist" out. */}
+      <SourceTag icon={ListChecksIcon} label={labelFor(line)} detail={detail} tooltip={detail} action={action} nameId={id} />
     </div>
   )
 }

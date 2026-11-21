@@ -62,7 +62,7 @@ const known = () => {
 }
 
 const render = () => renderToStaticMarkup(createElement(TooltipProvider, null, createElement(UserMessageRow, { item: ITEM, sessionId: 's1', userName: 'Stuart' })))
-const lineMarkup = (html: string) => /<div id="[^"]+" class="mb-1 flex min-w-0 justify-end text-xs">.*?<\/div>/.exec(html)?.[0] ?? ''
+const lineMarkup = (html: string) => /<div class="mb-1 flex min-w-0 justify-end text-xs">.*?<\/div>/.exec(html)?.[0] ?? ''
 
 function findAll(node: ReactNode, match: (el: ReactElement<Record<string, unknown>>) => boolean, out: ReactElement<Record<string, unknown>>[] = []) {
   if (Array.isArray(node)) node.forEach((child) => findAll(child, match, out))
@@ -92,7 +92,8 @@ describe('checklist source line keyboard and screen reader', () => {
   it('tab_reaches_only_the_action_button', () => {
     const line = lineMarkup(render())
     expect(line.match(/<button/g)).toHaveLength(1)
-    expect(line).not.toContain('tabindex')
+    // The tooltip trigger carries tabindex="-1" (focusable by pointer only); any other value is a tab stop.
+    expect(line).not.toMatch(/tabindex="(?!-1")/)
     expect(line).not.toContain('<a ')
   })
 
@@ -109,15 +110,18 @@ describe('checklist source line keyboard and screen reader', () => {
     expect(useChecklistStore.getState().revealRequest).toEqual({ sessionId: 's1', checklistId: 'p1', itemId: 'i2' })
   })
 
-  it('bubble_name_reads_the_line', () => {
+  it('bubble_name_reads_the_words_not_the_action', () => {
     const html = render()
-    const lineId = /<div id="([^"]+)" class="mb-1 flex min-w-0 justify-end text-xs">/.exec(html)?.[1]
+    const lineId = /<span id="([^"]+)" class="inline-flex min-w-0 items-start gap-1">/.exec(html)?.[1]
     expect(lineId).toBeDefined()
     expect(html).toContain(`role="group" aria-labelledby="${lineId}"`)
-    const line = lineMarkup(html)
-    const text = [...line.matchAll(/>([^<]+)</g)].map((m) => m[1]).join(' ')
+    // The labelled span ends at the detail span's close, before the "Show in checklist" button.
+    const named = new RegExp(`<span id="${lineId}"[^>]*>(.*?)</span></span>`).exec(html)?.[1] ?? ''
+    const text = named.replace(/<[^>]+>/g, '')
     expect(text).toContain('Checklist item 2:')
     expect(text).toContain('Run the migration')
-    expect(line).not.toContain('aria-hidden="true">Checklist')
+    expect(text).not.toContain('Show in checklist')
+    expect(lineMarkup(html)).toContain('Show in checklist')
+    expect(lineMarkup(html)).not.toContain('aria-hidden="true">Checklist')
   })
 })

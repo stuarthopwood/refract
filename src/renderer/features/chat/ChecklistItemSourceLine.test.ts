@@ -11,7 +11,7 @@ import type { SessionChecklist } from '@/state/checklist-store'
 import type { MessageSource } from '../../../shared/model'
 import { makeChecklist, makeItem } from '../right-pane/checklist/checklist-fixtures'
 
-const captured = vi.hoisted(() => ({ tag: undefined as undefined | { action?: { label: string; onActivate: () => void } } }))
+const captured = vi.hoisted(() => ({ tag: undefined as undefined | { action?: { label: string; onActivate: () => void }; tooltip?: string; nameId?: string } }))
 
 vi.mock('@/state/checklist-store', async (importActual) => {
   const actual = await importActual<typeof ChecklistStoreModule>()
@@ -32,7 +32,8 @@ import { useChecklistStore } from '@/state/checklist-store'
 import { useRightPaneStore } from '@/state/right-pane-store'
 import { frontSessionIdOf, useSplitStore } from '@/state/split-store'
 import { useViewStore } from '@/state/view-store'
-import { ChecklistItemSourceLine, hydrateIfUnseen } from './ChecklistItemSourceLine'
+import { ChecklistItemSourceLine } from './ChecklistItemSourceLine'
+import { hydrateIfUnseen } from './checklistItemActions'
 
 type ItemSource = Extract<MessageSource, { kind: 'checklist-item' }>
 const SOURCE: ItemSource = { kind: 'checklist-item', checklistId: 'p1', itemId: 'i2', action: 'ask' }
@@ -67,6 +68,8 @@ describe('ChecklistItemSourceLine', () => {
     expect(html).toContain('Checklist item 2:')
     expect(html).toMatch(/<span class="line-clamp-2 min-w-0 break-words">Run the migration above the bucket<\/span>/)
     expect(html).toContain('id="line-1"')
+    expect(captured.tag?.tooltip).toBe('Run the migration above the bucket')
+    expect(captured.tag?.nameId).toBe('line-1')
     expect(html).toMatch(/<button[^>]*>Show in checklist<\/button>/)
   })
 
@@ -76,6 +79,7 @@ describe('ChecklistItemSourceLine', () => {
     expect(html).toContain('Checklist item (removed)')
     expect(html).not.toContain('<button')
     expect(html).not.toContain('line-clamp')
+    expect(captured.tag?.tooltip).toBeUndefined()
   })
 
   it('replaced_has_no_button', () => {
