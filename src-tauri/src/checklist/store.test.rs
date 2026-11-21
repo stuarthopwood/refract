@@ -178,3 +178,29 @@ async fn agent_apply_completes_when_caller_dropped() {
     assert!(dir.path().join("s1.json").exists());
     assert_eq!(seq(&store, "s1").await, 2);
 }
+
+#[test]
+fn tool_unavailable_set_then_cleared() {
+    let store = ChecklistStore::new(std::env::temp_dir());
+    assert!(!store.tool_unavailable("s1"));
+
+    store.set_tool_unavailable("s1");
+    assert!(store.tool_unavailable("s1"));
+    assert!(!store.tool_unavailable("s2"));
+
+    store.clear_tool_unavailable("s1");
+    assert!(!store.tool_unavailable("s1"));
+}
+
+#[tokio::test]
+async fn tool_unavailable_dropped_with_session() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = ChecklistStore::new(dir.path().to_path_buf());
+    store.set_tool_unavailable("s1");
+    store.set_tool_unavailable("s2");
+
+    store.discard("s1").await.unwrap();
+
+    assert!(!store.tool_unavailable("s1"));
+    assert!(store.tool_unavailable("s2"));
+}

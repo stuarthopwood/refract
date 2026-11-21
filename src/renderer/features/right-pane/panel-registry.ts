@@ -1,10 +1,10 @@
-import { BotIcon, CircleDotIcon, FileDiffIcon, FileIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, GitPullRequestIcon, HammerIcon, LibraryIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
+import { BotIcon, CircleDotIcon, FileDiffIcon, FileIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, GitPullRequestIcon, HammerIcon, LibraryIcon, ListChecksIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/state'
 import panelContract from '../../../../specs/124-tool-channel-1193/contracts/panel-actions.json'
 import type { TabItem } from './tab-items'
 
 export type PanelId =
-  | 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline' | 'session-usage'
+  | 'subagents' | 'fdb-knowledge' | 'agent-builder' | 'side-chat' | 'file-explorer' | 'git-changes' | 'outline' | 'session-usage' | 'checklist'
   | PinnedPanelId
 
 export type PinnedPanelId = 'pull-request' | 'issue'
@@ -54,7 +54,8 @@ export const HOSTED_PANELS: HostedPanelDescriptor[] = [
   { id: 'fdb-knowledge', name: 'FDB Knowledge', icon: LibraryIcon, hasCount: false, ...declared('fdb-knowledge') },
   { id: 'agent-builder', name: 'Agent Builder', icon: HammerIcon, hasCount: false, ...declared('agent-builder') },
   { id: 'outline', name: 'Outline', icon: ListTreeIcon, hasCount: false, ...declared('outline') },
-  { id: 'session-usage', name: 'Session usage', icon: GaugeIcon, hasCount: false, ...declared('session-usage') }
+  { id: 'session-usage', name: 'Session usage', icon: GaugeIcon, hasCount: false, ...declared('session-usage') },
+  { id: 'checklist', name: 'Checklist', icon: ListChecksIcon, hasCount: false, ...declared('checklist') }
 ]
 
 // Opened only from the chat header, so they stay out of the rail, launcher and saved layout.

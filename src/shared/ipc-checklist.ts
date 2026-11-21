@@ -59,9 +59,15 @@ export interface ChecklistUpdatePayload {
   opened?: true
 }
 
+/** `checklist.get`: the Session's active checklist (null when it has none) and the tool-refused flag. */
+export interface ChecklistGetResult {
+  checklist: Checklist | null
+  /** True when the agent was refused the checklist tool, so no checklist can be created. */
+  toolUnavailable: boolean
+}
+
 export interface ChecklistApi {
-  /** The Session's active checklist, or null when it has none. */
-  get(sessionId: string): Promise<Result<Checklist | null>>
+  get(sessionId: string): Promise<Result<ChecklistGetResult>>
   /** A repeated `requestId` returns the current checklist without applying again. */
   mutate(
     sessionId: string,

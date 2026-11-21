@@ -112,6 +112,7 @@
     { "id": "session-usage", "name": "Session usage", "actions": [] },
     { "id": "issue", "name": "Issue", "actions": [] },
     { "id": "fdb-knowledge", "name": "FDB Knowledge", "actions": [] },
-    { "id": "agent-builder", "name": "Agent Builder", "actions": [] }
+    { "id": "agent-builder", "name": "Agent Builder", "actions": [] },
+    { "id": "checklist", "name": "Checklist", "actions": [] }
   ]
 }

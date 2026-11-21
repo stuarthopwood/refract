@@ -20,6 +20,15 @@ fn tool_parameters_list_every_panel_id() {
 }
 
 #[test]
+fn checklist_is_an_openable_panel_id() {
+    assert!(panel_ids().contains(&"checklist"));
+    let schema = tool_parameters(OPEN_PANEL);
+    let ids = schema["properties"]["panelId"]["enum"].as_array().unwrap();
+    assert!(ids.contains(&json!("checklist")));
+    assert!(panel("checklist").unwrap().actions.is_empty());
+}
+
+#[test]
 fn validate_accepts_a_matching_object() {
     let schema = &action("git-changes", "stage_file").unwrap().input_schema;
     assert!(validate(schema, &json!({ "path": "src/a.ts" }), "input").is_ok());

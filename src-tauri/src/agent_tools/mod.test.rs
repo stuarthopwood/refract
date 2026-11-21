@@ -114,3 +114,25 @@ fn definitions_match_the_rpc_host_tool_shape() {
         assert_eq!(def["parameters"]["type"], "object");
     }
 }
+
+#[test]
+fn refusal_sets_tool_unavailable() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = ChecklistStore::new(dir.path().to_path_buf());
+
+    note_registration(&store, "s1", false);
+
+    assert!(store.tool_unavailable("s1"));
+    assert!(!store.tool_unavailable("s2"));
+}
+
+#[test]
+fn accepted_registration_clears_tool_unavailable() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = ChecklistStore::new(dir.path().to_path_buf());
+    store.set_tool_unavailable("s1");
+
+    note_registration(&store, "s1", true);
+
+    assert!(!store.tool_unavailable("s1"));
+}

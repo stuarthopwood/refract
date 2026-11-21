@@ -331,7 +331,15 @@ impl SessionAgent {
             }
         };
         let ask_dialog_enabled = send_set_ask_dialog(self, &proc).await;
-        crate::agent_tools::register_host_tools(&proc, tool_access).await;
+        let manager = self.tool_manager();
+        crate::agent_tools::register_host_tools(
+            &proc,
+            tool_access,
+            manager
+                .as_ref()
+                .map(|m| (m.checklists().as_ref(), session.id.as_str())),
+        )
+        .await;
         // Compares the pre-launch count with the observed state before `sync_from_state` re-baselines it.
         let rebaseline_notice = session
             .current_conversation

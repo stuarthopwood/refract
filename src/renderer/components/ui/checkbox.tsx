@@ -58,5 +58,13 @@ export const OPTION_RECOMMENDED_ROW_CLASS = OPTION_RECOMMENDED_FILL_CLASS + " " 
 /** Mark column for an option row: centred on the whole row, spanning label and description. */
 export const OPTION_MARK_CLASS = "row-span-2 self-center"
 export const CHECKBOX_BOX_CLASS = "grid size-4 shrink-0 place-items-center rounded-sm border border-muted-foreground"
+// `CheckboxItem` is a full-row button, so a row holding other controls passes this to shrink it to the box alone.
+// Its own ring is lighter, and a busy or locked box reads as inert (dimmed, no pointer) while a live one answers hover.
+export const CHECKBOX_BOX_ONLY_CLASS = [
+  CHECKBOX_BOX_CLASS,
+  "gap-0 bg-transparent p-0 hover:bg-transparent hover:border-foreground data-[state=checked]:border-muted-foreground data-[state=checked]:bg-transparent",
+  "focus-visible:border-muted-foreground focus-visible:ring-2",
+  "aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:border-muted-foreground"
+].join(" ")
 
 export { CheckboxItem, CheckboxIndicator }

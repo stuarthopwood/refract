@@ -2,7 +2,7 @@
 // so the agent's tool and the developer's panel serialise. The apply runs on a clone and the clone
 // replaces the in-memory file only after it reached disk, so a failed write changes nothing.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -72,6 +72,8 @@ type SlotHandle = Arc<AsyncMutex<Slot>>;
 pub struct ChecklistStore {
     dir: PathBuf,
     slots: Mutex<HashMap<String, SlotHandle>>,
+    /// Sessions whose omp refused the Refract tools, so the panel can say the agent cannot use a checklist.
+    tool_unavailable: Mutex<HashSet<String>>,
 }
 
 /// A second guard behind the registry: even a live id never reaches the path unless it is plain.
@@ -89,7 +91,29 @@ impl ChecklistStore {
         Self {
             dir,
             slots: Mutex::new(HashMap::new()),
+            tool_unavailable: Mutex::new(HashSet::new()),
         }
+    }
+
+    /// Marks a Session's agent as unable to call `refract_checklist`.
+    pub fn set_tool_unavailable(&self, id: &str) {
+        self.unavailable().insert(id.to_string());
+    }
+
+    /// Clears the mark once the tool is known to work for the Session.
+    pub fn clear_tool_unavailable(&self, id: &str) {
+        self.unavailable().remove(id);
+    }
+
+    /// Whether the Session's agent was refused the checklist tool.
+    pub fn tool_unavailable(&self, id: &str) -> bool {
+        self.unavailable().contains(id)
+    }
+
+    fn unavailable(&self) -> std::sync::MutexGuard<'_, HashSet<String>> {
+        self.tool_unavailable
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// The file path for a Session id, refusing anything that is not a plain id.
@@ -193,6 +217,7 @@ impl ChecklistStore {
     /// Removes a deleted Session's file and tombstones its entry under the Session lock, so an
     /// in-flight call that already holds a witness cannot write the file back afterwards.
     pub async fn discard(&self, id: &str) -> io::Result<()> {
+        self.clear_tool_unavailable(id);
         let path = self
             .session_file(id)
             .map_err(|_| io::Error::other("not a plain Session id"))?;

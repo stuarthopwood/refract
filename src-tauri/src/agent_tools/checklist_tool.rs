@@ -399,8 +399,16 @@ pub async fn checklist_with(
         _ => return Ok(invalid("action")),
     };
     match result {
-        Ok(outcome) => finish(outcome),
-        Err(StoreError::Op(e)) => Ok(error_payload(&e, active_of(host, &live).await.as_ref())),
+        Ok(outcome) => {
+            // A call that reached the handler proves the tool is registered for this Session.
+            store.clear_tool_unavailable(host.caller_id());
+            finish(outcome)
+        }
+        Err(StoreError::Op(e)) => {
+            // A refusal from the store still came from a registered tool.
+            store.clear_tool_unavailable(host.caller_id());
+            Ok(error_payload(&e, active_of(host, &live).await.as_ref()))
+        }
         Err(other) => Err(store_error(other)),
     }
 }
