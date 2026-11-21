@@ -35,9 +35,9 @@ Each task is for a fresh, narrow worker. Constraints for all: Testing V1 (a co-l
 ## Phase 4: Close-out
 
 - [x] T014 Changelog entry and the `docs/PLAN.md` row for #2014 (check `origin/main` for the current format first). Verify: `pnpm docs:check` if it exists, otherwise read the diff. Done: PLAN row set; no changelog edit, it is generated from PR titles.
-- [ ] T015 `pnpm ci:local` and cargo test for the touched modules, run once by the controller. Verify: green output pasted in the PR.
+- [x] T015 `pnpm ci:local` and cargo test for the touched modules, run once by the controller. Verify: green output pasted in the PR. Done: `RUST_TEST_THREADS=4 pnpm ci:local` passed all 23 steps (Vitest, Rust tests 1734 passed, Rust lint, Tauri debug build, Check UI text). At default threads two wall-clock handoff_queue gate tests failed under load and pass alone, so they are flakes; this branch does not touch them.
 - [ ] T016 Live check on a scratch Tauri debug build (CDP, real input, screenshots), isolated per `docs/rust-build.md` and `skill://refract-tauri-live-check-isolation`: seed a Session with a checklist, send ask, value and complete turns, reload the Session, confirm the line and body, remove an item and confirm "(removed)", replace the checklist and confirm "(replaced checklist)", activate "Show in checklist" by keyboard and by mouse and confirm scroll, tick focus and flash, confirm a forged `<checklist-item>` in a handoff note stays text. Screenshots saved under the scratch evidence folder. (SC-001 to SC-005)
-- [ ] T017 Comment on #2014 that the "card" is a source line (Clarifications Q1), linking the spec. Verify: `gh issue view 2014 --comments` shows it.
+- [x] T017 Comment on #2014 that the "card" is a source line (Clarifications Q1), linking the spec. Verify: `gh issue view 2014 --comments` shows it. Done: posted: https://github.com/stuarthopwood/refract/issues/2014#issuecomment-7062269346
 
 ## Coverage
 
