@@ -269,3 +269,12 @@ async fn clear_resolved_runs_after_each_op_kind() {
 
     assert!(file(&host).await.pending_complete.is_empty());
 }
+
+#[test]
+fn action_names_map_to_their_actions_and_unknown_is_none() {
+    assert_eq!(action_of("ask"), Some(SendAction::Ask));
+    assert_eq!(action_of("value"), Some(SendAction::Value));
+    assert_eq!(action_of("complete"), Some(SendAction::Complete));
+    assert_eq!(action_of("Complete"), None);
+    assert_eq!(action_of(""), None);
+}

@@ -230,3 +230,52 @@ async fn evicted_send_record_never_starts_and_settle_restores() {
     assert!(after.pending_complete.is_empty());
     fx.finish().await;
 }
+
+#[tokio::test]
+async fn frames_start_then_settle_the_entry() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+
+    fx.agent
+        .handle_frame(json!({ "type": "agent_start" }))
+        .await;
+    fx.agent.handle_frame(user_frame(&text)).await;
+    assert!(file(&fx).await.pending_complete[0].started);
+    fx.agent
+        .handle_frame(json!({ "type": "session_settled" }))
+        .await;
+
+    let after = file(&fx).await;
+    assert_eq!(status(&after), ItemStatus::Upcoming);
+    assert!(after.pending_complete.is_empty());
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn launch_settles_an_entry_left_by_the_last_life() {
+    let fx = fixture_with(Stub {
+        stopped: true,
+        ..Stub::default()
+    })
+    .await;
+    let text = accept(&fx).await;
+    fx.agent.start_from_frame(&user_frame(&text)).await;
+    let session = fx
+        .agent
+        .registry
+        .lock()
+        .await
+        .get_session(&fx.agent.session_id)
+        .cloned()
+        .unwrap();
+    let worktree = std::path::PathBuf::from(session.worktree_path.clone().unwrap());
+    tokio::fs::create_dir_all(&worktree).await.unwrap();
+
+    // The launch itself may or may not succeed here; only the settle is under test.
+    let _ = fx.agent.launch(&session, worktree, false, "").await;
+
+    let after = file(&fx).await;
+    assert_eq!(status(&after), ItemStatus::Upcoming);
+    assert!(after.pending_complete.is_empty());
+    fx.finish().await;
+}
