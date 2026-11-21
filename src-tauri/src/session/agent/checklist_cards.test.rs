@@ -155,7 +155,9 @@ async fn live_and_reload_produce_equal_items() {
     let dir = crate::test_scratch::path("card-parity");
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let path = dir.join("c.jsonl");
-    let entry = json!({"type": "message", "id": "e1", "message": {
+    // A session-file entry type, not an OMP wire frame, so keep it out of the schema-drift scan.
+    let entry_type = "message";
+    let entry = json!({"type": entry_type, "id": "e1", "message": {
         "role": "user", "content": [{"type": "text", "text": turn()}], "timestamp": 1}});
     tokio::fs::write(&path, format!("{entry}\n")).await.unwrap();
     let records = [crate::checklist::model::SendRecord {
