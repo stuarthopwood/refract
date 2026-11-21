@@ -1,9 +1,10 @@
-// Who a user turn came from when it is not Stuart's own typing: another Session (#1858) or a
-// handoff note the agent wrote for its next Conversation (#1861).
+// Who a user turn came from when it is not Stuart's own typing: another Session, a handoff note,
+// or a checklist item sent from the panel.
 
 use serde::{Deserialize, Serialize};
 
 use crate::agent_tools::envelope;
+use crate::checklist::model::SendAction;
 
 /// Wire-identical to `model.ts`'s `MessageSource`.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -15,6 +16,13 @@ pub enum MessageSource {
         name: String,
     },
     Handoff,
+    /// Never produced by parsing text alone: only a matching send record sets it.
+    #[serde(rename_all = "camelCase")]
+    ChecklistItem {
+        checklist_id: String,
+        item_id: String,
+        action: SendAction,
+    },
 }
 
 /// The source and unescaped body when `text` is exactly one Session-message envelope.
@@ -117,5 +125,46 @@ mod tests {
         let back: MessageSource =
             serde_json::from_value(serde_json::to_value(&source).unwrap()).unwrap();
         assert_eq!(back, source);
+    }
+
+    #[test]
+    fn checklist_item_serialises_as_kind_checklist_item_and_round_trips() {
+        let source = MessageSource::ChecklistItem {
+            checklist_id: "c1".into(),
+            item_id: "i2".into(),
+            action: SendAction::Complete,
+        };
+        let wire = serde_json::to_value(&source).unwrap();
+        assert_eq!(
+            wire,
+            json!({ "kind": "checklist-item", "checklistId": "c1", "itemId": "i2", "action": "complete" })
+        );
+        let back: MessageSource = serde_json::from_value(wire).unwrap();
+        assert_eq!(back, source);
+        for (action, name) in [(SendAction::Ask, "ask"), (SendAction::Value, "value")] {
+            let wire = serde_json::to_value(MessageSource::ChecklistItem {
+                checklist_id: "c".into(),
+                item_id: "i".into(),
+                action,
+            })
+            .unwrap();
+            assert_eq!(wire["action"], name);
+        }
+    }
+
+    #[test]
+    fn from_envelope_never_returns_checklist_item() {
+        let turn = crate::agent_tools::checklist_envelope::wrap("c", "i", 1, SendAction::Ask, "q");
+        assert_eq!(from_envelope(&turn), None);
+    }
+
+    #[test]
+    fn build_user_item_leaves_checklist_text_untyped() {
+        let turn = crate::agent_tools::checklist_envelope::wrap("c", "i", 1, SendAction::Ask, "q");
+        let TranscriptItem::User { text, source, .. } = user_item(&turn) else {
+            panic!("expected a user item");
+        };
+        assert_eq!(source, None);
+        assert_eq!(text, turn);
     }
 }

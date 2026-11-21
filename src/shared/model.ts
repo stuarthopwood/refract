@@ -333,7 +333,8 @@ export interface FileAttachmentRef {
 /** Who sent a user turn when it was not Stuart: another Session (#1858), or an agent's own handoff note (#1861). Absent for ordinary turns. */
 export type MessageSource =
   | { kind: 'session'; sessionId: string; name: string }
-  | { kind: 'handoff' };
+  | { kind: 'handoff' }
+  | { kind: 'checklist-item'; checklistId: string; itemId: string; action: 'ask' | 'value' | 'complete' };
 
 /** Where a notice came from when Refract did not write it (#2114): an OMP extension's `notify` request. Absent for Refract's own notices. */
 export type NoticeSource = 'extension';
