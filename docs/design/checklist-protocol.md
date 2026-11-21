@@ -113,7 +113,7 @@ Option A for the agent side. Rust owns the checklist. The developer's direct edi
 | 5 | Refract to renderer | Tauri event `checklist:update` (new, beside `readout:update` in `src-tauri/src/events.rs`) | `{ sessionId, checklist, by: "agent" \| "developer", opened?: true }` | The whole checklist, so the renderer holds no merge logic. |
 | 6 | Renderer to Refract: read | IPC request `checklist.get` | `(sessionId)` returns the active checklist or `null` | none |
 | 7 | Renderer to Refract: tick, value, edit | IPC request `checklist.mutate` | `(sessionId, checklistId, baseRev, requestId?, op)` | `op` names the item id. |
-| 8 | Renderer to agent: ask / value / complete this step | IPC request `checklist.itemMessage`, which sends an undecorated `prompt` | `(sessionId, checklistId, itemId, action: "ask" \| "value" \| "complete", text?)`, sent as a `<checklist-item>` envelope | The envelope carries `checklist`, `item` and `rev`. |
+| 8 | Renderer to agent: ask / value / complete this step | IPC request `checklist.itemMessage`, which sends an undecorated `prompt` | `(sessionId, checklistId, itemId, action: "ask" \| "value" \| "complete", text?, baseRev)`, sent as a `<checklist-item>` envelope | The envelope carries `checklist`, `item` and `rev`. `value` and `complete` need `baseRev` and fail `item_changed` when the agent changed the item since. |
 | 9 | Refract to agent: developer edits it has not acknowledged | `userChanges` in every `refract_checklist` result, plus a hint line in the `[Refract]` notice | list of `{ rev, itemId, op, by, ... }`: the op and the changed field names only, never new text or values | Same ids. |
 | 10 | Refract to disk | Write-through to `<data_dir>/checklists/<sessionId>.json` | See "Persistence" | Same ids. |
 

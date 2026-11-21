@@ -32,8 +32,8 @@
 
 ## Phase 4: Close-out
 
-- [ ] T020 Changelog entry and `docs/PLAN.md` row for #2013 (what shipped, depends on #2011 and #2012); `docs/design/checklist-protocol.md` notes only if T001 found drift. Verified by: `git diff --stat` shows docs only.
-- [ ] T021 Run `pnpm ci:local` once; fix only failures this lane introduced (file size, comment density, parity, lint, types, tests). Verified by: clean exit.
+- [x] T020 Changelog entry and `docs/PLAN.md` row for #2013 (what shipped, depends on #2011 and #2012); `docs/design/checklist-protocol.md` notes only if T001 found drift. Verified by: `git diff --stat` shows docs only. `CHANGELOG.md` is generated per release from PR titles, so no hand entry; the design doc row 8 gained `baseRev` (F2).
+- [x] T021 Run `pnpm ci:local` once; fix only failures this lane introduced (file size, comment density, parity, lint, types, tests). Verified by: clean exit. Result: no lane failures; only two known flaky Rust tests failed and pass alone; clippy, Tauri debug build and `check:ui-text` run by hand and pass.
 - [ ] T022 Live check on a scratch Tauri debug build, isolated per `docs/rust-build.md` (own data dir, own WebView2 profile, own instance), fake omp: attach CDP, drive with real input, screenshot each: ask on an idle Session (sent), on a working one (queued), on a paused one (held); value then agent sees it; save value with no agent; refused send keeps draft with alert; "Do this item" goes in progress then settles; Ctrl+Enter, Escape focus return. Verified by: screenshots saved under `%TEMP%\scratch\checklist-controls-2013\`, a short results note in the PR, scratch deleted by literal path.
 
 ## Order
