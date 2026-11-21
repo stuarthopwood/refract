@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { makeItem } from './checklist-fixtures'
-import { byteLength, canDoItem, deliveryLine, derivePresentation, dismissForm, isSendChord, refusalLine, sendBlock, sendLabel, showsDoItem, submitAndRefocus } from './item-controls'
+import { byteLength, canDoItem, deliveryLine, derivePresentation, dismissForm, doItemHint, doItemLabel, isSendChord, refusalLine, sendBlock, sendLabel, showsDoItem, submitAndRefocus } from './item-controls'
 
 describe('item-controls', () => {
   it('awaiting_input_when_requires_value_and_no_value', () => {
@@ -91,5 +91,15 @@ describe('item-controls', () => {
     expect(focus).not.toHaveBeenCalled()
     await submitAndRefocus(async () => true, { focus })
     expect(focus).toHaveBeenCalledOnce()
+  })
+
+  it('do_item_label_and_hint_say_why_it_cannot_go', () => {
+    const plain = makeItem({ id: 'a' })
+    expect(doItemLabel(plain)).toBe('Do this item')
+    expect(doItemLabel(makeItem({ id: 'a', status: 'in_progress' }))).toBe('Agent is doing this item')
+    expect(doItemHint(plain, true)).toBeNull()
+    expect(doItemHint(plain, false)).toContain('not running')
+    expect(doItemHint(makeItem({ id: 'a', requiresValue: true }), true)).toContain('Add a value first')
+    expect(doItemHint(makeItem({ id: 'a', status: 'in_progress' }), false)).toBeNull()
   })
 })

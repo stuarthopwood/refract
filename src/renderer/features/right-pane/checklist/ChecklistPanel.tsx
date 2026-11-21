@@ -12,6 +12,7 @@ import { useRevealRequest } from './reveal'
 import { useChecklistAnnouncer } from './useChecklistAnnouncer'
 
 interface ChecklistListProps {
+  sessionId: string
   checklist: Checklist
   pending: Record<string, true>
   refusals: Record<string, ItemRefusal>
@@ -19,12 +20,20 @@ interface ChecklistListProps {
 }
 
 /** The active checklist's rows, keyed by item id so a row keeps its focus and state across updates. */
-export function ChecklistList({ checklist, pending, refusals, onTick }: ChecklistListProps) {
+export function ChecklistList({ sessionId, checklist, pending, refusals, onTick }: ChecklistListProps) {
   return (
     // Item ids restart at i1 per checklist, so a replace must remount the rows past the memo.
     <ol key={checklist.id} aria-label={checklist.title}>
       {checklist.items.map((item) => (
-        <ChecklistRow key={item.id} item={item} pending={pending[item.id] === true} refusal={refusals[item.id]} onTick={onTick} />
+        <ChecklistRow
+          key={item.id}
+          item={item}
+          sessionId={sessionId}
+          checklistId={checklist.id}
+          pending={pending[item.id] === true}
+          refusal={refusals[item.id]}
+          onTick={onTick}
+        />
       ))}
     </ol>
   )
@@ -139,7 +148,7 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
           itemCount === 0 ? (
             <InlineStatus>This checklist has no items yet.</InlineStatus>
           ) : (
-            <ChecklistList checklist={checklist} pending={pending} refusals={refusals} onTick={onTick} />
+            sessionId !== null && <ChecklistList sessionId={sessionId} checklist={checklist} pending={pending} refusals={refusals} onTick={onTick} />
           )
         ) : (
           error === null && !toolUnavailable && <NoChecklist sessionId={sessionId} loaded={loaded} />

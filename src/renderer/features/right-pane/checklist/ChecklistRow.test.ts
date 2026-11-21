@@ -1,14 +1,17 @@
 // The repo has no jsdom, so rows render to a string.
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { draftKey, selectItemDraft, useChecklistDraftsStore } from '@/state/checklist-drafts'
 import type { ItemRefusal } from '@/state/checklist-store'
 import type { ChecklistItem } from '../../../../shared/checklist'
 import { ChecklistRow } from './ChecklistRow'
 import { makeItem } from './checklist-fixtures'
 
 const render = (item: ChecklistItem, extra: { pending?: boolean; refusal?: ItemRefusal } = {}): string =>
-  renderToStaticMarkup(createElement('ol', null, createElement(ChecklistRow, { item, pending: extra.pending ?? false, onTick: () => {}, refusal: extra.refusal })))
+  renderToStaticMarkup(
+    createElement('ol', null, createElement(ChecklistRow, { item, sessionId: 's1', checklistId: 'p1', pending: extra.pending ?? false, onTick: () => {}, refusal: extra.refusal }))
+  )
 
 const tickTag = (html: string): string => /<button[^>]*role="checkbox"[^>]*>/.exec(html)?.[0] ?? ''
 const textOf = (html: string): string => html.replace(/<[^>]*>/g, ' ')
@@ -140,12 +143,46 @@ describe('ChecklistRow', () => {
   })
 })
 
+describe('ChecklistRow controls', () => {
+  const html = (...items: ChecklistItem[]): string =>
+    renderToStaticMarkup(
+      createElement('ol', null, ...items.map((item) => createElement(ChecklistRow, { key: item.id, item, sessionId: 's1', checklistId: 'p1', pending: false, onTick: () => {} })))
+    )
+
+  beforeEach(() => useChecklistDraftsStore.setState({ openKey: null, drafts: {}, inFlight: {}, notes: {} }))
+
+  it('controls_render_per_item', () => {
+    const out = html(makeItem({ id: 'a' }), makeItem({ id: 'b' }))
+    expect(out.match(/data-slot="checklist-item-controls"/g)).toHaveLength(2)
+    expect(out.match(/Ask or provide a value/g)?.length).toBeGreaterThanOrEqual(2)
+    expect(out).toContain('size-4')
+    expect(out).toContain('after:-inset-1')
+  })
+
+  // Server rendering reads the store's initial state, so the open form itself is covered by the view and store tests.
+  it('submitting_one_item_leaves_other_items_untouched', () => {
+    const a = draftKey({ sessionId: 's1', checklistId: 'p1', itemId: 'a' })
+    const b = draftKey({ sessionId: 's1', checklistId: 'p1', itemId: 'b' })
+    const store = useChecklistDraftsStore.getState()
+    store.open(a)
+    store.setText(a, 'which file?')
+    store.beginSend(a)
+    expect(a).not.toBe(b)
+    expect(selectItemDraft(useChecklistDraftsStore.getState(), b)).toBeUndefined()
+    expect(useChecklistDraftsStore.getState().inFlight[b]).toBeUndefined()
+    const out = html(makeItem({ id: 'a' }), makeItem({ id: 'b' }))
+    expect(out.match(/aria-controls=/g)).toBeNull()
+    expect(out).toContain('checklist-item-form-a-do-hint')
+    expect(out).toContain('checklist-item-form-b-do-hint')
+  })
+})
+
 describe('ChecklistRow memo comparator', () => {
   type Props = Parameters<typeof ChecklistRow>[0]
   // React's memo type does not expose its comparator, but the memo object carries it.
   const compare = (ChecklistRow as unknown as { compare: (a: Props, b: Props) => boolean }).compare
   const onTick = (): void => {}
-  const base: Props = { item: makeItem({ id: 'a', rev: 1 }), pending: false, onTick, refusal: undefined }
+  const base: Props = { item: makeItem({ id: 'a', rev: 1 }), sessionId: 's1', checklistId: 'p1', pending: false, onTick, refusal: undefined }
 
   it('same_rev_pending_refusal_and_onTick_skip_the_render', () => {
     expect(compare(base, { ...base, item: { ...base.item } })).toBe(true)
@@ -155,7 +192,9 @@ describe('ChecklistRow memo comparator', () => {
     ['rev', { item: makeItem({ id: 'a', rev: 2 }) }],
     ['pending', { pending: true }],
     ['refusal', { refusal: { code: 'item_changed', message: 'm', op: 'tick' as const } }],
-    ['onTick', { onTick: () => {} }]
+    ['onTick', { onTick: () => {} }],
+    ['sessionId', { sessionId: 's2' }],
+    ['checklistId', { checklistId: 'p2' }]
   ])('a_changed_%s_re_renders', (_name, change) => {
     expect(compare(base, { ...base, ...change })).toBe(false)
   })

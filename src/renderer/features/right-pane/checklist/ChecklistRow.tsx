@@ -7,10 +7,14 @@ import type { ItemRefusal } from '@/state/checklist-store'
 import type { ChecklistItem } from '../../../../shared/checklist'
 import { refusalMessage, refusalTone } from './checklist-refusal'
 import { CHECKLIST_STATUS_GLYPH } from './checklist-status'
+import { ChecklistItemControls } from './ChecklistItemControls'
 import { needsValueToTick } from './checklist-tick'
 
 interface ChecklistRowProps {
   item: ChecklistItem
+  /** Item ids restart per checklist, so the controls' drafts are keyed by both. */
+  sessionId: string
+  checklistId: string
   /** A `checklist.mutate` for this item is in flight. */
   pending: boolean
   refusal?: ItemRefusal
@@ -20,7 +24,7 @@ interface ChecklistRowProps {
 const PLAIN_TEXT = 'whitespace-pre-wrap break-words'
 
 /** One checklist item: tick, text, status with icon and word, who completed it, its value, and why a tick was refused. */
-function ChecklistRowView({ item, pending, refusal, onTick }: ChecklistRowProps) {
+function ChecklistRowView({ item, sessionId, checklistId, pending, refusal, onTick }: ChecklistRowProps) {
   const id = useId()
   const textId = `${id}-text`
   const reasonId = `${id}-reason`
@@ -80,10 +84,20 @@ function ChecklistRowView({ item, pending, refusal, onTick }: ChecklistRowProps)
             {refusalMessage(refusal)}
           </InlineStatus>
         )}
+        <ChecklistItemControls sessionId={sessionId} checklistId={checklistId} item={item} />
       </div>
     </li>
   )
 }
 
 /** A row re-renders only when its item revision, pending flag or refusal changes; `onTick` is stable. */
-export const ChecklistRow = memo(ChecklistRowView, (a, b) => a.item.rev === b.item.rev && a.pending === b.pending && a.refusal === b.refusal && a.onTick === b.onTick)
+export const ChecklistRow = memo(
+  ChecklistRowView,
+  (a, b) =>
+    a.item.rev === b.item.rev &&
+    a.pending === b.pending &&
+    a.refusal === b.refusal &&
+    a.onTick === b.onTick &&
+    a.sessionId === b.sessionId &&
+    a.checklistId === b.checklistId
+)

@@ -28,7 +28,7 @@ describe('ChecklistPanel', () => {
     expect(html.match(/<li[ >]/g)).toHaveLength(3)
     expect([...html.matchAll(/data-checklist-item="([^"]+)"/g)].map((m) => m[1])).toEqual(['a', 'b', 'c'])
 
-    const list = ChecklistList({ checklist, pending: {}, refusals: {}, onTick: () => {} })
+    const list = ChecklistList({ sessionId: 's1', checklist, pending: {}, refusals: {}, onTick: () => {} })
     const rows = list.props.children as ReactElement[]
     expect(rows.every(isValidElement)).toBe(true)
     expect(rows.map((row) => row.key)).toEqual(['a', 'b', 'c'])
@@ -37,7 +37,7 @@ describe('ChecklistPanel', () => {
   it('list_ticks_report_the_item_id', () => {
     const onTick = vi.fn()
     const checklist = makeChecklist({ items: [makeItem({ id: 'a' }), makeItem({ id: 'b' })] })
-    const rows = ChecklistList({ checklist, pending: {}, refusals: {}, onTick }).props.children as ReactElement<{ onTick: (itemId: string) => void }>[]
+    const rows = ChecklistList({ sessionId: 's1', checklist, pending: {}, refusals: {}, onTick }).props.children as ReactElement<{ onTick: (itemId: string) => void }>[]
     rows[1]?.props.onTick('b')
     expect(onTick).toHaveBeenCalledWith('b')
   })
