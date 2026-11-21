@@ -165,7 +165,13 @@ async function main() {
     for (const [name, id] of Object.entries({ i1, i2, i3, i4, i5, i6 })) names[name] = await getAccessibleName(cdp, boxSel(id));
     check(Object.entries(textOf).every(([k, t]) => names[k] === t), 'each tick resolves to its item text as accessible name', names);
     const words = await cdp.evaluate(`(() => Object.fromEntries(Object.entries(${JSON.stringify({ i1, i2, i3, i4, i5, i6 })}).map(([k, id]) => { const r = document.querySelector('[data-checklist-item="' + id + '"]'); const w = r.querySelector('div > span.inline-flex'); return [k, { text: w?.textContent.trim(), hasIcon: !!w?.querySelector('svg') }]; })))()`);
-    check(Object.values(words).every((w) => w.hasIcon && w.text) && new Set(Object.values(words).map((w) => w.text)).size >= 5, 'every status shows an icon plus a word; all five statuses read differently', words);
+    // Upcoming rows deliberately render no status span (the unticked box is the state; gate fix 6b3d2f86); the other four carry icon plus word.
+    const marked = ['i1', 'i2', 'i5', 'i6'];
+    check(
+      marked.every((k) => words[k].hasIcon && words[k].text) && new Set(marked.map((k) => words[k].text.split('Completed by')[0])).size === 4 && ['i3', 'i4'].every((k) => !words[k].hasIcon && !words[k].text),
+      'complete/next/in-progress/blocked each show an icon plus a distinct word; upcoming rows show only the unticked box',
+      words
+    );
     const currentRows = await cdp.evaluate(`Array.from(document.querySelectorAll('[data-checklist-item][aria-current="step"]')).map((r) => r.getAttribute('data-checklist-item'))`);
     check(currentRows.length === 1 && currentRows[0] === i2, 'aria-current="step" is only on the next row', currentRows);
 
@@ -268,7 +274,7 @@ async function main() {
     await pidOfNewestSession([pidA]);
     const frontIs = (id) => `document.querySelector('[data-session-open=${JSON.stringify(id)}]')?.getAttribute('aria-current') === 'true'`;
     await cdp.waitFor(frontIs(sessionB.id), { timeoutMs: 15_000, label: 'Session B front' });
-    await cdp.waitFor(`document.querySelector('section[aria-label="Checklist"]')?.innerText.includes('Checklist tool unavailable')`, { timeoutMs: 15_000, label: 'tool-unavailable notice' });
+    await cdp.waitFor(`document.querySelector('section[aria-label="Checklist"]')?.innerText.includes("can't use checklists")`, { timeoutMs: 15_000, label: 'tool-unavailable notice' });
     const unavailable = await live(sessionB.id);
     check(unavailable.toolUnavailable === true, 'the fake omp refused set_host_tools: Session B reports toolUnavailable and the panel shows the notice', { toolUnavailable: unavailable.toolUnavailable });
     await cdp.screenshot(path.join(EVIDENCE, '07-tool-unavailable.png'));
@@ -276,14 +282,14 @@ async function main() {
     check(!created6.isError && created6.body.error === undefined && created6.body.checklistId !== undefined, 'agent in front-less Session A created a second checklist (archives or replaces)', created6.body);
     await sleep(1200);
     const frontAfter = await cdp.evaluate(`({ b: ${frontIs(sessionB.id)}, a: ${frontIs(sessionA.id)}, text: document.querySelector('section[aria-label="Checklist"]')?.innerText ?? null })`);
-    check(frontAfter.b && !frontAfter.a && frontAfter.text?.includes('Checklist tool unavailable') && !frontAfter.text.includes('Background plan'), 'a background Session checklist with opened:true did not switch the visible pane', frontAfter);
+    check(frontAfter.b && !frontAfter.a && frontAfter.text?.includes("can't use checklists") && !frontAfter.text.includes('Background plan'), 'a background Session checklist with opened:true did not switch the visible pane', frontAfter);
     await cdp.screenshot(path.join(EVIDENCE, '06-background-session-no-switch.png'));
     // The switch proves the screenshot discriminates: Session A, once front, hydrates the checklist the agent made while it was behind.
     await cdp.click(`document.querySelector('[data-session-open=${JSON.stringify(sessionA.id)}]')`);
     await cdp.waitFor(frontIs(sessionA.id), { timeoutMs: 15_000, label: 'Session A front again' });
     await cdp.waitFor(`document.querySelector('section[aria-label="Checklist"]')?.innerText.includes('Background plan')`, { timeoutMs: 15_000, label: 'background checklist hydrated' });
     const switched = await cdp.evaluate(`document.querySelector('section[aria-label="Checklist"]')?.innerText ?? null`);
-    check(switched?.includes('Background plan') && !switched.includes('Checklist tool unavailable'), 'switching to Session A shows the checklist created while it was in the background', switched);
+    check(switched?.includes('Background plan') && !switched.includes("can't use checklists"), 'switching to Session A shows the checklist created while it was in the background', switched);
     await cdp.screenshot(path.join(EVIDENCE, '06b-background-session-hydrated.png'));
     cdp.close();
   } catch (err) {
