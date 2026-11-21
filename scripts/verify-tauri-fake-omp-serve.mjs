@@ -3,6 +3,7 @@
 // Files go in `<REFRACT_FAKE_OMP_SERVE_ROOT>/<cwd basename>/`, named like real omp files; `serve-procs.jsonl` maps pid to dir.
 // A `prompt` containing `HOLD` stays open until a `__serve_settle__` call line or `abort_and_restore_queue`.
 // `REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS` / `..._PROMPT_AFTER_NEW_REFUSALS`: scratch files holding N refusals to make.
+// `REFRACT_FAKE_OMP_PROMPT_REFUSALS` is the same for any `prompt`; a prompt sent while a turn is held answers `queued`, as omp does (#2013).
 
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -84,8 +85,9 @@ export function createServe({ emit, root, cwd, pid, env }) {
           refuseNextPrompt = false;
           return refuse('fixture refused the first prompt after new_session');
         }
+        if (takeFrom(env.REFRACT_FAKE_OMP_PROMPT_REFUSALS)) return refuse('fixture refused the prompt');
         turnId = cmd.id;
-        reply();
+        reply(held ? { queued: true } : {});
         const text = typeof cmd.message === 'string' ? cmd.message : '';
         emit({ type: 'agent_start' });
         const message = { role: 'user', content: [{ type: 'text', text }], timestamp: 0 };
