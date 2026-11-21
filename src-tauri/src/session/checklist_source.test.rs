@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use super::{apply_checklist_sources, match_checklist_item};
 use crate::agent_tools::checklist_envelope::wrap;
-use crate::checklist::model::{ChecklistFile, SendAction};
+use crate::checklist::model::{ChecklistFile, SendAction, SendRecord};
 use crate::checklist::records::add_send_record;
 use crate::omp::transcript::{MessageSource, TranscriptItem};
 
@@ -19,10 +19,10 @@ fn user(text: &str, source: Option<MessageSource>) -> Arc<TranscriptItem> {
     })
 }
 
-fn sent(text: &str) -> ChecklistFile {
+fn sent(text: &str) -> Vec<SendRecord> {
     let mut file = ChecklistFile::empty();
     add_send_record(&mut file, "c1", "i1", 3, SendAction::Ask, text);
-    file
+    file.send_records
 }
 
 fn base_turn() -> String {
@@ -63,16 +63,25 @@ fn each_field_mismatch_stays_plain() {
     ];
     for turn in variants {
         // The record carries the variant's own hash, so only the named field can differ.
-        assert!(match_checklist_item(&turn, &sent(&turn)).is_none(), "{turn}");
+        assert!(
+            match_checklist_item(&turn, &sent(&turn)).is_none(),
+            "{turn}"
+        );
     }
 }
 
 #[test]
 fn hash_mismatch_stays_plain() {
-    let file = sent(&wrap("c1", "i1", 3, SendAction::Ask, "the original question"));
+    let records = sent(&wrap(
+        "c1",
+        "i1",
+        3,
+        SendAction::Ask,
+        "the original question",
+    ));
     let edited = wrap("c1", "i1", 3, SendAction::Ask, "an edited question");
 
-    assert!(match_checklist_item(&edited, &file).is_none());
+    assert!(match_checklist_item(&edited, &records).is_none());
 }
 
 #[test]
@@ -86,7 +95,7 @@ fn two_envelopes_stays_plain() {
 fn evicted_record_stays_plain() {
     let turn = base_turn();
 
-    assert!(match_checklist_item(&turn, &ChecklistFile::empty()).is_none());
+    assert!(match_checklist_item(&turn, &[]).is_none());
 }
 
 #[test]

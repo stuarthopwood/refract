@@ -4,17 +4,17 @@
 use std::sync::Arc;
 
 use crate::agent_tools::checklist_envelope::parse;
-use crate::checklist::model::ChecklistFile;
-use crate::checklist::records::has_send_record;
+use crate::checklist::model::SendRecord;
+use crate::checklist::records::is_recorded;
 use crate::omp::transcript::{MessageSource, TranscriptItem};
 
 /// The source and unescaped body of `text` when it is exactly one envelope that a send record
 /// vouches for on all five fields; otherwise `None`, and the turn stays plain text.
-pub fn match_checklist_item(text: &str, file: &ChecklistFile) -> Option<(MessageSource, String)> {
+pub fn match_checklist_item(text: &str, records: &[SendRecord]) -> Option<(MessageSource, String)> {
     let envelope = parse(text)?;
     // The hash covers the whole delivered turn, so it is taken from the original text.
-    if !has_send_record(
-        file,
+    if !is_recorded(
+        records,
         &envelope.checklist_id,
         &envelope.item_id,
         envelope.rev,
@@ -36,7 +36,7 @@ pub fn match_checklist_item(text: &str, file: &ChecklistFile) -> Option<(Message
 /// there stays text and a second pass over a labelled list changes nothing.
 pub fn apply_checklist_sources(
     items: &[Arc<TranscriptItem>],
-    file: &ChecklistFile,
+    records: &[SendRecord],
 ) -> Vec<(usize, TranscriptItem)> {
     let mut changes = Vec::new();
     for (index, item) in items.iter().enumerate() {
@@ -46,7 +46,7 @@ pub fn apply_checklist_sources(
         else {
             continue;
         };
-        let Some((matched, body)) = match_checklist_item(text, file) else {
+        let Some((matched, body)) = match_checklist_item(text, records) else {
             continue;
         };
         let mut labelled = item.as_ref().clone();

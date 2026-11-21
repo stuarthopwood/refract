@@ -16,6 +16,7 @@ use crate::store::settings::{ApprovalMode, SettingsStore};
 
 mod chat;
 mod chat_restore;
+mod checklist_cards;
 mod checklist_notice;
 mod checklist_pending;
 mod command_wait;
@@ -111,6 +112,7 @@ struct AgentState {
     pending_agent_notice: Vec<String>,
     // A new or relaunched Conversation has not heard about the active checklist yet.
     checklist_line_due: bool,
+    checklist_cards: checklist_cards::State,
     pause: pause::State,
 }
 
@@ -207,6 +209,7 @@ impl SessionAgent {
                 queued_handoff: None,
                 pending_agent_notice: Vec::new(),
                 checklist_line_due: true,
+                checklist_cards: Default::default(),
                 pause: Default::default(),
             }),
             status_tx,
@@ -419,7 +422,14 @@ impl SessionAgent {
     }
 
     async fn apply_transcript_frame(&self, frame: &Value) {
+        // Read before the state lock so the store lock never nests inside it.
+        let records = if checklist_cards::needs_match(frame) {
+            Some(self.checklist_send_records().await)
+        } else {
+            None
+        };
         let mut state = self.state.lock().await;
+        checklist_cards::hold_records(&mut state, records);
         self.apply_frame_locked(&mut state, frame);
     }
 
@@ -440,6 +450,7 @@ impl SessionAgent {
         let turn_abort_requested = state.turn_abort_requested;
         mutate(&mut state.transcript, turn_abort_requested);
         queued_handoff::mark_note(state);
+        checklist_cards::mark_cards(state);
         let ops = diff_transcript(&before, state.transcript.items());
         // Queued under the state lock so a concurrent reset cannot supersede this upsert.
         if !ops.is_empty() {

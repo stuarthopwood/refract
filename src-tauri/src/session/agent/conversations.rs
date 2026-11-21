@@ -75,6 +75,7 @@ impl SessionAgent {
             let mut state = self.state.lock().await;
             state.transcript = TranscriptState::new();
             state.handoff.note_live = false;
+            super::checklist_cards::clear(&mut state);
             // A failed-handoff notice belongs to the Conversation it failed in (#1861).
             state.pending_agent_notice.clear();
             state.checklist_line_due = true;
@@ -184,6 +185,7 @@ impl SessionAgent {
             false
         };
         let note_live = super::queued_handoff::is_note_file(Some(&file)).await;
+        let records = self.checklist_send_records().await;
         {
             let mut state = self.state.lock().await;
             state.handoff.note_live = note_live;
@@ -199,6 +201,8 @@ impl SessionAgent {
                 TranscriptState::new()
             };
             super::queued_handoff::mark_note(&mut state);
+            super::checklist_cards::clear(&mut state);
+            super::checklist_cards::label_transcript(&mut state, &records);
         }
         // A different Conversation, so the old readout and subagent state must not carry over (#577).
         crate::session::readout::on_conversation_reset(self).await;
