@@ -150,7 +150,7 @@ async fn refused_send_undoes_complete_and_removes_record() {
     let err = item_message_with(&host, "s1", "p1", "i1", 1, SendAction::Complete, None)
         .await
         .unwrap_err();
-    assert_eq!(err.code, "agent-not-running");
+    assert_eq!(err.code, "prompt-failed");
     let after = file(&host).await;
     assert_eq!(status_of(&after), ItemStatus::Upcoming);
     assert!(after.send_records.is_empty());
@@ -196,6 +196,23 @@ async fn returns_sent_queued_held() {
         assert_eq!(out["delivery"], json!(name));
         assert!(has_send_record_for_ask(&file(&host).await, &host).await);
     }
+}
+
+#[tokio::test]
+async fn only_a_delivery_failure_reports_prompt_failed() {
+    let host = host(true, Err("agent-not-running"));
+    seed(&host, one_developer_item()).await;
+    let err = item_message_with(&host, "s1", "p1", "i1", 1, SendAction::Complete, None)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "prompt-failed");
+
+    let no_agent = self::host(false, Ok(MessageDelivery::Sent));
+    seed(&no_agent, one_developer_item()).await;
+    let err = item_message_with(&no_agent, "s1", "p1", "i1", 1, SendAction::Complete, None)
+        .await
+        .unwrap_err();
+    assert_ne!(err.code, "prompt-failed");
 }
 
 async fn has_send_record_for_ask(file: &ChecklistFile, _host: &FakeHost) -> bool {

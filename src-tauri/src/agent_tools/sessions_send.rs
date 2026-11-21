@@ -10,20 +10,12 @@ use super::envelope;
 use super::router::{ToolError, INVALID_INPUT};
 use super::sessions::{check_args, status_of, NOT_FOUND, SEND_SESSION_MESSAGE};
 use super::sessions_limit::{SendLimiter, LIMITER};
-use crate::session::agent::{AgentError, MessageDelivery, SessionAgent};
+use crate::session::agent::{outcome_name, AgentError, MessageDelivery, SessionAgent};
 
 pub const INVALID_TARGET: &str = "invalid_target";
 pub const SESSION_NOT_RUNNING: &str = "session_not_running";
 pub const RATE_LIMITED: &str = "rate_limited";
 pub const MAX_TEXT_BYTES: usize = 32 * 1024;
-
-pub fn outcome_name(delivery: MessageDelivery) -> &'static str {
-    match delivery {
-        MessageDelivery::Sent => "sent",
-        MessageDelivery::Queued => "queued",
-        MessageDelivery::Held => "held",
-    }
-}
 
 /// `(id, text)` once the arguments are well formed.
 pub fn parse_args(args: &Value) -> Result<(&str, &str), ToolError> {

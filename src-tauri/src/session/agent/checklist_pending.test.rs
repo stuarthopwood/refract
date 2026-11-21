@@ -206,6 +206,73 @@ async fn relaunch_settles_all() {
 }
 
 #[tokio::test]
+async fn removing_a_held_complete_restores_the_item() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+    fx.agent
+        .state
+        .lock()
+        .await
+        .pause
+        .hold_for_test(vec![text.clone()]);
+
+    let out = fx.agent.remove_queued(text, "followUp").await.unwrap();
+
+    assert_eq!(out["removed"], true);
+    let after = file(&fx).await;
+    assert_eq!(status(&after), ItemStatus::Upcoming);
+    assert!(after.pending_complete.is_empty());
+    fx.finish().await;
+}
+
+async fn prompts(fx: &Fixture) -> Vec<String> {
+    fx.rpcs()
+        .await
+        .iter()
+        .filter(|cmd| cmd["type"] == "prompt")
+        .map(|cmd| cmd["message"].as_str().unwrap().to_string())
+        .collect()
+}
+
+#[tokio::test]
+async fn a_held_envelope_resumes_verbatim_and_undecorated() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+    {
+        let mut state = fx.agent.state.lock().await;
+        state.pause.hold_for_test(vec![text.clone()]);
+        state.pending_agent_notice = vec!["Handoff failed: boom".to_string()];
+        state.checklist_line_due = true;
+    }
+
+    fx.agent.resume().await.unwrap();
+
+    assert_eq!(prompts(&fx).await, std::slice::from_ref(&text));
+    let state = fx.agent.state.lock().await;
+    assert_eq!(state.pending_agent_notice, ["Handoff failed: boom"]);
+    assert!(state.checklist_line_due);
+    drop(state);
+    fx.agent.start_from_frame(&user_frame(&text)).await;
+    assert!(file(&fx).await.pending_complete[0].started);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn stop_while_held_does_not_restore_the_held_item() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+    fx.agent.state.lock().await.pause.hold_for_test(vec![text]);
+
+    fx.agent.settle_checklist_unstarted().await;
+    fx.agent.settle_checklist_all().await;
+
+    let after = file(&fx).await;
+    assert_eq!(status(&after), ItemStatus::InProgress);
+    assert_eq!(after.pending_complete.len(), 1);
+    fx.finish().await;
+}
+
+#[tokio::test]
 async fn evicted_send_record_never_starts_and_settle_restores() {
     let fx = fixture_with(Stub::default()).await;
     let text = accept(&fx).await;

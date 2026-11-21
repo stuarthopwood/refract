@@ -8,13 +8,12 @@ use serde_json::{json, Value};
 
 use super::checklist::{live_session, refusal, store_error, AppHost, Host};
 use super::{arg_str, invalid_argument, IpcError};
-use crate::agent_tools::sessions_send::outcome_name;
 use crate::checklist::item_message::prepare;
 use crate::checklist::model::{Actor, SendAction};
 use crate::checklist::records::{clear_resolved, refuse_complete, remove_send_record};
 use crate::checklist::store::StoreError;
 use crate::events::checklist_update_payload;
-use crate::session::agent::MessageDelivery;
+use crate::session::agent::{outcome_name, MessageDelivery};
 use crate::session::AgentError;
 
 /// The Session's agent, which `Host` does not need for the panel's own edits.
@@ -90,8 +89,17 @@ pub async fn item_message_with(
             "checklist": prepared.checklist,
         })),
         Err(err) => {
-            undo_send(host, session_id, checklist_id, item_id, action, &prepared).await;
-            Err(IpcError::new(err.code, err.message))
+            // Every failure here is after the store write, so one code tells the panel the value is saved.
+            let mut refused = IpcError::new("prompt-failed", err.message);
+            if let Err(undo) =
+                undo_send(host, session_id, checklist_id, item_id, action, &prepared).await
+            {
+                refused.message = format!(
+                    "{} The item could not be restored: {}",
+                    refused.message, undo.message
+                );
+            }
+            Err(refused)
         }
     }
 }
@@ -105,16 +113,13 @@ async fn undo_send(
     item_id: &str,
     action: SendAction,
     prepared: &crate::checklist::item_message::Prepared,
-) {
-    let Ok(live) = live_session(host, session_id).await else {
-        return;
-    };
+) -> Result<(), IpcError> {
+    let live = live_session(host, session_id).await?;
     let emit = host.emitter();
     let session = session_id.to_string();
     let (checklist_id, item_id) = (checklist_id.to_string(), item_id.to_string());
     let (rev, text) = (prepared.rev, prepared.text.clone());
-    let _ = host
-        .store()
+    host.store()
         .apply_detached_then(
             live,
             move |file| {
@@ -136,7 +141,12 @@ async fn undo_send(
                 }
             },
         )
-        .await;
+        .await
+        .map_err(|err| {
+            log::warn!("checklist: could not undo a refused item send: {err:?}");
+            store_error(err, session_id)
+        })?;
+    Ok(())
 }
 
 impl ItemHost for AppHost<'_> {
@@ -158,9 +168,14 @@ pub fn register(d: &mut super::Dispatcher) {
     d.register("checklist.itemMessage", checklist_item_message);
 }
 
-fn checklist_item_message(state: super::AppState, args: Vec<Value>) -> super::HandlerFuture {
+fn checklist_item_message(state: super::AppState, mut args: Vec<Value>) -> super::HandlerFuture {
     Box::pin(async move {
         const SHAPE: &str = "checklist.itemMessage expects (sessionId, checklistId, itemId, baseRev, action, text?)";
+        let text = match args.get_mut(5).map(Value::take) {
+            None | Some(Value::Null) => None,
+            Some(Value::String(text)) => Some(text),
+            Some(_) => return Err(invalid_argument(SHAPE)),
+        };
         let (Some(session_id), Some(checklist_id), Some(item_id), Some(base_rev), Some(action)) = (
             arg_str(&args, 0),
             arg_str(&args, 1),
@@ -169,11 +184,6 @@ fn checklist_item_message(state: super::AppState, args: Vec<Value>) -> super::Ha
             arg_str(&args, 4).and_then(action_of),
         ) else {
             return Err(invalid_argument(SHAPE));
-        };
-        let text = match args.get(5) {
-            None | Some(Value::Null) => None,
-            Some(Value::String(text)) => Some(text.clone()),
-            Some(_) => return Err(invalid_argument(SHAPE)),
         };
         let host = AppHost { state: &state };
         item_message_with(

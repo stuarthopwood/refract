@@ -8,7 +8,7 @@ use crate::agent_tools::checklist_envelope::parse;
 use crate::checklist::model::{Actor, Checklist, ChecklistFile, SendAction};
 use crate::checklist::ops::ChecklistError;
 use crate::checklist::records::{
-    has_send_record, settle_all, settle_started, settle_unstarted, start_entry,
+    has_send_record, refuse_complete, settle_all, settle_started, settle_unstarted, start_entry,
 };
 use crate::checklist::store::LiveSession;
 use crate::omp::transcript::TranscriptItem;
@@ -71,14 +71,61 @@ impl SessionAgent {
         self.apply_pending(settle_started).await;
     }
 
+    /// A "complete" turn the developer removed before it ran never starts, so its item is restored.
+    pub(super) async fn settle_removed_turn(&self, text: &str) {
+        let Some(env) = parse(text).filter(|e| e.action == SendAction::Complete) else {
+            return;
+        };
+        self.apply_pending(move |file| {
+            let waiting = file.pending_complete.iter().any(|e| {
+                e.checklist_id == env.checklist_id
+                    && e.item_id == env.item_id
+                    && e.turn_marker == env.rev
+                    && !e.started
+            });
+            waiting && refuse_complete(file, &env.item_id)
+        })
+        .await;
+    }
+
     /// `stop` withdraws the queued turns, so every entry that never started is settled.
     pub(super) async fn settle_checklist_unstarted(&self) {
-        self.apply_pending(settle_unstarted).await;
+        self.settle_not_held(settle_unstarted).await;
     }
 
     /// A relaunch leaves no live turn, so every entry is stale.
     pub(super) async fn settle_checklist_all(&self) {
-        self.apply_pending(settle_all).await;
+        self.settle_not_held(settle_all).await;
+    }
+
+    /// A turn still in Pause's held list is neither withdrawn nor stale: it goes out on Resume,
+    /// so its entry waits for it.
+    async fn settle_not_held(&self, change: fn(&mut ChecklistFile) -> bool) {
+        self.ensure_pause_loaded().await;
+        let held: Vec<(String, String, u64)> = self
+            .state
+            .lock()
+            .await
+            .pause
+            .held_texts()
+            .filter_map(parse)
+            .filter(|e| e.action == SendAction::Complete)
+            .map(|e| (e.checklist_id, e.item_id, e.rev))
+            .collect();
+        self.apply_pending(move |file| {
+            let (waiting, rest) = std::mem::take(&mut file.pending_complete)
+                .into_iter()
+                .partition(|e| {
+                    held.iter().any(|(c, i, r)| {
+                        *c == e.checklist_id && *i == e.item_id && *r == e.turn_marker
+                    })
+                });
+            file.pending_complete = rest;
+            let changed = change(file);
+            file.pending_complete.extend(waiting);
+            changed
+        })
+        .await;
     }
 
     /// Applies `change` to this Session's checklist and announces the result only when it changed
@@ -105,19 +152,21 @@ impl SessionAgent {
         };
         let events = self.events.clone();
         let session_id = self.session_id.clone();
-        let _ = manager
+        let result = manager
             .checklists()
             .apply_detached_then(
                 live,
                 move |file| {
+                    // Nothing pending: skip the copy of the whole checklist.
+                    if file.pending_complete.is_empty() {
+                        return Ok::<_, ChecklistError>(None);
+                    }
                     // Only a change to the checklist itself is announced; starting an entry is not.
                     let before = file.active.clone();
                     change(file);
-                    Ok::<_, ChecklistError>(
-                        (file.active != before)
-                            .then(|| file.active.clone())
-                            .flatten(),
-                    )
+                    Ok((file.active != before)
+                        .then(|| file.active.clone())
+                        .flatten())
                 },
                 move |list: &Option<Checklist>| {
                     if let Some(list) = list {
@@ -131,6 +180,9 @@ impl SessionAgent {
                 },
             )
             .await;
+        if let Err(err) = result {
+            log::warn!("checklist: could not settle a pending item: {err:?}");
+        }
     }
 }
 

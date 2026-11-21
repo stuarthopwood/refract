@@ -38,7 +38,7 @@ mod status;
 mod sync_from_state;
 mod tool_host;
 mod types;
-pub use chat::MessageDelivery;
+pub use chat::{outcome_name, MessageDelivery};
 pub use command_wait::COMMANDS_WAIT;
 pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,

@@ -26,6 +26,15 @@ fn delivery_of(held: bool, response: &Value) -> MessageDelivery {
     }
 }
 
+/// The wire name of a delivery, shared by the agent tool and `checklist.itemMessage`.
+pub fn outcome_name(delivery: MessageDelivery) -> &'static str {
+    match delivery {
+        MessageDelivery::Sent => "sent",
+        MessageDelivery::Queued => "queued",
+        MessageDelivery::Held => "held",
+    }
+}
+
 /// Only an idle prompt that is not a drain follow-up gets the working-mode wrapper, and Session
 /// messages opt out so the envelope reaches the target verbatim.
 fn should_decorate(working: bool, force_follow_up: bool, decorate: bool) -> bool {
@@ -79,7 +88,7 @@ impl SessionAgent {
     }
 
     /// `decorate` adds the working-mode wrapper to an idle send; Session messages pass `false`.
-    async fn send_unheld_with(
+    pub(super) async fn send_unheld_with(
         &self,
         text: String,
         images: Option<Vec<Value>>,
@@ -316,6 +325,7 @@ impl SessionAgent {
     /// Removes a queued message. OMP only matches within the queue named by `queue`.
     pub async fn remove_queued(&self, text: String, queue: &str) -> Result<Value, AgentError> {
         if self.remove_held(&text).await {
+            self.settle_removed_turn(&text).await;
             return Ok(json!({ "removed": true }));
         }
         let data = self
@@ -329,6 +339,9 @@ impl SessionAgent {
             .get("removed")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        if removed {
+            self.settle_removed_turn(&text).await;
+        }
         Ok(json!({ "removed": removed }))
     }
 
