@@ -26,7 +26,7 @@ describe('ChecklistRow', () => {
     const html = render(makeItem({ id: 'a' }))
     expect(html).toContain('size-6')
     expect(tickTag(html)).toContain('size-4')
-    expect(tickTag(html)).toContain('after:-inset-[5px]')
+    expect(tickTag(html)).toContain('after:-inset-1')
   })
 
   it('pending_is_aria_disabled_not_disabled', () => {
@@ -115,8 +115,8 @@ describe('ChecklistRow', () => {
   })
 
   it('other_refusal_shows_its_message_as_an_error', () => {
-    expect(render(makeItem({ id: 'a' }), { refusal: { code: 'x', message: 'Not allowed' } })).toMatch(/data-tone="error"[^>]*role="alert"[^>]*>/)
-    expect(textOf(render(makeItem({ id: 'a' }), { refusal: { code: 'x', message: 'Not allowed' } }))).toContain('Not allowed')
+    expect(render(makeItem({ id: 'a' }), { refusal: { code: 'x', message: 'Not allowed', op: 'tick' } })).toMatch(/data-tone="error"[^>]*role="alert"[^>]*>/)
+    expect(textOf(render(makeItem({ id: 'a' }), { refusal: { code: 'x', message: 'Not allowed', op: 'tick' } }))).toContain('Not allowed')
   })
 
   it('no_alert_without_a_refusal', () => {

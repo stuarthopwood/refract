@@ -47,7 +47,7 @@ function ChecklistRowView({ item, pending, refusal, onTick }: ChecklistRowProps)
           aria-labelledby={textId}
           aria-describedby={describedBy}
           onCheckedChange={() => onTick(item.id)}
-          className={cn(CHECKBOX_BOX_ONLY_CLASS, 'relative after:absolute after:-inset-[5px] after:content-[""]')}
+          className={cn(CHECKBOX_BOX_ONLY_CLASS, 'relative after:absolute after:-inset-1 after:content-[""]')}
         >
           {pending ? <LoaderCircleIcon aria-hidden className="size-3 animate-spin motion-reduce:animate-none" /> : <CheckboxIndicator />}
         </CheckboxItem>

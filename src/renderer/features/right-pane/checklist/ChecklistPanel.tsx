@@ -107,7 +107,7 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
         <span key={line.serial}>{line.message}</span>
       </div>
       {loadError !== null && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-divider px-2 py-1">
+        <div className="no-drag-region flex shrink-0 items-center gap-2 border-b border-divider px-2 py-1">
           <InlineStatus tone="error" density="compact" className="min-w-0 flex-1 break-words p-0">
             {loadError.message}
           </InlineStatus>
