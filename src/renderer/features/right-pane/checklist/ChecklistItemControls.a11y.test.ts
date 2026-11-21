@@ -88,7 +88,8 @@ describe('ChecklistItemControls accessibility', () => {
     const refused = note({ kind: 'refusal', message: 'Not sent. Your question is still in the box.' })
     expect(refused).toMatch(/role="alert"[^>]*><svg[^>]*aria-hidden="true".*Error: <\/span>Not sent\. Your question is still in the box\./)
     const idle = renderToStaticMarkup(createElement(ItemNoteLine, { note: undefined }))
-    expect(idle).toMatch(/<div data-slot="checklist-item-note"><div role="status"><\/div><\/div>/)
+    expect(idle).toMatch(/<div data-slot="checklist-item-note"[^>]*><div role="status" class="sr-only"><\/div><\/div>/)
+    expect(idle).toContain('class="contents"')
     expect(idle).not.toContain('role="alert"')
   })
 

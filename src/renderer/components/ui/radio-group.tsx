@@ -49,7 +49,7 @@ const CARD_ITEM_CLASS =
 
 // `bare` is a ring-and-label row with no card chrome, for a small inline choice.
 const BARE_ITEM_CLASS =
-  "group/radio-item flex min-h-6 w-auto min-w-0 items-center gap-2 rounded-md text-left text-sm outline-none focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-ring disabled:cursor-not-allowed disabled:text-muted-foreground disabled:opacity-50"
+  "group/radio-item flex min-h-6 w-auto min-w-0 items-center gap-2 rounded-md text-left text-sm outline-none focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
 
 function RadioGroupItem({
   className,

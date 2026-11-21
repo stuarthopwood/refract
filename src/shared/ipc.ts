@@ -70,6 +70,7 @@ export type IpcErrorCode =
   | 'invalid-argument'
   | 'prompt-failed'
   | 'agent-not-running'
+  | 'restore-failed'
   | 'start-failed'
   | 'worktree-missing'
   | 'file-missing'

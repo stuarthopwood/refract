@@ -18,6 +18,14 @@ const adopt = (sessionId: string, checklist: Checklist | null): void => {
   if (checklist !== null) useChecklistStore.getState().applyUpdate({ sessionId, checklist, by: 'developer' })
 }
 
+// A refused send changed the item twice in Rust (prepare, then undo), and those `checklist:update` events can land after this
+// response; adopting the current checklist first stops a note stamped on the old rev from being hidden as stale.
+const resync = async (sessionId: string, code: string): Promise<void> => {
+  if (code !== 'prompt-failed' && code !== 'restore-failed') return
+  const current = await window.refract.checklist.get(sessionId)
+  if (current.ok) adopt(sessionId, current.value.checklist)
+}
+
 /** Sends one item action and records the outcome; true only when it went. A draft is cleared only by a send that came from the form. */
 export async function sendItemAction({ sessionId, itemId, action, text, agentRunning }: ItemSend): Promise<boolean> {
   const checklist = selectSessionChecklist(useChecklistStore.getState(), sessionId).checklist
@@ -56,7 +64,10 @@ export async function sendItemAction({ sessionId, itemId, action, text, agentRun
 
   const result = await window.refract.checklist.itemMessage(sessionId, checklist.id, itemId, checklist.rev, action, text)
   // The Session refused the send after Rust stored a value, so a value stays saved only on this branch.
-  if (!result.ok) return refuse(refusalLine(action, result.error))
+  if (!result.ok) {
+    await resync(sessionId, result.error.code)
+    return refuse(refusalLine(action, result.error))
+  }
   if ('error' in result.value) {
     adopt(sessionId, result.value.checklist)
     return refuse(refusalLine(action, result.value.error))

@@ -83,6 +83,7 @@ const capitalise = (text: string): string => text.charAt(0).toUpperCase() + text
 
 /** The alert after a send that did not go; it says what the developer kept so they know what is safe. */
 export const refusalLine = (action: ChecklistItemAction, error: { code: string; message: string }): string => {
+  if (error.code === 'restore-failed') return 'Not sent, and the item could not be restored. Check it before you try again.'
   const kept =
     action === 'value'
       ? error.code === 'prompt-failed'

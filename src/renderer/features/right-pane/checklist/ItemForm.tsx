@@ -14,12 +14,12 @@ const MODES: readonly { value: ItemFormMode; label: string }[] = [
   { value: 'value', label: 'Provide a value' }
 ]
 
-/** Where the last send went or why it did not. The polite status wrapper is always mounted so a delivery line is announced as a change; a refusal is its own sibling alert, never nested in it. */
+/** Where the last send went or why it did not. The polite status wrapper is always mounted so a delivery line is announced as a change; a refusal is its own sibling alert, never nested in it. Both collapse out of layout when empty so the idle row has no extra gap. */
 export function ItemNoteLine({ note }: { note: ItemNote | undefined }) {
   const delivery = note?.kind === 'delivery' ? deliveryLine(note.delivery) : null
   return (
-    <div data-slot="checklist-item-note">
-      <div role="status">
+    <div data-slot="checklist-item-note" className="contents">
+      <div role="status" className={delivery === null ? 'sr-only' : undefined}>
         {delivery !== null && (
           <InlineStatus tone="info" density="compact" className="p-0">
             {delivery}
@@ -59,7 +59,6 @@ export function ItemForm({ itemText, mode, text, agentRunning, inFlight, textare
   const cap = capFor(mode)
   const tooLong = bytes > cap
   const block = sendBlock(mode, text, agentRunning, bytes)
-  const blockedByAgent = block === ASK_UNAVAILABLE_REASON
   const send = () => {
     if (block === null && !inFlight) onSend()
   }
@@ -104,13 +103,13 @@ export function ItemForm({ itemText, mode, text, agentRunning, inFlight, textare
       <p id={counterId} className="text-xs text-muted-foreground">
         Plain text, stored in the checklist and sent to the agent. Do not put secrets here.{' '}
         <span className={tooLong ? 'text-destructive' : undefined}>
-          {bytes} of {cap} bytes{tooLong ? ', too long' : ''}
+          {bytes} of {cap} bytes
         </span>
       </p>
       <span role="status" className="sr-only">
         {tooLong ? 'Too long to send.' : ''}
       </span>
-      {block !== null && !blockedByAgent && (
+      {block !== null && (
         <p id={blockId} className="text-xs text-muted-foreground">
           {block}
         </p>
@@ -119,10 +118,9 @@ export function ItemForm({ itemText, mode, text, agentRunning, inFlight, textare
         <Button
           type="submit"
           size="sm"
-          className="aria-disabled:opacity-50"
           loading={inFlight}
           aria-disabled={block !== null || inFlight || undefined}
-          aria-describedby={block === null ? undefined : blockedByAgent ? reasonId : blockId}
+          aria-describedby={block === null ? undefined : blockId}
         >
           {sendLabel(mode, agentRunning)}
         </Button>

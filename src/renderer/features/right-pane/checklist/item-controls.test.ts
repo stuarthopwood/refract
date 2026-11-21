@@ -64,6 +64,7 @@ describe('item-controls', () => {
     expect(refusalLine('value', { code: 'agent-not-running', message: '' })).toBe('Not sent. Your value is still in the box. The agent is not running.')
     expect(refusalLine('ask', { code: 'odd', message: 'agent is busy.' })).toBe('Not sent. Your question is still in the box. Reason: Agent is busy.')
     expect(refusalLine('complete', { code: 'odd', message: '' })).toBe('Not sent. The item is unchanged.')
+    expect(refusalLine('complete', { code: 'restore-failed', message: 'x' })).toBe('Not sent, and the item could not be restored. Check it before you try again.')
   })
 
   it('send_chord_needs_enter_with_ctrl_or_meta', () => {

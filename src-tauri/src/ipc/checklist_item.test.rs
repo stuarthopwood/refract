@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::*;
@@ -14,6 +15,9 @@ struct FakeHost {
     /// The checklist file as it was when `deliver` ran, to prove store-before-send.
     seen_at_send: Mutex<Option<ChecklistFile>>,
     emits: Arc<Mutex<Vec<Value>>>,
+    /// Set once `deliver` has run, so the undo that follows finds the Session gone.
+    vanish_on_deliver: bool,
+    gone: AtomicBool,
 }
 
 impl Host for FakeHost {
@@ -21,7 +25,7 @@ impl Host for FakeHost {
         &self.store
     }
     async fn is_live(&self, _id: &str) -> bool {
-        true
+        !self.gone.load(Ordering::SeqCst)
     }
     fn is_deleting(&self, _id: &str) -> bool {
         false
@@ -37,6 +41,9 @@ impl ItemHost for FakeHost {
         self.agent
     }
     async fn deliver(&self, id: &str, _text: String) -> Result<MessageDelivery, AgentError> {
+        if self.vanish_on_deliver {
+            self.gone.store(true, Ordering::SeqCst);
+        }
         let live = LiveSession::check(id, |_| true, |_| false).unwrap();
         let file = self.store.read(&live, Clone::clone).await.unwrap();
         *self.seen_at_send.lock().unwrap() = Some(file);
@@ -56,6 +63,8 @@ fn host(agent: bool, reply: Result<MessageDelivery, &'static str>) -> FakeHost {
         reply: Mutex::new(reply),
         seen_at_send: Mutex::new(None),
         emits: Arc::new(Mutex::new(Vec::new())),
+        vanish_on_deliver: false,
+        gone: AtomicBool::new(false),
     }
 }
 
@@ -213,6 +222,18 @@ async fn only_a_delivery_failure_reports_prompt_failed() {
         .await
         .unwrap_err();
     assert_ne!(err.code, "prompt-failed");
+}
+
+#[tokio::test]
+async fn a_failed_undo_reports_restore_failed_not_prompt_failed() {
+    let mut host = host(true, Err("agent-not-running"));
+    host.vanish_on_deliver = true;
+    seed(&host, one_developer_item()).await;
+    let err = item_message_with(&host, "s1", "p1", "i1", 1, SendAction::Complete, None)
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "restore-failed");
+    assert!(err.message.contains("could not be restored"));
 }
 
 async fn has_send_record_for_ask(file: &ChecklistFile, _host: &FakeHost) -> bool {

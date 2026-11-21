@@ -117,11 +117,17 @@ describe('ChecklistItemControls', () => {
 
   it('hint_is_text_linked_by_aria_describedby', () => {
     const markup = html(makeItem({ id: 'a' }), { agentRunning: false, focused: true })
-    expect(html(makeItem({ id: 'a' }), { agentRunning: false })).not.toContain('The agent is not running')
     const describedBy = /aria-describedby="([^"]+)"/.exec(markup)?.[1] ?? ''
     expect(describedBy).not.toBe('')
-    expect(markup).toContain(`<p id="${describedBy}"`)
+    expect(markup).toContain(`<p id="${describedBy}" class="text-xs text-muted-foreground"`)
     expect(textOf(markup)).toContain('The agent is not running')
+  })
+
+  it('a_blocked_do_item_is_described_by_its_reason_even_before_the_hint_is_shown', () => {
+    const markup = html(makeItem({ id: 'a' }), { agentRunning: false })
+    const describedBy = /aria-describedby="([^"]+)"/.exec(markup)?.[1] ?? ''
+    expect(describedBy).not.toBe('')
+    expect(markup).toContain(`<p id="${describedBy}" class="sr-only"`)
   })
 
   it('escape_returns_focus_to_disclosure', () => {

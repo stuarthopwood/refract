@@ -89,17 +89,18 @@ pub async fn item_message_with(
             "checklist": prepared.checklist,
         })),
         Err(err) => {
-            // Every failure here is after the store write, so one code tells the panel the value is saved.
-            let mut refused = IpcError::new("prompt-failed", err.message);
-            if let Err(undo) =
-                undo_send(host, session_id, checklist_id, item_id, action, &prepared).await
-            {
-                refused.message = format!(
-                    "{} The item could not be restored: {}",
-                    refused.message, undo.message
-                );
+            // `prompt-failed` tells the panel the value is saved; `restore-failed` says the undo itself failed, so the item may not be as it was.
+            let refused = IpcError::new("prompt-failed", err.message);
+            match undo_send(host, session_id, checklist_id, item_id, action, &prepared).await {
+                Ok(()) => Err(refused),
+                Err(undo) => Err(IpcError::new(
+                    "restore-failed",
+                    format!(
+                        "{} The item could not be restored: {}",
+                        refused.message, undo.message
+                    ),
+                )),
             }
-            Err(refused)
         }
     }
 }

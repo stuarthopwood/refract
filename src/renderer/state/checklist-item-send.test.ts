@@ -1,11 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeChecklist, makeItem } from '../features/right-pane/checklist/checklist-fixtures'
 import { draftKey, useChecklistDraftsStore } from './checklist-drafts'
+import { isNoteStale } from '../features/right-pane/checklist/item-controls'
 import { sendItemAction } from './checklist-item-send'
 import { selectSessionChecklist, useChecklistStore } from './checklist-store'
 
 const mutate = vi.fn()
 const itemMessage = vi.fn()
+const get = vi.fn()
 const drafts = useChecklistDraftsStore
 const key = draftKey({ sessionId: 's1', checklistId: 'p1', itemId: 'a' })
 const send = (action: 'ask' | 'value' | 'complete', text: string | undefined, agentRunning: boolean) =>
@@ -17,7 +19,8 @@ beforeEach(() => {
   drafts.setState({ openKey: null, drafts: {}, inFlight: {}, notes: {} })
   mutate.mockReset()
   itemMessage.mockReset()
-  vi.stubGlobal('window', { refract: { checklist: { mutate, itemMessage } } })
+  get.mockReset()
+  vi.stubGlobal('window', { refract: { checklist: { mutate, itemMessage, get } } })
   drafts.getState().open(key)
   drafts.getState().setText(key, 'typed')
 })
@@ -88,6 +91,30 @@ describe('sendItemAction', () => {
     expect(drafts.getState().drafts[key]?.text).toBe('typed')
     expect(drafts.getState().openKey).toBe(key)
     expect(drafts.getState().inFlight[key]).toBeUndefined()
+  })
+
+  it('a_refused_send_keeps_its_note_when_the_rust_updates_land_after_the_response', async () => {
+    const settled = makeChecklist({ rev: 5, items: [makeItem({ id: 'a', rev: 5 })] })
+    itemMessage.mockResolvedValue({ ok: false, error: { code: 'prompt-failed', message: 'down' } })
+    get.mockResolvedValue({ ok: true, value: { checklist: settled, toolUnavailable: false } })
+
+    expect(await send('complete', undefined, true)).toBe(false)
+    useChecklistStore.getState().applyUpdate({ sessionId: 's1', checklist: settled, by: 'developer' })
+
+    const item = selectSessionChecklist(useChecklistStore.getState(), 's1').checklist?.items[0]
+    const note = drafts.getState().notes[key]
+    expect(note).toMatchObject({ kind: 'refusal' })
+    expect(isNoteStale(note?.stamp ?? { rev: -1, status: 'upcoming' }, { rev: item?.rev ?? -1, status: item?.status ?? 'upcoming' })).toBe(false)
+  })
+
+  it('a_failed_restore_says_so_and_resyncs_too', async () => {
+    itemMessage.mockResolvedValue({ ok: false, error: { code: 'restore-failed', message: 'x' } })
+    get.mockResolvedValue({ ok: true, value: { checklist: makeChecklist({ rev: 6, items: [makeItem({ id: 'a', rev: 6 })] }), toolUnavailable: false } })
+
+    await send('complete', undefined, true)
+
+    expect(drafts.getState().notes[key]).toMatchObject({ message: 'Not sent, and the item could not be restored. Check it before you try again.' })
+    expect(selectSessionChecklist(useChecklistStore.getState(), 's1').checklist?.rev).toBe(6)
   })
 
   it('a_second_send_while_one_is_in_flight_is_dropped', async () => {

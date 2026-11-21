@@ -102,7 +102,7 @@ export function ChecklistItemControlsView({
         )}
         {doItem && (
           <Button
-            className={working ? 'aria-disabled:opacity-100' : 'aria-disabled:text-muted-foreground'}
+            className={working ? undefined : 'aria-disabled:text-muted-foreground'}
             type="button"
             variant="ghost"
             size="sm"
@@ -110,7 +110,7 @@ export function ChecklistItemControlsView({
             aria-disabled={doBlocked}
             aria-busy={working || undefined}
             aria-label={`${doItemLabel(item)}: ${item.text}`}
-            aria-describedby={hintShown ? hintId : undefined}
+            aria-describedby={doBlocked && hint !== null ? hintId : undefined}
             loading={inFlight && !working}
             onClick={() => {
               if (!doBlocked) onDoItem()
@@ -121,8 +121,8 @@ export function ChecklistItemControlsView({
           </Button>
         )}
       </div>
-      {hintShown && (
-        <p id={hintId} className="text-xs text-muted-foreground">
+      {hint !== null && (
+        <p id={hintId} className={hintShown ? 'text-xs text-muted-foreground' : 'sr-only'}>
           {hint}
         </p>
       )}

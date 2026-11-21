@@ -75,7 +75,8 @@ describe('ItemForm', () => {
     expect(textOf(render({ mode: 'ask', text: 'abc' }))).toContain('3 of 4096 bytes')
     expect(textOf(render({ mode: 'value', text: 'ééé' }))).toContain('6 of 1024 bytes')
     const over = render({ mode: 'value', text: 'x'.repeat(1025) })
-    expect(textOf(over)).toContain('1025 of 1024 bytes, too long')
+    expect(textOf(over)).toContain('1025 of 1024 bytes')
+    expect(textOf(over.replace(/<span role="status"[^>]*>[^<]*<\/span>/, '')).match(/too long/gi)).toHaveLength(1)
     expect(over).toContain('aria-invalid="true"')
   })
 
