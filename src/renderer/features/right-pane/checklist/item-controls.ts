@@ -22,6 +22,19 @@ export const canDoItem = (item: ChecklistItem): boolean => {
   return !item.requiresValue || (item.value !== undefined && item.value !== '' && item.valueBy === 'developer')
 }
 
+export const DO_ITEM_LABEL = 'Do this item'
+export const IN_PROGRESS_LABEL = 'Agent is doing this item'
+
+/** What "Do this item" says on its face; an item the agent is on stays shown, with its state in words. */
+export const doItemLabel = (item: ChecklistItem): string => (item.status === 'in_progress' ? IN_PROGRESS_LABEL : DO_ITEM_LABEL)
+
+/** Why "Do this item" cannot go, shown as text beside it; null when it can, or when the label already says the agent has it. */
+export const doItemHint = (item: ChecklistItem, agentRunning: boolean): string | null => {
+  if (item.status === 'in_progress') return null
+  if (!agentRunning) return 'The agent is not running, so it cannot do this item.'
+  return canDoItem(item) ? null : 'Add a value first, then the agent can do this item.'
+}
+
 const encoder = new TextEncoder()
 
 /** The size the Rust caps count. */
