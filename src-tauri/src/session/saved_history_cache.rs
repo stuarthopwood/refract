@@ -5,8 +5,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
+use super::checklist_source::apply_checklist_sources;
 use super::handoff_note::marked_first_user;
 use super::saved_history::{contained_history_file, read_saved_history, SavedHistory};
+use crate::checklist::model::SendRecord;
 use crate::omp::transcript::TranscriptItem;
 
 const CAPACITY: usize = 4;
@@ -20,12 +22,32 @@ type Items = Arc<Vec<Arc<TranscriptItem>>>;
 static CACHE: Mutex<Vec<(Key, Items)>> = Mutex::new(Vec::new());
 
 /// Returns the saved history of the Session's current Conversation file, cached when unchanged.
-pub async fn load_saved_history(session_dir: Option<&str>, file: Option<&str>) -> SavedHistory {
+/// `records` are the Session's checklist sends, applied to a copy so the cache never holds them.
+pub async fn load_saved_history(
+    session_dir: Option<&str>,
+    file: Option<&str>,
+    records: &[SendRecord],
+) -> SavedHistory {
     let Some(path) = contained_history_file(session_dir, file).await else {
         return SavedHistory::Missing;
     };
     let history = load_cached(path.clone()).await;
-    label_handoff_note(&path, history).await
+    label_checklist_turns(label_handoff_note(&path, history).await, records)
+}
+
+fn label_checklist_turns(history: SavedHistory, records: &[SendRecord]) -> SavedHistory {
+    let SavedHistory::Items(items) = &history else {
+        return history;
+    };
+    let changes = apply_checklist_sources(items, records);
+    if changes.is_empty() {
+        return history;
+    }
+    let mut labelled = items.to_vec();
+    for (index, item) in changes {
+        labelled[index] = Arc::new(item);
+    }
+    SavedHistory::Items(Arc::new(labelled))
 }
 
 /// The cache keeps the unlabelled list; a handoff Conversation gets a labelled copy per call.
