@@ -9,6 +9,7 @@ import { MessageImageGrid } from '@/components/MessageImageGrid'
 import { MessageMenu } from './MessageMenu'
 import { SessionSourceLine } from './SessionSourceLine'
 import { HandoffNoteLine } from './HandoffNoteLine'
+import { ChecklistItemSourceLine } from './ChecklistItemSourceLine'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -19,6 +20,8 @@ interface UserMessageRowProps {
   userAvatarUrl?: string
   /** True when a `TimeGapDivider` directly above already shows the time. */
   hideTime?: boolean
+  /** The Session whose transcript holds this turn; its own, which in a split is not always the focused one. */
+  sessionId: string | null
 }
 
 // `numeric: 'auto'` yields the localised word ("yesterday") instead of "1 day ago".
@@ -55,19 +58,24 @@ function UserMessageTime({ at, hide }: { at: number; hide: boolean | undefined }
   )
 }
 
+// The Rust side sends an empty body for a complete, so the bubble says what the click did.
+const CHECKLIST_COMPLETE_COPY = 'Asked the agent to complete this step'
+
 /** Right-aligned user bubble; the timestamp is a sibling above the whole `Message`. */
-export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: UserMessageRowProps) {
+export function UserMessageRow({ item, sessionId, userName, userAvatarUrl, hideTime }: UserMessageRowProps) {
   const source = item.source
   const sender = source?.kind === 'session' ? source : undefined
   // A Session-sent turn is authored by that Session, not the user: no user avatar or name.
   const author = sender ? sender.name : (userName ?? 'You')
   const sourceLineId = React.useId()
+  const bodyText = source?.kind === 'checklist-item' && source.action === 'complete' ? CHECKLIST_COMPLETE_COPY : item.text
   return (
     <>
       <UserMessageTime at={item.at} hide={hideTime} />
       {source?.kind === 'session' && <SessionSourceLine source={source} id={sourceLineId} />}
       {source?.kind === 'handoff' && <HandoffNoteLine id={sourceLineId} />}
-      <MessageMenu id={item.id} text={item.text} align="end">
+      {source?.kind === 'checklist-item' && <ChecklistItemSourceLine source={source} sessionId={sessionId} id={sourceLineId} />}
+      <MessageMenu id={item.id} text={bodyText} align="end">
       <Message align="end">
         <MessageAvatar aria-hidden>
           {sender ? (
@@ -90,9 +98,9 @@ export function UserMessageRow({ item, userName, userAvatarUrl, hideTime }: User
             </div>
           )}
           {item.images && item.images.length > 0 && <MessageImageGrid images={item.images} className="mb-2" />}
-          {item.text.trim() !== '' && <Markdown id={item.id} text={item.text} variant="chat" className="text-chat-user-bubble-fg" />}
+          {bodyText.trim() !== '' && <Markdown id={item.id} text={bodyText} variant="chat" className="text-chat-user-bubble-fg" />}
           {/* An image-only message whose images are missing still says so (#744). */}
-          {item.text.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
+          {bodyText.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
         </MessageContent>
       </Message>
       </MessageMenu>
