@@ -8,6 +8,8 @@ import { needsValueToTick } from '../features/right-pane/checklist/checklist-tic
 export interface ItemRefusal {
   code: string
   message: string
+  /** What the developer tried: ticking an open item or unticking a completed one. Optional only so existing literals in other tests still typecheck; the store always sets it. */
+  op?: 'tick' | 'untick'
   /** The item's status in the checklist the refusal returned; the `item_changed` sentence names it. */
   status?: ItemStatus
 }
@@ -146,6 +148,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       // Rust refuses a completion without a value; asking would only produce an error the row already explains.
       if (needsValueToTick(item)) return
       const status: ItemStatus = complete ? (item.previousStatus ?? 'upcoming') : 'complete'
+      const op: ItemRefusal['op'] = complete ? 'untick' : 'tick'
       const withoutPending = (state: SessionChecklist): Record<string, true> => {
         const { [itemId]: _done, ...rest } = state.pending
         return rest
@@ -163,7 +166,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
       if (!result.ok) {
         patch(sessionId, (state) => ({
           pending: withoutPending(state),
-          refusals: { ...state.refusals, [itemId]: { code: result.error.code, message: result.error.message } }
+          refusals: { ...state.refusals, [itemId]: { code: result.error.code, message: result.error.message, op } }
         }))
         return
       }
@@ -172,7 +175,7 @@ export const useChecklistStore = create<ChecklistState>((set, get) => {
         if (latest !== null) accept(sessionId, latest, null)
         patch(sessionId, (state) => ({
           pending: withoutPending(state),
-          refusals: { ...state.refusals, [itemId]: { code: error.code, message: error.message, status: latest?.items.find((candidate) => candidate.id === itemId)?.status } }
+          refusals: { ...state.refusals, [itemId]: { code: error.code, message: error.message, op, status: latest?.items.find((candidate) => candidate.id === itemId)?.status } }
         }))
         return
       }

@@ -258,7 +258,14 @@ describe('useChecklistStore.mutateItem', () => {
     const latest = makeChecklist({ rev: 6, items: [makeItem({ id: 'i1', status: 'blocked', rev: 6 })] })
     mutate.mockResolvedValue({ ok: true, value: { error: { code: 'item_changed', message: 'changed' }, checklist: latest } })
     await useChecklistStore.getState().mutateItem('s1', 'i1')
-    expect(read('s1').refusals.i1).toEqual({ code: 'item_changed', message: 'changed', status: 'blocked' })
+    expect(read('s1').refusals.i1).toEqual({ code: 'item_changed', message: 'changed', op: 'tick', status: 'blocked' })
+  })
+
+  it('a_refused_untick_records_the_untick_op', async () => {
+    seed(makeItem({ id: 'i1', status: 'complete', previousStatus: 'next', completedBy: 'developer' }))
+    mutate.mockResolvedValue({ ok: false, error: { code: 'x', message: 'no' } })
+    await useChecklistStore.getState().mutateItem('s1', 'i1')
+    expect(read('s1').refusals.i1?.op).toBe('untick')
   })
 
   it('refusal_clears_when_the_item_changes_again', async () => {
@@ -274,7 +281,7 @@ describe('useChecklistStore.mutateItem', () => {
     seed()
     mutate.mockResolvedValue({ ok: false, error: { code: 'unknown_session', message: 'gone' } })
     await useChecklistStore.getState().mutateItem('s1', 'i1')
-    expect(read('s1').refusals.i1).toEqual({ code: 'unknown_session', message: 'gone' })
+    expect(read('s1').refusals.i1).toEqual({ code: 'unknown_session', message: 'gone', op: 'tick' })
     expect(read('s1').pending).toEqual({})
   })
 
