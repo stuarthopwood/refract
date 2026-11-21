@@ -53,6 +53,29 @@ pub fn has_send_record(
     })
 }
 
+/// Drops the newest matching send record, for a send that was refused. Returns whether one went.
+pub fn remove_send_record(
+    file: &mut ChecklistFile,
+    checklist_id: &str,
+    item_id: &str,
+    rev: u64,
+    action: SendAction,
+    text: &str,
+) -> bool {
+    let hash = text_hash(text);
+    let Some(at) = file.send_records.iter().rposition(|r| {
+        r.checklist_id == checklist_id
+            && r.item_id == item_id
+            && r.rev == rev
+            && r.action == action
+            && r.text_hash == hash
+    }) else {
+        return false;
+    };
+    file.send_records.remove(at);
+    true
+}
+
 fn has_complete_record(file: &ChecklistFile, entry: &PendingComplete) -> bool {
     file.send_records.iter().any(|r| {
         r.checklist_id == entry.checklist_id

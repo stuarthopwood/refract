@@ -3,11 +3,13 @@
 use serde_json::{json, Value};
 
 use crate::agent_tools::checklist_envelope::wrap;
-use crate::checklist::model::{ChecklistFile, ItemStatus, SendAction};
-use crate::checklist::records::accept_complete;
+use crate::agent_tools::envelope;
+use crate::checklist::model::{ChecklistFile, ItemStatus, SendAction, MAX_SEND_RECORDS};
+use crate::checklist::records::{accept_complete, add_send_record};
 use crate::checklist::store::LiveSession;
 use crate::checklist::test_support::{checklist, item};
 use crate::session::agent::pause_subagents::fixture::{fixture_with, Fixture, Stub};
+use crate::session::agent::SessionStatus;
 
 fn user_frame(text: &str) -> Value {
     json!({
@@ -48,12 +50,73 @@ fn status(file: &ChecklistFile) -> ItemStatus {
 }
 
 #[tokio::test]
-async fn a_started_turn_restores_the_item_when_it_settles() {
+async fn own_turn_starts_the_entry() {
     let fx = fixture_with(Stub::default()).await;
     let text = accept(&fx).await;
 
     fx.agent.start_from_frame(&user_frame(&text)).await;
+
     assert!(file(&fx).await.pending_complete[0].started);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn edited_text_does_not_start_it() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+
+    fx.agent
+        .start_from_frame(&user_frame(&format!("{text} edited")))
+        .await;
+
+    assert!(!file(&fx).await.pending_complete[0].started);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn other_rev_does_not_start_it() {
+    let fx = fixture_with(Stub::default()).await;
+    accept(&fx).await;
+    let other = wrap("p1", "i1", 99, SendAction::Complete, "body");
+
+    fx.agent.start_from_frame(&user_frame(&other)).await;
+
+    assert!(!file(&fx).await.pending_complete[0].started);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn handoff_note_turn_is_skipped() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+    fx.agent.state.lock().await.handoff.note_live = true;
+
+    fx.agent.start_from_frame(&user_frame(&text)).await;
+
+    assert!(!file(&fx).await.pending_complete[0].started);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn session_message_body_is_not_parsed() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+    let from_a_sibling = envelope::wrap("sibling", "s2", &text);
+
+    fx.agent
+        .start_from_frame(&user_frame(&from_a_sibling))
+        .await;
+
+    assert!(!file(&fx).await.pending_complete[0].started);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn settle_started_restores_when_status_rev_equals_turn_marker() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+
+    fx.agent.start_from_frame(&user_frame(&text)).await;
     fx.agent.settle_checklist_turn().await;
 
     let after = file(&fx).await;
@@ -63,15 +126,27 @@ async fn a_started_turn_restores_the_item_when_it_settles() {
 }
 
 #[tokio::test]
-async fn an_edited_turn_starts_nothing() {
+async fn settle_started_keeps_a_status_the_agent_changed() {
     let fx = fixture_with(Stub::default()).await;
     let text = accept(&fx).await;
+    fx.agent.start_from_frame(&user_frame(&text)).await;
+    let live = LiveSession::check(&fx.agent.session_id, |_| true, |_| false).unwrap();
+    fx.manager
+        .checklists()
+        .apply(&live, |file| {
+            let list = file.active.as_mut().unwrap();
+            list.rev += 1;
+            let rev = list.rev;
+            list.items[0].status = ItemStatus::Blocked;
+            list.items[0].status_rev = rev;
+            Ok(())
+        })
+        .await
+        .unwrap();
 
-    fx.agent
-        .start_from_frame(&user_frame(&format!("{text} edited")))
-        .await;
+    fx.agent.settle_checklist_turn().await;
 
-    assert!(!file(&fx).await.pending_complete[0].started);
+    assert_eq!(status(&file(&fx).await), ItemStatus::Blocked);
     fx.finish().await;
 }
 
@@ -89,23 +164,66 @@ async fn a_settle_leaves_an_unstarted_entry_waiting() {
 }
 
 #[tokio::test]
-async fn withdrawing_the_queue_settles_unstarted_entries() {
+async fn stop_settles_a_queued_unstarted_complete() {
     let fx = fixture_with(Stub::default()).await;
     accept(&fx).await;
+    {
+        let mut state = fx.agent.state.lock().await;
+        state.status = SessionStatus::Working;
+        state.turn_generation = 1;
+    }
 
-    fx.agent.settle_checklist_unstarted().await;
+    // `stop` waits for the Session to go idle, so run it aside and release it afterwards.
+    let agent = fx.agent.clone();
+    let stopping = tokio::spawn(async move { agent.stop().await });
+    for _ in 0..200 {
+        if status(&file(&fx).await) == ItemStatus::Upcoming {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    let after = file(&fx).await;
+    assert_eq!(status(&after), ItemStatus::Upcoming);
+    assert!(after.pending_complete.is_empty());
 
-    assert_eq!(status(&file(&fx).await), ItemStatus::Upcoming);
+    fx.agent.set_status(SessionStatus::Idle, None, None).await;
+    stopping.await.unwrap().unwrap();
     fx.finish().await;
 }
 
 #[tokio::test]
-async fn a_relaunch_settles_every_entry() {
+async fn relaunch_settles_all() {
     let fx = fixture_with(Stub::default()).await;
     let text = accept(&fx).await;
     fx.agent.start_from_frame(&user_frame(&text)).await;
 
     fx.agent.settle_checklist_all().await;
+
+    let after = file(&fx).await;
+    assert_eq!(status(&after), ItemStatus::Upcoming);
+    assert!(after.pending_complete.is_empty());
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn evicted_send_record_never_starts_and_settle_restores() {
+    let fx = fixture_with(Stub::default()).await;
+    let text = accept(&fx).await;
+    let live = LiveSession::check(&fx.agent.session_id, |_| true, |_| false).unwrap();
+    fx.manager
+        .checklists()
+        .apply(&live, |file| {
+            for n in 0..MAX_SEND_RECORDS {
+                add_send_record(file, "p1", "i1", 1, SendAction::Ask, &format!("ask {n}"));
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    fx.agent.start_from_frame(&user_frame(&text)).await;
+    assert!(!file(&fx).await.pending_complete[0].started);
+    fx.agent.settle_checklist_turn().await;
 
     let after = file(&fx).await;
     assert_eq!(status(&after), ItemStatus::Upcoming);
