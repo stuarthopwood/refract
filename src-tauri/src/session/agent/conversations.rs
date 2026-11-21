@@ -201,8 +201,7 @@ impl SessionAgent {
                 TranscriptState::new()
             };
             super::queued_handoff::mark_note(&mut state);
-            super::checklist_cards::clear(&mut state);
-            super::checklist_cards::label_transcript(&mut state, &records);
+            super::checklist_cards::reload(&mut state, &records);
         }
         // A different Conversation, so the old readout and subagent state must not carry over (#577).
         crate::session::readout::on_conversation_reset(self).await;

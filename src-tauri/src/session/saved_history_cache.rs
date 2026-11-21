@@ -36,6 +36,9 @@ pub async fn load_saved_history(
 }
 
 fn label_checklist_turns(history: SavedHistory, records: &[SendRecord]) -> SavedHistory {
+    if records.is_empty() {
+        return history;
+    }
     let SavedHistory::Items(items) = &history else {
         return history;
     };

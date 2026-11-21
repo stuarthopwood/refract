@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use super::{apply_checklist_sources, match_checklist_item};
-use crate::agent_tools::checklist_envelope::wrap;
+use crate::agent_tools::checklist_envelope::{complete_body, wrap};
 use crate::checklist::model::{ChecklistFile, SendAction, SendRecord};
 use crate::checklist::records::add_send_record;
 use crate::omp::transcript::{MessageSource, TranscriptItem};
@@ -22,6 +22,12 @@ fn user(text: &str, source: Option<MessageSource>) -> Arc<TranscriptItem> {
 fn sent(text: &str) -> Vec<SendRecord> {
     let mut file = ChecklistFile::empty();
     add_send_record(&mut file, "c1", "i1", 3, SendAction::Ask, text);
+    file.send_records
+}
+
+fn sent_as(text: &str, action: SendAction) -> Vec<SendRecord> {
+    let mut file = ChecklistFile::empty();
+    add_send_record(&mut file, "c1", "i1", 3, action, text);
     file.send_records
 }
 
@@ -51,6 +57,25 @@ fn matches_all_five_fields_and_sets_body() {
         }
     );
     assert_eq!(body, "what <next>?");
+}
+
+#[test]
+fn a_complete_turn_matches_and_its_text_is_the_whole_fixed_body() {
+    let body = complete_body("Ship <it>", true);
+    let turn = wrap("c1", "i1", 3, SendAction::Complete, &body);
+
+    let (source, text) =
+        match_checklist_item(&turn, &sent_as(&turn, SendAction::Complete)).unwrap();
+
+    assert_eq!(
+        source,
+        MessageSource::ChecklistItem {
+            checklist_id: "c1".into(),
+            item_id: "i1".into(),
+            action: SendAction::Complete,
+        }
+    );
+    assert_eq!(text, body);
 }
 
 #[test]

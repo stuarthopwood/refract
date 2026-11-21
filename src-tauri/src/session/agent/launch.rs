@@ -383,11 +383,12 @@ impl SessionAgent {
             };
             state.handoff.note_live = note_live;
             if complete {
-                let transcript = &mut state.transcript;
-                transcript.merge_from_history(&messages, terminated_unexpectedly);
-                queued_handoff::mark_note(&mut state);
-                super::checklist_cards::clear(&mut state);
-                super::checklist_cards::label_transcript(&mut state, &records);
+                super::checklist_cards::merge_relaunch_history(
+                    &mut state,
+                    &messages,
+                    terminated_unexpectedly,
+                    &records,
+                );
             }
         }
         // After the merge above, so the notice is not dropped as unpersisted.

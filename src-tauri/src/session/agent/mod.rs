@@ -421,18 +421,6 @@ impl SessionAgent {
         payload
     }
 
-    async fn apply_transcript_frame(&self, frame: &Value) {
-        // Read before the state lock so the store lock never nests inside it.
-        let records = if checklist_cards::needs_match(frame) {
-            Some(self.checklist_send_records().await)
-        } else {
-            None
-        };
-        let mut state = self.state.lock().await;
-        checklist_cards::hold_records(&mut state, records);
-        self.apply_frame_locked(&mut state, frame);
-    }
-
     /// For a caller that checks state and writes the transcript in one lock hold.
     fn apply_frame_locked(&self, state: &mut AgentState, frame: &Value) {
         self.mutate_transcript_locked(state, |transcript, turn_abort_requested| {

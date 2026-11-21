@@ -122,6 +122,21 @@ async fn reload_labels_matching_checklist_turn() {
 }
 
 #[tokio::test]
+async fn a_labelled_load_leaves_the_cache_unlabelled() {
+    let dir = crate::test_scratch::path("saved-history-card-cache");
+    let file = write_turn(&dir, "cardcache.jsonl", &turn()).await;
+    handoff_notes::use_dir_for_test(dir.clone());
+    let session_dir = dir.to_string_lossy().into_owned();
+
+    let labelled = load_saved_history(Some(&session_dir), Some(&file), &records()).await;
+    let plain = load_saved_history(Some(&session_dir), Some(&file), &[]).await;
+
+    assert!(first_source(&labelled).is_some());
+    assert_eq!(first_source(&plain), None);
+    assert_eq!(first_text(&plain), turn());
+}
+
+#[tokio::test]
 async fn reload_skips_handoff_note_turn() {
     let dir = crate::test_scratch::path("saved-history-card-note");
     let file = write_turn(&dir, "cardnote.jsonl", &turn()).await;
