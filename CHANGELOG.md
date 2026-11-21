@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.39.0 (2026-11-21)
+
+### Features
+
+- feat(checklist-store): Checklist data model and per-Session store (https://github.com/stuarthopwood/refract/pull/2118)
+- feat(checklist-panel): bespoke right-pane Checklist panel (https://github.com/stuarthopwood/refract/pull/2121)
+- feat(checklist-controls): per-item controls and send path (https://github.com/stuarthopwood/refract/pull/2122)
+- feat(checklist-card): checklist item source line in chat (https://github.com/stuarthopwood/refract/pull/2123)
+
+### Other
+
+- docs/plan 2026 11 20 polish (https://github.com/stuarthopwood/refract/pull/2112)
+- docs(checklist): rename interactive plan to Checklist and record #2011 grill (https://github.com/stuarthopwood/refract/pull/2113)
+- UI Polish: Chat: extension notify notices use the accent colour and a Bot icon (#2114) (https://github.com/stuarthopwood/refract/pull/2115)
+- docs(plan): add #2116 plan-mode enforcement bug row (https://github.com/stuarthopwood/refract/pull/2117)
+- docs(plan): add #2119 checklist store follow-ups row (https://github.com/stuarthopwood/refract/pull/2120)
+- docs(plan): close epic #2015 (Checklist) (https://github.com/stuarthopwood/refract/pull/2124)
+- test(checklist-card): keep the session-file entry type out of the drift scan (https://github.com/stuarthopwood/refract/pull/2125)
+
 ## v0.38.0 (2026-11-19)
 
 ### Features
