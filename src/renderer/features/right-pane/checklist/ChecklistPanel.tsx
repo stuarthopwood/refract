@@ -21,7 +21,8 @@ interface ChecklistListProps {
 /** The active checklist's rows, keyed by item id so a row keeps its focus and state across updates. */
 export function ChecklistList({ checklist, pending, refusals, onTick }: ChecklistListProps) {
   return (
-    <ol aria-label={checklist.title}>
+    // Item ids restart at i1 per checklist, so a replace must remount the rows past the memo.
+    <ol key={checklist.id} aria-label={checklist.title}>
       {checklist.items.map((item) => (
         <ChecklistRow key={item.id} item={item} pending={pending[item.id] === true} refusal={refusals[item.id]} onTick={onTick} />
       ))}
