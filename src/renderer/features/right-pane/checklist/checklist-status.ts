@@ -1,4 +1,4 @@
-import { CircleAlertIcon, CircleArrowRightIcon, CircleDashedIcon, CirclePlayIcon, type LucideIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleArrowRightIcon, CircleDotIcon, CircleIcon, type LucideIcon } from 'lucide-react'
 import type { ItemStatus } from '../../../../shared/checklist'
 import { STATUS_GLYPH } from '../../chat/statusGlyph'
 
@@ -13,9 +13,9 @@ export interface ChecklistStatusGlyph {
 // Feature-local on purpose: a Checklist item is not a Todo task, so `TodoTree`'s map is not shared.
 // `complete` and `in_progress` share a colour in dark presets, so their icon shape and word must differ.
 export const CHECKLIST_STATUS_GLYPH: Record<ItemStatus, ChecklistStatusGlyph> = {
-  upcoming: { Icon: CircleDashedIcon, className: 'text-muted-foreground', word: 'Upcoming', showWord: false },
+  upcoming: { Icon: CircleIcon, className: 'text-muted-foreground', word: 'Upcoming', showWord: false },
   next: { Icon: CircleArrowRightIcon, className: 'text-foreground', word: 'Next', showWord: true },
-  in_progress: { Icon: CirclePlayIcon, className: 'text-state-working', word: 'In progress', showWord: true },
+  in_progress: { Icon: CircleDotIcon, className: 'text-state-working', word: 'In progress', showWord: true },
   blocked: { Icon: CircleAlertIcon, className: 'text-severity-warning', word: 'Blocked', showWord: true },
   complete: { ...STATUS_GLYPH['success-done'], word: 'Complete', showWord: false }
 }

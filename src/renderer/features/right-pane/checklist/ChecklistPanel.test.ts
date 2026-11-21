@@ -37,8 +37,8 @@ describe('ChecklistPanel', () => {
   it('list_ticks_report_the_item_id', () => {
     const onTick = vi.fn()
     const checklist = makeChecklist({ items: [makeItem({ id: 'a' }), makeItem({ id: 'b' })] })
-    const rows = ChecklistList({ checklist, pending: {}, refusals: {}, onTick }).props.children as ReactElement<{ onTick: () => void }>[]
-    rows[1]?.props.onTick()
+    const rows = ChecklistList({ checklist, pending: {}, refusals: {}, onTick }).props.children as ReactElement<{ onTick: (itemId: string) => void }>[]
+    rows[1]?.props.onTick('b')
     expect(onTick).toHaveBeenCalledWith('b')
   })
 
@@ -65,26 +65,34 @@ describe('ChecklistPanel', () => {
   it('shows_tool_unavailable', () => {
     seed({ toolUnavailable: true, loaded: true })
     const html = render()
-    expect(html).toContain('Checklist tool unavailable')
-    expect(html).toMatch(/role="alert"/)
+    expect(textOf(html)).toContain('The agent can&#x27;t use checklists in this session. Restart the session to try again.')
     expect(html).not.toContain('No checklist yet')
   })
 
   it('never_silently_empty', () => {
     seed(null)
     expect(textOf(render())).toContain('Loading checklist')
-    expect(textOf(render(null))).toContain('No checklist yet')
+    expect(textOf(render(null))).toContain('No Session open')
     seed({ loaded: true })
     expect(textOf(render())).toContain('No checklist yet')
     seed({ loaded: true, checklist: makeChecklist({ items: [] }) })
     expect(textOf(render())).toContain('This checklist has no items yet.')
+    expect(textOf(render())).not.toContain('0 of 0')
   })
 
-  it('store_error_shown_inline', () => {
-    seed({ error: 'store-failed', loaded: true })
+  it('store_error_shows_user_copy_and_retry_never_the_raw_message', () => {
+    seed({ error: 'rust exploded', errorCode: 'store-failed', loaded: true })
     const html = render()
-    expect(html).toMatch(/role="alert"[^>]*>(?:(?!<\/div>).)*Couldn&#x27;t load the checklist/)
-    expect(textOf(html)).toContain('store-failed')
+    expect(html).toMatch(/role="alert"[^>]*>(?:(?!<\/div>).)*Couldn&#x27;t read this session&#x27;s checklist/)
+    expect(html).toContain('Retry')
+    expect(textOf(html)).not.toContain('rust exploded')
+  })
+
+  it('unsupported_store_error_offers_no_retry', () => {
+    seed({ error: 'newer', errorCode: 'store-unsupported', loaded: true })
+    const html = render()
+    expect(textOf(html)).toContain('newer version of Refract')
+    expect(html).not.toContain('Retry')
   })
 
   it('only_complete_items_count_as_done', () => {

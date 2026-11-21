@@ -1,29 +1,42 @@
 import { describe, expect, it } from 'vitest'
-import { containsFocus, focusFollowsReplace, wasReplaced } from './checklist-focus'
+import { blurLeavesRegion, containsFocus, shouldRefocus } from './checklist-focus'
 
-const before = { sessionId: 's1', checklistId: 'p1' }
-const after = { sessionId: 's1', checklistId: 'p2' }
+describe('shouldRefocus', () => {
+  const base = { sameSession: true, focusWasInside: true, focusStillInside: false }
 
-describe('checklist focus on replace', () => {
-  it('replace_moves_focus_when_inside', () => {
-    expect(focusFollowsReplace(before, after, true)).toBe(true)
+  it('pulls_focus_back_when_the_focused_item_went_away', () => {
+    expect(shouldRefocus(base)).toBe(true)
   })
 
-  it('replace_leaves_focus_when_outside', () => {
-    expect(focusFollowsReplace(before, after, false)).toBe(false)
+  it('leaves_focus_alone_when_it_was_outside', () => {
+    expect(shouldRefocus({ ...base, focusWasInside: false })).toBe(false)
   })
 
-  it('same_checklist_never_moves_focus', () => {
-    expect(focusFollowsReplace(before, { ...before }, true)).toBe(false)
+  it('leaves_focus_alone_when_it_is_still_inside', () => {
+    expect(shouldRefocus({ ...base, focusStillInside: true })).toBe(false)
   })
 
-  it('session_change_is_not_a_replacement', () => {
-    expect(wasReplaced(before, { sessionId: 's2', checklistId: 'p9' })).toBe(false)
+  it('a_session_change_never_pulls_focus', () => {
+    expect(shouldRefocus({ ...base, sameSession: false })).toBe(false)
+  })
+})
+
+describe('blurLeavesRegion', () => {
+  const inner = {} as Node
+  const region = { contains: (node: Node | null) => node === inner }
+  const mounted = { isConnected: true }
+
+  it('moving_focus_within_the_region_is_not_leaving', () => {
+    expect(blurLeavesRegion(region, inner, mounted)).toBe(false)
   })
 
-  it('first_checklist_is_not_a_replacement', () => {
-    expect(wasReplaced({ sessionId: 's1', checklistId: null }, after)).toBe(false)
-    expect(wasReplaced(before, { sessionId: 's1', checklistId: null })).toBe(false)
+  it('moving_focus_elsewhere_or_to_nothing_is_leaving', () => {
+    expect(blurLeavesRegion(region, {} as Node, mounted)).toBe(true)
+    expect(blurLeavesRegion(region, null, mounted)).toBe(true)
+  })
+
+  it('an_unmounted_element_is_not_a_departure', () => {
+    expect(blurLeavesRegion(region, null, { isConnected: false })).toBe(false)
   })
 })
 

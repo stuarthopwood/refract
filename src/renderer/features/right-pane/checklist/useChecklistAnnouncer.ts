@@ -28,5 +28,7 @@ export function useChecklistAnnouncer(sessionId: string | null): AnnouncerLine {
     const taken = useChecklistStore.getState().takeAnnouncement(sessionId)
     if (taken !== null) setLine((previous) => nextLine(previous, taken, Date.now()))
   }, [pending, sessionId])
+  // A line from another Session must not linger in this one's live region.
+  useEffect(() => setLine(SILENT_LINE), [sessionId])
   return line
 }

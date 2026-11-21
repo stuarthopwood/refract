@@ -26,7 +26,7 @@ describe('ChecklistRow', () => {
     const html = render(makeItem({ id: 'a' }))
     expect(html).toContain('size-6')
     expect(tickTag(html)).toContain('size-4')
-    expect(tickTag(html)).toContain('after:-inset-1')
+    expect(tickTag(html)).toContain('after:-inset-[5px]')
   })
 
   it('pending_is_aria_disabled_not_disabled', () => {
@@ -53,9 +53,9 @@ describe('ChecklistRow', () => {
     expect(render(makeItem({ id: 'a', status: 'upcoming' }))).not.toContain('aria-current')
   })
 
-  it('status_word_visible_for_next_and_screen_reader_only_for_upcoming', () => {
+  it('status_word_visible_for_blocked_and_screen_reader_only_for_complete', () => {
     expect(render(makeItem({ id: 'a', status: 'blocked' }))).toMatch(/<span>Blocked<\/span>/)
-    expect(render(makeItem({ id: 'a', status: 'upcoming' }))).toMatch(/<span class="sr-only">Upcoming<\/span>/)
+    expect(render(makeItem({ id: 'a', status: 'complete', completedBy: 'agent' }))).toMatch(/<span class="sr-only">Complete<\/span>/)
   })
 
   it('completed_by_visible', () => {
@@ -79,9 +79,22 @@ describe('ChecklistRow', () => {
     const tag = tickTag(html)
     expect(tag).toContain('aria-disabled="true"')
     expect(tag).not.toMatch(/\sdisabled(=|\s|>)/)
-    const describedBy = /aria-describedby="([^"]+)"/.exec(tag)?.[1]
-    expect(describedBy).toBeDefined()
-    expect(html).toMatch(new RegExp(`id="${describedBy}"[^>]*>This item needs a value before it can be ticked.<`))
+    const describedBy = /aria-describedby="([^"]+)"/.exec(tag)?.[1]?.split(' ') ?? []
+    expect(describedBy).toHaveLength(1)
+    expect(html).toMatch(new RegExp(`id="${describedBy[0]}"[^>]*>This item needs a value before it can be ticked.<`))
+  })
+
+  it('tick_is_described_by_the_visible_status_and_the_reason', () => {
+    const html = render(makeItem({ id: 'a', status: 'blocked', requiresValue: true }))
+    const ids = /aria-describedby="([^"]+)"/.exec(tickTag(html))?.[1]?.split(' ') ?? []
+    expect(ids).toHaveLength(2)
+    expect(html).toMatch(new RegExp(`id="${ids[0]}"[^>]*>.*Blocked`))
+  })
+
+  it('upcoming_row_renders_no_status_line', () => {
+    const html = render(makeItem({ id: 'a', status: 'upcoming' }))
+    expect(textOf(html)).not.toContain('Upcoming')
+    expect(tickTag(html)).not.toContain('aria-describedby')
   })
 
   it('requires_value_with_value_shows_no_reason', () => {
@@ -90,13 +103,20 @@ describe('ChecklistRow', () => {
     expect(tickTag(html)).toContain('aria-disabled="false"')
   })
 
-  it('item_changed_alert_text', () => {
-    const html = render(makeItem({ id: 'a' }), { refusal: { code: 'item_changed', message: 'raw', status: 'complete' } })
-    expect(html).toMatch(/<p role="alert"[^>]*>The agent changed this item to complete\. Tick again if you still want it\.<\/p>/)
+  it('item_changed_is_a_quiet_notice_naming_the_new_status', () => {
+    const html = render(makeItem({ id: 'a' }), { refusal: { code: 'item_changed', message: 'raw', status: 'blocked' } })
+    expect(html).toMatch(/<p[^>]*data-tone="notice"[^>]*role="status"[^>]*>The agent changed this item to blocked\. Tick again if you still want it\.<\/p>/)
   })
 
-  it('other_refusal_shows_its_message_in_an_alert', () => {
-    expect(render(makeItem({ id: 'a' }), { refusal: { code: 'x', message: 'Not allowed' } })).toMatch(/role="alert"[^>]*>Not allowed</)
+  it('item_changed_to_complete_does_not_ask_for_another_tick', () => {
+    const html = render(makeItem({ id: 'a' }), { refusal: { code: 'item_changed', message: 'raw', status: 'complete' } })
+    expect(textOf(html)).toContain('The agent already marked this item complete.')
+    expect(textOf(html)).not.toContain('Tick again')
+  })
+
+  it('other_refusal_shows_its_message_as_an_error', () => {
+    expect(render(makeItem({ id: 'a' }), { refusal: { code: 'x', message: 'Not allowed' } })).toMatch(/data-tone="error"[^>]*role="alert"[^>]*>/)
+    expect(textOf(render(makeItem({ id: 'a' }), { refusal: { code: 'x', message: 'Not allowed' } }))).toContain('Not allowed')
   })
 
   it('no_alert_without_a_refusal', () => {
