@@ -73,6 +73,20 @@ describe('useChecklistDraftsStore', () => {
     expect(store.getState().drafts[a]).toEqual({ mode: 'value', text: 'typed' })
   })
 
+  it('switching_mode_keeps_the_text', () => {
+    store.getState().open(a)
+    store.getState().setText(a, 'typed')
+    store.getState().setMode(a, 'value')
+    expect(store.getState().drafts[a]).toEqual({ mode: 'value', text: 'typed' })
+  })
+
+  it('a_new_send_clears_the_last_note', () => {
+    store.getState().refuse(a, 'no')
+    store.getState().beginSend(a)
+    expect(store.getState().notes[a]).toBeUndefined()
+    expect(store.getState().inFlight[a]).toBe(true)
+  })
+
   it('another_items_edit_leaves_this_items_draft_object_untouched', () => {
     store.getState().open(a)
     store.getState().setText(a, 'one')
