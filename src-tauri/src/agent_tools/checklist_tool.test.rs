@@ -142,6 +142,22 @@ async fn next_success_clears_tool_unavailable() {
 }
 
 #[tokio::test]
+async fn an_op_refusal_also_clears_tool_unavailable() {
+    let host = host(true);
+    call(&host, create_args("r1", false)).await;
+    host.store.set_tool_unavailable("s1");
+
+    let refused = call(
+        &host,
+        json!({ "action": "update", "baseRev": 1, "ops": [{ "op": "setStatus", "id": "missing", "status": "complete" }] }),
+    )
+    .await;
+
+    assert!(refused.get("error").is_some(), "{refused}");
+    assert!(!host.store.tool_unavailable("s1"));
+}
+
+#[tokio::test]
 async fn replace_card_denied_returns_denied_checklist_unchanged() {
     let host = host(false);
     call(&host, create_args("r1", false)).await;

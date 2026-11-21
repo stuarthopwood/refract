@@ -117,7 +117,8 @@ fn definitions_match_the_rpc_host_tool_shape() {
 
 #[test]
 fn refusal_sets_tool_unavailable() {
-    let store = ChecklistStore::new(std::env::temp_dir());
+    let dir = tempfile::tempdir().unwrap();
+    let store = ChecklistStore::new(dir.path().to_path_buf());
 
     note_registration(&store, "s1", false);
 
@@ -127,7 +128,8 @@ fn refusal_sets_tool_unavailable() {
 
 #[test]
 fn accepted_registration_clears_tool_unavailable() {
-    let store = ChecklistStore::new(std::env::temp_dir());
+    let dir = tempfile::tempdir().unwrap();
+    let store = ChecklistStore::new(dir.path().to_path_buf());
     store.set_tool_unavailable("s1");
 
     note_registration(&store, "s1", true);

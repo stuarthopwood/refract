@@ -404,7 +404,11 @@ pub async fn checklist_with(
             store.clear_tool_unavailable(host.caller_id());
             finish(outcome)
         }
-        Err(StoreError::Op(e)) => Ok(error_payload(&e, active_of(host, &live).await.as_ref())),
+        Err(StoreError::Op(e)) => {
+            // A refusal from the store still came from a registered tool.
+            store.clear_tool_unavailable(host.caller_id());
+            Ok(error_payload(&e, active_of(host, &live).await.as_ref()))
+        }
         Err(other) => Err(store_error(other)),
     }
 }
