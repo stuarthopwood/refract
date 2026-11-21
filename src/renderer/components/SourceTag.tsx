@@ -3,7 +3,8 @@
 // assistive technology, it never takes focus, and it adds no layout box of its own beyond its
 // content, so a row's own accessible name (set by the row) carries the same information.
 // The optional `action` (#1858) adds a real link-styled button after the word, for a tag that names
-// something the reader can jump to; only then does the tag hold a tab stop.
+// something the reader can jump to; only then does the tag hold a tab stop. The optional `detail`
+// is quoted text that wraps and clamps to two lines instead of forcing the tag wider than its row.
 import type { ComponentType, SVGProps } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -17,6 +18,8 @@ export interface SourceTagAction {
 interface SourceTagProps {
   icon: ComponentType<SVGProps<SVGSVGElement>>
   label: string
+  /** Wrapping text after the label, clamped to two lines; omit and the tag stays one unbreakable line. */
+  detail?: string
   /** Supplementary hover text (for example the advisor's own name); omit for none. */
   tooltip?: string
   /** Renders `action.label` as a button after the word; omit for plain text. */
@@ -24,11 +27,20 @@ interface SourceTagProps {
   className?: string
 }
 
-export function SourceTag({ icon: Icon, label, tooltip, action, className }: SourceTagProps) {
+export function SourceTag({ icon: Icon, label, detail, tooltip, action, className }: SourceTagProps) {
   const tag = (
-    <span data-slot="source-tag" className={cn('inline-flex shrink-0 items-center gap-1 leading-5 text-muted-foreground', className)}>
+    <span data-slot="source-tag" className={cn(detail === undefined ? 'inline-flex shrink-0' : 'inline-flex max-w-full min-w-0', 'items-center gap-1 leading-5 text-muted-foreground', className)}>
       <Icon aria-hidden="true" className="size-4 shrink-0" />
-      {label}
+      {detail === undefined ? (
+        label
+      ) : (
+        <>
+          <span className="shrink-0">{label}</span>
+          {/* A real space so textContent and copied text keep the label apart from the quoted words. */}
+          {' '}
+          <span className="line-clamp-2 min-w-0 break-words">{detail}</span>
+        </>
+      )}
       {action && (
         <>
           {/* A real space so textContent and copied text read "From Session Alpha"; flex drops it visually. */}

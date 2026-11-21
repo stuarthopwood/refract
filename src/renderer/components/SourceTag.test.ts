@@ -48,4 +48,22 @@ describe('SourceTag', () => {
     ;(button!.props.onClick as () => void)()
     expect(onActivate).toHaveBeenCalledTimes(1)
   })
+
+  it('clamps detail to two lines in a shrinkable span while the label and button stay unshrinkable', () => {
+    const html = renderToStaticMarkup(
+      createElement(SourceTag, { icon: MessageSquareIcon, label: 'Checklist item 2', detail: 'Write the migration', action: { label: 'Show in checklist', onActivate: () => {} } }),
+    )
+    expect(html).toMatch(/<span class="line-clamp-2 min-w-0 break-words">Write the migration<\/span>/)
+    expect(html).toMatch(/<span class="shrink-0">Checklist item 2<\/span>/)
+    expect(html).toMatch(/<button[^>]*class="[^"]*\bshrink-0\b[^"]*"[^>]*>Show in checklist<\/button>/)
+    expect(html).toMatch(/data-slot="source-tag" class="[^"]*max-w-full min-w-0/)
+    expect(html).not.toMatch(/data-slot="source-tag" class="[^"]*\bshrink-0\b/)
+  })
+
+  it('leaves a tag without detail exactly as before', () => {
+    const html = renderToStaticMarkup(createElement(SourceTag, { icon: MessageSquareIcon, label: 'From Session' }))
+    expect(html).toMatch(/data-slot="source-tag" class="inline-flex shrink-0 items-center gap-1 leading-5 text-muted-foreground"/)
+    expect(html).toContain('</svg>From Session</span>')
+    expect(html).not.toContain('line-clamp')
+  })
 })
