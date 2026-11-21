@@ -12,6 +12,9 @@ export const refusalTone = (refusal: ItemRefusal): 'notice' | 'error' => (refusa
 export function refusalMessage(refusal: ItemRefusal): string {
   if (refusal.code !== 'item_changed') return refusal.message
   if (refusal.status === undefined) return 'The agent changed this item. Check it, then try again if you still want to.'
-  if (refusal.status === 'complete') return 'The agent already marked this item complete.'
-  return `The agent changed this item to ${CHECKLIST_STATUS_GLYPH[refusal.status].word.toLowerCase()}. Tick again if you still want it.`
+  const untick = refusal.op === 'untick'
+  if (untick ? refusal.status !== 'complete' : refusal.status === 'complete') {
+    return untick ? 'The agent already reopened this item.' : 'The agent already marked this item complete.'
+  }
+  return `The agent changed this item to ${CHECKLIST_STATUS_GLYPH[refusal.status].word.toLowerCase()}. ${untick ? 'Untick' : 'Tick'} again if you still want it.`
 }

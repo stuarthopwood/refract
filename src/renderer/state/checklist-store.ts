@@ -8,8 +8,8 @@ import { needsValueToTick } from '../features/right-pane/checklist/checklist-tic
 export interface ItemRefusal {
   code: string
   message: string
-  /** What the developer tried: ticking an open item or unticking a completed one. Optional only so existing literals in other tests still typecheck; the store always sets it. */
-  op?: 'tick' | 'untick'
+  /** What the developer tried: ticking an open item or unticking a completed one. */
+  op: 'tick' | 'untick'
   /** The item's status in the checklist the refusal returned; the `item_changed` sentence names it. */
   status?: ItemStatus
 }

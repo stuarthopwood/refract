@@ -47,7 +47,7 @@ describe('ChecklistPanel', () => {
       checklist: makeChecklist({ items: [makeItem({ id: 'a' }), makeItem({ id: 'b' })] }),
       loaded: true,
       pending: { a: true },
-      refusals: { b: { code: 'item_changed', message: 'm', status: 'blocked' } }
+      refusals: { b: { code: 'item_changed', message: 'm', op: 'tick', status: 'blocked' } }
     })
     const html = render()
     expect(html.match(/aria-busy="true"/g)).toHaveLength(1)

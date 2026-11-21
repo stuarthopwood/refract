@@ -104,12 +104,12 @@ describe('ChecklistRow', () => {
   })
 
   it('item_changed_is_a_quiet_notice_naming_the_new_status', () => {
-    const html = render(makeItem({ id: 'a' }), { refusal: { code: 'item_changed', message: 'raw', status: 'blocked' } })
+    const html = render(makeItem({ id: 'a' }), { refusal: { code: 'item_changed', message: 'raw', op: 'tick', status: 'blocked' } })
     expect(html).toMatch(/<p[^>]*data-tone="notice"[^>]*role="status"[^>]*>The agent changed this item to blocked\. Tick again if you still want it\.<\/p>/)
   })
 
   it('item_changed_to_complete_does_not_ask_for_another_tick', () => {
-    const html = render(makeItem({ id: 'a' }), { refusal: { code: 'item_changed', message: 'raw', status: 'complete' } })
+    const html = render(makeItem({ id: 'a' }), { refusal: { code: 'item_changed', message: 'raw', op: 'tick', status: 'complete' } })
     expect(textOf(html)).toContain('The agent already marked this item complete.')
     expect(textOf(html)).not.toContain('Tick again')
   })
@@ -133,9 +133,30 @@ describe('ChecklistRow', () => {
   it('no_step_wording', () => {
     const states = [
       render(makeItem({ id: 'a', status: 'next' })),
-      render(makeItem({ id: 'a', requiresValue: true }), { refusal: { code: 'item_changed', message: 'm', status: 'next' } }),
+      render(makeItem({ id: 'a', requiresValue: true }), { refusal: { code: 'item_changed', message: 'm', op: 'tick', status: 'next' } }),
       render(makeItem({ id: 'a', status: 'complete', completedBy: 'agent', value: 'v' }), { pending: true })
     ]
     for (const html of states) expect(textOf(html)).not.toMatch(/\bsteps?\b/i)
+  })
+})
+
+describe('ChecklistRow memo comparator', () => {
+  type Props = Parameters<typeof ChecklistRow>[0]
+  // React's memo type does not expose its comparator, but the memo object carries it.
+  const compare = (ChecklistRow as unknown as { compare: (a: Props, b: Props) => boolean }).compare
+  const onTick = (): void => {}
+  const base: Props = { item: makeItem({ id: 'a', rev: 1 }), pending: false, onTick, refusal: undefined }
+
+  it('same_rev_pending_refusal_and_onTick_skip_the_render', () => {
+    expect(compare(base, { ...base, item: { ...base.item } })).toBe(true)
+  })
+
+  it.each([
+    ['rev', { item: makeItem({ id: 'a', rev: 2 }) }],
+    ['pending', { pending: true }],
+    ['refusal', { refusal: { code: 'item_changed', message: 'm', op: 'tick' as const } }],
+    ['onTick', { onTick: () => {} }]
+  ])('a_changed_%s_re_renders', (_name, change) => {
+    expect(compare(base, { ...base, ...change })).toBe(false)
   })
 })
