@@ -53,6 +53,29 @@ pub fn has_send_record(
     })
 }
 
+/// Drops the newest matching send record, for a send that was refused. Returns whether one went.
+pub fn remove_send_record(
+    file: &mut ChecklistFile,
+    checklist_id: &str,
+    item_id: &str,
+    rev: u64,
+    action: SendAction,
+    text: &str,
+) -> bool {
+    let hash = text_hash(text);
+    let Some(at) = file.send_records.iter().rposition(|r| {
+        r.checklist_id == checklist_id
+            && r.item_id == item_id
+            && r.rev == rev
+            && r.action == action
+            && r.text_hash == hash
+    }) else {
+        return false;
+    };
+    file.send_records.remove(at);
+    true
+}
+
 fn has_complete_record(file: &ChecklistFile, entry: &PendingComplete) -> bool {
     file.send_records.iter().any(|r| {
         r.checklist_id == entry.checklist_id
@@ -63,9 +86,15 @@ fn has_complete_record(file: &ChecklistFile, entry: &PendingComplete) -> bool {
 }
 
 /// Under the Session lock, before the turn goes out: the item becomes `in_progress`, an entry and
-/// the send record are added. Returns the `turnMarker`, or `None` when there is nothing to start
-/// (the caller checks owner and value rules).
-pub fn accept_complete(file: &mut ChecklistFile, item_id: &str, text: &str) -> Option<u64> {
+/// the send record are added. `build` receives the new `rev` and returns the turn text, so the
+/// envelope carries the `rev` it is recorded under and the record hashes the text actually sent.
+/// Returns the `turnMarker` and that text, or `None` when there is nothing to start (the caller
+/// checks owner and value rules).
+pub fn accept_complete(
+    file: &mut ChecklistFile,
+    item_id: &str,
+    build: impl FnOnce(u64) -> String,
+) -> Option<(u64, String)> {
     let list = file.active.as_mut()?;
     let idx = list.items.iter().position(|i| i.id == item_id)?;
     let checklist_id = list.id.clone();
@@ -77,6 +106,7 @@ pub fn accept_complete(file: &mut ChecklistFile, item_id: &str, text: &str) -> O
         return None;
     }
     let rev = bump_rev(list);
+    let text = build(rev);
     let item = &mut list.items[idx];
     item.previous_status = Some(item.status);
     item.status = ItemStatus::InProgress;
@@ -94,9 +124,9 @@ pub fn accept_complete(file: &mut ChecklistFile, item_id: &str, text: &str) -> O
         item_id,
         rev,
         SendAction::Complete,
-        text,
+        &text,
     );
-    Some(rev)
+    Some((rev, text))
 }
 
 fn restore_previous(list: &mut Checklist, idx: usize) {

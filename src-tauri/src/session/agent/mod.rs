@@ -17,6 +17,7 @@ use crate::store::settings::{ApprovalMode, SettingsStore};
 mod chat;
 mod chat_restore;
 mod checklist_notice;
+mod checklist_pending;
 mod command_wait;
 mod commands;
 mod conversations;
@@ -37,7 +38,7 @@ mod status;
 mod sync_from_state;
 mod tool_host;
 mod types;
-pub use chat::MessageDelivery;
+pub use chat::{outcome_name, MessageDelivery};
 pub use command_wait::COMMANDS_WAIT;
 pub use commands::{
     classify_slash_invocation, classify_unsupported_arguments, parse_slash_command,

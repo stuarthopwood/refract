@@ -150,7 +150,7 @@ fn accepted(status: ItemStatus) -> (ChecklistFile, u64) {
     let mut it = item("i1");
     it.status = status;
     let mut file = file_with(vec![it]);
-    let marker = accept_complete(&mut file, "i1", "do it").unwrap();
+    let (marker, _) = accept_complete(&mut file, "i1", |_| "do it".to_string()).unwrap();
     (file, marker)
 }
 
@@ -204,8 +204,66 @@ fn accept_one_entry() {
         SendAction::Complete,
         "do it"
     ));
-    assert_eq!(accept_complete(&mut file, "i1", "again"), None);
+    assert_eq!(
+        accept_complete(&mut file, "i1", |_| "again".to_string()),
+        None
+    );
     assert_eq!(file.pending_complete.len(), 1);
+}
+
+#[test]
+fn accept_complete_hashes_the_text_it_returns() {
+    let mut file = file_with(vec![item("i1")]);
+
+    let (marker, text) = accept_complete(&mut file, "i1", |rev| format!("turn at {rev}")).unwrap();
+
+    assert_eq!(text, format!("turn at {marker}"));
+    assert!(has_send_record(
+        &file,
+        "p1",
+        "i1",
+        marker,
+        SendAction::Complete,
+        &text
+    ));
+    assert!(!has_send_record(
+        &file,
+        "p1",
+        "i1",
+        marker,
+        SendAction::Complete,
+        "turn at 0"
+    ));
+    assert_eq!(
+        file.send_records.last().unwrap().text_hash,
+        text_hash(&text)
+    );
+}
+
+#[test]
+fn accept_complete_envelope_carries_the_new_rev() {
+    let mut file = file_with(vec![item("i1")]);
+    let before = file.active.as_ref().unwrap().rev;
+
+    let (marker, text) = accept_complete(&mut file, "i1", |rev| {
+        crate::agent_tools::checklist_envelope::wrap("p1", "i1", rev, SendAction::Complete, "b")
+    })
+    .unwrap();
+
+    assert_eq!(marker, before + 1);
+    let parsed = crate::agent_tools::checklist_envelope::parse(&text).unwrap();
+    assert_eq!(parsed.rev, marker);
+    assert_eq!(parsed.rev, item_of(&file, "i1").status_rev);
+}
+
+#[test]
+fn refused_accept_never_builds_the_text() {
+    let mut file = file_with(vec![item("i1")]);
+    accept_complete(&mut file, "i1", |_| "first".to_string()).unwrap();
+
+    let second = accept_complete(&mut file, "i1", |_| panic!("builder must not run"));
+
+    assert_eq!(second, None);
 }
 
 #[test]
@@ -325,7 +383,7 @@ fn stale_entry_on_load_cleared_by_same_rule() {
     let mut second = item("i2");
     second.status = ItemStatus::Next;
     file.active.as_mut().unwrap().items.push(second);
-    accept_complete(&mut file, "i2", "x").unwrap();
+    accept_complete(&mut file, "i2", |_| "x".to_string()).unwrap();
     agent(&mut file, set_status("i2", "blocked"));
 
     assert!(settle_all(&mut file));

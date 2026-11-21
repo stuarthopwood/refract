@@ -287,3 +287,52 @@ async fn duplicate_update_issues_the_seen_rev_it_returns() {
     assert!(next["error"].is_null(), "{next}");
     assert_eq!(next["rev"], json!(4));
 }
+
+/// Gives `i1` an in-progress "complete" turn that is still the current state of the item.
+async fn seed_pending_complete(host: &FakeHost) {
+    use crate::checklist::model::{ItemStatus, PendingComplete};
+    let live = LiveSession::check("s1", |_| true, |_| false).unwrap();
+    host.store
+        .apply(&live, |file| {
+            let list = file.active.as_mut().unwrap();
+            let marker = list.items[0].status_rev;
+            list.items[0].status = ItemStatus::InProgress;
+            file.pending_complete.push(PendingComplete {
+                checklist_id: list.id.clone(),
+                item_id: "i1".into(),
+                turn_marker: marker,
+                started: false,
+            });
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
+
+async fn pending_len(host: &FakeHost) -> usize {
+    let live = LiveSession::check("s1", |_| true, |_| false).unwrap();
+    host.store
+        .read(&live, |file| file.pending_complete.len())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn clear_resolved_runs_after_each_op_kind() {
+    let host = host(true);
+    let created = call(&host, create_args("r1", false)).await;
+    seed_pending_complete(&host).await;
+    assert_eq!(pending_len(&host).await, 1);
+
+    let update = json!({
+        "action": "update", "baseRev": created["seenRev"],
+        "ops": [{ "op": "setStatus", "id": "i1", "status": "blocked" }],
+    });
+    call(&host, update).await;
+    assert_eq!(pending_len(&host).await, 0, "update");
+
+    seed_pending_complete(&host).await;
+    adopt_first_item(&host).await;
+    call(&host, create_args("r2", true)).await;
+    assert_eq!(pending_len(&host).await, 0, "create replace");
+}

@@ -190,3 +190,36 @@ async fn mutate_refuses_an_empty_or_oversized_request_id() {
     }
     assert!(host.emits.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn clear_resolved_runs_after_each_op_kind() {
+    use crate::checklist::model::{ItemStatus, PendingComplete};
+    let host = host(true);
+    let live = LiveSession::check("s1", |_| true, |_| false).unwrap();
+    host.store
+        .apply(&live, |file| {
+            let mut it = item("i1");
+            it.status = ItemStatus::InProgress;
+            file.active = Some(checklist(vec![it]));
+            file.pending_complete.push(PendingComplete {
+                checklist_id: "p1".into(),
+                item_id: "i1".into(),
+                turn_marker: 1,
+                started: false,
+            });
+            Ok(())
+        })
+        .await
+        .unwrap();
+
+    mutate_with(&host, "s1", "p1", 1, None, &tick())
+        .await
+        .unwrap();
+
+    let left = host
+        .store
+        .read(&live, |file| file.pending_complete.len())
+        .await
+        .unwrap();
+    assert_eq!(left, 0);
+}

@@ -80,9 +80,19 @@ fn check_agent_change(
     base_rev: u64,
     op: &ChecklistOp,
 ) -> Result<(), ChecklistError> {
-    let Some(id) = op.target_id() else {
-        return Ok(());
-    };
+    match op.target_id() {
+        Some(id) => check_item_unseen_agent_change(list, base_rev, id),
+        None => Ok(()),
+    }
+}
+
+/// `item_changed` when the agent touched the item after the panel's `baseRev`. The send path uses
+/// it directly because `value` and `complete` act on one item without going through an op.
+pub fn check_item_unseen_agent_change(
+    list: &Checklist,
+    base_rev: u64,
+    id: &str,
+) -> Result<(), ChecklistError> {
     let agent_changed = list
         .items
         .iter()

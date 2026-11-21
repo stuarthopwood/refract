@@ -18,6 +18,7 @@ use crate::checklist::create::{
 };
 use crate::checklist::model::{Actor, Checklist, ChecklistFile};
 use crate::checklist::ops::{decode_ops, ChecklistError, ErrorCode, NewItem};
+use crate::checklist::records::clear_resolved;
 use crate::checklist::result::{build_result, error_payload, none_result, ResultInput};
 use crate::checklist::store::{ChecklistStore, LiveSession, StoreError};
 use crate::events::checklist_update_payload;
@@ -172,7 +173,9 @@ fn do_create(
             let seen = user_changes(list).seen_rev;
             issue_seen_rev(list, seen);
             let value = full_result(list, false, Some(("ids", &ids)));
-            Ok(done(list, value, true, true))
+            let out = done(list, value, true, true);
+            clear_resolved(file);
+            Ok(out)
         }
     }
 }
@@ -207,6 +210,7 @@ fn do_update(
     let value = full_result(&next, false, Some(("addedIds", &applied.added_ids)));
     let out = done(&next, value, true, false);
     *list = next;
+    clear_resolved(file);
     Ok(out)
 }
 

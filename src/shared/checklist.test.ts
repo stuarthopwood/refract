@@ -46,7 +46,7 @@ describe('checklist mirror', () => {
     expect([...ITEM_OWNERS]).toEqual(['agent', 'human', 'either']);
   });
 
-  it('caps_match_rust_constants', () => {
+  it('caps_match_the_rust_constants', () => {
     const rust = read('model.rs');
     const block = rust.slice(rust.indexOf('// CAPS-BEGIN'), rust.indexOf('// CAPS-END'));
     const camel = (name: string): string =>

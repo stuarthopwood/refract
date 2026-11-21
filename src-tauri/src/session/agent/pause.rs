@@ -24,6 +24,11 @@ pub(super) struct State {
 }
 
 impl State {
+    /// The texts Pause is holding, oldest first.
+    pub(super) fn held_texts(&self) -> impl Iterator<Item = &str> {
+        self.held.iter().flatten().map(String::as_str)
+    }
+
     /// True while Pause holds sends and cancels subagents. A resuming Session has stopped gating,
     /// so what its drain spawns runs and a Pause RPC still in flight is stale.
     pub(super) fn is_gating(&self) -> bool {
@@ -62,6 +67,13 @@ pub fn mark_stopped(object: &mut serde_json::Map<String, Value>, held: &Option<V
     if held.is_some() {
         object.insert("pause".to_string(), "paused".into());
     }
+}
+
+/// A Session message or checklist item turn: the text the agent must see byte for byte. Read from
+/// the text itself, so the answer survives the held list being persisted across a restart.
+pub(super) fn is_envelope(text: &str) -> bool {
+    crate::agent_tools::envelope::parse(text).is_some()
+        || crate::agent_tools::checklist_envelope::parse(text).is_some()
 }
 
 /// OMP's queued messages come first, then the held ones.
@@ -291,7 +303,10 @@ impl SessionAgent {
                     }
                 }
             };
-            self.send_unheld(next.clone(), None, sent > 0).await?;
+            // An envelope turn reached the hold through `deliver_verbatim`; it leaves the same way.
+            let decorate = !is_envelope(&next);
+            self.send_unheld_with(next.clone(), None, sent > 0, decorate)
+                .await?;
             sent += 1;
             let mut state = self.state.lock().await;
             if let Some(held) = state.pause.held.as_mut() {

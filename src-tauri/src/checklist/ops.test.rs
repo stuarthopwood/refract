@@ -127,3 +127,14 @@ fn add_op_unknown_owner_invalid_input() {
         Err(invalid("op"))
     );
 }
+
+#[test]
+fn error_code_all_has_thirteen() {
+    assert_eq!(ErrorCode::ALL.len(), 13);
+    let names: std::collections::HashSet<_> = ErrorCode::ALL.iter().map(|c| c.as_str()).collect();
+    assert_eq!(names.len(), 13);
+    assert_eq!(
+        ErrorCode::NotAgentCompletable.as_str(),
+        "not_agent_completable"
+    );
+}

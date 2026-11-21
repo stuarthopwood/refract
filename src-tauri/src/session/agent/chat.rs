@@ -26,6 +26,15 @@ fn delivery_of(held: bool, response: &Value) -> MessageDelivery {
     }
 }
 
+/// The wire name of a delivery, shared by the agent tool and `checklist.itemMessage`.
+pub fn outcome_name(delivery: MessageDelivery) -> &'static str {
+    match delivery {
+        MessageDelivery::Sent => "sent",
+        MessageDelivery::Queued => "queued",
+        MessageDelivery::Held => "held",
+    }
+}
+
 /// Only an idle prompt that is not a drain follow-up gets the working-mode wrapper, and Session
 /// messages opt out so the envelope reaches the target verbatim.
 fn should_decorate(working: bool, force_follow_up: bool, decorate: bool) -> bool {
@@ -49,6 +58,16 @@ impl SessionAgent {
     /// Delivers another Session's envelope (#1858): held while paused, queued while busy, never
     /// decorated, since the envelope text must reach the target verbatim.
     pub async fn send_session_message(&self, text: String) -> Result<MessageDelivery, AgentError> {
+        self.deliver_verbatim(text).await
+    }
+
+    /// Delivers a checklist item turn the same way: its text is an envelope the agent must see
+    /// byte for byte, and it must not eat the notice meant for the developer's next prompt.
+    pub async fn send_checklist_item(&self, text: String) -> Result<MessageDelivery, AgentError> {
+        self.deliver_verbatim(text).await
+    }
+
+    async fn deliver_verbatim(&self, text: String) -> Result<MessageDelivery, AgentError> {
         if self.hold_if_paused(&text, &None).await?.is_some() {
             return Ok(delivery_of(true, &Value::Null));
         }
@@ -69,7 +88,7 @@ impl SessionAgent {
     }
 
     /// `decorate` adds the working-mode wrapper to an idle send; Session messages pass `false`.
-    async fn send_unheld_with(
+    pub(super) async fn send_unheld_with(
         &self,
         text: String,
         images: Option<Vec<Value>>,
@@ -186,6 +205,8 @@ impl SessionAgent {
         }
         // Older runtimes reject this command, so fall back to a plain `abort`.
         let mut restored = empty_restored_queue();
+        // Only `abort_and_restore_queue` withdraws queued turns; a plain `abort` leaves them to run.
+        let mut withdrawn = false;
         let abort_result = match proc
             .request(
                 json!({ "type": "abort_and_restore_queue" }),
@@ -195,6 +216,7 @@ impl SessionAgent {
         {
             Ok(res) if res.get("success").and_then(Value::as_bool) == Some(true) => {
                 restored = parse_restored_queue(res.get("data").unwrap_or(&Value::Null));
+                withdrawn = true;
                 Ok(res)
             }
             // Any rejection falls back to plain `abort`, so the turn still stops.
@@ -221,6 +243,9 @@ impl SessionAgent {
                 // Timeout or transport error: clear the flag, as above.
                 self.state.lock().await.turn_abort_requested = false;
             }
+        }
+        if withdrawn {
+            self.settle_checklist_unstarted().await;
         }
         let mut rx = self.status_tx.subscribe();
         if matches!(*rx.borrow(), SessionStatus::Idle | SessionStatus::Stopped) {
@@ -300,6 +325,7 @@ impl SessionAgent {
     /// Removes a queued message. OMP only matches within the queue named by `queue`.
     pub async fn remove_queued(&self, text: String, queue: &str) -> Result<Value, AgentError> {
         if self.remove_held(&text).await {
+            self.settle_removed_turn(&text).await;
             return Ok(json!({ "removed": true }));
         }
         let data = self
@@ -313,6 +339,9 @@ impl SessionAgent {
             .get("removed")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        if removed {
+            self.settle_removed_turn(&text).await;
+        }
         Ok(json!({ "removed": removed }))
     }
 

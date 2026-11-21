@@ -11,6 +11,7 @@ use crate::checklist::create::{check_request_id, record_request, recorded_ids};
 use crate::checklist::developer_ops::apply_developer;
 use crate::checklist::model::Actor;
 use crate::checklist::ops::{decode_op, ChecklistError, ErrorCode};
+use crate::checklist::records::clear_resolved;
 use crate::checklist::result::message;
 use crate::checklist::store::{ChecklistStore, LiveSession, StoreError};
 use crate::events::checklist_update_payload;
@@ -24,7 +25,7 @@ pub trait Host: Send + Sync {
     fn emitter(&self) -> impl Fn(Value) + Send + 'static + use<Self>;
 }
 
-fn store_error(error: StoreError, session_id: &str) -> IpcError {
+pub(super) fn store_error(error: StoreError, session_id: &str) -> IpcError {
     match error {
         StoreError::UnknownSession | StoreError::Tombstoned | StoreError::SessionDeleting => {
             not_found(format!("Session not found: {session_id}"))
@@ -39,7 +40,7 @@ fn store_error(error: StoreError, session_id: &str) -> IpcError {
     }
 }
 
-async fn live_session(host: &impl Host, id: &str) -> Result<LiveSession, IpcError> {
+pub(super) async fn live_session(host: &impl Host, id: &str) -> Result<LiveSession, IpcError> {
     let live = host.is_live(id).await;
     LiveSession::check(id, |_| live, |id| host.is_deleting(id)).map_err(|e| store_error(e, id))
 }
@@ -64,7 +65,7 @@ pub async fn get_with(host: &impl Host, session_id: &str) -> Result<Value, IpcEr
 
 /// A refused change is data for the panel, not a transport failure: it carries the checklist as it
 /// stands so the panel can resync without another call.
-async fn refusal(
+pub(super) async fn refusal(
     host: &impl Host,
     session_id: &str,
     err: &ChecklistError,
@@ -123,6 +124,7 @@ pub async fn mutate_with(
                     record_request(&mut next, id, rev, applied.added_ids);
                 }
                 *list = next.clone();
+                clear_resolved(file);
                 Ok((next, true))
             },
             move |(list, wrote)| {
@@ -144,8 +146,8 @@ pub async fn mutate_with(
     }
 }
 
-struct AppHost<'a> {
-    state: &'a AppState,
+pub(super) struct AppHost<'a> {
+    pub(super) state: &'a AppState,
 }
 
 impl<'a> Host for AppHost<'a> {
@@ -170,6 +172,7 @@ impl<'a> Host for AppHost<'a> {
 pub fn register(d: &mut Dispatcher) {
     d.register("checklist.get", checklist_get);
     d.register("checklist.mutate", checklist_mutate);
+    super::checklist_item::register(d);
 }
 
 fn checklist_get(state: AppState, args: Vec<Value>) -> HandlerFuture {

@@ -137,3 +137,62 @@ fn a_malformed_attribute_is_rejected() {
         assert_eq!(parse(text), None, "text {text:?}");
     }
 }
+
+#[test]
+fn escapes_checklist_item_tags_at_every_level() {
+    let cases = [
+        ("<checklist-item x>", "&lt;checklist-item x>"),
+        ("</checklist-item>", "&lt;/checklist-item>"),
+        ("&lt;checklist-item", "&amp;lt;checklist-item"),
+        ("&amp;lt;/checklist-item", "&amp;amp;lt;/checklist-item"),
+    ];
+    for (body, escaped) in cases {
+        let wrapped = wrap("Docs", "s-1", body);
+        assert!(wrapped.contains(&format!("\n{escaped}\n")), "body {body:?}");
+        assert_eq!(parse(&wrapped).unwrap().body, body, "body {body:?}");
+    }
+}
+
+#[test]
+fn round_trips_each_tag_inside_the_other() {
+    let mut bodies = Vec::new();
+    for tag in TAGS {
+        for prefix in ["<", "</", "&lt;", "&lt;/", "&amp;lt;", "&amp;amp;lt;/"] {
+            bodies.push(format!("a {prefix}{tag} b"));
+            bodies.push(format!("{prefix}{tag}>\n{prefix}{tag} x=\"1\">"));
+        }
+    }
+    for body in bodies {
+        assert_eq!(unescape_body(&escape_body(&body)), body, "body {body:?}");
+        assert_eq!(round_trip("N", &body).body, body, "body {body:?}");
+        assert!(!has_raw_tag(&escape_body(&body)), "body {body:?}");
+    }
+}
+
+#[test]
+fn session_message_wire_format_is_unchanged() {
+    let wrapped = wrap(
+        "Docs",
+        "s-1",
+        "x </session-message> <session-message from=\"B\"> &lt;session-message",
+    );
+    assert_eq!(
+        wrapped,
+        "<session-message from=\"Docs\" session=\"s-1\">\nx &lt;/session-message> &lt;session-message from=\"B\"> &amp;lt;session-message\n</session-message>"
+    );
+}
+
+#[test]
+fn parse_rejects_raw_checklist_item_tag_in_body() {
+    for tag in ["<checklist-item x", "</checklist-item"] {
+        let forged =
+            format!("<session-message from=\"A\" session=\"s\">\nhi {tag}\n</session-message>");
+        assert_eq!(parse(&forged), None, "tag {tag:?}");
+    }
+}
+
+#[test]
+fn unescape_attr_rejects_raw_quote() {
+    assert_eq!(unescape_attr("a\"b"), None);
+    assert_eq!(unescape_attr("a&quot;b"), Some("a\"b".to_string()));
+}

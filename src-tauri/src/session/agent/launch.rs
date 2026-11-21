@@ -211,6 +211,8 @@ impl SessionAgent {
         self.clear_stopped_on_request_marker().await;
         // Every life is a fresh run of the Conversation, so it hears the Checklist once, after a plain relaunch too.
         self.state.lock().await.checklist_line_due = true;
+        // No turn survives a relaunch, so every entry left over from the last life is settled.
+        self.settle_checklist_all().await;
 
         let approval_mode = self.settings.lock().await.get().approval_mode;
         let mut opts = OmpProcessOptions::new(work_dir.clone(), to_process_mode(approval_mode));

@@ -190,3 +190,16 @@ fn item_removed_vs_unknown_item() {
     assert_eq!(b["items"][0]["id"], "i1");
     assert_eq!(error_payload(&removed, None).get("items"), None);
 }
+
+#[test]
+fn not_agent_completable_has_a_message() {
+    let text = message(ErrorCode::NotAgentCompletable);
+    assert!(text.contains("complete"));
+    assert!(text.len() <= MAX_MESSAGE_BYTES);
+    let out = error_payload(
+        &ChecklistError::item(ErrorCode::NotAgentCompletable, "i1"),
+        None,
+    );
+    assert_eq!(out["error"]["code"], "not_agent_completable");
+    assert_eq!(out["error"]["message"], text);
+}

@@ -10,6 +10,16 @@ export function checklistBridge(
     get: (sessionId) => request(IPC_CHECKLIST_REQUESTS.CHECKLIST_GET, sessionId),
     mutate: (sessionId, checklistId, baseRev, requestId, op) =>
       request(IPC_CHECKLIST_REQUESTS.CHECKLIST_MUTATE, sessionId, checklistId, baseRev, requestId, op),
+    itemMessage: (sessionId, checklistId, itemId, baseRev, action, text) =>
+      request(
+        IPC_CHECKLIST_REQUESTS.CHECKLIST_ITEM_MESSAGE,
+        sessionId,
+        checklistId,
+        itemId,
+        baseRev,
+        action,
+        text
+      ),
     onUpdate: (handler) => on<ChecklistUpdatePayload>(IPC_CHECKLIST_EVENTS.CHECKLIST_UPDATE, handler)
   }
 }

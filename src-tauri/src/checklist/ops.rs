@@ -27,11 +27,12 @@ pub enum ErrorCode {
     ValueRequired,
     ItemComplete,
     ChecklistExists,
+    NotAgentCompletable,
 }
 
 impl ErrorCode {
     /// Every error code, for exhaustive checks.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::InvalidInput,
         Self::TooLarge,
         Self::UnknownItem,
@@ -44,6 +45,7 @@ impl ErrorCode {
         Self::ValueRequired,
         Self::ItemComplete,
         Self::ChecklistExists,
+        Self::NotAgentCompletable,
     ];
 
     /// The wire name of the code.
@@ -61,6 +63,7 @@ impl ErrorCode {
             Self::ValueRequired => "value_required",
             Self::ItemComplete => "item_complete",
             Self::ChecklistExists => "checklist_exists",
+            Self::NotAgentCompletable => "not_agent_completable",
         }
     }
 }

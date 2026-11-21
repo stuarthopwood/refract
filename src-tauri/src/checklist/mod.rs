@@ -7,6 +7,7 @@ pub mod create;
 pub mod developer_ops;
 pub mod hint;
 pub mod ids;
+pub mod item_message;
 pub mod model;
 pub mod ops;
 pub mod records;
@@ -17,3 +18,7 @@ pub mod validate;
 
 #[cfg(test)]
 pub(crate) mod test_support;
+
+#[cfg(test)]
+#[path = "lifecycle.test.rs"]
+mod lifecycle;

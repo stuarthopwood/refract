@@ -42,6 +42,7 @@ function answer(cmd) {
     failedOnce = true;
     return reply(cmd, false, null, 'refused');
   }
+  if (cmd.type === 'prompt' && cfg.queuePrompts) return reply(cmd, true, { queued: true });
   return reply(cmd, true, {});
 }
 let buf = '';
@@ -85,6 +86,8 @@ pub(in crate::session::agent) struct Stub<'a> {
     pub fail_once: Option<&'a str>,
     /// This many commands of the gated type are answered at once before the rest wait.
     pub gate_after: usize,
+    /// A `prompt` answers `queued:true`, as OMP does for a busy agent.
+    pub queue_prompts: bool,
 }
 
 pub(in crate::session::agent) struct Fixture {
@@ -184,6 +187,7 @@ pub(in crate::session::agent) async fn fixture_with(stub: Stub<'_>) -> Fixture {
         "gated": stub.gated,
         "failOnce": stub.fail_once,
         "gateAfter": stub.gate_after,
+        "queuePrompts": stub.queue_prompts,
     });
     tokio::fs::write(&script, STUB).await.unwrap();
     let mut command = tokio::process::Command::new("node");

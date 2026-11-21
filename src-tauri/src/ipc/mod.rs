@@ -23,6 +23,7 @@ pub mod attachments;
 pub mod chat;
 pub mod chat_pause;
 pub mod checklist;
+pub mod checklist_item;
 pub mod clipboard;
 pub mod conversations;
 pub mod conversations_core;
