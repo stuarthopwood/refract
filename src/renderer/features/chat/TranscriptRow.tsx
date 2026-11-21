@@ -98,7 +98,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
   switch (item.kind) {
     case 'user':
       // Rendering (including the per-message timestamp, issue #555) lives in `UserMessageRow` (split out to keep Transcript.tsx within its `check:file-size` baseline).
-      return <UserMessageRow item={item} userName={userName} userAvatarUrl={userAvatarUrl} hideTime={hideTime} />
+      return <UserMessageRow item={item} sessionId={sessionId} userName={userName} userAvatarUrl={userAvatarUrl} hideTime={hideTime} />
 
     case 'assistant-text':
       return (

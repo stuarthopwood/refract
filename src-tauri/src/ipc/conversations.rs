@@ -52,7 +52,7 @@ pub(crate) async fn build_snapshot(
             obj.remove("pendingToolNames");
         }
     }
-    inject_saved_history(&mut runtime, session).await;
+    inject_saved_history(&mut runtime, session, agent).await;
     let conversations = list_conversations(
         session.session_dir.as_deref(),
         session.current_conversation.as_deref(),
@@ -71,7 +71,11 @@ pub(crate) async fn build_snapshot(
 
 /// A `stopped` agent with no transcript of its own shows its Conversation's saved history, read from file.
 /// A missing or empty file shows a plain notice instead.
-async fn inject_saved_history(runtime: &mut Value, session: &crate::store::registry::Session) {
+async fn inject_saved_history(
+    runtime: &mut Value,
+    session: &crate::store::registry::Session,
+    agent: &crate::session::SessionAgent,
+) {
     use crate::session::saved_history::{notice_for, SavedHistory};
     use crate::session::saved_history_cache::load_saved_history;
     let stopped = runtime.get("status").and_then(Value::as_str) == Some("stopped");
@@ -82,9 +86,11 @@ async fn inject_saved_history(runtime: &mut Value, session: &crate::store::regis
     if !stopped || has_live {
         return;
     }
+    let records = agent.checklist_send_records().await;
     let history = load_saved_history(
         session.session_dir.as_deref(),
         session.current_conversation.as_deref(),
+        &records,
     )
     .await;
     let transcript = match notice_for(&history) {

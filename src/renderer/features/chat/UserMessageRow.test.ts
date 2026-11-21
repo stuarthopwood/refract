@@ -22,10 +22,24 @@ const mocks = vi.hoisted(() => {
     { getState: () => state }
   )
   const useSplitStore = { getState: () => state }
-  return { state, select, useSessionsStore, useSplitStore, focusSessionPane: vi.fn(), focusSessionsNav: vi.fn() }
+  return { state, select, useSessionsStore, useSplitStore, focusSessionPane: vi.fn(), focusSessionsNav: vi.fn(), menuText: vi.fn(), lineProps: vi.fn() }
 })
 vi.mock('@/state', () => ({ useSessionsStore: mocks.useSessionsStore, useSplitStore: mocks.useSplitStore }))
 vi.mock('@/lib/focus', () => ({ focusSessionPane: mocks.focusSessionPane, focusSessionsNav: mocks.focusSessionsNav }))
+
+// The menu and the checklist line are seen only through the props the row hands them.
+vi.mock('./MessageMenu', () => ({
+  MessageMenu: ({ text, children }: { text: string; children: ReactNode }) => {
+    mocks.menuText(text)
+    return children
+  }
+}))
+vi.mock('./ChecklistItemSourceLine', () => ({
+  ChecklistItemSourceLine: (props: { id: string }) => {
+    mocks.lineProps(props)
+    return createElement('div', { id: props.id }, 'Checklist item')
+  }
+}))
 
 import { SessionSourceLine } from './SessionSourceLine'
 import { UserMessageRow, type UserItem } from './UserMessageRow'
@@ -42,14 +56,16 @@ function findAll(node: ReactNode, match: (el: ReactElement<Record<string, any>>)
   return out
 }
 
-const render = (item: UserItem, userAvatarUrl?: string) =>
-  renderToStaticMarkup(createElement(TooltipProvider, null, createElement(UserMessageRow, { item, userName: 'Stuart', userAvatarUrl })))
+const render = (item: UserItem, userAvatarUrl?: string, sessionId: string | null = 'pane-a') =>
+  renderToStaticMarkup(createElement(TooltipProvider, null, createElement(UserMessageRow, { item, sessionId, userName: 'Stuart', userAvatarUrl })))
 
 beforeEach(() => {
   mocks.state.sessions = [{ id: 'sess-1' }]
   mocks.state.open = vi.fn(() => Promise.resolve(null))
   mocks.state.replaceFocused = vi.fn()
   mocks.select.mockClear()
+  mocks.menuText.mockClear()
+  mocks.lineProps.mockClear()
   mocks.focusSessionPane.mockReset().mockReturnValue(true)
   mocks.focusSessionsNav.mockReset()
   // The focus hop waits a frame for the new pane to mount; run it synchronously here.
@@ -151,5 +167,49 @@ describe('UserMessageRow session source', () => {
     expect(html).not.toContain('From Session')
     expect(html).toMatch(/data-slot="message-header"[^>]*>Stuart<\/div>/)
     expect(mocks.select).not.toHaveBeenCalled()
+  })
+})
+
+describe('UserMessageRow checklist source', () => {
+  const ask: MessageSource = { kind: 'checklist-item', checklistId: 'p1', itemId: 'i1', action: 'ask' }
+  const complete: MessageSource = { kind: 'checklist-item', checklistId: 'p1', itemId: 'i1', action: 'complete' }
+
+  it('checklist_source_renders_line_and_group_name', () => {
+    const html = render({ ...base, text: 'Is this safe?', source: ask })
+    const lineId = /<div id="([^"]+)">Checklist item<\/div>/.exec(html)?.[1]
+    expect(lineId).toBeDefined()
+    expect(html).toContain(`role="group" aria-labelledby="${lineId}"`)
+    expect(html.indexOf('Checklist item')).toBeLessThan(html.indexOf('Is this safe?'))
+    expect(html).toMatch(/data-slot="message-header"[^>]*>Stuart<\/div>/)
+  })
+
+  it('complete_shows_fixed_phrase', () => {
+    // The real stored text is the agent-facing envelope, quoted step included; the bubble must not show it.
+    const envelope = 'The developer asks you to do this step yourself.\n> Run the migration'
+    const html = render({ ...base, text: envelope, source: complete })
+    expect(html).toContain('Asked the agent to complete this step')
+    expect(html).not.toContain('Run the migration')
+    expect(html).not.toContain('Image attached')
+    expect(mocks.menuText).toHaveBeenCalledWith('Asked the agent to complete this step')
+  })
+
+  it('ask_keeps_the_developers_words', () => {
+    const html = render({ ...base, text: 'Is this safe?', source: ask })
+    expect(html).toContain('Is this safe?')
+    expect(html).not.toContain('complete this step')
+    expect(mocks.menuText).toHaveBeenCalledWith('Is this safe?')
+  })
+
+  it('hands_the_line_the_pane_session_not_the_focused_one', () => {
+    mocks.state.sessions = [{ id: 'pane-a' }, { id: 'pane-b' }]
+    render({ ...base, source: ask }, undefined, 'pane-b')
+    expect(mocks.lineProps).toHaveBeenCalledWith(expect.objectContaining({ sessionId: 'pane-b', source: ask }))
+  })
+
+  it('ordinary_user_turn_unchanged', () => {
+    const html = render(base)
+    expect(html).not.toContain('Checklist item')
+    expect(mocks.lineProps).not.toHaveBeenCalled()
+    expect(mocks.menuText).toHaveBeenCalledWith('hello there')
   })
 })

@@ -9,18 +9,7 @@ impl SessionAgent {
     /// hint when the developer changed it; `None` for a Session with no active checklist.
     pub(super) async fn checklist_line(&self, conversation_due: bool) -> Option<String> {
         let manager = self.tool_manager()?;
-        let live = self
-            .registry
-            .lock()
-            .await
-            .get_session(&self.session_id)
-            .is_some();
-        let live = LiveSession::check(
-            &self.session_id,
-            |_| live,
-            crate::ipc::sessions_lifecycle::delete_in_flight::is_deleting,
-        )
-        .ok()?;
+        let live = self.live_checklist_session().await?;
         manager
             .checklists()
             .read(&live, |file| {
@@ -33,6 +22,22 @@ impl SessionAgent {
             .await
             .ok()
             .flatten()
+    }
+
+    /// The witness the checklist store needs; `None` once the Session is gone or being deleted.
+    pub(super) async fn live_checklist_session(&self) -> Option<LiveSession> {
+        let live = self
+            .registry
+            .lock()
+            .await
+            .get_session(&self.session_id)
+            .is_some();
+        LiveSession::check(
+            &self.session_id,
+            |_| live,
+            crate::ipc::sessions_lifecycle::delete_in_flight::is_deleting,
+        )
+        .ok()
     }
 }
 

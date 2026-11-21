@@ -43,8 +43,20 @@ pub fn has_send_record(
     action: SendAction,
     text: &str,
 ) -> bool {
+    is_recorded(&file.send_records, checklist_id, item_id, rev, action, text)
+}
+
+/// `has_send_record` over a snapshot of the records, so a reader need not hold the file.
+pub fn is_recorded(
+    records: &[SendRecord],
+    checklist_id: &str,
+    item_id: &str,
+    rev: u64,
+    action: SendAction,
+    text: &str,
+) -> bool {
     let hash = text_hash(text);
-    file.send_records.iter().any(|r| {
+    records.iter().any(|r| {
         r.checklist_id == checklist_id
             && r.item_id == item_id
             && r.rev == rev
