@@ -36,6 +36,8 @@ interface DraftsState {
   refuse: (key: string, message: string) => void
   /** The send went: the draft goes with it. */
   succeed: (key: string, note: ItemNote | null) => void
+  /** A send that is not the form's own, like "Do this item", went: whatever is typed stays. */
+  settle: (key: string, note: ItemNote | null) => void
   clearNote: (key: string) => void
 }
 
@@ -70,6 +72,8 @@ export const useChecklistDraftsStore = create<DraftsState>((set) => ({
       openKey: state.openKey === key ? null : state.openKey,
       notes: note === null ? without(state.notes, key) : { ...state.notes, [key]: note }
     })),
+  settle: (key, note) =>
+    set((state) => ({ inFlight: without(state.inFlight, key), notes: note === null ? without(state.notes, key) : { ...state.notes, [key]: note } })),
   clearNote: (key) => set((state) => (key in state.notes ? { notes: without(state.notes, key) } : state))
 }))
 

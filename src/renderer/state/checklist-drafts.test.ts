@@ -93,4 +93,15 @@ describe('useChecklistDraftsStore', () => {
     store.getState().open(a)
     expect(store.getState().notes[a]).toEqual({ kind: 'refusal', message: 'no' })
   })
+
+  it('settle_keeps_the_draft_and_the_open_form', () => {
+    store.getState().open(a)
+    store.getState().setText(a, 'typed')
+    store.getState().beginSend(a)
+    store.getState().settle(a, { kind: 'delivery', delivery: 'sent' })
+    expect(store.getState().drafts[a]?.text).toBe('typed')
+    expect(store.getState().openKey).toBe(a)
+    expect(store.getState().inFlight[a]).toBeUndefined()
+    expect(store.getState().notes[a]).toEqual({ kind: 'delivery', delivery: 'sent' })
+  })
 })

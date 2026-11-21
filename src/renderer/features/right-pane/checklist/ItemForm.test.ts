@@ -1,0 +1,129 @@
+// The repo has no jsdom, so the form renders to a string and its key handling is tested as a pure helper.
+import { createElement } from 'react'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it, vi } from 'vitest'
+import type { ItemNote } from '@/state/checklist-drafts'
+import { ItemForm } from './ItemForm'
+import { ASK_UNAVAILABLE_REASON, handleFormKey, type ItemFormMode } from './item-controls'
+
+interface RenderOptions {
+  mode?: ItemFormMode
+  text?: string
+  agentRunning?: boolean
+  inFlight?: boolean
+  note?: ItemNote
+}
+
+const render = ({ mode = 'ask', text = '', agentRunning = true, inFlight = false, note }: RenderOptions = {}): string =>
+  renderToStaticMarkup(
+    createElement(ItemForm, {
+      itemText: 'Write the spec',
+      mode,
+      text,
+      agentRunning,
+      inFlight,
+      note,
+      onModeChange: () => {},
+      onTextChange: () => {},
+      onSend: () => {},
+      onClose: () => {}
+    })
+  )
+
+const tag = (html: string, pattern: RegExp): string => pattern.exec(html)?.[0] ?? ''
+const submitTag = (html: string): string => tag(html, /<button[^>]*type="submit"[^>]*>/)
+const askRadioTag = (html: string): string => tag(html, /<button[^>]*role="radio"[^>]*value="ask"[^>]*>/)
+const textOf = (html: string): string => html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ')
+
+describe('ItemForm', () => {
+  it('ctrl_enter_sends', () => {
+    const send = vi.fn()
+    const close = vi.fn()
+    const preventDefault = vi.fn()
+    handleFormKey({ key: 'Enter', ctrlKey: true, metaKey: false, preventDefault }, { send, close })
+    expect(send).toHaveBeenCalledOnce()
+    expect(preventDefault).toHaveBeenCalledOnce()
+    expect(close).not.toHaveBeenCalled()
+    handleFormKey({ key: 'Enter', ctrlKey: false, metaKey: false }, { send, close })
+    expect(send).toHaveBeenCalledOnce()
+  })
+
+  it('escape_closes_and_is_not_passed_to_the_pane', () => {
+    const send = vi.fn()
+    const close = vi.fn()
+    const stopPropagation = vi.fn()
+    handleFormKey({ key: 'Escape', ctrlKey: false, metaKey: false, stopPropagation }, { send, close })
+    expect(close).toHaveBeenCalledOnce()
+    expect(stopPropagation).toHaveBeenCalledOnce()
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('send_disabled_while_in_flight', () => {
+    const idle = submitTag(render({ text: 'hello' }))
+    expect(idle).not.toContain('aria-disabled=')
+    const busy = submitTag(render({ text: 'hello', inFlight: true }))
+    expect(busy).toContain('aria-busy="true"')
+    expect(busy).toContain('aria-disabled="true"')
+    expect(busy).not.toMatch(/\sdisabled=""/)
+  })
+
+  it('send_is_aria_disabled_when_empty_so_focus_stays', () => {
+    const empty = submitTag(render({ text: '   ' }))
+    expect(empty).toContain('aria-disabled="true"')
+    expect(empty).not.toMatch(/\sdisabled=""/)
+  })
+
+  it('counter_shows_bytes', () => {
+    expect(textOf(render({ mode: 'ask', text: 'abc' }))).toContain('3 of 4096 bytes')
+    expect(textOf(render({ mode: 'value', text: 'ééé' }))).toContain('6 of 1024 bytes')
+    const over = render({ mode: 'value', text: 'x'.repeat(1025) })
+    expect(textOf(over)).toContain('1025 of 1024 bytes, too long')
+    expect(over).toContain('aria-invalid="true"')
+  })
+
+  it('warning_is_described_by', () => {
+    const html = render()
+    const describedBy = /<textarea[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1] ?? ''
+    const warningId = describedBy.split(' ')[0]
+    expect(warningId).not.toBe('')
+    const warning = new RegExp(`<p id="${warningId}"[^>]*>([^<]*)</p>`).exec(html)?.[1] ?? ''
+    expect(warning).toContain('Do not put secrets here')
+    expect(describedBy.split(' ')).toHaveLength(2)
+  })
+
+  it('textarea_is_labelled_by_mode_and_item', () => {
+    expect(render({ mode: 'ask' })).toContain('aria-label="Question for Write the spec"')
+    expect(render({ mode: 'value' })).toContain('aria-label="Value for Write the spec"')
+  })
+
+  it('refusal_keeps_draft_and_alerts', () => {
+    const html = render({ text: 'my question', note: { kind: 'refusal', message: 'Not sent. Your question is still in the box.' } })
+    expect(html).toContain('role="alert"')
+    expect(textOf(html)).toContain('Not sent. Your question is still in the box.')
+    expect(html).toContain('>my question</textarea>')
+  })
+
+  it('delivery_line_is_a_status_not_an_alert', () => {
+    const html = render({ note: { kind: 'delivery', delivery: 'queued' } })
+    expect(html).toMatch(/<p role="status"[^>]*>Queued after the current turn<\/p>/)
+    expect(html).not.toContain('role="alert"')
+    expect(render({ note: { kind: 'delivery', delivery: 'sent' } })).not.toContain('role="status"')
+  })
+
+  it('no_agent_value_mode_reads_save_value', () => {
+    expect(submitTag(render({ mode: 'value', agentRunning: false, text: 'v' }))).toBeTruthy()
+    expect(textOf(render({ mode: 'value', agentRunning: false, text: 'v' }))).toContain('Save value')
+    expect(textOf(render({ mode: 'value', agentRunning: true, text: 'v' }))).not.toContain('Save value')
+  })
+
+  it('no_agent_ask_is_disabled_with_visible_reason', () => {
+    const html = render({ mode: 'value', agentRunning: false })
+    expect(askRadioTag(html)).toMatch(/\sdisabled=""/)
+    expect(textOf(html)).toContain(ASK_UNAVAILABLE_REASON)
+    const reasonId = /aria-describedby="([^"]+)"/.exec(askRadioTag(html))?.[1] ?? ''
+    expect(html).toContain(`<p id="${reasonId}"`)
+    const running = render({ mode: 'ask', agentRunning: true })
+    expect(askRadioTag(running)).not.toMatch(/\sdisabled=""/)
+    expect(textOf(running)).not.toContain(ASK_UNAVAILABLE_REASON)
+  })
+})

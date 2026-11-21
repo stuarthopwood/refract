@@ -1,6 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { makeItem } from './checklist-fixtures'
-import { byteLength, canDoItem, deliveryLine, derivePresentation, isSendChord, refusalLine, sendBlock, sendLabel, showsDoItem } from './item-controls'
+import { byteLength, canDoItem, deliveryLine, derivePresentation, dismissForm, isSendChord, refusalLine, sendBlock, sendLabel, showsDoItem, submitAndRefocus } from './item-controls'
 
 describe('item-controls', () => {
   it('awaiting_input_when_requires_value_and_no_value', () => {
@@ -40,6 +40,7 @@ describe('item-controls', () => {
     expect(deliveryLine('queued')).toBe('Queued after the current turn')
     expect(deliveryLine('held')).toBe('Held until you resume')
     expect(deliveryLine('not_running')).toBe('Agent not running')
+    expect(deliveryLine('saved')).toBe('Value saved on the item')
   })
 
   it('byte_length_counts_utf8_bytes_not_characters', () => {
@@ -75,5 +76,20 @@ describe('item-controls', () => {
     expect(sendLabel('value', false)).toBe('Save value')
     expect(sendLabel('value', true)).toBe('Send')
     expect(sendLabel('ask', false)).toBe('Send')
+  })
+
+  it('dismissing_closes_then_focuses_the_disclosure', () => {
+    const order: string[] = []
+    dismissForm(() => order.push('close'), { focus: () => order.push('focus') })
+    expect(order).toEqual(['close', 'focus'])
+    expect(() => dismissForm(() => {}, null)).not.toThrow()
+  })
+
+  it('focus_returns_only_after_a_send_that_went', async () => {
+    const focus = vi.fn()
+    await submitAndRefocus(async () => false, { focus })
+    expect(focus).not.toHaveBeenCalled()
+    await submitAndRefocus(async () => true, { focus })
+    expect(focus).toHaveBeenCalledOnce()
   })
 })
