@@ -117,10 +117,9 @@ describe('checklist source line keyboard and screen reader', () => {
     expect(html).toContain(`role="group" aria-labelledby="${lineId}"`)
     // The labelled span ends at the detail span's close, before the "Show in checklist" button.
     const named = new RegExp(`<span id="${lineId}"[^>]*>(.*?)</span></span>`).exec(html)?.[1] ?? ''
-    const text = named.replace(/<[^>]+>/g, '')
-    expect(text).toContain('Checklist item 2:')
-    expect(text).toContain('Run the migration')
-    expect(text).not.toContain('Show in checklist')
+    expect(named).toContain('Checklist item 2:')
+    expect(named).toContain('Run the migration')
+    expect(named).not.toContain('Show in checklist')
     expect(lineMarkup(html)).toContain('Show in checklist')
     expect(lineMarkup(html)).not.toContain('aria-hidden="true">Checklist')
   })
