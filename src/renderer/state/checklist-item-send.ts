@@ -20,6 +20,7 @@ const adopt = (sessionId: string, checklist: Checklist | null): void => {
 
 // A refused send changed the item twice in Rust (prepare, then undo), and those `checklist:update` events can land after this
 // response; adopting the current checklist first stops a note stamped on the old rev from being hidden as stale.
+// A failed or empty `get` is ignored and the refusal still records: its note may later read as stale, which beats losing the refusal.
 const resync = async (sessionId: string, code: string): Promise<void> => {
   if (code !== 'prompt-failed' && code !== 'restore-failed') return
   const current = await window.refract.checklist.get(sessionId)

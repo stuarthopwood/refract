@@ -117,6 +117,21 @@ describe('sendItemAction', () => {
     expect(selectSessionChecklist(useChecklistStore.getState(), 's1').checklist?.rev).toBe(6)
   })
 
+  it.each([
+    ['get_fails', { ok: false, error: { code: 'x', message: 'x' } }],
+    ['get_has_no_checklist', { ok: true, value: { checklist: null, toolUnavailable: false } }],
+  ])('a_refusal_still_records_when_the_resync_%s', async (_name, getResult) => {
+    itemMessage.mockResolvedValue({ ok: false, error: { code: 'prompt-failed', message: 'down' } })
+    get.mockResolvedValue(getResult)
+
+    expect(await send('complete', undefined, true)).toBe(false)
+
+    expect(get).toHaveBeenCalled()
+    expect(drafts.getState().notes[key]).toMatchObject({ kind: 'refusal' })
+    expect(drafts.getState().inFlight[key]).toBeUndefined()
+    expect(selectSessionChecklist(useChecklistStore.getState(), 's1').checklist?.rev).toBe(3)
+  })
+
   it('a_second_send_while_one_is_in_flight_is_dropped', async () => {
     drafts.getState().beginSend(key)
 
