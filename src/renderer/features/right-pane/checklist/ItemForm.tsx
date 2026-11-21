@@ -14,16 +14,18 @@ const MODES: readonly { value: ItemFormMode; label: string }[] = [
   { value: 'value', label: 'Provide a value' }
 ]
 
-/** Where the last send went or why it did not; the wrapper is always mounted so a new line is announced as a change. */
+/** Where the last send went or why it did not. The polite status wrapper is always mounted so a delivery line is announced as a change; a refusal is its own sibling alert, never nested in it. */
 export function ItemNoteLine({ note }: { note: ItemNote | undefined }) {
   const delivery = note?.kind === 'delivery' ? deliveryLine(note.delivery) : null
   return (
-    <div data-slot="checklist-item-note" role="status">
-      {delivery !== null && (
-        <InlineStatus tone="info" density="compact" className="p-0">
-          {delivery}
-        </InlineStatus>
-      )}
+    <div data-slot="checklist-item-note">
+      <div role="status">
+        {delivery !== null && (
+          <InlineStatus tone="info" density="compact" className="p-0">
+            {delivery}
+          </InlineStatus>
+        )}
+      </div>
       {note?.kind === 'refusal' && (
         <InlineStatus tone="error" density="compact" className={`p-0 ${PLAIN_TEXT}`}>
           {note.message}

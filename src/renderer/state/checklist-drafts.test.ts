@@ -120,3 +120,43 @@ describe('useChecklistDraftsStore', () => {
     expect(store.getState().notes[a]).toEqual({ kind: 'delivery', delivery: 'sent', stamp })
   })
 })
+
+describe('useChecklistDraftsStore pruning', () => {
+  const other = draftKey({ sessionId: 's2', checklistId: 'p1', itemId: 'a' })
+  const next = draftKey({ sessionId: 's1', checklistId: 'p2', itemId: 'a' })
+  const seed = () => {
+    for (const key of [a, other, next]) {
+      store.getState().open(key)
+      store.getState().setText(key, 't')
+    }
+    store.getState().refuse(a, 'no', stamp)
+    store.getState().beginSend(other)
+    store.getState().open(a)
+  }
+
+  it('pruneSessions_drops_drafts_notes_in_flight_and_the_open_form_of_unlisted_sessions', () => {
+    seed()
+    store.getState().pruneSessions(new Set(['s2']))
+    const state = store.getState()
+    expect(Object.keys(state.drafts)).toEqual([other])
+    expect(Object.keys(state.notes)).toEqual([])
+    expect(Object.keys(state.inFlight)).toEqual([other])
+    expect(state.openKey).toBeNull()
+  })
+
+  it('pruneSessions_keeps_the_state_object_when_nothing_goes', () => {
+    seed()
+    const before = store.getState()
+    store.getState().pruneSessions(new Set(['s1', 's2']))
+    expect(store.getState().drafts).toBe(before.drafts)
+    expect(store.getState().openKey).toBe(before.openKey)
+  })
+
+  it('pruneChecklists_drops_only_the_sessions_other_checklists', () => {
+    seed()
+    store.getState().pruneChecklists('s1', 'p2')
+    expect(Object.keys(store.getState().drafts).sort()).toEqual([other, next].sort())
+    expect(store.getState().notes[a]).toBeUndefined()
+    expect(store.getState().openKey).toBeNull()
+  })
+})

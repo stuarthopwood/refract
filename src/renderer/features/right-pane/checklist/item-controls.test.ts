@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { makeItem } from './checklist-fixtures'
-import { byteLength, canDoItem, deliveryLine, derivePresentation, dismissForm, doItemHint, doItemLabel, isSendChord, refusalLine, sendBlock, sendLabel, showsDoItem, submitAndRefocus } from './item-controls'
+import { byteLength, canDoItem, canRefocusAfterSend, deliveryLine, derivePresentation, dismissForm, doItemHint, doItemLabel, effectiveMode, handleFormKey, isNoteStale, isSendChord, refusalLine, sendBlock, sendLabel, shouldFocusOnOpen, showsDoItem, submitAndRefocus } from './item-controls'
 
 describe('item-controls', () => {
   it('awaiting_input_when_requires_value_and_no_value', () => {
@@ -102,5 +102,53 @@ describe('item-controls', () => {
     expect(doItemHint(plain, false)).toContain('not running')
     expect(doItemHint(makeItem({ id: 'a', requiresValue: true }), true)).toBeNull()
     expect(doItemHint(makeItem({ id: 'a', status: 'in_progress' }), false)).toBeNull()
+  })
+
+  it('a_note_is_stale_once_the_revision_or_the_status_moves', () => {
+    const stamp = { rev: 3, status: 'upcoming' as const }
+    expect(isNoteStale(stamp, { rev: 3, status: 'upcoming' })).toBe(false)
+    expect(isNoteStale(stamp, { rev: 4, status: 'upcoming' })).toBe(true)
+    expect(isNoteStale(stamp, { rev: 3, status: 'in_progress' })).toBe(true)
+  })
+
+  it('focus_moves_only_when_the_form_goes_from_closed_to_open', () => {
+    expect(shouldFocusOnOpen(false, true)).toBe(true)
+    expect(shouldFocusOnOpen(true, true)).toBe(false)
+    expect(shouldFocusOnOpen(true, false)).toBe(false)
+    expect(shouldFocusOnOpen(false, false)).toBe(false)
+  })
+
+  it('focus_after_a_send_needs_this_item_open_or_none_open_and_focus_still_here', () => {
+    const base = { openKey: 'k', key: 'k', focusInsideItem: true, focusOnBody: false }
+    expect(canRefocusAfterSend(base)).toBe(true)
+    expect(canRefocusAfterSend({ ...base, openKey: null })).toBe(true)
+    expect(canRefocusAfterSend({ ...base, openKey: 'other' })).toBe(false)
+    expect(canRefocusAfterSend({ ...base, focusInsideItem: false, focusOnBody: true })).toBe(true)
+    expect(canRefocusAfterSend({ ...base, focusInsideItem: false })).toBe(false)
+  })
+
+  it('focus_does_not_return_when_the_developer_moved_on', async () => {
+    const focus = vi.fn()
+    await submitAndRefocus(async () => true, { focus }, () => false)
+    expect(focus).not.toHaveBeenCalled()
+    await submitAndRefocus(async () => true, { focus }, () => true)
+    expect(focus).toHaveBeenCalledOnce()
+  })
+
+  it('ask_shows_as_value_only_without_an_agent', () => {
+    expect(effectiveMode('ask', false)).toBe('value')
+    expect(effectiveMode('ask', true)).toBe('ask')
+    expect(effectiveMode('value', false)).toBe('value')
+  })
+
+  it('escape_closes_and_is_consumed_and_ctrl_enter_sends', () => {
+    const send = vi.fn()
+    const close = vi.fn()
+    const stopPropagation = vi.fn()
+    handleFormKey({ key: 'Escape', ctrlKey: false, metaKey: false, stopPropagation }, { send, close })
+    expect(close).toHaveBeenCalledOnce()
+    expect(stopPropagation).toHaveBeenCalledOnce()
+    handleFormKey({ key: 'Enter', ctrlKey: true, metaKey: false }, { send, close })
+    expect(send).toHaveBeenCalledOnce()
   })
 })

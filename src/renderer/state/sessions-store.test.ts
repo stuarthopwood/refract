@@ -9,6 +9,7 @@ import { useSessionListStore } from './session-list-store';
 import { useDocumentTabsStore } from './document-tabs-store';
 import { useGitChangesStore } from './git-changes-store';
 import { useSideChatStore } from './side-chat-store';
+import { draftKey, useChecklistDraftsStore } from './checklist-drafts';
 import { liveParentIds, useSessionsStore } from './sessions-store';
 
 vi.mock('./notify', () => ({ notify: vi.fn() }));
@@ -216,5 +217,18 @@ describe('useSessionsStore.refresh dropping Session-keyed panel state (#2075 FR-
     await useSessionsStore.getState().refresh();
     expect(Object.keys(useGitChangesStore.getState().groupOpenBySession)).toEqual(['live']);
     expect(Object.keys(useSideChatStore.getState().draftBySession)).toEqual(['live']);
+  });
+});
+
+describe('useSessionsStore.refresh dropping checklist item drafts of deleted Sessions (#2013)', () => {
+  it('keeps the drafts of a listed Session and drops those of a Session that left the list', async () => {
+    (globalThis as unknown as { window: unknown }).window = {
+      refract: { sessions: { list: () => Promise.resolve({ ok: true, value: [summary('live')] }), deleting: () => Promise.resolve({ ok: true, value: [] }) } },
+    };
+    const live = draftKey({ sessionId: 'live', checklistId: 'c', itemId: 'a' });
+    const gone = draftKey({ sessionId: 'gone', checklistId: 'c', itemId: 'a' });
+    useChecklistDraftsStore.setState({ openKey: null, drafts: { [live]: { mode: 'ask', text: 'x' }, [gone]: { mode: 'ask', text: 'y' } }, inFlight: {}, notes: {} });
+    await useSessionsStore.getState().refresh();
+    expect(Object.keys(useChecklistDraftsStore.getState().drafts)).toEqual([live]);
   });
 });

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { makeChecklist, makeItem } from '../features/right-pane/checklist/checklist-fixtures'
 import { selectSessionChecklist, useChecklistStore } from './checklist-store'
+import { draftKey, useChecklistDraftsStore } from './checklist-drafts'
 
 const get = vi.fn()
 const mutate = vi.fn()
@@ -324,5 +325,17 @@ describe('useChecklistStore.mutateItem', () => {
     mutate.mockResolvedValue({ ok: true, value: makeChecklist({ rev: 5 }) })
     await useChecklistStore.getState().mutateItem('s1', 'i1')
     expect(mutate).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('useChecklistStore replacing a checklist', () => {
+  it('drops the drafts of the replaced checklist and keeps those of the new one', () => {
+    const old = draftKey({ sessionId: 's1', checklistId: 'p1', itemId: 'a' })
+    const next = draftKey({ sessionId: 's1', checklistId: 'p2', itemId: 'a' })
+    update('s1', makeChecklist({ id: 'p1', rev: 1 }))
+    useChecklistDraftsStore.setState({ openKey: old, drafts: { [old]: { mode: 'ask', text: 'x' }, [next]: { mode: 'ask', text: 'y' } }, inFlight: {}, notes: {} })
+    update('s1', makeChecklist({ id: 'p2', rev: 1 }))
+    expect(Object.keys(useChecklistDraftsStore.getState().drafts)).toEqual([next])
+    expect(useChecklistDraftsStore.getState().openKey).toBeNull()
   })
 })

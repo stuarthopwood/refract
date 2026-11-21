@@ -125,3 +125,30 @@ describe('ItemForm', () => {
     expect(textOf(running)).not.toContain(ASK_UNAVAILABLE_REASON)
   })
 })
+
+describe('ItemForm too-long announcement', () => {
+  it('the_status_region_is_always_mounted_and_says_too_long_only_when_over_the_cap', () => {
+    const status = (html: string): string => /<span role="status"[^>]*>([^<]*)<\/span>/.exec(html)?.[1] ?? 'missing'
+    expect(status(render({ mode: 'value', text: 'x'.repeat(1025) }))).toBe('Too long to send.')
+    expect(status(render({ mode: 'value', text: 'x' }))).toBe('')
+  })
+})
+
+describe('ItemNoteLine live regions', () => {
+  it('a_refusal_alert_is_never_nested_inside_a_status_region', () => {
+    const html = renderToStaticMarkup(createElement(ItemNoteLine, { note: { kind: 'refusal', message: 'Not sent.' } }))
+    const open = /<div[^>]*role="status"[^>]*>/.exec(html)
+    expect(open).not.toBeNull()
+    let depth = 1
+    let end = (open?.index ?? 0) + (open?.[0].length ?? 0)
+    for (const tagMatch of html.slice(end).matchAll(/<(\/?)div\b/g)) {
+      depth += tagMatch[1] === '/' ? -1 : 1
+      if (depth === 0) {
+        end += tagMatch.index
+        break
+      }
+    }
+    expect(html.slice((open?.index ?? 0) + (open?.[0].length ?? 0), end)).not.toContain('role="alert"')
+    expect(html).toContain('role="alert"')
+  })
+})
