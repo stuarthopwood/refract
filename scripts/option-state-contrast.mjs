@@ -1,10 +1,10 @@
-// The Ask card's option rows: hover is `--muted` + 5% `--foreground`, selected is `--muted` + 12% `--primary` (`--color-option-hover-bg`,
-// `--color-option-selected-bg`). Row text must keep 4.5:1 on both fills; the 2px `--primary` edge is a secondary cue (the dot or tick
-// is the other), so its 3:1 against the selected fill is informational. The oklab mix tracks the CSS oklch mix to ~0.03 in ratio.
+// Ask card option rows: hover (`--muted` + 5% `--foreground`) and selected (`--muted` + 12% `--primary`) fills must keep 4.5:1 text.
+// The 2px `--primary` edge is a secondary cue (the dot or tick is the other), so its 3:1 is informational.
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
 import { mixEntries } from './recommended-hover-contrast.mjs'
 
 const FILLS = [
+  // Weights mirror the `--color-option-*` color-mix percentages in src/renderer/styles/globals.css; keep in sync.
   { label: 'option hover fill (muted + 5% foreground)', tint: 'foreground', weight: 0.05 },
   { label: 'option selected fill (muted + 12% primary)', tint: 'primary', weight: 0.12 }
 ]
