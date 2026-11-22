@@ -141,6 +141,14 @@ fn map_chat_error_passes_code_and_message_through() {
     assert_eq!(ipc_err.message, "no live process");
 }
 
+#[test]
+fn a_late_answer_keeps_its_request_gone_code_and_other_failures_stay_not_found() {
+    let gone = map_answer_error(crate::session::AgentError::new("request-gone", "closed"));
+    assert_eq!(gone.code, "request-gone");
+    let other = map_answer_error(crate::session::AgentError::new("agent-not-running", "x"));
+    assert_eq!(other.code, "not-found");
+}
+
 // ---- is_native_reserved / is_valid_queue_kind / parse_session_id_and_text ----
 
 #[test]

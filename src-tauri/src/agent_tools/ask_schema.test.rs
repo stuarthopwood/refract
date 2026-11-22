@@ -10,8 +10,14 @@ fn a_single_line_label_is_accepted() {
 }
 
 #[test]
-fn a_zero_width_joiner_in_a_label_is_accepted_for_emoji_sequences() {
-    assert!(parse(&call("Team \u{1F468}\u{200D}\u{1F4BB}")).is_ok());
+fn zero_width_joiner_non_joiner_and_emoji_selector_in_a_label_are_accepted() {
+    for label in [
+        "Team \u{1F468}\u{200D}\u{1F4BB}",
+        "\u{0645}\u{200C}\u{0647}",
+        "Heart \u{2764}\u{FE0F}",
+    ] {
+        assert!(parse(&call(label)).is_ok(), "label {label:?}");
+    }
 }
 
 #[test]

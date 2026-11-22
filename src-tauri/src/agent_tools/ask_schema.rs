@@ -152,10 +152,11 @@ fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> 
         if option.label.contains(|c: char| {
             c.is_control()
                 || matches!(c, '\u{2028}' | '\u{2029}')
-                || (c != '\u{200D}' && crate::github::profile::is_invisible_format(c))
+                || (!matches!(c, '\u{200C}' | '\u{200D}' | '\u{FE0F}')
+                    && crate::github::profile::is_invisible_format(c))
         }) {
             return Err(invalid(format!(
-                "option {} of {name} has a label with a line break or control character; \
+                "option {} of {name} has a label with line breaks, control, invisible or direction-control characters; \
 labels must be a single line of plain text",
                 index + 1
             )));
