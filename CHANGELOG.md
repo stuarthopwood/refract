@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.40.0 (2026-11-22)
+
+### Features
+
+- feat(chat): multi-select keys and selected counter on the Question card (https://github.com/stuarthopwood/refract/pull/2133)
+- feat(chat): add the refract_ask host tool that replaces native ask (https://github.com/stuarthopwood/refract/pull/2134)
+
+### Fixes
+
+- fix(chat): make the selected Ask card option visually distinct (https://github.com/stuarthopwood/refract/pull/2132)
+
+### Other
+
+- docs(plan): place #2127 and #2128 (https://github.com/stuarthopwood/refract/pull/2129)
+- docs(chat): Refract owns the ask tool, #1990 grill outcome (ADR 0012) (https://github.com/stuarthopwood/refract/pull/2130)
+- docs(chat): specify the refract_ask host tool (https://github.com/stuarthopwood/refract/pull/2131)
+
 ## v0.39.0 (2026-11-21)
 
 ### Features
