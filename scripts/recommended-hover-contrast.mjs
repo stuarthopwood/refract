@@ -5,19 +5,24 @@ import { contrastRatio, linearToHex, oklabToLinearSrgb, relativeLuminance, resol
 
 const MIX_WEIGHT = 0.05
 
-function linearToOklab([r, g, b]) {
+export function linearToOklab([r, g, b]) {
   const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b)
   const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b)
   const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b)
   return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s]
 }
 
+/** `color-mix(in oklch, base, over weight%)` as a theme entry, premultiplied so translucent inputs composite like the browser. */
+export function mixEntries(base, over, weight, raw) {
+  const alpha = (1 - weight) * base.alpha + weight * over.alpha
+  const baseLab = linearToOklab(base.linear)
+  const overLab = linearToOklab(over.linear)
+  const lab = baseLab.map((c, i) => ((1 - weight) * base.alpha * c + weight * over.alpha * overLab[i]) / alpha)
+  return { raw, alpha, linear: oklabToLinearSrgb(...lab).map((c) => Math.min(1, Math.max(0, c))) }
+}
+
 export function hoveredTintEntry(tint, foreground) {
-  const alpha = (1 - MIX_WEIGHT) * tint.alpha + MIX_WEIGHT * foreground.alpha
-  const tintLab = linearToOklab(tint.linear)
-  const fgLab = linearToOklab(foreground.linear)
-  const lab = tintLab.map((c, i) => ((1 - MIX_WEIGHT) * tint.alpha * c + MIX_WEIGHT * foreground.alpha * fgLab[i]) / alpha)
-  return { raw: 'recommended-hover', alpha, linear: oklabToLinearSrgb(...lab).map((c) => Math.min(1, Math.max(0, c))) }
+  return mixEntries(tint, foreground, MIX_WEIGHT, 'recommended-hover')
 }
 
 export function recommendedHoverContrastRows(themes) {

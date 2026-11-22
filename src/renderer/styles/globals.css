@@ -177,6 +177,8 @@
   --color-severity-warning-bg: var(--severity-warning-bg);
   --color-severity-error-bg: var(--severity-error-bg);
   --color-severity-info-bg: var(--severity-info-bg);
+  --color-option-hover-bg: color-mix(in oklch, var(--muted), var(--foreground) 5%);
+  --color-option-selected-bg: color-mix(in oklch, var(--muted), var(--primary) 12%);
   --color-alert-note: var(--alert-note);
   --color-alert-tip: var(--alert-tip);
   --color-alert-important: var(--alert-important);

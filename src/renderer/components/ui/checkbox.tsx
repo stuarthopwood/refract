@@ -36,18 +36,20 @@ function CheckboxIndicator({
 
 export const CHECKBOX_LIST_ITEM_CLASS =
   "min-h-6 flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 hover:bg-transparent data-[state=checked]:border-none data-[state=checked]:bg-transparent"
-// Question-card option row (#1434): a fill, not a border; the dot or tick shows the pick. Transparent border keeps a forced-colors edge.
+// Question-card option row: a fill, not a border. Resting is `--muted`, hover a neutral 5% foreground mix, and a pick a
+// `--primary`-tinted fill plus a left edge, so hover and selected never share a fill. Transparent border keeps a forced-colors edge.
 export const OPTION_FILL_CLASS =
-  "border-transparent bg-muted hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] dark:border-transparent dark:bg-muted dark:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
+  "border-transparent bg-muted hover:bg-option-hover-bg dark:border-transparent dark:bg-muted dark:hover:bg-option-hover-bg"
 // Busy rows keep their resting fill on hover, so they do not look pressable. Literal classes: Tailwind cannot see interpolated ones.
 const OPTION_BUSY_HOVER =
-  "aria-disabled:hover:bg-muted dark:aria-disabled:hover:bg-muted aria-disabled:data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)] dark:aria-disabled:data-[state=checked]:hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
+  "aria-disabled:hover:bg-muted dark:aria-disabled:hover:bg-muted aria-disabled:data-[state=checked]:hover:bg-option-selected-bg dark:aria-disabled:data-[state=checked]:hover:bg-option-selected-bg"
+// The left edge is an inset shadow, so it composes with the focus ring's own box-shadow layers; forced colors drops shadows and uses the Highlight border.
 const OPTION_LAYOUT_CLASS =
-  "grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 min-h-9 py-1 aria-disabled:opacity-50 data-[state=checked]:border-transparent focus-visible:border-transparent forced-colors:data-[state=checked]:border-[Highlight]"
+  "grid grid-cols-[1rem_minmax(0,1fr)] items-center gap-x-2 gap-y-1 min-h-9 py-1 aria-disabled:opacity-50 data-[state=checked]:border-transparent data-[state=checked]:shadow-[inset_2px_0_0_0_var(--primary)] focus-visible:border-transparent forced-colors:data-[state=checked]:border-[Highlight]"
 export const OPTION_ROW_CLASS =
-  OPTION_FILL_CLASS + " " + OPTION_BUSY_HOVER + " " + OPTION_LAYOUT_CLASS + " data-[state=checked]:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]"
-// A question's recommended option (#1985): the `--severity-success-bg` tint. The icon and "Recommended" text, not this tint, carry the meaning.
-// The tint survives the checked state and hover (`--color-severity-success-hover-bg`, a 5% foreground mix, is the cue), so the base `hover:bg-muted` and `data-[state=checked]:bg-primary/5` are overridden here.
+  OPTION_FILL_CLASS + " " + OPTION_BUSY_HOVER + " " + OPTION_LAYOUT_CLASS + " data-[state=checked]:bg-option-selected-bg data-[state=checked]:hover:bg-option-selected-bg dark:data-[state=checked]:bg-option-selected-bg dark:data-[state=checked]:hover:bg-option-selected-bg"
+// A question's recommended option: the `--severity-success-bg` tint. The icon and "Recommended" text, not this tint, carry the meaning.
+// The tint survives the checked state and hover (`--color-severity-success-hover-bg`, a 5% foreground mix, is the cue), so the base `hover:bg-muted` and the selected fill (`bg-option-selected-bg`) are overridden here.
 // The mix is a theme token, not a `color-mix(` here: the literal-colours gate counts those, and its baseline may not grow.
 export const OPTION_RECOMMENDED_FILL_CLASS =
   "border-transparent bg-severity-success-bg hover:bg-severity-success-hover-bg data-[state=checked]:bg-severity-success-bg data-[state=checked]:hover:bg-severity-success-hover-bg dark:border-transparent dark:bg-severity-success-bg dark:hover:bg-severity-success-hover-bg dark:data-[state=checked]:bg-severity-success-bg dark:data-[state=checked]:hover:bg-severity-success-hover-bg"
