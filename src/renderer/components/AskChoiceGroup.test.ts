@@ -92,10 +92,18 @@ describe.each([
 
 describe('rowProps Enter shortcut (#1985)', () => {
   const RECOMMENDED: AskChoiceOption = { value: 'Beta', label: 'Beta', recommended: true }
-  function press(key: string, extra: { repeat?: boolean; isComposing?: boolean } = {}) {
+  function press(key: string, extra: { repeat?: boolean; isComposing?: boolean; ctrlKey?: boolean; altKey?: boolean; metaKey?: boolean } = {}) {
     const accept = vi.fn()
     const preventDefault = vi.fn()
-    rowProps(RECOMMENDED, accept).onKeyDown?.({ key, repeat: extra.repeat ?? false, preventDefault, nativeEvent: { isComposing: extra.isComposing ?? false } })
+    rowProps(RECOMMENDED, accept).onKeyDown?.({
+      key,
+      repeat: extra.repeat ?? false,
+      ctrlKey: extra.ctrlKey ?? false,
+      altKey: extra.altKey ?? false,
+      metaKey: extra.metaKey ?? false,
+      preventDefault,
+      nativeEvent: { isComposing: extra.isComposing ?? false }
+    })
     return { accept, preventDefault }
   }
 
@@ -108,6 +116,9 @@ describe('rowProps Enter shortcut (#1985)', () => {
   it.each([
     ['a held Enter', 'Enter', { repeat: true }],
     ['Enter during IME composition', 'Enter', { isComposing: true }],
+    ['Ctrl+Enter', 'Enter', { ctrlKey: true }],
+    ['Alt+Enter', 'Enter', { altKey: true }],
+    ['Meta+Enter', 'Enter', { metaKey: true }],
     ['Space', ' ', {}],
     ['ArrowDown', 'ArrowDown', {}]
   ])('does not accept on %s', (_name, key, extra) => {

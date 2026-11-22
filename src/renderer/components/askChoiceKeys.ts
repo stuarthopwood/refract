@@ -28,15 +28,23 @@ export function choiceDigitIndex(event: ChoiceKeyEvent, optionCount: number): nu
   return index < Math.min(optionCount, MAX_DIGIT_OPTIONS) ? index : null
 }
 
+/** The attribute a row sets when it handles Enter itself, so the card-level Enter skips it. */
+export const ACCEPTS_ENTER_ATTRIBUTE = 'data-ask-accepts-enter'
+
+/** Enter with no modifier, not held and not confirming IME text. */
+export function isPlainEnter(event: Pick<ChoiceKeyEvent, 'key' | 'ctrlKey' | 'metaKey' | 'altKey' | 'repeat' | 'nativeEvent'>): boolean {
+  return event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.repeat && !event.nativeEvent.isComposing
+}
+
 /**
  * Enter on an option row acts like the primary button. Radix prevents default on Enter in every row, so defaultPrevented cannot mean "claimed";
  * a row that accepts Enter itself (the recommended one) marks itself and is skipped here.
  */
 export function isRowEnter(event: ChoiceKeyEvent): boolean {
-  if (event.key !== 'Enter' || event.ctrlKey || event.metaKey || event.altKey || event.repeat || event.nativeEvent.isComposing) return false
-  const target = event.target as HTMLElement | null
-  const role = target?.getAttribute?.('role')
-  return (role === 'radio' || role === 'checkbox') && target?.hasAttribute('data-ask-accepts-enter') !== true
+  if (!isPlainEnter(event)) return false
+  const target = event.target instanceof Element ? event.target : null
+  const role = target?.getAttribute('role')
+  return (role === 'radio' || role === 'checkbox') && !target?.hasAttribute(ACCEPTS_ENTER_ATTRIBUTE)
 }
 
 /** Moves focus to the option row a digit just changed, so assistive tech reads its new state. */

@@ -2,7 +2,7 @@ import * as React from 'react'
 import { RecommendedBadge } from '@/components/RecommendedBadge'
 import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_RECOMMENDED_ROW_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { MAX_DIGIT_OPTIONS } from '@/components/askChoiceKeys'
+import { ACCEPTS_ENTER_ATTRIBUTE, MAX_DIGIT_OPTIONS, isPlainEnter } from '@/components/askChoiceKeys'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 
@@ -109,10 +109,10 @@ export function rowProps(option: AskChoiceOption, onAcceptRecommended: (() => vo
   return {
     className: OPTION_RECOMMENDED_ROW_CLASS,
     'data-ask-recommended': '',
-    'data-ask-accepts-enter': onAcceptRecommended ? '' : undefined,
+    [ACCEPTS_ENTER_ATTRIBUTE]: onAcceptRecommended ? '' : undefined,
     onKeyDown: onAcceptRecommended
-      ? (event: Pick<React.KeyboardEvent<HTMLElement>, 'key' | 'repeat' | 'preventDefault'> & { nativeEvent: Pick<KeyboardEvent, 'isComposing'> }) => {
-          if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.repeat) return
+      ? (event: Pick<React.KeyboardEvent<HTMLElement>, 'key' | 'repeat' | 'preventDefault' | 'ctrlKey' | 'metaKey' | 'altKey'> & { nativeEvent: Pick<KeyboardEvent, 'isComposing'> }) => {
+          if (!isPlainEnter(event)) return
           event.preventDefault()
           onAcceptRecommended()
         }
@@ -144,13 +144,6 @@ export function createArrowGuard() {
   }
 }
 
-/** "Keys 1-3 toggle." for several options, "Key 1 toggles." for one, nothing for none; digits address the first nine only. */
-function keyHint(optionCount: number): string {
-  const count = Math.min(optionCount, MAX_DIGIT_OPTIONS)
-  if (count === 0) return ''
-  return count === 1 ? '. Key 1 toggles.' : `. Keys 1-${count} toggle.`
-}
-
 /** Ticked options plus a typed "Other" answer, which is what Submit sends. */
 function selectedCount(selected: readonly string[], other: AskChoiceOther, otherSelected: boolean): number {
   return selected.length + (otherSelected && other.text.trim().length > 0 ? 1 : 0)
@@ -177,7 +170,6 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 text-xs text-muted-foreground">
           <span>
             <span id={hintId}>Select all that apply</span>
-            <span aria-hidden>{keyHint(options.length)}</span>
           </span>
           <span role="status" className="tabular-nums">
             {selectedCount(selected, other, otherSelected)} selected
