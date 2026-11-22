@@ -31,6 +31,7 @@ export function choiceDigitIndex(event: ChoiceKeyEvent, optionCount: number): nu
 /** Enter on an option row that nothing else claimed (the recommended row does), which acts like the primary button. */
 export function isRowEnter(event: ChoiceKeyEvent): boolean {
   if (event.key !== 'Enter' || event.defaultPrevented || event.repeat || event.nativeEvent.isComposing) return false
+  if (event.ctrlKey || event.metaKey || event.altKey) return false
   const role = (event.target as HTMLElement | null)?.getAttribute?.('role')
   return role === 'radio' || role === 'checkbox'
 }

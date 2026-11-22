@@ -143,6 +143,13 @@ export function createArrowGuard() {
   }
 }
 
+/** "Keys 1-3 toggle." for several options, "Key 1 toggles." for one, nothing for none; digits address the first nine only. */
+function keyHint(optionCount: number): string {
+  const count = Math.min(optionCount, MAX_DIGIT_OPTIONS)
+  if (count === 0) return ''
+  return count === 1 ? '. Key 1 toggles.' : `. Keys 1-${count} toggle.`
+}
+
 /** Ticked options plus a typed "Other" answer, which is what Submit sends. */
 function selectedCount(selected: readonly string[], other: AskChoiceOther, otherSelected: boolean): number {
   return selected.length + (otherSelected && other.text.trim().length > 0 ? 1 : 0)
@@ -169,7 +176,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted-foreground">
           <span>
             <span id={hintId}>Select all that apply</span>
-            <span aria-hidden>{`. Keys 1-${Math.min(options.length, MAX_DIGIT_OPTIONS)} toggle.`}</span>
+            <span aria-hidden>{keyHint(options.length)}</span>
           </span>
           <span role="status" className="tabular-nums">
             {selectedCount(selected, other, otherSelected)} selected
