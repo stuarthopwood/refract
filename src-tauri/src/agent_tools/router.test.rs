@@ -389,6 +389,24 @@ fn an_answer_through_another_router_is_not_accepted() {
 }
 
 #[test]
+fn an_ask_answer_reaches_a_waiting_call_once() {
+    let router = ToolRouter::default();
+    let rx = router.wait_for("c1");
+    assert!(router.answer_ask("c1", None));
+    assert!(matches!(rx.blocking_recv(), Ok(Reply::Ask(None))));
+    assert!(!router.answer_ask("c1", None));
+}
+
+#[test]
+fn an_ask_answer_for_a_gone_call_reports_false() {
+    let router = ToolRouter::default();
+    assert!(!router.answer_ask("missing", None));
+    let rx = router.wait_for("c2");
+    drop(rx);
+    assert!(!router.answer_ask("c2", None));
+}
+
+#[test]
 fn a_cancelled_approval_becomes_an_error_frame() {
     let err = approval_outcome(Some(Reply::Approval(Decision::Cancelled))).unwrap_err();
     let frame = error_frame("c1", &err);

@@ -105,3 +105,7 @@ pub(crate) fn format_answers(questions: &[AskedQuestion], answers: &[AskAnswer])
     }
     out
 }
+
+#[cfg(test)]
+#[path = "ask_result.test.rs"]
+mod tests;

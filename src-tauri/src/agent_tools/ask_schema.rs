@@ -226,3 +226,7 @@ pub(crate) fn card(card_id: &str, questions: &[AskedQuestion]) -> PendingRequest
         host_call: true,
     }
 }
+
+#[cfg(test)]
+#[path = "ask_schema.test.rs"]
+mod tests;
