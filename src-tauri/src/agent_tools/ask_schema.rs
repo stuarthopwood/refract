@@ -149,7 +149,10 @@ fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> 
                 index + 1
             )));
         }
-        if option.label.contains(|c: char| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')) {
+        if option
+            .label
+            .contains(|c: char| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
+        {
             return Err(invalid(format!(
                 "option {} of {name} has a label with a line break or control character; \
 labels must be a single line of plain text",
