@@ -98,7 +98,8 @@ export type IpcErrorCode =
   | 'worktree-held' | 'worktree-busy' | 'already-deleting' | 'destination-not-empty' | 'too-many-clones' | 'destination-in-use'
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed' // lane R11b (#794); #1265 settings.json write failed
   | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape' | 'working-folder-unavailable'
-  | 'no-repository';
+  | 'no-repository'
+  | 'request-gone';
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -189,7 +190,7 @@ export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset
 
 export type SlashCommand = SlashCommandDescriptor;
 
-export type ChatAnswer = { approve: boolean; option?: string } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`).
+export type ChatAnswer = { approve: boolean; option?: string } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string; notes?: { option: string; text: string }[] }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`). `notes` only applies to a `refract_ask` card.
 
 export type { LowMemoryWarning } from './lowMemoryWarning';
 export type { TokenGuardCalls, TokenGuardHandoffResult, TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';

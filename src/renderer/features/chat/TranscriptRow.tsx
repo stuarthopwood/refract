@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Message, MessageContent } from '@/components/ui/message'
-import { type PendingRequest, type TranscriptItem } from '../../../shared/model'
+import { isAskTool, type PendingRequest, type TranscriptItem } from '../../../shared/model'
 import { Markdown } from './Markdown'
 import { AgentMessageRow, AgentSteerRow } from './AgentMessageRow'
 import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'
@@ -125,7 +125,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
       return <ThoughtRunRow group={{ kind: 'thought-run', id: item.id, items: [item] }} />
 
     case 'tool':
-      if (item.tool === 'ask') {
+      if (isAskTool(item.tool)) {
         return <AskToolRow item={item} sessionId={sessionId} userName={userName} userAvatarUrl={userAvatarUrl} askRequestId={askRequestId} />
       }
       // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not

@@ -2,6 +2,7 @@
 
 use serde_json::{json, Value};
 
+use crate::agent_tools::ask_result::AskAnswer;
 use crate::omp::transcript::RequestResolution;
 
 use super::commands::string_array;
@@ -34,7 +35,8 @@ impl SessionAgent {
                     )
                 })?;
             let proc = state.process.clone();
-            if proc.is_none() && !owned {
+            // A host-call card is answered in-process, so it needs no live omp process either.
+            if proc.is_none() && !owned && !request.is_host_ask() {
                 return Err(AgentError::new(
                     "agent-not-running",
                     format!(
@@ -45,7 +47,18 @@ impl SessionAgent {
             }
             (request, proc)
         };
-        if owned {
+        // A host ask whose call is gone (cancelled or settled elsewhere) reaches no one.
+        let mut late_ask = false;
+        if let PendingRequest::Ask {
+            questions,
+            host_call: true,
+            ..
+        } = &request
+        {
+            let reply = host_ask_reply(questions, &answer)
+                .map_err(|err| AgentError::new("invalid-argument", err))?;
+            late_ask = !self.agent_tools.answer_ask(&request_id, reply);
+        } else if owned {
             let decision = crate::agent_tools::approval::decision(&answer);
             self.agent_tools.answer_approval(&request_id, decision);
         } else if let Some(proc) = proc {
@@ -56,8 +69,8 @@ impl SessionAgent {
                 .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         }
 
-        // `cancelled` wins, then `approve`, otherwise a question answer.
-        let resolved = if answer.get("cancelled").is_some() {
+        // `cancelled` wins, then `approve`, otherwise a question answer; a late answer is no answer.
+        let resolved = if late_ask || answer.get("cancelled").is_some() {
             RequestResolution::Cancelled
         } else if let Some(approve) = answer.get("approve") {
             if approve.as_bool() == Some(true) {
@@ -78,6 +91,15 @@ impl SessionAgent {
             .emit_request_resolved(&self.session_id, &request_id);
         if became_working {
             self.set_status(SessionStatus::Working, None, None).await;
+        }
+        if late_ask {
+            return Err(AgentError::new(
+                "request-gone",
+                format!(
+                    "SessionAgent {}: the question is no longer waiting for an answer",
+                    self.session_id
+                ),
+            ));
         }
         Ok(())
     }
@@ -218,6 +240,7 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
                     .and_then(Value::as_f64)
                     .filter(|ms| ms.is_finite() && *ms >= 0.0)
                     .map(|ms| now_ms().saturating_add(ms as i64)),
+                host_call: false,
             }),
             None => DialogClassification::Malformed { id },
         },
@@ -271,6 +294,8 @@ fn parse_ask_questions(frame: &Value) -> Option<Vec<AskQuestion>> {
                             .get("description")
                             .and_then(Value::as_str)
                             .map(str::to_string),
+                        recommended: false,
+                        reason: None,
                     })
                     .collect::<Vec<_>>()
             })
@@ -296,6 +321,67 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// The reply for a host-call card: `None` for the developer's cancel, else the validated answers.
+fn host_ask_reply(
+    questions: &[AskQuestion],
+    answer: &Value,
+) -> Result<Option<Vec<AskAnswer>>, String> {
+    if answer.get("cancelled") == Some(&Value::Bool(true)) {
+        return Ok(None);
+    }
+    let answers = answer
+        .get("answers")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "expected an answers array for the ask request".to_string())?;
+    validate_ask_answers(questions, answers)?;
+    serde_json::from_value(Value::Array(answers.clone()))
+        .map(Some)
+        .map_err(|err| format!("malformed answers: {err}"))
+}
+
+const MAX_NOTE_CHARS: usize = 1000;
+
+/// Each note names an offered option that is also picked, in at most `MAX_NOTE_CHARS` characters.
+fn validate_notes(
+    question: &AskQuestion,
+    selected: &[Value],
+    notes: Option<&Value>,
+) -> Result<(), String> {
+    let Some(notes) = notes else {
+        return Ok(());
+    };
+    let id = &question.id;
+    let notes = notes
+        .as_array()
+        .ok_or_else(|| format!("answer {id} has a non-array notes"))?;
+    for note in notes {
+        let option = note
+            .get("option")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("answer {id} has a note without an option"))?;
+        let text = note
+            .get("text")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("answer {id} has a note without text"))?;
+        if !question.options.iter().any(|o| o.label == option) {
+            return Err(format!(
+                "answer {id} has a note on an option not offered: {option}"
+            ));
+        }
+        if !selected.iter().any(|label| label.as_str() == Some(option)) {
+            return Err(format!(
+                "answer {id} has a note on an option not picked: {option}"
+            ));
+        }
+        if text.chars().count() > MAX_NOTE_CHARS {
+            return Err(format!(
+                "answer {id} has a note over {MAX_NOTE_CHARS} characters"
+            ));
+        }
+    }
+    Ok(())
 }
 
 /// Rejects answers that do not match the pending question: wrong count, order, or label.
@@ -344,6 +430,7 @@ fn validate_ask_answers(questions: &[AskQuestion], answers: &[Value]) -> Result<
                 "answer {id} is single-choice but selected {selected_count} options"
             ));
         }
+        validate_notes(question, selected, obj.get("notes"))?;
         match obj.get("customInput") {
             None => {}
             Some(Value::String(text)) => {

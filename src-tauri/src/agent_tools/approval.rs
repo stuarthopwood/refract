@@ -13,6 +13,16 @@ pub fn request_id(call_id: &str) -> String {
     format!("{REQUEST_PREFIX}{call_id}")
 }
 
+/// The card key for a tool's call: `refract_ask` keys its Question card by the bare call id (it is
+/// answered by the host-call path, not the `is_owned` prefix), every other tool by `request_id`.
+pub fn card_id(tool: &str, call_id: &str) -> String {
+    if tool == super::ask_schema::ASK {
+        call_id.to_string()
+    } else {
+        request_id(call_id)
+    }
+}
+
 pub fn is_owned(request_id: &str) -> bool {
     request_id.starts_with(REQUEST_PREFIX)
 }
@@ -130,6 +140,13 @@ mod tests {
         let id = request_id("abc");
         assert!(is_owned(&id));
         assert!(!is_owned("abc"));
+    }
+
+    #[test]
+    fn only_refract_ask_is_keyed_by_the_bare_call_id() {
+        assert_eq!(card_id("refract_ask", "c1"), "c1");
+        assert_eq!(card_id("x", "c1"), "refract-tool-c1");
+        assert!(!is_owned(&card_id("refract_ask", "c1")));
     }
 
     #[test]

@@ -1,4 +1,4 @@
-import type { TranscriptDisplaySettings } from '../../../shared/model'
+import { isAskTool, type TranscriptDisplaySettings } from '../../../shared/model'
 import { isStageGroup } from './groupSubagentStages'
 import { isAgentSteerGroup, isToolGroup } from './groupToolItems'
 import type { AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
@@ -19,7 +19,7 @@ const BOOKKEEPING_KINDS: Partial<Record<AdvisoryGroupedTranscriptItem['kind'], t
 
 export function isBookkeepingRow(row: AdvisoryGroupedTranscriptItem): boolean {
   if (row.kind === 'request') return row.resolved !== undefined
-  if (row.kind === 'tool') return row.tool === 'ask' && row.status !== 'running'
+  if (row.kind === 'tool') return isAskTool(row.tool) && row.status !== 'running'
   return BOOKKEEPING_KINDS[row.kind] === true
 }
 export type RowVisibility = 'visible' | 'hidden' | 'sr-only'

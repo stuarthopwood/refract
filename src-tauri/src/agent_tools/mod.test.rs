@@ -23,7 +23,8 @@ fn root_sessions_get_the_session_tools_and_the_panel_tools() {
             "refract_list_conversations",
             "refract_new_conversation",
             "refract_switch_conversation",
-            "refract_checklist"
+            "refract_checklist",
+            "refract_ask"
         ]
     );
     assert!(names.iter().all(|n| n.starts_with(TOOL_PREFIX)));
@@ -36,7 +37,7 @@ fn every_depth_registers_every_session_tool() {
         for tool in sessions::SESSION_TOOLS {
             assert!(names.contains(&tool), "depth {depth}: {tool}");
         }
-        assert_eq!(host_tool_defs(ToolAccess::for_depth(depth)).len(), 18);
+        assert_eq!(host_tool_defs(ToolAccess::for_depth(depth)).len(), 19);
     }
 }
 

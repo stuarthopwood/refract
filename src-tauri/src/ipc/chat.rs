@@ -308,6 +308,16 @@ pub fn chat_remove_queued(state: AppState, args: Vec<Value>) -> HandlerFuture {
     })
 }
 
+/// A late answer must reach the renderer as itself, so it can say the question closed; every
+/// other failure stays `not-found`.
+fn map_answer_error(err: crate::session::AgentError) -> IpcError {
+    if err.code == "request-gone" {
+        map_chat_error(err)
+    } else {
+        not_found(err.message)
+    }
+}
+
 pub fn chat_answer(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let Some(session_id) = args.first().and_then(Value::as_str) else {
@@ -343,7 +353,7 @@ pub fn chat_answer(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .get_or_create_agent(session_id)
             .answer_request(request_id.to_string(), answer.clone())
             .await
-            .map_err(|err| not_found(err.message))?;
+            .map_err(map_answer_error)?;
         Ok(Value::Null)
     })
 }
