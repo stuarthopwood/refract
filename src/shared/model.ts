@@ -428,7 +428,10 @@ export const HIDDEN_TOOL_NOTICE_PREFIX = 'hidden-tool-error:';
 export const STARTUP_NOTICE_PREFIX = 'startup-notice:';
 
 /** One question of an `ask`-tool batch. */
-export interface AskQuestion { id: string; question: string; header?: string; options: { label: string; description?: string }[]; multi: boolean; recommended?: number; }
+export interface AskQuestion { id: string; question: string; header?: string; options: { label: string; description?: string; recommended?: boolean; reason?: string }[]; multi: boolean; recommended?: number; }
+
+/** The native `ask` and the host-owned `refract_ask` rows share every question and answer row. */
+export const isAskTool = (tool: string): boolean => tool === 'ask' || tool === 'refract_ask';
 
 /** `requestId` is the `id` of the OMP `extension_ui_request`. */
 export type PendingRequest =

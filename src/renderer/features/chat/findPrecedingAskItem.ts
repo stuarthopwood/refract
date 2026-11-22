@@ -1,4 +1,4 @@
-import { type TranscriptItem } from '../../../shared/model'
+import { isAskTool, type TranscriptItem } from '../../../shared/model'
 import { type ToolItem } from './TranscriptRow'
 
 /**
@@ -9,7 +9,7 @@ import { type ToolItem } from './TranscriptRow'
 export function findPrecedingAskItem(items: TranscriptItem[], requestIndex: number): ToolItem | undefined {
   for (let i = requestIndex - 1; i >= 0; i--) {
     const candidate = items[i]!
-    if (candidate.kind === 'tool') return candidate.tool === 'ask' ? candidate : undefined
+    if (candidate.kind === 'tool') return isAskTool(candidate.tool) ? candidate : undefined
   }
   return undefined
 }

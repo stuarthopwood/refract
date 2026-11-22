@@ -125,7 +125,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
       return <ThoughtRunRow group={{ kind: 'thought-run', id: item.id, items: [item] }} />
 
     case 'tool':
-      if (item.tool === 'ask') {
+      if (isAskTool(item.tool)) {
         return <AskToolRow item={item} sessionId={sessionId} userName={userName} userAvatarUrl={userAvatarUrl} askRequestId={askRequestId} />
       }
       // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not

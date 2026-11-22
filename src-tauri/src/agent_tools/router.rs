@@ -202,6 +202,16 @@ fn text_frame(id: &str, text: &str) -> Value {
     })
 }
 
+/// The ask result: the same verbatim text, plus the structured answers so the Asked-user line
+/// can show them without parsing the text.
+fn ask_frame(id: &str, text: &str, results: Option<&[AskAnswer]>) -> Value {
+    let mut frame = text_frame(id, text);
+    if let Some(results) = results {
+        frame["result"]["details"] = json!({ "results": results });
+    }
+    frame
+}
+
 pub fn error_frame(id: &str, err: &ToolError) -> Value {
     let text = json!({ "error": { "code": err.code, "message": err.message } }).to_string();
     json!({
@@ -394,7 +404,7 @@ impl ToolRouter {
 /// What a finished call sends: structured JSON for a panel or Session tool, verbatim text for ask.
 enum Done {
     Json(Value),
-    Text(String),
+    Ask(String, Option<Vec<AskAnswer>>),
 }
 
 async fn serve(agent: Arc<SessionAgent>, call: Call, cancel: Arc<Notify>) {
@@ -417,7 +427,7 @@ async fn serve(agent: Arc<SessionAgent>, call: Call, cancel: Arc<Notify>) {
     };
     let frame = match &outcome {
         Ok(Done::Json(value)) => ok_frame(&call.id, value),
-        Ok(Done::Text(text)) => text_frame(&call.id, text),
+        Ok(Done::Ask(text, results)) => ask_frame(&call.id, text, results.as_deref()),
         Err(err) => error_frame(&call.id, err),
     };
     if let Some(proc) = agent.tool_process().await {
@@ -434,7 +444,9 @@ async fn run(agent: &Arc<SessionAgent>, call: &Call) -> Result<Done, ToolError> 
                 .map(Done::Json)
         }
         Plan::Ask { questions } => {
-            return ask_questions(agent, call, questions).await.map(Done::Text)
+            return ask_questions(agent, call, questions)
+                .await
+                .map(|(text, results)| Done::Ask(text, results))
         }
         _ => {}
     }
@@ -450,14 +462,16 @@ async fn ask_questions(
     agent: &Arc<SessionAgent>,
     call: &Call,
     questions: &[AskedQuestion],
-) -> Result<String, ToolError> {
+) -> Result<(String, Option<Vec<AskAnswer>>), ToolError> {
     let rx = agent.tool_router().wait_for(&call.id);
     agent
         .tool_raise_approval(ask_schema::card(&call.id, questions))
         .await;
     match rx.await {
-        Ok(Reply::Ask(Some(answers))) => Ok(ask_result::format_answers(questions, &answers)),
-        Ok(Reply::Ask(None)) => Ok(ask_result::CANCELLED.to_string()),
+        Ok(Reply::Ask(Some(answers))) => {
+            Ok((ask_result::format_answers(questions, &answers), Some(answers)))
+        }
+        Ok(Reply::Ask(None)) => Ok((ask_result::CANCELLED.to_string(), None)),
         _ => Err(ToolError::new(CANCELLED, "the call was cancelled")),
     }
 }

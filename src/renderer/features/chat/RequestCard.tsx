@@ -100,6 +100,7 @@ interface AskResultLike {
   id?: unknown
   selectedOptions?: unknown
   customInput?: unknown
+  notes?: unknown
   timedOut?: unknown
 }
 
@@ -112,14 +113,39 @@ function formatAskAnswerText(selectedOptions: string[], customInput: string, fal
   return fallbackOutput && fallbackOutput.length > 0 ? fallbackOutput : 'None selected'
 }
 
+function readAskNotes(notes: unknown): string[] {
+  if (!Array.isArray(notes)) return []
+  return notes.flatMap((entry: unknown) => {
+    const { option, text } = (entry && typeof entry === 'object' ? entry : {}) as { option?: unknown; text?: unknown }
+    return typeof option === 'string' && typeof text === 'string' ? [`Note on ${option}: ${text}`] : []
+  })
+}
+
 interface AskAnswer {
   text: string
   timedOut: boolean
 }
 
-function readAskAnswers(item: AskToolItem, questionIds: string[]): AskAnswer[] {
+const NUMBERED_RESULT = /^The developer (?:answered \d+ questions?|cancelled the questions)\./
+const CANCELLED_RESULT = /^The developer cancelled the questions\./
+
+/** A `refract_ask` result read back from saved history, which carries only its numbered text: each question's line without its number and question text, notes included. */
+function readNumberedAnswers(output: string | undefined, questions: { question: string }[]): AskAnswer[] | undefined {
+  if (!output || !NUMBERED_RESULT.test(output) || questions.length === 0) return undefined
+  const markers = questions.map((entry, index) => `\n${index + 1}. ${entry.question} `)
+  const starts = markers.map((marker) => output.indexOf(marker))
+  if (starts.some((start) => start < 0)) return undefined
+  return questions.map((_, index) => {
+    const end = index + 1 < starts.length ? starts[index + 1]! : output.length
+    return { text: output.slice(starts[index]! + markers[index]!.length, end).trim(), timedOut: false }
+  })
+}
+
+function readAskAnswers(item: AskToolItem, questions: { id?: string; question: string }[]): AskAnswer[] {
+  const questionIds = questions.map((question, index) => question.id ?? String(index))
   const count = Math.max(questionIds.length, 1)
-  if (item.status === 'error' || item.status === 'cancelled') return Array.from({ length: count }, () => ({ text: 'Cancelled', timedOut: false }))
+  if (item.status === 'error' || item.status === 'cancelled' || (item.output && CANCELLED_RESULT.test(item.output)))
+    return Array.from({ length: count }, () => ({ text: 'Cancelled', timedOut: false }))
   if (item.status === 'interrupted') return Array.from({ length: count }, () => ({ text: 'Question not answered', timedOut: false }))
   const details =
     item.details && typeof item.details === 'object'
@@ -136,15 +162,15 @@ function readAskAnswers(item: AskToolItem, questionIds: string[]): AskAnswer[] {
     return questionIds.map((id) => {
       const result = byId[id]
       if (!result) return { text: 'None selected', timedOut: false }
-      return {
-        text: formatAskAnswerText(
-          Array.isArray(result.selectedOptions) ? result.selectedOptions.filter((o): o is string => typeof o === 'string') : [],
-          typeof result.customInput === 'string' ? result.customInput : ''
-        ),
-        timedOut: result.timedOut === true
-      }
+      const picked = formatAskAnswerText(
+        Array.isArray(result.selectedOptions) ? result.selectedOptions.filter((o): o is string => typeof o === 'string') : [],
+        typeof result.customInput === 'string' ? result.customInput : ''
+      )
+      return { text: [picked, ...readAskNotes(result.notes)].join('\n'), timedOut: result.timedOut === true }
     })
   }
+  const numbered = readNumberedAnswers(item.output, questions)
+  if (numbered) return numbered
   const selectedOptions = details && Array.isArray(details.selectedOptions) ? details.selectedOptions.filter((o): o is string => typeof o === 'string') : []
   const customInput = details && typeof details.customInput === 'string' ? details.customInput : ''
   const timedOut = details?.timedOut === true
@@ -154,7 +180,7 @@ function readAskAnswers(item: AskToolItem, questionIds: string[]): AskAnswer[] {
 type AskCallStatus = 'answered' | 'answered-automatically' | 'cancelled' | 'not-answered'
 
 function askCallStatus(item: AskToolItem, answers: AskAnswer[]): AskCallStatus {
-  if (item.status === 'error' || item.status === 'cancelled') return 'cancelled'
+  if (item.status === 'error' || item.status === 'cancelled' || (item.output && CANCELLED_RESULT.test(item.output))) return 'cancelled'
   if (item.status === 'interrupted') return 'not-answered'
   return answers.some((answer) => answer.timedOut) ? 'answered-automatically' : 'answered'
 }
@@ -218,7 +244,7 @@ interface AskQuestionRowProps {
 /** Transcript row for a resolved `ask` question and its answer. */
 export function AskQuestionRow({ item, userName, userAvatarUrl, requestId, sessionId }: AskQuestionRowProps) {
   const questions = readAskQuestions(item.args)
-  const answers = readAskAnswers(item, questions.map((question, index) => question.id ?? String(index)))
+  const answers = readAskAnswers(item, questions)
   const name = userName ?? 'You'
   const status = askCallStatus(item, answers)
   const firstQuestion = questions[0]?.question ?? ''
@@ -265,7 +291,7 @@ export function AskQuestionRow({ item, userName, userAvatarUrl, requestId, sessi
                 <div className="text-sm">
                   <span className="text-muted-foreground">Answer: </span>
                   <span>{name}</span>
-                  <span className="text-muted-foreground">: {answer?.text ?? 'None selected'}</span>
+                  <span className="whitespace-pre-line text-muted-foreground">: {answer?.text ?? 'None selected'}</span>
                 </div>
               </div>
             </div>

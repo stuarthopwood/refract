@@ -1,7 +1,7 @@
 // The text a `refract_ask` call returns to the agent: numbered plain text, one line per question
 // and an optional note line under it, so the model can read it without a parser.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::ask_schema::AskedQuestion;
 
@@ -9,14 +9,14 @@ pub(crate) const MAX_NOTE_CHARS: usize = 1000;
 pub(crate) const CANCELLED: &str = "The developer cancelled the questions.";
 
 /// A developer's note on one picked option.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct AskNote {
     pub option: String,
     pub text: String,
 }
 
 /// One question's answer, as the `chat.answer` payload carries it.
-#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AskAnswer {
     pub id: String,
