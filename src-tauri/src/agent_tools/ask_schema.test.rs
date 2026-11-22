@@ -11,10 +11,20 @@ fn a_single_line_label_is_accepted() {
 
 #[test]
 fn a_label_with_a_line_break_or_control_character_is_rejected_as_invalid_input() {
-    for label in ["One\ntwo", "One\rtwo", "One\u{2028}two", "One\u{2029}two", "One\u{0007}two"] {
+    for label in [
+        "One\ntwo",
+        "One\rtwo",
+        "One\u{2028}two",
+        "One\u{2029}two",
+        "One\u{0007}two",
+    ] {
         let err = parse(&call(label)).unwrap_err();
         assert_eq!(err.code, INVALID_INPUT, "label {label:?}");
-        assert!(err.message.contains("single line of plain text"), "{}", err.message);
+        assert!(
+            err.message.contains("single line of plain text"),
+            "{}",
+            err.message
+        );
     }
 }
 

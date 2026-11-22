@@ -66,7 +66,11 @@ fn every_field_stays_on_one_line_and_bidi_characters_are_dropped() {
     );
     let text = format_answers(&[q], &[a]);
     let lines: Vec<&str> = text.split('\n').collect();
-    assert_eq!(lines.len(), 3, "header, question line and one note: {text:?}");
+    assert_eq!(
+        lines.len(),
+        3,
+        "header, question line and one note: {text:?}"
+    );
     assert!(lines[1].starts_with("1. Which database? "));
     assert!(lines[1].contains("A \"Postgres\" (recommended)"));
     assert!(lines[1].contains("Typed: \"line one  line two end\"."));
