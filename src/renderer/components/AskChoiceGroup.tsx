@@ -109,6 +109,7 @@ export function rowProps(option: AskChoiceOption, onAcceptRecommended: (() => vo
   return {
     className: OPTION_RECOMMENDED_ROW_CLASS,
     'data-ask-recommended': '',
+    'data-ask-accepts-enter': onAcceptRecommended ? '' : undefined,
     onKeyDown: onAcceptRecommended
       ? (event: Pick<React.KeyboardEvent<HTMLElement>, 'key' | 'repeat' | 'preventDefault'> & { nativeEvent: Pick<KeyboardEvent, 'isComposing'> }) => {
           if (event.key !== 'Enter' || event.nativeEvent.isComposing || event.repeat) return

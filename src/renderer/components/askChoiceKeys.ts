@@ -28,12 +28,15 @@ export function choiceDigitIndex(event: ChoiceKeyEvent, optionCount: number): nu
   return index < Math.min(optionCount, MAX_DIGIT_OPTIONS) ? index : null
 }
 
-/** Enter on an option row that nothing else claimed (the recommended row does), which acts like the primary button. */
+/**
+ * Enter on an option row acts like the primary button. Radix prevents default on Enter in every row, so defaultPrevented cannot mean "claimed";
+ * a row that accepts Enter itself (the recommended one) marks itself and is skipped here.
+ */
 export function isRowEnter(event: ChoiceKeyEvent): boolean {
-  if (event.key !== 'Enter' || event.defaultPrevented || event.repeat || event.nativeEvent.isComposing) return false
-  if (event.ctrlKey || event.metaKey || event.altKey) return false
-  const role = (event.target as HTMLElement | null)?.getAttribute?.('role')
-  return role === 'radio' || role === 'checkbox'
+  if (event.key !== 'Enter' || event.ctrlKey || event.metaKey || event.altKey || event.repeat || event.nativeEvent.isComposing) return false
+  const target = event.target as HTMLElement | null
+  const role = target?.getAttribute?.('role')
+  return (role === 'radio' || role === 'checkbox') && target?.hasAttribute('data-ask-accepts-enter') !== true
 }
 
 /** Moves focus to the option row a digit just changed, so assistive tech reads its new state. */
