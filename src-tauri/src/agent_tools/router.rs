@@ -415,11 +415,7 @@ async fn serve(agent: Arc<SessionAgent>, call: Call, cancel: Arc<Notify>) {
     };
     router.finish(&call.id);
     let Some(outcome) = outcome else {
-        let card = if call.tool == ask_schema::ASK {
-            call.id.clone()
-        } else {
-            approval::request_id(&call.id)
-        };
+        let card = approval::card_id(&call.tool, &call.id);
         agent
             .tool_resolve_approval(&card, RequestResolution::Cancelled)
             .await;
@@ -463,9 +459,10 @@ async fn ask_questions(
     call: &Call,
     questions: &[AskedQuestion],
 ) -> Result<(String, Option<Vec<AskAnswer>>), ToolError> {
-    let rx = agent.tool_router().wait_for(&call.id);
+    let key = approval::card_id(ask_schema::ASK, &call.id);
+    let rx = agent.tool_router().wait_for(&key);
     agent
-        .tool_raise_ask(ask_schema::card(&call.id, questions))
+        .tool_raise_ask(ask_schema::card(&key, questions))
         .await;
     match rx.await {
         Ok(Reply::Ask(Some(answers))) => Ok((

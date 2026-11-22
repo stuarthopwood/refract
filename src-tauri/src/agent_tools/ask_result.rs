@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::approval::flatten;
 use super::ask_schema::AskedQuestion;
 
 pub(crate) const MAX_NOTE_CHARS: usize = 1000;
@@ -38,14 +39,7 @@ fn letter(index: usize) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-fn flatten(text: &str) -> String {
-    text.replace("\r\n", " ")
-        .replace(['\n', '\r'], " ")
-        .chars()
-        .take(MAX_NOTE_CHARS)
-        .collect()
-}
-
+/// Labels are flattened too, so no field can add a line to the one-line-per-question result.
 fn picked(question: &AskedQuestion, answer: &AskAnswer) -> Option<String> {
     let picks: Vec<String> = answer
         .selected_options
@@ -56,6 +50,7 @@ fn picked(question: &AskedQuestion, answer: &AskAnswer) -> Option<String> {
                 Some(i) if question.options[i].recommended => " (recommended)",
                 _ => "",
             };
+            let label = flatten(label);
             match found {
                 Some(i) => format!("{} \"{label}\"{marker}", letter(i)),
                 None => format!("\"{label}\""),
@@ -87,7 +82,7 @@ fn question_lines(number: usize, question: &AskedQuestion, answer: &AskAnswer) -
     for note in &answer.notes {
         let target = match question.options.iter().position(|o| o.label == note.option) {
             Some(i) => letter(i),
-            None => format!("\"{}\"", note.option),
+            None => format!("\"{}\"", flatten(&note.option)),
         };
         out.push_str(&format!("\n Note on {target}: {}.", flatten(&note.text)));
     }

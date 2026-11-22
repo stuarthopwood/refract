@@ -1,6 +1,5 @@
-// `refract_ask`: the tool's name, description, parameter schema and the input check. The shape is
-// native `ask`'s plus a per-option `recommended` and `reason`; every rule is checked in Rust so a
-// bad call fails with a message the model can fix before the developer sees a card.
+// `refract_ask`: name, description, parameter schema and input check; the shape is native `ask`'s
+// plus per-option `recommended` and `reason`, all checked here so a bad call fails fixably.
 
 use serde::Deserialize;
 use serde_json::{json, Value};
@@ -150,6 +149,13 @@ fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> 
                 index + 1
             )));
         }
+        if option.label.contains(|c: char| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}')) {
+            return Err(invalid(format!(
+                "option {} of {name} has a label with a line break or control character; \
+labels must be a single line of plain text",
+                index + 1
+            )));
+        }
         if question.options[..index]
             .iter()
             .any(|o| o.label == option.label)
@@ -184,11 +190,11 @@ fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> 
     Ok(())
 }
 
-/// The Question card for a call: keyed by the host-call id with no deadline, since the card waits
-/// for the developer alone.
-pub(crate) fn card(call_id: &str, questions: &[AskedQuestion]) -> PendingRequest {
+/// The Question card for a call: keyed by `card_id`, with no deadline, since the card waits for
+/// the developer alone.
+pub(crate) fn card(card_id: &str, questions: &[AskedQuestion]) -> PendingRequest {
     PendingRequest::Ask {
-        request_id: call_id.to_string(),
+        request_id: card_id.to_string(),
         questions: questions
             .iter()
             .map(|question| AskQuestion {

@@ -1,4 +1,4 @@
-import { HIDDEN_TOOL_NOTICE_PREFIX, isAskTool } from '../../../shared/model'
+import { HIDDEN_TOOL_NOTICE_PREFIX, isAskTool, isRefractAsk } from '../../../shared/model'
 import type { TranscriptItem } from '../../../shared/model'
 import { agentSteerTarget } from './agentMessageDirection'
 import { resolveToolDisplay } from './toolDisplay'
@@ -41,6 +41,11 @@ export function isAgentSteerGroup(item: { kind: string }): boolean {
   return isToolGroup(item) && item.items.length === 1 && agentSteerTarget(item.items[0]!) !== undefined
 }
 
+// A `refract_ask` call that failed validation never raised a card, so it reads as an ordinary failed tool call.
+function isFailedRefractAsk(item: ToolItem): boolean {
+  return isRefractAsk(item.tool) && item.status === 'error'
+}
+
 // Merges adjacent `tool` items sharing a tool name into a `ToolGroup`, always wrapping even a run of
 // one so a focused/expanded row keeps focus when a second call arrives. `ask` and skill `read`s
 // never group (grouping boundaries). A hidden tool's failure notice is emitted in place without
@@ -62,8 +67,7 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
       result.push({ kind: 'tool-group', id: item.id, tool: item.tool, items: [item] })
       continue
     }
-    // A `refract_ask` call that failed validation never raised a card, so it reads as an ordinary failed tool call.
-    if (item.kind === 'tool' && (!isAskTool(item.tool) || (item.tool === 'refract_ask' && item.status === 'error')) && !item.skill) {
+    if (item.kind === 'tool' && !item.skill && (!isAskTool(item.tool) || isFailedRefractAsk(item))) {
       // Group on the display key so `write xd://a`, `write xd://b` and plain `write` never share a run.
       if (run.length > 0 && displayKey(run[0]!) === displayKey(item)) {
         run.push(item)

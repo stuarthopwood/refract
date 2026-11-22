@@ -1,6 +1,5 @@
-// Per-launch omp `--config` overlay: pre-approves the Refract host tools in omp, so omp's own
-// `Allow tool:` prompt never fires (Refract raises its card itself, once, for mutating actions),
-// and turns native `ask` off, since `refract_ask` replaces it.
+// Per-launch omp `--config` overlay: pre-approves the Refract host tools (Refract raises its own
+// card for mutating actions) and turns native `ask` off, since `refract_ask` replaces it.
 
 use std::io;
 use std::path::{Path, PathBuf};

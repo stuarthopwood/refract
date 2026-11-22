@@ -18,6 +18,7 @@ import { isFocusStranded } from '@/lib/focus'
 import { UserAvatar } from '@/components/UserAvatar'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
 import { AskCard } from './AskCard'
+import { readNumberedAnswers } from './readNumberedAnswers'
 import { ApprovalActions } from './ApprovalActions'
 
 type AskToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -126,28 +127,9 @@ interface AskAnswer {
   timedOut: boolean
 }
 
-const NUMBERED_RESULT = /^The developer (?:answered \d+ questions?|cancelled the questions)\./
 const CANCELLED_RESULT = /^The developer cancelled the questions\./
 
-/** A `refract_ask` result read back from saved history, which carries only its numbered text: each question's line without its number and question text, notes included. */
-function readNumberedAnswers(output: string | undefined, questions: { question: string }[]): AskAnswer[] | undefined {
-  if (!output || !NUMBERED_RESULT.test(output) || questions.length === 0) return undefined
-  const markers = questions.map((entry, index) => `\n${index + 1}. ${entry.question.replace(/\r\n|[\r\n]/g, ' ')} `)
-  const starts: number[] = []
-  let from = 0
-  for (const marker of markers) {
-    const start = output.indexOf(marker, from)
-    if (start < 0) return undefined
-    starts.push(start)
-    from = start + marker.length
-  }
-  return questions.map((_, index) => {
-    const end = index + 1 < starts.length ? starts[index + 1]! : output.length
-    return { text: output.slice(starts[index]! + markers[index]!.length, end).trim(), timedOut: false }
-  })
-}
-
-function readAskAnswers(item: AskToolItem, questions: { id?: string; question: string }[]): AskAnswer[] {
+function readAskAnswers(item: AskToolItem, questions: { id?: string; question: string; options: string[] }[]): AskAnswer[] {
   const questionIds = questions.map((question, index) => question.id ?? String(index))
   const count = Math.max(questionIds.length, 1)
   if (item.status === 'error' || item.status === 'cancelled' || (item.output && CANCELLED_RESULT.test(item.output)))
@@ -176,7 +158,7 @@ function readAskAnswers(item: AskToolItem, questions: { id?: string; question: s
     })
   }
   const numbered = readNumberedAnswers(item.output, questions)
-  if (numbered) return numbered
+  if (numbered) return numbered.map((text) => ({ text, timedOut: false }))
   const selectedOptions = details && Array.isArray(details.selectedOptions) ? details.selectedOptions.filter((o): o is string => typeof o === 'string') : []
   const customInput = details && typeof details.customInput === 'string' ? details.customInput : ''
   const timedOut = details?.timedOut === true

@@ -47,6 +47,8 @@ impl SessionAgent {
             }
             (request, proc)
         };
+        // A host ask whose call is gone (cancelled or settled elsewhere) reaches no one.
+        let mut late_ask = false;
         if let PendingRequest::Ask {
             questions,
             host_call: true,
@@ -55,7 +57,7 @@ impl SessionAgent {
         {
             let reply = host_ask_reply(questions, &answer)
                 .map_err(|err| AgentError::new("invalid-argument", err))?;
-            self.agent_tools.answer_ask(&request_id, reply);
+            late_ask = !self.agent_tools.answer_ask(&request_id, reply);
         } else if owned {
             let decision = crate::agent_tools::approval::decision(&answer);
             self.agent_tools.answer_approval(&request_id, decision);
@@ -67,8 +69,8 @@ impl SessionAgent {
                 .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         }
 
-        // `cancelled` wins, then `approve`, otherwise a question answer.
-        let resolved = if answer.get("cancelled").is_some() {
+        // `cancelled` wins, then `approve`, otherwise a question answer; a late answer is no answer.
+        let resolved = if late_ask || answer.get("cancelled").is_some() {
             RequestResolution::Cancelled
         } else if let Some(approve) = answer.get("approve") {
             if approve.as_bool() == Some(true) {
@@ -89,6 +91,15 @@ impl SessionAgent {
             .emit_request_resolved(&self.session_id, &request_id);
         if became_working {
             self.set_status(SessionStatus::Working, None, None).await;
+        }
+        if late_ask {
+            return Err(AgentError::new(
+                "request-gone",
+                format!(
+                    "SessionAgent {}: the question is no longer waiting for an answer",
+                    self.session_id
+                ),
+            ));
         }
         Ok(())
     }
