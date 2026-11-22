@@ -381,7 +381,11 @@ The unboxed, collapsible transcript row an answered, cancelled, or unanswered **
 _Avoid_: answered card, answer pill
 
 **Recommended option**:
-The option the agent marks as its default (issue #572). Shown with a success tint and a "Recommended" label; on a single-choice question it is preselected and focused, so Enter accepts it (#1985). OMP uses it if the question times out. At most one per question until OMP's ask wire carries more (#1989).
+An option the agent marks as its default (issue #572), optionally with a one-line reason shown under it. Shown with a success tint and a "Recommended" label; on a single-choice question it is preselected and focused, so Enter accepts it (#1985). A single-choice question has at most one; a multi-select question may have several (ADR 0012).
+
+**Option note**:
+Free text the developer attaches to an option they pick on a **Question card**, sent to the agent beside that option's answer (#1987, ADR 0012).
+_Avoid_: comment, annotation
 
 **Panel**:
 A distinct, secondary tool or view hosted in the right pane, opened and closed as a whole (for example, the **Subagent panel**). The pane itself collapses and expands from the **Icon rail**'s top button or Ctrl+Shift+B; collapsing keeps every open panel, the tab order and the width, and all three survive a restart.
