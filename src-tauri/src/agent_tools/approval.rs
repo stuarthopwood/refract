@@ -143,6 +143,13 @@ mod tests {
     }
 
     #[test]
+    fn only_refract_ask_is_keyed_by_the_bare_call_id() {
+        assert_eq!(card_id("refract_ask", "c1"), "c1");
+        assert_eq!(card_id("x", "c1"), "refract-tool-c1");
+        assert!(!is_owned(&card_id("refract_ask", "c1")));
+    }
+
+    #[test]
     fn decision_prefers_cancelled_then_approve() {
         assert_eq!(decision(&json!({ "approve": true })), Decision::Approved);
         assert_eq!(decision(&json!({ "approve": false })), Decision::Denied);

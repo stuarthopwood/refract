@@ -4,6 +4,7 @@ import { usePendingRequestsStore } from '@/state/pending-requests-store'
 import type { PendingRequest } from '../../../../shared/model'
 import { type AskFieldValue, canSubmit } from './answerPlan'
 import { afterAnswered, afterSendFailed, type AskFormSession, cancelSession, initialSession, nextAction, submitSession } from './askFormSession'
+import { answerFailureText } from '../askAnswerError'
 import type { AskFormField } from './parseAskHtml'
 
 const NO_PENDING: PendingRequest[] = []
@@ -55,7 +56,7 @@ export function useAskFormSession(sessionId: string, askItemId: string, fields: 
     const { requestId, answer } = action
     update(key, init, (current) => ({ ...current, inflight: requestId }))
     void window.refract.chat.answer(sessionId, requestId, answer).then((result) => {
-      update(key, init, (current) => (result.ok ? afterAnswered(current, fields, requestId, answer) : afterSendFailed(current, result.error.message)))
+      update(key, init, (current) => (result.ok ? afterAnswered(current, fields, requestId, answer) : afterSendFailed(current, answerFailureText(result.error))))
     })
   }, [session, pending, key, init, fields, sessionId, update])
 

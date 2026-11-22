@@ -13,6 +13,7 @@ import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { type AskDraftQuestion, EMPTY_ASK_QUESTION_DRAFT, useAskPicksStore } from '@/state/ask-picks-store'
 import { Markdown } from './Markdown'
 import { splitQuestionHeading } from './RequestCard'
+import { answerFailureText } from './askAnswerError'
 import { draftAfterUseRecommended, focusProbeOf, initialPickFor, opensOnRecommended, recommendedIndex, recommendedLabel, shouldTakeInitialFocus } from './askRecommended'
 
 // New for #572: the structured multi-question dialog path (`PendingRequest` kind `ask`), built
@@ -63,11 +64,6 @@ function focusFirstOrCheckedOption(container: HTMLElement | null, preventScroll 
   const recommended = container.querySelector<HTMLElement>('[data-ask-recommended]')
   const first = container.querySelector<HTMLElement>('[role=radio], [role=checkbox]')
   ;(checked ?? recommended ?? first)?.focus({ preventScroll })
-}
-
-function friendlyAskError(message: string): string {
-  if (/customInput exceeds \d+ characters/.test(message)) return 'Your answer is too long. Shorten it and try again.'
-  return message
 }
 
 export function AskCard({ sessionId, request }: AskCardProps) {
@@ -140,7 +136,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     const result = await window.refract.chat.answer(sessionId, request.requestId, answer)
     setBusyAction(null)
     if (!result.ok) {
-      setError(friendlyAskError(result.error.message))
+      setError(answerFailureText(result.error))
       return
     }
   }
@@ -151,7 +147,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     const result = await window.refract.chat.answer(sessionId, request.requestId, { cancelled: true })
     setBusyAction(null)
     if (!result.ok) {
-      setError(friendlyAskError(result.error.message))
+      setError(answerFailureText(result.error))
       return
     }
   }

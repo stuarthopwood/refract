@@ -2,7 +2,7 @@
 
 use serde_json::{json, Value};
 
-use crate::agent_tools::ask_result::{AskAnswer, MAX_NOTE_CHARS};
+use crate::agent_tools::ask_result::AskAnswer;
 use crate::omp::transcript::RequestResolution;
 
 use super::commands::string_array;
@@ -340,6 +340,8 @@ fn host_ask_reply(
         .map(Some)
         .map_err(|err| format!("malformed answers: {err}"))
 }
+
+const MAX_NOTE_CHARS: usize = 1000;
 
 /// Each note names an offered option that is also picked, in at most `MAX_NOTE_CHARS` characters.
 fn validate_notes(

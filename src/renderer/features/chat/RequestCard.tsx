@@ -18,6 +18,7 @@ import { isFocusStranded } from '@/lib/focus'
 import { UserAvatar } from '@/components/UserAvatar'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
 import { AskCard } from './AskCard'
+import { answerFailureText } from './askAnswerError'
 import { readNumberedAnswers } from './readNumberedAnswers'
 import { ApprovalActions } from './ApprovalActions'
 
@@ -336,7 +337,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
     if (!result.ok) refocusRef.current = origin
     setBusy(false)
     if (!result.ok) {
-      setError(result.error.message)
+      setError(answerFailureText(result.error))
       return
     }
     // Armed at the swap, not before the await: busy disables the focused control and the summary row must claim focus.

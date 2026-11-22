@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use super::approval::flatten;
 use super::ask_schema::AskedQuestion;
 
-pub(crate) const MAX_NOTE_CHARS: usize = 1000;
 pub(crate) const CANCELLED: &str = "The developer cancelled the questions.";
 
 /// A developer's note on one picked option.

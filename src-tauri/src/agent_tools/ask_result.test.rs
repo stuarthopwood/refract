@@ -87,6 +87,22 @@ fn a_note_on_an_option_the_question_never_offered_names_the_flattened_label() {
 }
 
 #[test]
+fn a_note_over_a_thousand_characters_is_never_truncated() {
+    let long = "n".repeat(1500);
+    let q = question("q1", "Q?", vec![option("A", false)]);
+    let text = format_answers(&[q], &[answer("q1", &["A"], None, &[("A", &long)])]);
+    assert!(text.contains(&format!("Note on A: {long}.")));
+}
+
+#[test]
+fn a_label_over_a_thousand_characters_is_never_truncated() {
+    let long = "l".repeat(1200);
+    let q = question("q1", "Q?", vec![option(&long, false)]);
+    let text = format_answers(&[q], &[answer("q1", &[long.as_str()], None, &[])]);
+    assert!(text.contains(&format!("\"{long}\"")));
+}
+
+#[test]
 fn a_question_without_an_answer_reads_as_unanswered() {
     let q = question("q1", "Q?", vec![option("A", false)]);
     assert_eq!(

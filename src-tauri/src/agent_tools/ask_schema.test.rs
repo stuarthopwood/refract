@@ -10,6 +10,11 @@ fn a_single_line_label_is_accepted() {
 }
 
 #[test]
+fn a_zero_width_joiner_in_a_label_is_accepted_for_emoji_sequences() {
+    assert!(parse(&call("Team \u{1F468}\u{200D}\u{1F4BB}")).is_ok());
+}
+
+#[test]
 fn a_label_with_a_line_break_or_control_character_is_rejected_as_invalid_input() {
     for label in [
         "One\ntwo",
@@ -17,6 +22,9 @@ fn a_label_with_a_line_break_or_control_character_is_rejected_as_invalid_input()
         "One\u{2028}two",
         "One\u{2029}two",
         "One\u{0007}two",
+        "One\u{202E}two",
+        "One\u{200B}two",
+        "One\u{2060}two",
     ] {
         let err = parse(&call(label)).unwrap_err();
         assert_eq!(err.code, INVALID_INPUT, "label {label:?}");

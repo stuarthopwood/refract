@@ -42,4 +42,20 @@ describe('readNumberedAnswers (#1989)', () => {
     expect(readNumberedAnswers('Some other output', [DB])).toBeUndefined()
     expect(readNumberedAnswers(undefined, [DB])).toBeUndefined()
   })
+
+  it('reads every question of a two-question result', () => {
+    const text = 'The developer answered 2 questions.\n1. Which database? Picked: A "Postgres".\n2. Which cache? Picked: B "Redis".'
+    const cache = { question: 'Which cache?', options: ['Memcached', 'Redis'] }
+    expect(readNumberedAnswers(text, [DB, cache])).toEqual(['Postgres', 'Redis'])
+  })
+
+  it('names a note on a label the question never offered by that label', () => {
+    const text = 'The developer answered 1 question.\n1. Which database? Picked: A "Postgres".\n Note on "Odd label": keep it.'
+    expect(readNumberedAnswers(text, [DB])).toEqual(['Postgres\nNote on Odd label: keep it'])
+  })
+
+  it('reads a pick that carries no letter', () => {
+    const text = 'The developer answered 1 question.\n1. Which database? Picked: "Postgres".'
+    expect(readNumberedAnswers(text, [DB])).toEqual(['Postgres'])
+  })
 })
