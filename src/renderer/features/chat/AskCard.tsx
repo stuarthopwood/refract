@@ -6,6 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { AskChoiceGroup } from '@/components/AskChoiceGroup'
+import { choiceDigitIndex, focusChoiceRow, isRowEnter } from '@/components/askChoiceKeys'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
@@ -216,6 +217,22 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   const groupAriaId = `${request.requestId.replace(/[^a-zA-Z0-9_-]/g, '-')}-ask`
   const activeDraft = byQuestionId[activeQuestion.id] ?? EMPTY_ASK_QUESTION_DRAFT
 
+  // Digits pick or tick by position and Enter on a row acts like the primary button, only while focus is inside this card and not in a text box.
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (busy) return
+    const index = choiceDigitIndex(event, activeQuestion.options.length)
+    const option = index === null ? undefined : activeQuestion.options[index]
+    if (index !== null && option) {
+      event.preventDefault()
+      if (activeQuestion.multi) toggleMultiOption(sessionId, request.requestId, activeQuestion.id, option.label)
+      else selectSingleOption(sessionId, request.requestId, activeQuestion.id, option.label)
+      focusChoiceRow(questionBodyRef.current, index)
+    } else if (isRowEnter(event)) {
+      event.preventDefault()
+      handlePrimary()
+    }
+  }
+
   const questionBody = (
     <AskQuestionBody
       key={activeQuestion.id}
@@ -237,7 +254,8 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   )
 
   return (
-    <div ref={cardRootRef}>
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div ref={cardRootRef} onKeyDown={handleKeyDown}>
       <Card size="sm">
         {questions.length > 1 ? (
           <Tabs value={activeId} onValueChange={handleTabChange} activationMode="automatic">

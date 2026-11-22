@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { choiceDigitIndex, focusChoiceRow, isRowEnter } from '@/components/askChoiceKeys'
 import { AskChoiceGroup } from '@/components/AskChoiceGroup'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,15 +37,30 @@ function ChoiceField({ field, value, disabled, idPrefix, showInvalid, onChange, 
     const selected = value.selected.includes(optionValue) ? value.selected.filter((entry) => entry !== optionValue) : [...value.selected, optionValue]
     onChange({ ...value, selected })
   }
+  const select = (optionValue: string) => onChange({ ...value, selected: [optionValue], otherSelected: false })
+  const multi = field.kind === 'checkbox'
+
+  // Digits address this field's options by position, only while focus is inside the field and not in a text box.
+  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (disabled) return
+    const index = choiceDigitIndex(event, field.options.length)
+    const option = index === null ? undefined : field.options[index]
+    if (index === null || !option) return
+    event.preventDefault()
+    if (multi) toggle(option.value)
+    else select(option.value)
+    focusChoiceRow(event.currentTarget, index)
+  }
 
   return (
-    <CardContent data-ask-field={idPrefix} className="space-y-2">
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <CardContent data-ask-field={idPrefix} className="space-y-2" onKeyDown={handleKeyDown}>
       <p id={headingId} className="whitespace-pre-line text-sm font-medium">
         {field.question}
         {field.required && <span className="font-normal text-muted-foreground">, required</span>}
       </p>
       <AskChoiceGroup
-        multi={field.kind === 'checkbox'}
+        multi={multi}
         options={field.options}
         selected={value.selected}
         otherSelected={value.otherSelected}
@@ -61,7 +77,7 @@ function ChoiceField({ field, value, disabled, idPrefix, showInvalid, onChange, 
           onTextChange: (otherText) => onChange({ ...value, otherText }),
           onBlur: onOtherBlur
         }}
-        onSelect={(next) => onChange({ ...value, selected: [next], otherSelected: false })}
+        onSelect={select}
         onToggle={toggle}
         onSelectOther={() => onChange({ ...value, selected: [], otherSelected: true })}
         onToggleOther={() => onChange({ ...value, otherSelected: !value.otherSelected })}
@@ -198,6 +214,11 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (editing && isRowEnter(event)) {
+      event.preventDefault()
+      trySubmit()
+      return
+    }
     if (!cancellable || !escapeCancelsForm(event.key, event.nativeEvent.isComposing, event.target as HTMLElement)) return
     event.stopPropagation()
     cancel()
