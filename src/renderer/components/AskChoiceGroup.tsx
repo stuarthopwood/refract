@@ -2,6 +2,7 @@ import * as React from 'react'
 import { RecommendedBadge } from '@/components/RecommendedBadge'
 import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_RECOMMENDED_ROW_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
+import { MAX_DIGIT_OPTIONS } from '@/components/askChoiceKeys'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 
@@ -142,6 +143,11 @@ export function createArrowGuard() {
   }
 }
 
+/** Ticked options plus a typed "Other" answer, which is what Submit sends. */
+function selectedCount(selected: readonly string[], other: AskChoiceOther, otherSelected: boolean): number {
+  return selected.length + (otherSelected && other.text.trim().length > 0 ? 1 : 0)
+}
+
 /** The radio or checkbox rows of one question, the "Other" row, and its free-text box; shared by every ask card. */
 export function AskChoiceGroup(props: AskChoiceGroupProps) {
   const { multi, options, selected, otherSelected, disabled, idPrefix, other } = props
@@ -149,10 +155,26 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
   const otherValue = otherSentinel(options)
   const ids = (index: number) => ({ labelId: `${idPrefix}-opt-${index}-label`, descId: `${idPrefix}-opt-${index}-desc` })
   const otherInput = other.visible ? <OtherInput other={other} disabled={disabled} /> : null
+  const hintId = `${idPrefix}-multi-hint`
 
   if (multi) {
     return (
-      <div role="group" aria-labelledby={props.groupLabelledBy} aria-label={props.groupLabel} aria-describedby={props.groupDescribedBy} className="flex flex-col gap-2">
+      <div
+        role="group"
+        aria-labelledby={props.groupLabelledBy}
+        aria-label={props.groupLabel}
+        aria-describedby={[props.groupDescribedBy, hintId].filter(Boolean).join(' ')}
+        className="flex flex-col gap-2"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted-foreground">
+          <span>
+            <span id={hintId}>Select all that apply</span>
+            <span aria-hidden>{`. Keys 1-${Math.min(options.length, MAX_DIGIT_OPTIONS)} toggle.`}</span>
+          </span>
+          <span role="status" className="tabular-nums">
+            {selectedCount(selected, other, otherSelected)} selected
+          </span>
+        </div>
         {options.map((option, index) => {
           const { labelId, descId } = ids(index)
           return (
@@ -162,6 +184,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
               aria-disabled={disabled}
               onCheckedChange={() => !disabled && props.onToggle(option.value)}
               aria-labelledby={labelId}
+              aria-keyshortcuts={index < MAX_DIGIT_OPTIONS ? String(index + 1) : undefined}
               aria-describedby={option.description ? descId : undefined}
               {...rowProps(option, props.onAcceptRecommended)}
             >
@@ -210,6 +233,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
               value={option.value}
               aria-disabled={disabled}
               aria-labelledby={labelId}
+              aria-keyshortcuts={index < MAX_DIGIT_OPTIONS ? String(index + 1) : undefined}
               aria-describedby={option.description ? descId : undefined}
               // A double-click's second click would otherwise pick the same slot in the next question.
               onClick={(event) => props.onPick && !arrowGuard.isMoving() && event.detail < 2 && props.onPick(option.value)}
