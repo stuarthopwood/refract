@@ -465,7 +465,7 @@ async fn ask_questions(
 ) -> Result<(String, Option<Vec<AskAnswer>>), ToolError> {
     let rx = agent.tool_router().wait_for(&call.id);
     agent
-        .tool_raise_approval(ask_schema::card(&call.id, questions))
+        .tool_raise_ask(ask_schema::card(&call.id, questions))
         .await;
     match rx.await {
         Ok(Reply::Ask(Some(answers))) => {

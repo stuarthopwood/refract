@@ -63,6 +63,12 @@ impl SessionAgent {
         self.push_pending_request(request).await;
     }
 
+    /// A `refract_ask` card gets the same Away mode answer as a native ask.
+    pub async fn tool_raise_ask(&self, request: PendingRequest) {
+        self.push_pending_request(request.clone()).await;
+        crate::session::working_mode::away::on_request(self, request).await;
+    }
+
     /// Closes a Refract-owned card whose call ended before the developer answered. A no-op when
     /// the card is already gone.
     pub async fn tool_resolve_approval(&self, request_id: &str, resolution: RequestResolution) {
