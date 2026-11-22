@@ -206,7 +206,11 @@ pub(crate) fn card(call_id: &str, questions: &[AskedQuestion]) -> PendingRequest
                     })
                     .collect(),
                 multi: question.multi,
-                recommended: None,
+                recommended: question
+                    .options
+                    .iter()
+                    .position(|option| option.recommended)
+                    .and_then(|index| i64::try_from(index).ok()),
             })
             .collect(),
         deadline_at: None,

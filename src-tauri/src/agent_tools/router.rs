@@ -468,9 +468,10 @@ async fn ask_questions(
         .tool_raise_ask(ask_schema::card(&call.id, questions))
         .await;
     match rx.await {
-        Ok(Reply::Ask(Some(answers))) => {
-            Ok((ask_result::format_answers(questions, &answers), Some(answers)))
-        }
+        Ok(Reply::Ask(Some(answers))) => Ok((
+            ask_result::format_answers(questions, &answers),
+            Some(answers),
+        )),
         Ok(Reply::Ask(None)) => Ok((ask_result::CANCELLED.to_string(), None)),
         _ => Err(ToolError::new(CANCELLED, "the call was cancelled")),
     }

@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Message, MessageContent } from '@/components/ui/message'
-import { type PendingRequest, type TranscriptItem } from '../../../shared/model'
+import { isAskTool, type PendingRequest, type TranscriptItem } from '../../../shared/model'
 import { Markdown } from './Markdown'
 import { AgentMessageRow, AgentSteerRow } from './AgentMessageRow'
 import { AdvisoryRow, AdvisoryRunRow } from './AdvisoryRow'

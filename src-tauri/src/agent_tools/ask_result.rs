@@ -70,7 +70,7 @@ fn typed(answer: &AskAnswer) -> Option<String> {
         .custom_input
         .as_deref()
         .filter(|text| !text.trim().is_empty())
-        .map(|text| format!("Typed: \"{text}\""))
+        .map(|text| format!("Typed: \"{}\"", flatten(text)))
 }
 
 fn question_lines(number: usize, question: &AskedQuestion, answer: &AskAnswer) -> String {
@@ -83,7 +83,7 @@ fn question_lines(number: usize, question: &AskedQuestion, answer: &AskAnswer) -
     } else {
         parts.join(". ")
     };
-    let mut out = format!("{number}. {} {outcome}.", question.question);
+    let mut out = format!("{number}. {} {outcome}.", flatten(&question.question));
     for note in &answer.notes {
         let target = match question.options.iter().position(|o| o.label == note.option) {
             Some(i) => letter(i),

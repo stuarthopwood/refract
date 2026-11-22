@@ -132,9 +132,15 @@ const CANCELLED_RESULT = /^The developer cancelled the questions\./
 /** A `refract_ask` result read back from saved history, which carries only its numbered text: each question's line without its number and question text, notes included. */
 function readNumberedAnswers(output: string | undefined, questions: { question: string }[]): AskAnswer[] | undefined {
   if (!output || !NUMBERED_RESULT.test(output) || questions.length === 0) return undefined
-  const markers = questions.map((entry, index) => `\n${index + 1}. ${entry.question} `)
-  const starts = markers.map((marker) => output.indexOf(marker))
-  if (starts.some((start) => start < 0)) return undefined
+  const markers = questions.map((entry, index) => `\n${index + 1}. ${entry.question.replace(/\r\n|[\r\n]/g, ' ')} `)
+  const starts: number[] = []
+  let from = 0
+  for (const marker of markers) {
+    const start = output.indexOf(marker, from)
+    if (start < 0) return undefined
+    starts.push(start)
+    from = start + marker.length
+  }
   return questions.map((_, index) => {
     const end = index + 1 < starts.length ? starts[index + 1]! : output.length
     return { text: output.slice(starts[index]! + markers[index]!.length, end).trim(), timedOut: false }
