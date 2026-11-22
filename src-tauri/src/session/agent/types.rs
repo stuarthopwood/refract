@@ -74,6 +74,11 @@ pub struct AskOption {
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// The agent's pick, from `refract_ask`; native `ask` options never carry it.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub recommended: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
 }
 
 /// One question of a `PendingRequest::Ask`.
@@ -122,6 +127,9 @@ pub enum PendingRequest {
         questions: Vec<AskQuestion>,
         #[serde(skip_serializing_if = "Option::is_none")]
         deadline_at: Option<i64>,
+        /// True for a `refract_ask` card: the host-call id keys it and Rust answers it in-process.
+        #[serde(skip)]
+        host_call: bool,
     },
 }
 
@@ -133,5 +141,16 @@ impl PendingRequest {
             | Self::Question { request_id, .. }
             | Self::Ask { request_id, .. } => request_id,
         }
+    }
+
+    /// A `refract_ask` card, answered through the router instead of an `extension_ui_response`.
+    pub(super) fn is_host_ask(&self) -> bool {
+        matches!(
+            self,
+            Self::Ask {
+                host_call: true,
+                ..
+            }
+        )
     }
 }

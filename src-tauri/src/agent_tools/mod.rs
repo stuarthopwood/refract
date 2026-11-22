@@ -2,10 +2,7 @@
 // Routing lives in `router`, approval in `approval`, the OMP approval overlay in `overlay`.
 
 pub mod approval;
-// The ask router calls into these once it lands; unused until then.
-#[allow(dead_code)]
-mod ask_result;
-#[allow(dead_code)]
+pub(crate) mod ask_result;
 mod ask_schema;
 pub mod checklist_envelope;
 mod checklist_schema;

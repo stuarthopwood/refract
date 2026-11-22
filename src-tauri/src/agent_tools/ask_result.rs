@@ -10,7 +10,7 @@ pub(crate) const CANCELLED: &str = "The developer cancelled the questions.";
 
 /// A developer's note on one picked option.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-pub(crate) struct AskNote {
+pub struct AskNote {
     pub option: String,
     pub text: String,
 }
@@ -18,7 +18,7 @@ pub(crate) struct AskNote {
 /// One question's answer, as the `chat.answer` payload carries it.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
-pub(crate) struct AskAnswer {
+pub struct AskAnswer {
     pub id: String,
     pub selected_options: Vec<String>,
     pub custom_input: Option<String>,

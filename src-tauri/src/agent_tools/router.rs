@@ -8,6 +8,8 @@ use serde_json::{json, Value};
 use tokio::sync::{oneshot, Notify};
 
 use super::approval::{self, Decision};
+use super::ask_result::{self, AskAnswer};
+use super::ask_schema::{self, AskedQuestion};
 use super::panels::{self, INVOKE_PANEL_ACTION, LIST_PANELS, OPEN_PANEL};
 use super::router_native::run_native;
 use super::sessions;
@@ -63,6 +65,10 @@ pub enum Plan {
         tool: String,
         args: Value,
     },
+    /// A `refract_ask` call: waits for the developer with no timer and answers in plain text.
+    Ask {
+        questions: Vec<AskedQuestion>,
+    },
 }
 
 impl Plan {
@@ -82,6 +88,7 @@ impl Plan {
                 ..
             } => json!({ "panelId": panel_id, "action": action, "input": input }),
             Plan::Native { args, .. } => args.clone(),
+            Plan::Ask { .. } => json!({}),
         }
     }
 }
@@ -143,6 +150,9 @@ pub fn plan(tool: &str, args: &Value) -> Result<Plan, ToolError> {
                 mutates: action.mutates,
             })
         }
+        ask_schema::ASK => Ok(Plan::Ask {
+            questions: ask_schema::parse(args)?,
+        }),
         super::checklist_schema::CHECKLIST => Ok(Plan::Native {
             tool: tool.to_string(),
             args: args.clone(),
@@ -180,6 +190,11 @@ pub fn ok_frame(id: &str, value: &Value) -> Value {
             ),
         );
     }
+    text_frame(id, &text)
+}
+
+/// A result carrying `text` verbatim; the size cap is the caller's choice.
+fn text_frame(id: &str, text: &str) -> Value {
     json!({
         "type": "host_tool_result",
         "id": id,
@@ -237,6 +252,8 @@ fn parse_call(frame: &Value) -> Option<Call> {
 pub(super) enum Reply {
     Renderer(Result<Value, ToolError>),
     Approval(Decision),
+    /// The developer's answers to a `refract_ask` card; `None` is a cancel.
+    Ask(Option<Vec<AskAnswer>>),
 }
 
 #[derive(Default)]
@@ -342,6 +359,14 @@ impl ToolRouter {
         tx.send(Reply::Approval(decision)).is_ok()
     }
 
+    /// The developer's answer, or `None` for their cancel, on a `refract_ask` card.
+    pub fn answer_ask(&self, call_id: &str, answers: Option<Vec<AskAnswer>>) -> bool {
+        let Some(tx) = self.lock().waits.remove(call_id) else {
+            return false;
+        };
+        tx.send(Reply::Ask(answers)).is_ok()
+    }
+
     /// The renderer is about to change files. False means Rust already gave up on the call (or it
     /// is not a pending mutation), so the renderer must change nothing.
     pub fn started(&self, call_id: &str) -> bool {
@@ -366,6 +391,12 @@ impl ToolRouter {
     }
 }
 
+/// What a finished call sends: structured JSON for a panel or Session tool, verbatim text for ask.
+enum Done {
+    Json(Value),
+    Text(String),
+}
+
 async fn serve(agent: Arc<SessionAgent>, call: Call, cancel: Arc<Notify>) {
     let router = agent.tool_router();
     let outcome = tokio::select! {
@@ -374,16 +405,19 @@ async fn serve(agent: Arc<SessionAgent>, call: Call, cancel: Arc<Notify>) {
     };
     router.finish(&call.id);
     let Some(outcome) = outcome else {
+        let card = if call.tool == ask_schema::ASK {
+            call.id.clone()
+        } else {
+            approval::request_id(&call.id)
+        };
         agent
-            .tool_resolve_approval(
-                &approval::request_id(&call.id),
-                RequestResolution::Cancelled,
-            )
+            .tool_resolve_approval(&card, RequestResolution::Cancelled)
             .await;
         return;
     };
     let frame = match &outcome {
-        Ok(value) => ok_frame(&call.id, value),
+        Ok(Done::Json(value)) => ok_frame(&call.id, value),
+        Ok(Done::Text(text)) => text_frame(&call.id, text),
         Err(err) => error_frame(&call.id, err),
     };
     if let Some(proc) = agent.tool_process().await {
@@ -391,15 +425,41 @@ async fn serve(agent: Arc<SessionAgent>, call: Call, cancel: Arc<Notify>) {
     }
 }
 
-async fn run(agent: &Arc<SessionAgent>, call: &Call) -> Result<Value, ToolError> {
+async fn run(agent: &Arc<SessionAgent>, call: &Call) -> Result<Done, ToolError> {
     let plan = plan(&call.tool, &call.args)?;
-    if let Plan::Native { tool, args } = &plan {
-        return run_native(agent, &call.id, tool, args).await;
+    match &plan {
+        Plan::Native { tool, args } => {
+            return run_native(agent, &call.id, tool, args)
+                .await
+                .map(Done::Json)
+        }
+        Plan::Ask { questions } => {
+            return ask_questions(agent, call, questions).await.map(Done::Text)
+        }
+        _ => {}
     }
     if approval::needs_approval(plan.mutates(), agent.tool_is_yolo().await) {
         ask_developer(agent, call, &plan).await?;
     }
-    ask_renderer(agent, call, &plan).await
+    ask_renderer(agent, call, &plan).await.map(Done::Json)
+}
+
+/// Raises the Question card and waits for the developer with no timer: only an answer, a cancel
+/// or the call's own cancellation ends it.
+async fn ask_questions(
+    agent: &Arc<SessionAgent>,
+    call: &Call,
+    questions: &[AskedQuestion],
+) -> Result<String, ToolError> {
+    let rx = agent.tool_router().wait_for(&call.id);
+    agent
+        .tool_raise_approval(ask_schema::card(&call.id, questions))
+        .await;
+    match rx.await {
+        Ok(Reply::Ask(Some(answers))) => Ok(ask_result::format_answers(questions, &answers)),
+        Ok(Reply::Ask(None)) => Ok(ask_result::CANCELLED.to_string()),
+        _ => Err(ToolError::new(CANCELLED, "the call was cancelled")),
+    }
 }
 
 async fn ask_developer(

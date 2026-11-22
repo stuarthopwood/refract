@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::router::{ToolError, INVALID_INPUT};
+use crate::session::agent::{AskOption, AskQuestion, PendingRequest};
 
 pub const ASK: &str = "refract_ask";
 pub(crate) const MAX_REASON_CHARS: usize = 200;
@@ -13,7 +14,7 @@ pub(crate) const MAX_REASON_CHARS: usize = 200;
 /// One option of a question; `reason` is the agent's one line on why it recommends the option.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct AskedOption {
+pub struct AskedOption {
     pub label: String,
     pub description: Option<String>,
     #[serde(default)]
@@ -24,7 +25,7 @@ pub(crate) struct AskedOption {
 /// One validated question of a `refract_ask` call.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct AskedQuestion {
+pub struct AskedQuestion {
     #[serde(default)]
     pub id: String,
     #[serde(default)]
@@ -181,4 +182,34 @@ fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> 
         )));
     }
     Ok(())
+}
+
+/// The Question card for a call: keyed by the host-call id with no deadline, since the card waits
+/// for the developer alone.
+pub(crate) fn card(call_id: &str, questions: &[AskedQuestion]) -> PendingRequest {
+    PendingRequest::Ask {
+        request_id: call_id.to_string(),
+        questions: questions
+            .iter()
+            .map(|question| AskQuestion {
+                id: question.id.clone(),
+                question: question.question.clone(),
+                header: question.header.clone(),
+                options: question
+                    .options
+                    .iter()
+                    .map(|option| AskOption {
+                        label: option.label.clone(),
+                        description: option.description.clone(),
+                        recommended: option.recommended,
+                        reason: option.reason.clone(),
+                    })
+                    .collect(),
+                multi: question.multi,
+                recommended: None,
+            })
+            .collect(),
+        deadline_at: None,
+        host_call: true,
+    }
 }
