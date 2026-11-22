@@ -377,11 +377,11 @@ The decision card shown when the agent asks the developer one or more questions 
 _Avoid_: ask tool card, ask dialog (OMP's protocol name)
 
 **Asked-user line**:
-The unboxed, collapsible transcript row an answered, cancelled, or unanswered **Question card** becomes (issue #572).
+The unboxed, collapsible transcript row an answered, cancelled, or unanswered **Question card** becomes (issue #572), whichever way the agent asked. Its one-line header names the outcome ("Questions from the agent · 3 answered", cancelled or timed out) and expands to one row per question with the chosen answer, marking a chosen **Recommended option** (#1988). Collapsed by default; read-only.
 _Avoid_: answered card, answer pill
 
 **Recommended option**:
-The option the agent marks as its default (issue #572). Shown as text, never preselected; OMP uses it if the question times out.
+The option the agent marks as its default (issue #572). Shown with a success tint and a "Recommended" label; on a single-choice question it is preselected and focused, so Enter accepts it (#1985). OMP uses it if the question times out. At most one per question until OMP's ask wire carries more (#1989).
 
 **Panel**:
 A distinct, secondary tool or view hosted in the right pane, opened and closed as a whole (for example, the **Subagent panel**). The pane itself collapses and expands from the **Icon rail**'s top button or Ctrl+Shift+B; collapsing keeps every open panel, the tab order and the width, and all three survive a restart.
