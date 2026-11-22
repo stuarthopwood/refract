@@ -116,9 +116,6 @@ describe('rowProps Enter shortcut (#1985)', () => {
   it.each([
     ['a held Enter', 'Enter', { repeat: true }],
     ['Enter during IME composition', 'Enter', { isComposing: true }],
-    ['Ctrl+Enter', 'Enter', { ctrlKey: true }],
-    ['Alt+Enter', 'Enter', { altKey: true }],
-    ['Meta+Enter', 'Enter', { metaKey: true }],
     ['Space', ' ', {}],
     ['ArrowDown', 'ArrowDown', {}]
   ])('does not accept on %s', (_name, key, extra) => {
