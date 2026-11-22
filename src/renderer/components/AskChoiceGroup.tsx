@@ -174,7 +174,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         aria-describedby={[props.groupDescribedBy, hintId].filter(Boolean).join(' ')}
         className="flex flex-col gap-2"
       >
-        <div className="flex flex-wrap items-baseline justify-between gap-x-3 text-xs text-muted-foreground">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 text-xs text-muted-foreground">
           <span>
             <span id={hintId}>Select all that apply</span>
             <span aria-hidden>{keyHint(options.length)}</span>
