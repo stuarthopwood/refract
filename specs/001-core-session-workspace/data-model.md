@@ -167,15 +167,17 @@ Built in the main process from OMP frames (see [contracts/omp-usage.md](contract
 type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[] }
   | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm' }
-  | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number };
+  | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number; hostCallId?: string };  // hostCallId (FR-133, #1989): set when the ask came from the `refract_ask` host tool, `requestId` is then that call's id; never a deadlineAt
 
 interface AskQuestion {
   id: string; question: string; header?: string;
-  options: { label: string; description?: string }[]; multi: boolean; recommended?: number;
+  options: { label: string; description?: string; recommended?: boolean; reason?: string }[]; multi: boolean; recommended?: number;   // per-option recommended/reason come only from refract_ask; recommended (index) only from a native ask (FR-131)
 }
 ```
 
 `requestId` is the `id` of the OMP `extension_ui_request`. Requests do not survive a process restart: on a restart they are dropped and the Session shows a notice. `kind:'ask'` (issue #572) is the structured multi-question dialog, built only once `set_ask_dialog` is confirmed enabled for this OMP process (contracts/omp-usage.md "Start-up sequence"); `kind:'question'` (`inputKind` tells `choice`/`text`/`confirm` apart) stays the one-question-at-a-time fallback, built the same way whether the dialog was never enabled or a given `select`/`input`/`editor`/`confirm` frame simply arrived outside an `ask` dialog (for example an extension's own prompt). `deadlineAt` is an epoch-ms value computed once, when the frame arrives, from OMP's own `timeout` (already milliseconds, not seconds -- `rpc.md`'s own example shows `"timeout": 30000`; gate-fix, round 1 High, a prior `secs * 1000` conversion made every deadline about 1000x too late); Refract never counts it down itself, only renders it as a static line.
+
+A `refract_ask` request is never persisted (FR-135): it dies with the process like every other pending request. It does not depend on `set_ask_dialog`: it arrives as a `host_tool_call`, not as an `extension_ui_request`, and works whether or not the native dialog is enabled.
 
 ## State transitions
 

@@ -40,7 +40,7 @@ omp --mode rpc-ui --approval-mode=<always-ask|write|yolo>
 | Answer a dialog | `{type:'extension_ui_response', id, value}` or `{..., confirmed}` or `{..., cancelled:true}` or `{..., answers:[{id, selectedOptions, customInput?}]}` (one entry per question, in request order, each `id` copied exactly -- answers a `method:'ask'` request) | See "Dialogs". |
 | Shut down | close stdin, keep reading stdout until exit; after 10 s `taskkill /PID <pid> /T /F` | |
 
-Not used in this spec: `set_model`, thinking-level commands, `compact`, `handoff`, `branch`, `set_subagent_subscription` (stays `off`), host tools, `set_event_filter` (left `null`; unknown events are ignored).
+Not used in this spec: `set_model`, thinking-level commands, `compact`, `handoff`, `branch`, `set_subagent_subscription` (stays `off`), `set_event_filter` (left `null`; unknown events are ignored). Host tools are registered through `set_host_tools` (ADR 0007, spec 124); `refract_ask` (FR-131 to FR-135) is one of them, see "Host tool `refract_ask`".
 
 ## Frames Refract consumes
 
@@ -87,6 +87,15 @@ Every other frame type is ignored (recorded frames also include `turn_start`, `t
 | `setStatus`, `setWidget`, `setTitle`, `set_editor_text`, `open_url` | Ignored | none |
 
 Every `select`, `confirm`, `input`, `editor`, and `ask` request MUST be answered, or the turn stalls (constitution II). Requests with a `timeout` resolve to a default inside OMP when it elapses; the request is removed from the UI when a `cancel` frame or the turn's end arrives. A request pending when the process exits is dropped and a notice is added. A `cancel` for an `ask` request specifically (issue #572 D17, e.g. once its own timeout already answered it) removes the card WITHOUT the usual "Request withdrawn" notice other kinds get, since a recorded answer -- not a withdrawal -- is what actually happened; the answered-question summary is built from the tool's own result, not from this cancel.
+
+## Host tool `refract_ask` (FR-131 to FR-135, #1989, ADR 0012)
+
+- **Launch**: the per-launch `--config` overlay (`agent_tools/overlay.rs`) gains `ask:\n  enabled: false` for every access level and `refract_ask: allow` under `tools.approval`. Probed 2026-11-22 (omp 18.22.2, scratch profile, no model call, `evidence/report.json` of the #1989 spec task): with a global `ask.enabled: true`, `get_state` lists `ask` without the overlay and omits it with the overlay while `refract_ask` stays registered; a `--tools` allow-list is the documented fallback only. Plain `omp` outside Refract is untouched.
+- **Register**: `set_host_tools` carries `refract_ask` (`name`, `label`, `description`, `parameters`, `loadMode:'essential'`) for `Role::Root`.
+- **Parameters** (the native `ask` shape): `{ questions: [{ id: string, question: string, options: [{ label: string, description?: string, recommended?: boolean, reason?: string }], multi?: boolean }] }`. `reason` is one line of at most 200 characters. A single-choice question allows at most one `recommended` option; a violation, a missing or duplicate `id`, an empty `options`, or a `reason` with a line break returns `{code:'invalid_input'}` with a message the model can act on, and no card is raised. There is no question-level `recommended` index.
+- **Call**: a `host_tool_call` frame with `toolName:'refract_ask'` raises a `PendingRequest` of `kind:'ask'` keyed by the host-call id with no `deadlineAt`; Refract does not apply `RENDERER_TIMEOUT_MS`. The call completes with a `host_tool_result` whose content is the raw FR-134 text, not JSON-quoted and not capped by `MAX_RESULT_BYTES`. A developer cancel completes it with `The developer cancelled the questions.` (not an error). A `host_tool_cancel` for the id drops the call and the card and sends nothing.
+- **Result text**: `The developer answered N questions.`, then `K. <question> Picked: <L> "<label>" (recommended), <L> "<label>". Typed: "<text>".`, with ` Note on <L>: <text>.` on its own line under its question (1000-character cap, line breaks replaced by spaces).
+- **Unverified**: what OMP does with a dangling host-tool call when a Session with a pending ask is resumed, and how saved history shows a `refract_ask` call that never got a result, are checked live (T476).
 
 ## Approval mode change (FR-020)
 
