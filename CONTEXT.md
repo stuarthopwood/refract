@@ -377,7 +377,7 @@ The decision card shown when the agent asks the developer one or more questions 
 _Avoid_: ask tool card, ask dialog (OMP's protocol name)
 
 **Asked-user line**:
-The unboxed, collapsible transcript row an answered, cancelled, or unanswered **Question card** becomes (issue #572), whichever way the agent asked. Its one-line header names the outcome ("Questions from the agent · 3 answered", cancelled or timed out) and expands to one row per question with the chosen answer, marking a chosen **Recommended option** (#1988). Collapsed by default; read-only.
+The collapsible, read-only transcript card an answered, cancelled, timed-out or unanswered **Question card** becomes (issue #572), whichever way the agent asked. Its header names the outcome ("Questions from the agent · 3 answered", or "answered by Away Mode", cancelled, timed out) and, collapsed by default, sits above one digest line per question showing the chosen answer; expanded it shows each question with its full answer, any option note and a mark on a chosen **Recommended option** (#1988).
 _Avoid_: answered card, answer pill
 
 **Recommended option**:
