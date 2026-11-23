@@ -381,7 +381,7 @@ The unboxed, collapsible transcript row an answered, cancelled, or unanswered **
 _Avoid_: answered card, answer pill
 
 **Recommended option**:
-An option the agent marks as its default (issue #572), optionally with a one-line reason shown under it. Shown with a success tint and a "Recommended" label; on a single-choice question it is preselected and focused, so Enter accepts it (#1985). A single-choice question has at most one; a multi-select question may have several (ADR 0012).
+An option the agent marks as its default (issue #572), optionally with a one-line reason shown beside its "Recommended" label. Shown with a success tint and a "Recommended" label; on a single-choice question it is preselected and focused, so Enter accepts it (#1985). A single-choice question has at most one; a multi-select question may have several (ADR 0012), none of them pre-ticked. A reason belongs only to a recommended option.
 
 **Option note**:
 Free text the developer attaches to an option they pick on a **Question card**, sent to the agent beside that option's answer (#1987, ADR 0012).
