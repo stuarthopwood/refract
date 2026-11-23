@@ -6,7 +6,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { AskChoiceGroup } from '@/components/AskChoiceGroup'
-import { choiceDigitIndex, focusChoiceRow, isRowEnter } from '@/components/askChoiceKeys'
+import { choiceDigitIndex, focusChoiceRow, focusedOptionIndex, isNoteShortcut, isRowEnter } from '@/components/askChoiceKeys'
+import { type AskChoiceNotes, OptionNoteHint } from '@/components/OptionNote'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
@@ -14,6 +15,7 @@ import { type AskDraftQuestion, EMPTY_ASK_QUESTION_DRAFT, useAskPicksStore } fro
 import { Markdown } from './Markdown'
 import { splitQuestionHeading } from './RequestCard'
 import { answerFailureText } from './askAnswerError'
+import { pickedNotes } from './askNotes'
 import { draftAfterUseRecommended, focusProbeOf, initialPickFor, opensOnRecommended, recommendedFlags, recommendedLabels, shouldTakeInitialFocus } from './askRecommended'
 
 // New for #572: the structured multi-question dialog path (`PendingRequest` kind `ask`), built
@@ -33,18 +35,21 @@ function isQuestionComplete(question: AskQuestion, draft: AskDraftQuestion): boo
   return draft.selectedOptions.length > 0 || (draft.otherSelected && draft.customInput.trim().length > 0)
 }
 
-function buildAnswers(questions: AskQuestion[], byQuestionId: Record<string, AskDraftQuestion>) {
+/** Notes ride only on a `refract_ask` card (`withNotes`); the native ask has nowhere to carry them. */
+export function buildAnswers(questions: AskQuestion[], byQuestionId: Record<string, AskDraftQuestion>, withNotes: boolean) {
   return questions.map((question) => {
     const draft = byQuestionId[question.id] ?? EMPTY_ASK_QUESTION_DRAFT
     const trimmedInput = draft.customInput.trim()
+    const notes = withNotes ? pickedNotes(draft.selectedOptions, draft.notes) : []
+    const noteField = notes.length > 0 ? { notes } : {}
     if (question.multi) {
       const customInput = draft.otherTicked && trimmedInput ? trimmedInput : undefined
-      return { id: question.id, selectedOptions: draft.selectedOptions, ...(customInput ? { customInput } : {}) }
+      return { id: question.id, selectedOptions: draft.selectedOptions, ...(customInput ? { customInput } : {}), ...noteField }
     }
     if (draft.otherSelected && trimmedInput) {
       return { id: question.id, selectedOptions: [], customInput: trimmedInput }
     }
-    return { id: question.id, selectedOptions: draft.selectedOptions }
+    return { id: question.id, selectedOptions: draft.selectedOptions, ...noteField }
   })
 }
 
@@ -72,6 +77,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   const [error, setError] = React.useState<string | null>(null)
   const [incompleteNoteId, setIncompleteNoteId] = React.useState<string | null>(null)
   const [tabEpoch, setTabEpoch] = React.useState(0)
+  const [editingNote, setEditingNote] = React.useState<{ questionId: string; label: string } | null>(null)
 
   const draft = useAskPicksStore((state) => state.bySession[sessionId]?.[request.requestId])
   const setActiveQuestion = useAskPicksStore((state) => state.setActiveQuestion)
@@ -81,6 +87,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   const setCustomInput = useAskPicksStore((state) => state.setCustomInput)
   const toggleOtherTicked = useAskPicksStore((state) => state.toggleOtherTicked)
   const replaceQuestionDraft = useAskPicksStore((state) => state.replaceQuestionDraft)
+  const setOptionNote = useAskPicksStore((state) => state.setOptionNote)
 
   const questions = request.questions
   const byQuestionId = draft?.byQuestionId ?? {}
@@ -132,7 +139,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   async function submit(answersBy: Record<string, AskDraftQuestion> = byQuestionId) {
     setBusyAction('submit')
     setError(null)
-    const answer: ChatAnswer = { answers: buildAnswers(questions, answersBy) }
+    const answer: ChatAnswer = { answers: buildAnswers(questions, answersBy, request.hostCall === true) }
     const result = await window.refract.chat.answer(sessionId, request.requestId, answer)
     setBusyAction(null)
     if (!result.ok) {
@@ -213,10 +220,50 @@ export function AskCard({ sessionId, request }: AskCardProps) {
 
   const groupAriaId = `${request.requestId.replace(/[^a-zA-Z0-9_-]/g, '-')}-ask`
   const activeDraft = byQuestionId[activeQuestion.id] ?? EMPTY_ASK_QUESTION_DRAFT
+  const editingLabel = editingNote?.questionId === activeQuestion.id ? editingNote.label : null
 
-  // Digits pick or tick by position and Enter on a row acts like the primary button, only while focus is inside this card and not in a text box.
+  // A note belongs to a picked option, so unpicking the option being edited closes its editor (the text stays in the draft).
+  React.useEffect(() => {
+    if (editingLabel && !activeDraft.selectedOptions.includes(editingLabel)) setEditingNote(null)
+  }, [editingLabel, activeDraft.selectedOptions])
+
+  const closeNoteEditor = (label: string) => {
+    setEditingNote(null)
+    focusChoiceRow(questionBodyRef.current, activeQuestion.options.findIndex((option) => option.label === label))
+  }
+
+  const notes: AskChoiceNotes | undefined = request.hostCall
+    ? {
+        texts: activeDraft.notes,
+        editing: editingLabel,
+        onEdit: (label) => setEditingNote({ questionId: activeQuestion.id, label }),
+        onSave: (label, text) => {
+          setOptionNote(sessionId, request.requestId, activeQuestion.id, label, text)
+          closeNoteEditor(label)
+        },
+        onCancel: closeNoteEditor,
+        onRemove: (label) => {
+          setOptionNote(sessionId, request.requestId, activeQuestion.id, label, '')
+          closeNoteEditor(label)
+        }
+      }
+    : undefined
+
+  // N acts on the focused option: it picks it first if needed, then opens the note editor. Digits pick or tick by position and Enter on a row acts like the primary button, only while focus is inside this card and not in a text box.
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (busy) return
+    if (notes && isNoteShortcut(event)) {
+      const noteIndex = focusedOptionIndex(questionBodyRef.current, event.target)
+      const noteOption = noteIndex === null ? undefined : activeQuestion.options[noteIndex]
+      if (!noteOption) return
+      event.preventDefault()
+      if (!activeDraft.selectedOptions.includes(noteOption.label)) {
+        if (activeQuestion.multi) toggleMultiOption(sessionId, request.requestId, activeQuestion.id, noteOption.label)
+        else selectSingleOption(sessionId, request.requestId, activeQuestion.id, noteOption.label)
+      }
+      setEditingNote({ questionId: activeQuestion.id, label: noteOption.label })
+      return
+    }
     const index = choiceDigitIndex(event, activeQuestion.options.length)
     const option = index === null ? undefined : activeQuestion.options[index]
     if (index !== null && option) {
@@ -247,6 +294,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
       onToggleOtherTicked={() => toggleOtherTicked(sessionId, request.requestId, activeQuestion.id)}
       onEnterInOther={handlePrimary}
       onAcceptRecommended={acceptRecommended}
+      notes={notes}
     />
   )
 
@@ -355,10 +403,11 @@ interface AskQuestionBodyProps {
   onToggleOtherTicked: () => void
   onAcceptRecommended: () => void
   onEnterInOther: () => void
+  notes: AskChoiceNotes | undefined
 }
 
 const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(function AskQuestionBody(
-  { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther, onAcceptRecommended },
+  { question, draft, busy, showIncompleteNote, groupIdPrefix, onSelectSingle, onPickSingle, onSelectOther, onToggleMulti, onCustomInput, onToggleOtherTicked, onEnterInOther, onAcceptRecommended, notes },
   ref
 ) {
   const { heading, body } = splitQuestionHeading(question.question)
@@ -419,7 +468,9 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
           onToggleOther={onToggleOtherTicked}
           onPick={onPickSingle}
           onAcceptRecommended={opensOnRecommended(question) ? onAcceptRecommended : undefined}
+          notes={notes}
         />
+        {notes && <OptionNoteHint />}
         {showIncompleteNote && (
           <p id={noteId} role="alert" className="text-sm text-destructive">
             Choose an option or type your own.

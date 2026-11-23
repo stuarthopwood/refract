@@ -2,7 +2,8 @@ import * as React from 'react'
 import { RecommendedBadge } from '@/components/RecommendedBadge'
 import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_RECOMMENDED_ROW_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
-import { ACCEPTS_ENTER_ATTRIBUTE, MAX_DIGIT_OPTIONS, isPlainEnter } from '@/components/askChoiceKeys'
+import { ACCEPTS_ENTER_ATTRIBUTE, ASK_OPTION_ATTRIBUTE, MAX_DIGIT_OPTIONS, isPlainEnter } from '@/components/askChoiceKeys'
+import { type AskChoiceNotes, OptionNoteSlot } from '@/components/OptionNote'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 
@@ -54,6 +55,8 @@ interface AskChoiceGroupProps {
   onPick?: (value: string) => void
   /** Enter on the recommended row's own control; the caller picks it and moves on. */
   onAcceptRecommended?: (() => void) | undefined
+  /** Offers a note on each picked listed option (`refract_ask` only); absent, rows render exactly as before. */
+  notes?: AskChoiceNotes | undefined
 }
 
 /** A radio value no option can collide with, so "Other" is one more row of the same group. */
@@ -170,6 +173,16 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
   const ids = (index: number) => ({ labelId: `${idPrefix}-opt-${index}-label`, descId: `${idPrefix}-opt-${index}-desc`, reasonId: `${idPrefix}-opt-${index}-reason` })
   const otherInput = other.visible ? <OtherInput other={other} disabled={disabled} /> : null
   const hintId = `${idPrefix}-multi-hint`
+  // The wrapper marks which option a focused control belongs to, so the N key can find it (askChoiceKeys).
+  const withNote = (option: AskChoiceOption, picked: boolean, row: React.ReactElement) =>
+    props.notes ? (
+      <div key={option.value} {...{ [ASK_OPTION_ATTRIBUTE]: '' }} className="flex flex-col gap-1">
+        {row}
+        <OptionNoteSlot value={option.value} label={option.label} picked={picked} disabled={disabled} notes={props.notes} />
+      </div>
+    ) : (
+      React.cloneElement(row, { key: option.value })
+    )
 
   if (multi) {
     return (
@@ -190,10 +203,12 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         </div>
         {options.map((option, index) => {
           const { labelId, descId, reasonId } = ids(index)
-          return (
+          const picked = selected.includes(option.value)
+          return withNote(
+            option,
+            picked,
             <CheckboxItem
-              key={option.value}
-              checked={selected.includes(option.value)}
+              checked={picked}
               aria-disabled={disabled}
               onCheckedChange={() => !disabled && props.onToggle(option.value)}
               aria-labelledby={labelId}
@@ -240,9 +255,10 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
       >
         {options.map((option, index) => {
           const { labelId, descId, reasonId } = ids(index)
-          return (
+          return withNote(
+            option,
+            selected[0] === option.value && !otherSelected,
             <RadioGroupItem
-              key={option.value}
               value={option.value}
               aria-disabled={disabled}
               aria-labelledby={labelId}

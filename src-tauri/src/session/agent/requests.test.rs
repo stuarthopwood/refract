@@ -32,6 +32,18 @@ fn is_chat_answer_rejects_wrong_field_types() {
 }
 
 #[test]
+fn host_ask_card_serialises_host_call_so_the_renderer_offers_notes() {
+    let ask = |host_call| PendingRequest::Ask {
+        request_id: "r1".into(),
+        questions: Vec::new(),
+        deadline_at: None,
+        host_call,
+    };
+    assert_eq!(serde_json::to_value(ask(true)).unwrap()["hostCall"], json!(true));
+    // A native ask never carries notes, so the field stays off the wire.
+    assert!(serde_json::to_value(ask(false)).unwrap().get("hostCall").is_none());
+}
+#[test]
 fn is_chat_answer_rejects_an_object_with_none_of_the_recognised_fields() {
     assert!(!is_chat_answer(&json!({})));
     assert!(!is_chat_answer(&json!({ "somethingElse": true })));

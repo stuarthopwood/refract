@@ -128,7 +128,8 @@ pub enum PendingRequest {
         #[serde(skip_serializing_if = "Option::is_none")]
         deadline_at: Option<i64>,
         /// True for a `refract_ask` card: the host-call id keys it and Rust answers it in-process.
-        #[serde(skip)]
+        /// Sent as `hostCall` so the card offers option notes, which only `refract_ask` carries.
+        #[serde(skip_serializing_if = "std::ops::Not::not")]
         host_call: bool,
     },
 }

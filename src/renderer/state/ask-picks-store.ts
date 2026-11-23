@@ -14,6 +14,8 @@ export interface AskDraftQuestion {
   otherTicked: boolean
   /** The tab has been opened once; a viewed multiple-choice question counts as complete even if empty. */
   viewed: boolean
+  /** Free text per listed option label. Kept while the option is unpicked (hidden, not sent) and shown again when it is picked; an empty text removes it. */
+  notes: Record<string, string>
 }
 
 export const EMPTY_ASK_QUESTION_DRAFT: AskDraftQuestion = {
@@ -21,7 +23,8 @@ export const EMPTY_ASK_QUESTION_DRAFT: AskDraftQuestion = {
   customInput: '',
   otherSelected: false,
   otherTicked: false,
-  viewed: false
+  viewed: false,
+  notes: {}
 }
 
 export interface AskDraft {
@@ -38,6 +41,8 @@ interface AskPicksState {
   selectSingleOption(sessionId: string, requestId: string, questionId: string, label: string): void
   /** Single choice only: the Other radio clicked with no text yet. */
   selectOther(sessionId: string, requestId: string, questionId: string): void
+  /** Saves a note on a listed option; empty (after trimming) removes it. */
+  setOptionNote(sessionId: string, requestId: string, questionId: string, label: string, text: string): void
   toggleMultiOption(sessionId: string, requestId: string, questionId: string, label: string): void
   /** `multi` picks which Other field typing affects. */
   setCustomInput(sessionId: string, requestId: string, questionId: string, text: string, multi: boolean): void
@@ -114,6 +119,14 @@ export const useAskPicksStore = create<AskPicksState>((set, get) => ({
     const state = get()
     const question = getQuestionDraft(state, sessionId, requestId, questionId)
     set(updateQuestion(state, sessionId, requestId, questionId, { ...question, otherTicked: !question.otherTicked }))
+  },
+  setOptionNote: (sessionId, requestId, questionId, label, text) => {
+    const state = get()
+    const question = getQuestionDraft(state, sessionId, requestId, questionId)
+    const rest = { ...question.notes }
+    delete rest[label]
+    const trimmed = text.trim()
+    set(updateQuestion(state, sessionId, requestId, questionId, { ...question, notes: trimmed ? { ...rest, [label]: trimmed } : rest }))
   },
   replaceQuestionDraft: (sessionId, requestId, questionId, next) => set(updateQuestion(get(), sessionId, requestId, questionId, next)),
   clear: (sessionId, requestId) => {
