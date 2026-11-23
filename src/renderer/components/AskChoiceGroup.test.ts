@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { AskChoiceGroup, createArrowGuard, rowProps, type AskChoiceOption } from './AskChoiceGroup'
+import { AskChoiceGroup, createArrowGuard, describedByOf, rowProps, type AskChoiceOption } from './AskChoiceGroup'
 
 const OPTIONS: AskChoiceOption[] = [
   { value: 'Alpha', label: 'Alpha' },
@@ -87,6 +87,53 @@ describe.each([
     expect(html).not.toContain('data-recommended-badge')
     expect(html).not.toContain('data-ask-recommended')
     expect(html).not.toContain('bg-severity-success-bg')
+  })
+})
+
+describe.each([
+  ['single choice', false],
+  ['multiple choice', true]
+])('recommendation reason, %s (#1985 rest)', (_name, multi) => {
+  const REASONED: AskChoiceOption[] = [
+    { value: 'Alpha', label: 'Alpha' },
+    { value: 'Beta', label: 'Beta', recommended: true, reason: 'Fastest to ship, and it keeps the API stable' }
+  ]
+
+  it('shows the full reason after the Recommended cue, muted and hidden from the row name', () => {
+    const html = render(multi, REASONED)
+    expect(html).toMatch(/data-recommended-badge[^>]*>.*Recommended<\/span><span aria-hidden="true" data-recommended-reason[^>]*>· Fastest to ship, and it keeps the API stable<\/span>/)
+    expect(html).toMatch(/data-recommended-reason[^>]*class="[^"]*text-muted-foreground/)
+  })
+
+  it('reads the reason as the recommended row description', () => {
+    const html = render(multi, REASONED)
+    expect(html).toContain('aria-describedby="p-opt-1-reason"')
+    expect(html).toContain('<span id="p-opt-1-reason" class="sr-only">Fastest to ship, and it keeps the API stable</span>')
+  })
+
+  it('shows no reason text on a row that is not recommended', () => {
+    const html = render(multi, [{ value: 'Alpha', label: 'Alpha', reason: 'Stray' }])
+    expect(html).not.toContain('Stray')
+    expect(html).not.toContain('data-recommended-reason')
+  })
+
+  it('tints and marks every recommended row, not only the first', () => {
+    const html = render(multi, [
+      { value: 'A', label: 'A', recommended: true, reason: 'Cheap' },
+      { value: 'B', label: 'B', recommended: true, reason: 'Quick' },
+      { value: 'C', label: 'C' }
+    ])
+    expect(html.match(/data-ask-recommended/g)).toHaveLength(2)
+    expect(html.match(/data-recommended-reason/g)).toHaveLength(2)
+  })
+})
+
+describe('describedByOf', () => {
+  it('joins the description and the recommended reason, and returns nothing when there is neither', () => {
+    expect(describedByOf({ value: 'A', label: 'A', description: 'd', recommended: true, reason: 'r' }, 'd1', 'r1')).toBe('d1 r1')
+    expect(describedByOf({ value: 'A', label: 'A', description: 'd' }, 'd1', 'r1')).toBe('d1')
+    expect(describedByOf({ value: 'A', label: 'A', recommended: true, reason: 'r' }, 'd1', 'r1')).toBe('r1')
+    expect(describedByOf({ value: 'A', label: 'A', reason: 'r' }, 'd1', 'r1')).toBeUndefined()
   })
 })
 

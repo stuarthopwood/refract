@@ -48,8 +48,9 @@ pub fn description() -> &'static str {
 Use it when you need a decision only they can make. Give each question a unique `id`, the \
 `question` text and its `options`; set `multi` to let them pick several. The developer can also \
 type their own answer. Mark the option you would choose with `recommended: true` and say why in \
-`reason`, one line of at most 200 characters; a single-choice question takes at most one \
-recommended option. The result lists each question with what the developer picked or typed, and \
+`reason`, one line of at most 200 characters; a `reason` is only accepted on a recommended \
+option. A single-choice question takes at most one recommended option; a `multi` question may \
+recommend several. The result lists each question with what the developer picked or typed, and \
 any note they added to an option. If they cancel, you are told so; carry on without the answers."
 }
 
@@ -60,7 +61,7 @@ fn option() -> Value {
             "label": { "type": "string", "description": "Short choice text." },
             "description": { "type": "string", "description": "Optional detail shown under the label." },
             "recommended": { "type": "boolean", "description": "This is the option you recommend." },
-            "reason": { "type": "string", "maxLength": MAX_REASON_CHARS, "description": "Why you recommend it: one line, at most 200 characters." }
+            "reason": { "type": "string", "maxLength": MAX_REASON_CHARS, "description": "Why you recommend it: one line, at most 200 characters. Only on an option with recommended true." }
         },
         "required": ["label"],
         "additionalProperties": false
@@ -141,6 +142,17 @@ fn check_question(
     check_options(&name, question)
 }
 
+/// Line breaks, control, invisible and direction-control characters hide or reorder card text;
+/// the joiners and emoji selector stay so names and emoji survive.
+fn has_hidden_char(text: &str) -> bool {
+    text.contains(|c: char| {
+        c.is_control()
+            || matches!(c, '\u{2028}' | '\u{2029}')
+            || (!matches!(c, '\u{200C}' | '\u{200D}' | '\u{FE0F}')
+                && crate::github::profile::is_invisible_format(c))
+    })
+}
+
 fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> {
     for (index, option) in question.options.iter().enumerate() {
         if option.label.trim().is_empty() {
@@ -149,12 +161,7 @@ fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> 
                 index + 1
             )));
         }
-        if option.label.contains(|c: char| {
-            c.is_control()
-                || matches!(c, '\u{2028}' | '\u{2029}')
-                || (!matches!(c, '\u{200C}' | '\u{200D}' | '\u{FE0F}')
-                    && crate::github::profile::is_invisible_format(c))
-        }) {
+        if has_hidden_char(&option.label) {
             return Err(invalid(format!(
                 "option {} of {name} has a label with line breaks, control, invisible or direction-control characters; \
 labels must be a single line of plain text",
@@ -171,9 +178,17 @@ labels must be a single line of plain text",
             )));
         }
         if let Some(reason) = &option.reason {
-            if reason.contains(['\n', '\r']) {
+            if !option.recommended {
                 return Err(invalid(format!(
-                    "the reason for option \"{}\" of {name} must be a single line without line breaks",
+                    "option \"{}\" of {name} has a reason but is not recommended; a reason belongs only to a recommended option, \
+so set recommended to true or drop the reason",
+                    option.label
+                )));
+            }
+            if has_hidden_char(reason) {
+                return Err(invalid(format!(
+                    "the reason for option \"{}\" of {name} has line breaks, control, invisible or direction-control characters; \
+a reason must be a single line of plain text",
                     option.label
                 )));
             }

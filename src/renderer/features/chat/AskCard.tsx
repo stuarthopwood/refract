@@ -14,7 +14,7 @@ import { type AskDraftQuestion, EMPTY_ASK_QUESTION_DRAFT, useAskPicksStore } fro
 import { Markdown } from './Markdown'
 import { splitQuestionHeading } from './RequestCard'
 import { answerFailureText } from './askAnswerError'
-import { draftAfterUseRecommended, focusProbeOf, initialPickFor, opensOnRecommended, recommendedIndex, recommendedLabel, shouldTakeInitialFocus } from './askRecommended'
+import { draftAfterUseRecommended, focusProbeOf, initialPickFor, opensOnRecommended, recommendedFlags, recommendedLabels, shouldTakeInitialFocus } from './askRecommended'
 
 // New for #572: the structured multi-question dialog path (`PendingRequest` kind `ask`), built
 // only once `set_ask_dialog` is confirmed enabled for this OMP process (contracts/omp-usage.md
@@ -49,9 +49,9 @@ function buildAnswers(questions: AskQuestion[], byQuestionId: Record<string, Ask
 }
 
 /** D16: a static deadline line, never a ticking countdown -- OMP owns the timer. */
-function formatDeadlineText(deadlineAt: number, questions: AskQuestion[]): string {
+export function formatDeadlineText(deadlineAt: number, questions: AskQuestion[]): string {
   const time = new Date(deadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  const anyRecommended = questions.some((question) => recommendedIndex(question) !== undefined)
+  const anyRecommended = questions.some((question) => recommendedLabels(question).length > 0)
   return anyRecommended
     ? `If there's no answer by ${time}, the agent uses the recommended answers.`
     : `If there's no answer by ${time}, the agent uses the first option for each question.`
@@ -153,6 +153,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   }
 
   if (!activeQuestion) return null
+  const recommendedNames = recommendedLabels(activeQuestion)
 
   const allComplete = questions.every((question) => isQuestionComplete(question, byQuestionId[question.id] ?? EMPTY_ASK_QUESTION_DRAFT))
   const activeIncomplete = !isQuestionComplete(activeQuestion, byQuestionId[activeQuestion.id] ?? EMPTY_ASK_QUESTION_DRAFT)
@@ -318,8 +319,8 @@ export function AskCard({ sessionId, request }: AskCardProps) {
             {busyAction === 'cancel' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
             {busyAction === 'cancel' ? 'Cancelling…' : 'Cancel'}
           </Button>
-          {recommendedIndex(activeQuestion) !== undefined && (
-            <Button size="sm" variant="outline" aria-label={`Use recommended: ${recommendedLabel(activeQuestion)}`} aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
+          {recommendedNames.length > 0 && (
+            <Button size="sm" variant="outline" aria-label={`Use recommended: ${recommendedNames.join('; ')}`} aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
               Use Recommended
               <span aria-hidden>↵</span>
             </Button>
@@ -365,12 +366,13 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
   const headingId = `${safeId}-heading`
   const noteId = `${safeId}-incomplete-note`
   const describedBy = showIncompleteNote ? noteId : undefined
-  const recommended = recommendedIndex(question)
+  const recommended = recommendedFlags(question)
   const options = question.options.map((option, index) => ({
     value: option.label,
     label: option.label,
     description: option.description,
-    recommended: recommended === index
+    recommended: recommended[index] === true,
+    reason: option.reason
   }))
 
   function handleOtherKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {

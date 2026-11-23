@@ -58,11 +58,21 @@ pub fn approval_timeout() -> Duration {
     DEFAULT_APPROVAL_TIMEOUT
 }
 
-/// The recommended option for each question, or the fallback text when none is recommended.
+/// The recommended option(s) for each question, or the fallback text when none is recommended.
+/// A multi-select with per-option flags takes every flagged option (as "Use Recommended" does); otherwise the question-level index.
 pub fn ask_answers(questions: &[AskQuestion]) -> Vec<Value> {
     questions
         .iter()
         .map(|q| {
+            let flagged: Vec<&str> = q
+                .options
+                .iter()
+                .filter(|option| option.recommended)
+                .map(|option| option.label.as_str())
+                .collect();
+            if q.multi && !flagged.is_empty() {
+                return json!({ "id": q.id, "selectedOptions": flagged });
+            }
             let pick = q
                 .recommended
                 .and_then(|i| usize::try_from(i).ok())
@@ -84,10 +94,16 @@ fn describe_ask(questions: &[AskQuestion], answers: &[Value]) -> (String, String
     let chosen = answers
         .iter()
         .map(|a| {
-            a.pointer("/selectedOptions/0")
-                .and_then(Value::as_str)
-                .map(str::to_string)
-                .unwrap_or_else(|| "left to the agent".to_string())
+            let picked: Vec<&str> = a
+                .get("selectedOptions")
+                .and_then(Value::as_array)
+                .map(|items| items.iter().filter_map(Value::as_str).collect())
+                .unwrap_or_default();
+            if picked.is_empty() {
+                "left to the agent".to_string()
+            } else {
+                picked.join(" + ")
+            }
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -236,3 +252,7 @@ pub(in crate::session) async fn summarise(agent: &SessionAgent) {
     };
     agent.lane_notice(text, "info").await;
 }
+
+#[cfg(test)]
+#[path = "away.test.rs"]
+mod tests;
