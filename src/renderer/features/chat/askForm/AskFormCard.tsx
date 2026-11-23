@@ -7,12 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
 import { firstMissingField, missingFieldMessage, type AskFieldValue } from './answerPlan'
 import { canCancel, type AskFormPhase } from './askFormSession'
 import { escapeCancelsForm } from './askFormKeys'
 import type { AskFormChoiceField, AskFormField } from './parseAskHtml'
-import { askCardLabel, NO_SELECTION, type AskFormAnswer } from './readAskForm'
+import { ASKED_USER_TITLE } from '../askedUserLine'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { askFormIntentKey } from './askFormIntentKey'
 import { useClaimAskFormFocus } from './askFormFocus'
@@ -129,10 +128,10 @@ const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
   done: 'Answers submitted'
 }
 
-/** The card chrome the live form and the read-only history share; `label` names the card, `resting` makes a finished card a focus target. */
-function AskFormShell({ children, ref, label, resting }: { children: React.ReactNode; ref?: React.Ref<HTMLDivElement>; label: string; resting?: boolean }) {
+/** The live form's card chrome; `label` names the card. */
+function AskFormShell({ children, label }: { children: React.ReactNode; label: string }) {
   return (
-    <Card ref={ref} size="sm" role="group" aria-label={label} {...(resting ? { tabIndex: -1, className: RESTING_FOCUS_CLASS } : {})}>
+    <Card size="sm" role="group" aria-label={label}>
       <CardHeader>
         <CardTitle>Questions from the agent</CardTitle>
       </CardHeader>
@@ -141,42 +140,14 @@ function AskFormShell({ children, ref, label, resting }: { children: React.React
   )
 }
 
-interface AskFormLiveCardProps {
+interface AskFormCardProps {
   sessionId: string
   askItemId: string
   fields: readonly AskFormField[]
 }
 
-/** Read-only question and answer pairs for a finished ask, so history shows the same card the user answered in. */
-function AskFormAnswersCard({ answers, sessionId, askItemId }: { answers: readonly AskFormAnswer[] } & ClaimFocusProps) {
-  const rootRef = React.useRef<HTMLDivElement>(null)
-  useClaimAskFormFocus(rootRef, sessionId, askItemId)
-  return (
-    <AskFormShell ref={rootRef} label={askCardLabel(answers)} resting>
-      <CardContent>
-        <dl className="space-y-2">
-          {answers.map((row, index) => (
-            <div key={`${row.name}-${index}`} className="space-y-1">
-              <dt className="whitespace-pre-line text-sm font-medium">{row.question}</dt>
-              <dd className={cn('whitespace-pre-line break-words text-sm', row.answer === NO_SELECTION && 'text-muted-foreground')}>{row.answer}</dd>
-            </div>
-          ))}
-        </dl>
-      </CardContent>
-    </AskFormShell>
-  )
-}
-
-type AskFormCardProps = ({ answers?: undefined } & AskFormLiveCardProps) | ({ answers: readonly AskFormAnswer[] } & ClaimFocusProps)
-
-/** The ask form card: editable and live, or read-only from `answers` once the ask has finished. */
-export function AskFormCard(props: AskFormCardProps) {
-  if (props.answers) return <AskFormAnswersCard answers={props.answers} sessionId={props.sessionId} askItemId={props.askItemId} />
-  return <AskFormLiveCard sessionId={props.sessionId} askItemId={props.askItemId} fields={props.fields} />
-}
-
 /** One card for the whole parsed HTML form; Submit answers OMP's per-field frames in order. */
-function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps) {
+export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) {
   const { session, submittable, setValue, submit, cancel } = useAskFormSession(sessionId, askItemId, fields)
   const rootRef = React.useRef<HTMLDivElement>(null)
   const intentKey = askFormIntentKey(sessionId, askItemId)
@@ -228,7 +199,7 @@ function AskFormLiveCard({ sessionId, askItemId, fields }: AskFormLiveCardProps)
     // Esc is the Cancel shortcut for the whole card (FR-010) except while typing; the buttons below stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={rootRef} onKeyDown={handleKeyDown}>
-      <AskFormShell label={askCardLabel([])}>
+      <AskFormShell label={ASKED_USER_TITLE}>
         {fields.map((field, index) => {
           const value = session.values[index]
           if (!value) return null

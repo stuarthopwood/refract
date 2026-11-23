@@ -18,20 +18,9 @@ export function isAskTimedOut(details: unknown): boolean {
 export interface AskFormAnswer {
   name: string
   question: string
-  /** Display text; an empty saved answer reads "No selection". */
+  /** The saved answer text; empty when the group was left unanswered. */
   answer: string
 }
-
-const LABEL_QUESTION_MAX = 80
-
-/** The accessible name of a finished card, from its first question so history cards tell apart. */
-export function askCardLabel(answers: readonly AskFormAnswer[]): string {
-  const first = answers[0]?.question.replace(/\s+/g, ' ').trim()
-  if (!first) return 'Questions from the agent'
-  return `Questions from the agent: ${first.length > LABEL_QUESTION_MAX ? `${first.slice(0, LABEL_QUESTION_MAX - 1)}…` : first}`
-}
-
-export const NO_SELECTION = 'No selection'
 
 /** The finished ask's `details.answers` as read-only rows, or `null` when it carries none. */
 export function readAskFormAnswers(details: unknown): AskFormAnswer[] | null {
@@ -43,7 +32,7 @@ export function readAskFormAnswers(details: unknown): AskFormAnswer[] | null {
     const text = typeof answer === 'string' ? answer.trim() : ''
     const label = typeof question === 'string' && question.trim() ? question : typeof name === 'string' ? name : ''
     if (!label) continue
-    rows.push({ name: typeof name === 'string' ? name : label, question: label, answer: text || NO_SELECTION })
+    rows.push({ name: typeof name === 'string' ? name : label, question: label, answer: text })
   }
   return rows.length > 0 ? rows : null
 }
