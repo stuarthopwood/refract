@@ -175,23 +175,45 @@ fn one_question() -> Vec<AskQuestion> {
 }
 
 #[test]
-fn a_host_ask_answer_carries_the_away_marker_only_when_the_reply_sets_it() {
-    let answers = json!([{ "id": "q1", "selectedOptions": ["A"] }]);
-    let away = host_ask_reply(&one_question(), &json!({ "answers": answers, "byAway": true }))
+fn a_host_ask_answer_carries_the_away_marker_only_when_the_caller_passes_it() {
+    let reply = json!({ "answers": [{ "id": "q1", "selectedOptions": ["A"] }] });
+    let away = host_ask_reply(&one_question(), &reply, true)
         .unwrap()
         .unwrap();
     assert!(away[0].by_away);
-    let human = host_ask_reply(&one_question(), &json!({ "answers": answers }))
+    let human = host_ask_reply(&one_question(), &reply, false)
         .unwrap()
         .unwrap();
     assert!(!human[0].by_away);
 }
 
 #[test]
-fn a_host_ask_answer_cannot_claim_away_mode_from_inside_an_entry() {
-    let answers = json!([{ "id": "q1", "selectedOptions": ["A"], "byAway": true }]);
-    let reply = host_ask_reply(&one_question(), &json!({ "answers": answers }))
+fn a_chat_answer_payload_cannot_claim_away_mode_at_the_top_level() {
+    // `chat.answer` forwards the renderer's raw JSON, so the marker must not be read from it.
+    let payload = json!({
+        "answers": [{ "id": "q1", "selectedOptions": ["A"] }],
+        "byAway": true
+    });
+    let reply = host_ask_reply(&one_question(), &payload, false)
         .unwrap()
         .unwrap();
     assert!(!reply[0].by_away);
+}
+
+#[test]
+fn a_host_ask_answer_cannot_claim_away_mode_from_inside_an_entry() {
+    let answers = json!([{ "id": "q1", "selectedOptions": ["A"], "byAway": true }]);
+    let reply = host_ask_reply(&one_question(), &json!({ "answers": answers }), false)
+        .unwrap()
+        .unwrap();
+    assert!(!reply[0].by_away);
+}
+
+#[test]
+fn the_caller_flag_overrides_an_entry_that_says_otherwise() {
+    let answers = json!([{ "id": "q1", "selectedOptions": ["A"], "byAway": true }]);
+    let reply = host_ask_reply(&one_question(), &json!({ "answers": answers }), true)
+        .unwrap()
+        .unwrap();
+    assert!(reply[0].by_away);
 }

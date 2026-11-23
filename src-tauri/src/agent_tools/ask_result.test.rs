@@ -131,6 +131,11 @@ fn an_away_mode_answer_is_attributed_in_the_text_and_survives_serialising() {
 fn a_developer_answer_carries_no_away_marker() {
     let q = question("q1", "Q?", vec![option("A", false)]);
     let human = answer("q1", &["A"], None, &[]);
-    assert!(format_answers(&[q], std::slice::from_ref(&human)).starts_with("The developer answered"));
-    assert!(serde_json::to_value(&human).unwrap().get("byAway").is_none());
+    assert!(
+        format_answers(&[q], std::slice::from_ref(&human)).starts_with("The developer answered")
+    );
+    assert!(serde_json::to_value(&human)
+        .unwrap()
+        .get("byAway")
+        .is_none());
 }
