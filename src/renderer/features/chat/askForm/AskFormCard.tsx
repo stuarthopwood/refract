@@ -14,7 +14,6 @@ import type { AskFormChoiceField, AskFormField } from './parseAskHtml'
 import { ASKED_USER_TITLE } from '../askedUserLine'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { askFormIntentKey } from './askFormIntentKey'
-import { useClaimAskFormFocus } from './askFormFocus'
 import { useAskFormSession } from './useAskFormSession'
 
 type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
@@ -112,14 +111,6 @@ function TextField({ field, value, disabled, idPrefix, onChange }: TextFieldProp
       {field.kind === 'textarea' ? <Textarea {...shared} /> : <Input {...shared} />}
     </CardContent>
   )
-}
-
-/** Programmatic focus target for a finished card, so Submit or Esc never leaves focus on the page body. */
-const RESTING_FOCUS_CLASS = 'outline-none focus-visible:ring-2 focus-visible:ring-ring'
-
-interface ClaimFocusProps {
-  sessionId?: string
-  askItemId?: string
 }
 
 const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
@@ -243,18 +234,5 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
         </CardFooter>
       </AskFormShell>
     </div>
-  )
-}
-
-/** FR-006: an ask that timed out reads "Timed out, no answer" and offers no retry. */
-export function AskFormTimedOut({ sessionId, askItemId }: ClaimFocusProps) {
-  const rootRef = React.useRef<HTMLDivElement>(null)
-  useClaimAskFormFocus(rootRef, sessionId, askItemId)
-  return (
-    <Card ref={rootRef} size="sm" tabIndex={-1} role="group" aria-label="Questions from the agent" className={RESTING_FOCUS_CLASS}>
-      <CardContent role="status" className="text-sm text-muted-foreground">
-        Timed out, no answer
-      </CardContent>
-    </Card>
   )
 }

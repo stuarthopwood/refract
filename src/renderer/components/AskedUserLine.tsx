@@ -2,7 +2,7 @@ import * as React from 'react'
 import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
+import { INSET_FOCUS_OUTLINE_CLASS, RESTING_FOCUS_CLASS } from '@/components/ui/focus-classes'
 import { cn } from '@/lib/utils'
 import {
   askedUserDigestAnswer,
@@ -91,7 +91,7 @@ export function AskedUserLine({ model, defaultOpen = false, ref }: AskedUserLine
   const answered = model.status === 'answered' || model.status === 'answered-by-away'
   const Chevron = open ? ChevronUpIcon : ChevronDownIcon
   return (
-    <Card ref={ref} size="sm" role="group" aria-label={askedUserLabel(model)} tabIndex={-1} className="gap-0 py-0 outline-none">
+    <Card ref={ref} size="sm" role="group" aria-label={askedUserLabel(model)} tabIndex={-1} className={cn('gap-0 py-0', RESTING_FOCUS_CLASS)}>
       <Button
         type="button"
         variant="ghost"

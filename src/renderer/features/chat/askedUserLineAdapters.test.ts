@@ -84,6 +84,14 @@ describe('askedUserModel: native ask rows and saved numbered text', () => {
     expect(model.questions[0]).toEqual({ prompt: 'Which database?', multi: false, answers: [{ label: 'MySQL', other: false, recommended: false }] })
   })
 
+  it('Given a native ask whose recommended option was chosen, When mapped, Then the pick is flagged recommended', () => {
+    const args = { questions: [{ id: 'db', question: 'Which database?', options: ['Postgres', 'MySQL'], recommended: 0 }] }
+    const model = askedUserModel(tool({ tool: 'ask', args, details: { selectedOptions: ['Postgres'] } }))
+    expect(model.questions[0]?.answers).toEqual([{ label: 'Postgres', other: false, recommended: true }])
+    const other = askedUserModel(tool({ tool: 'ask', args, details: { selectedOptions: ['MySQL'] } }))
+    expect(other.questions[0]?.answers[0]?.recommended).toBe(false)
+  })
+
   it('Given the oldest shape answered only in the result text, When mapped, Then the text is the answer', () => {
     const args = { question: 'Which database?', options: ['Postgres'] }
     expect(askedUserModel(tool({ tool: 'ask', args, output: 'Postgres' })).questions[0]?.answers[0]?.label).toBe('Postgres')
@@ -132,5 +140,11 @@ describe('askedUserModel: HTML-form ask', () => {
     const model = askedUserModel(tool({ tool: 'ask', args: { html }, status: 'interrupted' }))
     expect(model.status).toBe('not-answered')
     expect(model.questions.map((question) => question.prompt)).toEqual(['Which language?'])
+  })
+
+  it('Given a timed-out form, When mapped, Then the status is timed-out and each question reads no answer', () => {
+    const model = askedUserModel(tool({ tool: 'ask', args: { html }, details: { timedOut: true } }))
+    expect(model.status).toBe('timed-out')
+    expect(model.questions).toEqual([{ prompt: 'Which language?', multi: false, answers: [] }])
   })
 })

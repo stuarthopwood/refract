@@ -1,7 +1,7 @@
 import * as React from 'react'
 import type { PendingRequest, TranscriptItem } from '../../../shared/model'
-import { AskFormCard, AskFormTimedOut } from './askForm/AskFormCard'
-import { isAskTimedOut, readAskForm } from './askForm/readAskForm'
+import { AskFormCard } from './askForm/AskFormCard'
+import { readAskForm } from './askForm/readAskForm'
 import { useAskFormOwnsFrames } from './askForm/useAskFormSession'
 import { AskedUserRow } from './AskedUserRow'
 import { RequestCard, ResolvedRequestSummary } from './RequestCard'
@@ -20,10 +20,7 @@ export function AskToolRow({ item, sessionId, askRequestId }: AskToolRowProps) {
   const running = item.status === 'running'
 
   const formOwned = fields !== null && sessionId !== null && owns
-  if (formOwned) {
-    if (running) return <AskFormCard sessionId={sessionId} askItemId={item.id} fields={fields} />
-    if (isAskTimedOut(item.details)) return <AskFormTimedOut sessionId={sessionId} askItemId={item.id} />
-  }
+  if (formOwned && running) return <AskFormCard sessionId={sessionId} askItemId={item.id} fields={fields} />
   // The live question is the `request` item below, or nothing while the combined card has no form to show.
   if (running) return null
   // A form's live card arms its focus intent under the ask item id, so the row that replaces it claims that key.

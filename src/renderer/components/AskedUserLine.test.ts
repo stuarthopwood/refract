@@ -90,6 +90,13 @@ describe('AskedUserLine collapsed (FR-139)', () => {
   it('names the group from its first question so history cards tell apart', () => {
     expect(render(ANSWERED)).toContain('role="group" aria-label="Questions from the agent: Which database?"')
   })
+
+  it('keeps a visible keyboard focus ring on the programmatically focused card root', () => {
+    const root = render(ANSWERED).match(/<div[^>]*role="group"[^>]*>/)?.[0] ?? ''
+    expect(root).toContain('tabindex="-1"')
+    expect(root).toContain('focus-visible:ring-2')
+    expect(root).toContain('focus-visible:ring-ring')
+  })
 })
 
 describe('AskedUserLine expanded (FR-139)', () => {

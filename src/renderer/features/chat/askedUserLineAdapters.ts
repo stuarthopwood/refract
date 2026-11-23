@@ -116,8 +116,9 @@ function fromNumberedText(questions: AskQuestion[], output: string | undefined):
 }
 
 /** The oldest native-ask shape: one question, answered in top-level details or only in the result text. */
-function fromLegacy(details: Record<string, unknown> | undefined, output: string | undefined): AskedUserAnswer[] {
-  const answers = toAnswers(strings(details?.selectedOptions).map((label) => ({ label, recommended: false })), typeof details?.customInput === 'string' ? details.customInput : '', [])
+function fromLegacy(question: AskQuestion | undefined, details: Record<string, unknown> | undefined, output: string | undefined): AskedUserAnswer[] {
+  const recommended = question ? recommendedLabels(question) : []
+  const answers = toAnswers(strings(details?.selectedOptions).map((label) => ({ label, recommended: recommended.includes(label) })), typeof details?.customInput === 'string' ? details.customInput : '', [])
   const text = output?.trim()
   return answers.length === 0 && text ? [{ label: text, other: false, recommended: false }] : answers
 }
@@ -127,7 +128,7 @@ function readAnswers(item: AskToolItem, questions: AskQuestion[]): ReadAnswers {
   if (Array.isArray(details?.results) && details.results.length > 0) return fromResults(questions, details.results)
   const numbered = fromNumberedText(questions, item.output)
   if (numbered) return numbered
-  return { byAway: false, answers: questions.length === 1 ? [fromLegacy(details, item.output)] : questions.map(() => []) }
+  return { byAway: false, answers: questions.length === 1 ? [fromLegacy(questions[0], details, item.output)] : questions.map(() => []) }
 }
 
 function statusOf(item: AskToolItem, byAway: boolean): AskedUserStatus {
