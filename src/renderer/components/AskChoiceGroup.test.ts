@@ -2,6 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { AskChoiceGroup, createArrowGuard, describedByOf, rowProps, type AskChoiceOption } from './AskChoiceGroup'
 
 const OPTIONS: AskChoiceOption[] = [
@@ -233,5 +234,56 @@ describe('arrow guard (#1435, #1985)', () => {
     guard.keyDown('ArrowDown')
     guard.blur(event)
     expect(guard.isMoving()).toBe(false)
+  })
+})
+
+describe('option notes slot (#1987)', () => {
+  const notes = { texts: { Alpha: 'why' }, editing: null, onEdit: () => undefined, onSave: () => undefined, onCancel: () => undefined, onRemove: () => undefined }
+  function renderWithNotes(multi: boolean, selected: string[]) {
+    return renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(AskChoiceGroup, {
+          multi,
+          options: OPTIONS,
+          selected,
+          otherSelected: false,
+          disabled: false,
+          idPrefix: 'p',
+          groupLabel: 'Pick',
+          other: { visible: false, text: '', ariaLabel: 'Other answer', onTextChange: () => undefined },
+          onSelect: () => undefined,
+          onToggle: () => undefined,
+          onSelectOther: () => undefined,
+          onToggleOther: () => undefined,
+          notes
+        })
+      )
+    )
+  }
+
+  it.each([
+    ['single choice', false],
+    ['multiple choice', true]
+  ])('shows a picked option\'s note and, on an unpicked option, only a hover-revealed Note button, %s', (_name, multi) => {
+    const html = renderWithNotes(multi, ['Alpha'])
+    expect(html.match(/data-ask-option/g)).toHaveLength(2)
+    expect(html).toContain('Note:')
+    expect(html).toContain('aria-label="Add a note to Beta"')
+    expect(html).toContain('group/option')
+  })
+
+  it.each([
+    ['single choice', false],
+    ['multiple choice', true]
+  ])('hides the note of an unpicked option but offers its Note button, %s', (_name, multi) => {
+    const html = renderWithNotes(multi, ['Beta'])
+    expect(html).not.toContain('Note:')
+    expect(html).toContain('Add a note to Beta')
+  })
+
+  it('renders no note markers without the notes prop', () => {
+    expect(render(false, OPTIONS, ['Alpha'])).not.toContain('data-ask-option')
   })
 })

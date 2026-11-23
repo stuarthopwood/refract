@@ -3,7 +3,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { AskQuestion, PendingRequest } from '../../../shared/model'
-import { AskCard, formatDeadlineText } from './AskCard'
+import { EMPTY_ASK_QUESTION_DRAFT } from '@/state/ask-picks-store'
+import { AskCard, buildAnswers, formatDeadlineText } from './AskCard'
 
 // The markdown renderer and the state barrel need a browser `window` at import; neither is under test.
 vi.mock('./Markdown', () => ({ Markdown: ({ text }: { text: string }) => text }))
@@ -39,5 +40,45 @@ describe('formatDeadlineText', () => {
 
   it('says the first option is used when nothing is recommended', () => {
     expect(formatDeadlineText(DEADLINE, [question({ options: [{ label: 'Lint' }, { label: 'Tests' }] })])).toContain('the agent uses the first option for each question.')
+  })
+})
+
+describe('AskCard option notes (#1987)', () => {
+  function renderHost(q: AskQuestion, hostCall: boolean): string {
+    const request = { kind: 'ask', requestId: 'r1', questions: [q], hostCall } as AskRequest
+    return renderToStaticMarkup(createElement(AskCard, { sessionId: 's1', request }))
+  }
+
+  it('shows the "Press N" hint on a refract_ask card only', () => {
+    expect(renderHost(question(), true)).toContain('to add a note to selected option')
+    expect(renderHost(question(), false)).not.toContain('to add a note to selected option')
+  })
+})
+
+describe('buildAnswers notes (#1987)', () => {
+  const multi = question({ options: [{ label: 'A' }, { label: 'B' }, { label: 'C' }] })
+  const single = question({ id: 'q2', multi: false, options: [{ label: 'A' }, { label: 'B' }] })
+
+  it('sends only the notes on picked options of a multi-select', () => {
+    const draft = { ...EMPTY_ASK_QUESTION_DRAFT, selectedOptions: ['A', 'B'], notes: { A: 'one', B: 'two', C: 'hidden' } }
+    expect(buildAnswers([multi], { q1: draft }, true)).toEqual([
+      { id: 'q1', selectedOptions: ['A', 'B'], notes: [{ option: 'A', text: 'one' }, { option: 'B', text: 'two' }] }
+    ])
+  })
+
+  it('sends the note on a single-choice pick, and drops a note left on the option no longer picked', () => {
+    const draft = { ...EMPTY_ASK_QUESTION_DRAFT, selectedOptions: ['B'], notes: { A: 'old', B: 'why' } }
+    expect(buildAnswers([single], { q2: draft }, true)).toEqual([{ id: 'q2', selectedOptions: ['B'], notes: [{ option: 'B', text: 'why' }] }])
+  })
+
+  it('never puts a note on a typed Other answer', () => {
+    const draft = { ...EMPTY_ASK_QUESTION_DRAFT, otherSelected: true, customInput: 'mine', notes: { A: 'hidden' } }
+    expect(buildAnswers([single], { q2: draft }, true)).toEqual([{ id: 'q2', selectedOptions: [], customInput: 'mine' }])
+  })
+
+  it('sends no notes field when there are none, or when the card is not a refract_ask card', () => {
+    const draft = { ...EMPTY_ASK_QUESTION_DRAFT, selectedOptions: ['A'], notes: { A: 'x' } }
+    expect(buildAnswers([multi], { q1: draft }, false)).toEqual([{ id: 'q1', selectedOptions: ['A'] }])
+    expect(buildAnswers([multi], { q1: { ...draft, notes: {} } }, true)).toEqual([{ id: 'q1', selectedOptions: ['A'] }])
   })
 })

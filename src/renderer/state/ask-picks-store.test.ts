@@ -40,3 +40,34 @@ describe('replaceQuestionDraft', () => {
     expect(useAskPicksStore.getState().bySession.s1?.r1?.byQuestionId.q2?.selectedOptions).toEqual(['Z'])
   })
 })
+
+describe('setOptionNote (#1987)', () => {
+  it('saves a trimmed note on a listed option', () => {
+    useAskPicksStore.getState().setOptionNote('s1', 'r1', 'q1', 'Alpha', '  why  ')
+    expect(read()?.notes).toEqual({ Alpha: 'why' })
+  })
+
+  it('removes the note when the text is empty after trimming', () => {
+    useAskPicksStore.getState().setOptionNote('s1', 'r1', 'q1', 'Alpha', 'why')
+    useAskPicksStore.getState().setOptionNote('s1', 'r1', 'q1', 'Alpha', '   ')
+    expect(read()?.notes).toEqual({})
+  })
+
+  it('keeps the note while its option is unpicked, so picking it again restores it', () => {
+    const store = useAskPicksStore.getState()
+    store.toggleMultiOption('s1', 'r1', 'q1', 'Alpha')
+    store.setOptionNote('s1', 'r1', 'q1', 'Alpha', 'why')
+    store.toggleMultiOption('s1', 'r1', 'q1', 'Alpha')
+    expect(read()).toMatchObject({ selectedOptions: [], notes: { Alpha: 'why' } })
+    store.toggleMultiOption('s1', 'r1', 'q1', 'Alpha')
+    expect(read()).toMatchObject({ selectedOptions: ['Alpha'], notes: { Alpha: 'why' } })
+  })
+
+  it('keeps notes on other options when one changes', () => {
+    const store = useAskPicksStore.getState()
+    store.setOptionNote('s1', 'r1', 'q1', 'Alpha', 'a')
+    store.setOptionNote('s1', 'r1', 'q1', 'Beta', 'b')
+    store.setOptionNote('s1', 'r1', 'q1', 'Alpha', '')
+    expect(read()?.notes).toEqual({ Beta: 'b' })
+  })
+})

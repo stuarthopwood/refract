@@ -28,6 +28,30 @@ export function choiceDigitIndex(event: ChoiceKeyEvent, optionCount: number): nu
   return index < Math.min(optionCount, MAX_DIGIT_OPTIONS) ? index : null
 }
 
+/** Set on the wrapper of each listed option when notes are on, so the key handler can tell which option a focused control (row, Note button, Edit, remove) belongs to. */
+export const ASK_OPTION_ATTRIBUTE = 'data-ask-option'
+
+/** A bare N or n, the note shortcut: never typed text, a chord, a held key or IME composition. */
+export function isNoteShortcut(event: ChoiceKeyEvent): boolean {
+  if (event.defaultPrevented || event.repeat || event.nativeEvent.isComposing) return false
+  if (event.ctrlKey || event.metaKey || event.altKey || isTextTarget(event.target)) return false
+  return event.key === 'n' || event.key === 'N'
+}
+
+/** The zero-based listed option the focused element belongs to, or null (the Other row and everything outside the options have none). */
+export function focusedOptionIndex(container: ParentNode | null, target: EventTarget | null): number | null {
+  const wrapper = target instanceof Element ? target.closest(`[${ASK_OPTION_ATTRIBUTE}]`) : null
+  if (!container || !wrapper) return null
+  const index = Array.from(container.querySelectorAll(`[${ASK_OPTION_ATTRIBUTE}]`)).indexOf(wrapper)
+  return index < 0 ? null : index
+}
+
+/** What opening a note on an option must do first, so the N key and the Note button agree: nothing when it is already picked, else pick it the way its group does (select on single-choice, tick on multi-select). */
+export function pickBeforeNote(multi: boolean, picked: boolean): 'select' | 'toggle' | null {
+  if (picked) return null
+  return multi ? 'toggle' : 'select'
+}
+
 /** The attribute a row sets when it handles Enter itself, so the card-level Enter skips it. */
 export const ACCEPTS_ENTER_ATTRIBUTE = 'data-ask-accepts-enter'
 
