@@ -49,7 +49,7 @@ function buildAnswers(questions: AskQuestion[], byQuestionId: Record<string, Ask
 }
 
 /** D16: a static deadline line, never a ticking countdown -- OMP owns the timer. */
-function formatDeadlineText(deadlineAt: number, questions: AskQuestion[]): string {
+export function formatDeadlineText(deadlineAt: number, questions: AskQuestion[]): string {
   const time = new Date(deadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   const anyRecommended = questions.some((question) => recommendedLabels(question).length > 0)
   return anyRecommended
@@ -153,6 +153,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   }
 
   if (!activeQuestion) return null
+  const recommendedNames = recommendedLabels(activeQuestion)
 
   const allComplete = questions.every((question) => isQuestionComplete(question, byQuestionId[question.id] ?? EMPTY_ASK_QUESTION_DRAFT))
   const activeIncomplete = !isQuestionComplete(activeQuestion, byQuestionId[activeQuestion.id] ?? EMPTY_ASK_QUESTION_DRAFT)
@@ -318,8 +319,8 @@ export function AskCard({ sessionId, request }: AskCardProps) {
             {busyAction === 'cancel' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
             {busyAction === 'cancel' ? 'Cancelling…' : 'Cancel'}
           </Button>
-          {recommendedLabels(activeQuestion).length > 0 && (
-            <Button size="sm" variant="outline" aria-label={`Use recommended: ${recommendedLabels(activeQuestion).join(', ')}`} aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
+          {recommendedNames.length > 0 && (
+            <Button size="sm" variant="outline" aria-label={`Use recommended: ${recommendedNames.join('; ')}`} aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
               Use Recommended
               <span aria-hidden>↵</span>
             </Button>
