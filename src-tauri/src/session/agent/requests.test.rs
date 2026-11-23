@@ -39,9 +39,15 @@ fn host_ask_card_serialises_host_call_so_the_renderer_offers_notes() {
         deadline_at: None,
         host_call,
     };
-    assert_eq!(serde_json::to_value(ask(true)).unwrap()["hostCall"], json!(true));
+    assert_eq!(
+        serde_json::to_value(ask(true)).unwrap()["hostCall"],
+        json!(true)
+    );
     // A native ask never carries notes, so the field stays off the wire.
-    assert!(serde_json::to_value(ask(false)).unwrap().get("hostCall").is_none());
+    assert!(serde_json::to_value(ask(false))
+        .unwrap()
+        .get("hostCall")
+        .is_none());
 }
 #[test]
 fn is_chat_answer_rejects_an_object_with_none_of_the_recognised_fields() {
