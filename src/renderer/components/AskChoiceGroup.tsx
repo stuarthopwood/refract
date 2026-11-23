@@ -16,6 +16,8 @@ export interface AskChoiceOption {
   description?: string | undefined
   /** OMP's recommended option: tinted row plus an icon and "Recommended" text (never colour alone), and ", Recommended" for assistive tech. */
   recommended?: boolean | undefined
+  /** Why it is recommended; shown after the "Recommended" cue and read as the row's description. Ignored on a row that is not recommended. */
+  reason?: string | undefined
 }
 
 export interface AskChoiceOther {
@@ -87,13 +89,24 @@ function OtherInput({ other, disabled }: { other: AskChoiceOther; disabled: bool
   )
 }
 
-function OptionLabel({ option, labelId, descId }: { option: AskChoiceOption; labelId: string; descId: string }) {
+/** The accessible description of a row: its detail text and, on a recommended row, the reason. */
+export function describedByOf(option: AskChoiceOption, descId: string, reasonId: string): string | undefined {
+  const ids = [option.description ? descId : undefined, option.recommended && option.reason ? reasonId : undefined].filter(Boolean)
+  return ids.length > 0 ? ids.join(' ') : undefined
+}
+
+function OptionLabel({ option, labelId, descId, reasonId }: { option: AskChoiceOption; labelId: string; descId: string; reasonId: string }) {
   return (
     <>
       <span id={labelId} className="col-start-2 min-w-0 break-words">
         {option.label}
-        {option.recommended && <RecommendedBadge />}
+        {option.recommended && <RecommendedBadge reason={option.reason} />}
       </span>
+      {option.recommended && option.reason && (
+        <span id={reasonId} className="sr-only">
+          {option.reason}
+        </span>
+      )}
       {option.description && (
         <span id={descId} className="col-start-2 w-full min-w-0 break-words text-xs text-muted-foreground">
           {option.description}
@@ -154,7 +167,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
   const { multi, options, selected, otherSelected, disabled, idPrefix, other } = props
   const [arrowGuard] = React.useState(createArrowGuard)
   const otherValue = otherSentinel(options)
-  const ids = (index: number) => ({ labelId: `${idPrefix}-opt-${index}-label`, descId: `${idPrefix}-opt-${index}-desc` })
+  const ids = (index: number) => ({ labelId: `${idPrefix}-opt-${index}-label`, descId: `${idPrefix}-opt-${index}-desc`, reasonId: `${idPrefix}-opt-${index}-reason` })
   const otherInput = other.visible ? <OtherInput other={other} disabled={disabled} /> : null
   const hintId = `${idPrefix}-multi-hint`
 
@@ -176,7 +189,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
           </span>
         </div>
         {options.map((option, index) => {
-          const { labelId, descId } = ids(index)
+          const { labelId, descId, reasonId } = ids(index)
           return (
             <CheckboxItem
               key={option.value}
@@ -185,13 +198,13 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
               onCheckedChange={() => !disabled && props.onToggle(option.value)}
               aria-labelledby={labelId}
               aria-keyshortcuts={index < MAX_DIGIT_OPTIONS ? String(index + 1) : undefined}
-              aria-describedby={option.description ? descId : undefined}
+              aria-describedby={describedByOf(option, descId, reasonId)}
               {...rowProps(option, props.onAcceptRecommended)}
             >
               <span aria-hidden className={cn(OPTION_MARK_CLASS, CHECKBOX_BOX_CLASS, CHECKED_MARK_CLASS)}>
                 <CheckboxIndicator />
               </span>
-              <OptionLabel option={option} labelId={labelId} descId={descId} />
+              <OptionLabel option={option} labelId={labelId} descId={descId} reasonId={reasonId} />
             </CheckboxItem>
           )
         })}
@@ -226,7 +239,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         }}
       >
         {options.map((option, index) => {
-          const { labelId, descId } = ids(index)
+          const { labelId, descId, reasonId } = ids(index)
           return (
             <RadioGroupItem
               key={option.value}
@@ -234,7 +247,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
               aria-disabled={disabled}
               aria-labelledby={labelId}
               aria-keyshortcuts={index < MAX_DIGIT_OPTIONS ? String(index + 1) : undefined}
-              aria-describedby={option.description ? descId : undefined}
+              aria-describedby={describedByOf(option, descId, reasonId)}
               // A double-click's second click would otherwise pick the same slot in the next question.
               onClick={(event) => props.onPick && !arrowGuard.isMoving() && event.detail < 2 && props.onPick(option.value)}
               {...rowProps(option, props.onAcceptRecommended)}
@@ -242,7 +255,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
               <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
                 <RadioGroupIndicator />
               </span>
-              <OptionLabel option={option} labelId={labelId} descId={descId} />
+              <OptionLabel option={option} labelId={labelId} descId={descId} reasonId={reasonId} />
             </RadioGroupItem>
           )
         })}

@@ -1,28 +1,37 @@
 import type { AskQuestion } from '../../../shared/model'
 import type { AskDraftQuestion } from '@/state/ask-picks-store'
 
-/** OMP sends one question-level index (requests.rs); an out-of-range or negative one counts as none. */
-export function recommendedIndex(question: AskQuestion): number | undefined {
+/** OMP's native ask sends one question-level index (requests.rs); an out-of-range or negative one counts as none. */
+function questionLevelIndex(question: AskQuestion): number | undefined {
   const index = question.recommended
   return index !== undefined && Number.isInteger(index) && index >= 0 && index < question.options.length ? index : undefined
 }
 
-export function recommendedLabel(question: AskQuestion): string | undefined {
-  const index = recommendedIndex(question)
-  return index === undefined ? undefined : question.options[index]?.label
+/** Per-option flags (`refract_ask`) win; only a question with none flagged, an old transcript or native ask, falls back to its one index. One entry per option. */
+export function recommendedFlags(question: AskQuestion): boolean[] {
+  if (question.options.some((option) => option.recommended === true)) return question.options.map((option) => option.recommended === true)
+  const index = questionLevelIndex(question)
+  return question.options.map((_, position) => position === index)
+}
+
+export function recommendedLabels(question: AskQuestion): string[] {
+  const flags = recommendedFlags(question)
+  return question.options.filter((_, position) => flags[position]).map((option) => option.label)
 }
 
 /** What opening a question preselects: only a single-choice question's recommended option; a tick box is never ticked for the user. */
 export function initialPickFor(question: AskQuestion): string | undefined {
-  return question.multi ? undefined : recommendedLabel(question)
+  return question.multi ? undefined : recommendedLabels(question)[0]
 }
 
-/** The draft after "Use Recommended": the recommended option picked (ticked, for multiple choice, keeping other ticks), Other dropped on a single choice. */
+/** The draft after "Use Recommended": a single choice takes its recommended option and drops Other; a multiple choice ticks every recommended option, keeping other ticks. */
 export function draftAfterUseRecommended(question: AskQuestion, draft: AskDraftQuestion): AskDraftQuestion | undefined {
-  const label = recommendedLabel(question)
-  if (label === undefined) return undefined
-  if (!question.multi) return { ...draft, selectedOptions: [label], otherSelected: false }
-  return draft.selectedOptions.includes(label) ? draft : { ...draft, selectedOptions: [...draft.selectedOptions, label] }
+  const labels = recommendedLabels(question)
+  const first = labels[0]
+  if (first === undefined) return undefined
+  if (!question.multi) return { ...draft, selectedOptions: [first], otherSelected: false }
+  const missing = labels.filter((label) => !draft.selectedOptions.includes(label))
+  return missing.length === 0 ? draft : { ...draft, selectedOptions: [...draft.selectedOptions, ...missing] }
 }
 
 /** What the card needs to know about the focused element; `AskCard` builds it from `document.activeElement` with `focusProbeOf`. */
@@ -52,7 +61,7 @@ export function focusProbeOf(active: Element | null, sessionId: string): FocusPr
 
 /** Only a single-choice question opens on its recommended row: Enter there accepts and advances, which must never tick and submit an unread multiple-choice answer. */
 export function opensOnRecommended(question: AskQuestion): boolean {
-  return !question.multi && recommendedIndex(question) !== undefined
+  return !question.multi && recommendedLabels(question).length > 0
 }
 
 /**
