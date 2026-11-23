@@ -142,6 +142,17 @@ fn check_question(
     check_options(&name, question)
 }
 
+/// Line breaks, control, invisible and direction-control characters hide or reorder card text;
+/// the joiners and emoji selector stay so names and emoji survive.
+fn has_hidden_char(text: &str) -> bool {
+    text.contains(|c: char| {
+        c.is_control()
+            || matches!(c, '\u{2028}' | '\u{2029}')
+            || (!matches!(c, '\u{200C}' | '\u{200D}' | '\u{FE0F}')
+                && crate::github::profile::is_invisible_format(c))
+    })
+}
+
 fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> {
     for (index, option) in question.options.iter().enumerate() {
         if option.label.trim().is_empty() {
@@ -150,12 +161,7 @@ fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> 
                 index + 1
             )));
         }
-        if option.label.contains(|c: char| {
-            c.is_control()
-                || matches!(c, '\u{2028}' | '\u{2029}')
-                || (!matches!(c, '\u{200C}' | '\u{200D}' | '\u{FE0F}')
-                    && crate::github::profile::is_invisible_format(c))
-        }) {
+        if has_hidden_char(&option.label) {
             return Err(invalid(format!(
                 "option {} of {name} has a label with line breaks, control, invisible or direction-control characters; \
 labels must be a single line of plain text",
@@ -179,9 +185,10 @@ so set recommended to true or drop the reason",
                     option.label
                 )));
             }
-            if reason.contains(['\n', '\r']) {
+            if has_hidden_char(reason) {
                 return Err(invalid(format!(
-                    "the reason for option \"{}\" of {name} must be a single line without line breaks",
+                    "the reason for option \"{}\" of {name} has line breaks, control, invisible or direction-control characters; \
+a reason must be a single line of plain text",
                     option.label
                 )));
             }

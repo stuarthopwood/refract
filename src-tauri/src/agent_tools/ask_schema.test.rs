@@ -124,6 +124,40 @@ fn a_multiple_choice_question_may_recommend_several_options_each_with_a_reason()
 }
 
 #[test]
+fn a_reason_with_a_line_break_control_invisible_or_direction_character_is_invalid_input() {
+    for reason in [
+        "Fast\nand cheap",
+        "Fast\rand cheap",
+        "Fast\u{2028}and cheap",
+        "Fast\u{2029}and cheap",
+        "Fast\u{0007}and cheap",
+        "Fast\u{202E}and cheap",
+        "Fast\u{200B}and cheap",
+    ] {
+        let args = question_with(
+            json!([{ "label": "A", "recommended": true, "reason": reason }]),
+            false,
+        );
+        let err = parse(&args).unwrap_err();
+        assert_eq!(err.code, INVALID_INPUT, "reason {reason:?}");
+        assert!(
+            err.message.contains("single line of plain text"),
+            "{}",
+            err.message
+        );
+    }
+}
+
+#[test]
+fn a_plain_reason_with_punctuation_and_an_emoji_is_accepted() {
+    let args = question_with(
+        json!([{ "label": "A", "recommended": true, "reason": "Cheaper, and it ships today \u{1F468}\u{200D}\u{1F4BB}" }]),
+        false,
+    );
+    assert!(parse(&args).is_ok());
+}
+
+#[test]
 fn the_tool_description_says_a_reason_belongs_to_a_recommended_option() {
     assert!(description().contains("only accepted on a recommended option"));
 }
