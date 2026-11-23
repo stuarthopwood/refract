@@ -159,7 +159,12 @@ function readAskAnswers(item: AskToolItem, questions: { id?: string; question: s
     })
   }
   const numbered = readNumberedAnswers(item.output, questions)
-  if (numbered) return numbered.map((text) => ({ text, timedOut: false }))
+  if (numbered) {
+    return numbered.answers.map((answer) => ({
+      text: [formatAskAnswerText(answer.picks.map((pick) => pick.label), answer.typed), ...answer.notes.map((note) => `Note on ${note.option}: ${note.text}`)].join('\n'),
+      timedOut: false
+    }))
+  }
   const selectedOptions = details && Array.isArray(details.selectedOptions) ? details.selectedOptions.filter((o): o is string => typeof o === 'string') : []
   const customInput = details && typeof details.customInput === 'string' ? details.customInput : ''
   const timedOut = details?.timedOut === true

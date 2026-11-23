@@ -4,58 +4,73 @@ import { readNumberedAnswers } from './readNumberedAnswers'
 
 const DB = { question: 'Which database?', options: ['Postgres', 'MySQL'] }
 
-describe('readNumberedAnswers (#1989)', () => {
-  it('reads a picked recommended option back to the live wording', () => {
+const answersOf = (text: string, questions: { question: string; options: string[] }[]) => readNumberedAnswers(text, questions)?.answers
+
+describe('readNumberedAnswers (#1989, #1988)', () => {
+  it('reads a picked recommended option back to the live wording and flags it', () => {
     const text = 'The developer answered 1 question.\n1. Which database? Picked: A "Postgres" (recommended).'
-    expect(readNumberedAnswers(text, [DB])).toEqual(['Postgres'])
+    expect(answersOf(text, [DB])).toEqual([{ picks: [{ label: 'Postgres', recommended: true }], typed: '', notes: [] }])
   })
 
-  it('reads typed text as Other and joins it after the picks', () => {
+  it('words a pick by the live option its letter names', () => {
+    const text = 'The developer answered 1 question.\n1. Which database? Picked: B "my sql".'
+    expect(answersOf(text, [DB])?.[0]?.picks).toEqual([{ label: 'MySQL', recommended: false }])
+  })
+
+  it('reads typed text separately from the picks', () => {
     const text = 'The developer answered 1 question.\n1. Which database? Picked: B "MySQL". Typed: "or SQLite".'
-    expect(readNumberedAnswers(text, [DB])).toEqual(['MySQL, Other: or SQLite'])
+    expect(answersOf(text, [DB])).toEqual([{ picks: [{ label: 'MySQL', recommended: false }], typed: 'or SQLite', notes: [] }])
   })
 
-  it('maps a note letter to the option label and keeps the note on its own line', () => {
+  it('maps a note letter to the option label', () => {
     const text = 'The developer answered 1 question.\n1. Which database? Picked: A "Postgres".\n Note on A: use v16 please.'
-    expect(readNumberedAnswers(text, [DB])).toEqual(['Postgres\nNote on Postgres: use v16 please'])
+    expect(answersOf(text, [DB])?.[0]?.notes).toEqual([{ option: 'Postgres', text: 'use v16 please' }])
   })
 
-  it('reads an unanswered question as None selected', () => {
+  it('reads an unanswered question as no picks and no typed text', () => {
     const text = 'The developer answered 1 question.\n1. Which database? No answer.'
-    expect(readNumberedAnswers(text, [DB])).toEqual(['None selected'])
+    expect(answersOf(text, [DB])).toEqual([{ picks: [], typed: '', notes: [] }])
   })
 
   it('still finds a question longer than a note whose line breaks the host flattened', () => {
     const long = `${'q'.repeat(1200)}\nsecond line`
     const flat = `${'q'.repeat(1200)} second line`
     const text = `The developer answered 1 question.\n1. ${flat} Picked: A "Postgres".`
-    expect(readNumberedAnswers(text, [{ question: long, options: ['Postgres'] }])).toEqual(['Postgres'])
+    expect(answersOf(text, [{ question: long, options: ['Postgres'] }])?.[0]?.picks).toEqual([{ label: 'Postgres', recommended: false }])
   })
 
   it('matches a question carrying Unicode line breaks and bidi characters', () => {
     const text = 'The developer answered 1 question.\n1. Which database? Picked: A "Postgres".'
     const question = { question: 'Which\u2028data\u202Ebase?', options: ['Postgres'] }
-    expect(readNumberedAnswers(text, [question])).toEqual(['Postgres'])
+    expect(answersOf(text, [question])?.[0]?.picks).toEqual([{ label: 'Postgres', recommended: false }])
   })
 
   it('returns undefined for text that is not a numbered result', () => {
     expect(readNumberedAnswers('Some other output', [DB])).toBeUndefined()
+    expect(readNumberedAnswers('The developer cancelled the questions.', [DB])).toBeUndefined()
     expect(readNumberedAnswers(undefined, [DB])).toBeUndefined()
   })
 
   it('reads every question of a two-question result', () => {
     const text = 'The developer answered 2 questions.\n1. Which database? Picked: A "Postgres".\n2. Which cache? Picked: B "Redis".'
     const cache = { question: 'Which cache?', options: ['Memcached', 'Redis'] }
-    expect(readNumberedAnswers(text, [DB, cache])).toEqual(['Postgres', 'Redis'])
+    expect(answersOf(text, [DB, cache])?.map((answer) => answer.picks[0]?.label)).toEqual(['Postgres', 'Redis'])
   })
 
   it('names a note on a label the question never offered by that label', () => {
     const text = 'The developer answered 1 question.\n1. Which database? Picked: A "Postgres".\n Note on "Odd label": keep it.'
-    expect(readNumberedAnswers(text, [DB])).toEqual(['Postgres\nNote on Odd label: keep it'])
+    expect(answersOf(text, [DB])?.[0]?.notes).toEqual([{ option: 'Odd label', text: 'keep it' }])
   })
 
   it('reads a pick that carries no letter', () => {
     const text = 'The developer answered 1 question.\n1. Which database? Picked: "Postgres".'
-    expect(readNumberedAnswers(text, [DB])).toEqual(['Postgres'])
+    expect(answersOf(text, [DB])?.[0]?.picks).toEqual([{ label: 'Postgres', recommended: false }])
+  })
+
+  it('reads the developer as the answerer unless the result opens with Away Mode', () => {
+    const human = 'The developer answered 1 question.\n1. Which database? Picked: A "Postgres".'
+    const away = 'Away Mode answered 1 question.\n1. Which database? Picked: A "Postgres".'
+    expect(readNumberedAnswers(human, [DB])?.byAway).toBe(false)
+    expect(readNumberedAnswers(away, [DB])?.byAway).toBe(true)
   })
 })
