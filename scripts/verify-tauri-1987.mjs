@@ -176,7 +176,8 @@ async function main() {
     await pressN(cdp);
     await cdp.waitFor(`!!(${EDITOR('Dual write')})`, { timeoutMs: 10_000, label: 'editor open for the cap' });
     await typeText(cdp, 'x'.repeat(1200));
-    const cap = await cdp.evaluate(`({ length: ${EDITOR('Dual write')}.value.length, counter: document.querySelector('[role="status"]')?.textContent ?? null })`);
+    // The counter sits in the editor's own block; the first role=status on the page is another live region.
+    const cap = await cdp.evaluate(`({ length: ${EDITOR('Dual write')}.value.length, counter: ${EDITOR('Dual write')}.closest('div.ml-6')?.querySelector('[role="status"]')?.textContent ?? null })`);
     check(cap.length === 1000 && cap.counter === '1000/1000', '1l. The editor stops at 1000 characters and the counter shows 1000/1000', cap);
     await shot('03-cap-counter.png');
     await pressEscape(cdp);
@@ -206,7 +207,8 @@ async function main() {
     await focusRow('checkbox', 'Lint');
     await pressEnter(cdp);
     const r2 = await result(two);
-    check(!r2.isError && / Note on Lint: Fast only\./.test(r2.text) && / Note on Tests: Unit tests\./.test(r2.text) && !/Docs build|Skip this one/.test(r2.text), '2b. Only the notes on the two ticked options are sent (" Note on A: ...")', r2);
+    // The host names options by letter (A, B), not label: "Note on A: ...".
+    check(!r2.isError && /Picked: A "Lint", B "Tests"\./.test(r2.text) && /\n Note on A: Fast only\./.test(r2.text) && /\n Note on B: Unit tests\./.test(r2.text) && !/Docs build|Skip this one|Note on C/.test(r2.text), '2b. Only the notes on the two ticked options are sent (" Note on A: ...")', r2);
     await cdp.waitFor(`!(${ROW('checkbox', 'Lint')})`, { timeoutMs: 15_000, label: 'multi-select card closed' });
 
     // 3. N inside the Other text field types an n and opens no editor.
