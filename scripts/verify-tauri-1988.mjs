@@ -1,10 +1,8 @@
 #!/usr/bin/env node
 // Live CDP check for #1988: the Asked-user line that replaces a finished refract_ask card.
-// A serve-mode fake omp (the Session) replays refract_ask host_tool_call frames; the developer side is real CDP input.
-// Covers: s1 answered with the recommended pick and a note (collapsed digest, expand toggle, keyboard focus ring on the card);
-// s3 cancelled; s6 a spoofed `byAway: true` answer that must never read "by Away Mode".
-// Not covered: s4 HTML-form answers (the fake omp only replays refract_ask host calls, no native `ask` with args.html), and
-// relaunch/history scenarios (Away reload, old saved transcript), which are a follow-up.
+// A serve-mode fake omp replays refract_ask host_tool_call frames; the developer side is real CDP input.
+// Covers s1 answered (recommended pick, note, expand, focus ring), s3 cancelled, s6 spoofed `byAway`.
+// HTML-form and relaunch scenarios are #2160: the fake omp cannot produce them yet.
 // Usage: REFRACT_1988_ROOT=<task folder> REFRACT_1988_EXE=<private exe copy> node scripts/verify-tauri-1988.mjs
 
 // Set REFRACT_1988_RED=1 to run one assertion with a deliberately wrong expectation (proves the checks can fail).
