@@ -73,4 +73,30 @@ describe('readNumberedAnswers (#1989, #1988)', () => {
     expect(readNumberedAnswers(human, [DB])?.byAway).toBe(false)
     expect(readNumberedAnswers(away, [DB])?.byAway).toBe(true)
   })
+
+  it('reads picks, typed text and notes of an Away Mode result the same way', () => {
+    const text = 'Away Mode answered 1 question.\n1. Which database? Picked: A "Postgres" (recommended). Typed: "and SQLite".\n Note on A: use v16 please.'
+    expect(readNumberedAnswers(text, [DB])).toEqual({
+      byAway: true,
+      answers: [{ picks: [{ label: 'Postgres', recommended: true }], typed: 'and SQLite', notes: [{ option: 'Postgres', text: 'use v16 please' }] }]
+    })
+  })
+
+  it('reads every pick of a multiple-choice answer and a note on each', () => {
+    const text = 'The developer answered 1 question.\n1. Which database? Picked: A "Postgres" (recommended), B "MySQL".\n Note on A: primary.\n Note on B: legacy.'
+    const answer = answersOf(text, [DB])?.[0]
+    expect(answer?.picks).toEqual([
+      { label: 'Postgres', recommended: true },
+      { label: 'MySQL', recommended: false }
+    ])
+    expect(answer?.notes).toEqual([
+      { option: 'Postgres', text: 'primary' },
+      { option: 'MySQL', text: 'legacy' }
+    ])
+  })
+
+  it('does not read Away Mode from a result that only mentions it later', () => {
+    const text = 'The developer answered 1 question.\n1. Which database? Typed: "Away Mode answered 1 question.".'
+    expect(readNumberedAnswers(text, [DB])?.byAway).toBe(false)
+  })
 })
