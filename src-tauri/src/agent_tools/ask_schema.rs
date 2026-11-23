@@ -48,8 +48,9 @@ pub fn description() -> &'static str {
 Use it when you need a decision only they can make. Give each question a unique `id`, the \
 `question` text and its `options`; set `multi` to let them pick several. The developer can also \
 type their own answer. Mark the option you would choose with `recommended: true` and say why in \
-`reason`, one line of at most 200 characters; a single-choice question takes at most one \
-recommended option. The result lists each question with what the developer picked or typed, and \
+`reason`, one line of at most 200 characters; a `reason` is only accepted on a recommended \
+option. A single-choice question takes at most one recommended option; a `multi` question may \
+recommend several. The result lists each question with what the developer picked or typed, and \
 any note they added to an option. If they cancel, you are told so; carry on without the answers."
 }
 
@@ -60,7 +61,7 @@ fn option() -> Value {
             "label": { "type": "string", "description": "Short choice text." },
             "description": { "type": "string", "description": "Optional detail shown under the label." },
             "recommended": { "type": "boolean", "description": "This is the option you recommend." },
-            "reason": { "type": "string", "maxLength": MAX_REASON_CHARS, "description": "Why you recommend it: one line, at most 200 characters." }
+            "reason": { "type": "string", "maxLength": MAX_REASON_CHARS, "description": "Why you recommend it: one line, at most 200 characters. Only on an option with recommended true." }
         },
         "required": ["label"],
         "additionalProperties": false
@@ -171,6 +172,13 @@ labels must be a single line of plain text",
             )));
         }
         if let Some(reason) = &option.reason {
+            if !option.recommended {
+                return Err(invalid(format!(
+                    "option \"{}\" of {name} has a reason but is not recommended; a reason belongs only to a recommended option, \
+so set recommended to true or drop the reason",
+                    option.label
+                )));
+            }
             if reason.contains(['\n', '\r']) {
                 return Err(invalid(format!(
                     "the reason for option \"{}\" of {name} must be a single line without line breaks",
