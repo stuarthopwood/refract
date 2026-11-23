@@ -73,7 +73,10 @@ fn a_reason_on_a_recommended_option_is_accepted_and_reaches_the_card() {
     let questions = parse(&args).unwrap();
     match card("call-1", &questions) {
         PendingRequest::Ask { questions, .. } => {
-            assert_eq!(questions[0].options[0].reason.as_deref(), Some("Fastest to ship"));
+            assert_eq!(
+                questions[0].options[0].reason.as_deref(),
+                Some("Fastest to ship")
+            );
             assert!(questions[0].options[0].recommended);
         }
         other => panic!("expected an ask card, got {other:?}"),
@@ -89,13 +92,20 @@ fn a_reason_on_an_option_that_is_not_recommended_is_invalid_input_naming_questio
         let err = parse(&question_with(options, false)).unwrap_err();
         assert_eq!(err.code, INVALID_INPUT);
         assert!(err.message.contains("question \"q1\""), "{}", err.message);
-        assert!(err.message.contains("belongs only to a recommended option"), "{}", err.message);
+        assert!(
+            err.message.contains("belongs only to a recommended option"),
+            "{}",
+            err.message
+        );
     }
 }
 
 #[test]
 fn the_unrecommended_option_with_a_reason_is_the_one_named() {
-    let args = question_with(json!([{ "label": "A" }, { "label": "B", "reason": "Cheaper" }]), true);
+    let args = question_with(
+        json!([{ "label": "A" }, { "label": "B", "reason": "Cheaper" }]),
+        true,
+    );
     let err = parse(&args).unwrap_err();
     assert!(err.message.contains("option \"B\""), "{}", err.message);
 }
