@@ -336,9 +336,14 @@ fn host_ask_reply(
         .and_then(Value::as_array)
         .ok_or_else(|| "expected an answers array for the ask request".to_string())?;
     validate_ask_answers(questions, answers)?;
-    serde_json::from_value(Value::Array(answers.clone()))
-        .map(Some)
-        .map_err(|err| format!("malformed answers: {err}"))
+    let mut replies: Vec<AskAnswer> = serde_json::from_value(Value::Array(answers.clone()))
+        .map_err(|err| format!("malformed answers: {err}"))?;
+    // The marker is the Away Mode path's alone; an entry cannot claim it for itself.
+    let by_away = answer.get("byAway") == Some(&Value::Bool(true));
+    for reply in &mut replies {
+        reply.by_away = by_away;
+    }
+    Ok(Some(replies))
 }
 
 const MAX_NOTE_CHARS: usize = 1000;

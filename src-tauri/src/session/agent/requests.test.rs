@@ -157,3 +157,41 @@ async fn a_valid_answer_to_a_host_ask_nobody_waits_for_is_request_gone_and_cance
     drop(state);
     fx.finish().await;
 }
+
+fn one_question() -> Vec<AskQuestion> {
+    vec![AskQuestion {
+        id: "q1".into(),
+        question: "Which?".into(),
+        header: None,
+        options: vec![AskOption {
+            label: "A".into(),
+            description: None,
+            recommended: true,
+            reason: None,
+        }],
+        multi: false,
+        recommended: None,
+    }]
+}
+
+#[test]
+fn a_host_ask_answer_carries_the_away_marker_only_when_the_reply_sets_it() {
+    let answers = json!([{ "id": "q1", "selectedOptions": ["A"] }]);
+    let away = host_ask_reply(&one_question(), &json!({ "answers": answers, "byAway": true }))
+        .unwrap()
+        .unwrap();
+    assert!(away[0].by_away);
+    let human = host_ask_reply(&one_question(), &json!({ "answers": answers }))
+        .unwrap()
+        .unwrap();
+    assert!(!human[0].by_away);
+}
+
+#[test]
+fn a_host_ask_answer_cannot_claim_away_mode_from_inside_an_entry() {
+    let answers = json!([{ "id": "q1", "selectedOptions": ["A"], "byAway": true }]);
+    let reply = host_ask_reply(&one_question(), &json!({ "answers": answers }))
+        .unwrap()
+        .unwrap();
+    assert!(!reply[0].by_away);
+}

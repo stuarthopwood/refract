@@ -32,6 +32,7 @@ fn answer(id: &str, selected: &[&str], typed: Option<&str>, notes: &[(&str, &str
                 text: text.to_string(),
             })
             .collect(),
+        by_away: false,
     }
 }
 
@@ -109,4 +110,27 @@ fn a_question_without_an_answer_reads_as_unanswered() {
         format_answers(&[q], &[]),
         "The developer answered 1 question.\n1. Q? No answer."
     );
+}
+
+#[test]
+fn an_away_mode_answer_is_attributed_in_the_text_and_survives_serialising() {
+    let q = question("q1", "Q?", vec![option("A", true)]);
+    let mut away = answer("q1", &["A"], None, &[]);
+    away.by_away = true;
+    let text = format_answers(std::slice::from_ref(&q), std::slice::from_ref(&away));
+    assert_eq!(
+        text,
+        "Away Mode answered 1 question.\n1. Q? Picked: A \"A\" (recommended)."
+    );
+    assert_eq!(serde_json::to_value(&away).unwrap()["byAway"], true);
+    let back: AskAnswer = serde_json::from_value(serde_json::to_value(&away).unwrap()).unwrap();
+    assert!(back.by_away);
+}
+
+#[test]
+fn a_developer_answer_carries_no_away_marker() {
+    let q = question("q1", "Q?", vec![option("A", false)]);
+    let human = answer("q1", &["A"], None, &[]);
+    assert!(format_answers(&[q], std::slice::from_ref(&human)).starts_with("The developer answered"));
+    assert!(serde_json::to_value(&human).unwrap().get("byAway").is_none());
 }
