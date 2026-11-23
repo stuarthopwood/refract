@@ -38,7 +38,7 @@ const REASON_TESTS = 'The change touches parsing, so a regression here would rea
 // The label span's first text node is the option's own label; the badge and the reason come after it.
 const ROW = (role, label) => `Array.from(document.querySelectorAll('[role="${role}"]')).find((el) => el.querySelector('.col-start-2.break-words')?.firstChild?.nodeValue?.trim() === ${JSON.stringify(label)})`;
 const BUTTON = (text) => `Array.from(document.querySelectorAll('button')).find((b) => b.textContent.replace(/\\s+/g, ' ').trim().startsWith(${JSON.stringify(text)}))`;
-const FOCUSED_LABEL = `(() => { const a = document.activeElement; return { role: a?.getAttribute?.('role') ?? null, label: a?.querySelector?.('.col-start-2.break-words')?.firstChild?.nodeValue?.trim() ?? null }; })()`;
+const FOCUSED_LABEL = `(() => { const a = document.activeElement; return { role: a?.getAttribute?.('role') ?? null, label: a?.querySelector?.('.col-start-2.break-words')?.firstChild?.nodeValue?.trim() ?? null, tag: a?.tagName ?? null, aria: a?.getAttribute?.('aria-label') ?? null, pane: a?.closest?.('[data-session-pane]')?.getAttribute('data-session-pane') ?? null }; })()`;
 const cueOf = (role, label) => `(() => {
   const row = ${ROW(role, label)}; if (!row) return null;
   const badge = row.querySelector('[data-recommended-badge]'); const reason = row.querySelector('[data-recommended-reason]');
@@ -123,6 +123,12 @@ async function main() {
     };
     const tools = records().find((r) => r.frame.type === 'set_host_tools').frame.tools.map((t) => t.name);
     check(tools.includes('refract_ask'), 'the Session registered refract_ask', tools);
+
+    // A real ask arrives after the developer sent a prompt, so focus sits in their own (empty) composer; a card never pulls focus out of another pane.
+    await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'composer enabled' });
+    log('focus before the composer click (what the first live run had when the card opened)', await cdp.evaluate(FOCUSED_LABEL));
+    await cdp.click(`document.querySelector('[aria-label="Message"]')`);
+    log('focus after the composer click', await cdp.evaluate(FOCUSED_LABEL));
 
     // 1. Single choice: one recommended option with a long reason.
     const one = send({ questions: [{ id: 'strategy', header: 'Migration', question: 'How should we roll out the schema change?', options: [{ label: 'Expand then contract', description: 'Two releases, no downtime' }, { label: 'Big-bang cutover', recommended: true, reason: REASON_ONE }, { label: 'Dual write', description: 'Write both shapes for a week' }] }] }, pid);
