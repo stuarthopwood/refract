@@ -266,17 +266,18 @@ describe('option notes slot (#1987)', () => {
   it.each([
     ['single choice', false],
     ['multiple choice', true]
-  ])('marks every option and shows its note and a Note button only on picked options, %s', (_name, multi) => {
+  ])('shows a picked option\'s note and, on an unpicked option, only a hover-revealed Note button, %s', (_name, multi) => {
     const html = renderWithNotes(multi, ['Alpha'])
     expect(html.match(/data-ask-option/g)).toHaveLength(2)
     expect(html).toContain('Note:')
-    expect(html).not.toContain('Add a note to Beta')
+    expect(html).toContain('aria-label="Add a note to Beta"')
+    expect(html).toContain('group/option')
   })
 
   it.each([
     ['single choice', false],
     ['multiple choice', true]
-  ])('hides the note of an unpicked option, %s', (_name, multi) => {
+  ])('hides the note of an unpicked option but offers its Note button, %s', (_name, multi) => {
     const html = renderWithNotes(multi, ['Beta'])
     expect(html).not.toContain('Note:')
     expect(html).toContain('Add a note to Beta')

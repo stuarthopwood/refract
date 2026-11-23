@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ASK_OPTION_ATTRIBUTE, focusedOptionIndex, isNoteShortcut } from './askChoiceKeys'
+import { ASK_OPTION_ATTRIBUTE, focusedOptionIndex, isNoteShortcut, pickBeforeNote } from './askChoiceKeys'
 
 function press(key: string, extra: { ctrlKey?: boolean; altKey?: boolean; metaKey?: boolean; repeat?: boolean; isComposing?: boolean; defaultPrevented?: boolean; target?: unknown } = {}) {
   return {
@@ -32,6 +32,17 @@ describe('isNoteShortcut (#1987)', () => {
     ['N typed in a contentEditable', press('n', { target: { tagName: 'DIV', isContentEditable: true } })]
   ])('ignores %s', (_name, event) => {
     expect(isNoteShortcut(event)).toBe(false)
+  })
+})
+
+describe('pickBeforeNote (#1987)', () => {
+  it.each([
+    ['single-choice, not picked', false, false, 'select'],
+    ['multi-select, not picked', true, false, 'toggle'],
+    ['single-choice, already picked', false, true, null],
+    ['multi-select, already ticked', true, true, null]
+  ] as const)('%s', (_name, multi, picked, expected) => {
+    expect(pickBeforeNote(multi, picked)).toBe(expected)
   })
 })
 

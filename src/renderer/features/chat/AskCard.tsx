@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { AskChoiceGroup } from '@/components/AskChoiceGroup'
-import { choiceDigitIndex, focusChoiceRow, focusedOptionIndex, isNoteShortcut, isRowEnter } from '@/components/askChoiceKeys'
+import { choiceDigitIndex, focusChoiceRow, focusedOptionIndex, isNoteShortcut, isRowEnter, pickBeforeNote } from '@/components/askChoiceKeys'
 import { type AskChoiceNotes, OptionNoteHint } from '@/components/OptionNote'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -232,11 +232,19 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     focusChoiceRow(questionBodyRef.current, activeQuestion.options.findIndex((option) => option.label === label))
   }
 
+  // The N key and the Note button share this: pick the option first if needed, then open its editor.
+  const openNote = (label: string) => {
+    const pick = pickBeforeNote(activeQuestion.multi, activeDraft.selectedOptions.includes(label))
+    if (pick === 'toggle') toggleMultiOption(sessionId, request.requestId, activeQuestion.id, label)
+    else if (pick === 'select') selectSingleOption(sessionId, request.requestId, activeQuestion.id, label)
+    setEditingNote({ questionId: activeQuestion.id, label })
+  }
+
   const notes: AskChoiceNotes | undefined = request.hostCall
     ? {
         texts: activeDraft.notes,
         editing: editingLabel,
-        onEdit: (label) => setEditingNote({ questionId: activeQuestion.id, label }),
+        onEdit: openNote,
         onSave: (label, text) => {
           setOptionNote(sessionId, request.requestId, activeQuestion.id, label, text)
           closeNoteEditor(label)
@@ -249,7 +257,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
       }
     : undefined
 
-  // N acts on the focused option: it picks it first if needed, then opens the note editor. Digits pick or tick by position and Enter on a row acts like the primary button, only while focus is inside this card and not in a text box.
+  // N acts on the focused option (openNote). Digits pick or tick by position and Enter on a row acts like the primary button, only while focus is inside this card and not in a text box.
   const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (busy) return
     if (notes && isNoteShortcut(event)) {
@@ -257,11 +265,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
       const noteOption = noteIndex === null ? undefined : activeQuestion.options[noteIndex]
       if (!noteOption) return
       event.preventDefault()
-      if (!activeDraft.selectedOptions.includes(noteOption.label)) {
-        if (activeQuestion.multi) toggleMultiOption(sessionId, request.requestId, activeQuestion.id, noteOption.label)
-        else selectSingleOption(sessionId, request.requestId, activeQuestion.id, noteOption.label)
-      }
-      setEditingNote({ questionId: activeQuestion.id, label: noteOption.label })
+      openNote(noteOption.label)
       return
     }
     const index = choiceDigitIndex(event, activeQuestion.options.length)

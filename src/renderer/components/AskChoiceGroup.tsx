@@ -176,7 +176,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
   // The wrapper marks which option a focused control belongs to, so the N key can find it (askChoiceKeys).
   const withNote = (option: AskChoiceOption, picked: boolean, row: React.ReactElement) =>
     props.notes ? (
-      <div key={option.value} {...{ [ASK_OPTION_ATTRIBUTE]: '' }} className="flex flex-col gap-1">
+      <div key={option.value} {...{ [ASK_OPTION_ATTRIBUTE]: '' }} className="group/option relative flex flex-col gap-1">
         {row}
         <OptionNoteSlot value={option.value} label={option.label} picked={picked} disabled={disabled} notes={props.notes} />
       </div>

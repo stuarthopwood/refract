@@ -3,7 +3,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { OPTION_NOTE_MAX_LENGTH, OptionNoteHint, OptionNoteSlot, noteCounterText, noteEditorAction, normalizeNoteText, type AskChoiceNotes } from './OptionNote'
+import { OPTION_NOTE_MAX_LENGTH, OptionNoteHint, OptionNoteSlot, noteCounterText, noteEditorAction, noteLimitAnnouncement, normalizeNoteText, type AskChoiceNotes } from './OptionNote'
 
 const press = (key: string, isComposing = false) => ({ key, nativeEvent: { isComposing } })
 
@@ -13,6 +13,21 @@ describe('noteCounterText (#1987)', () => {
     expect(noteCounterText(899)).toBeNull()
     expect(noteCounterText(900)).toBe('900/1000')
     expect(noteCounterText(OPTION_NOTE_MAX_LENGTH)).toBe('1000/1000')
+  })
+})
+
+describe('noteLimitAnnouncement (#1987)', () => {
+  it('is silent below 900 characters', () => {
+    expect(noteLimitAnnouncement(0)).toBe('')
+    expect(noteLimitAnnouncement(899)).toBe('')
+  })
+
+  it('changes only at 900, 950 and 1000, so a live region speaks at those points and not per keystroke', () => {
+    const bands = [900, 949, 950, 999, 1000].map(noteLimitAnnouncement)
+    expect(bands[0]).toBe(bands[1])
+    expect(bands[2]).toBe(bands[3])
+    expect(new Set([bands[0], bands[2], bands[4]]).size).toBe(3)
+    expect(bands.every((text) => text !== '')).toBe(true)
   })
 })
 
@@ -42,13 +57,22 @@ function notes(overrides: Partial<AskChoiceNotes> = {}): AskChoiceNotes {
   return { texts: {}, editing: null, onEdit: vi.fn(), onSave: vi.fn(), onCancel: vi.fn(), onRemove: vi.fn(), ...overrides }
 }
 
-function slot(picked: boolean, n: AskChoiceNotes) {
-  return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(OptionNoteSlot, { value: 'A', label: 'Alpha', picked, disabled: false, notes: n })))
+function slot(picked: boolean, n: AskChoiceNotes, disabled = false) {
+  return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(OptionNoteSlot, { value: 'A', label: 'Alpha', picked, disabled, notes: n })))
 }
 
 describe('OptionNoteSlot (#1987)', () => {
-  it('shows nothing under an option that is not picked, even when it holds a note', () => {
-    expect(slot(false, notes({ texts: { A: 'kept' } }))).toBe('')
+  it('shows only a Note button, hidden until hover or focus-within, on an option that is not picked, and not its kept note', () => {
+    const html = slot(false, notes({ texts: { A: 'kept' } }))
+    expect(html).toContain('aria-label="Add a note to Alpha"')
+    expect(html).toContain('opacity-0')
+    expect(html).toContain('group-hover/option:opacity-100')
+    expect(html).toContain('group-focus-within/option:opacity-100')
+    expect(html).not.toContain('kept')
+  })
+
+  it('shows nothing under an unpicked option once the card is busy', () => {
+    expect(slot(false, notes(), true)).toBe('')
   })
 
   it('offers a labelled Note button with the N shortcut on a picked option without a note', () => {
@@ -56,27 +80,35 @@ describe('OptionNoteSlot (#1987)', () => {
     expect(html).toContain('aria-label="Add a note to Alpha"')
     expect(html).toContain('aria-keyshortcuts="N"')
     expect(html).toContain('Note')
+    expect(html).not.toContain('opacity-0')
   })
 
-  it('renders a saved note as "Note: text" in the warning token, with Edit and remove controls', () => {
+  it('renders a saved note as "Note: text" in the warning token on the warning background, with Edit and remove controls', () => {
     const html = slot(true, notes({ texts: { A: 'ship it' } }))
     expect(html).toContain('Note:')
     expect(html).toContain('ship it')
     expect(html).toContain('text-severity-warning')
+    expect(html).toContain('bg-severity-warning-bg')
     expect(html).toContain('aria-label="Edit note on Alpha"')
     expect(html).toContain('aria-label="Remove note on Alpha"')
   })
 
-  it('renders the editor, labelled and capped, while its option is being edited', () => {
+  it('renders the editor, labelled, capped and tied to its keyboard hint, while its option is being edited', () => {
     const html = slot(true, notes({ texts: { A: 'draft' }, editing: 'A' }))
     expect(html).toContain('aria-label="Note on Alpha"')
     expect(html).toContain('maxLength="1000"')
-    expect(html).toContain('Enter saves, Esc cancels')
+    expect(html).toContain('Enter saves, Escape cancels')
+    const describedBy = /<textarea[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1] ?? ''
+    expect(html).toContain(`id="${describedBy}">Enter saves, Escape cancels`)
   })
 
-  it('shows the counter in the editor once the text nears the cap', () => {
+  it('shows the counter, tied to the editor, once the text nears the cap, with a separate live region for the limit warning', () => {
     const html = slot(true, notes({ texts: { A: 'x'.repeat(950) }, editing: 'A' }))
     expect(html).toContain('950/1000')
+    expect(html).toContain('Fewer than 50 characters left')
+    const describedBy = /<textarea[^>]*aria-describedby="([^"]+)"/.exec(html)?.[1] ?? ''
+    expect(describedBy.split(' ')).toHaveLength(2)
+    expect(html).not.toMatch(/role="status"[^>]*>\s*950\/1000/)
   })
 })
 

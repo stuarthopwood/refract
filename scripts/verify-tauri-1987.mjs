@@ -161,7 +161,8 @@ async function main() {
     // Unpick hides the note, re-picking restores it.
     await cdp.click(ROW('radio', 'Big-bang cutover'));
     await cdp.waitFor(`${NOTE_TEXTS}.length === 0`, { timeoutMs: 10_000, label: 'note hidden' });
-    check(true, '1i. Picking another option hides the unpicked option\'s note', await cdp.evaluate(NOTE_TEXTS));
+    const hiddenTexts = await cdp.evaluate(NOTE_TEXTS);
+    check(hiddenTexts.length === 0, '1i. Picking another option hides the unpicked option\'s note', hiddenTexts);
     await cdp.click(ROW('radio', 'Dual write'));
     await cdp.waitFor(`${NOTE_TEXTS}.length === 1`, { timeoutMs: 10_000, label: 'note restored' });
     check((await cdp.evaluate(NOTE_TEXTS))[0] === 'Note: Keep the old shape for a week', '1j. Picking it again restores the same note', await cdp.evaluate(NOTE_TEXTS));
@@ -169,16 +170,48 @@ async function main() {
     // Remove (x).
     await cdp.click(BUTTON('Remove note on Dual write'));
     await cdp.waitFor(`${NOTE_TEXTS}.length === 0 && !!(${BUTTON('Add a note to Dual write')})`, { timeoutMs: 10_000, label: 'note removed' });
-    check(true, '1k. Remove deleted the note and offered "Add a note" again', await cdp.evaluate(NOTE_TEXTS));
+    const afterRemove = await cdp.evaluate(NOTE_TEXTS);
+    check(afterRemove.length === 0, '1k. Remove deleted the note and offered "Add a note" again', afterRemove);
+
+    // The Note button on an unpicked row: hidden at rest, shown on hover and on focus-within, and clicking it picks the row and opens the editor.
+    const GHOST = BUTTON('Add a note to Expand then contract');
+    const opacityOf = (finder) => `Number(getComputedStyle(${finder}).opacity)`;
+    const moveMouse = (x, y) => cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+    await cdp.evaluate(`document.activeElement?.blur()`);
+    await moveMouse(1, 1);
+    await sleep(400);
+    const restOpacity = await cdp.evaluate(opacityOf(GHOST));
+    check(restOpacity === 0, '1n. At rest the unpicked row\'s Note button is hidden (opacity 0)', restOpacity);
+    const rowCentre = await cdp.evaluate(`(() => { const r = (${ROW('radio', 'Expand then contract')}).getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+    await moveMouse(rowCentre.x, rowCentre.y);
+    await cdp.waitFor(`${opacityOf(GHOST)} === 1`, { timeoutMs: 5_000, label: 'unpicked Note button shown on hover' }).catch(() => {});
+    const hoverOpacity = await cdp.evaluate(opacityOf(GHOST));
+    check(hoverOpacity === 1, '1o. Hovering the unpicked row shows its Note button (opacity 1)', hoverOpacity);
+    await shot('06-hover-note-button.png');
+    check((await checked('radio', 'Expand then contract')) !== 'true', '1p. Setup: the hovered row is still unpicked', await checked('radio', 'Expand then contract'));
+    await cdp.click(GHOST);
+    await cdp.waitFor(`!!(${EDITOR('Expand then contract')})`, { timeoutMs: 10_000, label: 'editor open after clicking the Note button' });
+    const clickedPick = await checked('radio', 'Expand then contract');
+    const clickedFocus = await cdp.evaluate(FOCUS);
+    check(clickedPick === 'true' && clickedFocus.aria === 'Note on Expand then contract', '1q. Clicking the Note button picked the row and opened the editor with focus', { clickedPick, clickedFocus });
+    await pressEscape(cdp);
+    await cdp.waitFor(`!(${EDITOR('Expand then contract')})`, { timeoutMs: 10_000, label: 'ghost editor closed' });
+    await moveMouse(1, 1);
+    await focusRow('radio', 'Big-bang cutover');
+    await cdp.waitFor(`${opacityOf(BUTTON('Add a note to Big-bang cutover'))} === 1`, { timeoutMs: 5_000, label: 'unpicked Note button shown on focus-within' }).catch(() => {});
+    const focusOpacity = await cdp.evaluate(opacityOf(BUTTON('Add a note to Big-bang cutover')));
+    check(focusOpacity === 1, '1r. Keyboard focus on an unpicked row shows its Note button (focus-within), mouse away', focusOpacity);
 
     // 1000-character cap and counter.
     await focusRow('radio', 'Dual write');
     await pressN(cdp);
     await cdp.waitFor(`!!(${EDITOR('Dual write')})`, { timeoutMs: 10_000, label: 'editor open for the cap' });
     await typeText(cdp, 'x'.repeat(1200));
-    // The counter sits in the editor's own block; the first role=status on the page is another live region.
-    const cap = await cdp.evaluate(`({ length: ${EDITOR('Dual write')}.value.length, counter: ${EDITOR('Dual write')}.closest('div.ml-6')?.querySelector('[role="status"]')?.textContent ?? null })`);
+    // The counter sits in the editor's own block and is non-live; the limit warning is a separate sr-only live region.
+    const cap = await cdp.evaluate(`({ length: ${EDITOR('Dual write')}.value.length, counter: ${EDITOR('Dual write')}.closest('div.ml-6')?.querySelector('[data-note-counter]')?.textContent ?? null })`);
     check(cap.length === 1000 && cap.counter === '1000/1000', '1l. The editor stops at 1000 characters and the counter shows 1000/1000', cap);
+    const capLive = await cdp.evaluate(`${EDITOR('Dual write')}.closest('div.ml-6').querySelector('[role="status"]')?.textContent ?? null`);
+    check(capLive === 'Note is at the 1000 character limit', '1l-live. The limit warning is spoken through its own live region at the cap, not the counter', capLive);
     await shot('03-cap-counter.png');
     await pressEscape(cdp);
     await cdp.waitFor(`!(${EDITOR('Dual write')})`, { timeoutMs: 10_000, label: 'cap editor closed' });

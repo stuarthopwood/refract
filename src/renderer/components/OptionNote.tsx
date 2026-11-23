@@ -16,13 +16,21 @@ export function noteCounterText(length: number): string | null {
   return length >= COUNTER_FROM ? `${length}/${OPTION_NOTE_MAX_LENGTH}` : null
 }
 
+/** The spoken limit warning. It is constant within a band, so a live region holding it announces at 900, 950 and 1000 characters, not on every keystroke. */
+export function noteLimitAnnouncement(length: number): string {
+  if (length >= OPTION_NOTE_MAX_LENGTH) return 'Note is at the 1000 character limit'
+  if (length >= 950) return 'Fewer than 50 characters left'
+  if (length >= COUNTER_FROM) return 'Fewer than 100 characters left'
+  return ''
+}
+
 /** A note is one line of text that wraps: line breaks (typed or pasted) become spaces and the cap is enforced. */
 export function normalizeNoteText(text: string): string {
   return text.replace(/[\r\n]+/g, ' ').slice(0, OPTION_NOTE_MAX_LENGTH)
 }
 
 /** What a key does in the editor. Enter never reaches the card, and Enter that confirms IME text is not a save. */
-export function noteEditorAction(event: { key: string; shiftKey?: boolean; nativeEvent: { isComposing: boolean } }): 'save' | 'cancel' | null {
+export function noteEditorAction(event: { key: string; nativeEvent: { isComposing: boolean } }): 'save' | 'cancel' | null {
   if (event.nativeEvent.isComposing) return null
   if (event.key === 'Enter') return 'save'
   if (event.key === 'Escape') return 'cancel'
@@ -76,7 +84,7 @@ interface OptionNoteViewProps {
 /** A saved note under its option: the "Note:" label (not colour) carries it, with inline Edit and remove. */
 export function OptionNoteView({ text, optionLabel, disabled, onEdit, onRemove }: OptionNoteViewProps) {
   return (
-    <div className="ml-6 flex items-start gap-2 border-t border-border pt-2 text-xs">
+    <div className="ml-6 flex items-start gap-2 border-t border-border bg-severity-warning-bg pt-2 text-xs">
       <p className="min-w-0 flex-1 break-words">
         <span className="font-medium text-severity-warning">Note:</span> {text}
       </p>
@@ -107,6 +115,8 @@ export function OptionNoteEditor({ initial, optionLabel, onSave, onCancel }: Opt
     field.setSelectionRange(field.value.length, field.value.length)
   }, [])
   const counter = noteCounterText(text.length)
+  const hintId = React.useId()
+  const counterId = React.useId()
 
   return (
     <div className="ml-6 flex flex-col gap-1 border-t border-border pt-2">
@@ -116,6 +126,7 @@ export function OptionNoteEditor({ initial, optionLabel, onSave, onCancel }: Opt
         value={text}
         maxLength={OPTION_NOTE_MAX_LENGTH}
         aria-label={`Note on ${optionLabel}`}
+        aria-describedby={counter ? `${hintId} ${counterId}` : hintId}
         placeholder="Add a note for the agent"
         className="min-h-0 resize-none text-xs md:text-xs"
         onChange={(event) => setText(normalizeNoteText(event.target.value))}
@@ -129,12 +140,15 @@ export function OptionNoteEditor({ initial, optionLabel, onSave, onCancel }: Opt
         }}
       />
       <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-        <span>Enter saves, Esc cancels</span>
+        <span id={hintId}>Enter saves, Escape cancels</span>
         {counter && (
-          <span role="status" className="tabular-nums">
+          <span id={counterId} data-note-counter className="tabular-nums">
             {counter}
           </span>
         )}
+        <span role="status" className="sr-only">
+          {noteLimitAnnouncement(text.length)}
+        </span>
       </div>
     </div>
   )
@@ -158,9 +172,21 @@ interface OptionNoteSlotProps {
   notes: AskChoiceNotes
 }
 
-/** Under a picked option: its editor while open, else its saved note, else the Note button. An unpicked option shows nothing (its note is kept, not shown). */
+/** Under a picked option: its editor while open, else its saved note, else the Note button. An unpicked option shows only a hover or focus-within "Note [N]" button that picks it first (its kept note stays hidden until then). */
 export function OptionNoteSlot({ value, label, picked, disabled, notes }: OptionNoteSlotProps) {
-  if (!picked) return null
+  if (!picked) {
+    if (disabled) return null
+    // Overlaid on the row so revealing it never moves the rows below; opacity (not display) keeps it focusable so focus-within can show it.
+    return (
+      <OptionNoteButton
+        optionLabel={label}
+        hasNote={false}
+        disabled={disabled}
+        onClick={() => notes.onEdit(value)}
+        className="absolute inset-y-0 right-2 my-auto border-border bg-background opacity-0 group-focus-within/option:opacity-100 group-hover/option:opacity-100"
+      />
+    )
+  }
   const text = notes.texts[value]
   if (notes.editing === value) {
     return <OptionNoteEditor initial={text ?? ''} optionLabel={label} onSave={(next) => notes.onSave(value, next)} onCancel={() => notes.onCancel(value)} />

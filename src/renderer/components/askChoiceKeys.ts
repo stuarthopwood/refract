@@ -46,6 +46,12 @@ export function focusedOptionIndex(container: ParentNode | null, target: EventTa
   return index < 0 ? null : index
 }
 
+/** What opening a note on an option must do first, so the N key and the Note button agree: nothing when it is already picked, else pick it the way its group does (select on single-choice, tick on multi-select). */
+export function pickBeforeNote(multi: boolean, picked: boolean): 'select' | 'toggle' | null {
+  if (picked) return null
+  return multi ? 'toggle' : 'select'
+}
+
 /** The attribute a row sets when it handles Enter itself, so the card-level Enter skips it. */
 export const ACCEPTS_ENTER_ATTRIBUTE = 'data-ask-accepts-enter'
 
