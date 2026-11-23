@@ -139,8 +139,9 @@ async function main() {
     check(c1.marked && c1.badge === 'Recommended' && c1.reason === `· ${REASON_ONE}`, '1a. The recommended row shows "Recommended" then the full reason as "· {reason}"', c1);
     check(c1.reasonLines >= 2 && !c1.reasonClipped && c1.insideRow, '1b. The long reason wraps over several lines, is not clipped and stays inside the row', { lines: c1.reasonLines, clipped: c1.reasonClipped, inside: c1.insideRow });
     check(c1.describedBy.includes(REASON_ONE), '1c. The reason is part of the row\'s accessible description', c1.describedBy);
-    const mutedColour = await cdp.evaluate(`getComputedStyle(${ROW('radio', 'Big-bang cutover')}.querySelector('.text-xs.text-muted-foreground, [data-recommended-reason]')).color`);
-    check(c1.reasonColour === mutedColour && plain.reason === null && plain.badge === null, '1d. The reason is muted text and a plain row shows no cue or reason', { reasonColour: c1.reasonColour, plain });
+    // The expected colour comes from another row's description span, the card's own muted text, so the reason cannot pass by being compared with itself.
+    const mutedColour = await cdp.evaluate(`getComputedStyle(${ROW('radio', 'Expand then contract')}.querySelector('.text-xs.text-muted-foreground')).color`);
+    check(c1.reasonColour === mutedColour && plain.reason === null && plain.badge === null, '1d. The reason is muted text and a plain row shows no cue or reason', { reasonColour: c1.reasonColour, mutedColour, plain });
     const name1 = await getAccessibleName(cdp, ROW('radio', 'Big-bang cutover'));
     check(String(name1?.name ?? name1).replace(/\s+/g, ' ').replace(/\s+,/g, ',').trim() === 'Big-bang cutover, Recommended', '1e. The accessible name stays "Big-bang cutover, Recommended" (the reason is the description, not the name)', name1);
     check(c1.checked === 'true' && (await cdp.evaluate(FOCUSED_LABEL)).label === 'Big-bang cutover', '1f. The recommended row is preselected and focused', { checked: c1.checked, focus: await cdp.evaluate(FOCUSED_LABEL) });
@@ -162,7 +163,7 @@ async function main() {
     const ticked = await cdp.evaluate(`Array.from(document.querySelectorAll('[role="checkbox"]')).filter((el) => el.getAttribute('aria-checked') === 'true').length`);
     check(ticked === 0, '2c. Nothing is pre-ticked on a multi-select', ticked);
     const useName = await getAccessibleName(cdp, BUTTON('Use Recommended'));
-    check(String(useName?.name ?? useName).trim() === 'Use recommended: Lint, Tests', '2d. "Use Recommended" names every recommended option', useName);
+    check(String(useName?.name ?? useName).trim() === 'Use recommended: Lint; Tests', '2d. "Use Recommended" names every recommended option, joined with "; "', useName);
     await cdp.click(ROW('checkbox', 'Docs build'));
     await cdp.waitFor(`(${ROW('checkbox', 'Docs build')})?.getAttribute('aria-checked') === 'true'`, { timeoutMs: 10_000, label: 'Docs build ticked' });
     await shot('02-multi-two-recommended.png');
@@ -176,7 +177,8 @@ async function main() {
     const r3 = await result(bad);
     await sleep(1500);
     const card = await cdp.evaluate(`({ radios: document.querySelectorAll('[role="radio"]').length, text: document.body.innerText.includes('Which colour?') })`);
-    check(r3.isError && /invalid_input|colour/.test(r3.text) && /Red/.test(r3.text) && /recommended/i.test(r3.text), '3a. A reason on a non-recommended option fails with an error naming the question and the option', r3);
+    const rejection = (() => { try { return JSON.parse(r3.text)?.error ?? null; } catch { return null; } })();
+    check(r3.isError && rejection?.code === 'invalid_input' && rejection.message === 'option "Red" of question "colour" has a reason but is not recommended; a reason belongs only to a recommended option, so set recommended to true or drop the reason', '3a. A reason on a non-recommended option fails with invalid_input and the exact Rust message naming the question and the option', r3);
     check(card.radios === 0 && !card.text, '3b. No card is shown for the rejected call', card);
     await shot('03-reason-without-recommended-rejected.png');
     cdp.close();
