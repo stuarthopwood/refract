@@ -2,6 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { OPTION_NOTE_MAX_LENGTH, OptionNoteHint, OptionNoteSlot, noteCounterText, noteEditorAction, normalizeNoteText, type AskChoiceNotes } from './OptionNote'
 
 const press = (key: string, isComposing = false) => ({ key, nativeEvent: { isComposing } })
@@ -42,7 +43,7 @@ function notes(overrides: Partial<AskChoiceNotes> = {}): AskChoiceNotes {
 }
 
 function slot(picked: boolean, n: AskChoiceNotes) {
-  return renderToStaticMarkup(createElement(OptionNoteSlot, { value: 'A', label: 'Alpha', picked, disabled: false, notes: n }))
+  return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(OptionNoteSlot, { value: 'A', label: 'Alpha', picked, disabled: false, notes: n })))
 }
 
 describe('OptionNoteSlot (#1987)', () => {

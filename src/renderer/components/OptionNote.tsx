@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { XIcon } from 'lucide-react'
+import { IconButton } from '@/components/IconButton'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Textarea } from '@/components/ui/textarea'
@@ -75,14 +76,14 @@ interface OptionNoteViewProps {
 /** A saved note under its option: the "Note:" label (not colour) carries it, with inline Edit and remove. */
 export function OptionNoteView({ text, optionLabel, disabled, onEdit, onRemove }: OptionNoteViewProps) {
   return (
-    <div className="ml-7 flex items-start gap-2 border-t border-border pt-1.5 text-xs">
+    <div className="ml-6 flex items-start gap-2 border-t border-border pt-2 text-xs">
       <p className="min-w-0 flex-1 break-words">
         <span className="font-medium text-severity-warning">Note:</span> {text}
       </p>
       <OptionNoteButton optionLabel={optionLabel} hasNote disabled={disabled} onClick={onEdit} />
-      <Button type="button" size="icon-xs" variant="ghost" aria-label={`Remove note on ${optionLabel}`} aria-disabled={disabled} className="aria-disabled:opacity-50" onClick={() => !disabled && onRemove()}>
+      <IconButton label={`Remove note on ${optionLabel}`} size="icon-xs" aria-disabled={disabled} className="aria-disabled:opacity-50" onClick={() => !disabled && onRemove()}>
         <XIcon aria-hidden />
-      </Button>
+      </IconButton>
     </div>
   )
 }
@@ -108,7 +109,7 @@ export function OptionNoteEditor({ initial, optionLabel, onSave, onCancel }: Opt
   const counter = noteCounterText(text.length)
 
   return (
-    <div className="ml-7 flex flex-col gap-1 border-t border-border pt-1.5">
+    <div className="ml-6 flex flex-col gap-1 border-t border-border pt-2">
       <Textarea
         ref={ref}
         rows={1}
@@ -167,5 +168,5 @@ export function OptionNoteSlot({ value, label, picked, disabled, notes }: Option
   if (text) {
     return <OptionNoteView text={text} optionLabel={label} disabled={disabled} onEdit={() => notes.onEdit(value)} onRemove={() => notes.onRemove(value)} />
   }
-  return <OptionNoteButton optionLabel={label} hasNote={false} disabled={disabled} onClick={() => notes.onEdit(value)} className="ml-7 self-start" />
+  return <OptionNoteButton optionLabel={label} hasNote={false} disabled={disabled} onClick={() => notes.onEdit(value)} className="ml-6 self-start" />
 }

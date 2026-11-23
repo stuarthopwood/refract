@@ -2,6 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { AskChoiceGroup, createArrowGuard, describedByOf, rowProps, type AskChoiceOption } from './AskChoiceGroup'
 
 const OPTIONS: AskChoiceOption[] = [
@@ -240,21 +241,25 @@ describe('option notes slot (#1987)', () => {
   const notes = { texts: { Alpha: 'why' }, editing: null, onEdit: () => undefined, onSave: () => undefined, onCancel: () => undefined, onRemove: () => undefined }
   function renderWithNotes(multi: boolean, selected: string[]) {
     return renderToStaticMarkup(
-      createElement(AskChoiceGroup, {
-        multi,
-        options: OPTIONS,
-        selected,
-        otherSelected: false,
-        disabled: false,
-        idPrefix: 'p',
-        groupLabel: 'Pick',
-        other: { visible: false, text: '', ariaLabel: 'Other answer', onTextChange: () => undefined },
-        onSelect: () => undefined,
-        onToggle: () => undefined,
-        onSelectOther: () => undefined,
-        onToggleOther: () => undefined,
-        notes
-      })
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(AskChoiceGroup, {
+          multi,
+          options: OPTIONS,
+          selected,
+          otherSelected: false,
+          disabled: false,
+          idPrefix: 'p',
+          groupLabel: 'Pick',
+          other: { visible: false, text: '', ariaLabel: 'Other answer', onTextChange: () => undefined },
+          onSelect: () => undefined,
+          onToggle: () => undefined,
+          onSelectOther: () => undefined,
+          onToggleOther: () => undefined,
+          notes
+        })
+      )
     )
   }
 
