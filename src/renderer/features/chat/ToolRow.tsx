@@ -7,7 +7,7 @@ import { ToolCallDialog } from './ToolCallDialog'
 import { ToolIcon } from '@/components/ToolIcon'
 import { formatDuration, type RowStatus } from './toolStatus'
 import { resolveToolDisplay, toolRowLabel } from './toolDisplay'
-import { hasIntent, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, ToolTarget, toolTargetChip, useShowToolNames } from './toolRowParts'
+import { fullIntentLine, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, ToolTarget, toolTargetChip, useShowToolNames } from './toolRowParts'
 import { commandRowText, sanitizeLines } from './formatToolCommand'
 import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
@@ -18,6 +18,7 @@ type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
 interface ToolCallBodyProps {
   item: ToolItem
+  label: string
   dialogOpen: boolean
   onDialogOpenChange: (open: boolean) => void
 }
@@ -84,9 +85,10 @@ function errorLine(item: ToolItem): string {
   return line.length > QUIET_SUMMARY_MAX_CHARS ? `${line.slice(0, QUIET_SUMMARY_MAX_CHARS)}…` : line
 }
 
-function ToolCallBody({ item, dialogOpen, onDialogOpenChange }: ToolCallBodyProps) {
+export function ToolCallBody({ item, label, dialogOpen, onDialogOpenChange }: ToolCallBodyProps) {
   const isDone = item.status === 'done'
   const summary = isDone && item.tool !== 'bash' ? quietSummary(item.output) : undefined
+  const fullIntent = fullIntentLine(item.intent, label)
   const writeLineCount = item.write
     ? item.write.content === ''
       ? 0
@@ -95,6 +97,7 @@ function ToolCallBody({ item, dialogOpen, onDialogOpenChange }: ToolCallBodyProp
 
   return (
     <>
+      {fullIntent && <p className="[overflow-wrap:anywhere] text-xs text-tool-row-fg">{fullIntent}</p>}
       {item.edit && <DiffView path={item.edit.path} oldText={item.edit.oldText} newText={item.edit.newText} capped />}
       {isDone && item.write && (
         <p className="text-xs text-tool-row-fg">
@@ -127,7 +130,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   const failed = item.status === 'error'
   const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
   const memberAriaLabel = joinAriaParts([
-    toolAriaHead(item.status, display.entryTool, hasIntent(item.intent), label, rawId, target),
+    toolAriaHead(item.status, display.entryTool, item.intent, label, rawId, target),
     diffStatAriaText(editStatForItem(item)),
     memberDuration
   ])
@@ -149,7 +152,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       action={<ToolRowKebab item={item} open={open} onOpenChange={setOpen} />}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
-      <ToolCallBody item={item} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
+      <ToolCallBody item={item} label={label} dialogOpen={dialogOpen} onDialogOpenChange={onDialogOpenChange} />
     </CollapsedLine>
     </ToolRowMenu>
   )
@@ -223,12 +226,12 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
   const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
   const triggerAriaLabel = solo
     ? joinAriaParts([
-        toolAriaHead(status, display.entryTool, hasIntent(last.intent), toolLabel, rawId, soloSummaryText),
+        toolAriaHead(status, display.entryTool, last.intent, toolLabel, rawId, soloSummaryText),
         diffStatAriaText(editStatForItem(last)),
         soloDurationText
       ])
     : joinAriaParts([
-        toolAriaHead(verbPhase, display.entryTool, false, toolLabel, rawId, undefined),
+        toolAriaHead(verbPhase, display.entryTool, undefined, toolLabel, rawId, undefined),
         `${group.items.length} calls`,
         failedCount > 0 ? `${failedCount} failed` : undefined,
         interruptedCount > 0 ? `${interruptedCount} interrupted` : undefined,
@@ -279,6 +282,7 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
       {solo ? (
         <ToolCallBody
           item={last}
+          label={toolLabel}
           dialogOpen={openDialogItemId === last.id}
           onDialogOpenChange={(open) => setOpenDialogItemId(open ? last.id : null)}
         />

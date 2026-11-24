@@ -1,5 +1,6 @@
 // Per-launch omp `--config` overlay: pre-approves the Refract host tools (Refract raises its own
-// card for mutating actions) and turns native `ask` off, since `refract_ask` replaces it.
+// card for mutating actions), turns native `ask` off (`refract_ask` replaces it) and turns on RPC
+// intent tracing, which omp v19 left off by default.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -11,7 +12,8 @@ const FILE_NAME: &str = "agent-tools-approval.yml";
 
 /// A tool name is written as a bare YAML key, so only the registered `refract_` names go in.
 pub fn render(access: ToolAccess) -> String {
-    let mut out = String::from("ask:\n  enabled: false\ntools:\n  approval:\n");
+    let mut out =
+        String::from("ask:\n  enabled: false\ntools:\n  intentTracing: true\n  approval:\n");
     for name in tools_for(access) {
         out.push_str(&format!("    {name}: allow\n"));
     }
@@ -37,7 +39,19 @@ mod tests {
     fn overlay_allows_exactly_the_registered_tools() {
         assert_eq!(
             render(ToolAccess::for_depth(1)),
-            "ask:\n  enabled: false\ntools:\n  approval:\n    refract_list_panels: allow\n    refract_open_panel: allow\n    refract_invoke_panel_action: allow\n    refract_list_sessions: allow\n    refract_get_session_status: allow\n    refract_send_session_message: allow\n    refract_create_session: allow\n    refract_update_session: allow\n    refract_archive_session: allow\n    refract_unarchive_session: allow\n    refract_stop_session: allow\n    refract_pause_session: allow\n    refract_resume_session: allow\n    refract_delete_session: allow\n    refract_list_conversations: allow\n    refract_new_conversation: allow\n    refract_switch_conversation: allow\n    refract_checklist: allow\n    refract_ask: allow\n"
+            "ask:\n  enabled: false\ntools:\n  intentTracing: true\n  approval:\n    refract_list_panels: allow\n    refract_open_panel: allow\n    refract_invoke_panel_action: allow\n    refract_list_sessions: allow\n    refract_get_session_status: allow\n    refract_send_session_message: allow\n    refract_create_session: allow\n    refract_update_session: allow\n    refract_archive_session: allow\n    refract_unarchive_session: allow\n    refract_stop_session: allow\n    refract_pause_session: allow\n    refract_resume_session: allow\n    refract_delete_session: allow\n    refract_list_conversations: allow\n    refract_new_conversation: allow\n    refract_switch_conversation: allow\n    refract_checklist: allow\n    refract_ask: allow\n"
+        );
+    }
+
+    #[test]
+    fn overlay_turns_intent_tracing_on_for_every_role() {
+        let child = ToolAccess {
+            role: super::super::Role::Child,
+            depth: 1,
+        };
+        assert_eq!(
+            render(child),
+            "ask:\n  enabled: false\ntools:\n  intentTracing: true\n  approval:\n"
         );
     }
 }

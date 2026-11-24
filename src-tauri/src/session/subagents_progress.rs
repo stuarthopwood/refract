@@ -278,12 +278,10 @@ fn tool_item_id(subagent_id: &str, tool: &str, end_ms: i64) -> String {
     format!("subagent-tool:{subagent_id}:{end_ms}:{tool}")
 }
 
+/// The args preview, else the tool name: the call's intent is its own row field, never folded in here.
 fn tool_args_preview(entry: &Value) -> String {
-    if let Some(args) = entry.get("args").and_then(Value::as_str) {
-        return args.to_string();
-    }
     entry
-        .get("intent")
+        .get("args")
         .and_then(Value::as_str)
         .or_else(|| entry.get("tool").and_then(Value::as_str))
         .unwrap_or("")
@@ -327,7 +325,7 @@ fn apply_subagent_progress_in_place(
                 .get("isError")
                 .and_then(Value::as_bool)
                 .unwrap_or(false);
-            let row = json!({
+            let mut row = json!({
                 "kind": "tool",
                 "id": id,
                 "toolCallId": id,
@@ -336,6 +334,9 @@ fn apply_subagent_progress_in_place(
                 "status": if is_error { "error" } else { "done" },
                 "args": entry.get("args").cloned().unwrap_or(Value::Null),
             });
+            if let Some(intent) = entry.get("intent").and_then(Value::as_str) {
+                row["intent"] = json!(intent);
+            }
             stream.push(row.clone());
             new_rows.push(row);
         }
@@ -452,3 +453,7 @@ pub(super) async fn queue_patch_ops(agent: &SessionAgent, ops: Vec<Value>) {
             .emit_subagent_patch(agent.session_id(), &subagent_id, json!(ops));
     });
 }
+
+#[cfg(test)]
+#[path = "subagents_progress.test.rs"]
+mod tests;

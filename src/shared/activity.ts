@@ -3,6 +3,8 @@
 // string that came from the agent (tool `intent`, todo task text, a target path) is untrusted:
 // it is reduced to plain text here, control characters stripped, and capped at
 // `ACTIVITY_TEXT_MAX_CHARS`, so no consumer can render a raw one.
+import { toolIntentLabel } from './toolIntentLabel'
+
 /** The Rust-only readout fields SessionReadout extends; all optional so older fixtures still type. All clear at the turn boundary. */
 export interface ActivityReadoutFields {
   latestIntent?: string | null
@@ -126,8 +128,8 @@ function toolPhrase(tool: NonNullable<ActivityReadoutFields['latestTool']>): str
   return TOOL_PHRASES[tool.name] ?? null
 }
 
-/** Priority: needs you, retrying, compacting, waiting on subagents, current todo task, latest
- * intent, a plain verb for the latest tool call, then "Working…". */
+/** Priority: needs you, retrying, compacting, waiting on subagents, current todo task, the brief
+ * label of the latest intent, a plain verb for the latest tool call, then "Working…". */
 export function deriveActivity(input: ActivityInput): Activity {
   const text = (kind: ActivityKind, line: string): Activity => ({ kind, text: sanitizeActivityText(line) })
   if (input.needsYou) {
@@ -150,7 +152,9 @@ export function deriveActivity(input: ActivityInput): Activity {
     return text('subagents', `Waiting for ${n} ${n === 1 ? 'subagent' : 'subagents'}`)
   }
   if (input.todo) return text('todo', `Task ${input.todo.number} of ${input.todo.total} · ${input.todo.content}`)
-  const intent = input.latestIntent ? sanitizeActivityText(input.latestIntent) : ''
+  // FR-140: the line shows the intent's brief label with trailing full stops trimmed, as OMP's working
+  // message does (`normalizeIntent` after `toolIntentLabel`); the full intent is on the tool row.
+  const intent = input.latestIntent ? sanitizeActivityText(toolIntentLabel(sanitizeActivityText(input.latestIntent, Infinity)).replace(/\s*\.+$/, '')) : ''
   if (intent) return { kind: 'intent', text: intent }
   const phrase = input.latestTool ? toolPhrase(input.latestTool) : null
   if (phrase) return text('tool', phrase)

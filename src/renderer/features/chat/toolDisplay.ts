@@ -1,4 +1,5 @@
 import { Plug, Wrench, type LucideIcon } from 'lucide-react'
+import { toolIntentLabel } from '../../../shared/toolIntentLabel'
 import type { RowStatus } from './toolStatus'
 import { sentenceCaseToolName, toolVerb, toolVerbEntry } from './toolVerbs'
 
@@ -49,9 +50,10 @@ function toolVerbLabel(entryTool: string, status: RowStatus): string {
   return toolVerb(entryTool, status)
 }
 
-// FR-007: the row label is the call's intent when it has one, otherwise the tool's verb.
+// FR-007, FR-140: the row label is the brief label of the call's intent when it has one, otherwise
+// the tool's verb.
 export function toolRowLabel(tool: string, target: string | undefined, intent: string | undefined, status: RowStatus): string {
   const trimmed = intent?.trim()
-  if (trimmed) return trimmed
+  if (trimmed) return toolIntentLabel(trimmed)
   return toolVerbLabel(resolveToolDisplay(tool, target).entryTool, status)
 }
