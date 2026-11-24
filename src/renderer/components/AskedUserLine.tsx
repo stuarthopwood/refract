@@ -36,7 +36,12 @@ function DigestRow({ question }: { question: AskedUserQuestion }) {
       <span className="flex max-w-[60%] shrink-0 items-baseline gap-2">
         <span className={cn('truncate', !answered && 'text-muted-foreground')}>→ {askedUserDigestAnswer(question)}</span>
         {askedUserHasRecommended(question) && <RecommendedMark visibleText={false} />}
-        {notes.length > 0 && <span className="truncate text-xs text-severity-warning">{notes.join(' · ')}</span>}
+        {notes.length > 0 && (
+          <span className="truncate text-xs text-severity-warning">
+            <span className="sr-only">Note: </span>
+            {notes.join(' · ')}
+          </span>
+        )}
       </span>
     </li>
   )
@@ -102,9 +107,9 @@ export function AskedUserLine({ model, defaultOpen = false, ref }: AskedUserLine
       >
         {answered && <CheckIcon aria-hidden className="size-4 shrink-0 text-severity-success" />}
         <span className="min-w-0 flex-1">{askedUserHeader(model)}</span>
-        <span className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-muted-foreground">
+        <span aria-hidden className="inline-flex shrink-0 items-center gap-1 text-xs font-normal text-muted-foreground">
           {open ? 'Collapse' : 'Expand'}
-          <Chevron aria-hidden className="size-3.5" />
+          <Chevron className="size-3.5" />
         </span>
       </Button>
       <div id={bodyId} className="px-(--card-spacing) pt-1 pb-(--card-spacing) text-sm">

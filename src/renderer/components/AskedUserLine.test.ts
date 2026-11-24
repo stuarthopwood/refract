@@ -52,7 +52,7 @@ describe('AskedUserLine collapsed (FR-139)', () => {
 
   it('shows an option note in the warning colour', () => {
     const html = render({ status: 'answered', questions: [question('Which?', [pick('Postgres', { note: 'use v16 please' })])] })
-    expect(html).toMatch(/text-severity-warning[^>]*>use v16 please</)
+    expect(html).toMatch(/text-severity-warning[^>]*><span class="sr-only">Note: <\/span>use v16 please</)
   })
 
   it('marks a recommended pick with a success star and a screen-reader label', () => {
@@ -91,11 +91,17 @@ describe('AskedUserLine collapsed (FR-139)', () => {
     expect(render(ANSWERED)).toContain('role="group" aria-label="Questions from the agent: Which database?"')
   })
 
-  it('keeps a visible keyboard focus ring on the programmatically focused card root', () => {
+  it('keeps a keyboard focus ring and a forced-colors outline on the programmatically focused card root', () => {
     const root = render(ANSWERED).match(/<div[^>]*role="group"[^>]*>/)?.[0] ?? ''
     expect(root).toContain('tabindex="-1"')
     expect(root).toContain('focus-visible:ring-2')
     expect(root).toContain('focus-visible:ring-ring')
+    expect(root).toContain('focus-visible:outline-hidden')
+  })
+
+  it('keeps the toggle name stable by hiding its Expand and Collapse text from assistive tech', () => {
+    expect(render(ANSWERED)).toMatch(/<span aria-hidden="true"[^>]*>Expand<svg/)
+    expect(render(ANSWERED, true)).toMatch(/<span aria-hidden="true"[^>]*>Collapse<svg/)
   })
 })
 

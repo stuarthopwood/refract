@@ -1,6 +1,5 @@
-// Maps a finished `ask` / `refract_ask` tool row onto the Asked-user line's model (FR-139). One reader
-// serves `refract_ask` results and old native-ask rows; the HTML-form ask has its own. A field a source
-// lacks is left out of the model, never invented.
+// Maps a finished `ask` / `refract_ask` tool row onto the Asked-user line's model (FR-139); a field a
+// source lacks is left out, never invented. The HTML-form ask has its own reader.
 
 import type { AskQuestion, TranscriptItem } from '../../../shared/model'
 import { recommendedLabels } from './askRecommended'

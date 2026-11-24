@@ -136,7 +136,7 @@ async function main() {
     // The newest line's header text and digest, read once the line count has grown past `before`.
     const lineAfter = async (before, label) => {
       await cdp.waitFor(`${LINE_COUNT} > ${before} && !!(${TOGGLE})`, { timeoutMs: 20_000, label });
-      return cdp.evaluate(`({ header: ${squash(TOGGLE)}, digest: Array.from(${LINE}.querySelectorAll('li[data-asked-digest]')).map((li) => li.textContent.replace(/\\s+/g, ' ').trim()), recommendedMarks: ${LINE}.querySelectorAll('[data-recommended-mark]').length, expanded: ${TOGGLE}.getAttribute('aria-expanded') })`);
+      return cdp.evaluate(`({ header: ${squash(TOGGLE)}, digest: Array.from(${LINE}.querySelectorAll('li[data-asked-digest]')).map((li) => li.textContent.replace(/\\s+/g, ' ').trim()), recommendedMarks: ${LINE}.querySelectorAll('[data-recommended-mark]').length, expanded: ${TOGGLE}.getAttribute('aria-expanded'), hiddenToggleText: ${TOGGLE}.querySelector('span[aria-hidden=true]')?.textContent.trim() ?? null, srNoteLabels: Array.from(${LINE}.querySelectorAll('li[data-asked-digest] .sr-only')).map((el) => el.textContent) })`);
     };
     await cdp.waitFor(`(() => { const el = document.querySelector('[aria-label="Message"]'); return !!el && !el.disabled; })()`, { timeoutMs: 60_000, label: 'composer enabled' });
     await cdp.click(`document.querySelector('[aria-label="Message"]')`);
@@ -166,6 +166,13 @@ async function main() {
     await cdp.waitFor(`document.activeElement === ${LINE}`, { timeoutMs: 10_000, label: 'focus on the line card' }).catch(() => {});
     const focus = await cdp.evaluate(`(() => { const a = document.activeElement; return { isLine: a === ${LINE}, tabIndex: a?.getAttribute?.('tabindex') ?? null, boxShadow: a ? getComputedStyle(a).boxShadow : null }; })()`);
     check(focus.isLine && !!focus.boxShadow && focus.boxShadow !== 'none', 's1g. Keyboard focus rests on the card root with a visible ring (non-none box-shadow)', focus);
+    check(l1.hiddenToggleText === 'Expand', 's1g2. The toggle text Expand is aria-hidden, so the accessible name stays the header', l1.hiddenToggleText);
+    check(l1.srNoteLabels.some((t) => t.startsWith('Note:')), 's1g3. The digest note carries a screen-reader "Note:" prefix', l1.srNoteLabels);
+    // Windows high contrast drops box-shadows, so the focused card must also paint an outline there.
+    await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: 'active' }] });
+    const forced = await cdp.evaluate(`(() => { const a = document.activeElement; const s = a ? getComputedStyle(a) : null; return { isLine: a === ${LINE}, outlineStyle: s?.outlineStyle ?? null, outlineWidth: s?.outlineWidth ?? null }; })()`);
+    await cdp.send('Emulation.setEmulatedMedia', { features: [{ name: 'forced-colors', value: '' }] });
+    check(forced.isLine && forced.outlineStyle === 'solid' && parseFloat(forced.outlineWidth) > 0, 's1g4. Under forced-colors the focused card root paints an outline', forced);
     await shot('s1-collapsed.png');
     await cdp.click(TOGGLE);
     await cdp.waitFor(`${TOGGLE}.getAttribute('aria-expanded') === 'true'`, { timeoutMs: 10_000, label: 'line expanded' });
