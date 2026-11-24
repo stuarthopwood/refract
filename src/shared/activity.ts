@@ -152,8 +152,9 @@ export function deriveActivity(input: ActivityInput): Activity {
     return text('subagents', `Waiting for ${n} ${n === 1 ? 'subagent' : 'subagents'}`)
   }
   if (input.todo) return text('todo', `Task ${input.todo.number} of ${input.todo.total} · ${input.todo.content}`)
-  // FR-140: the line shows the intent's brief label; the full intent is on the tool row.
-  const intent = input.latestIntent ? sanitizeActivityText(toolIntentLabel(sanitizeActivityText(input.latestIntent, Infinity))) : ''
+  // FR-140: the line shows the intent's brief label with trailing full stops trimmed, as OMP's working
+  // message does (`normalizeIntent` after `toolIntentLabel`); the full intent is on the tool row.
+  const intent = input.latestIntent ? sanitizeActivityText(toolIntentLabel(sanitizeActivityText(input.latestIntent, Infinity)).replace(/\s*\.+$/, '')) : ''
   if (intent) return { kind: 'intent', text: intent }
   const phrase = input.latestTool ? toolPhrase(input.latestTool) : null
   if (phrase) return text('tool', phrase)

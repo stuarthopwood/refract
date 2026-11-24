@@ -1,6 +1,6 @@
 // FR-140: the row reads the brief label of a call's intent; the full intent is in the row's
-// accessible name and its expanded body. The repo has no jsdom, so the collapsed row is rendered
-// to a string and the expanded body's intent line is called as a function.
+// accessible name and its expanded body. The repo has no jsdom, so the collapsed row and the
+// expanded body are each rendered to a string.
 import { createElement, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -13,7 +13,7 @@ vi.mock('./ToolRowMenu', () => ({
   ToolRowKebab: () => null
 }))
 
-import { ToolGroupRow } from './ToolRow'
+import { ToolCallBody, ToolGroupRow } from './ToolRow'
 import { toolRowLabel } from './toolDisplay'
 import { fullIntentLine, toolAriaHead } from './toolRowParts'
 
@@ -33,6 +33,9 @@ const call = (intent: string | undefined): ToolItem => ({
 const render = (item: ToolItem) =>
   renderToStaticMarkup(createElement(TooltipProvider, null, createElement(ToolGroupRow, { group: { kind: 'tool-group', id: 'g1', tool: item.tool, items: [item] } })))
 
+const renderBody = (item: ToolItem, label: string) =>
+  renderToStaticMarkup(createElement(ToolCallBody, { item, label, dialogOpen: false, onDialogOpenChange: () => {} }))
+
 const FULL = 'Reading config: to find the port the server binds'
 
 describe('tool row intent label', () => {
@@ -51,6 +54,33 @@ describe('tool row intent label', () => {
     expect(fullIntentLine(FULL, 'Reading config')).toBe(FULL)
     expect(fullIntentLine('Reading config', 'Reading config')).toBeUndefined()
     expect(fullIntentLine(undefined, 'Read')).toBeUndefined()
+  })
+
+  it('renders the full intent once in the expanded body when the label differs', () => {
+    const html = renderBody(call(FULL), 'Reading config')
+    expect(html.split(FULL)).toHaveLength(2)
+  })
+
+  it('adds no intent line to the expanded body when the label already is the intent', () => {
+    const plain = 'Reading the config file'
+    expect(renderBody(call(plain), plain)).not.toContain(plain)
+    expect(renderBody(call(undefined), 'Read')).not.toContain('<p')
+  })
+
+  it('names a running call by its full intent, with no status prefix', () => {
+    expect(toolAriaHead('running', 'read', FULL, 'Reading config', undefined, 'src/main.ts')).toBe(`${FULL} src/main.ts`)
+  })
+
+  it('does not repeat the name when the label already is the intent', () => {
+    const plain = 'Reading the config file'
+    expect(toolAriaHead('running', 'read', plain, plain, undefined, 'src/main.ts')).toBe(`${plain} src/main.ts`)
+    expect(toolAriaHead('done', 'read', plain, plain, undefined, 'src/main.ts')).toBe(`${plain} src/main.ts`)
+  })
+
+  it('names a call by its label when the intent is empty or whitespace', () => {
+    expect(toolAriaHead('running', 'read', '', 'Reading', undefined, 'src/main.ts')).toBe('Reading src/main.ts')
+    expect(toolAriaHead('running', 'read', '   \t', 'Reading', undefined, 'src/main.ts')).toBe('Reading src/main.ts')
+    expect(toolAriaHead('done', 'read', undefined, 'Read', undefined, 'src/main.ts')).toBe('Read src/main.ts')
   })
 
   it('shows an intent with no qualifying colon exactly as before', () => {

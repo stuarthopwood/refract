@@ -85,7 +85,7 @@ function errorLine(item: ToolItem): string {
   return line.length > QUIET_SUMMARY_MAX_CHARS ? `${line.slice(0, QUIET_SUMMARY_MAX_CHARS)}…` : line
 }
 
-function ToolCallBody({ item, label, dialogOpen, onDialogOpenChange }: ToolCallBodyProps) {
+export function ToolCallBody({ item, label, dialogOpen, onDialogOpenChange }: ToolCallBodyProps) {
   const isDone = item.status === 'done'
   const summary = isDone && item.tool !== 'bash' ? quietSummary(item.output) : undefined
   const fullIntent = fullIntentLine(item.intent, label)

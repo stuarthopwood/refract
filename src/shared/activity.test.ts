@@ -14,6 +14,16 @@ describe('deriveActivity intent line (FR-140)', () => {
     expect(activity).toEqual({ kind: 'intent', text: 'Fetching http://localhost:3000/health' })
   })
 
+  it('trims trailing full stops from the label, as OMP does for its working message', () => {
+    expect(deriveActivity({ ...idle, latestIntent: 'Reading config.' })).toEqual({ kind: 'intent', text: 'Reading config' })
+    expect(deriveActivity({ ...idle, latestIntent: 'Reading config ...: why' })).toEqual({ kind: 'intent', text: 'Reading config' })
+  })
+
+  it('falls back to the tool phrase when the label is only full stops', () => {
+    const activity = deriveActivity({ ...idle, latestIntent: '...', latestTool: { name: 'bash', target: null } })
+    expect(activity).toEqual({ kind: 'tool', text: 'Running a command' })
+  })
+
   it('strips control characters before taking the label', () => {
     const activity = deriveActivity({ ...idle, latestIntent: 'Run\u202e tests:\u0007 all of them' })
     expect(activity).toEqual({ kind: 'intent', text: 'Run tests' })
