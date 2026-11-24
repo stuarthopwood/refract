@@ -1,6 +1,7 @@
 // Unit tests for `is_chat_answer`. Scoped to that one function.
 
 use super::*;
+use crate::session::agent::AskOption;
 
 #[test]
 fn is_chat_answer_accepts_every_documented_shape() {
@@ -290,4 +291,16 @@ async fn the_public_answer_path_reports_the_developer_as_the_answerer() {
 async fn the_away_answer_path_reports_away_mode_as_the_answerer() {
     let text = refract_ask_result_text(true).await;
     assert!(text.starts_with("Away Mode answered 1 question."), "{text}");
+}
+
+#[test]
+fn an_unknown_method_name_is_capped_before_it_reaches_the_notice() {
+    let frame = json!({ "id": "x1", "method": "m".repeat(500) });
+    match classify_dialog(&frame) {
+        DialogClassification::Unsupported { id, method } => {
+            assert_eq!(id, "x1");
+            assert_eq!(method.chars().count(), MAX_METHOD_LENGTH);
+        }
+        _ => panic!("an unknown method with an id is an unsupported dialog"),
+    }
 }
