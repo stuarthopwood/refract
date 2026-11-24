@@ -304,3 +304,44 @@ fn an_unknown_method_name_is_capped_before_it_reaches_the_notice() {
         _ => panic!("an unknown method with an id is an unsupported dialog"),
     }
 }
+
+#[test]
+fn a_multibyte_method_name_is_capped_on_character_boundaries() {
+    for raw in ["é".repeat(100), "😀".repeat(100)] {
+        let frame = json!({ "id": "x1", "method": raw });
+        match classify_dialog(&frame) {
+            DialogClassification::Unsupported { method, .. } => {
+                assert_eq!(method.chars().count(), MAX_METHOD_LENGTH);
+                assert!(std::str::from_utf8(method.as_bytes()).is_ok());
+            }
+            _ => panic!("an unknown method with an id is an unsupported dialog"),
+        }
+    }
+}
+
+#[test]
+fn control_characters_are_stripped_from_the_method_name() {
+    let frame = json!({ "id": "x1", "method": "fo\nrm\u{1b}[31m" });
+    match classify_dialog(&frame) {
+        DialogClassification::Unsupported { method, .. } => assert_eq!(method, "form[31m"),
+        _ => panic!("an unknown method with an id is an unsupported dialog"),
+    }
+}
+
+#[test]
+fn a_missing_non_string_or_empty_method_is_named_unknown() {
+    for frame in [
+        json!({ "id": "x1" }),
+        json!({ "id": "x1", "method": 7 }),
+        json!({ "id": "x1", "method": "" }),
+        json!({ "id": "x1", "method": "\n\u{1b}" }),
+    ] {
+        match classify_dialog(&frame) {
+            DialogClassification::Unsupported { id, method } => {
+                assert_eq!(id, "x1");
+                assert_eq!(method, "unknown");
+            }
+            _ => panic!("expected an unsupported dialog for {frame}"),
+        }
+    }
+}

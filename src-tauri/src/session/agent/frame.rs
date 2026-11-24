@@ -181,7 +181,7 @@ impl SessionAgent {
             DialogClassification::Unsupported { id, method } => {
                 self.reply_cancelled(id).await;
                 self.append_notice(
-                    format!("Refract can't show the agent's `{method}` dialog yet, so it was cancelled."),
+                    format!("Refract can't show the agent's \"{method}\" dialog yet, so it was cancelled."),
                     "warning",
                 )
                 .await;

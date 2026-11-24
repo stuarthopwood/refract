@@ -39,7 +39,9 @@ async fn a_form_request_is_answered_cancelled_and_leaves_a_notice_naming_it() {
     );
     assert_eq!(
         fx.notices().await,
-        vec!["Refract can't show the agent's `form` dialog yet, so it was cancelled.".to_string()]
+        vec![
+            r#"Refract can't show the agent's "form" dialog yet, so it was cancelled."#.to_string()
+        ]
     );
     fx.finish().await;
 }
@@ -60,7 +62,7 @@ async fn an_unknown_blocking_method_gets_the_same_cancelled_reply_and_notice() {
     assert_eq!(
         fx.notices().await,
         vec![
-            "Refract can't show the agent's `some_future_dialog` dialog yet, so it was cancelled."
+            r#"Refract can't show the agent's "some_future_dialog" dialog yet, so it was cancelled."#
                 .to_string()
         ]
     );
@@ -70,30 +72,37 @@ async fn an_unknown_blocking_method_gets_the_same_cancelled_reply_and_notice() {
 #[tokio::test]
 async fn fire_and_forget_methods_and_an_unanswerable_frame_get_no_reply_and_no_notice() {
     let fx = fixture(&[], &[]).await;
+    let mut sentinels: Vec<Value> = Vec::new();
 
-    for method in [
-        "setStatus",
-        "setWidget",
-        "setTitle",
-        "set_editor_text",
-        "open_url",
-    ] {
-        fx.agent.handle_frame(request("quiet", method)).await;
+    let quiet: [(&str, Value); 6] = [
+        ("setStatus", request("quiet", "setStatus")),
+        ("setWidget", request("quiet", "setWidget")),
+        ("setTitle", request("quiet", "setTitle")),
+        ("set_editor_text", request("quiet", "set_editor_text")),
+        ("open_url", request("quiet", "open_url")),
+        // No id means no one is waiting on a reply.
+        (
+            "form without an id",
+            json!({ "type": "extension_ui_request", "method": "form" }),
+        ),
+    ];
+    for (name, frame) in quiet {
+        fx.agent.handle_frame(frame).await;
+        // The wire is ordered, so a reply to the frame above would show up before this sentinel's.
+        let sentinel = format!("sentinel-{name}");
+        fx.agent.handle_frame(request(&sentinel, "form")).await;
+        sentinels.push(json!(sentinel));
+        fx.until_rpc_count("extension_ui_response", sentinels.len())
+            .await;
+
+        let replied: Vec<Value> = responses(&fx)
+            .await
+            .iter()
+            .map(|r| r["id"].clone())
+            .collect();
+        assert_eq!(replied, sentinels, "{name} was answered");
+        // Every sentinel notice has the same text, which the transcript collapses into one.
+        assert_eq!(fx.notices().await.len(), 1, "{name} left a notice");
     }
-    // No id means no one is waiting on a reply.
-    fx.agent
-        .handle_frame(json!({ "type": "extension_ui_request", "method": "form" }))
-        .await;
-    // The wire is ordered, so a reply to any frame above would show up before this sentinel's.
-    fx.agent.handle_frame(request("sentinel", "form")).await;
-    fx.until_rpc("extension_ui_response").await;
-
-    let replied: Vec<Value> = responses(&fx)
-        .await
-        .iter()
-        .map(|r| r["id"].clone())
-        .collect();
-    assert_eq!(replied, vec![json!("sentinel")]);
-    assert_eq!(fx.notices().await.len(), 1);
     fx.finish().await;
 }

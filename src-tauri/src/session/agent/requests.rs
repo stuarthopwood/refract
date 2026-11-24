@@ -297,10 +297,19 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
         }
         // A frame without an id cannot be answered.
         _ if id.is_empty() => DialogClassification::Ignore,
-        _ => DialogClassification::Unsupported {
-            id,
-            method: truncate(method, MAX_METHOD_LENGTH),
-        },
+        _ => {
+            // Control characters could forge extra lines in the notice; an unnameable method reads "unknown".
+            let clean: String = method.chars().filter(|c| !c.is_control()).collect();
+            let name = truncate(&clean, MAX_METHOD_LENGTH);
+            DialogClassification::Unsupported {
+                id,
+                method: if name.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    name
+                },
+            }
+        }
     }
 }
 
