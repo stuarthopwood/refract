@@ -91,17 +91,25 @@ export function toolRowMeta(status: RowStatus, rest: React.ReactNode | undefined
 
 // FR-015: spec 022's status prefix (only where the label cannot carry the status), the label, the
 // raw id while the setting is on, then the target. A running call's intent already reads as its
-// own progress, so it takes no "Running" prefix.
+// own progress, so it takes no "Running" prefix. FR-140: a call's full intent stands in for its
+// brief label, so it is part of the accessible name and never hover-only.
 export function toolAriaHead(
   status: RowStatus,
   entryTool: string,
-  intentShown: boolean,
+  intent: string | undefined,
   label: string,
   rawId: string | undefined,
   target: string | undefined
 ): string {
+  const intentShown = hasIntent(intent)
   const prefix = intentShown && status === 'running' ? undefined : toolAriaPrefix(status, entryTool)
-  return [prefix, label, rawId, target].filter(Boolean).join(' ')
+  return [prefix, intentShown ? intent?.trim() : label, rawId, target].filter(Boolean).join(' ')
+}
+
+// FR-140: the row shows the brief label, so the expanded row carries the full intent when it says more.
+export function fullIntentLine(intent: string | undefined, label: string): string | undefined {
+  const full = intent?.trim()
+  return full && full !== label ? full : undefined
 }
 
 export function joinAriaParts(parts: Array<string | undefined>): string {
