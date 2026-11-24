@@ -126,7 +126,7 @@ function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, 
 
     case 'tool':
       if (isAskTool(item.tool)) {
-        return <AskToolRow item={item} sessionId={sessionId} userName={userName} userAvatarUrl={userAvatarUrl} askRequestId={askRequestId} />
+        return <AskToolRow item={item} sessionId={sessionId} askRequestId={askRequestId} />
       }
       // Defensive fallback for a non-ask `tool` item that reaches here ungrouped (should not
       // normally occur: `groupToolItems` wraps every run, including a run of one, in a

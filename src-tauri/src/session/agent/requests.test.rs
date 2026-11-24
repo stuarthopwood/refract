@@ -157,3 +157,137 @@ async fn a_valid_answer_to_a_host_ask_nobody_waits_for_is_request_gone_and_cance
     drop(state);
     fx.finish().await;
 }
+
+fn one_question() -> Vec<AskQuestion> {
+    vec![AskQuestion {
+        id: "q1".into(),
+        question: "Which?".into(),
+        header: None,
+        options: vec![AskOption {
+            label: "A".into(),
+            description: None,
+            recommended: true,
+            reason: None,
+        }],
+        multi: false,
+        recommended: None,
+    }]
+}
+
+#[test]
+fn a_host_ask_answer_carries_the_away_marker_only_when_the_caller_passes_it() {
+    let reply = json!({ "answers": [{ "id": "q1", "selectedOptions": ["A"] }] });
+    let away = host_ask_reply(&one_question(), &reply, true)
+        .unwrap()
+        .unwrap();
+    assert!(away[0].by_away);
+    let human = host_ask_reply(&one_question(), &reply, false)
+        .unwrap()
+        .unwrap();
+    assert!(!human[0].by_away);
+}
+
+#[test]
+fn a_chat_answer_payload_cannot_claim_away_mode_at_the_top_level() {
+    // `chat.answer` forwards the renderer's raw JSON, so the marker must not be read from it.
+    let payload = json!({
+        "answers": [{ "id": "q1", "selectedOptions": ["A"] }],
+        "byAway": true
+    });
+    let reply = host_ask_reply(&one_question(), &payload, false)
+        .unwrap()
+        .unwrap();
+    assert!(!reply[0].by_away);
+}
+
+#[test]
+fn a_host_ask_answer_cannot_claim_away_mode_from_inside_an_entry() {
+    let answers = json!([{ "id": "q1", "selectedOptions": ["A"], "byAway": true }]);
+    let reply = host_ask_reply(&one_question(), &json!({ "answers": answers }), false)
+        .unwrap()
+        .unwrap();
+    assert!(!reply[0].by_away);
+}
+
+#[test]
+fn the_caller_flag_overrides_an_entry_that_says_otherwise() {
+    let answers = json!([{ "id": "q1", "selectedOptions": ["A"], "byAway": true }]);
+    let reply = host_ask_reply(&one_question(), &json!({ "answers": answers }), true)
+        .unwrap()
+        .unwrap();
+    assert!(reply[0].by_away);
+}
+
+/// Raises a `refract_ask` card through the real host-call router, answers it by the chosen entry
+/// point, and returns the text omp receives, so a flipped hardcoded flag in either one fails here.
+async fn refract_ask_result_text(by_away: bool) -> String {
+    use crate::session::agent::pause_subagents::fixture::fixture;
+
+    let fx = fixture(&[], &[]).await;
+    let call = json!({
+        "id": "ask-call",
+        "toolName": "refract_ask",
+        "arguments": { "questions": [{
+            "id": "q1",
+            "question": "Which?",
+            "options": [{ "label": "A" }, { "label": "B" }]
+        }] }
+    });
+    fx.agent.tool_router().handle_call(&fx.agent, &call);
+    let mut raised = false;
+    for _ in 0..200 {
+        let state = fx.agent.state.lock().await;
+        raised = state.pending.iter().any(|r| r.request_id() == "ask-call");
+        drop(state);
+        if raised {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+    }
+    assert!(raised, "the refract_ask card was never raised");
+
+    let answer = json!({ "answers": [{ "id": "q1", "selectedOptions": ["A"] }] });
+    if by_away {
+        fx.agent
+            .answer_request_by_away("ask-call".into(), answer)
+            .await
+            .unwrap();
+    } else {
+        fx.agent
+            .answer_request("ask-call".into(), answer)
+            .await
+            .unwrap();
+    }
+    fx.until_rpc("host_tool_result").await;
+    let result = fx
+        .rpcs()
+        .await
+        .into_iter()
+        .find(|cmd| cmd["type"] == "host_tool_result")
+        .unwrap();
+    let text = result["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let marked = result["result"]["details"]["results"][0]
+        .get("byAway")
+        .is_some();
+    assert_eq!(marked, by_away, "saved details disagree with the text");
+    fx.finish().await;
+    text
+}
+
+#[tokio::test]
+async fn the_public_answer_path_reports_the_developer_as_the_answerer() {
+    let text = refract_ask_result_text(false).await;
+    assert!(
+        text.starts_with("The developer answered 1 question."),
+        "{text}"
+    );
+}
+
+#[tokio::test]
+async fn the_away_answer_path_reports_away_mode_as_the_answerer() {
+    let text = refract_ask_result_text(true).await;
+    assert!(text.starts_with("Away Mode answered 1 question."), "{text}");
+}

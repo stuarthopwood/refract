@@ -168,8 +168,9 @@ pub(in crate::session) async fn sweep(agent: &SessionAgent) {
 async fn answer_ask(agent: &SessionAgent, request_id: String, questions: Vec<AskQuestion>) {
     let answers = ask_answers(&questions);
     let (asked, chosen) = describe_ask(&questions, &answers);
+    // The by-away helper, not JSON, tells the `refract_ask` result who answered (FR-139).
     match agent
-        .answer_request(request_id, json!({ "answers": answers }))
+        .answer_request_by_away(request_id, json!({ "answers": answers }))
         .await
     {
         Ok(()) => record(agent, Kind::Answered, asked, chosen).await,

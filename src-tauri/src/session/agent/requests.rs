@@ -10,11 +10,30 @@ use super::launch_support::truncate;
 use super::{AgentError, AskOption, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
 
 impl SessionAgent {
-    /// Writes the `extension_ui_response` for a pending request and marks it resolved.
+    /// Writes the `extension_ui_response` for a pending request and marks it resolved. The
+    /// renderer's `chat.answer` lands here, so it can never claim an Away Mode answer.
     pub async fn answer_request(
         &self,
         request_id: String,
         answer: Value,
+    ) -> Result<(), AgentError> {
+        self.answer_request_as(request_id, answer, false).await
+    }
+
+    /// Away Mode's answer; the only caller that sets `by_away` (FR-139).
+    pub(in crate::session) async fn answer_request_by_away(
+        &self,
+        request_id: String,
+        answer: Value,
+    ) -> Result<(), AgentError> {
+        self.answer_request_as(request_id, answer, true).await
+    }
+
+    async fn answer_request_as(
+        &self,
+        request_id: String,
+        answer: Value,
+        by_away: bool,
     ) -> Result<(), AgentError> {
         // A Refract-owned card (agent tool channel) completes in-process; omp never saw its id.
         let owned = crate::agent_tools::approval::is_owned(&request_id);
@@ -55,7 +74,7 @@ impl SessionAgent {
             ..
         } = &request
         {
-            let reply = host_ask_reply(questions, &answer)
+            let reply = host_ask_reply(questions, &answer, by_away)
                 .map_err(|err| AgentError::new("invalid-argument", err))?;
             late_ask = !self.agent_tools.answer_ask(&request_id, reply);
         } else if owned {
@@ -324,9 +343,11 @@ fn now_ms() -> i64 {
 }
 
 /// The reply for a host-call card: `None` for the developer's cancel, else the validated answers.
+/// `by_away` comes from the caller, never from the JSON, so no payload can claim it.
 fn host_ask_reply(
     questions: &[AskQuestion],
     answer: &Value,
+    by_away: bool,
 ) -> Result<Option<Vec<AskAnswer>>, String> {
     if answer.get("cancelled") == Some(&Value::Bool(true)) {
         return Ok(None);
@@ -336,9 +357,12 @@ fn host_ask_reply(
         .and_then(Value::as_array)
         .ok_or_else(|| "expected an answers array for the ask request".to_string())?;
     validate_ask_answers(questions, answers)?;
-    serde_json::from_value(Value::Array(answers.clone()))
-        .map(Some)
-        .map_err(|err| format!("malformed answers: {err}"))
+    let mut replies: Vec<AskAnswer> = serde_json::from_value(Value::Array(answers.clone()))
+        .map_err(|err| format!("malformed answers: {err}"))?;
+    for reply in &mut replies {
+        reply.by_away = by_away;
+    }
+    Ok(Some(replies))
 }
 
 const MAX_NOTE_CHARS: usize = 1000;

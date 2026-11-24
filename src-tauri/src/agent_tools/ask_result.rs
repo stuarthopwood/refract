@@ -23,6 +23,9 @@ pub struct AskAnswer {
     pub selected_options: Vec<String>,
     pub custom_input: Option<String>,
     pub notes: Vec<AskNote>,
+    /// Set when Away Mode answered, so a saved result still says who did (FR-139).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub by_away: bool,
 }
 
 /// A, B, ... Z, then AA, AB, ... for the rare question with more than 26 options.
@@ -93,7 +96,12 @@ pub(crate) fn format_answers(questions: &[AskedQuestion], answers: &[AskAnswer])
     let count = questions.len();
     let noun = if count == 1 { "question" } else { "questions" };
     let blank = AskAnswer::default();
-    let mut out = format!("The developer answered {count} {noun}.");
+    let who = if answers.iter().any(|a| a.by_away) {
+        "Away Mode"
+    } else {
+        "The developer"
+    };
+    let mut out = format!("{who} answered {count} {noun}.");
     for (index, question) in questions.iter().enumerate() {
         let answer = answers
             .iter()

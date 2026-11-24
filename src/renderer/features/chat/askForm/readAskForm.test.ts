@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { askCardLabel, isAskTimedOut, readAskForm, readAskFormAnswers } from './readAskForm'
+import { isAskTimedOut, readAskForm, readAskFormAnswers } from './readAskForm'
 
 describe('readAskForm', () => {
   test('Given ask args carrying html, When read, Then the parsed fields come back', () => {
@@ -34,9 +34,9 @@ describe('readAskFormAnswers', () => {
     expect(rows).toEqual([{ name: 'lang', question: 'Which language?', answer: 'TypeScript' }])
   })
 
-  test('Given an empty or blank answer, When read, Then it reads "No selection"', () => {
+  test('Given an empty or blank answer, When read, Then the row carries an empty answer for the line to show as no answer', () => {
     const rows = readAskFormAnswers({ answers: [{ name: 'a', question: 'Q1', answer: '' }, { name: 'b', question: 'Q2', answer: '  ' }, { name: 'c', question: 'Q3' }] })
-    expect(rows?.map((row) => row.answer)).toEqual(['No selection', 'No selection', 'No selection'])
+    expect(rows?.map((row) => row.answer)).toEqual(['', '', ''])
   })
 
   test('Given a missing question, When read, Then the field name stands in for it', () => {
@@ -52,25 +52,5 @@ describe('readAskFormAnswers', () => {
     expect(readAskFormAnswers({ results: [] })).toBeNull()
     expect(readAskFormAnswers({ answers: [] })).toBeNull()
     expect(readAskFormAnswers({ answers: 'x' })).toBeNull()
-  })
-})
-
-describe('askCardLabel', () => {
-  test('Given finished cards with different first questions, When named, Then each name carries its own first question', () => {
-    const a = askCardLabel([{ name: 'a', question: 'Which database?', answer: 'pg' }])
-    const b = askCardLabel([{ name: 'b', question: 'Why?', answer: 'x' }])
-    expect(a).toBe('Questions from the agent: Which database?')
-    expect(a).not.toBe(b)
-  })
-
-  test('Given a long multi-line first question, When named, Then whitespace collapses and the name is truncated', () => {
-    const label = askCardLabel([{ name: 'a', question: `line one\n${'x'.repeat(200)}`, answer: 'y' }])
-    expect(label.startsWith('Questions from the agent: line one xxx')).toBe(true)
-    expect(label.endsWith('…')).toBe(true)
-    expect(label.length).toBeLessThan(120)
-  })
-
-  test('Given no usable question, When named, Then the generic name stands in', () => {
-    expect(askCardLabel([])).toBe('Questions from the agent')
   })
 })
