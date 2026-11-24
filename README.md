@@ -13,7 +13,7 @@ Spec 001 (core session workspace) is implemented: sessions per git worktree, cha
 - Windows 11.
 - Node 24 or newer, with `pnpm`.
 - Git for Windows.
-- `omp` 18.6.3 or newer on `PATH`, signed in (`omp --version` prints `omp/18.6.3` or later). Verified against `omp/18.8.0`; 18.6.3 itself was not available to test directly (see `docs/spike/FINDINGS.md` item 49).
+- `omp` 18.6.3 or newer on `PATH`, signed in (`omp --version` prints `omp/18.6.3` or later). Versions newer than 18.17.x, including 19.x, start with an "unverified version" warning; v19 is not yet fully supported (#2140, #2141, #2091). Verified against `omp/18.8.0`; 18.6.3 itself was not available to test directly (see `docs/spike/FINDINGS.md` item 49).
 
 ## Running
 

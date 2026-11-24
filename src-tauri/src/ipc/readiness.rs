@@ -168,6 +168,9 @@ fn find_version(stdout: &str) -> Option<(String, u32, u32, u32)> {
                 {
                     return Some((found.to_string(), major, minor, patch));
                 }
+                // An overflowing component must not be re-read as a shorter, passing version.
+                i = j;
+                continue;
             }
         }
         i += 1;
@@ -265,13 +268,16 @@ fn classify_omp_version(stdout: &str) -> Check {
         };
     }
 
+    let hint = if major == OMP_MINIMUM_MAJOR {
+        format!("omp {found} is newer than 18.{OMP_TESTED_MINOR}.x, the newest version line Refract has been checked against. It is expected to keep working.")
+    } else {
+        format!("omp {found} is newer than 18.{OMP_TESTED_MINOR}.x, the newest version Refract has been checked against. Refract has not been checked against this version, and some features may not work correctly.")
+    };
     Check {
         ok: true,
-        found: Some(found.clone()),
+        found: Some(found),
         warning: Some(true),
-        hint: Some(format!(
-            "omp {found} is newer than 18.{OMP_TESTED_MINOR}.x, the newest version line Refract has been checked against. It is expected to keep working."
-        )),
+        hint: Some(hint),
     }
 }
 
