@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.41.0 (2026-11-24)
+
+### Features
+
+- feat(chat): show recommendation reasons and several recommended options (https://github.com/stuarthopwood/refract/pull/2138)
+- feat(chat): add option notes to the Question card (https://github.com/stuarthopwood/refract/pull/2157)
+- feat(chat): one Asked-user line for every finished ask (https://github.com/stuarthopwood/refract/pull/2164)
+
+### Fixes
+
+- fix(session): make the handoff gate tests independent of process latency (https://github.com/stuarthopwood/refract/pull/2175)
+
+### Other
+
+- docs(plan): OMP v19.1.1 review ledger, Ask v19 bump row, Phase E items (https://github.com/stuarthopwood/refract/pull/2143)
+- docs(plan): rescope #2140 and add #2144 (https://github.com/stuarthopwood/refract/pull/2145)
+- docs(plan): record #2127 reproduction on main (https://github.com/stuarthopwood/refract/pull/2146)
+- docs(plan): correct the #2127 cause (https://github.com/stuarthopwood/refract/pull/2147)
+- docs(chat): spec reasons and several recommended options on the Question card (https://github.com/stuarthopwood/refract/pull/2137)
+- docs(plan): mark #1985 rest done (https://github.com/stuarthopwood/refract/pull/2148)
+- docs/plan 2026 11 23 polish (https://github.com/stuarthopwood/refract/pull/2153)
+- docs(plan): place #2149 to #2152 in the Queue and record decisions (https://github.com/stuarthopwood/refract/pull/2154)
+- docs(chat): spec option notes on the Question card (https://github.com/stuarthopwood/refract/pull/2156)
+- docs(plan): mark #1987 done (https://github.com/stuarthopwood/refract/pull/2159)
+- docs/plan 2026 11 23 conv storage (https://github.com/stuarthopwood/refract/pull/2162)
+- docs(chat): spec the Asked-user line (FR-139) (https://github.com/stuarthopwood/refract/pull/2163)
+- docs(plan): mark epic #1990 done (https://github.com/stuarthopwood/refract/pull/2166)
+- docs(plan): add #2167 checklist item dependencies (https://github.com/stuarthopwood/refract/pull/2168)
+- docs(plan): add #2169 chat banner consolidation (https://github.com/stuarthopwood/refract/pull/2170)
+- docs/plan 2026 11 24 themes (https://github.com/stuarthopwood/refract/pull/2174)
+- docs(plan): add #2176 checklist upkeep in the tool description (https://github.com/stuarthopwood/refract/pull/2177)
+
 ## v0.40.0 (2026-11-22)
 
 ### Features
