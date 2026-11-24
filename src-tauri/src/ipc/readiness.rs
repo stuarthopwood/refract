@@ -168,6 +168,9 @@ fn find_version(stdout: &str) -> Option<(String, u32, u32, u32)> {
                 {
                     return Some((found.to_string(), major, minor, patch));
                 }
+                // An overflowing component must not be re-read as a shorter, passing version.
+                i = j;
+                continue;
             }
         }
         i += 1;
@@ -230,27 +233,23 @@ async fn check_omp() -> Check {
         }
     };
 
-    let Some((found, major, minor, patch)) = find_version(&stdout) else {
+    classify_omp_version(&stdout)
+}
+
+/// Pure version gate so the floor and the newer-major warning are unit-testable without spawning omp.
+fn classify_omp_version(stdout: &str) -> Check {
+    let Some((found, major, minor, patch)) = find_version(stdout) else {
         let found = stdout.trim().to_string();
         return Check {
             ok: false,
             found: Some(found.clone()),
-            hint: Some(format!("Expected omp 18.x, found {found}. Install a supported version and relaunch Refract.")),
+            hint: Some(format!("Could not read an omp version from {found:?}. Install omp 18.6.3 or newer and relaunch Refract.")),
             ..Default::default()
         };
     };
 
-    if major != OMP_MINIMUM_MAJOR {
-        return Check {
-            ok: false,
-            found: Some(found.clone()),
-            hint: Some(format!("Expected omp 18.x, found {found}. Install a supported version and relaunch Refract.")),
-            ..Default::default()
-        };
-    }
-
     let below_minimum =
-        minor < OMP_MINIMUM_MINOR || (minor == OMP_MINIMUM_MINOR && patch < OMP_MINIMUM_PATCH);
+        (major, minor, patch) < (OMP_MINIMUM_MAJOR, OMP_MINIMUM_MINOR, OMP_MINIMUM_PATCH);
     if below_minimum {
         return Check {
             ok: false,
@@ -260,7 +259,8 @@ async fn check_omp() -> Check {
         };
     }
 
-    if minor <= OMP_TESTED_MINOR {
+    // A newer major is warned about, not blocked: Refract has not been checked against it.
+    if major == OMP_MINIMUM_MAJOR && minor <= OMP_TESTED_MINOR {
         return Check {
             ok: true,
             found: Some(found),
@@ -268,13 +268,16 @@ async fn check_omp() -> Check {
         };
     }
 
+    let hint = if major == OMP_MINIMUM_MAJOR {
+        format!("omp {found} is newer than 18.{OMP_TESTED_MINOR}.x, the newest version line Refract has been checked against. It is expected to keep working.")
+    } else {
+        format!("omp {found} is newer than 18.{OMP_TESTED_MINOR}.x, the newest version Refract has been checked against. Refract has not been checked against this version, and some features may not work correctly.")
+    };
     Check {
         ok: true,
-        found: Some(found.clone()),
+        found: Some(found),
         warning: Some(true),
-        hint: Some(format!(
-            "omp {found} is newer than 18.{OMP_TESTED_MINOR}.x, the newest version Refract has been checked against. It is expected to keep working."
-        )),
+        hint: Some(hint),
     }
 }
 
