@@ -71,6 +71,14 @@ describe('tool row intent label', () => {
     expect(toolAriaHead('running', 'read', FULL, 'Reading config', undefined, 'src/main.ts')).toBe(`${FULL} src/main.ts`)
   })
 
+  it('drops the Running prefix for an unmapped tool that shows an intent', () => {
+    expect(toolAriaHead('running', 'mcp_fetch', FULL, 'Reading config', undefined, 'src/main.ts')).toBe(`${FULL} src/main.ts`)
+  })
+
+  it('keeps the Failed prefix when an errored call shows an intent', () => {
+    expect(toolAriaHead('error', 'read', FULL, 'Reading config', undefined, 'src/main.ts')).toBe(`Failed ${FULL} src/main.ts`)
+  })
+
   it('does not repeat the name when the label already is the intent', () => {
     const plain = 'Reading the config file'
     expect(toolAriaHead('running', 'read', plain, plain, undefined, 'src/main.ts')).toBe(`${plain} src/main.ts`)
