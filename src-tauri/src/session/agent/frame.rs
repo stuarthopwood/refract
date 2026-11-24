@@ -174,23 +174,33 @@ impl SessionAgent {
                 }
             }
             DialogClassification::Malformed { id } => {
-                // No PendingRequest exists for this frame, so reply cancelled on the wire directly. (#572)
-                let proc = self.state.lock().await.process.clone();
-                if let Some(proc) = proc {
-                    let _ = proc
-                        .send_raw(
-                            json!({ "type": "extension_ui_response", "id": id, "cancelled": true }),
-                        )
-                        .await;
-                }
+                self.reply_cancelled(id).await;
                 self.append_notice("Couldn't show the agent's question.".to_string(), "error")
                     .await;
+            }
+            DialogClassification::Unsupported { id, method } => {
+                self.reply_cancelled(id).await;
+                self.append_notice(
+                    format!("Refract can't show the agent's \"{method}\" dialog yet, so it was cancelled."),
+                    "warning",
+                )
+                .await;
             }
             DialogClassification::Request(request) => {
                 // push_pending_request handles the row, NeedsYou, and the emit in one call.
                 self.push_pending_request(request.clone()).await;
                 crate::session::working_mode::away::on_request(self, request).await;
             }
+        }
+    }
+
+    /// No PendingRequest exists for these frames, so the cancelled reply goes straight onto the wire.
+    async fn reply_cancelled(&self, id: String) {
+        let proc = self.state.lock().await.process.clone();
+        if let Some(proc) = proc {
+            let _ = proc
+                .send_raw(json!({ "type": "extension_ui_response", "id": id, "cancelled": true }))
+                .await;
         }
     }
 
@@ -387,3 +397,7 @@ mod tests;
 #[cfg(test)]
 #[path = "frame_notice.test.rs"]
 mod notice_tests;
+
+#[cfg(test)]
+#[path = "frame_dialog.test.rs"]
+mod dialog_tests;

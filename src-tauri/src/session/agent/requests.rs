@@ -5,9 +5,10 @@ use serde_json::{json, Value};
 use crate::agent_tools::ask_result::AskAnswer;
 use crate::omp::transcript::RequestResolution;
 
+use super::ask_frame::parse_ask_questions;
 use super::commands::string_array;
 use super::launch_support::truncate;
-use super::{AgentError, AskOption, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
+use super::{AgentError, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
 
 impl SessionAgent {
     /// Writes the `extension_ui_response` for a pending request and marks it resolved. The
@@ -136,10 +137,17 @@ pub(super) enum DialogClassification {
     Malformed {
         id: String,
     },
+    /// A blocking method Refract has no card for, such as OMP's `form`. `frame.rs` answers it
+    /// `{cancelled:true}` so the agent does not wait for a reply that never comes.
+    Unsupported {
+        id: String,
+        method: String,
+    },
 }
 
 const APPROVAL_PREFIX: &str = "Allow tool:";
 const MAX_TARGET_LENGTH: usize = 200;
+const MAX_METHOD_LENGTH: usize = 64;
 
 /// Caller has already checked the approval prefix, so the first line always carries it.
 fn parse_approval_title(title: &str) -> (String, Vec<String>) {
@@ -282,57 +290,27 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
                 .unwrap_or("info")
                 .to_string(),
         },
-        _ => DialogClassification::Ignore,
-    }
-}
-
-/// `None` when `questions` is missing, empty, or has an entry without an `id` (#572).
-fn parse_ask_questions(frame: &Value) -> Option<Vec<AskQuestion>> {
-    let raw = frame.get("questions")?.as_array()?;
-    if raw.is_empty() {
-        return None;
-    }
-    let mut questions = Vec::with_capacity(raw.len());
-    for q in raw {
-        let qid = q.get("id").and_then(Value::as_str).unwrap_or("");
-        if qid.is_empty() {
-            return None;
+        // OMP's frame has no blocking flag, so every method outside this list is treated as blocking:
+        // a cancelled reply to a fire-and-forget method is harmless, a missing one to a blocking method hangs.
+        "setStatus" | "setWidget" | "setTitle" | "set_editor_text" | "open_url" => {
+            DialogClassification::Ignore
         }
-        let options = q
-            .get("options")
-            .and_then(Value::as_array)
-            .map(|list| {
-                list.iter()
-                    .map(|o| AskOption {
-                        label: o
-                            .get("label")
-                            .and_then(Value::as_str)
-                            .unwrap_or("")
-                            .to_string(),
-                        description: o
-                            .get("description")
-                            .and_then(Value::as_str)
-                            .map(str::to_string),
-                        recommended: false,
-                        reason: None,
-                    })
-                    .collect::<Vec<_>>()
-            })
-            .unwrap_or_default();
-        questions.push(AskQuestion {
-            id: qid.to_string(),
-            question: q
-                .get("question")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_string(),
-            header: q.get("header").and_then(Value::as_str).map(str::to_string),
-            options,
-            multi: q.get("multi").and_then(Value::as_bool).unwrap_or(false),
-            recommended: q.get("recommended").and_then(Value::as_i64),
-        });
+        // A frame without an id cannot be answered.
+        _ if id.is_empty() => DialogClassification::Ignore,
+        _ => {
+            // Control characters could forge extra lines in the notice; an unnameable method reads "unknown".
+            let clean: String = method.chars().filter(|c| !c.is_control()).collect();
+            let name = truncate(&clean, MAX_METHOD_LENGTH);
+            DialogClassification::Unsupported {
+                id,
+                method: if name.is_empty() {
+                    "unknown".to_string()
+                } else {
+                    name
+                },
+            }
+        }
     }
-    Some(questions)
 }
 
 fn now_ms() -> i64 {
