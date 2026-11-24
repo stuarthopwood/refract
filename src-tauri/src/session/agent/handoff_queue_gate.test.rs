@@ -1,6 +1,8 @@
 // A settled cross-Session handoff holds the Project's tree gate from its check to its action (#1861).
 
 use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::sync::watch;
@@ -142,7 +144,10 @@ fn settle_until_expired(fx: &Fixture) -> (tokio::task::JoinHandle<()>, watch::Se
         let deadline = move || {
             let mut expired = expired.clone();
             async move {
-                let _ = expired.wait_for(|passed| *passed).await;
+                if expired.wait_for(|passed| *passed).await.is_err() {
+                    // A dropped sender is not the deadline passing.
+                    std::future::pending::<()>().await;
+                }
             }
         };
         agent.run_settled_handoff_until(2, deadline).await;
@@ -304,5 +309,40 @@ async fn a_retry_still_running_past_the_deadline_does_not_post_the_first_attempt
     let posted = |notices: &[String]| notices.iter().any(|n| n.starts_with("Handoff failed"));
     assert!(!posted(&notices_at_deadline), "{notices_at_deadline:?}");
     assert!(!posted(&fx.notices().await), "{:?}", fx.notices().await);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn the_deadline_starts_only_after_the_tree_gate_is_held() {
+    let fx = gated_fixture().await;
+    queue_settled(&fx, planner()).await;
+    let other_action = tree_gate::lock(&fx.repo).await;
+    let started = Arc::new(AtomicUsize::new(0));
+
+    let agent = fx.agent.clone();
+    let counted = started.clone();
+    let task = tokio::spawn(async move {
+        let deadline = move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<()>()
+        };
+        agent.run_settled_handoff_until(2, deadline).await;
+    });
+    // On this single-thread runtime the task has run until it parks on the held gate.
+    for _ in 0..50 {
+        tokio::task::yield_now().await;
+    }
+    let while_waiting = started.load(Ordering::SeqCst);
+    drop(other_action);
+    fx.until_rpc("new_session").await;
+    let once_running = started.load(Ordering::SeqCst);
+    fx.release().await;
+    finished(task).await;
+
+    assert_eq!(
+        while_waiting, 0,
+        "waiting for the gate must not eat the deadline"
+    );
+    assert_eq!(once_running, 1, "one deadline, made once the action runs");
     fx.finish().await;
 }

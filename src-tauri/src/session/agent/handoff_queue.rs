@@ -179,7 +179,7 @@ impl SessionAgent {
         let mut notice = None;
         for _ in 0..ATTEMPTS {
             // Each attempt takes the gate and checks again, so a retry never holds the gate across the gap.
-            match self.attempt_handoff(&queued, resend_only, deadline()).await {
+            match self.attempt_handoff(&queued, resend_only, &deadline).await {
                 Attempt::Done => {
                     notice = None;
                     break;
@@ -225,11 +225,12 @@ impl SessionAgent {
 
     /// The settle-time check, then the action, under one hold of the tree gate. The action runs on its
     /// own task that owns the gate, so a slow one is waited for at most `deadline`, never cancelled.
+    /// `deadline` is a factory so its clock starts once the gate is held, not while queued for it.
     async fn attempt_handoff<D: Future<Output = ()>>(
         &self,
         queued: &QueuedHandoff,
         resend_only: bool,
-        deadline: D,
+        deadline: &impl Fn() -> D,
     ) -> Attempt {
         // The check and the action share one hold, so a re-parent cannot land between them (#1861).
         let gate = self.hold_tree_gate(queued.sender.is_some()).await;
@@ -254,7 +255,7 @@ impl SessionAgent {
             late.tell_late(failed_notice(&reason), entry_generation)
                 .await;
         };
-        match finish_until(deadline, gate, action, tell_late).await {
+        match finish_until(deadline(), gate, action, tell_late).await {
             Waited::Done(Ok(())) => Attempt::Done,
             Waited::Done(Err(failed)) => Attempt::Failed(failed),
             Waited::StillRunning => Attempt::StillRunning,
