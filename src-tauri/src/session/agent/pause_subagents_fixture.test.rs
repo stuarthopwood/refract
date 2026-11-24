@@ -12,9 +12,13 @@ use crate::omp::transcript::TranscriptItem;
 use crate::session::agent::{AgentError, SessionAgent};
 use crate::store::registry::Session;
 
+/// 5 min of 25 ms polls; a full parallel run can starve the stub process for over a minute.
+const POLLS: usize = 12_000;
 const STUB: &str = r#"
 const fs = require('fs');
 const [log, gateFile, configJson] = process.argv.slice(2);
+// Slows every answer, to reproduce a loaded machine: STUB_DELAY_MS=4000 cargo test --lib gate_tests
+const delayMs = Number(process.env.STUB_DELAY_MS || 0);
 const cfg = JSON.parse(configJson);
 const live = new Set(cfg.running);
 const uncancellable = new Set(cfg.stuck);
@@ -27,6 +31,10 @@ function reply(cmd, success, data, error) {
   process.stdout.write(JSON.stringify(body) + '\n');
 }
 function answer(cmd) {
+  if (delayMs > 0) return setTimeout(() => answerNow(cmd), delayMs);
+  answerNow(cmd);
+}
+function answerNow(cmd) {
   if (cmd.type === 'get_subagents') {
     if (cfg.listError) return reply(cmd, false, null, cfg.listError);
     return reply(cmd, true, { subagents: [...live].map((id) => ({ id })) });
@@ -301,19 +309,31 @@ impl Fixture {
             .collect()
     }
 
-    /// Pause's RPCs and the auto-cancel run off the test's task, so poll for their effect.
+    /// Pause's RPCs and the auto-cancel run off the test's task, so poll for their effect. The stub is a
+    /// real process: the bound only catches a command that never comes, not a slow machine.
     pub async fn until_rpc(&self, kind: &str) {
-        for _ in 0..200 {
-            if self.rpc_types().await.iter().any(|seen| seen == kind) {
+        self.until_rpc_count(kind, 1).await;
+    }
+
+    pub async fn until_rpc_count(&self, kind: &str, count: usize) {
+        for _ in 0..POLLS {
+            if self
+                .rpc_types()
+                .await
+                .iter()
+                .filter(|seen| *seen == kind)
+                .count()
+                >= count
+            {
                 return;
             }
             tokio::time::sleep(Duration::from_millis(25)).await;
         }
-        panic!("no {kind} arrived");
+        panic!("fewer than {count} {kind} arrived");
     }
 
     pub async fn until_notices(&self, count: usize) {
-        for _ in 0..200 {
+        for _ in 0..POLLS {
             if self.notices().await.len() >= count {
                 return;
             }

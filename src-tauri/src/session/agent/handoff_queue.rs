@@ -1,11 +1,12 @@
 // The deferral slot (#1861): a handoff asked for mid-turn waits here and runs once the turn settles.
 // One slot per agent, so a Session holds at most one queued action.
 
+use std::future::Future;
 use std::time::Duration;
 
 use tokio::sync::OwnedMutexGuard;
 
-use super::detached_action::{finish_within, LostAction, Waited};
+use super::detached_action::{finish_until, LostAction, Waited};
 use super::start_with_message::{FirstMessage, StartStage, StartThenSendError};
 use super::{AgentError, AgentState, SessionAgent, SessionStatus};
 use crate::agent_tools::handoff_target::{check_target, needs_card, MOVED_OUT_OF_TREE};
@@ -156,11 +157,16 @@ impl SessionAgent {
     /// Runs the action queued during the turn that settled as `generation`; a follow-up turn that
     /// already started leaves it for its own settle, and a stop already emptied the slot.
     pub(super) async fn run_settled_handoff(&self, generation: u64) {
-        self.run_settled_handoff_within(generation, ACTION_DEADLINE)
+        self.run_settled_handoff_until(generation, || tokio::time::sleep(ACTION_DEADLINE))
             .await;
     }
 
-    async fn run_settled_handoff_within(&self, generation: u64, deadline: Duration) {
+    /// `deadline` makes each attempt's moment to stop waiting, so a test can end it on a signal.
+    async fn run_settled_handoff_until<D: Future<Output = ()>>(
+        &self,
+        generation: u64,
+        deadline: impl Fn() -> D,
+    ) {
         let queued = {
             let mut state = self.state.lock().await;
             if state.status != SessionStatus::Idle || state.turn_generation != generation {
@@ -173,7 +179,7 @@ impl SessionAgent {
         let mut notice = None;
         for _ in 0..ATTEMPTS {
             // Each attempt takes the gate and checks again, so a retry never holds the gate across the gap.
-            match self.attempt_handoff(&queued, resend_only, deadline).await {
+            match self.attempt_handoff(&queued, resend_only, deadline()).await {
                 Attempt::Done => {
                     notice = None;
                     break;
@@ -219,11 +225,11 @@ impl SessionAgent {
 
     /// The settle-time check, then the action, under one hold of the tree gate. The action runs on its
     /// own task that owns the gate, so a slow one is waited for at most `deadline`, never cancelled.
-    async fn attempt_handoff(
+    async fn attempt_handoff<D: Future<Output = ()>>(
         &self,
         queued: &QueuedHandoff,
         resend_only: bool,
-        deadline: Duration,
+        deadline: D,
     ) -> Attempt {
         // The check and the action share one hold, so a re-parent cannot land between them (#1861).
         let gate = self.hold_tree_gate(queued.sender.is_some()).await;
@@ -248,7 +254,7 @@ impl SessionAgent {
             late.tell_late(failed_notice(&reason), entry_generation)
                 .await;
         };
-        match finish_within(deadline, gate, action, tell_late).await {
+        match finish_until(deadline, gate, action, tell_late).await {
             Waited::Done(Ok(())) => Attempt::Done,
             Waited::Done(Err(failed)) => Attempt::Failed(failed),
             Waited::StillRunning => Attempt::StillRunning,
