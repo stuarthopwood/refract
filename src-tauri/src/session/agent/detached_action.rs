@@ -34,6 +34,24 @@ where
     L: FnOnce(Result<T, LostAction>) -> LF + Send + 'static,
     LF: Future<Output = ()> + Send + 'static,
 {
+    finish_until(tokio::time::sleep(deadline), gate, action, late).await
+}
+
+/// `finish_within` with the moment the caller stops waiting as a future, so a test whose action runs
+/// on a real process can end the wait on a signal instead of racing the process's speed to a clock.
+pub async fn finish_until<T, A, L, LF, D>(
+    deadline: D,
+    gate: Option<OwnedMutexGuard<()>>,
+    action: A,
+    late: L,
+) -> Waited<T>
+where
+    T: Send + 'static,
+    A: Future<Output = T> + Send + 'static,
+    L: FnOnce(Result<T, LostAction>) -> LF + Send + 'static,
+    LF: Future<Output = ()> + Send + 'static,
+    D: Future<Output = ()>,
+{
     let (tx, mut rx) = oneshot::channel();
     let task = tokio::spawn(async move {
         let result = action.await;
@@ -57,9 +75,9 @@ where
             late(unclaimed).await;
         }
     });
-    match tokio::time::timeout(deadline, &mut rx).await {
-        Ok(received) => claimed(received.ok()),
-        Err(_) => {
+    tokio::select! {
+        received = &mut rx => claimed(received.ok()),
+        () = deadline => {
             // Closing first makes a result sent in this instant either arrive here or go to `late`.
             rx.close();
             rx.try_recv()

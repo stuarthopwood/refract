@@ -1,13 +1,20 @@
 // A settled cross-Session handoff holds the Project's tree gate from its check to its action (#1861).
 
 use std::future::Future;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
+
+use tokio::sync::watch;
 
 use super::{try_queue, HandoffAction};
 use crate::agent_tools::tree_gate;
 use crate::session::agent::pause_subagents::fixture::{fixture_with, Fixture, Stub};
 use crate::session::agent::SessionStatus;
 use crate::store::registry::SessionPatch;
+
+/// Only a hang trips this: a full parallel run can starve the stub process for over a minute.
+const HANG_BOUND: Duration = Duration::from_secs(300);
 
 /// The new Conversation's RPC waits for `release`, so the action stays in flight while a test looks.
 async fn gated_fixture() -> Fixture {
@@ -63,7 +70,7 @@ async fn gate_is_held(repo: &str) -> bool {
 }
 
 async fn finished(task: tokio::task::JoinHandle<()>) {
-    tokio::time::timeout(Duration::from_secs(60), task)
+    tokio::time::timeout(HANG_BOUND, task)
         .await
         .expect("the settled handoff hung")
         .unwrap();
@@ -128,27 +135,44 @@ async fn a_reparent_that_wins_the_gate_first_drops_the_uncarded_action() {
     fx.finish().await;
 }
 
-/// Starts the settle with a short deadline and returns once the caller has stopped waiting, with the
-/// stub's `new_session` still unanswered.
-async fn settle_past_the_deadline(fx: &Fixture) {
-    settle_past(fx, Duration::from_millis(500)).await;
-}
-
-/// A longer deadline for a test whose first attempt must finish inside it on a loaded machine.
-async fn settle_past(fx: &Fixture, deadline: Duration) {
+/// Starts the settle with the caller's deadline held back until `expire` fires, so the stub's speed
+/// cannot decide whether an attempt finished in time.
+fn settle_until_expired(fx: &Fixture) -> (tokio::task::JoinHandle<()>, watch::Sender<bool>) {
+    let (expire, expired) = watch::channel(false);
     let agent = fx.agent.clone();
-    let task = tokio::spawn(async move { agent.run_settled_handoff_within(2, deadline).await });
-    finished(task).await;
-    fx.until_rpc("new_session").await;
+    let task = tokio::spawn(async move {
+        let deadline = move || {
+            let mut expired = expired.clone();
+            async move {
+                if expired.wait_for(|passed| *passed).await.is_err() {
+                    // A dropped sender is not the deadline passing.
+                    std::future::pending::<()>().await;
+                }
+            }
+        };
+        agent.run_settled_handoff_until(2, deadline).await;
+    });
+    (task, expire)
 }
 
+/// Returns once the caller has stopped waiting, with the stub's `new_session` still unanswered.
+async fn settle_past_the_deadline(fx: &Fixture) {
+    settle_past(fx, "new_session", 1).await;
+}
+
+/// Lets the deadline pass only once the stub holds the `count`th `kind`, which the action is waiting on.
+async fn settle_past(fx: &Fixture, kind: &str, count: usize) {
+    let (task, expire) = settle_until_expired(fx);
+    fx.until_rpc_count(kind, count).await;
+    expire.send_replace(true);
+    finished(task).await;
+}
+
+/// The action frees the gate when it ends; the bound only catches a hang.
 async fn until_gate_free(repo: &str) {
-    for _ in 0..200 {
-        if !gate_is_held(repo).await {
-            return;
-        }
-    }
-    panic!("the detached action never freed the gate");
+    tokio::time::timeout(HANG_BOUND, tree_gate::lock(repo))
+        .await
+        .expect("the detached action never freed the gate");
 }
 
 async fn count_of(fx: &Fixture, kind: &str) -> usize {
@@ -274,7 +298,7 @@ async fn a_retry_still_running_past_the_deadline_does_not_post_the_first_attempt
     .await;
     queue_settled(&fx, planner()).await;
 
-    settle_past(&fx, Duration::from_secs(10)).await;
+    settle_past(&fx, "prompt", 2).await;
     let notices_at_deadline = fx.notices().await;
     fx.release().await;
     until_gate_free(&fx.repo).await;
@@ -285,5 +309,40 @@ async fn a_retry_still_running_past_the_deadline_does_not_post_the_first_attempt
     let posted = |notices: &[String]| notices.iter().any(|n| n.starts_with("Handoff failed"));
     assert!(!posted(&notices_at_deadline), "{notices_at_deadline:?}");
     assert!(!posted(&fx.notices().await), "{:?}", fx.notices().await);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn the_deadline_starts_only_after_the_tree_gate_is_held() {
+    let fx = gated_fixture().await;
+    queue_settled(&fx, planner()).await;
+    let other_action = tree_gate::lock(&fx.repo).await;
+    let started = Arc::new(AtomicUsize::new(0));
+
+    let agent = fx.agent.clone();
+    let counted = started.clone();
+    let task = tokio::spawn(async move {
+        let deadline = move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<()>()
+        };
+        agent.run_settled_handoff_until(2, deadline).await;
+    });
+    // On this single-thread runtime the task has run until it parks on the held gate.
+    for _ in 0..50 {
+        tokio::task::yield_now().await;
+    }
+    let while_waiting = started.load(Ordering::SeqCst);
+    drop(other_action);
+    fx.until_rpc("new_session").await;
+    let once_running = started.load(Ordering::SeqCst);
+    fx.release().await;
+    finished(task).await;
+
+    assert_eq!(
+        while_waiting, 0,
+        "waiting for the gate must not eat the deadline"
+    );
+    assert_eq!(once_running, 1, "one deadline, made once the action runs");
     fx.finish().await;
 }
