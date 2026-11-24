@@ -18,6 +18,7 @@ use tokio::sync::Mutex as AsyncMutex;
 #[cfg(windows)]
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 
+use crate::ipc::readiness::find_version;
 use crate::process::executables::resolve_omp;
 
 const TIMEOUT_MS: u64 = 15_000;
@@ -484,6 +485,23 @@ pub async fn set_config_with(
     )
     .await?;
     parse_object_json(&stdout)
+}
+
+/// The installed `omp` version from `omp --version`, parsed the way readiness parses it.
+pub async fn installed_version_with(
+    executor: &dyn OmpExecutor,
+) -> Result<(u32, u32, u32), OmpConfigError> {
+    let args = vec!["--version".to_string()];
+    let stdout =
+        call_config_locked(executor, &args, "Could not read the omp version.", &[]).await?;
+    find_version(&stdout)
+        .map(|(_, major, minor, patch)| (major, minor, patch))
+        .ok_or_else(|| {
+            OmpConfigError::new(
+                OmpConfigErrorCode::ParseFailed,
+                "Could not read an omp version from `omp --version`.",
+            )
+        })
 }
 
 pub async fn set_config(
