@@ -5729,7 +5729,7 @@ Written before the build. Findings: `missing` = the version-aware `tools.command
 - [x] T538 Run `pnpm check:file-size` and `pnpm check:comment-density`, per FR-143
 - [x] T539 Commit and push `feat/2195-ask-followups`, per FR-143
 
-## Phase 108: Convergence (2026-11-25, #2135 ask follow-ups, FR-144, FR-134 and FR-139 amended; clarification "Session 2026-11-25 (ask follow-ups, #2135)", US2 scenario 14)
+## Phase 108: Convergence (2026-11-25, #2135 ask follow-ups, FR-144, FR-134 and FR-139 amended; clarification "Session 2026-11-25 (ask follow-ups, #2135)", US2 scenario 15)
 
 Written before the build. Findings: `missing` = the double-quote and bidi label checks in `ask_schema.rs`, the shared invisible-format table, the info-toast-plus-announcement helper, and the cancel wording; `partial` = `ask_schema.test.rs` (no tab or U+0085 rows), `groupToolItems.test.ts` (no adjacent-failure, native `ask` or skill cases); `matches` = `readNumberedAnswers.ts` parser (unchanged by decision). `approval::card_id` stays: `serve` in `router.rs` still keys every other tool's card with it, and the `refract_ask` line at `router.rs:462` must agree with that cancel path.
 
