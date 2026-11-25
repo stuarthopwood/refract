@@ -7,6 +7,7 @@ use crate::omp::transcript::RequestResolution;
 
 use super::ask_frame::parse_ask_questions;
 use super::commands::string_array;
+use super::form_frame::{build_form_response, validate_form_data};
 use super::launch_support::truncate;
 use super::{AgentError, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
 
@@ -89,8 +90,9 @@ impl SessionAgent {
                 .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         }
 
-        // `cancelled` wins, then `approve`, otherwise a question answer; a late answer is no answer.
-        let resolved = if late_ask || answer.get("cancelled").is_some() {
+        // `cancelled: true` wins, then `approve`, otherwise a question answer; a late answer is no answer.
+        // `{data, cancelled: false}` is an answer, so only an explicit `true` cancels.
+        let resolved = if late_ask || answer.get("cancelled") == Some(&Value::Bool(true)) {
             RequestResolution::Cancelled
         } else if let Some(approve) = answer.get("approve") {
             if approve.as_bool() == Some(true) {
@@ -137,8 +139,8 @@ pub(super) enum DialogClassification {
     Malformed {
         id: String,
     },
-    /// A blocking method Refract has no card for, such as OMP's `form`. `frame.rs` answers it
-    /// `{cancelled:true}` so the agent does not wait for a reply that never comes.
+    /// A blocking method Refract has no card for, or a `form` frame with no `html`. `frame.rs` answers
+    /// it `{cancelled:true}` so the agent does not wait for a reply that never comes.
     Unsupported {
         id: String,
         method: String,
@@ -262,14 +264,22 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
                 request_id: id,
                 questions,
                 // OMP's `timeout` is already in milliseconds on the wire; do not scale it.
-                deadline_at: frame
-                    .get("timeout")
-                    .and_then(Value::as_f64)
-                    .filter(|ms| ms.is_finite() && *ms >= 0.0)
-                    .map(|ms| now_ms().saturating_add(ms as i64)),
+                deadline_at: deadline_at(frame),
                 host_call: false,
             }),
             None => DialogClassification::Malformed { id },
+        },
+        // OMP v19 whole-form dialog. An id-less frame cannot be answered, so it falls through to Ignore.
+        "form" if !id.is_empty() => match frame.get("html").and_then(Value::as_str) {
+            Some(html) => DialogClassification::Request(PendingRequest::Form {
+                request_id: id,
+                html: html.to_string(),
+                deadline_at: deadline_at(frame),
+            }),
+            None => DialogClassification::Unsupported {
+                id,
+                method: "form".to_string(),
+            },
         },
         "cancel" => DialogClassification::Cancel(
             frame
@@ -311,6 +321,15 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
             }
         }
     }
+}
+
+/// The wall-clock deadline for a frame's `timeout` (milliseconds), if it carries a usable one.
+fn deadline_at(frame: &Value) -> Option<i64> {
+    frame
+        .get("timeout")
+        .and_then(Value::as_f64)
+        .filter(|ms| ms.is_finite() && *ms >= 0.0)
+        .map(|ms| now_ms().saturating_add(ms as i64))
 }
 
 fn now_ms() -> i64 {
@@ -502,6 +521,9 @@ fn build_dialog_response(
     request: &PendingRequest,
     answer: &Value,
 ) -> Result<Value, String> {
+    if let PendingRequest::Form { .. } = request {
+        return build_form_response(request_id, answer);
+    }
     if answer.get("cancelled") == Some(&Value::Bool(true)) {
         return Ok(json!({ "type": "extension_ui_response", "id": request_id, "cancelled": true }));
     }
@@ -558,8 +580,12 @@ pub fn is_chat_answer(value: &Value) -> bool {
         && obj.get("option").is_none_or(Value::is_string))
         || matches!(obj.get("value"), Some(Value::String(_)))
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
-        || obj.get("cancelled") == Some(&Value::Bool(true))
+        || (obj.get("cancelled") == Some(&Value::Bool(true))
+            && obj.get("timedOut").is_none_or(Value::is_boolean))
         || matches!(obj.get("answers"), Some(Value::Array(_)))
+        || obj
+            .get("data")
+            .is_some_and(|d| validate_form_data(d).is_ok())
 }
 
 #[cfg(test)]

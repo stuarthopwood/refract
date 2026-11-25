@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import type { PendingRequest } from '../../../../shared/model'
 import { afterAnswered, afterSendFailed, canCancel, cancelSession, type AskFormSession, initialSession, nextAction, submitSession } from './askFormSession'
-import type { AskFormField } from './parseAskHtml'
+import type { AskFormFrameField } from './parseAskHtml'
 
-const FIELDS: AskFormField[] = [
+const FIELDS: AskFormFrameField[] = [
   { kind: 'radio', name: 'db', question: 'Which database?', required: false, options: [{ value: 'pg', label: 'Postgres' }, { value: 'lite', label: 'SQLite' }], defaultValue: [] },
   { kind: 'checkbox', name: 'f', question: 'Which features?', required: false, options: [{ value: 'a', label: 'Auth' }, { value: 'b', label: 'Billing' }], defaultValue: [] },
   { kind: 'text', name: 'why', question: 'Why?', required: false, defaultValue: '' }

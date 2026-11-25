@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { parseAskHtml, type AskFormChoiceField, type AskFormTextField } from './parseAskHtml'
+import { parseAskHtml, type AskFormChoiceField, type AskFormInputField, type AskFormSelectField, type AskFormTextField } from './parseAskHtml'
 
 const PROBE_FORM = `<form>
 <fieldset><legend>Which database?</legend>
@@ -101,14 +101,84 @@ line two</textarea></label>
   })
 
   test.each([
-    ['select', '<label>Pick <select name="s"><option>a</option></select></label>'],
-    ['number', '<label>Age <input type="number" name="a"></label>'],
     ['date', '<label>When <input type="date" name="d"></label>'],
     ['password', '<label>Secret <input type="password" name="p"></label>'],
     ['file', '<label>Doc <input type="file" name="f"></label>'],
-    ['a supported field next to a select', '<input name="ok" aria-label="Ok"><select name="s"></select>'],
+    ['a select with no options', '<input name="ok" aria-label="Ok"><select name="s"></select>'],
   ])('Given an unsupported %s field, When parsed, Then the whole form is rejected', (_label, html) => {
     expect(parseAskHtml(html)).toBeNull()
+  })
+
+  test('Given a single select with no option marked, When parsed, Then the first enabled option is the default', () => {
+    const html = '<label>Pick <select name="s"><option value="x" disabled>X</option><option value="a">A</option><option value="b">B</option></select></label>'
+    expect(parseAskHtml(html)).toEqual([
+      {
+        kind: 'select',
+        name: 's',
+        question: 'Pick',
+        required: false,
+        multiple: false,
+        options: [
+          { value: 'x', label: 'X', disabled: true },
+          { value: 'a', label: 'A' },
+          { value: 'b', label: 'B' },
+        ],
+        defaultValue: ['a'],
+      },
+    ])
+  })
+
+  test('Given a single select with an option marked selected, When parsed, Then that option is the default and an option without a value uses its text', () => {
+    const [field] = parseAskHtml('<label>Pick <select name="s" required><option>One</option><option selected>Two</option></select></label>') as [AskFormSelectField]
+    expect(field.required).toBe(true)
+    expect(field.options.map((option) => option.value)).toEqual(['One', 'Two'])
+    expect(field.defaultValue).toEqual(['Two'])
+  })
+
+  test('Given a multiple select, When parsed, Then every selected option is a default and none is forced', () => {
+    const multi = '<label>Pick <select name="s" multiple><option value="a" selected>A</option><option value="b">B</option><option value="c" selected>C</option></select></label>'
+    expect((parseAskHtml(multi) as [AskFormSelectField])[0]).toMatchObject({ multiple: true, defaultValue: ['a', 'c'] })
+    const none = '<label>Pick <select name="s" multiple><option value="a">A</option><option value="b">B</option></select></label>'
+    expect((parseAskHtml(none) as [AskFormSelectField])[0].defaultValue).toEqual([])
+  })
+
+  test('Given a number input with limits and a default, When parsed, Then min, max, step and the default are carried', () => {
+    const [field] = parseAskHtml('<label>Age <input type="number" name="a" min="1" max="9.5" step="0.5" value="3" required></label>') as [AskFormInputField]
+    expect(field).toEqual({ kind: 'number', name: 'a', question: 'Age', required: true, defaultValue: '3', min: 1, max: 9.5, step: 0.5 })
+  })
+
+  test('Given a range input, When parsed, Then it is a range field with its limits and default', () => {
+    const [field] = parseAskHtml('<label>Level <input type="range" name="l" min="0" max="10" value="4"></label>') as [AskFormInputField]
+    expect(field).toMatchObject({ kind: 'range', min: 0, max: 10, defaultValue: '4' })
+  })
+
+  test('Given email and url inputs with length and pattern rules, When parsed, Then each rule is carried', () => {
+    const html = '<label>Mail <input type="email" name="m" minlength="3" maxlength="40" pattern=".+@x\\.com" value="a@x.com"></label><label>Site <input type="url" name="u"></label>'
+    const [email, url] = parseAskHtml(html) as [AskFormInputField, AskFormInputField]
+    expect(email).toMatchObject({ kind: 'email', minLength: 3, maxLength: 40, pattern: '.+@x\\.com', defaultValue: 'a@x.com' })
+    expect(url.kind).toBe('url')
+    expect(url).not.toHaveProperty('pattern')
+  })
+
+  test('Given text controls with length and pattern rules, When parsed, Then a text input carries all three and a textarea only the lengths', () => {
+    const html = '<label>T <input name="t" minlength="2" maxlength="5" pattern="[a-z]+"></label><label>N <textarea name="n" maxlength="9" pattern="x"></textarea></label>'
+    const [text, area] = parseAskHtml(html) as [AskFormTextField, AskFormTextField]
+    expect(text).toMatchObject({ minLength: 2, maxLength: 5, pattern: '[a-z]+' })
+    expect(area).toMatchObject({ kind: 'textarea', maxLength: 9 })
+    expect(area).not.toHaveProperty('pattern')
+  })
+
+  test('Given a numeric attribute that is blank or not a number, When parsed, Then the limit is left off', () => {
+    const [field] = parseAskHtml('<label>Age <input type="number" name="a" min="" max="abc"></label>') as [AskFormInputField]
+    expect(field).not.toHaveProperty('min')
+    expect(field).not.toHaveProperty('max')
+  })
+
+  test('Given a disabled radio option and an unnamed control, When parsed, Then the option is flagged and the field is marked unnamed', () => {
+    const [group, loose] = parseAskHtml('<fieldset><legend>Pick</legend><label><input type="radio" name="p" value="a"> A</label><label><input type="radio" name="p" value="b" disabled> B</label></fieldset><label>Free <input></label>') as [AskFormChoiceField, AskFormTextField]
+    expect(group.options[1]).toEqual({ value: 'b', label: 'B', disabled: true })
+    expect(loose.unnamed).toBe(true)
+    expect(group).not.toHaveProperty('unnamed')
   })
 
   test.each([

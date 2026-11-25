@@ -1,11 +1,11 @@
 import { describe, expect, test } from 'vitest'
 import { type AskFieldValue, canSubmit, firstMissingField, initialValue, isAnswered, missingFieldMessage, planSteps, resolveStep } from './answerPlan'
 import { matchFrame } from './matchFrame'
-import type { AskFormField } from './parseAskHtml'
+import type { AskFormFrameField } from './parseAskHtml'
 
-const radio: AskFormField = { kind: 'radio', name: 'db', question: 'Which database?', required: false, options: [{ value: 'pg', label: 'Postgres' }, { value: 'lite', label: 'SQLite' }], defaultValue: [] }
-const checkbox: AskFormField = { kind: 'checkbox', name: 'f', question: 'Which features?', required: false, options: [{ value: 'a', label: 'Auth' }, { value: 'b', label: 'Billing' }], defaultValue: [] }
-const text: AskFormField = { kind: 'text', name: 'why', question: 'Why?', required: false, defaultValue: '' }
+const radio: AskFormFrameField = { kind: 'radio', name: 'db', question: 'Which database?', required: false, options: [{ value: 'pg', label: 'Postgres' }, { value: 'lite', label: 'SQLite' }], defaultValue: [] }
+const checkbox: AskFormFrameField = { kind: 'checkbox', name: 'f', question: 'Which features?', required: false, options: [{ value: 'a', label: 'Auth' }, { value: 'b', label: 'Billing' }], defaultValue: [] }
+const text: AskFormFrameField = { kind: 'text', name: 'why', question: 'Why?', required: false, defaultValue: '' }
 
 const choice = (selected: string[], otherSelected = false, otherText = ''): AskFieldValue => ({ kind: 'choice', selected, otherSelected, otherText })
 
@@ -56,7 +56,7 @@ describe('isAnswered and canSubmit', () => {
   })
 
   test('Given required fields, When one is unanswered, Then Submit is blocked until it is filled', () => {
-    const fields: AskFormField[] = [{ ...radio, required: true }, { ...text, required: true }, checkbox]
+    const fields: AskFormFrameField[] = [{ ...radio, required: true }, { ...text, required: true }, checkbox]
     const values = [choice([]), { kind: 'text', text: '' } as const, choice([])]
     expect(canSubmit(fields, values)).toBe(false)
     expect(canSubmit(fields, [choice(['pg']), { kind: 'text', text: '' }, choice([])])).toBe(false)
@@ -86,7 +86,7 @@ describe('isAnswered and canSubmit', () => {
 
 describe('firstMissingField and missingFieldMessage', () => {
   test('Given several unanswered fields, When asked, Then the first in form order is reported', () => {
-    const fields: AskFormField[] = [text, radio, { ...checkbox, required: true }]
+    const fields: AskFormFrameField[] = [text, radio, { ...checkbox, required: true }]
     const values = [{ kind: 'text', text: '' } as const, choice([]), choice([])]
     expect(firstMissingField(fields, values)).toBe(1)
     expect(missingFieldMessage(fields, values)).toBe('Which database? is required')

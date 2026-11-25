@@ -439,7 +439,8 @@ export const isAskTool = (tool: string): boolean => tool === 'ask' || isRefractA
 export type PendingRequest =
   | { kind: 'approval'; requestId: string; tool: string; target: string; details: string[]; options?: string[] } // #1140: OMP's own option labels, answered verbatim
   | { kind: 'question'; requestId: string; title: string; message?: string; options: string[]; optionDetails?: (string | undefined)[]; inputKind: 'choice' | 'text' | 'confirm'; secret?: boolean }
-  | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number; hostCall?: boolean };
+  | { kind: 'ask'; requestId: string; questions: AskQuestion[]; deadlineAt?: number; hostCall?: boolean }
+  | { kind: 'form'; requestId: string; html: string; deadlineAt?: number }; // OMP v19 whole-form dialog: one HTML document answered at once
 
 /** Derived from OMP by scanning `Session.sessionDir` for `*.jsonl` files; not stored by Refract. */
 export interface ConversationInfo {

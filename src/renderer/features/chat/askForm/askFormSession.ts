@@ -2,7 +2,7 @@ import type { ChatAnswer } from '../../../../shared/ipc'
 import type { PendingRequest } from '../../../../shared/model'
 import { type AskFieldValue, canSubmit, initialValue, planSteps, resolveStep } from './answerPlan'
 import { frameBelongsToForm, matchFrame } from './matchFrame'
-import type { AskFormField } from './parseAskHtml'
+import type { AskFormFrameField } from './parseAskHtml'
 
 /**
  * `editing`: the user is filling the card. `answering`: Submit was pressed and each arriving frame
@@ -28,7 +28,7 @@ export type AskFormAction =
   | { readonly type: 'fallback' }
   | { readonly type: 'send'; readonly requestId: string; readonly answer: ChatAnswer }
 
-export function initialSession(fields: readonly AskFormField[]): AskFormSession {
+export function initialSession(fields: readonly AskFormFrameField[]): AskFormSession {
   return { values: fields.map(initialValue), phase: 'editing', cursor: 0, stepIndex: 0, handled: [], inflight: null, error: null }
 }
 
@@ -43,7 +43,7 @@ export function nextFrame(session: AskFormSession, pending: readonly PendingRequ
 const isFreeTextFrame = (frame: QuestionFrame): boolean => frame.inputKind === 'text' && !frame.secret
 
 /** What to do with the next unanswered frame. Pure: the hook performs the answer and records the outcome. */
-export function nextAction(session: AskFormSession, fields: readonly AskFormField[], pending: readonly PendingRequest[]): AskFormAction {
+export function nextAction(session: AskFormSession, fields: readonly AskFormFrameField[], pending: readonly PendingRequest[]): AskFormAction {
   if (session.inflight !== null || session.phase === 'fallback') return { type: 'none' }
 
   if (session.phase === 'cancelling') {
@@ -76,7 +76,7 @@ export function nextAction(session: AskFormSession, fields: readonly AskFormFiel
 }
 
 /** The free-text frame OMP sends after "Other" is this form's, though its title is OMP's own prompt. */
-function belongsToCancel(session: AskFormSession, fields: readonly AskFormField[], frame: QuestionFrame): boolean {
+function belongsToCancel(session: AskFormSession, fields: readonly AskFormFrameField[], frame: QuestionFrame): boolean {
   if (frameBelongsToForm(fields, frame)) return true
   const field = fields[session.cursor]
   const value = session.values[session.cursor]
@@ -85,7 +85,7 @@ function belongsToCancel(session: AskFormSession, fields: readonly AskFormField[
 }
 
 /** Submit starts answering only when nothing the form needs is missing. */
-export function submitSession(session: AskFormSession, fields: readonly AskFormField[]): AskFormSession {
+export function submitSession(session: AskFormSession, fields: readonly AskFormFrameField[]): AskFormSession {
   return session.phase === 'editing' && canSubmit(fields, session.values) ? { ...session, phase: 'answering', error: null } : session
 }
 
@@ -104,7 +104,7 @@ export function afterSendFailed(session: AskFormSession, message: string): AskFo
 }
 
 /** The session after `answer` to `requestId` was accepted by OMP. */
-export function afterAnswered(session: AskFormSession, fields: readonly AskFormField[], requestId: string, answer: ChatAnswer): AskFormSession {
+export function afterAnswered(session: AskFormSession, fields: readonly AskFormFrameField[], requestId: string, answer: ChatAnswer): AskFormSession {
   const base = { ...session, handled: [...session.handled, requestId], inflight: null, error: null }
   if (session.phase !== 'answering' || 'cancelled' in answer) return base
   const field = fields[session.cursor]

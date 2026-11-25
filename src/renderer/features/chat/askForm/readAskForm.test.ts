@@ -13,6 +13,11 @@ describe('readAskForm', () => {
     expect(readAskForm(undefined)).toBeNull()
     expect(readAskForm('html')).toBeNull()
   })
+
+  test('Given html with a select or a number input, When read, Then null keeps those forms off the per-field path', () => {
+    expect(readAskForm({ html: '<select name="s"><option>a</option><option>b</option></select>' })).toBeNull()
+    expect(readAskForm({ html: '<input type="text" name="t"><input type="number" name="n">' })).toBeNull()
+  })
 })
 
 describe('isAskTimedOut', () => {

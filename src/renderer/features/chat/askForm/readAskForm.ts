@@ -1,9 +1,13 @@
-import { parseAskHtml, type AskFormField } from './parseAskHtml'
+import { isFrameField, parseAskHtml, type AskFormFrameField } from './parseAskHtml'
 
-/** The ask tool's `args.html` as a field list, or `null` when it carries none the card can build. */
-export function readAskForm(args: unknown): AskFormField[] | null {
+/**
+ * The ask tool's `args.html` as per-field-card fields, or `null` when it carries none the card can build.
+ * A select or typed input exists only in a v19 whole form, so a form holding one keeps today's per-field path.
+ */
+export function readAskForm(args: unknown): AskFormFrameField[] | null {
   if (!args || typeof args !== 'object' || !('html' in args)) return null
-  return parseAskHtml(args.html)
+  const fields = parseAskHtml(args.html)
+  return fields?.every(isFrameField) ? fields : null
 }
 
 const isTimedOutFlag = (record: unknown): boolean => !!record && typeof record === 'object' && 'timedOut' in record && record.timedOut === true

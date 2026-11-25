@@ -1,6 +1,6 @@
 import type { ChatAnswer } from '../../../../shared/ipc'
 import type { FrameMatch } from './matchFrame'
-import type { AskFormField } from './parseAskHtml'
+import type { AskFormField, AskFormFrameField } from './parseAskHtml'
 
 /** What the card holds for one field: choice groups track option values plus "Other"; text fields track the string. */
 export type AskFieldValue =
@@ -34,7 +34,7 @@ export function isAnswered(value: AskFieldValue): boolean {
  * The first field Submit is waiting on, or -1. A field the HTML marks `required` must be answered,
  * and so must every radio group: OMP has no "none" row to send for an unanswered one.
  */
-export function firstMissingField(fields: readonly AskFormField[], values: readonly AskFieldValue[]): number {
+export function firstMissingField(fields: readonly AskFormFrameField[], values: readonly AskFieldValue[]): number {
   return fields.findIndex((field, index) => {
     const value = values[index]
     const mustAnswer = field.required || field.kind === 'radio'
@@ -42,12 +42,12 @@ export function firstMissingField(fields: readonly AskFormField[], values: reado
   })
 }
 
-export function canSubmit(fields: readonly AskFormField[], values: readonly AskFieldValue[]): boolean {
+export function canSubmit(fields: readonly AskFormFrameField[], values: readonly AskFieldValue[]): boolean {
   return firstMissingField(fields, values) === -1
 }
 
 /** What a blocked Submit tells the user, naming the field it is waiting on, or `null` when nothing is missing. */
-export function missingFieldMessage(fields: readonly AskFormField[], values: readonly AskFieldValue[]): string | null {
+export function missingFieldMessage(fields: readonly AskFormFrameField[], values: readonly AskFieldValue[]): string | null {
   const missing = fields[firstMissingField(fields, values)]
   return missing ? `${missing.question.replace(/\s+/g, ' ').trim()} is required` : null
 }
@@ -57,7 +57,7 @@ export function missingFieldMessage(fields: readonly AskFormField[], values: rea
  * `Done selecting`. A radio group with nothing chosen plans no steps; Submit is blocked until
  * every radio group is answered, so that case never reaches the wire.
  */
-export function planSteps(field: AskFormField, value: AskFieldValue): AnswerStep[] {
+export function planSteps(field: AskFormFrameField, value: AskFieldValue): AnswerStep[] {
   if (!('options' in field) || value.kind !== 'choice') {
     return [{ kind: 'text', text: value.kind === 'text' ? value.text.trim() : '' }]
   }

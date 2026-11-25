@@ -1,140 +1,20 @@
 import * as React from 'react'
-import { Loader2Icon, OctagonXIcon } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { choiceDigitIndex, focusChoiceRow, isRowEnter } from '@/components/askChoiceKeys'
-import { AskChoiceGroup } from '@/components/AskChoiceGroup'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { firstMissingField, missingFieldMessage, type AskFieldValue } from './answerPlan'
-import { canCancel, type AskFormPhase } from './askFormSession'
+import { isRowEnter } from '@/components/askChoiceKeys'
+import { firstMissingField, missingFieldMessage } from './answerPlan'
+import { AskFormFooter, AskFormShell, sessionPhaseNote } from './AskFormChrome'
+import { canCancel } from './askFormSession'
 import { escapeCancelsForm } from './askFormKeys'
-import type { AskFormChoiceField, AskFormField } from './parseAskHtml'
+import { ChoiceField, TextField } from './AskFormFields'
+import type { AskFormFrameField } from './parseAskHtml'
 import { ASKED_USER_TITLE } from '../askedUserLine'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { askFormIntentKey } from './askFormIntentKey'
 import { useAskFormSession } from './useAskFormSession'
 
-type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
-
-interface ChoiceFieldProps {
-  field: AskFormChoiceField
-  value: ChoiceValue
-  disabled: boolean
-  idPrefix: string
-  /** Whether an empty Other box reads as invalid: only after a blocked Submit or leaving the box. */
-  showInvalid: boolean
-  onChange: (value: ChoiceValue) => void
-  onOtherBlur: () => void
-}
-
-function ChoiceField({ field, value, disabled, idPrefix, showInvalid, onChange, onOtherBlur }: ChoiceFieldProps) {
-  const headingId = `${idPrefix}-heading`
-  const toggle = (optionValue: string) => {
-    const selected = value.selected.includes(optionValue) ? value.selected.filter((entry) => entry !== optionValue) : [...value.selected, optionValue]
-    onChange({ ...value, selected })
-  }
-  const select = (optionValue: string) => onChange({ ...value, selected: [optionValue], otherSelected: false })
-  const multi = field.kind === 'checkbox'
-
-  // Digits address this field's options by position, only while focus is inside the field and not in a text box.
-  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (disabled) return
-    const index = choiceDigitIndex(event, field.options.length)
-    const option = index === null ? undefined : field.options[index]
-    if (index === null || !option) return
-    event.preventDefault()
-    if (multi) toggle(option.value)
-    else select(option.value)
-    focusChoiceRow(event.currentTarget, index)
-  }
-
-  return (
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-    <CardContent data-ask-field={idPrefix} className="space-y-2" onKeyDown={handleKeyDown}>
-      <p id={headingId} className="whitespace-pre-line text-sm font-medium">
-        {field.question}
-        {field.required && <span className="font-normal text-muted-foreground">, required</span>}
-      </p>
-      <AskChoiceGroup
-        multi={multi}
-        options={field.options}
-        selected={value.selected}
-        otherSelected={value.otherSelected}
-        disabled={disabled}
-        idPrefix={idPrefix}
-        groupLabelledBy={headingId}
-        groupRequired={field.required}
-        other={{
-          visible: value.otherSelected,
-          text: value.otherText,
-          ariaLabel: `Other answer for ${field.question}`,
-          invalid: showInvalid && value.otherText.trim().length === 0,
-          focusOnShow: true,
-          onTextChange: (otherText) => onChange({ ...value, otherText }),
-          onBlur: onOtherBlur
-        }}
-        onSelect={select}
-        onToggle={toggle}
-        onSelectOther={() => onChange({ ...value, selected: [], otherSelected: true })}
-        onToggleOther={() => onChange({ ...value, otherSelected: !value.otherSelected })}
-      />
-    </CardContent>
-  )
-}
-
-interface TextFieldProps {
-  field: Extract<AskFormField, { kind: 'text' | 'textarea' }>
-  value: string
-  disabled: boolean
-  idPrefix: string
-  onChange: (text: string) => void
-}
-
-function TextField({ field, value, disabled, idPrefix, onChange }: TextFieldProps) {
-  const labelId = `${idPrefix}-heading`
-  const shared = {
-    value,
-    readOnly: disabled,
-    'aria-disabled': disabled,
-    'aria-labelledby': labelId,
-    'aria-required': field.required,
-    onChange: (event: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => onChange(event.target.value)
-  }
-  return (
-    <CardContent data-ask-field={idPrefix} className="space-y-2">
-      <p id={labelId} className="whitespace-pre-line text-sm font-medium">
-        {field.question}
-        {field.required && <span className="font-normal text-muted-foreground">, required</span>}
-      </p>
-      {field.kind === 'textarea' ? <Textarea {...shared} /> : <Input {...shared} />}
-    </CardContent>
-  )
-}
-
-const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
-  answering: 'Submitting your answers',
-  cancelling: 'Cancelled',
-  done: 'Answers submitted'
-}
-
-/** The live form's card chrome; `label` names the card. */
-function AskFormShell({ children, label }: { children: React.ReactNode; label: string }) {
-  return (
-    <Card size="sm" role="group" aria-label={label}>
-      <CardHeader>
-        <CardTitle>Questions from the agent</CardTitle>
-      </CardHeader>
-      {children}
-    </Card>
-  )
-}
-
 interface AskFormCardProps {
   sessionId: string
   askItemId: string
-  fields: readonly AskFormField[]
+  fields: readonly AskFormFrameField[]
 }
 
 /** One card for the whole parsed HTML form; Submit answers OMP's per-field frames in order. */
@@ -150,7 +30,6 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
     }
   }, [intentKey, sessionId])
   const editing = session.phase === 'editing'
-  const note = PHASE_NOTE[session.phase]
   const idBase = `ask-form-${askItemId}`.replace(/[^a-zA-Z0-9_-]/g, '-')
   // A blocked Submit names what is missing and marks empty Other boxes; blurring an Other box marks just that one.
   const [attempted, setAttempted] = React.useState(false)
@@ -211,27 +90,15 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
             <TextField key={key} field={field} value={value.text} disabled={!editing} idPrefix={idPrefix} onChange={(text) => setValue(index, { kind: 'text', text })} />
           ) : null
         })}
-        {(session.error ?? missing) && (
-          <CardContent>
-            <Alert variant="destructive" box="inline">
-              <OctagonXIcon aria-hidden />
-              <AlertDescription>{session.error ?? missing}</AlertDescription>
-            </Alert>
-          </CardContent>
-        )}
-        <CardContent role="status" className="text-sm text-muted-foreground empty:hidden">
-          {note}
-        </CardContent>
-        {/* Stays mounted with the card so the focused button is still in the DOM when the card unmounts. */}
-        <CardFooter>
-          <Button size="sm" variant="ghost" aria-disabled={!cancellable} className="aria-disabled:opacity-50" onClick={() => cancellable && cancel()}>
-            Cancel
-          </Button>
-          <Button size="sm" aria-disabled={!editing || !submittable} aria-busy={session.phase === 'answering'} className="aria-disabled:opacity-50" onClick={trySubmit}>
-            {session.phase === 'answering' && <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
-            {session.phase === 'answering' ? 'Submitting...' : 'Submit'}
-          </Button>
-        </CardFooter>
+        <AskFormFooter
+          error={session.error ?? missing}
+          note={sessionPhaseNote(session.phase)}
+          cancellable={cancellable}
+          submittable={editing && submittable}
+          sending={session.phase === 'answering'}
+          onCancel={cancel}
+          onSubmit={trySubmit}
+        />
       </AskFormShell>
     </div>
   )

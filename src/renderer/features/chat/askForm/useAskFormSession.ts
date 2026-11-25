@@ -5,7 +5,7 @@ import type { PendingRequest } from '../../../../shared/model'
 import { type AskFieldValue, canSubmit } from './answerPlan'
 import { afterAnswered, afterSendFailed, type AskFormSession, cancelSession, initialSession, nextAction, submitSession } from './askFormSession'
 import { answerFailureText } from '../askAnswerError'
-import type { AskFormField } from './parseAskHtml'
+import type { AskFormFrameField } from './parseAskHtml'
 
 const NO_PENDING: PendingRequest[] = []
 
@@ -36,7 +36,7 @@ export function useAskFormOwnsFrames(sessionId: string, askItemId: string | unde
  * Drives one parsed ask form: holds its values and, once submitted, answers each per-field frame
  * OMP sends, in order. A frame that does not fit the form switches the rest to per-field cards.
  */
-export function useAskFormSession(sessionId: string, askItemId: string, fields: readonly AskFormField[]) {
+export function useAskFormSession(sessionId: string, askItemId: string, fields: readonly AskFormFrameField[]) {
   const key = askFormKey(sessionId, askItemId)
   const init = React.useMemo(() => initialSession(fields), [fields])
   const stored = useAskFormStore((state) => state.byKey[key])

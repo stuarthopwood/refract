@@ -17,6 +17,7 @@ import { consumeAskFocusPending, markAskFocusPending, markAskFocusPendingWithFal
 import { isFocusStranded } from '@/lib/focus'
 import { CodeBlock, inferOutputBlock, Markdown } from './Markdown'
 import { AskCard } from './AskCard'
+import { FormRequestCard } from './askForm/FormRequestCard'
 import { answerFailureText } from './askAnswerError'
 import { ApprovalActions } from './ApprovalActions'
 
@@ -117,6 +118,10 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
 
   if (request.kind === 'ask') {
     return <AskCard sessionId={sessionId} request={request} />
+  }
+
+  if (request.kind === 'form') {
+    return <FormRequestCard key={request.requestId} sessionId={sessionId} request={request} />
   }
 
   async function answer(value: ChatAnswer, kind: ResolvedKind, detail?: string) {

@@ -345,3 +345,191 @@ fn a_missing_non_string_or_empty_method_is_named_unknown() {
         }
     }
 }
+
+fn form_card(html: &str) -> PendingRequest {
+    PendingRequest::Form {
+        request_id: "f1".into(),
+        html: html.into(),
+        deadline_at: None,
+    }
+}
+
+#[test]
+fn a_form_frame_with_html_becomes_a_form_card() {
+    let frame = json!({ "id": "f1", "method": "form", "html": "<form></form>" });
+    match classify_dialog(&frame) {
+        DialogClassification::Request(PendingRequest::Form {
+            request_id,
+            html,
+            deadline_at,
+        }) => {
+            assert_eq!(request_id, "f1");
+            assert_eq!(html, "<form></form>");
+            assert_eq!(deadline_at, None);
+        }
+        _ => panic!("a form frame with html is a form card"),
+    }
+}
+
+#[test]
+fn a_form_timeout_is_milliseconds_from_now() {
+    let before = now_ms();
+    let frame = json!({ "id": "f1", "method": "form", "html": "<form></form>", "timeout": 30000 });
+    let DialogClassification::Request(PendingRequest::Form {
+        deadline_at: Some(deadline),
+        ..
+    }) = classify_dialog(&frame)
+    else {
+        panic!("a form frame with a timeout carries a deadline");
+    };
+    assert!((before + 30_000..=now_ms() + 30_000).contains(&deadline));
+}
+
+#[test]
+fn an_unusable_form_timeout_leaves_no_deadline() {
+    for timeout in [json!(-1), json!("30000"), json!(null)] {
+        let frame =
+            json!({ "id": "f1", "method": "form", "html": "<form></form>", "timeout": timeout });
+        assert!(
+            matches!(
+                classify_dialog(&frame),
+                DialogClassification::Request(PendingRequest::Form {
+                    deadline_at: None,
+                    ..
+                })
+            ),
+            "timeout {timeout}"
+        );
+    }
+}
+
+#[test]
+fn a_form_frame_without_usable_html_is_unsupported() {
+    for frame in [
+        json!({ "id": "f1", "method": "form" }),
+        json!({ "id": "f1", "method": "form", "html": 7 }),
+        json!({ "id": "f1", "method": "form", "html": null }),
+    ] {
+        match classify_dialog(&frame) {
+            DialogClassification::Unsupported { id, method } => {
+                assert_eq!(id, "f1");
+                assert_eq!(method, "form");
+            }
+            _ => panic!("expected an unsupported dialog for {frame}"),
+        }
+    }
+}
+
+#[test]
+fn an_id_less_form_frame_is_ignored() {
+    let frame = json!({ "method": "form", "html": "<form></form>" });
+    assert!(matches!(
+        classify_dialog(&frame),
+        DialogClassification::Ignore
+    ));
+}
+
+#[test]
+fn a_form_card_serialises_with_the_form_kind_and_optional_deadline() {
+    let card = serde_json::to_value(form_card("<form></form>")).unwrap();
+    assert_eq!(
+        card,
+        json!({ "kind": "form", "requestId": "f1", "html": "<form></form>" })
+    );
+    let with_deadline = PendingRequest::Form {
+        request_id: "f1".into(),
+        html: String::new(),
+        deadline_at: Some(5),
+    };
+    assert_eq!(
+        serde_json::to_value(with_deadline).unwrap()["deadlineAt"],
+        5
+    );
+}
+
+#[test]
+fn a_form_answer_forwards_data_exactly() {
+    let data = json!({ "title": "Ship it", "count": 3, "ratio": 0.5, "tags": ["a", "b"] });
+    let reply = build_dialog_response("f1", &form_card(""), &json!({ "data": data })).unwrap();
+    assert_eq!(
+        reply,
+        json!({ "type": "extension_ui_response", "id": "f1", "data": data })
+    );
+}
+
+#[test]
+fn a_form_cancel_forwards_cancelled() {
+    let reply = build_dialog_response("f1", &form_card(""), &json!({ "cancelled": true })).unwrap();
+    assert_eq!(
+        reply,
+        json!({ "type": "extension_ui_response", "id": "f1", "cancelled": true })
+    );
+}
+
+#[test]
+fn a_form_deadline_cancel_forwards_timed_out() {
+    let answer = json!({ "cancelled": true, "timedOut": true });
+    let reply = build_dialog_response("f1", &form_card(""), &answer).unwrap();
+    assert_eq!(
+        reply,
+        json!({ "type": "extension_ui_response", "id": "f1", "cancelled": true, "timedOut": true })
+    );
+}
+
+#[test]
+fn only_a_form_cancel_carries_timed_out() {
+    let ask = PendingRequest::Question {
+        request_id: "q1".into(),
+        title: String::new(),
+        message: None,
+        options: vec![],
+        option_details: None,
+        input_kind: "text",
+        secret: false,
+    };
+    let answer = json!({ "cancelled": true, "timedOut": true });
+    let reply = build_dialog_response("q1", &ask, &answer).unwrap();
+    assert_eq!(
+        reply,
+        json!({ "type": "extension_ui_response", "id": "q1", "cancelled": true })
+    );
+}
+
+#[test]
+fn is_chat_answer_takes_a_boolean_timed_out_only() {
+    assert!(is_chat_answer(
+        &json!({ "cancelled": true, "timedOut": true })
+    ));
+    assert!(!is_chat_answer(
+        &json!({ "cancelled": true, "timedOut": "yes" })
+    ));
+}
+
+#[test]
+fn a_form_answer_of_another_shape_is_invalid() {
+    for answer in [
+        json!({ "value": "x" }),
+        json!({ "confirmed": true }),
+        json!({ "answers": [] }),
+        json!({ "cancelled": false }),
+        json!({ "data": "x" }),
+        json!({ "data": { "a": true } }),
+        json!({ "data": { "a": ["x", 1] } }),
+        json!({}),
+    ] {
+        let err = build_dialog_response("f1", &form_card(""), &answer).unwrap_err();
+        assert!(err.contains("f1") || err.contains("form"), "{err}");
+    }
+}
+
+#[test]
+fn is_chat_answer_accepts_form_data_and_rejects_malformed_data() {
+    assert!(is_chat_answer(&json!({ "data": {} })));
+    assert!(is_chat_answer(
+        &json!({ "data": { "a": "x", "b": 1, "c": ["y"] } })
+    ));
+    assert!(!is_chat_answer(&json!({ "data": null })));
+    assert!(!is_chat_answer(&json!({ "data": "x" })));
+    assert!(!is_chat_answer(&json!({ "data": [] })));
+    assert!(!is_chat_answer(&json!({ "data": { "a": false } })));
+}

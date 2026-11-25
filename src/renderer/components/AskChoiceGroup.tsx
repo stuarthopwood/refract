@@ -19,6 +19,8 @@ export interface AskChoiceOption {
   recommended?: boolean | undefined
   /** Why it is recommended; shown after the "Recommended" cue and read as the row's description. Ignored on a row that is not recommended. */
   reason?: string | undefined
+  /** A disabled option is shown but cannot be picked (a v19 form option marked `disabled`). */
+  disabled?: boolean | undefined
 }
 
 export interface AskChoiceOther {
@@ -44,9 +46,13 @@ interface AskChoiceGroupProps {
   groupLabelledBy?: string | undefined
   groupLabel?: string | undefined
   groupDescribedBy?: string | undefined
-  /** Marks a radio group required for assistive tech; a checkbox group's role does not carry it. */
+  /** Marks the group required for assistive tech. */
   groupRequired?: boolean | undefined
+  /** Marks the group invalid for assistive tech, e.g. while its question shows an error. */
+  groupInvalid?: boolean | undefined
   other: AskChoiceOther
+  /** Whether the "Other" row and its box show; false for a group that offers no free-text answer. Defaults to true. */
+  offerOther?: boolean | undefined
   onSelect: (value: string) => void
   onToggle: (value: string) => void
   onSelectOther: () => void
@@ -171,7 +177,8 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
   const [arrowGuard] = React.useState(createArrowGuard)
   const otherValue = otherSentinel(options)
   const ids = (index: number) => ({ labelId: `${idPrefix}-opt-${index}-label`, descId: `${idPrefix}-opt-${index}-desc`, reasonId: `${idPrefix}-opt-${index}-reason` })
-  const otherInput = other.visible ? <OtherInput other={other} disabled={disabled} /> : null
+  const offerOther = props.offerOther !== false
+  const otherInput = other.visible && offerOther ? <OtherInput other={other} disabled={disabled} /> : null
   const hintId = `${idPrefix}-multi-hint`
   // The wrapper marks which option a focused control belongs to, so the N key can find it (askChoiceKeys).
   const withNote = (option: AskChoiceOption, picked: boolean, row: React.ReactElement) =>
@@ -191,6 +198,8 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         aria-labelledby={props.groupLabelledBy}
         aria-label={props.groupLabel}
         aria-describedby={[props.groupDescribedBy, hintId].filter(Boolean).join(' ')}
+        aria-required={props.groupRequired}
+        aria-invalid={props.groupInvalid}
         className="flex flex-col gap-2"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 text-xs text-muted-foreground">
@@ -209,7 +218,8 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
             picked,
             <CheckboxItem
               checked={picked}
-              aria-disabled={disabled}
+              disabled={option.disabled}
+              aria-disabled={disabled || option.disabled}
               onCheckedChange={() => !disabled && props.onToggle(option.value)}
               aria-labelledby={labelId}
               aria-keyshortcuts={index < MAX_DIGIT_OPTIONS ? String(index + 1) : undefined}
@@ -223,12 +233,14 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
             </CheckboxItem>
           )
         })}
-        <CheckboxItem checked={otherSelected} aria-disabled={disabled} onCheckedChange={() => !disabled && props.onToggleOther()} aria-label="Other" className={OPTION_ROW_CLASS}>
-          <span aria-hidden className={cn(OPTION_MARK_CLASS, CHECKBOX_BOX_CLASS, CHECKED_MARK_CLASS)}>
-            <CheckboxIndicator />
-          </span>
-          <span className="col-start-2 min-w-0 break-words">Other</span>
-        </CheckboxItem>
+        {offerOther && (
+          <CheckboxItem checked={otherSelected} aria-disabled={disabled} onCheckedChange={() => !disabled && props.onToggleOther()} aria-label="Other" className={OPTION_ROW_CLASS}>
+            <span aria-hidden className={cn(OPTION_MARK_CLASS, CHECKBOX_BOX_CLASS, CHECKED_MARK_CLASS)}>
+              <CheckboxIndicator />
+            </span>
+            <span className="col-start-2 min-w-0 break-words">Other</span>
+          </CheckboxItem>
+        )}
         {otherInput}
       </div>
     )
@@ -241,6 +253,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         aria-label={props.groupLabel}
         aria-describedby={props.groupDescribedBy}
         aria-required={props.groupRequired}
+        aria-invalid={props.groupInvalid}
         className="gap-2"
         onKeyDownCapture={(event) => arrowGuard.keyDown(event.key)}
         onKeyUpCapture={arrowGuard.keyUp}
@@ -260,7 +273,8 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
             selected[0] === option.value && !otherSelected,
             <RadioGroupItem
               value={option.value}
-              aria-disabled={disabled}
+              disabled={option.disabled}
+              aria-disabled={disabled || option.disabled}
               aria-labelledby={labelId}
               aria-keyshortcuts={index < MAX_DIGIT_OPTIONS ? String(index + 1) : undefined}
               aria-describedby={describedByOf(option, descId, reasonId)}
@@ -275,12 +289,14 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
             </RadioGroupItem>
           )
         })}
-        <RadioGroupItem value={otherValue} aria-disabled={disabled} aria-label="Other" className={OPTION_ROW_CLASS}>
-          <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
-            <RadioGroupIndicator />
-          </span>
-          <span className="col-start-2 min-w-0 break-words">Other</span>
-        </RadioGroupItem>
+        {offerOther && (
+          <RadioGroupItem value={otherValue} aria-disabled={disabled} aria-label="Other" className={OPTION_ROW_CLASS}>
+            <span aria-hidden className={cn(OPTION_MARK_CLASS, RADIO_RING_CLASS)}>
+              <RadioGroupIndicator />
+            </span>
+            <span className="col-start-2 min-w-0 break-words">Other</span>
+          </RadioGroupItem>
+        )}
       </RadioGroup>
       {otherInput}
     </>

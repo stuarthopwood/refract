@@ -5,7 +5,7 @@ import type { AskQuestion, TranscriptItem } from '../../../shared/model'
 import { recommendedLabels } from './askRecommended'
 import type { AskedUserAnswer, AskedUserLineModel, AskedUserQuestion, AskedUserStatus } from './askedUserLine'
 import { isAskTimedOut, readAskForm, readAskFormAnswers } from './askForm/readAskForm'
-import type { AskFormField } from './askForm/parseAskHtml'
+import type { AskFormFrameField } from './askForm/parseAskHtml'
 import { readNumberedAnswers } from './readNumberedAnswers'
 
 type AskToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -146,7 +146,7 @@ function askResultModel(item: AskToolItem): AskedUserLineModel {
 }
 
 /** An HTML-form ask: its saved rows carry only a name, the question and one answer text, so there are no notes or recommendations and no per-pick split. */
-function askFormModel(item: AskToolItem, fields: AskFormField[]): AskedUserLineModel {
+function askFormModel(item: AskToolItem, fields: AskFormFrameField[]): AskedUserLineModel {
   const ended = endedStatus(item) !== undefined
   const rows = readAskFormAnswers(item.details)
   const questions: AskedUserQuestion[] = rows
