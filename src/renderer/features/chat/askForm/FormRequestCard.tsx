@@ -145,7 +145,7 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
     // A dropdown's list renders in a portal; its keys reach this handler through React but belong to the list.
     const target = event.target as HTMLElement
     if (!editing || !event.currentTarget.contains(target)) return
-    if (enterSubmitsForm(event.key, event.nativeEvent.isComposing, event.repeat, target)) {
+    if (enterSubmitsForm(event.key, event.nativeEvent.isComposing, event.repeat, target, event)) {
       event.preventDefault()
       trySubmit()
       return
