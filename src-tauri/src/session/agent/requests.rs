@@ -7,6 +7,7 @@ use crate::omp::transcript::RequestResolution;
 
 use super::ask_frame::parse_ask_questions;
 use super::commands::string_array;
+use super::form_frame::validate_form_data;
 use super::launch_support::truncate;
 use super::{AgentError, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
 
@@ -137,8 +138,8 @@ pub(super) enum DialogClassification {
     Malformed {
         id: String,
     },
-    /// A blocking method Refract has no card for, such as OMP's `form`. `frame.rs` answers it
-    /// `{cancelled:true}` so the agent does not wait for a reply that never comes.
+    /// A blocking method Refract has no card for, or a `form` frame with no `html`. `frame.rs` answers
+    /// it `{cancelled:true}` so the agent does not wait for a reply that never comes.
     Unsupported {
         id: String,
         method: String,
@@ -262,14 +263,22 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
                 request_id: id,
                 questions,
                 // OMP's `timeout` is already in milliseconds on the wire; do not scale it.
-                deadline_at: frame
-                    .get("timeout")
-                    .and_then(Value::as_f64)
-                    .filter(|ms| ms.is_finite() && *ms >= 0.0)
-                    .map(|ms| now_ms().saturating_add(ms as i64)),
+                deadline_at: deadline_at(frame),
                 host_call: false,
             }),
             None => DialogClassification::Malformed { id },
+        },
+        // OMP v19 whole-form dialog. An id-less frame cannot be answered, so it falls through to Ignore.
+        "form" if !id.is_empty() => match frame.get("html").and_then(Value::as_str) {
+            Some(html) => DialogClassification::Request(PendingRequest::Form {
+                request_id: id,
+                html: html.to_string(),
+                deadline_at: deadline_at(frame),
+            }),
+            None => DialogClassification::Unsupported {
+                id,
+                method: "form".to_string(),
+            },
         },
         "cancel" => DialogClassification::Cancel(
             frame
@@ -311,6 +320,15 @@ pub(super) fn classify_dialog(frame: &Value) -> DialogClassification {
             }
         }
     }
+}
+
+/// The wall-clock deadline for a frame's `timeout` (milliseconds), if it carries a usable one.
+fn deadline_at(frame: &Value) -> Option<i64> {
+    frame
+        .get("timeout")
+        .and_then(Value::as_f64)
+        .filter(|ms| ms.is_finite() && *ms >= 0.0)
+        .map(|ms| now_ms().saturating_add(ms as i64))
 }
 
 fn now_ms() -> i64 {
@@ -517,6 +535,15 @@ fn build_dialog_response(
             .map_err(|err| format!("{err} (approval request {request_id})"))?;
         return Ok(json!({ "type": "extension_ui_response", "id": request_id, "value": label }));
     }
+    if let PendingRequest::Form { .. } = request {
+        let data = answer
+            .get("data")
+            .ok_or_else(|| format!("expected a data object for form request {request_id}"))?;
+        validate_form_data(data).map_err(|err| format!("{err} (form request {request_id})"))?;
+        return Ok(
+            json!({ "type": "extension_ui_response", "id": request_id, "data": data.clone() }),
+        );
+    }
     if let PendingRequest::Ask { questions, .. } = request {
         let answers = answer
             .get("answers")
@@ -560,6 +587,9 @@ pub fn is_chat_answer(value: &Value) -> bool {
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
         || obj.get("cancelled") == Some(&Value::Bool(true))
         || matches!(obj.get("answers"), Some(Value::Array(_)))
+        || obj
+            .get("data")
+            .is_some_and(|d| validate_form_data(d).is_ok())
 }
 
 #[cfg(test)]

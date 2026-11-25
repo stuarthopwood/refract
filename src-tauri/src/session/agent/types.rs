@@ -132,6 +132,14 @@ pub enum PendingRequest {
         #[serde(skip_serializing_if = "std::ops::Not::not")]
         host_call: bool,
     },
+    /// OMP v19 whole-form dialog: one HTML document answered at once with `data` or `cancelled`.
+    #[serde(rename = "form")]
+    Form {
+        request_id: String,
+        html: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        deadline_at: Option<i64>,
+    },
 }
 
 impl PendingRequest {
@@ -140,7 +148,8 @@ impl PendingRequest {
         match self {
             Self::Approval { request_id, .. }
             | Self::Question { request_id, .. }
-            | Self::Ask { request_id, .. } => request_id,
+            | Self::Ask { request_id, .. }
+            | Self::Form { request_id, .. } => request_id,
         }
     }
 

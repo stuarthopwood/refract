@@ -110,6 +110,17 @@ fn describe_ask(questions: &[AskQuestion], answers: &[Value]) -> (String, String
     (asked, chosen)
 }
 
+/// Puts a fixture agent in Away without the persistence `set_mode` does, so tests leave no data dir behind.
+#[cfg(test)]
+pub(in crate::session) async fn enter_for_test(agent: &SessionAgent) {
+    agent
+        .with_working_mode_state(|s| {
+            s.loaded = true;
+            s.mode = super::WorkingMode::Away;
+        })
+        .await;
+}
+
 /// Called after the request is registered; a no-op unless the Session is in Away mode.
 pub(in crate::session) async fn on_request(agent: &SessionAgent, request: PendingRequest) {
     super::ensure_loaded(agent).await;
@@ -134,6 +145,10 @@ pub(in crate::session) async fn on_request(agent: &SessionAgent, request: Pendin
             input_kind,
             ..
         } => answer_question(agent, request_id, title, input_kind == "text").await,
+        // The agent waits on a whole form, and no recommended answer exists to fill it with.
+        PendingRequest::Form { request_id, .. } => {
+            answer_question(agent, request_id, "the agent's form".to_string(), false).await
+        }
     }
 }
 

@@ -24,6 +24,7 @@ mod command_wait;
 mod commands;
 mod conversations;
 mod detached_action;
+mod form_frame;
 mod frame;
 mod handoff;
 mod handoff_queue;
