@@ -1,7 +1,18 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { ChatAnswer } from '../../../../shared/ipc'
-import { FORM_CANCEL, FORM_TIMED_OUT, createFormResponder, firstInvalidField, scheduleDeadline, visibleErrors } from './formRequest'
-import { parseAskHtml } from './parseAskHtml'
+import type { AskFieldValue } from './answerPlan'
+import {
+  FORM_CANCEL,
+  FORM_TIMED_OUT,
+  createFormResponder,
+  firstInvalidField,
+  formDeadlineText,
+  formSubmission,
+  scheduleDeadline,
+  startingValues,
+  visibleErrors
+} from './formRequest'
+import { parseAskHtml, type AskFormField } from './parseAskHtml'
 
 describe('createFormResponder', () => {
   test('Given a submit and a deadline firing together, When both respond, Then OMP receives one answer', async () => {
@@ -67,6 +78,37 @@ describe('scheduleDeadline', () => {
     vi.advanceTimersByTime(10_000_000)
     expect(fire).not.toHaveBeenCalled()
   })
+
+  test('Given a deadline beyond the timer limit, When the limit passes, Then it has not fired until the deadline does', () => {
+    vi.setSystemTime(0)
+    const fire = vi.fn()
+    const deadlineAt = 2_147_483_647 * 2 + 1000
+    scheduleDeadline(deadlineAt, 0, fire)
+    vi.advanceTimersByTime(2_147_483_647)
+    expect(fire).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(2_147_483_647)
+    expect(fire).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1000)
+    expect(fire).toHaveBeenCalledTimes(1)
+  })
+
+  test('Given a far deadline was cleared after the first slice, When the deadline passes, Then nothing fires', () => {
+    vi.setSystemTime(0)
+    const fire = vi.fn()
+    const clear = scheduleDeadline(2_147_483_647 + 1000, 0, fire)
+    vi.advanceTimersByTime(2_147_483_647)
+    clear()
+    vi.advanceTimersByTime(10_000)
+    expect(fire).not.toHaveBeenCalled()
+  })
+
+  test('Given a deadline already past, When scheduled, Then it fires on the next tick', () => {
+    vi.setSystemTime(10_000)
+    const fire = vi.fn()
+    scheduleDeadline(5000, 10_000, fire)
+    vi.advanceTimersByTime(0)
+    expect(fire).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('visibleErrors', () => {
@@ -89,5 +131,51 @@ describe('firstInvalidField', () => {
   test('Given errors, Then the first invalid index is returned, or -1 when none', () => {
     expect(firstInvalidField([null, 'x', 'y'])).toBe(1)
     expect(firstInvalidField([null, null])).toBe(-1)
+  })
+})
+
+const fieldsOf = (html: string): AskFormField[] => parseAskHtml(html) as AskFormField[]
+const textValue = (value: string): AskFieldValue => ({ kind: 'text', text: value })
+const range = (attrs: string): AskFormField[] => fieldsOf(`<input type="range" name="a" aria-label="A" ${attrs}>`)
+
+describe('startingValues', () => {
+  test.each([
+    ['min 0, max 5, step 1', 'min="0" max="5" step="1"', '3'],
+    ['no bounds', '', '50'],
+    ['a negative min', 'min="-5" max="0" step="1"', '-2'],
+    ['a step coarser than the midpoint', 'min="0" max="5" step="10"', '0'],
+    ['a step from a non-zero min, halfway between two steps', 'min="1" max="10" step="3"', '7'],
+    ['a fractional step', 'min="0" max="1" step="0.1"', '0.5']
+  ])('Given an untouched range with %s, When values start, Then it holds the snapped midpoint %s', (_label, attrs, expected) => {
+    expect(startingValues(range(attrs))).toEqual([textValue(expected)])
+  })
+
+  test('Given a range with a default, When values start, Then the default is kept', () => {
+    expect(startingValues(range('min="0" max="10" value="7"'))).toEqual([textValue('7')])
+  })
+
+  test('Given text and choice defaults, When values start, Then they are honoured', () => {
+    const fields = fieldsOf('<input name="t" aria-label="T" value="hi"><label><input type="radio" name="r" value="x" checked> X</label><label><input type="radio" name="r" value="y"> Y</label>')
+    expect(startingValues(fields)).toEqual([textValue('hi'), { kind: 'choice', selected: ['x'], otherSelected: false, otherText: '' }])
+  })
+})
+
+describe('formSubmission', () => {
+  const fields = fieldsOf('<input name="a" aria-label="A" required><input type="number" name="n" aria-label="N" max="5">')
+
+  test('Given every field valid, When submitted, Then the answer carries the data', () => {
+    expect(formSubmission(fields, [textValue('x'), textValue('4')])).toEqual({ errors: [null, null], answer: { data: { a: 'x', n: 4 } } })
+  })
+
+  test('Given any field invalid, When submitted, Then there is no answer and the errors say which', () => {
+    const result = formSubmission(fields, [textValue('x'), textValue('9')])
+    expect(result.answer).toBeNull()
+    expect(result.errors).toEqual([null, 'Must be at most 5'])
+  })
+})
+
+describe('formDeadlineText', () => {
+  test('Given a deadline, Then the line names a time and says the form is cancelled', () => {
+    expect(formDeadlineText(new Date(2026, 10, 25, 14, 5).getTime())).toMatch(/^If there's no answer by .*\d.*, the form is cancelled\.$/)
   })
 })

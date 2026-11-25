@@ -41,7 +41,56 @@ function fieldValue(field: AskFormField, value: AskFieldValue | undefined): AskF
   return text
 }
 
+const MAX_PATTERN_LENGTH = 200
+
+interface PatternGroup {
+  repeats: boolean
+  alternates: boolean
+}
+
+// The pattern is the agent's and runs on the UI thread, so one that can backtrack catastrophically is not run at all:
+// OMP still checks the answer. Unsafe means too long, a backreference, or a repeated group holding a repeat or an alternation.
+function isSafePattern(pattern: string): boolean {
+  if (pattern.length > MAX_PATTERN_LENGTH || /\\(?:[1-9]|k<)/.test(pattern)) return false
+  const root: PatternGroup = { repeats: false, alternates: false }
+  const open: PatternGroup[] = [root]
+  let closed: PatternGroup | null = null
+  let classDepth = 0
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern[index]
+    const group = open[open.length - 1] ?? root
+    if (char === '\\') {
+      index++
+      closed = null
+    } else if (classDepth > 0) {
+      classDepth += char === '[' ? 1 : char === ']' ? -1 : 0
+    } else if (char === '[') {
+      classDepth = 1
+      closed = null
+    } else if (char === '(') {
+      open.push({ repeats: false, alternates: false })
+      closed = null
+    } else if (char === ')') {
+      closed = open.length > 1 ? (open.pop() ?? null) : null
+      const parent = open[open.length - 1] ?? root
+      parent.repeats ||= closed?.repeats ?? false
+      parent.alternates ||= closed?.alternates ?? false
+    } else if (char === '|') {
+      group.alternates = true
+      closed = null
+    } else if (char === '*' || char === '+' || char === '{') {
+      if (closed && (closed.repeats || closed.alternates)) return false
+      group.repeats = true
+      closed = null
+    } else {
+      closed = null
+    }
+  }
+  return true
+}
+
 function matchesPattern(pattern: string, text: string): boolean {
+  if (!isSafePattern(pattern)) return true
   try {
     return new RegExp(`^(?:${pattern})$`, 'v').test(text)
   } catch {

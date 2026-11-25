@@ -26,26 +26,31 @@ describe('escapeCancelsForm', () => {
 
 describe('enterSubmitsForm', () => {
   const row = (role: string) => ({ tagName: 'BUTTON', getAttribute: (name: string) => (name === 'role' ? role : null) })
+  const none = {}
 
   test('Given focus in a text input, When Enter is pressed, Then the form submits', () => {
-    expect(enterSubmitsForm('Enter', false, false, { tagName: 'INPUT' })).toBe(true)
+    expect(enterSubmitsForm('Enter', false, false, { tagName: 'INPUT' }, none)).toBe(true)
   })
 
   test('Given focus in a textarea, When Enter is pressed, Then the form does not submit', () => {
-    expect(enterSubmitsForm('Enter', false, false, { tagName: 'TEXTAREA' })).toBe(false)
+    expect(enterSubmitsForm('Enter', false, false, { tagName: 'TEXTAREA' }, none)).toBe(false)
   })
 
   test.each(['radio', 'checkbox'])('Given focus on a %s row, When Enter is pressed, Then the form submits', (role) => {
-    expect(enterSubmitsForm('Enter', false, false, row(role))).toBe(true)
+    expect(enterSubmitsForm('Enter', false, false, row(role), none)).toBe(true)
   })
 
   test('Given focus on a button, When Enter is pressed, Then the button keeps it', () => {
-    expect(enterSubmitsForm('Enter', false, false, { tagName: 'BUTTON' })).toBe(false)
+    expect(enterSubmitsForm('Enter', false, false, { tagName: 'BUTTON' }, none)).toBe(false)
   })
 
   test('Given composition, a held key or another key, Then the form does not submit', () => {
-    expect(enterSubmitsForm('Enter', true, false, { tagName: 'INPUT' })).toBe(false)
-    expect(enterSubmitsForm('Enter', false, true, { tagName: 'INPUT' })).toBe(false)
-    expect(enterSubmitsForm('a', false, false, { tagName: 'INPUT' })).toBe(false)
+    expect(enterSubmitsForm('Enter', true, false, { tagName: 'INPUT' }, none)).toBe(false)
+    expect(enterSubmitsForm('Enter', false, true, { tagName: 'INPUT' }, none)).toBe(false)
+    expect(enterSubmitsForm('a', false, false, { tagName: 'INPUT' }, none)).toBe(false)
+  })
+
+  test.each(['ctrlKey', 'altKey', 'metaKey'])('Given %s is held in a text input, When Enter is pressed, Then the form does not submit', (modifier) => {
+    expect(enterSubmitsForm('Enter', false, false, { tagName: 'INPUT' }, { [modifier]: true })).toBe(false)
   })
 })

@@ -7,11 +7,15 @@ export const FORM_CANCEL: ChatAnswer = { cancelled: true }
 export const FORM_TIMED_OUT: ChatAnswer = { cancelled: true, timedOut: true }
 export const FORM_UNSHOWN_NOTICE = 'This form could not be shown, so it was cancelled.'
 
-/** HTML submits a range's midpoint when it was never moved, so an untouched slider must hold that number too. */
+/** HTML submits a range's midpoint, snapped to its step from min, when it was never moved, so an untouched slider must hold that number too. */
 function rangeMidpoint(field: AskFormInputField): string {
   const min = field.min ?? 0
   const max = field.max ?? 100
-  return String(min + (max - min) / 2)
+  if (max <= min) return String(min)
+  const step = field.step !== undefined && field.step > 0 ? field.step : 1
+  let value = min + Math.round((max - min) / 2 / step) * step
+  if (value > max) value -= step
+  return String(Number(value.toFixed(10)))
 }
 
 export function startingValues(fields: readonly AskFormField[]): AskFieldValue[] {
@@ -48,13 +52,21 @@ export function formDeadlineText(deadlineAt: number): string {
   return `If there's no answer by ${time}, the form is cancelled.`
 }
 
-// setTimeout fires immediately for a delay beyond 2^31 - 1 ms, which would time a far deadline out at once.
+// setTimeout fires immediately for a delay beyond 2^31 - 1 ms, so a far deadline is reached in slices.
 const MAX_TIMER_MS = 2_147_483_647
 
 /** Runs `fire` when `deadlineAt` (epoch ms) passes, at once if it already has. Returns the cancel function. */
 export function scheduleDeadline(deadlineAt: number | undefined, now: number, fire: () => void): () => void {
   if (deadlineAt === undefined) return () => undefined
-  const timer = setTimeout(fire, Math.min(Math.max(deadlineAt - now, 0), MAX_TIMER_MS))
+  let timer: ReturnType<typeof setTimeout>
+  const arm = (delay: number): void => {
+    timer = setTimeout(() => {
+      const remaining = deadlineAt - Date.now()
+      if (remaining > 0) arm(remaining)
+      else fire()
+    }, Math.min(Math.max(delay, 0), MAX_TIMER_MS))
+  }
+  arm(deadlineAt - now)
   return () => clearTimeout(timer)
 }
 

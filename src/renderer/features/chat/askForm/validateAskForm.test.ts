@@ -32,6 +32,40 @@ describe('validateAskForm text rules', () => {
   })
 })
 
+describe('validateAskForm pattern safety', () => {
+  const patternOf = (pattern: string) => `<input name="a" aria-label="A" pattern="${pattern}">`
+
+  test.each(['(a+)+', '(a*)*', '(a|aa)+', '((a+))+', '(a+){2,}'])(
+    'Given the nested-quantifier pattern %s, When a long near-match is validated, Then it returns at once without an error',
+    (pattern) => {
+      const started = performance.now()
+      expect(errorOf(patternOf(pattern), text(`${'a'.repeat(30)}!`))).toBeNull()
+      expect(performance.now() - started).toBeLessThan(200)
+    }
+  )
+
+  test.each(['(a)\\1', '(?<x>a)\\k<x>'])('Given the backreference pattern %s, When validated, Then it is ignored', (pattern) => {
+    expect(errorOf(patternOf(pattern), text('b'))).toBeNull()
+  })
+
+  test('Given a pattern of 201 characters, When it would fail, Then it is ignored', () => {
+    expect(errorOf(patternOf('a'.repeat(201)), text('b'))).toBeNull()
+  })
+
+  test('Given a pattern of 200 characters, When it fails, Then it is enforced', () => {
+    expect(errorOf(patternOf('a'.repeat(200)), text('b'))).not.toBeNull()
+  })
+
+  test.each([
+    ['a repeat outside any group', '[a-z]+\\d+', 'ab1', null],
+    ['a repeat outside any group, off pattern', '[a-z]+\\d+', 'ab', 'Must match [a-z]+\\d+'],
+    ['a group that is only optional', '(\\d{3})-(a+)?', '123-b', 'Must match (\\d{3})-(a+)?'],
+    ['a repeat inside a character class', '[+*]x', '+x', null]
+  ])('Given %s, When validated, Then the pattern is still enforced', (_label, pattern, value, expected) => {
+    expect(errorOf(patternOf(pattern), text(value))).toBe(expected)
+  })
+})
+
 describe('validateAskForm typed inputs', () => {
   test.each([
     ['below min', '<input type="number" name="a" aria-label="A" min="2">', '1', 'Must be at least 2'],
