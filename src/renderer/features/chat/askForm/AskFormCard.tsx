@@ -70,7 +70,7 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
     // Esc is the Cancel shortcut for the whole card (FR-010) except while typing; the buttons below stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={rootRef} onKeyDown={handleKeyDown}>
-      <AskFormShell label={ASKED_USER_TITLE} title="Questions from the agent">
+      <AskFormShell label={ASKED_USER_TITLE} title={ASKED_USER_TITLE}>
         {fields.map((field, index) => {
           const value = session.values[index]
           if (!value) return null

@@ -175,7 +175,7 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
     // Esc and Enter are card-wide shortcuts for Cancel and Submit; the footer buttons stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={rootRef} onKeyDown={handleKeyDown}>
-      <AskFormShell label={ASKED_USER_TITLE} title="Questions from the agent">
+      <AskFormShell label={ASKED_USER_TITLE} title={ASKED_USER_TITLE}>
         {fields.map((field, index) => {
           const value = values[index]
           if (!value) return null

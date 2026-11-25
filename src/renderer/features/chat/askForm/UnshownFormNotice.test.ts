@@ -60,11 +60,11 @@ describe('UnshownFormView', () => {
 
 describe('unshownFormNoticeState', () => {
   test('Given each send phase, When the state is read, Then Retry shows when refused and stays through its resend', () => {
-    expect(unshownFormNoticeState('idle', 'refused')).toEqual({ error: 'refused', canRetry: true, retrying: false, outcome: 'refused' })
-    expect(unshownFormNoticeState('idle', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelling' })
-    expect(unshownFormNoticeState('sending', 'refused')).toEqual({ error: 'refused', canRetry: true, retrying: true, outcome: 'cancelling' })
-    expect(unshownFormNoticeState('sending', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelling' })
-    expect(unshownFormNoticeState('sent', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelled' })
+    expect(unshownFormNoticeState('idle', 'refused')).toEqual({ error: 'refused', retrying: false, outcome: 'refused' })
+    expect(unshownFormNoticeState('idle', null)).toEqual({ error: null, retrying: false, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sending', 'refused')).toEqual({ error: 'refused', retrying: true, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sending', null)).toEqual({ error: null, retrying: false, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sent', null)).toEqual({ error: null, retrying: false, outcome: 'cancelled' })
   })
 
   test('Given each outcome, When the wording is read, Then it says being cancelled, cancelled or could not be cancelled, keeping "form"', () => {

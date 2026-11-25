@@ -12,7 +12,7 @@ interface AskFormFooterProps {
   retry?: { busy: boolean; onRetry: () => void }
   /** A static line about the deadline, shown above the status note. */
   deadlineText?: string
-  note: string | undefined
+  note?: string
   cancellable: boolean
   submittable: boolean
   /** A submit is in flight. */

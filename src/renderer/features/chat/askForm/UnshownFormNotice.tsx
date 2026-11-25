@@ -19,7 +19,6 @@ export function cancelUnshownForm(responder: FormResponder): Promise<boolean> {
 export interface UnshownFormNoticeState {
   /** Why OMP refused the cancel, shown in its own alert; null while the first cancel is going or done. */
   readonly error: string | null
-  readonly canRetry: boolean
   /** A Retry send is in flight: Retry stays mounted, busy, so focus is not dropped. */
   readonly retrying: boolean
   /** What happened to the cancel, so the wording follows it. */
@@ -31,7 +30,7 @@ export function unshownFormNoticeState(phase: FormSendPhase, error: string | nul
   const refused = phase === 'idle' && error !== null
   const retrying = phase === 'sending' && error !== null
   const outcome = refused ? 'refused' : phase === 'sent' ? 'cancelled' : 'cancelling'
-  return { error: refused || retrying ? error : null, canRetry: refused || retrying, retrying, outcome }
+  return { error: refused || retrying ? error : null, retrying, outcome }
 }
 
 /** The notice wording for the state of the cancel; it keeps the word "form" the agent used. */
@@ -60,11 +59,9 @@ export function UnshownFormView({ phase, error, onRetry }: UnshownFormViewProps)
         <Alert variant="destructive" box="inline" role="alert">
           <OctagonXIcon aria-hidden />
           <AlertDescription>{state.error}</AlertDescription>
-          {state.canRetry && (
-            <AlertActions>
-              <RetryButton busy={state.retrying} onRetry={onRetry} handoffTo={wrapperRef} />
-            </AlertActions>
-          )}
+          <AlertActions>
+            <RetryButton busy={state.retrying} onRetry={onRetry} handoffTo={wrapperRef} />
+          </AlertActions>
         </Alert>
       )}
     </div>
