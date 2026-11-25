@@ -117,6 +117,26 @@ async fn get_config_rejects_an_invalid_key_before_ever_calling_the_executor() {
     assert!(executor.calls.lock().await.is_empty());
 }
 
+#[tokio::test]
+async fn installed_version_with_asks_for_the_version_and_reads_the_numbers() {
+    let executor = RecordingExecutor {
+        calls: AsyncMutex::new(Vec::new()),
+        response: "omp/19.1.1\n".to_string(),
+    };
+    assert_eq!(installed_version_with(&executor).await.unwrap(), (19, 1, 1));
+    assert_eq!(executor.calls.lock().await[0], vec!["--version"]);
+}
+
+#[tokio::test]
+async fn installed_version_with_reports_output_that_holds_no_version() {
+    let executor = RecordingExecutor {
+        calls: AsyncMutex::new(Vec::new()),
+        response: "unknown\n".to_string(),
+    };
+    let err = installed_version_with(&executor).await.unwrap_err();
+    assert_eq!(err.code, OmpConfigErrorCode::ParseFailed);
+}
+
 /// Regression for the pipe-drain hang: a child over the stdout cap must be killed and reported
 /// promptly. Uses `ping` for the delay, not a `cmd` loop, which CI's Windows runner flags.
 #[tokio::test]
