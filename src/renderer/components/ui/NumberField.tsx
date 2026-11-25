@@ -3,9 +3,7 @@ import { ChevronDownIcon, ChevronUpIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
-
-// `type="number"` also accepts these, which no whole-number setting wants.
-const BLOCKED_KEYS: Record<string, true> = { e: true, E: true, "+": true, "-": true }
+import { blocksNumberKey } from "./numberFieldKeys"
 
 // The native spinner cannot be themed or spaced, so it is hidden and replaced by the chevrons below.
 const HIDE_NATIVE_SPINNER =
@@ -22,8 +20,15 @@ function numericValue(value: unknown): number | undefined {
 }
 
 /** A number input with muted chevron step buttons, 8px clear of the value, and ArrowUp/ArrowDown stepping from `min`, `step` and `max`.
- * Blocks exponent and sign keys, and blurs on wheel so scrolling a page never edits a focused value. */
-function NumberField({ className, onKeyDown, onWheel, ref, ...props }: Omit<React.ComponentProps<typeof Input>, "type">) {
+ * Blocks exponent and sign keys (`allowNegative` keeps `-` for a range that dips below zero), and blurs on wheel so scrolling a page never edits a focused value. */
+function NumberField({
+  className,
+  allowNegative = false,
+  onKeyDown,
+  onWheel,
+  ref,
+  ...props
+}: Omit<React.ComponentProps<typeof Input>, "type"> & { allowNegative?: boolean }) {
   const inputRef = React.useRef<HTMLInputElement | null>(null)
   const setRefs = (node: HTMLInputElement | null): void => {
     inputRef.current = node
@@ -56,7 +61,7 @@ function NumberField({ className, onKeyDown, onWheel, ref, ...props }: Omit<Reac
         data-slot="number-field"
         className={cn(HIDE_NATIVE_SPINNER, "pr-6", className)}
         onKeyDown={(event) => {
-          if (!(event.ctrlKey || event.metaKey || event.altKey) && BLOCKED_KEYS[event.key]) event.preventDefault()
+          if (blocksNumberKey(event, allowNegative)) event.preventDefault()
           onKeyDown?.(event)
         }}
         onWheel={(event) => {

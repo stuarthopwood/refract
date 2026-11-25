@@ -6,20 +6,12 @@ import { useEffect, useRef, useState } from 'react'
 import { usePendingRequestsStore, useSettingsStore } from '@/state'
 import { playfulPhrase } from '../../../shared/activity'
 import type { Activity, ActivityPending } from '../../../shared/activity'
-import type { PendingRequest } from '../../../shared/model'
+import { toActivityPending } from './toActivityPending'
 
 // Each line stays on screen at least this long, so it changes at most ~1.7 times a second.
 const MIN_HOLD_MS = 600
 // Playful: the `working` phrase rotates on this cadence.
 const PLAYFUL_ROTATE_MS = 10_000
-
-function toActivityPending(request: PendingRequest | undefined): ActivityPending | null {
-  if (!request) return null
-  if (request.kind === 'approval') return { kind: 'approval', tool: request.tool, target: request.target || null }
-  if (request.kind === 'question') return { kind: 'question', text: request.title }
-  const first = request.questions[0]
-  return first ? { kind: 'question', text: first.question } : null
-}
 
 /** The Session's first pending request, reduced for `deriveActivity`'s needs-you line. */
 export function usePendingActivity(sessionId: string): ActivityPending | null {

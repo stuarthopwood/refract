@@ -1,117 +1,18 @@
 import * as React from 'react'
 import { Loader2Icon, OctagonXIcon } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { choiceDigitIndex, focusChoiceRow, isRowEnter } from '@/components/askChoiceKeys'
-import { AskChoiceGroup } from '@/components/AskChoiceGroup'
+import { isRowEnter } from '@/components/askChoiceKeys'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Textarea } from '@/components/ui/textarea'
-import { firstMissingField, missingFieldMessage, type AskFieldValue } from './answerPlan'
+import { firstMissingField, missingFieldMessage } from './answerPlan'
 import { canCancel, type AskFormPhase } from './askFormSession'
 import { escapeCancelsForm } from './askFormKeys'
-import type { AskFormChoiceField, AskFormField } from './parseAskHtml'
+import { ChoiceField, TextField } from './AskFormFields'
+import type { AskFormFrameField } from './parseAskHtml'
 import { ASKED_USER_TITLE } from '../askedUserLine'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { askFormIntentKey } from './askFormIntentKey'
 import { useAskFormSession } from './useAskFormSession'
-
-type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
-
-interface ChoiceFieldProps {
-  field: AskFormChoiceField
-  value: ChoiceValue
-  disabled: boolean
-  idPrefix: string
-  /** Whether an empty Other box reads as invalid: only after a blocked Submit or leaving the box. */
-  showInvalid: boolean
-  onChange: (value: ChoiceValue) => void
-  onOtherBlur: () => void
-}
-
-function ChoiceField({ field, value, disabled, idPrefix, showInvalid, onChange, onOtherBlur }: ChoiceFieldProps) {
-  const headingId = `${idPrefix}-heading`
-  const toggle = (optionValue: string) => {
-    const selected = value.selected.includes(optionValue) ? value.selected.filter((entry) => entry !== optionValue) : [...value.selected, optionValue]
-    onChange({ ...value, selected })
-  }
-  const select = (optionValue: string) => onChange({ ...value, selected: [optionValue], otherSelected: false })
-  const multi = field.kind === 'checkbox'
-
-  // Digits address this field's options by position, only while focus is inside the field and not in a text box.
-  function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
-    if (disabled) return
-    const index = choiceDigitIndex(event, field.options.length)
-    const option = index === null ? undefined : field.options[index]
-    if (index === null || !option) return
-    event.preventDefault()
-    if (multi) toggle(option.value)
-    else select(option.value)
-    focusChoiceRow(event.currentTarget, index)
-  }
-
-  return (
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-    <CardContent data-ask-field={idPrefix} className="space-y-2" onKeyDown={handleKeyDown}>
-      <p id={headingId} className="whitespace-pre-line text-sm font-medium">
-        {field.question}
-        {field.required && <span className="font-normal text-muted-foreground">, required</span>}
-      </p>
-      <AskChoiceGroup
-        multi={multi}
-        options={field.options}
-        selected={value.selected}
-        otherSelected={value.otherSelected}
-        disabled={disabled}
-        idPrefix={idPrefix}
-        groupLabelledBy={headingId}
-        groupRequired={field.required}
-        other={{
-          visible: value.otherSelected,
-          text: value.otherText,
-          ariaLabel: `Other answer for ${field.question}`,
-          invalid: showInvalid && value.otherText.trim().length === 0,
-          focusOnShow: true,
-          onTextChange: (otherText) => onChange({ ...value, otherText }),
-          onBlur: onOtherBlur
-        }}
-        onSelect={select}
-        onToggle={toggle}
-        onSelectOther={() => onChange({ ...value, selected: [], otherSelected: true })}
-        onToggleOther={() => onChange({ ...value, otherSelected: !value.otherSelected })}
-      />
-    </CardContent>
-  )
-}
-
-interface TextFieldProps {
-  field: Extract<AskFormField, { kind: 'text' | 'textarea' }>
-  value: string
-  disabled: boolean
-  idPrefix: string
-  onChange: (text: string) => void
-}
-
-function TextField({ field, value, disabled, idPrefix, onChange }: TextFieldProps) {
-  const labelId = `${idPrefix}-heading`
-  const shared = {
-    value,
-    readOnly: disabled,
-    'aria-disabled': disabled,
-    'aria-labelledby': labelId,
-    'aria-required': field.required,
-    onChange: (event: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => onChange(event.target.value)
-  }
-  return (
-    <CardContent data-ask-field={idPrefix} className="space-y-2">
-      <p id={labelId} className="whitespace-pre-line text-sm font-medium">
-        {field.question}
-        {field.required && <span className="font-normal text-muted-foreground">, required</span>}
-      </p>
-      {field.kind === 'textarea' ? <Textarea {...shared} /> : <Input {...shared} />}
-    </CardContent>
-  )
-}
 
 const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
   answering: 'Submitting your answers',
@@ -134,7 +35,7 @@ function AskFormShell({ children, label }: { children: React.ReactNode; label: s
 interface AskFormCardProps {
   sessionId: string
   askItemId: string
-  fields: readonly AskFormField[]
+  fields: readonly AskFormFrameField[]
 }
 
 /** One card for the whole parsed HTML form; Submit answers OMP's per-field frames in order. */

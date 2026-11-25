@@ -57,6 +57,10 @@ export type AskFormField = AskFormChoiceField | AskFormSelectField | AskFormText
 /** The field kinds OMP 18.x's per-field frames can carry; select and the typed inputs exist only in a v19 whole form. */
 export type AskFormFrameField = AskFormChoiceField | AskFormTextField
 
+export function isFrameField(field: AskFormField): field is AskFormFrameField {
+  return field.kind === 'radio' || field.kind === 'checkbox' || field.kind === 'text' || field.kind === 'textarea'
+}
+
 const MAX_HTML_LENGTH = 200_000
 const IGNORED_INPUT_TYPES: Record<string, true> = { hidden: true, submit: true, button: true, reset: true, image: true }
 const TYPED_INPUT_TYPES: Record<string, true> = { number: true, range: true, email: true, url: true }

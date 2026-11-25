@@ -1,6 +1,6 @@
 import type { ChatAnswer } from '../../../../shared/ipc'
 import type { FrameMatch } from './matchFrame'
-import type { AskFormFrameField } from './parseAskHtml'
+import type { AskFormField, AskFormFrameField } from './parseAskHtml'
 
 /** What the card holds for one field: choice groups track option values plus "Other"; text fields track the string. */
 export type AskFieldValue =
@@ -15,7 +15,7 @@ export type AnswerStep =
   | { readonly kind: 'done' }
   | { readonly kind: 'text'; readonly text: string }
 
-export function initialValue(field: AskFormFrameField): AskFieldValue {
+export function initialValue(field: AskFormField): AskFieldValue {
   if ('options' in field) return { kind: 'choice', selected: field.defaultValue, otherSelected: false, otherText: '' }
   return { kind: 'text', text: field.defaultValue }
 }

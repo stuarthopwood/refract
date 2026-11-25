@@ -1,21 +1,14 @@
 import type { ChatAnswer } from '../../../../shared/ipc'
 import { initialValue, type AskFieldValue } from './answerPlan'
-import type { AskFormChoiceField, AskFormField, AskFormTextField } from './parseAskHtml'
+import type { AskFormField, AskFormInputField } from './parseAskHtml'
 import { toFormData, validateAskForm } from './validateAskForm'
 
 export const FORM_CANCEL: ChatAnswer = { cancelled: true }
 export const FORM_TIMED_OUT: ChatAnswer = { cancelled: true, timedOut: true }
 export const FORM_UNSHOWN_NOTICE = 'This form could not be shown, so it was cancelled.'
 
-/** The field kinds OMP 18.x's per-field frames can carry; the select and typed inputs exist only in a v19 whole form. */
-export type AskFormFrameField = AskFormChoiceField | AskFormTextField
-
-export function isFrameField(field: AskFormField): field is AskFormFrameField {
-  return field.kind === 'radio' || field.kind === 'checkbox' || field.kind === 'text' || field.kind === 'textarea'
-}
-
 /** HTML submits a range's midpoint when it was never moved, so an untouched slider must hold that number too. */
-function rangeMidpoint(field: Extract<AskFormField, { kind: 'range' }>): string {
+function rangeMidpoint(field: AskFormInputField): string {
   const min = field.min ?? 0
   const max = field.max ?? 100
   return String(min + (max - min) / 2)
