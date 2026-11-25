@@ -232,6 +232,71 @@ async fn an_unreadable_omp_version_writes_tools_commands() {
 }
 
 #[tokio::test]
+async fn reset_all_on_omp_19_writes_tools_commands_and_drops_a_stale_xdev() {
+    let _serial = SERIAL.lock().await;
+    values::forget();
+    let dir = scratch("reset-all-xdev");
+    migrated(&dir);
+    let config = dir.join("config.yml");
+    std::fs::write(
+        &config,
+        "tools:\n  xdev: true\n  artifactSpillThreshold: 30\n",
+    )
+    .unwrap();
+    let omp = FakeOmp::new(None);
+    apply_change(&omp, &dir, Some(&config), false, Change::ResetAll)
+        .await
+        .unwrap();
+    let sets = omp.sets();
+    assert!(sets.contains(&set_call("tools.commands", "true")));
+    assert!(!sets.iter().any(|call| call[2] == "tools.xdev"));
+    assert_eq!(
+        std::fs::read_to_string(&config).unwrap(),
+        "tools:\n  artifactSpillThreshold: 30\n"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn without_a_config_path_the_rare_tools_write_touches_no_file() {
+    let _serial = SERIAL.lock().await;
+    values::forget();
+    let dir = scratch("no-config");
+    migrated(&dir);
+    let config = dir.join("config.yml");
+    let yaml = "tools:\n  xdev: true\n";
+    std::fs::write(&config, yaml).unwrap();
+    let files = || std::fs::read_dir(&dir).unwrap().count();
+    let count = files();
+    let omp = FakeOmp::new(None);
+    let change = Change::Set("tools.commands".to_string(), json!(false));
+    apply_change(&omp, &dir, None, false, change).await.unwrap();
+    assert_eq!(omp.sets(), vec![set_call("tools.commands", "false")]);
+    assert_eq!(std::fs::read_to_string(&config).unwrap(), yaml);
+    assert_eq!(files(), count);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
+async fn a_failed_stale_key_removal_does_not_fail_the_saved_toggle() {
+    let _serial = SERIAL.lock().await;
+    values::forget();
+    let dir = scratch("removal-fails");
+    migrated(&dir);
+    // A directory where the config file should be cannot be read as text, so the removal errors.
+    let config = dir.join("config.yml");
+    std::fs::create_dir(&config).unwrap();
+    let omp = FakeOmp::new(None);
+    let change = Change::Set("tools.commands".to_string(), json!(false));
+    let applied = apply_change(&omp, &dir, Some(&config), false, change)
+        .await
+        .unwrap();
+    assert_eq!(omp.sets(), vec![set_call("tools.commands", "false")]);
+    assert_eq!(applied.updated.values["tools.commands"], json!(false));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[tokio::test]
 async fn a_pending_migration_is_retried_inside_the_write_and_then_succeeds() {
     let _serial = SERIAL.lock().await;
     values::forget();

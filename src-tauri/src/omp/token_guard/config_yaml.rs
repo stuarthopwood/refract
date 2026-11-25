@@ -1,6 +1,7 @@
 // Drops one stale `parent.leaf` key from omp's global `config.yml`. omp can only reset keys it
 // knows, and each omp line knows only one of the two rare-tools keys, so the other is cut by hand.
 // Line-based on purpose: the file keeps the user's comments and ordering, and there is no YAML crate.
+// Quoted keys and flow maps (`tools: {xdev: true}`) are left untouched; tab indentation is invalid YAML and unsupported.
 
 use std::io;
 use std::path::Path;
@@ -159,8 +160,8 @@ mod tests {
 
     #[tokio::test]
     async fn rewrites_the_file_and_ignores_a_missing_one() {
-        let dir = std::env::temp_dir().join(format!("refract-yaml-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().to_path_buf();
         let file = dir.join("config.yml");
         std::fs::write(&file, "tools:\n  commands: true\n  xdev: false\n").unwrap();
         remove_key_from_file(&file, "tools", "xdev").await.unwrap();
@@ -171,6 +172,5 @@ mod tests {
         remove_key_from_file(&dir.join("absent.yml"), "tools", "xdev")
             .await
             .unwrap();
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -25,8 +25,8 @@ function xdTargetTool(tool: string, target: string | undefined): string | undefi
   return name === '' ? undefined : name
 }
 
-// The rarely-used tools omp 19 mounts as shell commands while `bash` is active (they are `loadMode:
-// "discoverable"` and not kept top-level), plus the resolve-flow commands. MCP tools mount the same way.
+// A snapshot of the tools omp 19.1.1 mounts as shell commands (`src/tools/tool-commands.ts`): the rarely-used
+// ones (`loadMode: "discoverable"`) plus the resolve-flow commands. MCP tools mount the same way.
 const TOOL_COMMAND_NAMES: Readonly<Record<string, true>> = Object.freeze({
   ast_edit: true,
   ast_grep: true,
@@ -48,8 +48,11 @@ const TOOL_COMMAND_NAMES: Readonly<Record<string, true>> = Object.freeze({
 const ENV_ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_]*=/
 const COMMAND_WORD_RE = /^[^\s;&|<>()]+/
 
-// A v19 tool command is a `bash` call whose first command word names a mounted tool. Leading
-// `NAME=value` assignments are skipped; any other first word keeps the call an ordinary bash row.
+const COMPOUND_SHELL_RE = /[;&|\r\n`]|\$\(/
+
+// A v19 tool command is a `bash` call that is one simple command whose first word names a mounted tool.
+// Leading `NAME=value` assignments are skipped; anything chained, piped or substituted after the tool word
+// stays an ordinary bash row, as does any other first word.
 function toolCommandName(tool: string, target: string | undefined): string | undefined {
   if (tool !== 'bash' || !target) return undefined
   let rest = target.trimStart()
@@ -60,7 +63,8 @@ function toolCommandName(tool: string, target: string | undefined): string | und
       rest = rest.slice(word.length).trimStart()
       continue
     }
-    return Object.hasOwn(TOOL_COMMAND_NAMES, word) || word.startsWith(MCP_PREFIX) ? word : undefined
+    if (!Object.hasOwn(TOOL_COMMAND_NAMES, word) && !word.startsWith(MCP_PREFIX)) return undefined
+    return COMPOUND_SHELL_RE.test(rest.slice(word.length)) ? undefined : word
   }
 }
 

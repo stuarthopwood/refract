@@ -332,11 +332,14 @@ async fn write_rare_tools(
         RARE_TOOLS_KEY
     };
     let leaf = stale.strip_prefix("tools.").unwrap_or(stale);
-    config_yaml::remove_key_from_file(config, "tools", leaf)
-        .await
-        .map_err(|err| {
-            format!("Saved {key}, but could not remove {stale} from the omp config: {err}")
-        })
+    // `omp config set` already succeeded, so a failed cleanup only warns. The file is read, edited and
+    // renamed with no lock, so an omp write in between can lose the edit.
+    if let Err(err) = config_yaml::remove_key_from_file(config, "tools", leaf).await {
+        log::warn!(
+            "token guard: saved {key}, but could not remove {stale} from the omp config: {err}"
+        );
+    }
+    Ok(())
 }
 
 /// Writes one key to the global omp config. The advisor role is read-merge-written because `omp config get modelRoles.advisor` is unsupported.

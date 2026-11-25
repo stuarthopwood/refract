@@ -1,4 +1,4 @@
-import { Terminal, Waypoints, Wrench, FileText } from 'lucide-react'
+import { Plug, Terminal, Waypoints, Wrench, FileText } from 'lucide-react'
 import { describe, expect, it } from 'vitest'
 
 import { isLinkableFilePath } from '../../lib/linkify'
@@ -9,6 +9,10 @@ describe('resolveToolDisplay tool commands (omp 19)', () => {
     const display = resolveToolDisplay('bash', 'lsp --help')
     expect(display).toMatchObject({ key: 'xd:lsp', entryTool: 'lsp', rawId: 'bash lsp' })
     expect(display.icon).toBe(Waypoints)
+  })
+
+  it('Given an MCP tool command, Then it has the Plug icon', () => {
+    expect(resolveToolDisplay('bash', 'mcp__srv__do').icon).toBe(Plug)
   })
 
   it('Given leading env assignments, Then the command word after them names the tool', () => {
@@ -23,6 +27,29 @@ describe('resolveToolDisplay tool commands (omp 19)', () => {
     const display = resolveToolDisplay('bash', 'ls -la')
     expect(display).toMatchObject({ key: 'bash', entryTool: 'bash', rawId: 'bash' })
     expect(display.icon).toBe(Terminal)
+  })
+
+  it.each([
+    'ast_edit', 'ast_grep', 'checkpoint', 'debug', 'github', 'lsp', 'memory_edit', 'propose',
+    'recall', 'reflect', 'reject', 'resolve', 'retain', 'rewind', 'security_scan'
+  ])('Given a bash call to the mounted tool %s, Then it is that tool\'s row', (name) => {
+    expect(resolveToolDisplay('bash', `${name} --x 1`)).toMatchObject({ key: `xd:${name}`, entryTool: name, rawId: `bash ${name}` })
+  })
+
+  it.each([
+    'lsp a | head',
+    'lsp x; rm y',
+    'lsp x && y',
+    'lsp x &',
+    'lsp x\nrm y',
+    'lsp `rm y`',
+    'lsp $(rm y)',
+    'FOO=1 lsp x | head',
+    'echo x; lsp',
+    'FOO=1',
+    'FOO=1; lsp x'
+  ])('Given the compound or non-tool command %j, Then it stays a bash row', (command) => {
+    expect(resolveToolDisplay('bash', command)).toMatchObject({ key: 'bash', entryTool: 'bash', rawId: 'bash' })
   })
 
   it('Given an unknown first word or a tool name only later in the line, Then it stays a bash row', () => {
