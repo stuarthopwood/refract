@@ -21,7 +21,7 @@ const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
 }
 
 /** The live form's card chrome; `label` names the card. */
-function AskFormShell({ children, label }: { children: React.ReactNode; label: string }) {
+export function AskFormShell({ children, label }: { children: React.ReactNode; label: string }) {
   return (
     <Card size="sm" role="group" aria-label={label}>
       <CardHeader>

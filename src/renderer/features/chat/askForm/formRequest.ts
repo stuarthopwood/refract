@@ -32,6 +32,16 @@ export function formSubmission(fields: readonly AskFormField[], values: readonly
   return { errors, answer: errors.every((error) => error === null) ? { data: toFormData(fields, values) } : null }
 }
 
+/** A message shows once its field was touched or Submit was tried, so an untouched form is not a wall of errors. */
+export function visibleErrors(errors: readonly (string | null)[], touched: ReadonlySet<number>, attempted: boolean): (string | null)[] {
+  return errors.map((error, index) => (attempted || touched.has(index) ? error : null))
+}
+
+/** The first field Submit is blocked on, or -1 when all are acceptable. */
+export function firstInvalidField(errors: readonly (string | null)[]): number {
+  return errors.findIndex((error) => error !== null)
+}
+
 /** A static line, as for the ask card: the form is cancelled on the user's behalf once the time passes. */
 export function formDeadlineText(deadlineAt: number): string {
   const time = new Date(deadlineAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -48,15 +58,20 @@ export function scheduleDeadline(deadlineAt: number | undefined, now: number, fi
   return () => clearTimeout(timer)
 }
 
+export interface FormResponder {
+  /** Resolves true once OMP took the answer; false when it was refused, or another send was in flight or already done. */
+  respond(answer: ChatAnswer): Promise<boolean>
+}
+
 /**
  * OMP takes exactly one response per form, so a second Submit, a Cancel racing the deadline, or a retry
  * while one send is in flight must not reach it. A refused send re-opens the responder so the user can retry.
  */
-export function createFormResponder(send: (answer: ChatAnswer) => Promise<boolean>) {
+export function createFormResponder(send: (answer: ChatAnswer) => Promise<boolean>): FormResponder {
   let busy = false
   let done = false
   return {
-    async respond(answer: ChatAnswer): Promise<boolean> {
+    async respond(answer) {
       if (busy || done) return false
       busy = true
       try {
