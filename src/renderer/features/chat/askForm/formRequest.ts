@@ -5,7 +5,6 @@ import { toFormData, validateAskForm } from './validateAskForm'
 
 export const FORM_CANCEL: ChatAnswer = { cancelled: true }
 export const FORM_TIMED_OUT: ChatAnswer = { cancelled: true, timedOut: true }
-export const FORM_UNSHOWN_NOTICE = 'This form could not be shown, so it was cancelled.'
 
 /** HTML submits a range's midpoint, snapped to its step from min, when it was never moved, so an untouched slider must hold that number too. */
 function rangeMidpoint(field: AskFormInputField): string {
