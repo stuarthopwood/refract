@@ -43,7 +43,39 @@ function fieldValue(field: AskFormField, value: AskFieldValue | undefined): AskF
 
 const MAX_PATTERN_LENGTH = 200
 const MAX_INPUT_LENGTH = 1_000
+const MAX_COUNT = 1_000
 const COUNTED_QUANTIFIER = /\{(\d+)(?:(,)(\d*))?\}/y
+const METACHARS = '\\^$.*+?()[]{}|'
+const ESCAPE = /[\\^$.*+?()[\]{}|/\-dwsDWS]/
+
+// Length of the flat class starting at `start`, or 0 when it holds anything but literals, ranges and simple escapes.
+function classLength(pattern: string, start: number): number {
+  let index = start + 1
+  if (pattern[index] === '^') index++
+  const first = index
+  while (index < pattern.length) {
+    const char = pattern[index] ?? ''
+    if (char === ']') return index > first ? index - start + 1 : 0
+    if (char === '\\') {
+      if (!ESCAPE.test(pattern[index + 1] ?? '')) return 0
+      index += 2
+    } else if (char === '[' || char === '-' || (char === '&' && pattern[index + 1] === '&')) {
+      return 0
+    } else {
+      const end = pattern[index + 2] ?? ''
+      index += pattern[index + 1] === '-' && end !== '' && !'[]\\-'.includes(end) ? 3 : 1
+    }
+  }
+  return 0
+}
+
+// Length of the single-character atom at `index`, or 0 when there is none.
+function atomLength(pattern: string, index: number): number {
+  const char = pattern[index] ?? ''
+  if (char === '\\') return ESCAPE.test(pattern[index + 1] ?? '') ? 2 : 0
+  if (char === '[') return classLength(pattern, index)
+  return char === '.' || !METACHARS.includes(char) ? 1 : 0
+}
 
 // The quantifier starting at `index`, or null; `variable` is false for a fixed `{n}`, which cannot backtrack.
 function quantifierAt(pattern: string, index: number): { length: number; variable: boolean } | null {
@@ -53,48 +85,34 @@ function quantifierAt(pattern: string, index: number): { length: number; variabl
   COUNTED_QUANTIFIER.lastIndex = index
   const match = COUNTED_QUANTIFIER.exec(pattern)
   if (!match) return null
-  const [whole = '', min = '', comma, max = ''] = match
-  return { length: whole.length, variable: comma !== undefined && (max === '' || Number(max) > Number(min)) }
+  const [whole = '', low = '', comma, high = ''] = match
+  const min = Number(low)
+  if (min > MAX_COUNT) return null
+  if (comma === undefined) return min >= 1 ? { length: whole.length, variable: false } : null
+  if (high === '') return { length: whole.length, variable: true }
+  const max = Number(high)
+  return max > min && max <= MAX_COUNT ? { length: whole.length, variable: true } : null
 }
 
-// The pattern is the agent's and runs on the UI thread, so it only runs when matching is provably cheap: at most one
-// variable-length quantifier, none on a group, no alternation, backreference or lookaround (`(a|a)` repeated backtracks
-// exponentially without any quantifier). OMP still checks the answer on submit.
+// The pattern is the agent's and runs on the UI thread, so it runs only when built from a small allow-list: every atom
+// matches exactly one character, so the single variable quantifier is the only choice point. OMP still checks on submit.
 function isCheapPattern(pattern: string): boolean {
   if (pattern.length > MAX_PATTERN_LENGTH) return false
   let variableQuantifiers = 0
-  let classDepth = 0
-  let afterGroup = false
-  for (let index = 0; index < pattern.length; index++) {
-    const char = pattern[index]
-    if (char === '\\') {
-      const next = pattern[index + 1] ?? ''
-      if (classDepth === 0 && (/[1-9]/.test(next) || (next === 'k' && pattern[index + 2] === '<'))) return false
+  let index = 0
+  while (index < pattern.length) {
+    if (pattern[index] === '^' || pattern[index] === '$') {
       index++
-      afterGroup = false
-    } else if (classDepth > 0) {
-      classDepth += char === '[' ? 1 : char === ']' ? -1 : 0
-    } else if (char === '[') {
-      classDepth = 1
-      afterGroup = false
-    } else if (char === '(') {
-      if (/^\(\?<?[=!]/.test(pattern.slice(index, index + 4))) return false
-      if (pattern[index + 1] === '?') index++
-      afterGroup = false
-    } else if (char === '|') {
-      return false
-    } else if (char === ')') {
-      afterGroup = true
-    } else {
-      const quantifier = quantifierAt(pattern, index)
-      if (quantifier) {
-        if (afterGroup || (quantifier.variable && ++variableQuantifiers > 1)) return false
-        index += quantifier.length - 1
-        // A lazy or possessive suffix belongs to the same quantifier.
-        if (pattern[index + 1] === '?' || pattern[index + 1] === '+') index++
-      }
-      afterGroup = false
+      continue
     }
+    const atom = atomLength(pattern, index)
+    if (atom === 0) return false
+    index += atom
+    const quantifier = quantifierAt(pattern, index)
+    if (!quantifier) continue
+    if (quantifier.variable && ++variableQuantifiers > 1) return false
+    index += quantifier.length
+    if (pattern[index] === '?') index++
   }
   return true
 }

@@ -35,38 +35,25 @@ describe('validateAskForm text rules', () => {
 describe('validateAskForm pattern safety', () => {
   const patternOf = (pattern: string) => `<input name="a" aria-label="A" pattern="${pattern}">`
 
-  test.each(['(a+)+$', '(a*)*', '(a|a)*', '(a|aa)+', '((a+))+', '(a+){2,}', `${'.*'.repeat(14)}x`, '.*.*x'])(
-    'Given the backtracking pattern %s, When a long near-match is validated, Then it is skipped at once without an error',
-    (pattern) => {
-      const started = performance.now()
-      expect(errorOf(patternOf(pattern), text(`${'a'.repeat(30)}!`))).toBeNull()
-      expect(performance.now() - started).toBeLessThan(200)
-    }
-  )
-
-  test.each(['(a)\\1', '(?<x>a)\\k<x>', '(?=a)a', '(?!b)a', '(?<=b)a', '(?<!b)a', '(ab){2}', '(ab)?'])(
-    'Given the pattern %s that has a backreference, lookaround or repeated group, When it would fail, Then it is skipped',
-    (pattern) => {
-      expect(errorOf(patternOf(pattern), text('zz'))).toBeNull()
-    }
-  )
-
-  test.each(['a+?b*', 'a{2,}b?', 'a{1,3}b*', 'a*?b+'])('Given the two-quantifier pattern %s, When it would fail, Then it is skipped', (pattern) => {
-    expect(errorOf(patternOf(pattern), text('zz'))).toBeNull()
-  })
-
   test.each([
-    ['(a|a) repeated', `${'(a|a)'.repeat(24)}b`],
-    ['(a|) repeated', `${'(a|)'.repeat(24)}b`]
-  ])('Given the alternation pattern %s, When a long near-match is validated, Then it is skipped within the time bound', (_label, pattern) => {
+    ['a class with a \\q string alternative', '[\\q{a|aa}]{30}b'],
+    ['a class with a property of strings', '[\\p{RGI_Emoji}]'],
+    ['a chain of (a|a) groups', `${'(a|a)'.repeat(24)}b`],
+    ['a chain of .* repeats', `${'.*'.repeat(14)}x`],
+    ['a nested repeat', '(a+)+$'],
+    ['an alternation', 'a|b'],
+    ['a group', '(ab)'],
+    ['a backreference', '(a)\\1'],
+    ['a lookahead', '(?=a)'],
+    ['a nested class with set subtraction', '[[a]--[b]]'],
+    ['a count above 1,000', 'a{1001}'],
+    ['two variable quantifiers', 'a+b*']
+  ])('Given %s, When a long near-match is validated, Then it is skipped at once without an error', (_label, pattern) => {
     const started = performance.now()
-    expect(errorOf(patternOf(pattern), text(`${'a'.repeat(24)}c`))).toBeNull()
+    expect(errorOf(patternOf(pattern), text(`${'a'.repeat(30)}!`))).toBeNull()
     expect(performance.now() - started).toBeLessThan(200)
   })
 
-  test('Given a top-level alternation that would fail, When validated, Then it is skipped', () => {
-    expect(errorOf(patternOf('(ab|cd)e+'), text('xe'))).toBeNull()
-  })
   test('Given a pattern of 201 characters, When it would fail, Then it is skipped', () => {
     expect(errorOf(patternOf('a'.repeat(201)), text('b'))).toBeNull()
   })
@@ -84,19 +71,22 @@ describe('validateAskForm pattern safety', () => {
   })
 
   test.each([
-    ['a repeat inside a character class, on pattern', '[*+]x', '+x', null],
-    ['a repeat inside a character class, off pattern', '[*+]x', 'ax', 'Must match [*+]x'],
     ['fixed counts, on pattern', '\\d{3}-\\d{4}', '123-4567', null],
     ['fixed counts, off pattern', '\\d{3}-\\d{4}', '123-456', 'Must match \\d{3}-\\d{4}'],
-    ['one repeat, on pattern', '^[A-Z][a-z]*$', 'Hello', null],
-    ['one repeat, off pattern', '^[A-Z][a-z]*$', 'hello', 'Must match ^[A-Z][a-z]*$'],
+    ['anchors and one repeat, on pattern', '^[A-Z][a-z]*$', 'Hello', null],
+    ['anchors and one repeat, off pattern', '^[A-Z][a-z]*$', 'hello', 'Must match ^[A-Z][a-z]*$'],
+    ['a class with an escaped hyphen and one repeat, on pattern', '[A-Za-z0-9._%+\\-]+@x\\.com', 'a.b@x.com', null],
+    ['a class with an escaped hyphen and one repeat, off pattern', '[A-Za-z0-9._%+\\-]+@x\\.com', 'a b@x.com', 'Must match [A-Za-z0-9._%+\\-]+@x\\.com'],
     ['an escaped star before one repeat, on pattern', 'a\\*b*', 'a*bb', null],
     ['an escaped star before one repeat, off pattern', 'a\\*b*', 'abb', 'Must match a\\*b*'],
+    ['an escaped bar in a class, on pattern', '[\\|]x', '|x', null],
+    ['an escaped bar in a class, off pattern', '[\\|]x', 'ax', 'Must match [\\|]x'],
+    ['a bounded repeat, on pattern', '\\w{2,5}', 'abc', null],
+    ['a bounded repeat, off pattern', '\\w{2,5}', 'a', 'Must match \\w{2,5}'],
+    ['a repeat inside a character class, on pattern', '[*+]x', '+x', null],
+    ['a repeat inside a character class, off pattern', '[*+]x', 'ax', 'Must match [*+]x'],
     ['an escaped backslash before a digit, off pattern', '\\\\1a+', 'x', 'Must match \\\\1a+'],
-    ['an escaped bar, on pattern', 'a\\|b', 'a|b', null],
-    ['an escaped bar, off pattern', 'a\\|b', 'ab', 'Must match a\\|b'],
-    ['an escaped bar in a character class, on pattern', '[\\|]x', '|x', null],
-    ['an escaped bar in a character class, off pattern', '[\\|]x', 'ax', 'Must match [\\|]x'],
+    ['a trailing hyphen in a class, which the v flag rejects as invalid, on any value', '[A-Za-z0-9._%+-]+@x\\.com', 'a b@x.com', null],
     ['an unescaped bar in a class, which the v flag rejects as invalid, on any value', '[|]x', 'ax', null]
   ])('Given %s, When validated, Then the pattern is still enforced', (_label, pattern, value, expected) => {
     expect(errorOf(patternOf(pattern), text(value))).toBe(expected)
