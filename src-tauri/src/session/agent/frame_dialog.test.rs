@@ -102,6 +102,79 @@ async fn a_form_answer_of_the_wrong_shape_is_refused_and_the_card_stays() {
 }
 
 #[tokio::test]
+async fn an_over_cap_form_answer_is_refused_as_invalid_and_the_card_stays() {
+    let fx = fixture(&[], &[]).await;
+
+    fx.agent.handle_frame(form_frame("form-5")).await;
+    let too_long = json!({ "data": { "title": "a".repeat(64 * 1024 + 1) } });
+    let err = fx
+        .agent
+        .answer_request("form-5".into(), too_long)
+        .await
+        .unwrap_err();
+
+    assert_eq!(err.code, "invalid-argument");
+    assert_eq!(fx.agent.pending_requests().await.len(), 1);
+    assert!(responses(&fx).await.is_empty());
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_form_answer_with_cancelled_false_resolves_answered_not_cancelled() {
+    use crate::omp::transcript::{RequestResolution, TranscriptItem};
+
+    let fx = fixture(&[], &[]).await;
+
+    fx.agent.handle_frame(form_frame("form-6")).await;
+    fx.agent
+        .answer_request(
+            "form-6".into(),
+            json!({ "data": { "title": "Ship it" }, "cancelled": false }),
+        )
+        .await
+        .unwrap();
+    fx.until_rpc("extension_ui_response").await;
+
+    assert_eq!(
+        responses(&fx).await,
+        vec![json!({
+            "type": "extension_ui_response",
+            "id": "form-6",
+            "data": { "title": "Ship it" }
+        })]
+    );
+    let state = fx.agent.state.lock().await;
+    let resolved = state
+        .transcript
+        .items()
+        .iter()
+        .find_map(|item| match &**item {
+            TranscriptItem::Request {
+                request_id,
+                resolved,
+                ..
+            } if request_id == "form-6" => Some(*resolved),
+            _ => None,
+        });
+    assert_eq!(resolved, Some(Some(RequestResolution::Answered)));
+    drop(state);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_process_exit_drops_a_pending_form_request() {
+    let fx = fixture(&[], &[]).await;
+    fx.agent.handle_frame(form_frame("form-7")).await;
+    assert_eq!(fx.agent.pending_requests().await.len(), 1);
+    let proc = fx.agent.state.lock().await.process.clone().unwrap();
+
+    fx.agent.handle_exit(&proc, Some(1), false).await;
+
+    assert!(fx.agent.pending_requests().await.is_empty());
+    proc.stop().await;
+}
+
+#[tokio::test]
 async fn a_form_request_without_html_is_answered_cancelled_and_leaves_a_notice_naming_it() {
     let fx = fixture(&[], &[]).await;
 

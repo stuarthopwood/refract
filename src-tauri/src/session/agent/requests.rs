@@ -90,8 +90,9 @@ impl SessionAgent {
                 .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
         }
 
-        // `cancelled` wins, then `approve`, otherwise a question answer; a late answer is no answer.
-        let resolved = if late_ask || answer.get("cancelled").is_some() {
+        // `cancelled: true` wins, then `approve`, otherwise a question answer; a late answer is no answer.
+        // `{data, cancelled: false}` is an answer, so only an explicit `true` cancels.
+        let resolved = if late_ask || answer.get("cancelled") == Some(&Value::Bool(true)) {
             RequestResolution::Cancelled
         } else if let Some(approve) = answer.get("approve") {
             if approve.as_bool() == Some(true) {

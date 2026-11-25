@@ -2,16 +2,38 @@
 
 use serde_json::{json, Value};
 
+/// Bounds on a submission, so a runaway or hostile payload is refused before it reaches OMP.
+const MAX_FORM_KEYS: usize = 100;
+const MAX_FORM_STRING_BYTES: usize = 64 * 1024;
+const MAX_FORM_ARRAY_ITEMS: usize = 200;
+
 /// OMP's `parseFormDialogResponse` throws on a value that is not a string, a number, or an array of
 /// strings, so a bad payload is refused here instead of reaching it.
 pub(super) fn validate_form_data(data: &Value) -> Result<(), String> {
     let fields = data
         .as_object()
         .ok_or_else(|| "form data must be an object".to_string())?;
+    if fields.len() > MAX_FORM_KEYS {
+        return Err(format!("form data has more than {MAX_FORM_KEYS} fields"));
+    }
     for (name, value) in fields {
         let valid = match value {
-            Value::String(_) | Value::Number(_) => true,
-            Value::Array(items) => items.iter().all(Value::is_string),
+            Value::String(text) => {
+                check_string_size(name, text)?;
+                true
+            }
+            Value::Number(_) => true,
+            Value::Array(items) => {
+                if items.len() > MAX_FORM_ARRAY_ITEMS {
+                    return Err(format!(
+                        "form field {name} has more than {MAX_FORM_ARRAY_ITEMS} items"
+                    ));
+                }
+                for text in items.iter().filter_map(Value::as_str) {
+                    check_string_size(name, text)?;
+                }
+                items.iter().all(Value::is_string)
+            }
             _ => false,
         };
         if !valid {
@@ -19,6 +41,15 @@ pub(super) fn validate_form_data(data: &Value) -> Result<(), String> {
                 "form field {name} must be a string, a number, or an array of strings"
             ));
         }
+    }
+    Ok(())
+}
+
+fn check_string_size(name: &str, text: &str) -> Result<(), String> {
+    if text.len() > MAX_FORM_STRING_BYTES {
+        return Err(format!(
+            "form field {name} has a value over {MAX_FORM_STRING_BYTES} bytes"
+        ));
     }
     Ok(())
 }
