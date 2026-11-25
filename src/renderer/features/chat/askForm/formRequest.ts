@@ -99,11 +99,11 @@ export interface SendOutcome {
 export const SEND_FAILED_TEXT = "Your answer couldn't be sent. Try again."
 
 /** A refused or failed send re-opens the form, except a timed-out cancel, which locks it: editing past the deadline cannot help. */
-export async function sendFormAnswer(answer: ChatAnswer, call: () => Promise<Result<void>>, failureText: (error: IpcError) => string): Promise<SendOutcome> {
+export async function sendFormAnswer(answer: ChatAnswer, call: () => Promise<Result<void>>, failureText: (error: IpcError, answer: ChatAnswer) => string): Promise<SendOutcome> {
   const refused = (error: string): SendOutcome => ({ accepted: false, phase: answerKind(answer) === 'timedOut' ? 'locked' : 'idle', error })
   try {
     const result = await call()
-    return result.ok ? { accepted: true, phase: 'sent', error: null } : refused(failureText(result.error))
+    return result.ok ? { accepted: true, phase: 'sent', error: null } : refused(failureText(result.error, answer))
   } catch {
     return refused(SEND_FAILED_TEXT)
   }

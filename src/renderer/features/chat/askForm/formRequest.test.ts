@@ -254,6 +254,13 @@ describe('sendFormAnswer', () => {
     expect(await sendFormAnswer(FORM_TIMED_OUT, async () => refused, failureText)).toEqual({ accepted: false, phase: 'locked', error: 'refused: gone' })
   })
 
+  test('Given a refusal, Then the failure text is told which answer was sent so a cancel can be worded as one (#2135)', async () => {
+    const failureFor = vi.fn((_error: IpcError, _answer: ChatAnswer) => 'refused')
+    await sendFormAnswer(FORM_CANCEL, async () => refused, failureFor)
+    await sendFormAnswer(FORM_TIMED_OUT, async () => refused, failureFor)
+    expect(failureFor.mock.calls.map(([, answer]) => answer)).toEqual([FORM_CANCEL, FORM_TIMED_OUT])
+  })
+
   test('Given the call rejects, Then it reads as a refusal instead of leaving the form sending', async () => {
     const reject = async (): Promise<Result<void>> => {
       throw new Error('ipc down')

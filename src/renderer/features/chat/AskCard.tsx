@@ -15,7 +15,7 @@ import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { type AskDraftQuestion, EMPTY_ASK_QUESTION_DRAFT, useAskPicksStore } from '@/state/ask-picks-store'
 import { Markdown } from './Markdown'
 import { splitQuestionHeading } from './RequestCard'
-import { answerFailureText } from './askAnswerError'
+import { sendAnswer } from './askAnswerError'
 import { pickedNotes } from './askNotes'
 import { draftAfterUseRecommended, focusProbeOf, initialPickFor, opensOnRecommended, recommendedFlags, recommendedLabels, shouldTakeInitialFocus } from './askRecommended'
 
@@ -146,23 +146,17 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     setBusyAction('submit')
     setError(null)
     const answer: ChatAnswer = { answers: buildAnswers(questions, answersBy, request.hostCall === true) }
-    const result = await window.refract.chat.answer(sessionId, request.requestId, answer)
+    const failure = await sendAnswer(sessionId, request.requestId, answer)
     setBusyAction(null)
-    if (!result.ok) {
-      setError(answerFailureText(result.error))
-      return
-    }
+    if (failure !== null) setError(failure)
   }
 
   async function cancel() {
     setBusyAction('cancel')
     setError(null)
-    const result = await window.refract.chat.answer(sessionId, request.requestId, { cancelled: true })
+    const failure = await sendAnswer(sessionId, request.requestId, { cancelled: true })
     setBusyAction(null)
-    if (!result.ok) {
-      setError(answerFailureText(result.error, 'cancel'))
-      return
-    }
+    if (failure !== null) setError(failure)
   }
 
   if (!activeQuestion) return null

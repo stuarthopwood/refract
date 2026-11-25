@@ -1,4 +1,4 @@
-import type { IpcError } from '../../../shared/ipc'
+import type { ChatAnswer, IpcError } from '../../../shared/ipc'
 import { notifyInfo } from '@/state'
 
 export const REQUEST_GONE_MESSAGE = "That question was already closed, so your answer wasn't sent."
@@ -17,4 +17,15 @@ export function answerFailureText(error: IpcError, action: 'answer' | 'cancel' =
   }
   if (/customInput exceeds \d+ characters/.test(error.message)) return 'Your answer is too long. Shorten it and try again.'
   return error.message
+}
+
+/** A cancel or a deadline's cancel is worded as a cancel; only a submission is an "answer". */
+export function answerFailureFor(error: IpcError, answer: ChatAnswer): string {
+  return answerFailureText(error, 'cancelled' in answer ? 'cancel' : 'answer')
+}
+
+/** Sends one answer; resolves the text to show when OMP refused it, or null when it took it. */
+export async function sendAnswer(sessionId: string, requestId: string, answer: ChatAnswer): Promise<string | null> {
+  const result = await window.refract.chat.answer(sessionId, requestId, answer)
+  return result.ok ? null : answerFailureFor(result.error, answer)
 }
