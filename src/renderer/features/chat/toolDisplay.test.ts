@@ -42,6 +42,7 @@ describe('resolveToolDisplay tool commands (omp 19)', () => {
     'lsp x && y',
     'lsp x &',
     'lsp x\nrm y',
+    'lsp x\rrm y',
     'lsp `rm y`',
     'lsp $(rm y)',
     'FOO=1 lsp x | head',
