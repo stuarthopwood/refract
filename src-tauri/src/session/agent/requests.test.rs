@@ -467,6 +467,45 @@ fn a_form_cancel_forwards_cancelled() {
 }
 
 #[test]
+fn a_form_deadline_cancel_forwards_timed_out() {
+    let answer = json!({ "cancelled": true, "timedOut": true });
+    let reply = build_dialog_response("f1", &form_card(""), &answer).unwrap();
+    assert_eq!(
+        reply,
+        json!({ "type": "extension_ui_response", "id": "f1", "cancelled": true, "timedOut": true })
+    );
+}
+
+#[test]
+fn only_a_form_cancel_carries_timed_out() {
+    let ask = PendingRequest::Question {
+        request_id: "q1".into(),
+        title: String::new(),
+        message: None,
+        options: vec![],
+        option_details: None,
+        input_kind: "text",
+        secret: false,
+    };
+    let answer = json!({ "cancelled": true, "timedOut": true });
+    let reply = build_dialog_response("q1", &ask, &answer).unwrap();
+    assert_eq!(
+        reply,
+        json!({ "type": "extension_ui_response", "id": "q1", "cancelled": true })
+    );
+}
+
+#[test]
+fn is_chat_answer_takes_a_boolean_timed_out_only() {
+    assert!(is_chat_answer(
+        &json!({ "cancelled": true, "timedOut": true })
+    ));
+    assert!(!is_chat_answer(
+        &json!({ "cancelled": true, "timedOut": "yes" })
+    ));
+}
+
+#[test]
 fn a_form_answer_of_another_shape_is_invalid() {
     for answer in [
         json!({ "value": "x" }),

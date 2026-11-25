@@ -7,7 +7,7 @@ use crate::omp::transcript::RequestResolution;
 
 use super::ask_frame::parse_ask_questions;
 use super::commands::string_array;
-use super::form_frame::validate_form_data;
+use super::form_frame::{build_form_response, validate_form_data};
 use super::launch_support::truncate;
 use super::{AgentError, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
 
@@ -520,6 +520,9 @@ fn build_dialog_response(
     request: &PendingRequest,
     answer: &Value,
 ) -> Result<Value, String> {
+    if let PendingRequest::Form { .. } = request {
+        return build_form_response(request_id, answer);
+    }
     if answer.get("cancelled") == Some(&Value::Bool(true)) {
         return Ok(json!({ "type": "extension_ui_response", "id": request_id, "cancelled": true }));
     }
@@ -534,15 +537,6 @@ fn build_dialog_response(
         let label = approval_answer_label(options, approve, chosen)
             .map_err(|err| format!("{err} (approval request {request_id})"))?;
         return Ok(json!({ "type": "extension_ui_response", "id": request_id, "value": label }));
-    }
-    if let PendingRequest::Form { .. } = request {
-        let data = answer
-            .get("data")
-            .ok_or_else(|| format!("expected a data object for form request {request_id}"))?;
-        validate_form_data(data).map_err(|err| format!("{err} (form request {request_id})"))?;
-        return Ok(
-            json!({ "type": "extension_ui_response", "id": request_id, "data": data.clone() }),
-        );
     }
     if let PendingRequest::Ask { questions, .. } = request {
         let answers = answer
@@ -585,7 +579,8 @@ pub fn is_chat_answer(value: &Value) -> bool {
         && obj.get("option").is_none_or(Value::is_string))
         || matches!(obj.get("value"), Some(Value::String(_)))
         || matches!(obj.get("confirmed"), Some(Value::Bool(_)))
-        || obj.get("cancelled") == Some(&Value::Bool(true))
+        || (obj.get("cancelled") == Some(&Value::Bool(true))
+            && obj.get("timedOut").is_none_or(Value::is_boolean))
         || matches!(obj.get("answers"), Some(Value::Array(_)))
         || obj
             .get("data")

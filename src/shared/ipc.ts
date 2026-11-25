@@ -190,7 +190,7 @@ export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset
 
 export type SlashCommand = SlashCommandDescriptor;
 
-export type ChatAnswer = { approve: boolean; option?: string } | { value: string } | { confirmed: boolean } | { cancelled: true } | { answers: { id: string; selectedOptions: string[]; customInput?: string; notes?: { option: string; text: string }[] }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`). `notes` only applies to a `refract_ask` card.
+export type ChatAnswer = { approve: boolean; option?: string } | { value: string } | { confirmed: boolean } | { cancelled: true; timedOut?: boolean } | { data: Record<string, string | number | string[]> } | { answers: { id: string; selectedOptions: string[]; customInput?: string; notes?: { option: string; text: string }[] }[] }; // #572: `answers` answers a `kind:'ask'` PendingRequest, one entry per question in request order, each `id` copied exactly (`omp://rpc.md`). `notes` only applies to a `refract_ask` card. `data` answers a `kind:'form'` PendingRequest, keyed by control name; `timedOut` rides a form cancel when its deadline fired.
 
 export type { LowMemoryWarning } from './lowMemoryWarning';
 export type { TokenGuardCalls, TokenGuardHandoffResult, TokenGuardLaunchWarning, TokenGuardSnapshot } from './tokenGuard';
