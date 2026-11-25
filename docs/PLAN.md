@@ -791,6 +791,7 @@ One agent, read-only. The supported OMP range is moving to a **minimum of 18.6.3
 - **Themes (Stuart, 2026-11-24):** #2171 (p0) fixes Amber Obsidian, which is missing from the Rust `ThemeId` enum, and adds a TS/Rust theme-id parity check; #2172 (p1, one issue, after #2171) adds 13 themes (six light, seven dark) from popular MIT-licensed palettes, faithful but adjusted to pass WCAG AA, with licence notices, and Nord kept distinct from Nordic Frost.
 - **Menus and the footer (Stuart, 2026-11-24):** #2173 makes menu separators use the app's `--divider` and lifts every menu and popover one surface step lighter, app-wide through the shared menu classes (not profile-only); the "footer" Stuart wants gone is the empty bottom status bar, already covered by #137, so it was not filed twice.
 - **Checklist upkeep (Stuart, 2026-11-24):** agents keep the checklist current without being asked; Stuart's own sessions get this from his shared context, and #2176 puts a generic version in the `refract_checklist` tool description so every Refract user's agent gets it.
+- **Peer Session messages (Stuart, 2026-11-25):** #2202 sends `refract_send_session_message` messages as a steer when the target is working or waiting on a question or approval, so they no longer wait for **Send now**; paused targets still hold them, and developer-typed messages keep the follow-up queue; p0.
 
 ## Decisions still needed from Stuart
 
