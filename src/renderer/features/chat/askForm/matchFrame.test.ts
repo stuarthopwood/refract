@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import type { PendingRequest } from '../../../../shared/model'
 import { frameBelongsToForm, isDoneRow, isOtherRow, matchFrame } from './matchFrame'
-import type { AskFormField } from './parseAskHtml'
+import type { AskFormFrameField } from './parseAskHtml'
 
-const FIELDS: AskFormField[] = [
+const FIELDS: AskFormFrameField[] = [
   { kind: 'radio', name: 'db', question: 'Which database?', required: false, options: [{ value: 'Postgres', label: 'Postgres' }, { value: 'SQLite', label: 'SQLite' }], defaultValue: [] },
   { kind: 'checkbox', name: 'features', question: 'Which features?', required: false, options: [{ value: 'Auth', label: 'Auth' }, { value: 'Billing', label: 'Billing' }], defaultValue: [] },
   { kind: 'text', name: 'why', question: 'Why?', required: false, defaultValue: '' },
@@ -36,18 +36,18 @@ describe('matchFrame', () => {
 
   test('Given case, spacing and a trailing colon differences in the title, When matched, Then the label still matches', () => {
     expect(matchFrame(FIELDS, 2, text('  why?  '))).not.toBeNull()
-    const named: AskFormField = { kind: 'text', name: 'n', question: 'Your name:', required: false, defaultValue: '' }
+    const named: AskFormFrameField = { kind: 'text', name: 'n', question: 'Your name:', required: false, defaultValue: '' }
     expect(matchFrame([named], 0, text('your   name'))).not.toBeNull()
   })
 
   test('Given input and editor frames, When matched against a text or textarea field, Then both match because they arrive as the same text request', () => {
     expect(matchFrame(FIELDS, 2, text('Why?'))).toMatchObject({ fieldIndex: 2, optionRows: [] })
-    const area: AskFormField = { kind: 'textarea', name: 'n', question: 'Notes', required: false, defaultValue: '' }
+    const area: AskFormFrameField = { kind: 'textarea', name: 'n', question: 'Notes', required: false, defaultValue: '' }
     expect(matchFrame([area], 0, text('Notes'))).not.toBeNull()
   })
 
   test('Given the option row carries the HTML value rather than the label, When matched, Then it still resolves', () => {
-    const field: AskFormField = { kind: 'radio', name: 'r', question: 'Pick', required: false, options: [{ value: 'a', label: 'Alpha' }], defaultValue: [] }
+    const field: AskFormFrameField = { kind: 'radio', name: 'r', question: 'Pick', required: false, options: [{ value: 'a', label: 'Alpha' }], defaultValue: [] }
     expect(matchFrame([field], 0, choice('Pick', ['a']))?.optionRows).toEqual(['a'])
   })
 
