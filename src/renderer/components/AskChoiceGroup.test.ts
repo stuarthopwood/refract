@@ -287,3 +287,67 @@ describe('option notes slot (#1987)', () => {
     expect(render(false, OPTIONS, ['Alpha'])).not.toContain('data-ask-option')
   })
 })
+
+describe('disabled option, group state and Other row', () => {
+  const base = {
+    options: [
+      { value: 'Alpha', label: 'Alpha', disabled: true },
+      { value: 'Beta', label: 'Beta' }
+    ] satisfies AskChoiceOption[],
+    selected: [],
+    otherSelected: false,
+    disabled: false,
+    idPrefix: 'p',
+    groupLabel: 'Pick',
+    other: { visible: true, text: '', ariaLabel: 'Other answer', onTextChange: () => undefined },
+    onSelect: () => undefined,
+    onToggle: () => undefined,
+    onSelectOther: () => undefined,
+    onToggleOther: () => undefined
+  }
+  const html = (multi: boolean, extra: Partial<Parameters<typeof AskChoiceGroup>[0]> = {}) => renderToStaticMarkup(createElement(AskChoiceGroup, { ...base, multi, ...extra }))
+  const rowTag = (markup: string, label: string) => {
+    const tag = markup.match(new RegExp(`<button[^>]*aria-labelledby="p-opt-${label}-label"[^>]*>`))?.[0]
+    if (!tag) throw new Error('row not rendered')
+    return tag
+  }
+
+  it.each([
+    ['single choice', false],
+    ['multiple choice', true]
+  ])('marks only the disabled option aria-disabled so it dims and drops hover, %s', (_name, multi) => {
+    const markup = html(multi)
+    expect(rowTag(markup, '0')).toContain('aria-disabled="true"')
+    expect(rowTag(markup, '1')).not.toContain('aria-disabled="true"')
+  })
+
+  it.each([
+    ['single choice', false],
+    ['multiple choice', true]
+  ])('marks every option aria-disabled while the whole group is busy, %s', (_name, multi) => {
+    const markup = html(multi, { disabled: true })
+    expect(rowTag(markup, '0')).toContain('aria-disabled="true"')
+    expect(rowTag(markup, '1')).toContain('aria-disabled="true"')
+  })
+
+  it.each([
+    ['single choice', false],
+    ['multiple choice', true]
+  ])('renders no Other row or input when offerOther is false, %s', (_name, multi) => {
+    const markup = html(multi, { offerOther: false })
+    expect(markup).not.toContain('data-ask-other')
+    expect(markup).not.toContain('aria-label="Other"')
+    expect(html(multi)).toContain('data-ask-other')
+  })
+
+  it.each([
+    ['single choice', false],
+    ['multiple choice', true]
+  ])('puts required, invalid and the described-by id on the group, %s', (_name, multi) => {
+    const markup = html(multi, { groupRequired: true, groupInvalid: true, groupDescribedBy: 'p-error' })
+    const group = markup.match(/<div[^>]*role="(?:radiogroup|group)"[^>]*>/)?.[0] ?? ''
+    expect(group).toContain('aria-required="true"')
+    expect(group).toContain('aria-invalid="true"')
+    expect(group).toContain('p-error')
+  })
+})

@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { choiceDigitIndex, focusChoiceRow } from '@/components/askChoiceKeys'
 import { AskChoiceGroup } from '@/components/AskChoiceGroup'
+import { InlineStatus } from '@/components/InlineStatus'
 import { CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { NumberField } from '@/components/ui/NumberField'
@@ -14,7 +15,7 @@ type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
 
 function FieldHeading({ id, question, required }: { id: string; question: string; required: boolean }) {
   return (
-    <p id={id} className="whitespace-pre-line text-sm font-medium">
+    <p id={id} className="whitespace-pre-line break-words text-sm font-medium">
       {question}
       {required && <span className="font-normal text-muted-foreground">, required</span>}
     </p>
@@ -23,10 +24,15 @@ function FieldHeading({ id, question, required }: { id: string; question: string
 
 function FieldError({ id, error }: { id: string; error: string | null | undefined }) {
   return error ? (
-    <p id={id} className="text-sm text-destructive">
+    <InlineStatus tone="error" density="compact" id={id} className="p-0 text-sm break-words">
       {error}
-    </p>
+    </InlineStatus>
   ) : null
+}
+
+/** A number field takes a minus sign only when its range can go below zero. */
+export function allowsNegative(min: number | undefined): boolean {
+  return min === undefined || min < 0
 }
 
 /** Props the text-like controls share: the label, the requirement and the error are tied to the control, not just drawn beside it. */
@@ -55,6 +61,7 @@ interface ChoiceFieldProps {
 
 export function ChoiceField({ field, value, disabled, idPrefix, showInvalid, offerOther, error, onChange, onOtherBlur }: ChoiceFieldProps) {
   const headingId = `${idPrefix}-heading`
+  const errorId = `${idPrefix}-error`
   const toggle = (optionValue: string) => {
     const selected = value.selected.includes(optionValue) ? value.selected.filter((entry) => entry !== optionValue) : [...value.selected, optionValue]
     onChange({ ...value, selected })
@@ -87,6 +94,8 @@ export function ChoiceField({ field, value, disabled, idPrefix, showInvalid, off
         idPrefix={idPrefix}
         groupLabelledBy={headingId}
         groupRequired={field.required}
+        groupInvalid={error ? true : undefined}
+        groupDescribedBy={error ? errorId : undefined}
         offerOther={offerOther}
         other={{
           visible: value.otherSelected,
@@ -102,9 +111,7 @@ export function ChoiceField({ field, value, disabled, idPrefix, showInvalid, off
         onSelectOther={() => onChange({ ...value, selected: [], otherSelected: true })}
         onToggleOther={() => onChange({ ...value, otherSelected: !value.otherSelected })}
       />
-      <div role="alert">
-        <FieldError id={`${idPrefix}-error`} error={error} />
-      </div>
+      <FieldError id={errorId} error={error} />
     </CardContent>
   )
 }
@@ -149,18 +156,29 @@ interface DropdownFieldProps {
 /** A single-choice `<select>`. Items are keyed by position because the dropdown cannot hold an empty option value. */
 export function DropdownField({ field, value, disabled, idPrefix, error, onChange }: DropdownFieldProps) {
   const picked = field.options.findIndex((option) => value.selected.includes(option.value))
+  const [open, setOpen] = React.useState(false)
+  const headingId = `${idPrefix}-heading`
+  const triggerId = `${idPrefix}-trigger`
   return (
     <CardContent data-ask-field={idPrefix} className="space-y-2">
-      <FieldHeading id={`${idPrefix}-heading`} question={field.question} required={field.required} />
+      <FieldHeading id={headingId} question={field.question} required={field.required} />
+      {/* While sending the trigger stays focusable (aria-disabled, not disabled) but cannot open or change. */}
       <Select
         value={picked === -1 ? '' : String(picked)}
-        disabled={disabled}
+        open={open && !disabled}
+        onOpenChange={(next) => setOpen(next && !disabled)}
         onValueChange={(next) => {
           const option = field.options[Number(next)]
-          if (option) onChange({ ...value, selected: [option.value] })
+          if (option && !disabled) onChange({ ...value, selected: [option.value] })
         }}
       >
-        <SelectTrigger {...controlA11y(idPrefix, field.required, error)} className="max-w-full">
+        <SelectTrigger
+          id={triggerId}
+          {...controlA11y(idPrefix, field.required, error)}
+          aria-labelledby={`${headingId} ${triggerId}`}
+          aria-disabled={disabled}
+          className="w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent dark:aria-disabled:hover:bg-transparent"
+        >
           <SelectValue placeholder="Choose an option" />
         </SelectTrigger>
         <SelectContent>
@@ -202,10 +220,15 @@ export function InputField({ field, value, disabled, idPrefix, error, onChange, 
   const asNumber = Number(value)
   let control: React.ReactNode
   if (field.kind === 'number') {
-    control = <NumberField {...text} min={field.min} max={field.max} step={field.step} allowNegative />
+    control = (
+      // A column wrapper stretches the field's inline-flex root to the card width.
+      <div className="flex flex-col">
+        <NumberField {...text} min={field.min} max={field.max} step={field.step} allowNegative={allowsNegative(field.min)} />
+      </div>
+    )
   } else if (field.kind === 'range') {
     control = (
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2">
         <Slider
           value={Number.isFinite(asNumber) ? asNumber : min}
           min={min}
@@ -217,7 +240,9 @@ export function InputField({ field, value, disabled, idPrefix, error, onChange, 
           onValueChange={(next) => onChange(String(next))}
           onBlur={onBlur}
         />
-        <output className="min-w-8 text-right text-sm tabular-nums">{value}</output>
+        <output aria-hidden="true" className="min-w-8 text-right text-sm tabular-nums">
+          {value}
+        </output>
       </div>
     )
   } else {

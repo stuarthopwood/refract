@@ -46,8 +46,10 @@ interface AskChoiceGroupProps {
   groupLabelledBy?: string | undefined
   groupLabel?: string | undefined
   groupDescribedBy?: string | undefined
-  /** Marks a radio group required for assistive tech; a checkbox group's role does not carry it. */
+  /** Marks the group required for assistive tech. */
   groupRequired?: boolean | undefined
+  /** Marks the group invalid for assistive tech, e.g. while its question shows an error. */
+  groupInvalid?: boolean | undefined
   other: AskChoiceOther
   /** Whether the "Other" row and its box show; false for a group that offers no free-text answer. Defaults to true. */
   offerOther?: boolean | undefined
@@ -196,6 +198,8 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         aria-labelledby={props.groupLabelledBy}
         aria-label={props.groupLabel}
         aria-describedby={[props.groupDescribedBy, hintId].filter(Boolean).join(' ')}
+        aria-required={props.groupRequired}
+        aria-invalid={props.groupInvalid}
         className="flex flex-col gap-2"
       >
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 text-xs text-muted-foreground">
@@ -215,7 +219,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
             <CheckboxItem
               checked={picked}
               disabled={option.disabled}
-              aria-disabled={disabled}
+              aria-disabled={disabled || option.disabled}
               onCheckedChange={() => !disabled && props.onToggle(option.value)}
               aria-labelledby={labelId}
               aria-keyshortcuts={index < MAX_DIGIT_OPTIONS ? String(index + 1) : undefined}
@@ -249,6 +253,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
         aria-label={props.groupLabel}
         aria-describedby={props.groupDescribedBy}
         aria-required={props.groupRequired}
+        aria-invalid={props.groupInvalid}
         className="gap-2"
         onKeyDownCapture={(event) => arrowGuard.keyDown(event.key)}
         onKeyUpCapture={arrowGuard.keyUp}
@@ -269,7 +274,7 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
             <RadioGroupItem
               value={option.value}
               disabled={option.disabled}
-              aria-disabled={disabled}
+              aria-disabled={disabled || option.disabled}
               aria-labelledby={labelId}
               aria-keyshortcuts={index < MAX_DIGIT_OPTIONS ? String(index + 1) : undefined}
               aria-describedby={describedByOf(option, descId, reasonId)}
