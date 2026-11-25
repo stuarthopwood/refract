@@ -38,6 +38,17 @@ describe('focusField', () => {
     expect(container.focus).toHaveBeenCalledTimes(1)
   })
 
+  test('Given a ticked, empty Other box is the invalid part, When Submit is blocked, Then that box takes focus before the first control', () => {
+    const other = focusable()
+    const control = focusable()
+    const selectors = fieldSelectors('f')
+    const taken = focusField(fakeRoot({ [selectors.invalidOther]: other, [selectors.control]: control }), 'f')
+    expect(taken).toBe(other)
+    expect(other.focus).toHaveBeenCalledTimes(1)
+    expect(control.focus).not.toHaveBeenCalled()
+    expect(selectors.invalidOther).toContain('input[data-ask-other][aria-invalid="true"]')
+  })
+
   test('Given no card or no such field, Then nothing is focused', () => {
     expect(focusField(null, 'f')).toBeNull()
     expect(focusField(fakeRoot({}), 'f')).toBeNull()

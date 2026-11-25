@@ -3,6 +3,7 @@ import { choiceDigitIndex, focusChoiceRow } from '@/components/askChoiceKeys'
 import { AskChoiceGroup } from '@/components/AskChoiceGroup'
 import { InlineStatus } from '@/components/InlineStatus'
 import { CardContent } from '@/components/ui/card'
+import { RESTING_FOCUS_CLASS } from '@/components/ui/focus-classes'
 import { Input } from '@/components/ui/input'
 import { NumberField } from '@/components/ui/NumberField'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -62,7 +63,7 @@ interface ChoiceFieldProps {
 }
 
 /** The container takes programmatic focus when every control in the field is disabled; it is never a Tab stop. */
-const FIELD_FOCUS_CLASS = 'space-y-2 outline-none'
+const FIELD_FOCUS_CLASS = `space-y-2 ${RESTING_FOCUS_CLASS}`
 
 export function ChoiceField({ field, value, disabled, idPrefix, showInvalid, offerOther, error, onChange, onBlur, onOtherBlur }: ChoiceFieldProps) {
   const headingId = `${idPrefix}-heading`

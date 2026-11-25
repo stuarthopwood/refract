@@ -69,6 +69,22 @@ export function formStatusNote(phase: FormSendPhase, kind: AnswerKind | null): s
   return phase === 'sent' ? SENT_NOTE[kind] : undefined
 }
 
+/** Submit spins only for a submit, and Cancel only for a cancel or the deadline's, so neither shows work it is not doing. */
+export function footerBusy(phase: FormSendPhase, kind: AnswerKind | null): { sending: boolean; cancelling: boolean } {
+  const inFlight = phase === 'sending'
+  return { sending: inFlight && kind === 'submitted', cancelling: inFlight && kind !== null && kind !== 'submitted' }
+}
+
+/** Retry is offered for a locked timed-out cancel and stays, busy, while its resend is in flight. */
+export function retryState(phase: FormSendPhase, kind: AnswerKind | null): { visible: boolean; busy: boolean } {
+  return { visible: phase === 'locked' || (phase === 'sending' && kind === 'timedOut'), busy: phase === 'sending' }
+}
+
+/** A refused send that lands after the deadline cannot be fixed by editing: the form is timed out instead of re-opened. */
+export function refusedPastDeadline(phase: FormSendPhase, error: string | null, deadlineAt: number | undefined, now: number): boolean {
+  return phase === 'idle' && error !== null && deadlineAt !== undefined && now >= deadlineAt
+}
+
 export interface SendOutcome {
   readonly accepted: boolean
   readonly phase: FormSendPhase

@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test, vi } from 'vitest'
 import type { ChatAnswer } from '../../../../shared/ipc'
 import { createFormResponder, type FormSendPhase } from './formRequest'
-import { UNSHOWN_FORM_NOTICE, UnshownFormView, cancelUnshownForm, unshownFormNoticeState } from './UnshownFormNotice'
+import { UNSHOWN_FORM_NOTICE, UnshownFormView, cancelUnshownForm, unshownFormNoticeState, unshownFormNoticeText } from './UnshownFormNotice'
 
 vi.mock('./useFormResponder', () => ({ useFormResponder: () => undefined }))
 
@@ -27,18 +27,37 @@ describe('UnshownFormView', () => {
     expect(html).toContain('role="alert"')
   })
 
-  test('Given the cancel has not been refused, When the notice renders, Then there is no Retry before or during the send', () => {
-    expect(render('idle', null)).not.toContain('Retry')
-    expect(render('sending', null)).not.toContain('Retry')
+  test('Given the cancel is in flight, When the notice renders, Then it says it is being cancelled and has no Retry', () => {
+    const html = render('sending', null)
+    expect(html).not.toContain('Retry')
+    expect(html).toContain('so it is being cancelled.')
+  })
+
+  test('Given a retry in flight, When the notice renders, Then Retry stays mounted, busy and aria-disabled', () => {
+    const retry = render('sending', 'refused').match(/<button[^>]*>(?:(?!<\/button>).)*Retry/)?.[0] ?? ''
+    expect(retry).toContain('aria-busy="true"')
+    expect(retry).toContain('aria-disabled="true"')
+  })
+
+  test('Given the notice, Then it sits in a programmatically focusable wrapper that Retry can hand focus to', () => {
+    expect(render('sent', null)).toMatch(/^<div[^>]*tabindex="-1"/)
   })
 })
 
 describe('unshownFormNoticeState', () => {
-  test('Given each send phase, When the state is read, Then only an idle phase with an error offers Retry', () => {
-    expect(unshownFormNoticeState('idle', 'refused')).toEqual({ error: 'refused', canRetry: true })
-    expect(unshownFormNoticeState('idle', null)).toEqual({ error: null, canRetry: false })
-    expect(unshownFormNoticeState('sending', 'stale')).toEqual({ error: null, canRetry: false })
-    expect(unshownFormNoticeState('sent', null)).toEqual({ error: null, canRetry: false })
+  test('Given each send phase, When the state is read, Then Retry shows when refused and stays through its resend', () => {
+    expect(unshownFormNoticeState('idle', 'refused')).toEqual({ error: 'refused', canRetry: true, retrying: false, outcome: 'refused' })
+    expect(unshownFormNoticeState('idle', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sending', 'refused')).toEqual({ error: null, canRetry: true, retrying: true, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sending', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sent', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelled' })
+  })
+
+  test('Given each outcome, When the wording is read, Then it says being cancelled, cancelled or could not be cancelled, keeping "form"', () => {
+    expect(unshownFormNoticeText('cancelling')).toContain('is being cancelled')
+    expect(unshownFormNoticeText('cancelled')).toBe(UNSHOWN_FORM_NOTICE)
+    expect(unshownFormNoticeText('refused')).toContain("couldn't be cancelled")
+    for (const outcome of ['cancelling', 'cancelled', 'refused'] as const) expect(unshownFormNoticeText(outcome)).toContain('"form"')
   })
 })
 

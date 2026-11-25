@@ -12,9 +12,12 @@ import {
   FORM_CANCEL,
   FORM_TIMED_OUT,
   firstInvalidField,
+  footerBusy,
   formDeadlineText,
   formStatusNote,
   formSubmission,
+  refusedPastDeadline,
+  retryState,
   scheduleDeadline,
   startingValues,
   visibleErrors,
@@ -93,6 +96,8 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
   const [values, setValues] = React.useState(() => startingValues(fields))
   const [touched, setTouched] = React.useState<ReadonlySet<number>>(new Set())
   const [attempted, setAttempted] = React.useState(false)
+  // A fresh object per blocked Submit, so focus moves once the invalid state has rendered.
+  const [focusRequest, setFocusRequest] = React.useState<{ index: number } | null>(null)
   const rootRef = React.useRef<HTMLDivElement>(null)
   const submission = React.useMemo(() => formSubmission(fields, values), [fields, values])
   const shownErrors = visibleErrors(submission.errors, touched, attempted)
@@ -101,12 +106,23 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
   const closed = phase === 'sent' || phase === 'locked'
   const idBase = `ask-form-${request.requestId}`.replace(/[^a-zA-Z0-9_-]/g, '-')
   const intentKey = askFormIntentKey(sessionId, request.requestId)
+  const busy = footerBusy(phase, kind)
+  const retry = retryState(phase, kind)
 
   // OMP cancels the form itself at the deadline; this answers first so the card does not outlive it.
   React.useEffect(() => {
     if (closed) return undefined
     return scheduleDeadline(request.deadlineAt, Date.now(), () => void responder.respond(FORM_TIMED_OUT))
   }, [request.deadlineAt, responder, closed])
+
+  // A refusal that lands after the deadline times the form out and locks it instead of re-opening it.
+  React.useEffect(() => {
+    if (refusedPastDeadline(phase, error, request.deadlineAt, Date.now())) void responder.respond(FORM_TIMED_OUT)
+  }, [phase, error, request.deadlineAt, responder])
+
+  React.useEffect(() => {
+    if (focusRequest) focusField(rootRef.current, `${idBase}-${focusRequest.index}`)
+  }, [focusRequest, idBase])
 
   React.useLayoutEffect(() => {
     return () => {
@@ -131,7 +147,7 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
       return
     }
     setAttempted(true)
-    focusField(rootRef.current, `${idBase}-${firstInvalidField(submission.errors)}`)
+    setFocusRequest({ index: firstInvalidField(submission.errors) })
   }
 
   function cancel() {
@@ -176,12 +192,13 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
         })}
         <AskFormFooter
           error={error}
-          onRetry={phase === 'locked' ? () => void responder.respond(FORM_TIMED_OUT) : undefined}
-          deadlineText={request.deadlineAt !== undefined ? formDeadlineText(request.deadlineAt) : undefined}
+          retry={retry.visible ? { busy: retry.busy, onRetry: () => void responder.respond(FORM_TIMED_OUT) } : undefined}
+          deadlineText={editing && request.deadlineAt !== undefined ? formDeadlineText(request.deadlineAt) : undefined}
           note={formStatusNote(phase, kind)}
           cancellable={editing}
           submittable={editing && submission.answer !== null}
-          sending={phase === 'sending'}
+          sending={busy.sending}
+          cancelling={busy.cancelling}
           onCancel={cancel}
           onSubmit={trySubmit}
         />

@@ -26,9 +26,17 @@ describe('AskFormFooter', () => {
     expect(html).not.toContain('Retry')
   })
 
-  test('Given an error with a retry, Then the alert carries a Retry button', () => {
-    const html = render({ error: 'refused', onRetry: () => undefined })
+  test('Given an error with a retry, Then the alert carries a Retry button that is operable when idle', () => {
+    const html = render({ error: 'refused', retry: { busy: false, onRetry: () => undefined } })
     expect(html).toContain('Retry')
+    expect(html).not.toContain('aria-busy="true"')
+  })
+
+  test('Given a retry send in flight, Then Retry stays mounted, busy and aria-disabled', () => {
+    const html = render({ error: 'refused', retry: { busy: true, onRetry: () => undefined } })
+    const retry = html.match(/<button[^>]*>(?:(?!<\/button>).)*Retry/)?.[0] ?? ''
+    expect(retry).toContain('aria-disabled="true"')
+    expect(retry).toContain('aria-busy="true"')
   })
 
   test('Given a deadline line and a note, Then both show, the note in a status region', () => {
@@ -37,11 +45,24 @@ describe('AskFormFooter', () => {
     expect(html).toMatch(/role="status"[^>]*>Answers submitted</)
   })
 
+  test('Given no note, Then the status region stays mounted but screen-reader only', () => {
+    const statusTag = (html: string) => html.match(/<[a-z]+[^>]*role="status"[^>]*>/)?.[0] ?? ''
+    expect(statusTag(render())).toContain('sr-only')
+    expect(statusTag(render({ note: 'Cancelled' }))).not.toContain('sr-only')
+  })
+
   test('Given a send in flight, Then Submit reads Submitting and is busy, and a locked form is not operable', () => {
     const sending = render({ sending: true, cancellable: false, submittable: false })
-    expect(sending).toContain('Submitting...')
+    expect(sending).toContain('Submitting…')
     expect(sending).toContain('aria-busy="true"')
     expect(sending.match(/aria-disabled="true"/g)).toHaveLength(2)
+  })
+
+  test('Given a cancel in flight, Then Cancel is busy and Submit is not', () => {
+    const html = render({ cancelling: true, cancellable: false, submittable: false })
+    expect(html).toContain('Cancelling…')
+    expect(html).not.toContain('Submitting')
+    expect(html.match(/aria-busy="true"/g)).toHaveLength(1)
   })
 })
 

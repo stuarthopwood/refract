@@ -6,11 +6,14 @@ import {
   FORM_TIMED_OUT,
   SEND_FAILED_TEXT,
   answerKind,
+  footerBusy,
   createFormResponder,
   firstInvalidField,
   formDeadlineText,
   formStatusNote,
   formSubmission,
+  refusedPastDeadline,
+  retryState,
   scheduleDeadline,
   sendFormAnswer,
   startingValues,
@@ -163,6 +166,60 @@ describe('answerKind and formStatusNote', () => {
   test('Given nothing was sent, Then there is no note', () => {
     expect(formStatusNote('idle', null)).toBeUndefined()
     expect(formStatusNote('sent', null)).toBeUndefined()
+  })
+})
+
+describe('footerBusy', () => {
+  test.each([
+    ['sending', 'submitted', { sending: true, cancelling: false }],
+    ['sending', 'cancelled', { sending: false, cancelling: true }],
+    ['sending', 'timedOut', { sending: false, cancelling: true }],
+    ['idle', 'submitted', { sending: false, cancelling: false }],
+    ['sent', 'cancelled', { sending: false, cancelling: false }]
+  ] as const)('Given phase %s after a %s answer, Then the busy buttons are %j', (phase, kind, expected) => {
+    expect(footerBusy(phase, kind)).toEqual(expected)
+  })
+
+  test('Given nothing was sent, Then neither button is busy', () => {
+    expect(footerBusy('sending', null)).toEqual({ sending: false, cancelling: false })
+  })
+})
+
+describe('retryState', () => {
+  test('Given a locked timed-out cancel, Then Retry shows and stays, busy, while its resend is in flight', () => {
+    expect(retryState('locked', 'timedOut')).toEqual({ visible: true, busy: false })
+    expect(retryState('sending', 'timedOut')).toEqual({ visible: true, busy: true })
+  })
+
+  test('Given any other phase or answer, Then there is no Retry', () => {
+    expect(retryState('sending', 'submitted')).toEqual({ visible: false, busy: true })
+    expect(retryState('sent', 'timedOut')).toEqual({ visible: false, busy: false })
+    expect(retryState('idle', null)).toEqual({ visible: false, busy: false })
+  })
+})
+
+describe('refusedPastDeadline', () => {
+  const deadline = 1_000
+
+  test('Given a refusal that lands at or after the deadline, Then the form is timed out rather than re-opened', () => {
+    expect(refusedPastDeadline('idle', 'refused', deadline, deadline)).toBe(true)
+    expect(refusedPastDeadline('idle', 'refused', deadline, deadline + 1)).toBe(true)
+  })
+
+  test.each([
+    ['before the deadline', 'idle', 'refused', deadline, deadline - 1],
+    ['with no deadline', 'idle', 'refused', undefined, deadline],
+    ['without an error', 'idle', null, deadline, deadline + 1],
+    ['while sending', 'sending', 'refused', deadline, deadline + 1],
+    ['once locked', 'locked', 'refused', deadline, deadline + 1]
+  ] as const)('Given a refusal %s, Then the form is not timed out again', (_name, phase, error, at, now) => {
+    expect(refusedPastDeadline(phase, error, at, now)).toBe(false)
+  })
+
+  test('Given a refused submit past the deadline, When the timed-out cancel is refused too, Then the form locks', async () => {
+    const refused: Result<void> = { ok: false, error: { code: 'request-gone', message: 'gone' } }
+    const outcome = await sendFormAnswer(FORM_TIMED_OUT, async () => refused, () => 'refused')
+    expect(outcome.phase).toBe('locked')
   })
 })
 

@@ -4,19 +4,21 @@ const FOCUSABLE = ':is(input, textarea, button, [role="radio"], [role="checkbox"
 export interface FieldSelectors {
   readonly control: string
   readonly container: string
+  /** A ticked Other box left empty: that box is what the error is about, so it is where focus goes. */
+  readonly invalidOther: string
 }
 
 /** `fieldId` is the field's `data-ask-field` value. */
 export function fieldSelectors(fieldId: string): FieldSelectors {
   const container = `[data-ask-field="${fieldId}"]`
-  return { control: `${container} ${FOCUSABLE}`, container }
+  return { control: `${container} ${FOCUSABLE}`, container, invalidOther: `${container} input[data-ask-other][aria-invalid="true"]:not(:disabled):not([aria-disabled="true"])` }
 }
 
-/** Focuses the field's first usable control, or the field itself when every control is disabled. Returns what took focus. */
+/** Focuses the invalid Other box, else the field's first usable control, else the field itself. Returns what took focus. */
 export function focusField(root: Pick<ParentNode, 'querySelector'> | null, fieldId: string): HTMLElement | null {
   if (!root) return null
-  const { control, container } = fieldSelectors(fieldId)
-  const target = root.querySelector<HTMLElement>(control) ?? root.querySelector<HTMLElement>(container)
+  const { control, container, invalidOther } = fieldSelectors(fieldId)
+  const target = root.querySelector<HTMLElement>(invalidOther) ?? root.querySelector<HTMLElement>(control) ?? root.querySelector<HTMLElement>(container)
   target?.focus()
   return target
 }

@@ -1,12 +1,15 @@
 import * as React from 'react'
 import { OctagonXIcon, TriangleAlertIcon } from 'lucide-react'
 import { Alert, AlertActions, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
+import { RESTING_FOCUS_CLASS } from '@/components/ui/focus-classes'
+import { cn } from '@/lib/utils'
+import { RetryButton } from './AskFormChrome'
 import { FORM_CANCEL, type FormResponder, type FormSendPhase } from './formRequest'
 import { useFormResponder } from './useFormResponder'
 
+const UNSHOWN_FORM_LEAD = `Refract can't show the agent's "form" dialog yet`
 // Same wording as the notice the Rust side appends for a dialog it can't show.
-export const UNSHOWN_FORM_NOTICE = `Refract can't show the agent's "form" dialog yet, so it was cancelled.`
+export const UNSHOWN_FORM_NOTICE = `${UNSHOWN_FORM_LEAD}, so it was cancelled.`
 
 /** The one cancel the agent gets, sent on open and again by Retry; the responder lets only one succeed. */
 export function cancelUnshownForm(responder: FormResponder): Promise<boolean> {
@@ -17,12 +20,24 @@ export interface UnshownFormNoticeState {
   /** Why OMP refused the cancel, shown beside the notice; null while the cancel is going or done. */
   readonly error: string | null
   readonly canRetry: boolean
+  /** A Retry send is in flight: Retry stays mounted, busy, so focus is not dropped. */
+  readonly retrying: boolean
+  /** What happened to the cancel, so the wording follows it. */
+  readonly outcome: 'cancelling' | 'cancelled' | 'refused'
 }
 
-/** A refused cancel is the only state with an error and a Retry; the notice itself reads the same throughout. */
+/** A refused cancel is the only state with an error and a Retry, which stays through its own resend. */
 export function unshownFormNoticeState(phase: FormSendPhase, error: string | null): UnshownFormNoticeState {
   const refused = phase === 'idle' && error !== null
-  return { error: refused ? error : null, canRetry: refused }
+  const retrying = phase === 'sending' && error !== null
+  const outcome = refused ? 'refused' : phase === 'sent' ? 'cancelled' : 'cancelling'
+  return { error: refused ? error : null, canRetry: refused || retrying, retrying, outcome }
+}
+
+/** The notice wording for the state of the cancel; it keeps the word "form" the agent used. */
+export function unshownFormNoticeText(outcome: UnshownFormNoticeState['outcome']): string {
+  if (outcome === 'cancelled') return UNSHOWN_FORM_NOTICE
+  return outcome === 'refused' ? `${UNSHOWN_FORM_LEAD}, and it couldn't be cancelled.` : `${UNSHOWN_FORM_LEAD}, so it is being cancelled.`
 }
 
 interface UnshownFormViewProps {
@@ -33,21 +48,22 @@ interface UnshownFormViewProps {
 
 export function UnshownFormView({ phase, error, onRetry }: UnshownFormViewProps) {
   const state = unshownFormNoticeState(phase, error)
+  const wrapperRef = React.useRef<HTMLDivElement>(null)
   return (
-    <Alert variant={state.canRetry ? 'destructive' : 'warning'} role={state.canRetry ? 'alert' : 'status'}>
-      {state.canRetry ? <OctagonXIcon aria-hidden /> : <TriangleAlertIcon aria-hidden />}
-      <AlertDescription>
-        {UNSHOWN_FORM_NOTICE}
-        {state.error !== null && <> {state.error}</>}
-      </AlertDescription>
-      {state.canRetry && (
-        <AlertActions>
-          <Button size="sm" variant="ghost" onClick={onRetry}>
-            Retry
-          </Button>
-        </AlertActions>
-      )}
-    </Alert>
+    <div ref={wrapperRef} tabIndex={-1} className={cn('rounded-lg', RESTING_FOCUS_CLASS)}>
+      <Alert variant={state.canRetry ? 'destructive' : 'warning'} role={state.canRetry ? 'alert' : 'status'}>
+        {state.canRetry ? <OctagonXIcon aria-hidden /> : <TriangleAlertIcon aria-hidden />}
+        <AlertDescription>
+          {unshownFormNoticeText(state.outcome)}
+          {state.error !== null && <> {state.error}</>}
+        </AlertDescription>
+        {state.canRetry && (
+          <AlertActions>
+            <RetryButton busy={state.retrying} onRetry={onRetry} handoffTo={wrapperRef} />
+          </AlertActions>
+        )}
+      </Alert>
+    </div>
   )
 }
 

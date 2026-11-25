@@ -20,7 +20,7 @@ export function useFormResponder(sessionId: string, requestId: string): UseFormR
     createFormResponder(async (answer) => {
       setPhase('sending')
       setKind(answerKind(answer))
-      setError(null)
+      // The last refusal stays until this send settles, so a Retry that sent it stays mounted instead of dropping focus.
       const outcome = await sendFormAnswer(answer, () => window.refract.chat.answer(sessionId, requestId, answer), answerFailureText)
       setPhase(outcome.phase)
       setError(outcome.error)
