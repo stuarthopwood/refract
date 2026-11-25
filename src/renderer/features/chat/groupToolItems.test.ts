@@ -16,6 +16,33 @@ describe('groupToolItems refract_ask (#1989)', () => {
     const grouped = groupToolItems([tool('a', 'refract_ask', 'error')])
     expect(grouped.filter(isToolGroup)).toHaveLength(1)
   })
+
+  it('merges adjacent failed refract_ask calls into one group', () => {
+    const grouped = groupToolItems([tool('a', 'refract_ask', 'error'), tool('b', 'refract_ask', 'error')])
+    const groups = grouped.filter(isToolGroup)
+    expect(groups).toHaveLength(1)
+    expect(groups[0]!.items.map((item) => item.id)).toEqual(['a', 'b'])
+  })
+
+  it('keeps an answered refract_ask out of a run of failed ones', () => {
+    const grouped = groupToolItems([tool('a', 'refract_ask', 'error'), tool('b', 'refract_ask', 'success'), tool('c', 'refract_ask', 'error')])
+    expect(grouped.filter(isToolGroup).map((group) => group.items.map((item) => item.id))).toEqual([['a'], ['c']])
+  })
+})
+
+describe('groupToolItems grouping boundaries (#2135)', () => {
+  const skillRead = (id: string) => ({ kind: 'tool', id, tool: 'read', status: 'done', target: '', skill: 'brainstorming' }) as unknown as TranscriptItem
+
+  it('leaves the native ask out of the tool groups even when it fails or sits between other calls', () => {
+    const grouped = groupToolItems([callOf('a', 'bash', 'ls'), tool('b', 'ask', 'error'), tool('c', 'ask', 'success'), callOf('d', 'bash', 'pwd')])
+    expect(grouped.filter(isToolGroup).map((group) => group.items.map((item) => item.id))).toEqual([['a'], ['d']])
+    expect(grouped.filter((item) => !isToolGroup(item)).map((item) => item.id)).toEqual(['b', 'c'])
+  })
+
+  it('keeps each skill read in a group of its own', () => {
+    const grouped = groupToolItems([callOf('a', 'read', 'src/a.ts'), skillRead('b'), skillRead('c'), callOf('d', 'read', 'src/d.ts')])
+    expect(grouped.filter(isToolGroup).map((group) => group.items.map((item) => item.id))).toEqual([['a'], ['b'], ['c'], ['d']])
+  })
 })
 
 const callOf = (id: string, name: string, target: string) =>

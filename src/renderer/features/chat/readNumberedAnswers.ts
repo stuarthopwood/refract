@@ -5,7 +5,7 @@ const NUMBERED_RESULT = /^(The developer|Away Mode) answered \d+ questions?\./
 const INVISIBLE = /[\u00AD\u034F\u061C\u115F\u1160\u180E\u200B\u200C\u200E\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\u3164\uFE00-\uFE0F\uFEFF\uFFA0\uFFF9-\uFFFB\u{E0000}-\u{E007F}]/gu
 const BREAKS = /[\p{Cc}\u2028\u2029]/gu
 
-function flatten(text: string): string {
+export function flatten(text: string): string {
   return text.replace(INVISIBLE, '').replace(BREAKS, ' ')
 }
 

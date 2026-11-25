@@ -67,6 +67,12 @@ export function notifyPersistentError(text: string, options: PersistentErrorOpti
   announceAssertive(options.description ? `${text}. ${options.description}` : text)
 }
 
+/** An informational toast that times out normally but is also announced assertively, for news a user must not miss. */
+export function notifyInfo(text: string): void {
+  toast.info(text, { id: `info:${text}`, closeButton: true })
+  announceAssertive(text)
+}
+
 let alarmListOpen = false
 const firedAlarmToastIds = new Set<string>()
 let alarmToastCounter = 0

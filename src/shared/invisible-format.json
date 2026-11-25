@@ -1,0 +1,21 @@
+{
+  "comment": "The invisible format and bidi characters of Rust github/profile.rs is_invisible_format, as inclusive hex ranges. A vitest test (readNumberedAnswers.test.ts) and a Rust test (profile.rs) both read this table, so the hand-copied TypeScript list cannot drift from the Rust one.",
+  "ranges": [
+    ["00AD", "00AD"],
+    ["034F", "034F"],
+    ["061C", "061C"],
+    ["115F", "1160"],
+    ["180E", "180E"],
+    ["200B", "200F"],
+    ["202A", "202E"],
+    ["2060", "2064"],
+    ["2066", "206F"],
+    ["3164", "3164"],
+    ["FE00", "FE0F"],
+    ["FEFF", "FEFF"],
+    ["FFA0", "FFA0"],
+    ["FFF9", "FFFB"],
+    ["E0000", "E007F"]
+  ],
+  "keptByFlatten": ["200D"]
+}

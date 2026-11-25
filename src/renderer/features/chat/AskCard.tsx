@@ -160,7 +160,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     const result = await window.refract.chat.answer(sessionId, request.requestId, { cancelled: true })
     setBusyAction(null)
     if (!result.ok) {
-      setError(answerFailureText(result.error))
+      setError(answerFailureText(result.error, 'cancel'))
       return
     }
   }
