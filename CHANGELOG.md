@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.42.1 (2026-11-25)
+
+### Fixes
+
+- fix(ask): shared Ask form shell and footer, stable notice role, footer error clears on edit (https://github.com/stuarthopwood/refract/pull/2203)
+- fix(ask): reject quote and bidi labels, share the invisible-character table, info toast for closed asks (https://github.com/stuarthopwood/refract/pull/2205)
+
+### Other
+
+- docs(ask): tick T510-T512 and record T517 as not run (#2140) (https://github.com/stuarthopwood/refract/pull/2200)
+- docs(ask): record the #2140 live check on OMP 19.1.1 (T517) (https://github.com/stuarthopwood/refract/pull/2201)
+- docs(ask): record the OMP 19.1.1 native ask tool-list probe (https://github.com/stuarthopwood/refract/pull/2204)
+
 ## v0.42.0 (2026-11-25)
 
 ### Features
