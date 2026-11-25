@@ -25,6 +25,8 @@ fn a_label_with_a_line_break_or_control_character_is_rejected_as_invalid_input()
     for label in [
         "One\ntwo",
         "One\rtwo",
+        "One\ttwo",
+        "One\u{0085}two",
         "One\u{2028}two",
         "One\u{2029}two",
         "One\u{0007}two",
@@ -39,6 +41,27 @@ fn a_label_with_a_line_break_or_control_character_is_rejected_as_invalid_input()
             "{}",
             err.message
         );
+    }
+}
+
+#[test]
+fn a_label_with_a_double_quote_is_rejected_with_a_rephrase_hint() {
+    for label in ["Say \"hi\"", "\"", "5\" pipe"] {
+        let err = parse(&call(label)).unwrap_err();
+        assert_eq!(err.code, INVALID_INPUT, "label {label:?}");
+        assert!(err.message.contains("rephrase"), "{}", err.message);
+        assert!(err.message.contains("double quote"), "{}", err.message);
+    }
+}
+
+#[test]
+fn a_label_with_a_bidi_control_is_rejected_with_a_rephrase_hint() {
+    for code in (0x202A..=0x202E).chain(0x2066..=0x2069) {
+        let label = format!("One{}two", char::from_u32(code).unwrap());
+        let err = parse(&call(&label)).unwrap_err();
+        assert_eq!(err.code, INVALID_INPUT, "U+{code:04X}");
+        assert!(err.message.contains("direction-control"), "{}", err.message);
+        assert!(err.message.contains("rephrase"), "{}", err.message);
     }
 }
 

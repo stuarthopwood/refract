@@ -470,4 +470,29 @@ mod tests {
         assert!(!matches_image_signature(&bytes, "image/png"));
         assert!(!matches_image_signature(&bytes, "image/jpeg"));
     }
+
+    // The renderer's `readNumberedAnswers.test.ts` checks its copy of the list against this table.
+    #[test]
+    fn invisible_format_list_matches_the_shared_table() {
+        let table: serde_json::Value =
+            serde_json::from_str(include_str!("../../../src/shared/invisible-format.json"))
+                .unwrap();
+        let hex =
+            |value: &serde_json::Value| u32::from_str_radix(value.as_str().unwrap(), 16).unwrap();
+        let ranges: Vec<(u32, u32)> = table["ranges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|range| (hex(&range[0]), hex(&range[1])))
+            .collect();
+        for code in 0..=0xE0080u32 {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            let listed = ranges
+                .iter()
+                .any(|(from, to)| (*from..=*to).contains(&code));
+            assert_eq!(is_invisible_format(c), listed, "U+{code:04X}");
+        }
+    }
 }

@@ -153,11 +153,29 @@ fn has_hidden_char(text: &str) -> bool {
     })
 }
 
+/// Bidirectional controls reorder a label on screen without changing its text.
+fn has_bidi_control(text: &str) -> bool {
+    text.contains(|c: char| matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'))
+}
+
 fn check_options(name: &str, question: &AskedQuestion) -> Result<(), ToolError> {
     for (index, option) in question.options.iter().enumerate() {
         if option.label.trim().is_empty() {
             return Err(invalid(format!(
                 "option {} of {name} has no label",
+                index + 1
+            )));
+        }
+        if option.label.contains('"') {
+            return Err(invalid(format!(
+                "option {} of {name} has a label containing a double quote; the answer text wraps each label in double quotes, \
+so rephrase the label without one",
+                index + 1
+            )));
+        }
+        if has_bidi_control(&option.label) {
+            return Err(invalid(format!(
+                "option {} of {name} has a label with a direction-control character; rephrase the label as a single line of plain text",
                 index + 1
             )));
         }

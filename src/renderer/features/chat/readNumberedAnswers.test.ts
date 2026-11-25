@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { readNumberedAnswers } from './readNumberedAnswers'
+import invisibleFormat from '../../../shared/invisible-format.json'
+import { flatten, readNumberedAnswers } from './readNumberedAnswers'
 
 const DB = { question: 'Which database?', options: ['Postgres', 'MySQL'] }
 
@@ -98,5 +99,26 @@ describe('readNumberedAnswers (#1989, #1988)', () => {
   it('does not read Away Mode from a result that only mentions it later', () => {
     const text = 'The developer answered 1 question.\n1. Which database? Typed: "Away Mode answered 1 question.".'
     expect(readNumberedAnswers(text, [DB])?.byAway).toBe(false)
+  })
+})
+
+// The Rust `is_invisible_format` test (github/profile.rs) reads the same table.
+describe('flatten invisible-format list (#2135)', () => {
+  const ranges = invisibleFormat.ranges.map(([from, to]) => [parseInt(from!, 16), parseInt(to!, 16)] as const)
+  const kept = invisibleFormat.keptByFlatten.map((hex) => parseInt(hex, 16))
+  // Controls and line separators become spaces rather than vanish, so the table does not govern them.
+
+  it('drops exactly the code points of the shared table, bar the ones flatten keeps', () => {
+    const wrong: string[] = []
+    for (let cp = 0; cp <= 0xe0080; cp += 1) {
+      if ((cp >= 0xd800 && cp <= 0xdfff) || cp < 0x20 || (cp >= 0x7f && cp <= 0x9f) || cp === 0x2028 || cp === 0x2029) continue
+      const dropped = ranges.some(([from, to]) => cp >= from && cp <= to) && !kept.includes(cp)
+      if ((flatten(String.fromCodePoint(cp)) === '') !== dropped) wrong.push(cp.toString(16))
+    }
+    expect(wrong).toEqual([])
+  })
+
+  it('turns line breaks and controls into spaces', () => {
+    expect(flatten('a\nb\u2028c\td')).toBe('a b c d')
   })
 })

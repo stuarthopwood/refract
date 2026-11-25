@@ -1,17 +1,31 @@
-import type { IpcError } from '../../../shared/ipc'
-import { notify } from '@/state'
+import type { ChatAnswer, IpcError } from '../../../shared/ipc'
+import { notifyInfo } from '@/state'
 
 export const REQUEST_GONE_MESSAGE = "That question was already closed, so your answer wasn't sent."
+export const REQUEST_GONE_CANCEL_MESSAGE = 'That question was already closed, so there was nothing to cancel.'
 
 /**
- * The text for a failed `chat.answer`. A late answer to a closed question also raises a toast,
- * because the card unmounts as soon as the host reports it resolved and would never show the error.
+ * The text for a failed `chat.answer`. A late answer or cancel on a closed question also raises an info
+ * toast with an assertive announcement, because the card unmounts as soon as the host reports it
+ * resolved and would never show the error.
  */
-export function answerFailureText(error: IpcError): string {
+export function answerFailureText(error: IpcError, action: 'answer' | 'cancel' = 'answer'): string {
   if (error.code === 'request-gone') {
-    notify({ code: error.code, message: REQUEST_GONE_MESSAGE })
-    return REQUEST_GONE_MESSAGE
+    const message = action === 'cancel' ? REQUEST_GONE_CANCEL_MESSAGE : REQUEST_GONE_MESSAGE
+    notifyInfo(message)
+    return message
   }
   if (/customInput exceeds \d+ characters/.test(error.message)) return 'Your answer is too long. Shorten it and try again.'
   return error.message
+}
+
+/** A cancel or a deadline's cancel is worded as a cancel; only a submission is an "answer". */
+export function answerFailureFor(error: IpcError, answer: ChatAnswer): string {
+  return answerFailureText(error, 'cancelled' in answer ? 'cancel' : 'answer')
+}
+
+/** Sends one answer; resolves the text to show when OMP refused it, or null when it took it. */
+export async function sendAnswer(sessionId: string, requestId: string, answer: ChatAnswer): Promise<string | null> {
+  const result = await window.refract.chat.answer(sessionId, requestId, answer)
+  return result.ok ? null : answerFailureFor(result.error, answer)
 }

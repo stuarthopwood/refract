@@ -5728,3 +5728,16 @@ Written before the build. Findings: `missing` = the version-aware `tools.command
 - [x] T537 Run `pnpm typecheck` and vitest for `src/renderer/features/chat` and `src/renderer/components`, per FR-143
 - [x] T538 Run `pnpm check:file-size` and `pnpm check:comment-density`, per FR-143
 - [x] T539 Commit and push `feat/2195-ask-followups`, per FR-143
+
+## Phase 108: Convergence (2026-11-25, #2135 ask follow-ups, FR-144, FR-134 and FR-139 amended; clarification "Session 2026-11-25 (ask follow-ups, #2135)", US2 scenario 15)
+
+Written before the build. Findings: `missing` = the double-quote and bidi label checks in `ask_schema.rs`, the shared invisible-format table, the info-toast-plus-announcement helper, and the cancel wording; `partial` = `ask_schema.test.rs` (no tab or U+0085 rows), `groupToolItems.test.ts` (no adjacent-failure, native `ask` or skill cases); `matches` = `readNumberedAnswers.ts` parser (unchanged by decision). `approval::card_id` stays: `serve` in `router.rs` still keys every other tool's card with it, and the `refract_ask` line at `router.rs:462` must agree with that cancel path.
+
+- [x] T540 [US2] `src-tauri/src/agent_tools/ask_schema.rs` (`check_options`) and `ask_schema.test.rs`: a label containing `"` or a bidi control (U+202A to U+202E, U+2066 to U+2069) is `invalid_input` with a rephrase hint; add `\t` and U+0085 to the rejected-label rows, per FR-144
+- [x] T541 [US2] `src/shared/invisible-format.json` (new), `src-tauri/src/github/profile.rs` test and `readNumberedAnswers.test.ts` (`flatten` exported): one shared table of the invisible format ranges that a Rust test and a vitest test both read, per FR-144
+- [x] T542 [US2] `src/renderer/state/notify.ts` (`notifyInfo`), `state/index.ts`, `notify.test.ts` (new): an info toast on the default duration plus an assertive live-region announcement, per FR-144
+- [x] T543 [US2] `src/renderer/features/chat/askAnswerError.ts` and `.test.ts`: the "already closed" notice goes through `notifyInfo`; a late cancel has its own wording, per FR-144
+- [x] T544 [US2] `src/renderer/features/chat/AskCard.tsx`: the cancel path passes `'cancel'` to `answerFailureText`; no other AskCard change (#2195 owns the shell and footer), per FR-144
+- [x] T545 [US2] `src-tauri/src/agent_tools/router.rs:462`: decision recorded, `approval::card_id` kept because `serve` (`router.rs:418`) still shares it for every other tool; no code change, per FR-144
+- [x] T546 [US2] `src/renderer/features/chat/groupToolItems.test.ts`: adjacent failed `refract_ask` items group, an answered one splits the run, and the native `ask` and skill reads stay out of a shared group, per FR-144
+- [x] T547 Verify: `pnpm typecheck`, vitest for `src/renderer/features/chat`, `src/renderer/state` and `src/shared`, `cargo test --lib` filtered to `ask`, `router` and `invisible`, `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check`, `pnpm check:file-size`, `pnpm check:comment-density`, per FR-144 Done 2026-11-25: typecheck exit 0; vitest 80 files, 1007 tests; cargo ask 52, router 40, invisible 2 passed; clippy and fmt clean.

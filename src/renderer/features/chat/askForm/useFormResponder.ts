@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { answerFailureText } from '../askAnswerError'
+import { answerFailureFor } from '../askAnswerError'
 import { answerKind, createFormResponder, sendFormAnswer, type AnswerKind, type FormResponder, type FormSendPhase } from './formRequest'
 
 interface UseFormResponder {
@@ -23,7 +23,7 @@ export function useFormResponder(sessionId: string, requestId: string): UseFormR
       setPhase('sending')
       setKind(answerKind(answer))
       // The last refusal stays until this send settles, so a Retry that sent it stays mounted instead of dropping focus.
-      const outcome = await sendFormAnswer(answer, () => window.refract.chat.answer(sessionId, requestId, answer), answerFailureText)
+      const outcome = await sendFormAnswer(answer, () => window.refract.chat.answer(sessionId, requestId, answer), answerFailureFor)
       setPhase(outcome.phase)
       setError(outcome.error)
       return outcome.accepted
