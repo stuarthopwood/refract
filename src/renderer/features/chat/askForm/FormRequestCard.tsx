@@ -13,7 +13,6 @@ import { enterSubmitsForm, escapeCancelsForm } from './askFormKeys'
 import {
   FORM_CANCEL,
   FORM_TIMED_OUT,
-  FORM_UNSHOWN_NOTICE,
   firstInvalidField,
   formDeadlineText,
   formSubmission,
@@ -24,6 +23,7 @@ import {
 import { parseAskHtml, type AskFormField } from './parseAskHtml'
 import { offersOther } from './validateAskForm'
 import { useFormResponder } from './useFormResponder'
+import { UnshownFormNotice } from './UnshownFormNotice'
 
 type FormRequest = Extract<PendingRequest, { kind: 'form' }>
 
@@ -35,24 +35,7 @@ interface FormRequestCardProps {
 /** A v19 whole-form request: parsed once, answered once with `{data}` or a cancel. */
 export function FormRequestCard({ sessionId, request }: FormRequestCardProps) {
   const fields = React.useMemo(() => parseAskHtml(request.html), [request.html])
-  return fields ? <FormBody sessionId={sessionId} request={request} fields={fields} /> : <UnshownForm sessionId={sessionId} requestId={request.requestId} />
-}
-
-function UnshownForm({ sessionId, requestId }: { sessionId: string; requestId: string }) {
-  const { responder, error } = useFormResponder(sessionId, requestId)
-  React.useEffect(() => {
-    void responder.respond(FORM_CANCEL)
-  }, [responder])
-  return (
-    <AskFormShell label={ASKED_USER_TITLE}>
-      <CardContent>
-        <Alert variant="destructive" box="inline">
-          <OctagonXIcon aria-hidden />
-          <AlertDescription>{error ?? FORM_UNSHOWN_NOTICE}</AlertDescription>
-        </Alert>
-      </CardContent>
-    </AskFormShell>
-  )
+  return fields ? <FormBody sessionId={sessionId} request={request} fields={fields} /> : <UnshownFormNotice sessionId={sessionId} requestId={request.requestId} />
 }
 
 interface FormFieldProps {
