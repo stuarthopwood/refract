@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.42.0 (2026-11-25)
+
+### Features
+
+- feat(chat): keep tool-call intent on OMP v19 and show its brief label (https://github.com/stuarthopwood/refract/pull/2187)
+- feat(tools): write tools.commands on OMP 19 and show tool commands as tool rows (https://github.com/stuarthopwood/refract/pull/2193)
+- feat(ask): render OMP v19 whole-form requests in the Ask card (#2140) (https://github.com/stuarthopwood/refract/pull/2196)
+
+### Fixes
+
+- fix(readiness): let newer OMP majors start with an unverified-version warning (https://github.com/stuarthopwood/refract/pull/2182)
+- fix(session): cancel unknown blocking extension requests instead of hanging (https://github.com/stuarthopwood/refract/pull/2183)
+
+### Other
+
+- docs(plan): add #2180 Ask card note hint polish (https://github.com/stuarthopwood/refract/pull/2181)
+- docs(plan): add #2184 Ask card note bar polish (https://github.com/stuarthopwood/refract/pull/2185)
+- docs(plan): add #2189 transcript status icon alignment (https://github.com/stuarthopwood/refract/pull/2190)
+- docs(chat): spec the tool intent label and v19 intent tracing (https://github.com/stuarthopwood/refract/pull/2186)
+- docs(tools): spec OMP v19 tool commands and the tools.commands key (https://github.com/stuarthopwood/refract/pull/2192)
+- docs(ask): spec the whole-form form request (#2140) (https://github.com/stuarthopwood/refract/pull/2191)
+
 ## v0.41.0 (2026-11-24)
 
 ### Features
