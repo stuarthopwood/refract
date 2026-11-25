@@ -68,7 +68,7 @@ export function groupToolItems(items: TranscriptItem[]): GroupedTranscriptItem[]
       continue
     }
     if (item.kind === 'tool' && !item.skill && (!isAskTool(item.tool) || isFailedRefractAsk(item))) {
-      // Group on the display key so `write xd://a`, `write xd://b` and plain `write` never share a run.
+      // Group on the display key so `write xd://a`, a `bash a` tool command, `write xd://b` and plain `write` never share a run.
       if (run.length > 0 && displayKey(run[0]!) === displayKey(item)) {
         run.push(item)
       } else {
