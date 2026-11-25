@@ -1,8 +1,9 @@
 import * as React from 'react'
 import { isRowEnter } from '@/components/askChoiceKeys'
 import { firstMissingField, missingFieldMessage } from './answerPlan'
-import { AskFormFooter, AskFormShell, sessionPhaseNote } from './AskFormChrome'
-import { canCancel } from './askFormSession'
+import { AskFormFooter } from '@/components/AskFormFooter'
+import { AskFormShell } from '@/components/AskFormShell'
+import { canCancel, sessionPhaseNote } from './askFormSession'
 import { escapeCancelsForm } from './askFormKeys'
 import { ChoiceField, TextField } from './AskFormFields'
 import type { AskFormFrameField } from './parseAskHtml'
@@ -69,7 +70,7 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
     // Esc is the Cancel shortcut for the whole card (FR-010) except while typing; the buttons below stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={rootRef} onKeyDown={handleKeyDown}>
-      <AskFormShell label={ASKED_USER_TITLE}>
+      <AskFormShell label={ASKED_USER_TITLE} title={ASKED_USER_TITLE}>
         {fields.map((field, index) => {
           const value = session.values[index]
           if (!value) return null

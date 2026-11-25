@@ -20,11 +20,12 @@ describe('UnshownFormView', () => {
     expect(html).toContain('role="status"')
   })
 
-  test('Given a refused cancel, When the notice renders, Then it shows the error and a Retry button', () => {
+  test('Given a refused cancel, When the notice renders, Then the warning stays a status and a separate alert holds the error and Retry', () => {
     const html = render('idle', 'OMP no longer has that question')
     expect(html).toContain('OMP no longer has that question')
     expect(html).toContain('Retry')
-    expect(html).toContain('role="alert"')
+    expect(html.indexOf('role="status"')).toBeLessThan(html.indexOf('role="alert"'))
+    expect(html.slice(html.indexOf('role="alert"'))).toContain('Retry')
   })
 
   test('Given the cancel is in flight, When the notice renders, Then it says it is being cancelled and has no Retry', () => {
@@ -33,10 +34,23 @@ describe('UnshownFormView', () => {
     expect(html).toContain('so it is being cancelled.')
   })
 
-  test('Given a retry in flight, When the notice renders, Then Retry stays mounted, busy and aria-disabled', () => {
-    const retry = render('sending', 'refused').match(/<button[^>]*>(?:(?!<\/button>).)*Retry/)?.[0] ?? ''
+  test('Given a retry in flight, When the notice renders, Then Retry stays mounted, busy and aria-disabled with the error still shown', () => {
+    const html = render('sending', 'refused')
+    const retry = html.match(/<button[^>]*>(?:(?!<\/button>).)*Retry/)?.[0] ?? ''
     expect(retry).toContain('aria-busy="true"')
     expect(retry).toContain('aria-disabled="true"')
+    expect(html).toContain('refused')
+  })
+
+  test.each([
+    ['cancelling', 'sending', null],
+    ['cancelled', 'sent', null],
+    ['refused', 'idle', 'OMP no longer has that question'],
+    ['retried', 'sending', 'OMP no longer has that question']
+  ] as const)('Given the cancel is %s, Then the warning keeps role="status" and the alert shows only for a refusal', (_name, phase, error) => {
+    const html = render(phase, error)
+    expect(html.match(/role="status"/g)).toHaveLength(1)
+    expect(html.match(/role="alert"/g)?.length ?? 0).toBe(error === null ? 0 : 1)
   })
 
   test('Given the notice, Then it sits in a programmatically focusable wrapper that Retry can hand focus to', () => {
@@ -46,11 +60,11 @@ describe('UnshownFormView', () => {
 
 describe('unshownFormNoticeState', () => {
   test('Given each send phase, When the state is read, Then Retry shows when refused and stays through its resend', () => {
-    expect(unshownFormNoticeState('idle', 'refused')).toEqual({ error: 'refused', canRetry: true, retrying: false, outcome: 'refused' })
-    expect(unshownFormNoticeState('idle', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelling' })
-    expect(unshownFormNoticeState('sending', 'refused')).toEqual({ error: null, canRetry: true, retrying: true, outcome: 'cancelling' })
-    expect(unshownFormNoticeState('sending', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelling' })
-    expect(unshownFormNoticeState('sent', null)).toEqual({ error: null, canRetry: false, retrying: false, outcome: 'cancelled' })
+    expect(unshownFormNoticeState('idle', 'refused')).toEqual({ error: 'refused', retrying: false, outcome: 'refused' })
+    expect(unshownFormNoticeState('idle', null)).toEqual({ error: null, retrying: false, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sending', 'refused')).toEqual({ error: 'refused', retrying: true, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sending', null)).toEqual({ error: null, retrying: false, outcome: 'cancelling' })
+    expect(unshownFormNoticeState('sent', null)).toEqual({ error: null, retrying: false, outcome: 'cancelled' })
   })
 
   test('Given each outcome, When the wording is read, Then it says being cancelled, cancelled or could not be cancelled, keeping "form"', () => {

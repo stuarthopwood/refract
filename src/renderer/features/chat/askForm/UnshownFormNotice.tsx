@@ -3,7 +3,7 @@ import { OctagonXIcon, TriangleAlertIcon } from 'lucide-react'
 import { Alert, AlertActions, AlertDescription } from '@/components/ui/alert'
 import { RESTING_FOCUS_CLASS } from '@/components/ui/focus-classes'
 import { cn } from '@/lib/utils'
-import { RetryButton } from './AskFormChrome'
+import { RetryButton } from '@/components/RetryButton'
 import { FORM_CANCEL, type FormResponder, type FormSendPhase } from './formRequest'
 import { useFormResponder } from './useFormResponder'
 
@@ -17,21 +17,20 @@ export function cancelUnshownForm(responder: FormResponder): Promise<boolean> {
 }
 
 export interface UnshownFormNoticeState {
-  /** Why OMP refused the cancel, shown beside the notice; null while the cancel is going or done. */
+  /** Why OMP refused the cancel, shown in its own alert; null while the first cancel is going or done. */
   readonly error: string | null
-  readonly canRetry: boolean
   /** A Retry send is in flight: Retry stays mounted, busy, so focus is not dropped. */
   readonly retrying: boolean
   /** What happened to the cancel, so the wording follows it. */
   readonly outcome: 'cancelling' | 'cancelled' | 'refused'
 }
 
-/** A refused cancel is the only state with an error and a Retry, which stays through its own resend. */
+/** A refused cancel is the only state with an error and a Retry; both stay through the Retry's own resend. */
 export function unshownFormNoticeState(phase: FormSendPhase, error: string | null): UnshownFormNoticeState {
   const refused = phase === 'idle' && error !== null
   const retrying = phase === 'sending' && error !== null
   const outcome = refused ? 'refused' : phase === 'sent' ? 'cancelled' : 'cancelling'
-  return { error: refused ? error : null, canRetry: refused || retrying, retrying, outcome }
+  return { error: refused || retrying ? error : null, retrying, outcome }
 }
 
 /** The notice wording for the state of the cancel; it keeps the word "form" the agent used. */
@@ -50,19 +49,21 @@ export function UnshownFormView({ phase, error, onRetry }: UnshownFormViewProps)
   const state = unshownFormNoticeState(phase, error)
   const wrapperRef = React.useRef<HTMLDivElement>(null)
   return (
-    <div ref={wrapperRef} tabIndex={-1} className={cn('rounded-lg', RESTING_FOCUS_CLASS)}>
-      <Alert variant={state.canRetry ? 'destructive' : 'warning'} role={state.canRetry ? 'alert' : 'status'}>
-        {state.canRetry ? <OctagonXIcon aria-hidden /> : <TriangleAlertIcon aria-hidden />}
-        <AlertDescription>
-          {unshownFormNoticeText(state.outcome)}
-          {state.error !== null && <> {state.error}</>}
-        </AlertDescription>
-        {state.canRetry && (
+    <div ref={wrapperRef} tabIndex={-1} className={cn('flex flex-col gap-2 rounded-lg', RESTING_FOCUS_CLASS)}>
+      {/* The warning keeps one role in every state; a refused cancel is its own alert so a screen reader announces it once. */}
+      <Alert variant="warning" role="status">
+        <TriangleAlertIcon aria-hidden />
+        <AlertDescription>{unshownFormNoticeText(state.outcome)}</AlertDescription>
+      </Alert>
+      {state.error !== null && (
+        <Alert variant="destructive" box="inline" role="alert">
+          <OctagonXIcon aria-hidden />
+          <AlertDescription>{state.error}</AlertDescription>
           <AlertActions>
             <RetryButton busy={state.retrying} onRetry={onRetry} handoffTo={wrapperRef} />
           </AlertActions>
-        )}
-      </Alert>
+        </Alert>
+      )}
     </div>
   )
 }

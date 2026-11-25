@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest'
 import type { PendingRequest } from '../../../../shared/model'
-import { afterAnswered, afterSendFailed, canCancel, cancelSession, type AskFormSession, initialSession, nextAction, submitSession } from './askFormSession'
+import type { AskFieldValue } from './answerPlan'
+import { afterAnswered, afterSendFailed, canCancel, cancelSession, editValue, type AskFormSession, initialSession, nextAction, sessionPhaseNote, submitSession } from './askFormSession'
 import type { AskFormFrameField } from './parseAskHtml'
 
 const FIELDS: AskFormFrameField[] = [
@@ -220,5 +221,31 @@ describe('failed sends', () => {
   test('Given a cancel that succeeded, When asked again, Then Cancel is not offered', () => {
     expect(canCancel({ ...filled(), phase: 'cancelling' })).toBe(false)
     expect(canCancel({ ...filled(), phase: 'done' })).toBe(false)
+  })
+})
+
+describe('editValue', () => {
+  const text = (value: string): AskFieldValue => ({ kind: 'text', text: value })
+
+  test('Given a refused send while editing, When a field is edited, Then the value changes and the error clears', () => {
+    const refused = afterSendFailed({ ...filled(), phase: 'answering', inflight: 'r1' }, 'offline')
+    const edited = editValue(refused, 2, text('edited'))
+    expect(edited.values[2]).toEqual(text('edited'))
+    expect(edited.error).toBeNull()
+    expect(edited).toMatchObject({ phase: 'editing', cursor: refused.cursor, stepIndex: refused.stepIndex })
+  })
+
+  test('Given a failed cancel, When a field is edited, Then the error stays because the card is no longer a form', () => {
+    const failed = afterSendFailed({ ...filled(), phase: 'cancelling', inflight: 'r1' }, 'offline')
+    expect(editValue(failed, 2, text('x')).error).toBe('offline')
+  })
+})
+
+describe('sessionPhaseNote', () => {
+  test('Given each per-field session phase, Then the note keeps its wording', () => {
+    expect(sessionPhaseNote('answering')).toBe('Submitting your answers')
+    expect(sessionPhaseNote('cancelling')).toBe('Cancelled')
+    expect(sessionPhaseNote('done')).toBe('Answers submitted')
+    expect(sessionPhaseNote('editing')).toBeUndefined()
   })
 })

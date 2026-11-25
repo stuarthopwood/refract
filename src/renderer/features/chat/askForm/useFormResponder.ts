@@ -9,6 +9,8 @@ interface UseFormResponder {
   kind: AnswerKind | null
   /** Why OMP refused the last send, or null. */
   error: string | null
+  /** Drops the shown refusal once the user starts editing again. */
+  clearError: () => void
 }
 
 /** One once-only responder for a form request, with the send progress the card shows. */
@@ -27,5 +29,6 @@ export function useFormResponder(sessionId: string, requestId: string): UseFormR
       return outcome.accepted
     })
   )
-  return { responder, phase, kind, error }
+  const clearError = React.useCallback(() => setError(null), [])
+  return { responder, phase, kind, error, clearError }
 }

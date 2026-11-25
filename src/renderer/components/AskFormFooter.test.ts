@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
-import { AskFormFooter, sessionPhaseNote } from './AskFormChrome'
+import { AskFormFooter } from './AskFormFooter'
 
 type FooterProps = Parameters<typeof AskFormFooter>[0]
 
@@ -64,13 +64,19 @@ describe('AskFormFooter', () => {
     expect(html).not.toContain('Submitting')
     expect(html.match(/aria-busy="true"/g)).toHaveLength(1)
   })
-})
 
-describe('sessionPhaseNote', () => {
-  test('Given each per-field session phase, Then the note keeps its wording', () => {
-    expect(sessionPhaseNote('answering')).toBe('Submitting your answers')
-    expect(sessionPhaseNote('cancelling')).toBe('Cancelled')
-    expect(sessionPhaseNote('done')).toBe('Answers submitted')
-    expect(sessionPhaseNote('editing')).toBeUndefined()
+  test('Given custom labels, Then they replace Cancel and Submit at rest, and the busy wording wins while a send runs', () => {
+    const resting = render({ cancelLabel: 'Skip', submitLabel: 'Next' })
+    expect(resting).toContain('Skip')
+    expect(resting).toContain('Next')
+    expect(resting).not.toContain('Cancel<')
+    expect(resting).not.toContain('Submit<')
+    expect(render({ submitLabel: 'Next', sending: true })).toContain('Submitting…')
+  })
+
+  test('Given an actions slot, Then it sits between Cancel and Submit', () => {
+    const html = render({ actions: createElement('button', null, 'Use Recommended') })
+    expect(html.indexOf('Cancel')).toBeLessThan(html.indexOf('Use Recommended'))
+    expect(html.indexOf('Use Recommended')).toBeLessThan(html.indexOf('Submit'))
   })
 })

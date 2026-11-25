@@ -194,7 +194,7 @@ export function DropdownField({ field, value, disabled, idPrefix, error, onChang
           onBlur={() => !open && onBlur?.()}
           aria-labelledby={`${headingId} ${triggerId}`}
           aria-disabled={disabled}
-          className="w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent dark:aria-disabled:hover:bg-transparent"
+          className="w-full"
         >
           <SelectValue placeholder="Choose an option" />
         </SelectTrigger>
