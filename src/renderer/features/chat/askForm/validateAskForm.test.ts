@@ -55,6 +55,18 @@ describe('validateAskForm pattern safety', () => {
     expect(errorOf(patternOf(pattern), text('zz'))).toBeNull()
   })
 
+  test.each([
+    ['(a|a) repeated', `${'(a|a)'.repeat(24)}b`],
+    ['(a|) repeated', `${'(a|)'.repeat(24)}b`]
+  ])('Given the alternation pattern %s, When a long near-match is validated, Then it is skipped within the time bound', (_label, pattern) => {
+    const started = performance.now()
+    expect(errorOf(patternOf(pattern), text(`${'a'.repeat(24)}c`))).toBeNull()
+    expect(performance.now() - started).toBeLessThan(200)
+  })
+
+  test('Given a top-level alternation that would fail, When validated, Then it is skipped', () => {
+    expect(errorOf(patternOf('(ab|cd)e+'), text('xe'))).toBeNull()
+  })
   test('Given a pattern of 201 characters, When it would fail, Then it is skipped', () => {
     expect(errorOf(patternOf('a'.repeat(201)), text('b'))).toBeNull()
   })
@@ -81,7 +93,11 @@ describe('validateAskForm pattern safety', () => {
     ['an escaped star before one repeat, on pattern', 'a\\*b*', 'a*bb', null],
     ['an escaped star before one repeat, off pattern', 'a\\*b*', 'abb', 'Must match a\\*b*'],
     ['an escaped backslash before a digit, off pattern', '\\\\1a+', 'x', 'Must match \\\\1a+'],
-    ['a group with no quantifier, off pattern', '(ab|cd)e+', 'xe', 'Must match (ab|cd)e+']
+    ['an escaped bar, on pattern', 'a\\|b', 'a|b', null],
+    ['an escaped bar, off pattern', 'a\\|b', 'ab', 'Must match a\\|b'],
+    ['an escaped bar in a character class, on pattern', '[\\|]x', '|x', null],
+    ['an escaped bar in a character class, off pattern', '[\\|]x', 'ax', 'Must match [\\|]x'],
+    ['an unescaped bar in a class, which the v flag rejects as invalid, on any value', '[|]x', 'ax', null]
   ])('Given %s, When validated, Then the pattern is still enforced', (_label, pattern, value, expected) => {
     expect(errorOf(patternOf(pattern), text(value))).toBe(expected)
   })

@@ -58,7 +58,8 @@ function quantifierAt(pattern: string, index: number): { length: number; variabl
 }
 
 // The pattern is the agent's and runs on the UI thread, so it only runs when matching is provably cheap: at most one
-// variable-length quantifier, none on a group, no backreference or lookaround. OMP still checks the answer on submit.
+// variable-length quantifier, none on a group, no alternation, backreference or lookaround (`(a|a)` repeated backtracks
+// exponentially without any quantifier). OMP still checks the answer on submit.
 function isCheapPattern(pattern: string): boolean {
   if (pattern.length > MAX_PATTERN_LENGTH) return false
   let variableQuantifiers = 0
@@ -80,6 +81,8 @@ function isCheapPattern(pattern: string): boolean {
       if (/^\(\?<?[=!]/.test(pattern.slice(index, index + 4))) return false
       if (pattern[index + 1] === '?') index++
       afterGroup = false
+    } else if (char === '|') {
+      return false
     } else if (char === ')') {
       afterGroup = true
     } else {
