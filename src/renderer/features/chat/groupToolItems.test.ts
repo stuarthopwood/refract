@@ -17,3 +17,23 @@ describe('groupToolItems refract_ask (#1989)', () => {
     expect(grouped.filter(isToolGroup)).toHaveLength(1)
   })
 })
+
+const callOf = (id: string, name: string, target: string) =>
+  ({ kind: 'tool', id, tool: name, status: 'done', target }) as unknown as TranscriptItem
+
+describe('groupToolItems tool commands (#2141)', () => {
+  it('groups a v19 tool command with the old write xd:// form of the same tool', () => {
+    const grouped = groupToolItems([callOf('a', 'bash', 'lsp hover'), callOf('b', 'write', 'xd://lsp'), callOf('c', 'bash', 'lsp refs')])
+    expect(grouped.filter(isToolGroup)).toHaveLength(1)
+  })
+
+  it('keeps a tool command apart from plain bash and from another tool', () => {
+    const grouped = groupToolItems([callOf('a', 'bash', 'ls -la'), callOf('b', 'bash', 'lsp hover'), callOf('c', 'bash', 'debug attach'), callOf('d', 'bash', 'pwd')])
+    expect(grouped.filter(isToolGroup)).toHaveLength(4)
+  })
+
+  it('groups consecutive plain bash calls as before', () => {
+    const grouped = groupToolItems([callOf('a', 'bash', 'ls'), callOf('b', 'bash', 'pwd')])
+    expect(grouped.filter(isToolGroup)).toHaveLength(1)
+  })
+})

@@ -139,7 +139,8 @@ async fn check_git() -> Check {
 }
 
 /// Extracts the first `\d+\.\d+\.\d+` run from `stdout` by manual scan (no `regex` dependency).
-fn find_version(stdout: &str) -> Option<(String, u32, u32, u32)> {
+/// Shared with the token guard, which picks the rare-tools config key from the installed version.
+pub(crate) fn find_version(stdout: &str) -> Option<(String, u32, u32, u32)> {
     let bytes = stdout.as_bytes();
     let mut i = 0;
     while i < bytes.len() {

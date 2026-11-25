@@ -6,7 +6,7 @@ const LIVE_KEYS = [
   'compaction.thresholdPercent',
   'compaction.modelThresholds',
   'compaction.methodOrder',
-  'tools.xdev',
+  'tools.commands',
   'snapcompact.toolResults',
   'snapcompact.systemPrompt',
   'task.softRequestBudget',
@@ -35,5 +35,15 @@ describe('appliesToNewSessionsOnly', () => {
 
   it('is true for a key the table does not know', () => {
     expect(appliesToNewSessionsOnly('no.such.key')).toBe(true)
+  })
+})
+
+describe('the rare-tools row', () => {
+  // Refract's own name for it: omp 19 calls it tools.commands and omp 18.x tools.xdev, which the backend picks by version.
+  it('is keyed tools.commands, keeps its label, and no row still names tools.xdev', () => {
+    const row = TOKEN_GUARD_KEYS.find((info) => info.key === 'tools.commands')
+    expect(row?.label).toBe('Load rare tools on demand')
+    expect(row?.kind).toBe('toggle')
+    expect(TOKEN_GUARD_KEYS.some((info) => info.key === 'tools.xdev')).toBe(false)
   })
 })

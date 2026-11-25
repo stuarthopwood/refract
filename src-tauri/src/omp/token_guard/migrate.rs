@@ -192,14 +192,19 @@ where
     Ok(())
 }
 
-async fn write_to_omp(executor: &dyn OmpExecutor, key: String, value: Value) -> Result<(), String> {
+async fn write_to_omp(
+    executor: &dyn OmpExecutor,
+    config: Option<&Path>,
+    key: String,
+    value: Value,
+) -> Result<(), String> {
     if key == "compaction.thresholdTokens" {
         return set_config_with(executor, &key, &value, &[])
             .await
             .map(|_| ())
             .map_err(|err| err.message);
     }
-    values::write_key(executor, &key, &value).await
+    values::write_key(executor, &key, &value, config).await
 }
 
 /// True once the global config holds the token guard set. Runs the migration if it has not yet succeeded; a failure is retried on the next call.
@@ -221,7 +226,7 @@ pub async fn ensure_with(executor: &dyn OmpExecutor, dir: &Path, config: Option<
     *LAST_ERROR.lock().expect("poisoned") = None;
     // A failed read only costs the skipped-write saving: the writes then report omp's own error.
     let current = list_config_with(executor, &[]).await.unwrap_or(Value::Null);
-    let write = |key, value| write_to_omp(executor, key, value);
+    let write = |key, value| write_to_omp(executor, config, key, value);
     match attempt(dir, &current, config, &today(), write).await {
         Ok(()) => {
             *LAST_ERROR.lock().expect("poisoned") = None;

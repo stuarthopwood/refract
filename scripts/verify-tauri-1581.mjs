@@ -75,7 +75,7 @@ const MANY_ROWS = {
   'prewalk.enabled': true,
   'plan.defaultOnStartup': true,
   'tools.artifactSpillThreshold': 100,
-  'tools.xdev': false
+  'tools.commands': false
 };
 
 async function launch(env) {

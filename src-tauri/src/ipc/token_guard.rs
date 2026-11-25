@@ -182,9 +182,9 @@ async fn apply_change(
             .unwrap_or_else(|| "The token guard migration has not finished".to_string()));
     }
     let updated = match change {
-        Change::Set(key, value) => values::set(executor, &key, value).await,
-        Change::Reset(key) => values::reset(executor, &key).await,
-        Change::ResetAll => values::reset_all(executor).await,
+        Change::Set(key, value) => values::set(executor, &key, value, config).await,
+        Change::Reset(key) => values::reset(executor, &key, config).await,
+        Change::ResetAll => values::reset_all(executor, config).await,
     }?;
     // The migration is done here, and omp dies with Refract, so only a Session launched in this
     // process before it finished can still read the legacy overlay (which beats the global config).
