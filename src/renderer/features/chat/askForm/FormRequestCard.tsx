@@ -1,24 +1,24 @@
 import * as React from 'react'
-import { Loader2Icon, OctagonXIcon } from 'lucide-react'
 import type { PendingRequest } from '../../../../shared/model'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { CardContent, CardFooter } from '@/components/ui/card'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { ASKED_USER_TITLE } from '../askedUserLine'
 import type { AskFieldValue } from './answerPlan'
-import { AskFormShell } from './AskFormCard'
+import { AskFormFooter, AskFormShell } from './AskFormChrome'
 import { ChoiceField, DropdownField, InputField, TextField } from './AskFormFields'
+import { askFormIntentKey } from './askFormIntentKey'
+import { focusField } from './askFormFocusTarget'
 import { enterSubmitsForm, escapeCancelsForm } from './askFormKeys'
 import {
   FORM_CANCEL,
   FORM_TIMED_OUT,
   firstInvalidField,
   formDeadlineText,
+  formStatusNote,
   formSubmission,
   scheduleDeadline,
   startingValues,
-  visibleErrors
+  visibleErrors,
+  withTouched
 } from './formRequest'
 import { parseAskHtml, type AskFormField } from './parseAskHtml'
 import { offersOther } from './validateAskForm'
@@ -54,7 +54,7 @@ interface FormFieldProps {
 function FormField({ field, value, disabled, idPrefix, error, showInvalid, onChange, onTouch }: FormFieldProps) {
   if (value.kind === 'choice' && 'options' in field) {
     if (field.kind === 'select' && !field.multiple) {
-      return <DropdownField field={field} value={value} disabled={disabled} idPrefix={idPrefix} error={error} onChange={onChange} />
+      return <DropdownField field={field} value={value} disabled={disabled} idPrefix={idPrefix} error={error} onChange={onChange} onBlur={onTouch} />
     }
     return (
       <ChoiceField
@@ -66,6 +66,7 @@ function FormField({ field, value, disabled, idPrefix, error, showInvalid, onCha
         offerOther={offersOther(field)}
         error={error}
         onChange={onChange}
+        onBlur={onTouch}
         onOtherBlur={onTouch}
       />
     )
@@ -87,10 +88,8 @@ function FormField({ field, value, disabled, idPrefix, error, showInvalid, onCha
   }
 }
 
-const PHASE_NOTE = { idle: undefined, sending: 'Submitting your answers', sent: 'Answers submitted' } as const
-
 function FormBody({ sessionId, request, fields }: FormRequestCardProps & { fields: readonly AskFormField[] }) {
-  const { responder, phase, error } = useFormResponder(sessionId, request.requestId)
+  const { responder, phase, kind, error } = useFormResponder(sessionId, request.requestId)
   const [values, setValues] = React.useState(() => startingValues(fields))
   const [touched, setTouched] = React.useState<ReadonlySet<number>>(new Set())
   const [attempted, setAttempted] = React.useState(false)
@@ -98,15 +97,16 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
   const submission = React.useMemo(() => formSubmission(fields, values), [fields, values])
   const shownErrors = visibleErrors(submission.errors, touched, attempted)
   const editing = phase === 'idle'
-  const settled = phase === 'sent'
+  // A sent form, or a refused timed-out cancel, must not be answered again by the deadline timer.
+  const closed = phase === 'sent' || phase === 'locked'
   const idBase = `ask-form-${request.requestId}`.replace(/[^a-zA-Z0-9_-]/g, '-')
-  const intentKey = `${sessionId}:${request.requestId}`
+  const intentKey = askFormIntentKey(sessionId, request.requestId)
 
   // OMP cancels the form itself at the deadline; this answers first so the card does not outlive it.
   React.useEffect(() => {
-    if (settled) return undefined
+    if (closed) return undefined
     return scheduleDeadline(request.deadlineAt, Date.now(), () => void responder.respond(FORM_TIMED_OUT))
-  }, [request.deadlineAt, responder, settled])
+  }, [request.deadlineAt, responder, closed])
 
   React.useLayoutEffect(() => {
     return () => {
@@ -115,13 +115,13 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
     }
   }, [intentKey, sessionId])
 
+  // Typing alone never marks a field touched: its message waits for leaving the field or a blocked Submit.
   function touch(index: number) {
-    setTouched((current) => (current.has(index) ? current : new Set(current).add(index)))
+    setTouched((current) => withTouched(current, index))
   }
 
   function change(index: number, value: AskFieldValue) {
     setValues((current) => current.map((existing, at) => (at === index ? value : existing)))
-    touch(index)
   }
 
   function trySubmit() {
@@ -131,10 +131,7 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
       return
     }
     setAttempted(true)
-    const target = rootRef.current?.querySelector<HTMLElement>(
-      `[data-ask-field="${idBase}-${firstInvalidField(submission.errors)}"] :is(input, textarea, button, [role="radio"], [role="checkbox"])`
-    )
-    target?.focus()
+    focusField(rootRef.current, `${idBase}-${firstInvalidField(submission.errors)}`)
   }
 
   function cancel() {
@@ -155,7 +152,6 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
     cancel()
   }
 
-  const note = PHASE_NOTE[phase]
   return (
     // Esc and Enter are card-wide shortcuts for Cancel and Submit; the footer buttons stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -178,27 +174,17 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
             />
           )
         })}
-        {error && (
-          <CardContent>
-            <Alert variant="destructive" box="inline">
-              <OctagonXIcon aria-hidden />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          </CardContent>
-        )}
-        {request.deadlineAt !== undefined && <CardContent className="text-sm text-muted-foreground">{formDeadlineText(request.deadlineAt)}</CardContent>}
-        <CardContent role="status" className="text-sm text-muted-foreground empty:hidden">
-          {note}
-        </CardContent>
-        <CardFooter>
-          <Button size="sm" variant="ghost" aria-disabled={!editing} className="aria-disabled:opacity-50" onClick={cancel}>
-            Cancel
-          </Button>
-          <Button size="sm" aria-disabled={!editing || !submission.answer} aria-busy={phase === 'sending'} className="aria-disabled:opacity-50" onClick={trySubmit}>
-            {phase === 'sending' && <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
-            {phase === 'sending' ? 'Submitting...' : 'Submit'}
-          </Button>
-        </CardFooter>
+        <AskFormFooter
+          error={error}
+          onRetry={phase === 'locked' ? () => void responder.respond(FORM_TIMED_OUT) : undefined}
+          deadlineText={request.deadlineAt !== undefined ? formDeadlineText(request.deadlineAt) : undefined}
+          note={formStatusNote(phase, kind)}
+          cancellable={editing}
+          submittable={editing && submission.answer !== null}
+          sending={phase === 'sending'}
+          onCancel={cancel}
+          onSubmit={trySubmit}
+        />
       </AskFormShell>
     </div>
   )

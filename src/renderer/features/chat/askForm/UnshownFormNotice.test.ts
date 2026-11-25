@@ -4,9 +4,8 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test, vi } from 'vitest'
 import type { ChatAnswer } from '../../../../shared/ipc'
-import { createFormResponder } from './formRequest'
+import { createFormResponder, type FormSendPhase } from './formRequest'
 import { UNSHOWN_FORM_NOTICE, UnshownFormView, cancelUnshownForm, unshownFormNoticeState } from './UnshownFormNotice'
-import type { FormSendPhase } from './useFormResponder'
 
 vi.mock('./useFormResponder', () => ({ useFormResponder: () => undefined }))
 

@@ -1,4 +1,4 @@
-import type { ChatAnswer } from '../../../../shared/ipc'
+import type { ChatAnswer, IpcError, Result } from '../../../../shared/ipc'
 import { initialValue, type AskFieldValue } from './answerPlan'
 import type { AskFormField, AskFormInputField } from './parseAskHtml'
 import { toFormData, validateAskForm } from './validateAskForm'
@@ -43,6 +43,49 @@ export function visibleErrors(errors: readonly (string | null)[], touched: Reado
 /** The first field Submit is blocked on, or -1 when all are acceptable. */
 export function firstInvalidField(errors: readonly (string | null)[]): number {
   return errors.findIndex((error) => error !== null)
+}
+
+/** A touched set that now holds `index`; the same set when it already does, so state does not re-render for nothing. */
+export function withTouched(touched: ReadonlySet<number>, index: number): ReadonlySet<number> {
+  return touched.has(index) ? touched : new Set(touched).add(index)
+}
+
+/** `locked` is a timed-out cancel OMP refused: the deadline has passed, so only a retry of that cancel is offered. */
+export type FormSendPhase = 'idle' | 'sending' | 'sent' | 'locked'
+export type AnswerKind = 'submitted' | 'cancelled' | 'timedOut'
+
+export function answerKind(answer: ChatAnswer): AnswerKind {
+  if (!('cancelled' in answer)) return 'submitted'
+  return answer.timedOut ? 'timedOut' : 'cancelled'
+}
+
+const SENDING_NOTE: Record<AnswerKind, string> = { submitted: 'Submitting your answers', cancelled: 'Cancelling', timedOut: 'Cancelling' }
+const SENT_NOTE: Record<AnswerKind, string> = { submitted: 'Answers submitted', cancelled: 'Cancelled', timedOut: 'Timed out, cancelled' }
+
+/** The status line names what was sent, so a Cancel or a deadline never reads as a submit. */
+export function formStatusNote(phase: FormSendPhase, kind: AnswerKind | null): string | undefined {
+  if (kind === null) return undefined
+  if (phase === 'sending') return SENDING_NOTE[kind]
+  return phase === 'sent' ? SENT_NOTE[kind] : undefined
+}
+
+export interface SendOutcome {
+  readonly accepted: boolean
+  readonly phase: FormSendPhase
+  readonly error: string | null
+}
+
+export const SEND_FAILED_TEXT = "Your answer couldn't be sent. Try again."
+
+/** A refused or failed send re-opens the form, except a timed-out cancel, which locks it: editing past the deadline cannot help. */
+export async function sendFormAnswer(answer: ChatAnswer, call: () => Promise<Result<void>>, failureText: (error: IpcError) => string): Promise<SendOutcome> {
+  const refused = (error: string): SendOutcome => ({ accepted: false, phase: answerKind(answer) === 'timedOut' ? 'locked' : 'idle', error })
+  try {
+    const result = await call()
+    return result.ok ? { accepted: true, phase: 'sent', error: null } : refused(failureText(result.error))
+  } catch {
+    return refused(SEND_FAILED_TEXT)
+  }
 }
 
 /** A static line, as for the ask card: the form is cancelled on the user's behalf once the time passes. */

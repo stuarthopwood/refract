@@ -2,8 +2,8 @@ import * as React from 'react'
 import { OctagonXIcon, TriangleAlertIcon } from 'lucide-react'
 import { Alert, AlertActions, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { FORM_CANCEL, type FormResponder } from './formRequest'
-import { useFormResponder, type FormSendPhase } from './useFormResponder'
+import { FORM_CANCEL, type FormResponder, type FormSendPhase } from './formRequest'
+import { useFormResponder } from './useFormResponder'
 
 // Same wording as the notice the Rust side appends for a dialog it can't show.
 export const UNSHOWN_FORM_NOTICE = `Refract can't show the agent's "form" dialog yet, so it was cancelled.`

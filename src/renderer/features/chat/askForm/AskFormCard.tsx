@@ -1,11 +1,8 @@
 import * as React from 'react'
-import { Loader2Icon, OctagonXIcon } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { isRowEnter } from '@/components/askChoiceKeys'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { firstMissingField, missingFieldMessage } from './answerPlan'
-import { canCancel, type AskFormPhase } from './askFormSession'
+import { AskFormFooter, AskFormShell, sessionPhaseNote } from './AskFormChrome'
+import { canCancel } from './askFormSession'
 import { escapeCancelsForm } from './askFormKeys'
 import { ChoiceField, TextField } from './AskFormFields'
 import type { AskFormFrameField } from './parseAskHtml'
@@ -13,24 +10,6 @@ import { ASKED_USER_TITLE } from '../askedUserLine'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { askFormIntentKey } from './askFormIntentKey'
 import { useAskFormSession } from './useAskFormSession'
-
-const PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
-  answering: 'Submitting your answers',
-  cancelling: 'Cancelled',
-  done: 'Answers submitted'
-}
-
-/** The live form's card chrome; `label` names the card. */
-export function AskFormShell({ children, label }: { children: React.ReactNode; label: string }) {
-  return (
-    <Card size="sm" role="group" aria-label={label}>
-      <CardHeader>
-        <CardTitle>Questions from the agent</CardTitle>
-      </CardHeader>
-      {children}
-    </Card>
-  )
-}
 
 interface AskFormCardProps {
   sessionId: string
@@ -51,7 +30,6 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
     }
   }, [intentKey, sessionId])
   const editing = session.phase === 'editing'
-  const note = PHASE_NOTE[session.phase]
   const idBase = `ask-form-${askItemId}`.replace(/[^a-zA-Z0-9_-]/g, '-')
   // A blocked Submit names what is missing and marks empty Other boxes; blurring an Other box marks just that one.
   const [attempted, setAttempted] = React.useState(false)
@@ -112,27 +90,15 @@ export function AskFormCard({ sessionId, askItemId, fields }: AskFormCardProps) 
             <TextField key={key} field={field} value={value.text} disabled={!editing} idPrefix={idPrefix} onChange={(text) => setValue(index, { kind: 'text', text })} />
           ) : null
         })}
-        {(session.error ?? missing) && (
-          <CardContent>
-            <Alert variant="destructive" box="inline">
-              <OctagonXIcon aria-hidden />
-              <AlertDescription>{session.error ?? missing}</AlertDescription>
-            </Alert>
-          </CardContent>
-        )}
-        <CardContent role="status" className="text-sm text-muted-foreground empty:hidden">
-          {note}
-        </CardContent>
-        {/* Stays mounted with the card so the focused button is still in the DOM when the card unmounts. */}
-        <CardFooter>
-          <Button size="sm" variant="ghost" aria-disabled={!cancellable} className="aria-disabled:opacity-50" onClick={() => cancellable && cancel()}>
-            Cancel
-          </Button>
-          <Button size="sm" aria-disabled={!editing || !submittable} aria-busy={session.phase === 'answering'} className="aria-disabled:opacity-50" onClick={trySubmit}>
-            {session.phase === 'answering' && <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
-            {session.phase === 'answering' ? 'Submitting...' : 'Submit'}
-          </Button>
-        </CardFooter>
+        <AskFormFooter
+          error={session.error ?? missing}
+          note={sessionPhaseNote(session.phase)}
+          cancellable={cancellable}
+          submittable={editing && submittable}
+          sending={session.phase === 'answering'}
+          onCancel={cancel}
+          onSubmit={trySubmit}
+        />
       </AskFormShell>
     </div>
   )

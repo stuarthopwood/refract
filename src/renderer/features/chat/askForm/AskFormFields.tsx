@@ -56,10 +56,15 @@ interface ChoiceFieldProps {
   offerOther?: boolean
   error?: string | null
   onChange: (value: ChoiceValue) => void
+  /** Focus left the whole field, not just a row inside it. */
+  onBlur?: () => void
   onOtherBlur: () => void
 }
 
-export function ChoiceField({ field, value, disabled, idPrefix, showInvalid, offerOther, error, onChange, onOtherBlur }: ChoiceFieldProps) {
+/** The container takes programmatic focus when every control in the field is disabled; it is never a Tab stop. */
+const FIELD_FOCUS_CLASS = 'space-y-2 outline-none'
+
+export function ChoiceField({ field, value, disabled, idPrefix, showInvalid, offerOther, error, onChange, onBlur, onOtherBlur }: ChoiceFieldProps) {
   const headingId = `${idPrefix}-heading`
   const errorId = `${idPrefix}-error`
   const toggle = (optionValue: string) => {
@@ -83,7 +88,15 @@ export function ChoiceField({ field, value, disabled, idPrefix, showInvalid, off
 
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-    <CardContent data-ask-field={idPrefix} className="space-y-2" onKeyDown={handleKeyDown}>
+    <CardContent
+      data-ask-field={idPrefix}
+      tabIndex={-1}
+      className={FIELD_FOCUS_CLASS}
+      onKeyDown={handleKeyDown}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) onBlur?.()
+      }}
+    >
       <FieldHeading id={headingId} question={field.question} required={field.required} />
       <AskChoiceGroup
         multi={multi}
@@ -136,7 +149,7 @@ export function TextField({ field, value, disabled, idPrefix, error, onChange, o
     onChange: (event: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => onChange(event.target.value)
   }
   return (
-    <CardContent data-ask-field={idPrefix} className="space-y-2">
+    <CardContent data-ask-field={idPrefix} tabIndex={-1} className={FIELD_FOCUS_CLASS}>
       <FieldHeading id={`${idPrefix}-heading`} question={field.question} required={field.required} />
       {field.kind === 'textarea' ? <Textarea {...shared} /> : <Input {...shared} />}
       <FieldError id={`${idPrefix}-error`} error={error} />
@@ -151,16 +164,17 @@ interface DropdownFieldProps {
   idPrefix: string
   error?: string | null
   onChange: (value: ChoiceValue) => void
+  onBlur?: () => void
 }
 
 /** A single-choice `<select>`. Items are keyed by position because the dropdown cannot hold an empty option value. */
-export function DropdownField({ field, value, disabled, idPrefix, error, onChange }: DropdownFieldProps) {
+export function DropdownField({ field, value, disabled, idPrefix, error, onChange, onBlur }: DropdownFieldProps) {
   const picked = field.options.findIndex((option) => value.selected.includes(option.value))
   const [open, setOpen] = React.useState(false)
   const headingId = `${idPrefix}-heading`
   const triggerId = `${idPrefix}-trigger`
   return (
-    <CardContent data-ask-field={idPrefix} className="space-y-2">
+    <CardContent data-ask-field={idPrefix} tabIndex={-1} className={FIELD_FOCUS_CLASS}>
       <FieldHeading id={headingId} question={field.question} required={field.required} />
       {/* While sending the trigger stays focusable (aria-disabled, not disabled) but cannot open or change. */}
       <Select
@@ -175,6 +189,8 @@ export function DropdownField({ field, value, disabled, idPrefix, error, onChang
         <SelectTrigger
           id={triggerId}
           {...controlA11y(idPrefix, field.required, error)}
+          // Focus moves into the list while it is open, which is not the user leaving the field.
+          onBlur={() => !open && onBlur?.()}
           aria-labelledby={`${headingId} ${triggerId}`}
           aria-disabled={disabled}
           className="w-full aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-transparent dark:aria-disabled:hover:bg-transparent"
@@ -249,7 +265,7 @@ export function InputField({ field, value, disabled, idPrefix, error, onChange, 
     control = <Input {...text} type={field.kind} autoComplete="off" />
   }
   return (
-    <CardContent data-ask-field={idPrefix} className="space-y-2">
+    <CardContent data-ask-field={idPrefix} tabIndex={-1} className={FIELD_FOCUS_CLASS}>
       <FieldHeading id={`${idPrefix}-heading`} question={field.question} required={field.required} />
       {control}
       <FieldError id={`${idPrefix}-error`} error={error} />

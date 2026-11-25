@@ -1,16 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import type { ChatAnswer } from '../../../../shared/ipc'
+import type { ChatAnswer, IpcError, Result } from '../../../../shared/ipc'
 import type { AskFieldValue } from './answerPlan'
 import {
   FORM_CANCEL,
   FORM_TIMED_OUT,
+  SEND_FAILED_TEXT,
+  answerKind,
   createFormResponder,
   firstInvalidField,
   formDeadlineText,
+  formStatusNote,
   formSubmission,
   scheduleDeadline,
+  sendFormAnswer,
   startingValues,
-  visibleErrors
+  visibleErrors,
+  withTouched
 } from './formRequest'
 import { parseAskHtml, type AskFormField } from './parseAskHtml'
 
@@ -124,6 +129,82 @@ describe('visibleErrors', () => {
 
   test('Given Submit was attempted, Then every message shows', () => {
     expect(visibleErrors(errors, new Set(), true)).toEqual(errors)
+  })
+
+  test('Given a field was typed in but never left, When errors are read, Then none shows until it is touched', () => {
+    const typed = withTouched(new Set(), 1)
+    expect(visibleErrors(errors, new Set(), false)[0]).toBeNull()
+    expect(visibleErrors(errors, typed, false)).toEqual([null, null, null])
+    expect(visibleErrors(errors, withTouched(typed, 2), false)).toEqual([null, null, 'Too long'])
+  })
+})
+
+describe('withTouched', () => {
+  test('Given a field already touched, When touched again, Then the same set comes back', () => {
+    const touched = withTouched(new Set(), 3)
+    expect(withTouched(touched, 3)).toBe(touched)
+    expect([...withTouched(touched, 1)].sort()).toEqual([1, 3])
+  })
+})
+
+describe('answerKind and formStatusNote', () => {
+  test.each([
+    [{ data: { a: 'x' } }, 'submitted', 'Submitting your answers', 'Answers submitted'],
+    [FORM_CANCEL, 'cancelled', 'Cancelling', 'Cancelled'],
+    [FORM_TIMED_OUT, 'timedOut', 'Cancelling', 'Timed out, cancelled']
+  ] as const)('Given %j was sent, Then it reads as %s and the notes follow what was sent', (answer, kind, sending, sent) => {
+    expect(answerKind(answer)).toBe(kind)
+    expect(formStatusNote('sending', kind)).toBe(sending)
+    expect(formStatusNote('sent', kind)).toBe(sent)
+    expect(formStatusNote('idle', kind)).toBeUndefined()
+    expect(formStatusNote('locked', kind)).toBeUndefined()
+  })
+
+  test('Given nothing was sent, Then there is no note', () => {
+    expect(formStatusNote('idle', null)).toBeUndefined()
+    expect(formStatusNote('sent', null)).toBeUndefined()
+  })
+})
+
+describe('sendFormAnswer', () => {
+  const refusedError: IpcError = { code: 'request-gone', message: 'gone' }
+  const refused: Result<void> = { ok: false, error: refusedError }
+  const failureText = (error: IpcError): string => `refused: ${error.message}`
+
+  test('Given OMP took the answer, Then the phase is sent with no error', async () => {
+    expect(await sendFormAnswer({ data: {} }, async () => ({ ok: true, value: undefined }), failureText)).toEqual({ accepted: true, phase: 'sent', error: null })
+  })
+
+  test('Given OMP refused a submit or a cancel, Then the form re-opens with the error', async () => {
+    expect(await sendFormAnswer({ data: {} }, async () => refused, failureText)).toEqual({ accepted: false, phase: 'idle', error: 'refused: gone' })
+    expect(await sendFormAnswer(FORM_CANCEL, async () => refused, failureText)).toEqual({ accepted: false, phase: 'idle', error: 'refused: gone' })
+  })
+
+  test('Given OMP refused the timed-out cancel, Then the form stays locked with the error', async () => {
+    expect(await sendFormAnswer(FORM_TIMED_OUT, async () => refused, failureText)).toEqual({ accepted: false, phase: 'locked', error: 'refused: gone' })
+  })
+
+  test('Given the call rejects, Then it reads as a refusal instead of leaving the form sending', async () => {
+    const reject = async (): Promise<Result<void>> => {
+      throw new Error('ipc down')
+    }
+    expect(await sendFormAnswer({ data: {} }, reject, failureText)).toEqual({ accepted: false, phase: 'idle', error: SEND_FAILED_TEXT })
+    expect(await sendFormAnswer(FORM_TIMED_OUT, reject, failureText)).toEqual({ accepted: false, phase: 'locked', error: SEND_FAILED_TEXT })
+  })
+
+  test('Given a refused timed-out cancel, When Retry resends it through the responder, Then it is sent again until accepted', async () => {
+    const call = vi.fn<() => Promise<Result<void>>>().mockResolvedValueOnce(refused).mockResolvedValueOnce({ ok: true, value: undefined })
+    const phases: string[] = []
+    const responder = createFormResponder(async (answer) => {
+      const outcome = await sendFormAnswer(answer, call, failureText)
+      phases.push(outcome.phase)
+      return outcome.accepted
+    })
+    expect(await responder.respond(FORM_TIMED_OUT)).toBe(false)
+    expect(await responder.respond(FORM_TIMED_OUT)).toBe(true)
+    expect(await responder.respond(FORM_TIMED_OUT)).toBe(false)
+    expect(phases).toEqual(['locked', 'sent'])
+    expect(call).toHaveBeenCalledTimes(2)
   })
 })
 
