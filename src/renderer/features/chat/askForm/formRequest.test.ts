@@ -16,6 +16,7 @@ import {
   retryState,
   scheduleDeadline,
   sendFormAnswer,
+  shouldClearErrorOnEdit,
   startingValues,
   visibleErrors,
   withTouched
@@ -195,6 +196,18 @@ describe('retryState', () => {
     expect(retryState('sending', 'submitted')).toEqual({ visible: false, busy: true })
     expect(retryState('sent', 'timedOut')).toEqual({ visible: false, busy: false })
     expect(retryState('idle', null)).toEqual({ visible: false, busy: false })
+  })
+})
+
+describe('shouldClearErrorOnEdit', () => {
+  test.each([
+    ['a refused send', 'idle', 'refused', true],
+    ['no error', 'idle', null, false],
+    ['a send in flight', 'sending', 'refused', false],
+    ['a locked form', 'locked', 'refused', false],
+    ['a sent form', 'sent', 'refused', false]
+  ] as const)('Given %s, When the user edits, Then the error clear is %s', (_name, phase, error, expected) => {
+    expect(shouldClearErrorOnEdit(phase, error)).toBe(expected)
   })
 })
 

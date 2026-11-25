@@ -3,7 +3,8 @@ import type { PendingRequest } from '../../../../shared/model'
 import { markAskFocusPendingWithFallback } from '@/state/ask-focus-intent'
 import { ASKED_USER_TITLE } from '../askedUserLine'
 import type { AskFieldValue } from './answerPlan'
-import { AskFormFooter, AskFormShell } from './AskFormChrome'
+import { AskFormFooter } from '@/components/AskFormFooter'
+import { AskFormShell } from '@/components/AskFormShell'
 import { ChoiceField, DropdownField, InputField, TextField } from './AskFormFields'
 import { askFormIntentKey } from './askFormIntentKey'
 import { focusField } from './askFormFocusTarget'
@@ -19,6 +20,7 @@ import {
   refusedPastDeadline,
   retryState,
   scheduleDeadline,
+  shouldClearErrorOnEdit,
   startingValues,
   visibleErrors,
   withTouched
@@ -92,7 +94,7 @@ function FormField({ field, value, disabled, idPrefix, error, showInvalid, onCha
 }
 
 function FormBody({ sessionId, request, fields }: FormRequestCardProps & { fields: readonly AskFormField[] }) {
-  const { responder, phase, kind, error } = useFormResponder(sessionId, request.requestId)
+  const { responder, phase, kind, error, clearError } = useFormResponder(sessionId, request.requestId)
   const [values, setValues] = React.useState(() => startingValues(fields))
   const [touched, setTouched] = React.useState<ReadonlySet<number>>(new Set())
   const [attempted, setAttempted] = React.useState(false)
@@ -137,6 +139,7 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
   }
 
   function change(index: number, value: AskFieldValue) {
+    if (shouldClearErrorOnEdit(phase, error)) clearError()
     setValues((current) => current.map((existing, at) => (at === index ? value : existing)))
   }
 
@@ -172,7 +175,7 @@ function FormBody({ sessionId, request, fields }: FormRequestCardProps & { field
     // Esc and Enter are card-wide shortcuts for Cancel and Submit; the footer buttons stay the operable controls.
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={rootRef} onKeyDown={handleKeyDown}>
-      <AskFormShell label={ASKED_USER_TITLE}>
+      <AskFormShell label={ASKED_USER_TITLE} title="Questions from the agent">
         {fields.map((field, index) => {
           const value = values[index]
           if (!value) return null

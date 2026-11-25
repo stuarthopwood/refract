@@ -1,10 +1,11 @@
 import * as React from 'react'
-import { CheckIcon, Loader2Icon, OctagonXIcon } from 'lucide-react'
+import { CheckIcon } from 'lucide-react'
 import type { ChatAnswer } from '../../../shared/ipc'
 import type { AskQuestion, PendingRequest } from '../../../shared/model'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { AskFormFooter } from '@/components/AskFormFooter'
+import { AskFormShell } from '@/components/AskFormShell'
 import { AskChoiceGroup } from '@/components/AskChoiceGroup'
 import { choiceDigitIndex, focusChoiceRow, focusedOptionIndex, isNoteShortcut, isRowEnter, pickBeforeNote } from '@/components/askChoiceKeys'
 import { type AskChoiceNotes, OptionNoteHint } from '@/components/OptionNote'
@@ -305,7 +306,7 @@ export function AskCard({ sessionId, request }: AskCardProps) {
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div ref={cardRootRef} onKeyDown={handleKeyDown}>
-      <Card size="sm">
+      <AskFormShell>
         {questions.length > 1 ? (
           <Tabs value={activeId} onValueChange={handleTabChange} activationMode="automatic">
             <CardHeader>
@@ -348,47 +349,27 @@ export function AskCard({ sessionId, request }: AskCardProps) {
         ) : (
           questionBody
         )}
-        {error && (
-          <CardContent>
-            <Alert variant="destructive" box="inline">
-              <OctagonXIcon aria-hidden />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          </CardContent>
-        )}
-        {request.deadlineAt !== undefined && (
-          <CardContent className="text-sm text-muted-foreground">{formatDeadlineText(request.deadlineAt, questions)}</CardContent>
-        )}
-        <CardFooter className="flex-wrap">
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-disabled={busy}
-            aria-busy={busyAction === 'cancel'}
-            className="aria-disabled:opacity-50"
-            onClick={() => !busy && void cancel()}
-          >
-            {busyAction === 'cancel' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
-            {busyAction === 'cancel' ? 'Cancelling…' : 'Cancel'}
-          </Button>
-          {recommendedNames.length > 0 && (
-            <Button size="sm" variant="outline" aria-label={`Use recommended: ${recommendedNames.join('; ')}`} aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
-              Use Recommended
-              <span aria-hidden>↵</span>
-            </Button>
-          )}
-          <Button
-            size="sm"
-            aria-disabled={busy}
-            aria-busy={busyAction === 'submit'}
-            className="aria-disabled:opacity-50"
-            onClick={() => !busy && handlePrimary()}
-          >
-            {busyAction === 'submit' && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
-            {busyAction === 'submit' ? 'Submitting…' : allComplete ? 'Submit' : 'Next'}
-          </Button>
-        </CardFooter>
-      </Card>
+        <AskFormFooter
+          error={error}
+          deadlineText={request.deadlineAt !== undefined ? formatDeadlineText(request.deadlineAt, questions) : undefined}
+          note={undefined}
+          cancellable={!busy}
+          submittable={!busy}
+          sending={busyAction === 'submit'}
+          cancelling={busyAction === 'cancel'}
+          submitLabel={allComplete ? 'Submit' : 'Next'}
+          actions={
+            recommendedNames.length > 0 && (
+              <Button size="sm" variant="outline" aria-label={`Use recommended: ${recommendedNames.join('; ')}`} aria-disabled={busy} className="aria-disabled:opacity-50" onClick={acceptRecommended}>
+                Use Recommended
+                <span aria-hidden>↵</span>
+              </Button>
+            )
+          }
+          onCancel={() => void cancel()}
+          onSubmit={handlePrimary}
+        />
+      </AskFormShell>
     </div>
   )
 }

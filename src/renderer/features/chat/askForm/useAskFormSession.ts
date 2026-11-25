@@ -3,7 +3,7 @@ import { create } from 'zustand'
 import { usePendingRequestsStore } from '@/state/pending-requests-store'
 import type { PendingRequest } from '../../../../shared/model'
 import { type AskFieldValue, canSubmit } from './answerPlan'
-import { afterAnswered, afterSendFailed, type AskFormSession, cancelSession, initialSession, nextAction, submitSession } from './askFormSession'
+import { afterAnswered, afterSendFailed, type AskFormSession, cancelSession, editValue, initialSession, nextAction, submitSession } from './askFormSession'
 import { answerFailureText } from '../askAnswerError'
 import type { AskFormFrameField } from './parseAskHtml'
 
@@ -60,11 +60,7 @@ export function useAskFormSession(sessionId: string, askItemId: string, fields: 
     })
   }, [session, pending, key, init, fields, sessionId, update])
 
-  const setValue = React.useCallback(
-    (index: number, value: AskFieldValue) =>
-      update(key, init, (current) => ({ ...current, values: current.values.map((existing, at) => (at === index ? value : existing)) })),
-    [key, init, update]
-  )
+  const setValue = React.useCallback((index: number, value: AskFieldValue) => update(key, init, (current) => editValue(current, index, value)), [key, init, update])
   const submit = React.useCallback(() => update(key, init, (current) => submitSession(current, fields)), [key, init, fields, update])
   // Cancels this form's frames pending now and any that arrive later, as the per-field Cancel does for one.
   const cancel = React.useCallback(() => update(key, init, cancelSession), [key, init, update])

@@ -85,6 +85,11 @@ export function refusedPastDeadline(phase: FormSendPhase, error: string | null, 
   return phase === 'idle' && error !== null && deadlineAt !== undefined && now >= deadlineAt
 }
 
+/** The error of a refused send describes that attempt, so an edit drops it; a locked or sent form keeps its own. */
+export function shouldClearErrorOnEdit(phase: FormSendPhase, error: string | null): boolean {
+  return phase === 'idle' && error !== null
+}
+
 export interface SendOutcome {
   readonly accepted: boolean
   readonly phase: FormSendPhase

@@ -98,6 +98,23 @@ export function cancelSession(session: AskFormSession): AskFormSession {
   return canCancel(session) ? { ...session, phase: 'cancelling', error: null } : session
 }
 
+/** An edit replaces one field's value; while the user can still edit it also drops the error of the refused send before it. */
+export function editValue(session: AskFormSession, index: number, value: AskFieldValue): AskFormSession {
+  const values = session.values.map((existing, at) => (at === index ? value : existing))
+  return { ...session, values, error: session.phase === 'editing' ? null : session.error }
+}
+
+const SESSION_PHASE_NOTE: Partial<Record<AskFormPhase, string>> = {
+  answering: 'Submitting your answers',
+  cancelling: 'Cancelled',
+  done: 'Answers submitted'
+}
+
+/** The per-field session's status line; the whole-form card words its own from what it sent. */
+export function sessionPhaseNote(phase: AskFormPhase): string | undefined {
+  return SESSION_PHASE_NOTE[phase]
+}
+
 /** A refused answer: a failed cancel stays cancelling, so the card never reverts to a form the user already cancelled. */
 export function afterSendFailed(session: AskFormSession, message: string): AskFormSession {
   return { ...session, inflight: null, phase: session.phase === 'cancelling' ? 'cancelling' : 'editing', error: message }

@@ -5710,20 +5710,20 @@ Written before the build. Findings: `missing` = the version-aware `tools.command
 
 ## Phase 107: Convergence (2026-11-25, #2195 follow-ups to the #2140 form card, FR-143, FR-141 amended; clarification "Session 2026-11-25" in `spec.md` Clarifications, US2 scenario 14; `docs/design/components.md`)
 
-- [ ] T523 [US2] `src/renderer/components/RetryButton.tsx` (moved from `askForm/AskFormChrome.tsx`, no re-export left): the busy, aria-disabled Retry that hands focus to `handoffTo` when it goes, per FR-143
-- [ ] T524 [US2] `src/renderer/components/AskFormShell.tsx` (moved from `askForm/AskFormChrome.tsx`): the card shell with a `title` slot (default "Questions from the agent", `null` for no header) and an optional group `label`, per FR-143
-- [ ] T525 [US2] `src/renderer/components/AskFormFooter.tsx` (moved): error, deadline line, status note and the Cancel / Submit pair, with `cancelLabel`, `submitLabel` and `actions` slots for the Question card's "Use Recommended"; its test moves beside it as `AskFormFooter.test.ts` and gains the slot cases, per FR-143
-- [ ] T526 [US2] `askForm/AskFormCard.tsx`, `FormRequestCard.tsx` and `UnshownFormNotice.tsx` import the shared components; `AskFormChrome.tsx` is deleted and `sessionPhaseNote` moves to `askForm/sessionPhaseNote.ts` with its test, per FR-143
-- [ ] T527 [US2] `src/renderer/features/chat/AskCard.tsx`: the Question card adopts `AskFormShell` and `AskFormFooter` in place of its own Card, error, deadline and Cancel / Submit markup, touching nothing else in the file, per FR-143
-- [ ] T528 [US2] `UnshownFormNotice.tsx`: the warning Alert keeps `role="status"` in every state, and a refused or retried cancel shows a separate inline destructive Alert (`role="alert"`) holding the error and the Retry button; `unshownFormNoticeState` keeps the error through the Retry resend, per FR-143, US2/AC14
-- [ ] T529 [US2] `UnshownFormNotice.test.ts`: the warning role is `status` for cancelling, cancelled and refused, the destructive alert appears only for a refused or retried cancel, and Retry stays mounted, busy and aria-disabled through its resend, per FR-143, US2/AC14
-- [ ] T530 [US2] `src/renderer/components/ui/select.tsx` and `askForm/AskFormFields.tsx`: the `aria-disabled:` classes move into `SELECT_TRIGGER_CLASS`, and `DropdownField` drops its per-call class string, per FR-143
-- [ ] T531 [US2] `src/renderer/components/ui/select.test.ts`: `SELECT_TRIGGER_CLASS` carries the `aria-disabled` cursor, opacity and hover tokens, per FR-143
-- [ ] T532 [US2] `askForm/askFormSession.ts` (`editValue`) and `useAskFormSession.ts`: editing a field while the form is `editing` clears a refused send's error and changes nothing else, per FR-143, US2/AC14
-- [ ] T533 [US2] `askForm/formRequest.ts` (`shouldClearErrorOnEdit`), `useFormResponder.ts` (`clearError`) and `FormRequestCard.tsx`: an edit after a refused send clears the footer error; a locked, sending or sent form keeps it, per FR-143, US2/AC14
-- [ ] T534 [US2] Tests (co-located): `askFormSession.test.ts` for `editValue` (error cleared while editing, kept while cancelling, values updated) and `formRequest.test.ts` for `shouldClearErrorOnEdit`, per FR-143, US2/AC14
-- [ ] T535 [US2] `docs/design/components.md`: entries for `AskFormShell`, `AskFormFooter`, `UnshownFormNotice` and the `readOnly` plus `aria-disabled` text-field convention, per FR-143
-- [ ] T536 [US2] Find and update every remaining caller or doc reference to the moved `AskFormChrome` exports; none left, per FR-143
-- [ ] T537 Run `pnpm typecheck` and vitest for `src/renderer/features/chat` and `src/renderer/components`, per FR-143
-- [ ] T538 Run `pnpm check:file-size` and `pnpm check:comment-density`, per FR-143
-- [ ] T539 Commit and push `feat/2195-ask-followups`, per FR-143
+- [x] T523 [US2] `src/renderer/components/RetryButton.tsx` (moved from `askForm/AskFormChrome.tsx`, no re-export left): the busy, aria-disabled Retry that hands focus to `handoffTo` when it goes, per FR-143
+- [x] T524 [US2] `src/renderer/components/AskFormShell.tsx` (moved from `askForm/AskFormChrome.tsx`): the card shell with a `title` slot (no header when omitted) and an optional group `label`, per FR-143
+- [x] T525 [US2] `src/renderer/components/AskFormFooter.tsx` (moved): error, deadline line, status note and the Cancel / Submit pair, with `cancelLabel`, `submitLabel` and `actions` slots for the Question card's "Use Recommended"; its test moves beside it as `AskFormFooter.test.ts` and gains the slot cases, per FR-143
+- [x] T526 [US2] `askForm/AskFormCard.tsx`, `FormRequestCard.tsx` and `UnshownFormNotice.tsx` import the shared components; `AskFormChrome.tsx` is deleted and `sessionPhaseNote` moves to `askForm/askFormSession.ts` with its test, per FR-143
+- [x] T527 [US2] `src/renderer/features/chat/AskCard.tsx`: the Question card adopts `AskFormShell` and `AskFormFooter` in place of its own Card, error, deadline and Cancel / Submit markup, touching nothing else in the file, per FR-143
+- [x] T528 [US2] `UnshownFormNotice.tsx`: the warning Alert keeps `role="status"` in every state, and a refused or retried cancel shows a separate inline destructive Alert (`role="alert"`) holding the error and the Retry button; `unshownFormNoticeState` keeps the error through the Retry resend, per FR-143, US2/AC14
+- [x] T529 [US2] `UnshownFormNotice.test.ts`: the warning role is `status` for cancelling, cancelled and refused, the destructive alert appears only for a refused or retried cancel, and Retry stays mounted, busy and aria-disabled through its resend, per FR-143, US2/AC14
+- [x] T530 [US2] `src/renderer/components/ui/select.tsx` and `askForm/AskFormFields.tsx`: the `aria-disabled:` classes move into `SELECT_TRIGGER_CLASS`, and `DropdownField` drops its per-call class string, per FR-143
+- [x] T531 [US2] `src/renderer/components/ui/select.test.ts`: `SELECT_TRIGGER_CLASS` carries the `aria-disabled` cursor, opacity and hover tokens, per FR-143
+- [x] T532 [US2] `askForm/askFormSession.ts` (`editValue`) and `useAskFormSession.ts`: editing a field while the form is `editing` clears a refused send's error and changes nothing else, per FR-143, US2/AC14
+- [x] T533 [US2] `askForm/formRequest.ts` (`shouldClearErrorOnEdit`), `useFormResponder.ts` (`clearError`) and `FormRequestCard.tsx`: an edit after a refused send clears the footer error; a locked, sending or sent form keeps it, per FR-143, US2/AC14
+- [x] T534 [US2] Tests (co-located): `askFormSession.test.ts` for `editValue` (error cleared while editing, kept while cancelling, values updated) and `formRequest.test.ts` for `shouldClearErrorOnEdit`, per FR-143, US2/AC14
+- [x] T535 [US2] `docs/design/components.md`: entries for `AskFormShell`, `AskFormFooter`, `UnshownFormNotice` and the `readOnly` plus `aria-disabled` text-field convention, per FR-143
+- [x] T536 [US2] Find and update every remaining caller or doc reference to the moved `AskFormChrome` exports; none left, per FR-143
+- [x] T537 Run `pnpm typecheck` and vitest for `src/renderer/features/chat` and `src/renderer/components`, per FR-143
+- [x] T538 Run `pnpm check:file-size` and `pnpm check:comment-density`, per FR-143
+- [x] T539 Commit and push `feat/2195-ask-followups`, per FR-143

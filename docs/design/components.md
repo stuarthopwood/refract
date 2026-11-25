@@ -311,6 +311,16 @@ A pane banner (Worktree missing, Terminated unexpectedly, The agent stopped, sta
 
 **RoleRow inline warning note.** A role row's `warning` prop (for example a WATCHDOG.yml roster overriding the Advisor role, #1409) renders as a muted line under the picker with a warning triangle and a bold "Warning:" lead, wrapping anywhere. It is an inline note, not a `PaneBanner`: it belongs to one row, has no actions, and is linked to the select through `aria-describedby`.
 
+## Ask forms (spec 001, FR-143, #2195)
+
+The agent's questions render through three shared pieces; reuse them rather than hand-building a card.
+
+- **AskFormShell** (`components/AskFormShell.tsx`): the `size="sm"` `Card` every ask card sits in. `title` is the header text slot (pass none when the card's own children carry the heading, as the Question card's tab strip does) and `label` names the card as a `role="group"`; leave `label` off when there is nothing to name.
+- **AskFormFooter** (`components/AskFormFooter.tsx`): the card's tail: an inline destructive error `Alert` (with an optional `retry` for a refused send), a static deadline line, an always-mounted status note (`role="status"`, `sr-only` while empty so a later note is announced) and the Cancel / Submit pair. Slots: `cancelLabel`, `submitLabel` and `actions` (extra buttons between Cancel and Submit, such as "Use Recommended"). While a send is in flight both buttons are `aria-disabled` rather than `disabled`, so focus survives and the busy one carries `aria-busy` and a spinner. Its Retry is the shared `RetryButton`, which hands focus on when it unmounts.
+- **UnshownFormNotice** (`features/chat/askForm/UnshownFormNotice.tsx`): the stand-in for a `form` dialog Refract cannot parse. The warning `Alert` keeps `role="status"` in every state; a refused or retried cancel adds a separate inline destructive `Alert` (`role="alert"`) holding the error and Retry, so an assistive reader hears the refusal once instead of the one element changing role. Retry stays mounted, busy and `aria-disabled`, through its own resend.
+- **`readOnly` plus `aria-disabled` text fields.** While an answer is being sent a text `Input` or `Textarea` takes `readOnly` and `aria-disabled`, never `disabled`: it stays focusable and keeps its caret and selection, but cannot change. A select trigger does the same with `aria-disabled` alone; `SELECT_TRIGGER_CLASS` already dims it, shows a not-allowed cursor and drops the hover fill, so a call site adds no `aria-disabled:` classes.
+- A refused send's footer error describes that attempt: editing a field afterwards clears it, except once the card is cancelling, locked or sent.
+
 ## Usage view components (spec 060, #1331)
 
 Five shared pieces carry the Usage view; reuse them rather than copying.
