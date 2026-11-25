@@ -1,13 +1,17 @@
 // Token guard values store (`token-guard.json`). A bad stored value falls back to its default for that key only.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use serde_json::{json, Map, Value};
 
 use crate::ipc::model_roles::set_model_role_with;
 use crate::omp::config::{
-    list_config_with, set_config_with, OmpConfigError, OmpExecutor, RealOmpExecutor,
+    installed_version_with, list_config_with, set_config_with, OmpConfigError, OmpExecutor,
+    RealOmpExecutor,
 };
+
+use super::config_yaml;
 
 pub const STORE_VERSION: u32 = 2;
 
@@ -18,6 +22,21 @@ enum Kind {
     Text,
     TextList,
     PercentRecord,
+}
+
+/// Refract's name for the "load rare tools on demand" key. omp 19 calls it `tools.commands`, omp 18.x `tools.xdev`.
+pub const RARE_TOOLS_KEY: &str = "tools.commands";
+const RARE_TOOLS_KEY_V18: &str = "tools.xdev";
+/// omp renamed `tools.xdev` to `tools.commands` in this major version.
+const RARE_TOOLS_RENAME_MAJOR: u32 = 19;
+
+/// The key omp itself uses for the rare-tools toggle. An unreadable version gets the current name,
+/// so a failing write names a key omp 19 knows.
+pub fn rare_tools_omp_key(version: Option<(u32, u32, u32)>) -> &'static str {
+    match version {
+        Some((major, _, _)) if major < RARE_TOOLS_RENAME_MAJOR => RARE_TOOLS_KEY_V18,
+        _ => RARE_TOOLS_KEY,
+    }
 }
 
 const KEYS: &[(&str, Kind)] = &[
@@ -43,7 +62,7 @@ const KEYS: &[(&str, Kind)] = &[
     ("prewalk.enabled", Kind::Bool),
     ("plan.defaultOnStartup", Kind::Bool),
     ("tools.artifactSpillThreshold", Kind::Int),
-    ("tools.xdev", Kind::Bool),
+    (RARE_TOOLS_KEY, Kind::Bool),
 ];
 
 pub type ValueMap = BTreeMap<String, Value>;
@@ -80,7 +99,7 @@ pub fn default_for(key: &str) -> Option<Value> {
         "prewalk.enabled" => json!(false),
         "plan.defaultOnStartup" => json!(false),
         "tools.artifactSpillThreshold" => json!(30),
-        "tools.xdev" => json!(true),
+        "tools.commands" => json!(true),
         _ => return None,
     })
 }
@@ -199,12 +218,21 @@ pub fn validate(key: &str, value: &Value) -> Result<(), String> {
     }
 }
 
-/// The value `omp config list --json` holds for a key, as stored (no validation or default).
-pub fn raw_value<'a>(list: &'a Value, key: &str) -> Option<&'a Value> {
+/// The value `omp config list --json` holds for one omp key, as stored.
+fn listed<'a>(list: &'a Value, key: &str) -> Option<&'a Value> {
     match key.strip_prefix("modelRoles.") {
         Some(role) => list.pointer(&format!("/modelRoles/value/{role}")),
         None => list.get(key).and_then(|entry| entry.get("value")),
     }
+}
+
+/// The value `omp config list --json` holds for a key, as stored (no validation or default). The
+/// rare-tools key is read under whichever of its two omp names the installed omp lists.
+pub fn raw_value<'a>(list: &'a Value, key: &str) -> Option<&'a Value> {
+    if key == RARE_TOOLS_KEY {
+        return listed(list, RARE_TOOLS_KEY).or_else(|| listed(list, RARE_TOOLS_KEY_V18));
+    }
+    listed(list, key)
 }
 
 /// The effective value of every token guard key in one `omp config list --json` result. A value
@@ -281,8 +309,43 @@ async fn current(executor: &dyn OmpExecutor) -> Result<Global, String> {
     }
 }
 
+/// Writes the rare-tools toggle under the installed omp's key, then drops the other name from the
+/// global config so one key is ever written. `omp config reset` cannot do it: each omp line only
+/// knows one of the two names. `config` is `None` when no real config file is in play.
+async fn write_rare_tools(
+    executor: &dyn OmpExecutor,
+    value: &Value,
+    config: Option<&Path>,
+) -> Result<(), String> {
+    // A failed version call leaves the write itself to report omp's trouble.
+    let version = installed_version_with(executor).await.ok();
+    let key = rare_tools_omp_key(version);
+    set_config_with(executor, key, value, &[])
+        .await
+        .map_err(omp_error)?;
+    let Some(config) = config else {
+        return Ok(());
+    };
+    let stale = if key == RARE_TOOLS_KEY {
+        RARE_TOOLS_KEY_V18
+    } else {
+        RARE_TOOLS_KEY
+    };
+    let leaf = stale.strip_prefix("tools.").unwrap_or(stale);
+    config_yaml::remove_key_from_file(config, "tools", leaf)
+        .await
+        .map_err(|err| {
+            format!("Saved {key}, but could not remove {stale} from the omp config: {err}")
+        })
+}
+
 /// Writes one key to the global omp config. The advisor role is read-merge-written because `omp config get modelRoles.advisor` is unsupported.
-pub async fn write_key(executor: &dyn OmpExecutor, key: &str, value: &Value) -> Result<(), String> {
+pub async fn write_key(
+    executor: &dyn OmpExecutor,
+    key: &str,
+    value: &Value,
+    config: Option<&Path>,
+) -> Result<(), String> {
     validate(key, value)?;
     if key == "modelRoles.advisor" {
         let selector = value.as_str().unwrap_or_default();
@@ -290,6 +353,9 @@ pub async fn write_key(executor: &dyn OmpExecutor, key: &str, value: &Value) -> 
             .await
             .map(|_| ())
             .map_err(omp_error);
+    }
+    if key == RARE_TOOLS_KEY {
+        return write_rare_tools(executor, value, config).await;
     }
     set_config_with(executor, key, value, &[])
         .await
@@ -304,8 +370,13 @@ pub async fn write_key(executor: &dyn OmpExecutor, key: &str, value: &Value) -> 
 }
 
 /// Stores a deliberate change for one key and returns the new effective values.
-pub async fn set(executor: &dyn OmpExecutor, key: &str, value: Value) -> Result<Global, String> {
-    if let Err(err) = write_key(executor, key, &value).await {
+pub async fn set(
+    executor: &dyn OmpExecutor,
+    key: &str,
+    value: Value,
+    config: Option<&Path>,
+) -> Result<Global, String> {
+    if let Err(err) = write_key(executor, key, &value, config).await {
         // A write that fails midway (the prewalk pair) may have changed omp anyway.
         forget();
         return Err(err);
@@ -317,15 +388,22 @@ pub async fn set(executor: &dyn OmpExecutor, key: &str, value: Value) -> Result<
 }
 
 /// Writes Refract's default for one key (omp has no unset) and returns the new effective values.
-pub async fn reset(executor: &dyn OmpExecutor, key: &str) -> Result<Global, String> {
+pub async fn reset(
+    executor: &dyn OmpExecutor,
+    key: &str,
+    config: Option<&Path>,
+) -> Result<Global, String> {
     let default = default_for(key).ok_or_else(|| format!("Unknown token guard key: {key}"))?;
-    set(executor, key, default).await
+    set(executor, key, default, config).await
 }
 
 /// Writes Refract's default for every key (the "Optimise token usage" button).
-pub async fn reset_all(executor: &dyn OmpExecutor) -> Result<Global, String> {
+pub async fn reset_all(
+    executor: &dyn OmpExecutor,
+    config: Option<&Path>,
+) -> Result<Global, String> {
     for (key, value) in defaults() {
-        if let Err(err) = write_key(executor, &key, &value).await {
+        if let Err(err) = write_key(executor, &key, &value, config).await {
             // Some keys are already written, so the remembered snapshot no longer matches.
             forget();
             return Err(err);
@@ -444,5 +522,30 @@ mod tests {
         }
         assert!(validate("providers.cacheWarming", &json!("always")).is_err());
         assert!(validate("providers.cacheWarming", &json!("")).is_err());
+    }
+
+    #[test]
+    fn the_rare_tools_key_follows_the_installed_omp_version() {
+        for (version, key) in [
+            (Some((18, 6, 3)), "tools.xdev"),
+            (Some((18, 22, 2)), "tools.xdev"),
+            (Some((19, 0, 0)), "tools.commands"),
+            (Some((19, 1, 1)), "tools.commands"),
+            (None, "tools.commands"),
+        ] {
+            assert_eq!(rare_tools_omp_key(version), key, "{version:?}");
+        }
+    }
+
+    #[test]
+    fn the_rare_tools_value_is_read_under_whichever_key_omp_lists() {
+        let v18 = json!({ "tools.xdev": { "value": false } });
+        let v19 = json!({ "tools.commands": { "value": false } });
+        assert_eq!(effective_from_list(&v18)["tools.commands"], json!(false));
+        assert_eq!(effective_from_list(&v19)["tools.commands"], json!(false));
+        assert_eq!(
+            effective_from_list(&json!({}))["tools.commands"],
+            json!(true)
+        );
     }
 }

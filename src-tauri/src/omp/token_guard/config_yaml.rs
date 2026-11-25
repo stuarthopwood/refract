@@ -135,7 +135,10 @@ mod tests {
 
     #[test]
     fn leaves_other_keys_and_deeper_namesakes_alone() {
-        assert_eq!(without_key("tools:\n  commands: true\n", "tools", "xdev"), None);
+        assert_eq!(
+            without_key("tools:\n  commands: true\n", "tools", "xdev"),
+            None
+        );
         assert_eq!(without_key("task:\n  xdev: 1\n", "tools", "xdev"), None);
         assert_eq!(
             without_key("tools:\n  nested:\n    xdev: 1\n", "tools", "xdev"),

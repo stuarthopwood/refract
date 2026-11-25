@@ -20,7 +20,7 @@
 | `grep.contextBefore` / `grep.contextAfter` | number | 0 / 1 |
 | `read.defaultLimit` | number | 200 |
 | `tools.artifactSpillThreshold` | number | 30 |
-| `tools.xdev` | boolean | true |
+| `tools.commands` (omp 18.x: `tools.xdev`, chosen from the installed version per FR-046) | boolean | true |
 
 Validation: numbers are non-negative integers; strings non-empty; the model threshold record keys are non-empty. Per-model threshold values match `^(\d{1,2})%$` and 1-99. `TokenGuardKeyInfo` gains optional `impact?: { costlierWhen(value, default): boolean; text: string }` (not persisted). Invalid stored values fall back to the default for that key. Reset to default restores one key.
 

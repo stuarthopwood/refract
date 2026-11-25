@@ -24,6 +24,8 @@ struct FakeOmp {
     fail_sets: AtomicBool,
     watched: Option<PathBuf>,
     seen_at_set: StdMutex<Vec<Option<String>>>,
+    /// What `omp --version` prints.
+    version: &'static str,
 }
 
 impl FakeOmp {
@@ -33,12 +35,24 @@ impl FakeOmp {
             fail_sets: AtomicBool::new(false),
             watched,
             seen_at_set: StdMutex::new(Vec::new()),
+            version: "19.1.1\n",
+        }
+    }
+
+    fn with_version(version: &'static str) -> Self {
+        Self {
+            version,
+            ..Self::new(None)
         }
     }
 
     fn sets(&self) -> Vec<Vec<String>> {
         let calls = self.calls.lock().unwrap();
-        calls.iter().filter(|c| c[1] == "set").cloned().collect()
+        calls
+            .iter()
+            .filter(|c| c.get(1).is_some_and(|a| a == "set"))
+            .cloned()
+            .collect()
     }
 }
 
@@ -51,6 +65,9 @@ impl OmpExecutor for FakeOmp {
     ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
         Box::pin(async move {
             self.calls.lock().unwrap().push(args.to_vec());
+            if args[0] == "--version" {
+                return Ok(self.version.to_string());
+            }
             match args[1].as_str() {
                 // The advisor already holds its default, so the migration does not go through the role merge.
                 "list" => Ok(
@@ -164,6 +181,54 @@ async fn the_write_runs_after_the_migrate_check_and_before_the_overlay_refresh()
     assert!(refreshed.contains("softRequestBudget: 30\n"));
     assert!(applied.warnings.is_empty());
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Runs `Change::Set` of the rare-tools key against a fake omp of `version` and a global config holding `yaml`.
+async fn set_rare_tools(
+    version: &'static str,
+    yaml: &str,
+    name: &str,
+) -> (Vec<Vec<String>>, String) {
+    let dir = scratch(name);
+    migrated(&dir);
+    let config = dir.join("config.yml");
+    std::fs::write(&config, yaml).unwrap();
+    let omp = FakeOmp::with_version(version);
+    let change = Change::Set("tools.commands".to_string(), json!(false));
+    apply_change(&omp, &dir, Some(&config), false, change)
+        .await
+        .unwrap();
+    let text = std::fs::read_to_string(&config).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    (omp.sets(), text)
+}
+
+#[tokio::test]
+async fn the_rare_tools_toggle_is_written_as_tools_commands_on_omp_19_and_drops_xdev() {
+    let _serial = SERIAL.lock().await;
+    values::forget();
+    let yaml = "tools:\n  xdev: true\n  artifactSpillThreshold: 30\n";
+    let (sets, text) = set_rare_tools("19.1.1\n", yaml, "commands").await;
+    assert_eq!(sets, vec![set_call("tools.commands", "false")]);
+    assert_eq!(text, "tools:\n  artifactSpillThreshold: 30\n");
+}
+
+#[tokio::test]
+async fn the_rare_tools_toggle_is_written_as_tools_xdev_on_omp_18_and_drops_commands() {
+    let _serial = SERIAL.lock().await;
+    values::forget();
+    let yaml = "tools:\n  commands: true\n  artifactSpillThreshold: 30\n";
+    let (sets, text) = set_rare_tools("18.22.2\n", yaml, "xdev").await;
+    assert_eq!(sets, vec![set_call("tools.xdev", "false")]);
+    assert_eq!(text, "tools:\n  artifactSpillThreshold: 30\n");
+}
+
+#[tokio::test]
+async fn an_unreadable_omp_version_writes_tools_commands() {
+    let _serial = SERIAL.lock().await;
+    values::forget();
+    let (sets, _) = set_rare_tools("no version here\n", "tools:\n  xdev: true\n", "unparsed").await;
+    assert_eq!(sets, vec![set_call("tools.commands", "false")]);
 }
 
 #[tokio::test]

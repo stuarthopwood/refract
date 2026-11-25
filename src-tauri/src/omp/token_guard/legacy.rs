@@ -51,12 +51,23 @@ fn drop_stale(stored: &mut Stored) {
     }
 }
 
+/// The rare-tools toggle was stored as `tools.xdev` before omp 19 renamed it; the choice carries over.
+fn rename_legacy_keys(stored: &mut Stored) {
+    if let Some(choice) = stored.overrides.remove("tools.xdev") {
+        stored
+            .overrides
+            .entry(values::RARE_TOOLS_KEY.to_string())
+            .or_insert(choice);
+    }
+}
+
 /// The user's valid choices from `token-guard.json`; empty when the file is absent or unreadable.
 pub async fn overrides(dir: &Path) -> ValueMap {
     let mut stored: Stored = read_json_file(&path(dir), Stored::default)
         .await
         .unwrap_or_default();
     drop_stale(&mut stored);
+    rename_legacy_keys(&mut stored);
     stored
         .overrides
         .into_iter()
@@ -93,5 +104,21 @@ mod tests {
         drop_stale(&mut stored);
         assert_eq!(stored.overrides.len(), 1);
         assert_eq!(stored.overrides["task.maxConcurrency"], json!(3));
+    }
+
+    #[test]
+    fn a_stored_xdev_choice_becomes_the_commands_choice() {
+        let mut stored = Stored::default();
+        stored.overrides.insert("tools.xdev".into(), json!(false));
+        rename_legacy_keys(&mut stored);
+        assert_eq!(stored.overrides.len(), 1);
+        assert_eq!(stored.overrides["tools.commands"], json!(false));
+
+        let mut both = Stored::default();
+        both.overrides.insert("tools.xdev".into(), json!(false));
+        both.overrides.insert("tools.commands".into(), json!(true));
+        rename_legacy_keys(&mut both);
+        assert_eq!(both.overrides["tools.commands"], json!(true));
+        assert!(!both.overrides.contains_key("tools.xdev"));
     }
 }

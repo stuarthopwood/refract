@@ -414,7 +414,7 @@ export const TOKEN_GUARD_KEYS: readonly TokenGuardKeyInfo[] = [
       "When a tool's output is bigger than this, the full output is saved to a file and the conversation keeps only the end of it."
   },
   {
-    key: 'tools.xdev',
+    key: 'tools.commands',
     label: 'Load rare tools on demand',
     kind: 'toggle',
     live: true,
