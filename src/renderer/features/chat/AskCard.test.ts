@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { AskQuestion, PendingRequest } from '../../../shared/model'
 import { EMPTY_ASK_QUESTION_DRAFT } from '@/state/ask-picks-store'
-import { AskCard, buildAnswers, formatDeadlineText } from './AskCard'
+import { AskCard, buildAnswers, formatDeadlineText, runUnlessBusy } from './AskCard'
 
 // The markdown renderer and the state barrel need a browser `window` at import; neither is under test.
 vi.mock('./Markdown', () => ({ Markdown: ({ text }: { text: string }) => text }))
@@ -80,5 +80,19 @@ describe('buildAnswers notes (#1987)', () => {
     const draft = { ...EMPTY_ASK_QUESTION_DRAFT, selectedOptions: ['A'], notes: { A: 'x' } }
     expect(buildAnswers([multi], { q1: draft }, false)).toEqual([{ id: 'q1', selectedOptions: ['A'] }])
     expect(buildAnswers([multi], { q1: { ...draft, notes: {} } }, true)).toEqual([{ id: 'q1', selectedOptions: ['A'] }])
+  })
+})
+
+describe('runUnlessBusy', () => {
+  it('does not run the action while a send or cancel is in flight, so a busy card cannot resubmit', () => {
+    const submit = vi.fn()
+    runUnlessBusy(true, submit)
+    expect(submit).not.toHaveBeenCalled()
+  })
+
+  it('runs the action once the card is idle', () => {
+    const submit = vi.fn()
+    runUnlessBusy(false, submit)
+    expect(submit).toHaveBeenCalledTimes(1)
   })
 })

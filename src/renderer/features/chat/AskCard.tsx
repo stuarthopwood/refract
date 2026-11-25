@@ -36,6 +36,11 @@ function isQuestionComplete(question: AskQuestion, draft: AskDraftQuestion): boo
   return draft.selectedOptions.length > 0 || (draft.otherSelected && draft.customInput.trim().length > 0)
 }
 
+/** Runs `action` only while no send or cancel is in flight, so a second press cannot resend. */
+export function runUnlessBusy(busy: boolean, action: () => void): void {
+  if (!busy) action()
+}
+
 /** Notes ride only on a `refract_ask` card (`withNotes`); the native ask has nowhere to carry them. */
 export function buildAnswers(questions: AskQuestion[], byQuestionId: Record<string, AskDraftQuestion>, withNotes: boolean) {
   return questions.map((question) => {
@@ -188,8 +193,9 @@ export function AskCard({ sessionId, request }: AskCardProps) {
     openQuestion(next)
   }
 
+  // The footer calls this even when Submit is not submittable (form cards use that to flag the attempt), so a busy card must refuse here.
   function handlePrimary() {
-    advance(byQuestionId)
+    runUnlessBusy(busy, () => advance(byQuestionId))
   }
 
   // #1435: a pointer click or Space on a single-choice option commits it and moves on; arrow keys only move the pick.
@@ -352,7 +358,6 @@ export function AskCard({ sessionId, request }: AskCardProps) {
         <AskFormFooter
           error={error}
           deadlineText={request.deadlineAt !== undefined ? formatDeadlineText(request.deadlineAt, questions) : undefined}
-          note={undefined}
           cancellable={!busy}
           submittable={!busy}
           sending={busyAction === 'submit'}
