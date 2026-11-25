@@ -42,55 +42,62 @@ function fieldValue(field: AskFormField, value: AskFieldValue | undefined): AskF
 }
 
 const MAX_PATTERN_LENGTH = 200
+const MAX_INPUT_LENGTH = 1_000
+const COUNTED_QUANTIFIER = /\{(\d+)(?:(,)(\d*))?\}/y
 
-interface PatternGroup {
-  repeats: boolean
-  alternates: boolean
+// The quantifier starting at `index`, or null; `variable` is false for a fixed `{n}`, which cannot backtrack.
+function quantifierAt(pattern: string, index: number): { length: number; variable: boolean } | null {
+  const char = pattern[index]
+  if (char === '*' || char === '+' || char === '?') return { length: 1, variable: true }
+  if (char !== '{') return null
+  COUNTED_QUANTIFIER.lastIndex = index
+  const match = COUNTED_QUANTIFIER.exec(pattern)
+  if (!match) return null
+  const [whole = '', min = '', comma, max = ''] = match
+  return { length: whole.length, variable: comma !== undefined && (max === '' || Number(max) > Number(min)) }
 }
 
-// The pattern is the agent's and runs on the UI thread, so one that can backtrack catastrophically is not run at all:
-// OMP still checks the answer. Unsafe means too long, a backreference, or a repeated group holding a repeat or an alternation.
-function isSafePattern(pattern: string): boolean {
-  if (pattern.length > MAX_PATTERN_LENGTH || /\\(?:[1-9]|k<)/.test(pattern)) return false
-  const root: PatternGroup = { repeats: false, alternates: false }
-  const open: PatternGroup[] = [root]
-  let closed: PatternGroup | null = null
+// The pattern is the agent's and runs on the UI thread, so it only runs when matching is provably cheap: at most one
+// variable-length quantifier, none on a group, no backreference or lookaround. OMP still checks the answer on submit.
+function isCheapPattern(pattern: string): boolean {
+  if (pattern.length > MAX_PATTERN_LENGTH) return false
+  let variableQuantifiers = 0
   let classDepth = 0
+  let afterGroup = false
   for (let index = 0; index < pattern.length; index++) {
     const char = pattern[index]
-    const group = open[open.length - 1] ?? root
     if (char === '\\') {
+      const next = pattern[index + 1] ?? ''
+      if (classDepth === 0 && (/[1-9]/.test(next) || (next === 'k' && pattern[index + 2] === '<'))) return false
       index++
-      closed = null
+      afterGroup = false
     } else if (classDepth > 0) {
       classDepth += char === '[' ? 1 : char === ']' ? -1 : 0
     } else if (char === '[') {
       classDepth = 1
-      closed = null
+      afterGroup = false
     } else if (char === '(') {
-      open.push({ repeats: false, alternates: false })
-      closed = null
+      if (/^\(\?<?[=!]/.test(pattern.slice(index, index + 4))) return false
+      if (pattern[index + 1] === '?') index++
+      afterGroup = false
     } else if (char === ')') {
-      closed = open.length > 1 ? (open.pop() ?? null) : null
-      const parent = open[open.length - 1] ?? root
-      parent.repeats ||= closed?.repeats ?? false
-      parent.alternates ||= closed?.alternates ?? false
-    } else if (char === '|') {
-      group.alternates = true
-      closed = null
-    } else if (char === '*' || char === '+' || char === '{') {
-      if (closed && (closed.repeats || closed.alternates)) return false
-      group.repeats = true
-      closed = null
+      afterGroup = true
     } else {
-      closed = null
+      const quantifier = quantifierAt(pattern, index)
+      if (quantifier) {
+        if (afterGroup || (quantifier.variable && ++variableQuantifiers > 1)) return false
+        index += quantifier.length - 1
+        // A lazy or possessive suffix belongs to the same quantifier.
+        if (pattern[index + 1] === '?' || pattern[index + 1] === '+') index++
+      }
+      afterGroup = false
     }
   }
   return true
 }
 
 function matchesPattern(pattern: string, text: string): boolean {
-  if (!isSafePattern(pattern)) return true
+  if (text.length > MAX_INPUT_LENGTH || !isCheapPattern(pattern)) return true
   try {
     return new RegExp(`^(?:${pattern})$`, 'v').test(text)
   } catch {
