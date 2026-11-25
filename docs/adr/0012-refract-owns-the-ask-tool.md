@@ -22,4 +22,5 @@ Epic #1990 needs per-option notes, several recommended options, and a reason per
 
 - Refract loses OMP's ask timer that answers with the recommended option, and future OMP ask features unless they are ported. New asks have no "timed out" outcome; old transcripts still render it.
 - The **Asked-user line** renders both native asks (history) and `refract_ask` results.
+- On OMP 19.1.1 (live check 2026-11-25, #520): Refract still passes the overlay `--config` with `ask.enabled: false`, and a whole-form `form` request renders in the Ask card and is answered with `{data}` or `{cancelled:true}` (#2140). The run did not dump OMP's effective tool list, so the missing native `ask` there and the `--tools` fallback remain untested on v19. The #1938 per-field route stays while 18.x is supported.
 - Revisit this ADR if OMP ships #20156 or #20157 and the native wire then carries notes and per-option recommendations.
