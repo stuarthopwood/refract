@@ -286,6 +286,17 @@ describe('option notes slot (#1987)', () => {
   it('renders no note markers without the notes prop', () => {
     expect(render(false, OPTIONS, ['Alpha'])).not.toContain('data-ask-option')
   })
+
+  it.each([
+    ['single choice', false],
+    ['multiple choice', true]
+  ])('reserves right padding on every option row so the hover hint never overlaps text, %s', (_name, multi) => {
+    const html = renderWithNotes(multi, ['Alpha'])
+    // The trailing Other row has no note slot, so only the listed options are checked.
+    const rows = (html.match(/<button[^>]*role="(?:radio|checkbox)"[^>]*>/g) ?? []).slice(0, OPTIONS.length)
+    expect(rows).toHaveLength(OPTIONS.length)
+    for (const row of rows) expect(classTokens(row)).toContain('pr-20')
+  })
 })
 
 describe('disabled option, group state and Other row', () => {

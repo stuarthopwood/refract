@@ -3,7 +3,7 @@ import { RecommendedBadge } from '@/components/RecommendedBadge'
 import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_RECOMMENDED_ROW_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { ACCEPTS_ENTER_ATTRIBUTE, ASK_OPTION_ATTRIBUTE, MAX_DIGIT_OPTIONS, isPlainEnter } from '@/components/askChoiceKeys'
-import { type AskChoiceNotes, OptionNoteSlot } from '@/components/OptionNote'
+import { type AskChoiceNotes, OPTION_NOTE_HINT_ROW_CLASS, OptionNoteSlot } from '@/components/OptionNote'
 import { RADIO_RING_CLASS, RadioGroup, RadioGroupIndicator, RadioGroupItem } from '@/components/ui/radio-group'
 import { cn } from '@/lib/utils'
 
@@ -181,10 +181,10 @@ export function AskChoiceGroup(props: AskChoiceGroupProps) {
   const otherInput = other.visible && offerOther ? <OtherInput other={other} disabled={disabled} /> : null
   const hintId = `${idPrefix}-multi-hint`
   // The wrapper marks which option a focused control belongs to, so the N key can find it (askChoiceKeys).
-  const withNote = (option: AskChoiceOption, picked: boolean, row: React.ReactElement) =>
+  const withNote = (option: AskChoiceOption, picked: boolean, row: React.ReactElement<{ className?: string }>) =>
     props.notes ? (
       <div key={option.value} {...{ [ASK_OPTION_ATTRIBUTE]: '' }} className="group/option relative flex flex-col gap-1">
-        {row}
+        {React.cloneElement(row, { className: cn(row.props.className, OPTION_NOTE_HINT_ROW_CLASS) })}
         <OptionNoteSlot value={option.value} label={option.label} picked={picked} disabled={disabled} notes={props.notes} />
       </div>
     ) : (
