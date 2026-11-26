@@ -10,7 +10,7 @@ import { SubagentStatusGlyph, subagentStatusTextClass } from '../subagentStatus'
 import type { StageItem } from '../viewModel/types'
 import { AgentChip } from './AgentChip'
 import { ParallelBadge } from './ParallelBadge'
-import { stageRowModel } from './stageRowModel'
+import { stageAccessibleName, stageRowModel } from './stageRowModel'
 
 interface StageHeaderProps {
   stage: StageItem
@@ -21,9 +21,16 @@ interface StageHeaderProps {
   renderTitle?: (title: { label: string; speechLabel: string; colorClass: string | undefined }) => React.ReactNode
   /** Makes the text column a tab stop; only for a caller with no other focusable thing in the header. */
   columnFocusable?: boolean
+  /** Shows the whole outcome line instead of one truncated line; the panel sets it on the focused or selected row so keyboard users can read it. */
+  fullOutcome?: boolean
 }
 
-export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocusable = false }: StageHeaderProps) {
+/** A truncated outcome is only clipped when the Stage is collapsed and nobody asked for the full text. */
+export function outcomeIsClamped(expanded: boolean, fullOutcome: boolean): boolean {
+  return !expanded && !fullOutcome
+}
+
+export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocusable = false, fullOutcome = false }: StageHeaderProps) {
   const { status, counts, durationMs, cleanTitle } = stage
   const label = stageHeading(stage.number, cleanTitle)
   const speechLabel = stageHeading(stage.number, cleanTitle, true)
@@ -42,6 +49,9 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
           <div
             className="flex min-w-0 flex-1 flex-col rounded focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
             tabIndex={columnFocusable ? 0 : undefined}
+            // A focusable column with no role has no name, so its outcome would be read without its Stage.
+            role={columnFocusable ? 'group' : undefined}
+            aria-label={columnFocusable ? stageAccessibleName(stage) : undefined}
           >
             <div className="flex min-w-0 items-center gap-2">
               {renderTitle ? renderTitle({ label, speechLabel, colorClass }) : <span className={cn('min-w-0 max-w-full truncate', colorClass)}>{label}</span>}
@@ -49,7 +59,7 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
               <ParallelBadge count={parallelCount} />
             </div>
             {outcome && (
-              <span className={cn('text-xs text-muted-foreground', expanded ? 'break-words' : 'truncate')} data-stage-outcome>
+              <span className={cn('text-xs text-muted-foreground', outcomeIsClamped(expanded, fullOutcome) ? 'truncate' : 'break-words')} data-stage-outcome>
                 {outcome}
               </span>
             )}

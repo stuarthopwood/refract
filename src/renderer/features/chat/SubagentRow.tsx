@@ -72,8 +72,8 @@ export function SubagentCardBody({ agent, children }: { agent: SubAgentItem; chi
   const hasProvenanceRow = causalBadgeText(triggeredBy) != null || (filesTouched?.length ?? 0) > 0
   const hasLive = running && (heartbeatText(liveDetail) != null || (subSteps?.length ?? 0) > 0)
   return (
-    <div className={cn('min-w-0 space-y-1.5 rounded-lg border bg-surface-subtle p-2', running ? 'border-state-working/50' : 'border-border')}>
-      <div className="flex min-w-0 items-center gap-1.5 text-xs">
+    <div className={cn('min-w-0 space-y-2 rounded-lg border bg-surface-subtle p-2', running ? 'border-state-working/50' : 'border-border')}>
+      <div className="flex min-w-0 items-center gap-2 text-xs">
         <span className="flex shrink-0 items-center gap-1">
           <SubagentStatusGlyph status={status} />
           {status !== 'finished' && <span aria-hidden="true" className="text-muted-foreground">{SUBAGENT_STATUS_LABEL[status]}</span>}
@@ -94,7 +94,7 @@ export function SubagentCardBody({ agent, children }: { agent: SubAgentItem; chi
         </div>
       )}
       {hasLive && (
-        <div className="space-y-1.5 border-t border-divider pt-1.5">
+        <div className="space-y-2 border-t border-divider pt-2">
           <Heartbeat liveDetail={liveDetail} />
           <SubStepList steps={subSteps} />
         </div>

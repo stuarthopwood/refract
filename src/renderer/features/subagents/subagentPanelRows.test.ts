@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
   agentPanelAriaLabel,
+  agentPanelDescription,
   buildPanelRows,
   isPanelStageOpen,
+  panelDurationMs,
   panelKeyAction,
   panelStageToggleId,
   resolveSelectedKey,
   stageHoldsTarget,
   stageOfPendingFocus,
+  stagePanelDescription,
   typeaheadIndex
 } from './subagentPanelRows'
 import { subagentSummary } from './viewModel/testFixtures'
@@ -158,5 +161,45 @@ describe('typeaheadIndex', () => {
 
   it('returns -1 when nothing matches', () => {
     expect(typeaheadIndex(rows, 0, 'zzz')).toBe(-1)
+  })
+})
+
+describe('agentPanelDescription (what the short name leaves out)', () => {
+  const [stage] = scenario().stages
+  const agent = { ...stage!.agents[0]!, role: 'Reviewer', duration: '2m', whatItDid: 'Found 3 issues', filesTouched: ['src/a.ts', 'src/b.ts', 'src/a.ts'] }
+
+  it('joins role, duration, outcome and the whole file list', () => {
+    expect(agentPanelDescription(agent)).toBe('Reviewer. 2m. Found 3 issues. Files touched: a.ts, b.ts')
+  })
+
+  it('leaves the ticking duration out while the agent runs', () => {
+    expect(agentPanelDescription({ ...agent, status: 'running' })).not.toContain('2m')
+  })
+
+  it('is empty for an agent with nothing to add', () => {
+    expect(agentPanelDescription({ ...agent, role: undefined, duration: undefined, whatItDid: undefined, filesTouched: undefined })).toBe('')
+  })
+})
+
+describe('row descriptions', () => {
+  it('gives a Stage the outcome line its header shows and an agent its own description', () => {
+    for (const row of buildPanelRows(scenario().stages, () => true)) {
+      expect(row.description).toBe(row.kind === 'stage' ? stagePanelDescription(row.stage) : agentPanelDescription(row.agent))
+    }
+  })
+})
+
+describe('panelDurationMs', () => {
+  it('ticks from the first Stage while running', () => {
+    expect(panelDurationMs({ startedAt: 1_000, totalDurationMs: 9 }, true, 6_000)).toBe(5_000)
+  })
+
+  it('never goes negative when the held clock is older than the first Stage', () => {
+    expect(panelDurationMs({ startedAt: 9_000, totalDurationMs: 9 }, true, 6_000)).toBe(0)
+  })
+
+  it('uses the view-model total once settled, and nothing before a start is known', () => {
+    expect(panelDurationMs({ startedAt: 1_000, totalDurationMs: 9 }, false, 6_000)).toBe(9)
+    expect(panelDurationMs({ startedAt: undefined, totalDurationMs: 9 }, true, 6_000)).toBeUndefined()
   })
 })

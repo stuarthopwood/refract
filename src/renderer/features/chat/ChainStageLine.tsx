@@ -59,7 +59,14 @@ function ChainAgentEntry({ item, agent, sessionId }: { item: SubagentItem; agent
 
 // A labelled `role="group"` per stage: `SpineList`'s `<ol>` only gives an unlabelled "1 of 2".
 // A running Stage opens and a settled one collapses on its own; the developer's own toggle wins for the Session (FR-149).
-// The header and outcome always show, and the chevron is a plain button so automatic changes never move focus.
+// The header and outcome always show, and the chevron is a plain button so automatic changes never move focus,
+// except an auto-collapse that would strand focus in the content, which hands it to the chevron.
+
+/** True when an auto-collapse is about to make the content inert while focus sits inside it (WCAG 2.4.3); the chevron then takes focus. */
+export function shouldMoveFocusToChevron(wasExpanded: boolean, expanded: boolean, focusInsideContent: boolean): boolean {
+  return wasExpanded && !expanded && focusInsideContent
+}
+
 export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: string | null }) {
   const { status } = stage.view
   const { parallelCount } = stageRowModel(stage.view)
@@ -68,8 +75,19 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
   const jumpToStageRow = React.useContext(JumpToStageContext)
   const canJump = rowVisibility(stage, transcriptDisplay) === 'visible' && sessionId != null && jumpToStageRow != null
   const speechHeading = stageHeading(stage.stageIndex, stage.view.cleanTitle, true)
+  const contentRef = React.useRef<HTMLDivElement>(null)
+  const chevronRef = React.useRef<HTMLButtonElement>(null)
+  const wasExpandedRef = React.useRef(expanded)
+  // A layout effect: it runs after the commit that makes `FadeCollapse` inert but before the browser drops focus to <body>.
+  React.useLayoutEffect(() => {
+    const wasExpanded = wasExpandedRef.current
+    wasExpandedRef.current = expanded
+    const active = document.activeElement
+    if (shouldMoveFocusToChevron(wasExpanded, expanded, active != null && contentRef.current?.contains(active) === true)) chevronRef.current?.focus({ preventScroll: true })
+  }, [expanded])
   return (
-    <div role="group" aria-label={stageAccessibleName(stage.view)} className="@container text-sm" data-status={status}>
+    // aria-live="off": the running Stage's outcome line changes often and must not be announced; the settle announcer speaks for it.
+    <div role="group" aria-label={stageAccessibleName(stage.view)} aria-live="off" className="@container text-sm" data-status={status}>
       <StageHeader
         stage={stage.view}
         expanded={expanded}
@@ -93,16 +111,23 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
             : undefined
         }
         trailing={
-          <Button type="button" variant="ghost" size="icon-xs" aria-expanded={expanded} aria-label={`${speechHeading} agents`} onClick={() => onOpenChange(!expanded)}>
+          <Button
+            ref={chevronRef}
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-expanded={expanded}
+            aria-label={`${speechHeading} agents`}
+            onClick={() => onOpenChange(!expanded)}
+          >
             <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', expanded && 'rotate-90')} />
           </Button>
         }
       />
       {/* pl-8 = icon slot plus gap, so "Uses:" starts under the title. */}
       <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-8 pr-2" />
-      {/* aria-live="off": inside the transcript's role="log", so an automatic expand is not announced as a log addition. */}
       <FadeCollapse show={expanded}>
-        <div aria-live="off">
+        <div ref={contentRef}>
           <SpineList elbows className={stageAgentsGridClass(parallelCount)}>
             {stage.items.map((item, index) => (
               <SpineItem key={item.id} isNew={false} className={stageAgentItemClass(parallelCount)}>

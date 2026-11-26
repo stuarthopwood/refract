@@ -3,7 +3,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { nextAnnouncement, ProgressStrip, type ProgressStripProps } from './ProgressStrip'
+import { nextAnnouncement, ProgressStrip, SEGMENT_CLASS, type ProgressStripProps } from './ProgressStrip'
 
 function render(props: Partial<ProgressStripProps> = {}) {
   return renderToStaticMarkup(createElement(ProgressStrip, { value: 1, max: 4, label: '1/4 done', ...props }))
@@ -18,14 +18,26 @@ describe('ProgressStrip segments', () => {
     expect(states).toEqual(['done', 'running', 'queued'])
   })
 
-  it('maps done to a solid success fill, queued to a hairline on the muted surface, running to a pulsing outline', () => {
+  it('maps done to a solid success fill, queued to a muted-foreground edge on the muted surface, running to a pulsing outline', () => {
     const html = render({ segments })
     expect(html).toMatch(/data-segment="done"[^>]*class="[^"]*bg-severity-success/)
-    expect(html).toMatch(/data-segment="queued"[^>]*class="[^"]*border-divider[^"]*bg-muted/)
+    expect(html).toMatch(/data-segment="queued"[^>]*class="[^"]*border-muted-foreground[^"]*bg-muted/)
     const running = html.match(/data-segment="running"[^>]*class="([^"]*)"/)![1]
     expect(running).toContain('border-2')
     expect(running).toContain('border-state-working')
     expect(running).toContain('animate-pulse')
+  })
+
+  it('keeps the queued edge off the 1.39:1 divider token, which is below the 3:1 non-text floor', () => {
+    expect(SEGMENT_CLASS.queued).not.toContain('border-divider')
+  })
+
+  it('tells the three states apart without fills under forced colours: thick solid, dashed, highlight outline', () => {
+    expect(SEGMENT_CLASS.done).toContain('forced-colors:border-4')
+    expect(SEGMENT_CLASS.done).toContain('forced-colors:border-solid')
+    expect(SEGMENT_CLASS.queued).toContain('forced-colors:border-dashed')
+    expect(SEGMENT_CLASS.running).toContain('forced-colors:border-[Highlight]')
+    expect(SEGMENT_CLASS.running).not.toContain('forced-colors:border-dashed')
   })
 
   it('stops the running pulse under reduced motion and keeps the outline', () => {

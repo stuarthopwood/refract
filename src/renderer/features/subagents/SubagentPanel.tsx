@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { KeyboardEvent } from 'react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -8,7 +8,7 @@ import { ToolGroupRow } from '../chat/ToolRow'
 import { LinkContext, Markdown } from '../chat/Markdown'
 import { NoticeRow } from '../chat/NoticeRow'
 import { overallStatus } from '../chat/subagentChainStatus'
-import { PanelHeader, PanelTree } from './SubagentPanelTree'
+import { AgentDetailSummary, LivePanelHeader, PanelTree } from './SubagentPanelTree'
 import {
   buildPanelRows,
   isPanelStageOpen,
@@ -16,27 +16,29 @@ import {
   panelStageToggleId,
   resolveSelectedKey,
   stageOfPendingFocus,
-  typeaheadIndex
+  typeaheadIndex,
+  type PanelAgentRow
 } from './subagentPanelRows'
 import { summarizeSubagentStatuses } from './subagentStatus'
 import { selectScenarioFromSummaries } from './viewModel'
 
-// Stable singleton: a fresh `?? {}` each render would look like a changed snapshot to zustand.
+// Stable singletons: a fresh `?? {}` or `?? []` each render would look like a changed snapshot to zustand.
 const NO_TOGGLES: Record<string, boolean> = {}
+const NO_STREAM: readonly never[] = []
 
 export function SubagentPanel({ sessionId }: { sessionId: string }) {
   const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
   const selectedId = useSubagentPanelStore((s) => s.selectedId)
   const storeSelectedKey = useSubagentPanelStore((s) => s.selectedKey)
   const selectSubagent = useSubagentPanelStore((s) => s.selectSubagent)
-  const streams = useSubagentPanelStore((s) => s.streams)
+  // Only the selected agent's stream: a token arriving for another agent must not re-render this panel.
+  const selectedStream = useSubagentPanelStore((s) => (s.selectedId ? s.streams[s.selectedId] : undefined)) ?? NO_STREAM
   const pendingFocusSubagentId = useSubagentPanelStore((s) => s.pendingFocusSubagentId)
   const pendingFocusSubagentKey = useSubagentPanelStore((s) => s.pendingFocusSubagentKey)
   const clearPendingFocus = useSubagentPanelStore((s) => s.clearPendingFocus)
   const toggles = useStageToggleStore((s) => s.bySession[sessionId] ?? NO_TOGGLES)
   const setManualOpen = useStageToggleStore((s) => s.setManualOpen)
-  const selectedStream = selectedId ? (streams[selectedId] ?? []) : []
-  const grouped = groupToolItems(selectedStream)
+  const grouped = useMemo(() => groupToolItems([...selectedStream]), [selectedStream])
 
   // The same view-model the chat card reads, so both surfaces show one goal, title, outcome and count (FR-150).
   const scenario = useMemo(() => selectScenarioFromSummaries(subagents), [subagents])
@@ -56,16 +58,8 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     return found === -1 ? 0 : found
   }, [rows, selectedKey])
 
-  // Wall clock from the first Stage while running so the header ticks; settled, the view-model's total.
   const status = overallStatus(summarizeSubagentStatuses(allAgents.map((agent) => agent.status)))
-  const isRunning = status === 'running'
-  const [, forceTick] = useReducer((count: number) => count + 1, 0)
-  useEffect(() => {
-    if (!isRunning) return
-    const interval = setInterval(forceTick, 1000)
-    return () => clearInterval(interval)
-  }, [isRunning])
-  const durationMs = scenario.startedAt == null ? undefined : isRunning ? Date.now() - scenario.startedAt : scenario.totalDurationMs
+  const selectedAgent = useMemo(() => allAgents.find((agent) => agent.key === selectedKey), [allAgents, selectedKey])
 
   useEffect(() => {
     if (!pendingFocusSubagentKey && !pendingFocusSubagentId) return
@@ -84,33 +78,51 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     clearPendingFocus()
   }, [pendingFocusSubagentId, pendingFocusSubagentKey, clearPendingFocus, rows, scenario, sessionId, setManualOpen])
 
-  function moveToRow(index: number): void {
-    const row = rows[index]
+  // The handlers read the latest rows through a ref, so their identity never changes and the memoised tree rows are not re-rendered by it.
+  const rowsRef = useRef(rows)
+  rowsRef.current = rows
+
+  const moveToRow = useCallback((index: number): void => {
+    const row = rowsRef.current[index]
     if (row) rowRefs.current.get(row.key)?.focus()
-  }
+  }, [])
 
-  function handleTypeahead(char: string, fromIndex: number): void {
-    clearTimeout(typeaheadRef.current.timer)
-    typeaheadRef.current.buffer += char.toLowerCase()
-    typeaheadRef.current.timer = window.setTimeout(() => {
-      typeaheadRef.current.buffer = ''
-    }, 500)
-    const found = typeaheadIndex(rows, fromIndex, typeaheadRef.current.buffer)
-    if (found !== -1) moveToRow(found)
-  }
+  const handleTypeahead = useCallback(
+    (char: string, fromIndex: number): void => {
+      clearTimeout(typeaheadRef.current.timer)
+      typeaheadRef.current.buffer += char.toLowerCase()
+      typeaheadRef.current.timer = window.setTimeout(() => {
+        typeaheadRef.current.buffer = ''
+      }, 500)
+      const found = typeaheadIndex(rowsRef.current, fromIndex, typeaheadRef.current.buffer)
+      if (found !== -1) moveToRow(found)
+    },
+    [moveToRow]
+  )
 
-  function handleRowKeyDown(event: KeyboardEvent<HTMLDivElement>, index: number): void {
-    // A key pressed on a control inside the row (a "Uses:" link, the chevron) belongs to that control.
-    if (event.target !== event.currentTarget) return
-    const action = panelKeyAction(rows, index, event.key)
-    if (action) {
-      event.preventDefault()
-      if (action.type === 'focus') moveToRow(action.index)
-      else setManualOpen(sessionId, panelStageToggleId(action.stageId), action.open)
-      return
-    }
-    if (event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) handleTypeahead(event.key, index)
-  }
+  const handleRowKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>, index: number): void => {
+      // A key pressed on a control inside the row (a "Uses:" link, the chevron) belongs to that control.
+      if (event.target !== event.currentTarget) return
+      const action = panelKeyAction(rowsRef.current, index, event.key)
+      if (action) {
+        event.preventDefault()
+        if (action.type === 'focus') moveToRow(action.index)
+        else setManualOpen(sessionId, panelStageToggleId(action.stageId), action.open)
+        return
+      }
+      if (event.key.length === 1 && event.key !== ' ' && !event.ctrlKey && !event.metaKey && !event.altKey) handleTypeahead(event.key, index)
+    },
+    [moveToRow, handleTypeahead, setManualOpen, sessionId]
+  )
+
+  const rowRef = useCallback((key: string, element: HTMLDivElement | null) => {
+    if (element) rowRefs.current.set(key, element)
+    else rowRefs.current.delete(key)
+  }, [])
+  // Issue #941 part 2: a Stage row has no single subagent to stream, so only an agent row selects.
+  const onFocusRow = useCallback((row: PanelAgentRow) => void selectSubagent(row.agent.id, row.agent.key), [selectSubagent])
+  const onToggleStage = useCallback((stageId: string, open: boolean) => setManualOpen(sessionId, panelStageToggleId(stageId), open), [setManualOpen, sessionId])
 
   return (
     <LinkContext.Provider value={sessionId}>
@@ -121,21 +133,8 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
           {rows.length > 0 ? (
             // @container: the shared card pieces size themselves from this pane's width, not the viewport (FR-150 c).
             <div className="@container h-full overflow-y-auto px-4 py-2">
-              <PanelHeader scenario={scenario} status={status} durationMs={durationMs} />
-              <PanelTree
-                rows={rows}
-                selectedKey={selectedKey}
-                tabbableIndex={tabbableIndex}
-                sessionId={sessionId}
-                rowRef={(key, element) => {
-                  if (element) rowRefs.current.set(key, element)
-                  else rowRefs.current.delete(key)
-                }}
-                onKeyDown={handleRowKeyDown}
-                // Issue #941 part 2: a Stage row has no single subagent to stream, so only an agent row selects.
-                onFocusRow={(row) => void selectSubagent(row.agent.id, row.agent.key)}
-                onToggleStage={(stageId, open) => setManualOpen(sessionId, panelStageToggleId(stageId), open)}
-              />
+              <LivePanelHeader scenario={scenario} status={status} />
+              <PanelTree rows={rows} selectedKey={selectedKey} tabbableIndex={tabbableIndex} sessionId={sessionId} rowRef={rowRef} onKeyDown={handleRowKeyDown} onFocusRow={onFocusRow} onToggleStage={onToggleStage} />
             </div>
           ) : (
             <p className="px-2 py-1 text-sm text-muted-foreground">No agents running.</p>
@@ -146,6 +145,8 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
           <ScrollArea className="h-full">
             <div className="flex flex-col gap-2 px-4 py-2">
               {selectedId === null && <p className="px-1 py-2 text-sm text-muted-foreground">Select a subagent to see its live stream.</p>}
+              {/* The tree row clamps the outcome and folds the files behind "+N" (not a tab stop there); the whole of both is here. */}
+              {selectedAgent && <AgentDetailSummary agent={selectedAgent} />}
               {grouped.map((item) =>
                 isToolGroup(item) ? (
                   <ToolGroupRow key={item.id} group={item} summaryWrap />

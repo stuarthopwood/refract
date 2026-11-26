@@ -51,8 +51,23 @@ export function SubagentsHeaderMeta({ status, durationMs }: { status: SubagentRo
   )
 }
 
-/** The segmented stage bar and the Goal strip under a header; shared with the panel's header (FR-150). */
-export function SubagentsHeaderBelow({ stageStates, goal, goalClassName }: { stageStates: readonly ProgressSegmentState[]; goal?: string; goalClassName?: string }) {
+/** The live region's text when every Stage settles; only the chat card announces, so the panel next to it passes `false` and stays silent. */
+export function stagesDoneText(announceDone: boolean): string | undefined {
+  return announceDone ? 'All stages done' : undefined
+}
+
+/** The segmented stage bar and the Goal strip under a header; shared with the panel's header (FR-150). The panel passes `announceDone={false}`: only the chat card speaks "All stages done". */
+export function SubagentsHeaderBelow({
+  stageStates,
+  goal,
+  goalClassName,
+  announceDone = true
+}: {
+  stageStates: readonly ProgressSegmentState[]
+  goal?: string
+  goalClassName?: string
+  announceDone?: boolean
+}) {
   const total = stageStates.length
   const done = stageStates.filter((state) => state === 'done').length
   return (
@@ -65,7 +80,7 @@ export function SubagentsHeaderBelow({ stageStates, goal, goalClassName }: { sta
           max={total}
           segments={stageStates}
           valueText={formatProgressValueText(done, total)}
-          doneText="All stages done"
+          doneText={stagesDoneText(announceDone)}
         />
       )}
       <GoalStrip goal={goal} className={goalClassName} />

@@ -67,8 +67,12 @@ describe('stageAccessibleName', () => {
     expect(stageAccessibleName(stage)).toBe('Stage 2, Gate, 3 done')
   })
 
-  it('adds "Running" while running and the duration when known', () => {
-    expect(stageAccessibleName({ ...stage, status: 'running', durationMs: 65_000 })).toMatch(/^Stage 2, Gate, 3 done, Running, 1m/)
+  it('adds "Running" while running and leaves the ticking duration out', () => {
+    expect(stageAccessibleName({ ...stage, status: 'running', durationMs: 65_000 })).toBe('Stage 2, Gate, 3 done, Running')
+  })
+
+  it('adds the duration once the Stage has settled', () => {
+    expect(stageAccessibleName({ ...stage, durationMs: 65_000 })).toMatch(/^Stage 2, Gate, 3 done, 1m/)
   })
 
   it('falls back to the bare Stage number without a title', () => {
