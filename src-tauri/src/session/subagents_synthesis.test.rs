@@ -19,6 +19,8 @@ struct FakeExec {
     calls: Mutex<Vec<(Vec<String>, Option<Duration>)>>,
     /// The `@file` message's path and its contents, read while the call is running.
     prompt_files: Mutex<Vec<(std::path::PathBuf, Option<String>)>>,
+    /// Signalled once a prompt file has been read, for a test that must act only after that.
+    recorded: tokio::sync::Notify,
 }
 
 impl FakeExec {
@@ -27,6 +29,7 @@ impl FakeExec {
             behaviour,
             calls: Mutex::new(Vec::new()),
             prompt_files: Mutex::new(Vec::new()),
+            recorded: tokio::sync::Notify::new(),
         }
     }
 
@@ -49,6 +52,7 @@ impl FakeExec {
                     .join(name);
                 let contents = tokio::fs::read_to_string(&path).await.ok();
                 self.prompt_files.lock().unwrap().push((path, contents));
+                self.recorded.notify_one();
             }
             match &self.behaviour {
                 Behaviour::Reply(reply) => Ok(reply.clone()),
@@ -391,10 +395,22 @@ async fn two_concurrent_calls_use_distinct_prompt_files_and_remove_both() {
     assert!(files.iter().all(|(path, _)| !path.exists()));
 }
 
-#[tokio::test(start_paused = true)]
+// The clock is frozen only once the fake has read its prompt file. Under `start_paused` it would jump
+// 30 s whenever the fake waited on the scratch-dir lock another test holds, expiring the call too early.
+#[tokio::test]
 async fn a_call_that_never_returns_times_out_to_none_is_not_retried_and_removes_its_prompt_file() {
     let exec = FakeExec::new(Behaviour::Hang);
-    assert_eq!(run_synthesis(&exec, "a/small", &input(2)).await, None);
+    let input = input(2);
+    let expire_once_recorded = async {
+        exec.recorded.notified().await;
+        tokio::time::pause();
+        tokio::time::advance(SYNTHESIS_TIMEOUT).await;
+    };
+    let (result, ()) = tokio::join!(
+        run_synthesis(&exec, "a/small", &input),
+        expire_once_recorded
+    );
+    assert_eq!(result, None);
     assert_eq!(exec.call_count(), 1);
     assert_the_one_prompt_file_is_gone(&exec);
 }

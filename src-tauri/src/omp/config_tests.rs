@@ -166,10 +166,16 @@ async fn read_capped_output_kills_the_child_and_returns_immediately_once_stdout_
     let err = result.unwrap_err();
     assert_eq!(err.code, OmpConfigErrorCode::ParseFailed);
 
-    // The child must actually have been killed, not left running to finish its own ~29s delay.
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // The kill lands asynchronously, so poll for the exit. A child left running would outlive the
+    // bound by its whole ~29s delay.
+    let exited = tokio::time::timeout(Duration::from_secs(5), async {
+        while child.try_wait().expect("try_wait").is_none() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await;
     assert!(
-        child.try_wait().expect("try_wait").is_some(),
+        exited.is_ok(),
         "child should have been killed by read_capped_output, not left running"
     );
 }
@@ -199,4 +205,63 @@ async fn the_default_call_with_timeout_delegates_to_call() {
         .unwrap();
     assert_eq!(reply, "reply");
     assert_eq!(*exec.0.lock().unwrap(), vec![args]);
+}
+
+// A real `omp` call holds `OMP_INVOCATION_LOCK` for seconds. An in-process executor that queued
+// behind it starved unrelated tests, so each test below holds the lock the way a real call would.
+#[tokio::test]
+async fn a_config_call_on_an_in_process_executor_never_waits_for_the_real_executors_lock() {
+    let _held = OMP_INVOCATION_LOCK.lock().await;
+    let executor = RecordingExecutor {
+        calls: AsyncMutex::new(Vec::new()),
+        response: r#"{"key":"x","value":1}"#.to_string(),
+    };
+    let read = tokio::time::timeout(
+        Duration::from_secs(5),
+        get_config_with(&executor, "modelRoles", &[]),
+    )
+    .await;
+    assert!(read
+        .expect("the call queued behind the real executor's lock")
+        .is_ok());
+}
+
+#[tokio::test]
+async fn a_refused_real_call_does_not_queue_behind_the_lock() {
+    let _held = OMP_INVOCATION_LOCK.lock().await;
+    let guard = refuse_real_omp::Forbid::new();
+    let args = vec!["config".to_string(), "list".to_string()];
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        RealOmpExecutor.call_config(&args, "failed", &[]),
+    )
+    .await;
+    let err = result
+        .expect("a refused call queued behind the lock")
+        .expect_err("the guard must refuse the call");
+    assert_eq!(err.code, OmpConfigErrorCode::OmpFailed);
+    assert_eq!(guard.refused(), 1);
+}
+
+struct NeverAnswers;
+
+impl OmpExecutor for NeverAnswers {
+    fn call<'a>(
+        &'a self,
+        _args: &'a [String],
+        _failure_message: &'a str,
+        _strip_env_vars: &'a [&'a str],
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        Box::pin(std::future::pending())
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_default_config_call_is_bounded_by_the_config_deadline() {
+    let args = vec!["config".to_string(), "list".to_string()];
+    let err = NeverAnswers
+        .call_config(&args, "failed", &[])
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, OmpConfigErrorCode::Timeout);
 }

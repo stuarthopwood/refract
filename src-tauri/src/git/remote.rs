@@ -134,6 +134,14 @@ fn owner_repo_from_path(path: &str) -> Option<(String, String)> {
 
 /// Read-only, bounded remote check; `None` means it timed out, `Unknown` means it ran but could not tell.
 pub async fn repository_remote(repo_path: &Path) -> Option<RepositoryRemoteKind> {
+    repository_remote_within(repo_path, Duration::from_millis(REMOTE_CHECK_TIMEOUT_MS)).await
+}
+
+/// `repository_remote` with the bound given, so a test can outlast a loaded machine's slow `git` start.
+async fn repository_remote_within(
+    repo_path: &Path,
+    bound: Duration,
+) -> Option<RepositoryRemoteKind> {
     let git_dir_exists = tokio::fs::symlink_metadata(repo_path.join(".git"))
         .await
         .is_ok();
@@ -141,7 +149,7 @@ pub async fn repository_remote(repo_path: &Path) -> Option<RepositoryRemoteKind>
         return Some(RepositoryRemoteKind::Unknown);
     }
     let timed = tokio::time::timeout(
-        Duration::from_millis(REMOTE_CHECK_TIMEOUT_MS),
+        bound,
         git_raw(
             repo_path,
             &["config", "--local", "--includes", "--list", "-z"],
@@ -196,6 +204,9 @@ pub async fn repository_remote(repo_path: &Path) -> Option<RepositoryRemoteKind>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Far above the production bound: these tests check parsing, and a real `git` start can stall under the full suite.
+    const TEST_BOUND: Duration = Duration::from_secs(60);
 
     fn temp_dir(label: &str) -> std::path::PathBuf {
         let dir = crate::test_scratch::path(format!(
@@ -263,7 +274,7 @@ mod tests {
     async fn repository_remote_returns_unknown_when_no_git_entry_exists() {
         let dir = temp_dir("no-git");
         assert_eq!(
-            repository_remote(&dir).await,
+            repository_remote_within(&dir, TEST_BOUND).await,
             Some(RepositoryRemoteKind::Unknown)
         );
     }
@@ -282,7 +293,7 @@ mod tests {
             ],
         );
         assert_eq!(
-            repository_remote(&dir).await,
+            repository_remote_within(&dir, TEST_BOUND).await,
             Some(RepositoryRemoteKind::Has {
                 host: "github.com".to_string(),
                 owner: Some("owner".to_string()),
@@ -297,7 +308,7 @@ mod tests {
         let dir = temp_dir("no-remote");
         run_git(&dir, &["init", "-q"]);
         assert_eq!(
-            repository_remote(&dir).await,
+            repository_remote_within(&dir, TEST_BOUND).await,
             Some(RepositoryRemoteKind::None)
         );
     }
