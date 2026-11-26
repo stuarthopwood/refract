@@ -64,3 +64,64 @@ async fn the_current_conversation_is_flagged() {
     let list = list_conversations(Some(&text), Some(&current), Some(1)).await;
     assert!(list[0].is_current);
 }
+
+// ---- saved-history labelling (the stopped-agent path of `inject_saved_history`) ----
+
+struct StubLookup;
+
+impl crate::omp::transcript::synthesis_labels::SynthesisLookup for StubLookup {
+    fn labels(
+        &self,
+        tool_call_id: &str,
+        _spec_index: u32,
+    ) -> crate::omp::transcript::synthesis_labels::SubagentLabels {
+        crate::omp::transcript::synthesis_labels::SubagentLabels {
+            role: Some(format!("role-of-{tool_call_id}")),
+            overall_goal: Some("Ship it".to_string()),
+        }
+    }
+}
+
+fn saved_subagent_rows() -> Vec<std::sync::Arc<crate::omp::transcript::TranscriptItem>> {
+    let history = vec![
+        serde_json::json!({ "role": "assistant", "content": [{
+            "type": "toolCall", "id": "call-1", "name": "task",
+            "arguments": { "tasks": [{ "name": "ImplA", "task": "do a" }] }
+        }] }),
+        serde_json::json!({ "role": "toolResult", "toolCallId": "call-1", "toolName": "task",
+            "isError": false, "content": [],
+            "details": { "progress": [{ "id": "job-0", "status": "done" }] } }),
+    ];
+    crate::omp::transcript::TranscriptState::from_history(&history)
+        .items()
+        .to_vec()
+}
+
+fn subagent_rows(value: &serde_json::Value) -> Vec<&serde_json::Value> {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["kind"] == "subagent")
+        .collect()
+}
+
+#[test]
+fn saved_subagent_rows_are_labelled_when_a_lookup_exists() {
+    let items = saved_subagent_rows();
+    let value = super::saved_items_transcript(&items, Some(&StubLookup));
+    let rows = subagent_rows(&value);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["role"], "role-of-call-1");
+    assert_eq!(rows[0]["overallGoal"], "Ship it");
+}
+
+#[test]
+fn saved_rows_are_unchanged_when_there_is_no_lookup() {
+    let items = saved_subagent_rows();
+    let value = super::saved_items_transcript(&items, None);
+    assert_eq!(value, serde_json::json!(items));
+    let rows = subagent_rows(&value);
+    assert_eq!(rows.len(), 1);
+    assert!(rows[0].get("role").is_none());
+}

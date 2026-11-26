@@ -17,6 +17,8 @@ enum Behaviour {
 struct FakeExec {
     behaviour: Behaviour,
     calls: Mutex<Vec<(Vec<String>, Option<Duration>)>>,
+    /// The `@file` message's path and its contents, read while the call is running.
+    prompt_files: Mutex<Vec<(std::path::PathBuf, Option<String>)>>,
 }
 
 impl FakeExec {
@@ -24,6 +26,7 @@ impl FakeExec {
         Self {
             behaviour,
             calls: Mutex::new(Vec::new()),
+            prompt_files: Mutex::new(Vec::new()),
         }
     }
 
@@ -37,7 +40,16 @@ impl FakeExec {
 
     fn respond<'a>(&'a self, args: &[String], deadline: Option<Duration>) -> CallFuture<'a> {
         self.calls.lock().unwrap().push((args.to_vec(), deadline));
+        let message = args.last().cloned().unwrap_or_default();
         Box::pin(async move {
+            if let Some(name) = message.strip_prefix('@') {
+                let path = crate::omp::config::ensure_scratch_dir()
+                    .await
+                    .unwrap()
+                    .join(name);
+                let contents = tokio::fs::read_to_string(&path).await.ok();
+                self.prompt_files.lock().unwrap().push((path, contents));
+            }
             match &self.behaviour {
                 Behaviour::Reply(reply) => Ok(reply.clone()),
                 Behaviour::Fail => Err(OmpConfigError::new(OmpConfigErrorCode::OmpFailed, "boom")),
@@ -319,7 +331,25 @@ async fn one_input_makes_one_call_with_the_tiny_selector_and_the_prompt() {
         assert!(args.iter().any(|a| a == flag), "missing {flag}");
     }
     assert!(args.contains(&"--model=a/small".to_string()));
-    assert_eq!(args.last().unwrap(), &build_prompt(&input));
+    // The prompt rides in an `@file` in the scratch cwd, never as argv text.
+    let message = args.last().unwrap();
+    assert!(message.starts_with("@synthesis-prompt-") && message.ends_with(".md"));
+    assert!(!args.iter().any(|a| a.contains("Do job 0")));
+    let files = exec.prompt_files.lock().unwrap();
+    assert_eq!(files[0].1.as_deref(), Some(build_prompt(&input).as_str()));
+    // The file is gone once the call is over.
+    assert!(!files[0].0.exists());
+}
+
+#[tokio::test]
+async fn a_batch_shim_omp_makes_no_call() {
+    for shim in ["C:/bin/omp.cmd", "C:/bin/omp.BAT"] {
+        let exec = FakeExec::replying(GOOD_REPLY);
+        let path = std::path::Path::new(shim);
+        let result = run_synthesis_with(&exec, "a/small", &input(2), Some(path)).await;
+        assert_eq!(result, None);
+        assert_eq!(exec.call_count(), 0);
+    }
 }
 
 #[tokio::test]

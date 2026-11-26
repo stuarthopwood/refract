@@ -76,7 +76,6 @@ async fn inject_saved_history(
     session: &crate::store::registry::Session,
     agent: &crate::session::SessionAgent,
 ) {
-    use crate::omp::transcript::synthesis_labels::labelled_copy;
     use crate::session::saved_history::{notice_for, SavedHistory};
     use crate::session::saved_history_cache::load_saved_history;
     use crate::session::subagents::synthesis_lookup;
@@ -98,16 +97,29 @@ async fn inject_saved_history(
     let transcript = match notice_for(&history) {
         Some(notice) => serde_json::json!([notice]),
         None => match history {
-            // A copy, so the shared cached history never carries a label a later synthesis writes.
-            SavedHistory::Items(items) => match synthesis_lookup(agent).await {
-                Some(lookup) => serde_json::json!(labelled_copy(&items, lookup.as_ref())),
-                None => serde_json::json!(items),
-            },
+            SavedHistory::Items(items) => {
+                let lookup = synthesis_lookup(agent).await;
+                saved_items_transcript(&items, lookup.as_deref())
+            }
             _ => return,
         },
     };
     if let Some(obj) = runtime.as_object_mut() {
         obj.insert("transcript".to_string(), transcript);
+    }
+}
+
+/// The saved rows as JSON, labelled from `lookup` when there is one.
+/// A labelled copy, so the shared cached history never carries a label a later synthesis writes.
+fn saved_items_transcript(
+    items: &[std::sync::Arc<crate::omp::transcript::TranscriptItem>],
+    lookup: Option<&dyn crate::omp::transcript::synthesis_labels::SynthesisLookup>,
+) -> Value {
+    match lookup {
+        Some(lookup) => serde_json::json!(crate::omp::transcript::synthesis_labels::labelled_copy(
+            items, lookup
+        )),
+        None => serde_json::json!(items),
     }
 }
 
