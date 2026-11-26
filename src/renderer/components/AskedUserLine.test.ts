@@ -1,8 +1,16 @@
 // The repo has no jsdom: the card is rendered to a string and the markup is asserted on.
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { AskedUserAnswer, AskedUserLineModel, AskedUserQuestion } from '@/features/chat/askedUserLine'
+
+// The real Markdown renderer is under test (#2033); the state barrel it imports needs a browser `window`, so it is stubbed.
+vi.mock('@/state', () => ({
+  notifyPersistentError: vi.fn(),
+  useSyntaxTheme: () => 'github-dark',
+  useSessionsStore: (select: (state: { sessions: [] }) => unknown) => select({ sessions: [] })
+}))
 import { AskedUserLine } from './AskedUserLine'
 
 const pick = (label: string, extra: Partial<AskedUserAnswer> = {}): AskedUserAnswer => ({ label, other: false, recommended: false, ...extra })
@@ -10,7 +18,7 @@ const question = (prompt: string, answers: AskedUserAnswer[] = [pick('Postgres')
 const ANSWERED: AskedUserLineModel = { status: 'answered', questions: [question('Which database?')] }
 
 function render(model: AskedUserLineModel, open = false) {
-  return renderToStaticMarkup(createElement(AskedUserLine, { model, defaultOpen: open }))
+  return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AskedUserLine, { model, defaultOpen: open })))
 }
 
 /** The text of every element carrying `attribute`, in order. */
@@ -166,5 +174,36 @@ describe('AskedUserLine expanded (FR-139)', () => {
   it('uses theme tokens only, never a hex colour', () => {
     const html = render({ status: 'answered', questions: [question('Which?', [pick('A', { recommended: true, note: 'n' })])] }, true)
     expect(html).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+  })
+})
+
+describe('AskedUserLine expanded question renders as Markdown (#2033)', () => {
+  const open = (prompt: string) => render({ status: 'answered', questions: [question(prompt)] }, true)
+
+  it('renders a pipe table in the question as a table, not raw pipes', () => {
+    const html = open('Which plan?\n\n| Plan | Cost |\n| --- | --- |\n| Fast | high |')
+    expect(html).toContain('<table')
+    expect(html).toContain('<th')
+    expect(html).not.toContain('| Fast | high |')
+  })
+
+  it('keeps the digest of a collapsed card as plain first-line text', () => {
+    const html = render({ status: 'answered', questions: [question('Which plan?\n\n| Plan | Cost |\n| --- | --- |')] })
+    expect(html).not.toContain('<table')
+    expect(html).toContain('>Which plan?</span>')
+  })
+
+  it('strips an unsafe link and an image from the question', () => {
+    const html = open('Go [here](javascript:alert(1)) ![pic](https://example.com/i.png)')
+    // The card's aria-label quotes the raw prompt; only an href would be live.
+    expect(html).not.toMatch(/href="javascript:/)
+    expect(html).not.toContain('<a ')
+    expect(html).not.toContain('<img')
+  })
+
+  it('renders a fenced code block in the question as a code block', () => {
+    const html = open('Run this?\n\n```sh\nls -la\n```')
+    expect(html).toContain('<pre')
+    expect(html).not.toContain('```')
   })
 })

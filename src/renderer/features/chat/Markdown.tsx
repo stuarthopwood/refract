@@ -363,6 +363,9 @@ interface MarkdownProps {
   id: string
   // True only for the live assistant-text/thinking rows.
   streaming?: boolean
+  // Set when the text sits inside an interactive control (an Ask option button): links render inert like a streaming message and the
+  // table scroll region is not focusable, so no interactive content nests inside the control.
+  inert?: boolean
   // Overrides the inherited text colour.
   className?: string
   // Pull requests view only: GitHub-style tables.
@@ -376,13 +379,13 @@ interface MarkdownProps {
 // Agent/tool text is untrusted: react-markdown yields a hast tree (never raw HTML) and
 // rehype-sanitize strips anything outside its default schema. `streaming` goes via context so
 // `components` stays static.
-function MarkdownImpl({ text, id, streaming = false, className, githubStyle = false, variant = 'default', resolveImage }: MarkdownProps) {
+function MarkdownImpl({ text, id, streaming = false, inert = false, className, githubStyle = false, variant = 'default', resolveImage }: MarkdownProps) {
   // Replaces (not extends) mdast's default `clobberPrefix`: rehype-sanitize already adds `user-content-`.
   const footnotePrefix = React.useMemo(() => `${id.replace(/[^a-zA-Z0-9_-]/g, '-')}-`, [id])
   const remarkRehypeOptions = React.useMemo(() => ({ clobberPrefix: footnotePrefix }), [footnotePrefix])
-  const options = React.useMemo(() => ({ githubStyle, variant, resolveImage }), [githubStyle, variant, resolveImage])
+  const options = React.useMemo(() => ({ githubStyle, variant, resolveImage, inert }), [githubStyle, variant, resolveImage, inert])
   return (
-    <StreamingContext.Provider value={streaming}>
+    <StreamingContext.Provider value={streaming || inert}>
       <MarkdownOptionsContext.Provider value={options}>
         <div className={cn('space-y-2 text-sm leading-relaxed break-words', className)}>
           <ReactMarkdown

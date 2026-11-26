@@ -404,4 +404,17 @@ describe.each([
     expect(markup).not.toContain('javascript:')
     expect(markup).not.toContain('<img')
   })
+
+  it('renders a link in a description inert, so no link nests inside the option button and a click cannot change the pick', () => {
+    const markup = render(multi, [{ value: 'a', label: 'Alpha', description: 'See [the docs](https://example.com/docs)' }])
+    expect(markup).not.toContain('<a ')
+    expect(markup).not.toContain('href=')
+    expect(markup).toMatch(/<span class="[^"]*underline[^"]*">the docs<\/span>/)
+  })
+
+  it('keeps a table scroll region in a description out of the tab order and unnamed', () => {
+    const markup = render(multi, [{ value: 'a', label: 'Alpha', description: TABLE }])
+    expect(markup).not.toContain('tabindex="0"')
+    expect(markup).not.toContain('role="region"')
+  })
 })

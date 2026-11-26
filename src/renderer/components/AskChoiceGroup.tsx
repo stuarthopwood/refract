@@ -119,7 +119,7 @@ function OptionLabel({ option, labelId, descId, reasonId }: { option: AskChoiceO
       )}
       {option.description && (
         <div id={descId} className="col-start-2 w-full min-w-0">
-          <Markdown id={descId} text={option.description} className="text-xs text-muted-foreground" />
+          <Markdown id={descId} text={option.description} inert className="text-xs text-muted-foreground" />
         </div>
       )}
     </>
