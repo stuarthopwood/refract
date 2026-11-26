@@ -10,15 +10,14 @@ import { JumpToStageContext } from './stageJump'
 import { formatElapsed } from './formatElapsed'
 import { stageHeading } from './stageMeta'
 import type { StageGroup } from './groupSubagentStages'
-import { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './subagentChainStatus'
+import type { SubagentItem } from './subagentChainStatus'
 import {
   chatRowStatus,
   isSubagentSuccessStatus,
   SUBAGENT_STATUS_LABEL,
   SUBAGENT_SUCCESS_TEXT_CLASS,
   SubagentStatusGlyph,
-  subagentStatusTextClass,
-  summarizeSubagentStatuses
+  subagentStatusTextClass
 } from '../subagents/subagentStatus'
 
 function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: string | null }) {
@@ -65,13 +64,9 @@ function ChainAgentEntry({ item, sessionId }: { item: SubagentItem; sessionId: s
 
 // A labelled `role="group"` per stage: `SpineList`'s `<ol>` only gives an unlabelled "1 of 2".
 export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: string | null }) {
-  const counts = summarizeSubagentStatuses(stage.items.map((item) => chatRowStatus(item.status)))
-  const status = overallStatus(counts)
-  const summaryText = status === 'running' ? stageRunningSummary(counts, stage.items.length) : stageSettleSummary(stage)
-  const { startedAt, endedAt } = stageTimeRange(stage.items)
-  const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
-  const stageLabel = stageHeading(stage.stageIndex, stage.label)
-  const speechHeading = stageHeading(stage.stageIndex, stage.label, true)
+  const { status, counts, rollupText: summaryText, durationMs, cleanTitle } = stage.view
+  const stageLabel = stageHeading(stage.stageIndex, cleanTitle)
+  const speechHeading = stageHeading(stage.stageIndex, cleanTitle, true)
   const transcriptDisplay = useSettingsStore((s) => s.settings.transcriptDisplay)
   const jumpToStageRow = React.useContext(JumpToStageContext)
   const canJump = rowVisibility(stage, transcriptDisplay) === 'visible' && sessionId != null && jumpToStageRow != null
@@ -113,7 +108,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
         )}
       </div>
       {/* pl-8 = icon slot plus gap, so "Uses:" starts under the title. */}
-      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="pl-8 pr-2" />
+      <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-8 pr-2" />
       <SpineList elbows>
         {stage.items.map((item) => (
           <SpineItem key={item.id} isNew={false}>

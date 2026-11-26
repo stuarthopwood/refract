@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { BLUR_TRANSITION_CLASS, BLURRED_CONTENT_CLASS } from '@/components/ui/blur-content'
 import { cn } from '@/lib/utils'
-import { EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useReadoutStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
 import { type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
 import { FadeCollapse } from '@/components/FadeCollapse'
 import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
@@ -220,14 +220,15 @@ export function Transcript({
     [turns, revealedEarlier]
   )
 
+  const subagentSummaries = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
   const turnsWithStages = React.useMemo(
     () =>
       visibleTurns.map((turn) => {
         const viewItems = transcriptDisplay.thinking ? turn.items : turn.items.filter((item) => item.kind !== 'thinking')
-        const groupedWithStages = groupMidTurnProse(groupAdvisoryItems(groupSubagentStages(groupThoughtItems(groupToolItems(viewItems)))))
+        const groupedWithStages = groupMidTurnProse(groupAdvisoryItems(groupSubagentStages(groupThoughtItems(groupToolItems(viewItems)), subagentSummaries)))
         return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
       }),
-    [visibleTurns, transcriptDisplay.thinking]
+    [visibleTurns, transcriptDisplay.thinking, subagentSummaries]
   )
 
   const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)

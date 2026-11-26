@@ -306,7 +306,16 @@ export interface ContextUsage {
   percent: number;
 }
 
-/** `id` is `${toolCallId}:${nameOrTask}`, plus a `:N` suffix when two members of one call share an identical name. */
+/** One step an agent recently ran; `endMs` is absent while the step is still in flight. */
+export interface SubagentRecentStep {
+  tool: string;
+  intent?: string;
+  target?: string;
+  isError?: boolean;
+  endMs?: number;
+}
+
+/** `id` is `${toolCallId}:${nameOrTask}`, plus a `:N` suffix when two members of one call share an identical name. The last four fields are the synthesis contract of ADR 0013: each is omitted, never null, when unknown. */
 export interface SubagentSummary {
   id: string;
   toolCallId: string;
@@ -319,6 +328,14 @@ export interface SubagentSummary {
   taskSummary?: string;
   name?: string;
   background?: boolean;
+  /** A short human role for the agent, at most 40 characters. */
+  role?: string;
+  /** The orchestration's goal, at most 120 characters; the same on every agent of one `toolCallId`. */
+  overallGoal?: string;
+  /** Files the agent touched: at most 50, deduplicated, first-seen order. Live only, so best-effort. */
+  filesTouched?: string[];
+  /** The agent's last steps, newest last, at most 5. Live only. */
+  recentSteps?: SubagentRecentStep[];
 }
 
 /** One file or folder attached via the Attach button, drag-and-drop, or a clipboard file paste, parsed back out of the prompt text. */
@@ -385,6 +402,10 @@ export type TranscriptItem =
       result?: string;
       /** The batch call's own `details.progress[].id`/the later `details.jobs[].jobId`, used only to correlate this row across the two frames; never rendered. */
       jobId?: string;
+      /** From the synthesis cache only (ADR 0013); at most 40 characters. A `SubagentSummary` value wins over this one. */
+      role?: string;
+      /** From the synthesis cache only; at most 120 characters, the same on every agent of one `toolCallId`. */
+      overallGoal?: string;
       messageId: string;
     }
   | {

@@ -16,9 +16,10 @@ import { stageRowDomId } from './stageJump'
 import { SubagentBody, SubagentRow } from './SubagentRow'
 import { SubagentGoalPreview } from './SubagentGoalPreview'
 import { formatElapsed } from './formatElapsed'
-import { stageHeading, extractContextLabel, extractResultSummary, stageRollupText } from './stageMeta'
+import { stageHeading, extractContextLabel, extractResultSummary } from './stageMeta'
 import { joinMetaParts } from './toolRowLabels'
 import type { StageGroup } from './groupSubagentStages'
+import { deriveHeader } from '../subagents/viewModel/derive'
 import { useStickyDisclosure } from './useStickyDisclosure'
 import {
   chatRowStatus,
@@ -26,28 +27,13 @@ import {
   SUBAGENT_STATUS_LABEL,
   SubagentStatusGlyph,
   subagentStatusTextClass,
-  summarizeSubagentStatuses,
-  type SubagentRowStatus
+  summarizeSubagentStatuses
 } from '../subagents/subagentStatus'
-
-import { overallStatus, stageSettleSummary, stageRunningSummary, stageTimeRange, type SubagentItem } from './subagentChainStatus'
-
-// Cancelled is always its own word, never folded into "failed".
-function rollupPhrase(counts: Record<SubagentRowStatus, number>): string {
-  const parts: string[] = []
-  if (counts.running > 0) parts.push(`${counts.running} running`)
-  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
-  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
-  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
-  if (counts.parked > 0) parts.push(`${counts.parked} parked`)
-  return parts.join(', ')
-}
+import { overallStatus } from './subagentChainStatus'
 
 /** One Stage rendered in place; always a `CollapsedLine` so the row never switches element type as agents stream in. */
 export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup; sessionId: string | null; shimmer?: boolean }) {
-  const statuses = group.items.map((item) => chatRowStatus(item.status))
-  const counts = summarizeSubagentStatuses(statuses)
-  const status = overallStatus(counts)
+  const { status, counts, startedAt, durationMs } = group.view
   const isRunning = status === 'running'
   const total = group.items.length
   const labelColorClass = subagentStatusTextClass(counts)
@@ -122,9 +108,7 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
     }
   }, [total])
 
-  const { startedAt, endedAt } = stageTimeRange(group.items)
-  const durationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
-  const summaryText = isRunning ? stageRunningSummary(counts, total) : stageSettleSummary(group)
+  const summaryText = group.view.rollupText
   const startTimeText =
     startedAt != null ? new Date(startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : undefined
   // A solo Stage with a captured context shows the context as its label, so its one agent's name goes in the summary slot.
@@ -163,9 +147,9 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
       )}
     </span>
   )
-  const stageLabel = stageHeading(group.stageIndex, group.label)
+  const stageLabel = stageHeading(group.stageIndex, group.view.cleanTitle)
   // The heading's speech form already says "Stage N", so the count clause is just "of M".
-  const triggerAriaLabel = `${stageHeading(group.stageIndex, group.label, true)}, of ${group.totalStages}${soloAgentName ? `, ${soloAgentName}` : ''}, ${summaryText}${isRunning ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}${startTimeText != null ? `, started ${startTimeText}` : ''}`
+  const triggerAriaLabel = `${stageHeading(group.stageIndex, group.view.cleanTitle, true)}, of ${group.totalStages}${soloAgentName ? `, ${soloAgentName}` : ''}, ${summaryText}${isRunning ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}${startTimeText != null ? `, started ${startTimeText}` : ''}`
   // A one-agent Stage's content already carries `pl-8`, so the brief/Uses lines take only `pr-2` there.
   const columnClassName = total > 1 ? cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2') : 'pr-2'
 
@@ -200,15 +184,15 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
             {soloFailureReason}
           </p>
         )}
-        <StageUsesLine dependencies={group.dependencies} sessionId={sessionId} className={columnClassName} />
+        <StageUsesLine dependencies={group.view.dependencies} sessionId={sessionId} className={columnClassName} />
         {/* Scoped to the member content that swaps element type on a 1-to-2 transition, so focus tracking ignores the brief/Uses line. (#1001) */}
         {/* A member's goal is suppressed only when its own call had a context; a solo body never shows it (rendered above). (#1077) */}
         <div ref={memberContentRef}>
           {total > 1 ? (
             <SpineList gap="member">
-              {group.items.map((item) => (
+              {group.items.map((item, index) => (
                 <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                  <SubagentRow item={item} showGoal={!toolCallIdsWithContext.has(item.toolCallId)} />
+                  <SubagentRow item={item} agent={group.view.agents[index]!} showGoal={!toolCallIdsWithContext.has(item.toolCallId)} />
                 </SpineItem>
               ))}
             </SpineList>
@@ -248,9 +232,8 @@ function ChainShowPanelButton({ sessionId }: { sessionId: string | null }) {
 export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; sessionId: string | null }) {
   // Stages mounting while the chain is live fade in; seeded during render, and before the early return (hooks rule).
   const seenStageIdsRef = React.useRef<Set<string> | null>(null)
-  const allItems = stages.flatMap((stage) => stage.items)
-  const statuses = allItems.map((item) => chatRowStatus(item.status))
-  const counts = summarizeSubagentStatuses(statuses)
+  const header = React.useMemo(() => deriveHeader(stages.map((stage) => stage.view)), [stages])
+  const counts = summarizeSubagentStatuses(stages.flatMap((stage) => stage.view.agents).map((agent) => agent.status))
   const status = overallStatus(counts)
   const isRunning = status === 'running'
 
@@ -281,11 +264,10 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
 
   if (stages.length < 2) return null
 
-  const { startedAt, endedAt } = stageTimeRange(allItems)
+  const { startedAt, totalDurationMs, headerStats } = header
   // Wall-clock from the first Stage's start; aria-hidden while running so a screen reader reads only the settled value.
-  const durationMs = startedAt == null ? undefined : isRunning ? Date.now() - startedAt : endedAt != null ? endedAt - startedAt : undefined
-  const rollup = rollupPhrase(counts)
-  const summary = `${stages.length} stages, ${allItems.length} agent${allItems.length === 1 ? '' : 's'}${rollup ? `, ${rollup}` : ''}`
+  const durationMs = startedAt == null ? undefined : isRunning ? Date.now() - startedAt : totalDurationMs
+  const summary = headerStats
   // The visible status word lives in `meta`; triggerAriaLabel restates it, so `meta` is aria-hidden.
   const statusVisible = status !== 'finished'
   const meta = (

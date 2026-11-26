@@ -19,21 +19,38 @@ function truncateLabel(label: string): string {
   return `${label.slice(0, LABEL_MAX_CHARS).trimEnd()}\u2026`
 }
 
-function findFirstContentLine(lines: string[]): { index: number; stripped: string } | null {
+// A line of "Rules (HARD)" boilerplate ends a label search: nothing after it describes the Stage.
+const RULES_HARD_RE = /^(?:#{1,6}\s*)?[*_]*rules\s*\(hard\)/i
+
+// Absolute paths through a `worktrees` folder; they swamp a one-line title and mean nothing to a reader.
+const WORKTREE_PATH_RE = /(?:[A-Za-z]:[\\/]|~?\/)(?:[^\s`'"]*[\\/])?worktrees[\\/][^\s`'",;)]*/gi
+
+// What is left of "Repo <path>" once the path is gone.
+const BARE_PATH_LABEL_RE = /^(?:repo(?:sitory)?|worktree|cwd|path|dir(?:ectory)?)\s*:?\s*$/i
+
+/** `text` with worktree paths removed and the whitespace they leave collapsed. */
+export function stripWorktreePaths(text: string): string {
+  return text.replace(WORKTREE_PATH_RE, ' ').replace(/\s{2,}/g, ' ').trim()
+}
+
+function findFirstContentLine(lines: string[], clean = false): { index: number; stripped: string } | null {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim()
     if (line.length === 0) continue
     if (HEADING_ONLY_GOAL_RE.test(line)) continue
-    const stripped = line.replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
+    if (clean && RULES_HARD_RE.test(line)) return null
+    let stripped = line.replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
+    if (clean) stripped = stripWorktreePaths(stripped)
     if (stripped.length === 0) continue
+    if (clean && BARE_PATH_LABEL_RE.test(stripped)) continue
     return { index: i, stripped }
   }
   return null
 }
 
-/** First non-empty line of a batch `task()` context, heading markers and "Goal:" stripped, truncated to about 60 characters. */
-export function extractContextLabel(context: string): string | null {
-  const found = findFirstContentLine(context.split('\n'))
+/** First useful line of a batch `task()` context, heading markers and "Goal:" stripped, truncated to about 60 characters. With `clean` (the default) worktree paths and "Rules (HARD)" boilerplate are dropped first. */
+export function extractContextLabel(context: string, clean = true): string | null {
+  const found = findFirstContentLine(context.split('\n'), clean)
   if (!found) return null
   return truncateLabel(found.stripped)
 }
@@ -75,10 +92,10 @@ export function sharedNamePrefix(names: string[]): string | null {
   return prefix.length >= 2 ? prefix : null
 }
 
-/** The three-tier Stage label. */
-export function computeStageLabel(context: string | undefined, names: string[]): string | null {
+/** The three-tier Stage label; `clean: false` keeps the raw first line, for the view-model's `rawLabel`. */
+export function computeStageLabel(context: string | undefined, names: string[], options: { clean?: boolean } = {}): string | null {
   if (context) {
-    const contextLabel = extractContextLabel(context)
+    const contextLabel = extractContextLabel(context, options.clean ?? true)
     if (contextLabel) return contextLabel
   }
   if (names.length === 1) return names[0] ?? null
@@ -153,6 +170,17 @@ export function resolveStageDependencies<
 
 export function stageRollupText(counts: Record<SubagentRowStatus, number>, total: number, isRunning: boolean): string {
   const parts = [isRunning ? `${counts.finished} of ${total} done` : `${counts.finished} done`]
+  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
+  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
+  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
+  if (counts.parked > 0) parts.push(`${counts.parked} parked`)
+  return parts.join(', ')
+}
+
+/** The unsettled counts only ("1 running, 2 failed"); cancelled is always its own word, never folded into "failed". Zero parts are dropped. */
+export function unsettledRollupText(counts: Record<SubagentRowStatus, number>): string {
+  const parts: string[] = []
+  if (counts.running > 0) parts.push(`${counts.running} running`)
   if (counts.failed > 0) parts.push(`${counts.failed} failed`)
   if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
   if (counts.exited > 0) parts.push(`${counts.exited} exited`)
