@@ -77,7 +77,7 @@ pub struct ChecklistStore {
 }
 
 /// A second guard behind the registry: even a live id never reaches the path unless it is plain.
-fn is_plain_id(id: &str) -> bool {
+pub(crate) fn is_plain_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= MAX_SESSION_ID_BYTES
         && id

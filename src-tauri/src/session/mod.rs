@@ -19,6 +19,8 @@ pub mod saved_history_cache;
 pub mod side_chat;
 pub mod start_queue;
 pub mod subagents;
+pub mod subagents_synthesis;
+pub mod subagents_synthesis_cache;
 pub mod termination;
 pub mod thinking_level;
 pub mod token_guard;
