@@ -9,18 +9,55 @@ import { NumberField } from '@/components/ui/NumberField'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
+import { Markdown } from '../Markdown'
+import { markdownToPlainText } from '../markdownPlainText'
 import type { AskFieldValue } from './answerPlan'
 import type { AskFormChoiceField, AskFormInputField, AskFormSelectField, AskFormTextField } from './parseAskHtml'
 
 type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
 
+/** The question is Markdown (sanitised GFM, the same renderer as the legacy ask card); ", required" sits beside a one-line question and drops below a block such as a table. */
 function FieldHeading({ id, question, required }: { id: string; question: string; required: boolean }) {
+  const { name, described } = questionLabel(question)
   return (
-    <p id={id} className="whitespace-pre-line break-words text-sm font-medium">
-      {question}
-      {required && <span className="font-normal text-muted-foreground">, required</span>}
-    </p>
+    <>
+      <div id={id} className="flex flex-wrap items-baseline break-words">
+        <Markdown id={`${id}-md`} text={question} className="font-medium [&_p]:whitespace-pre-line" />
+        {required && <span className="text-sm text-muted-foreground">, required</span>}
+      </div>
+      {described && (
+        <span id={`${id}-name`} className="sr-only">
+          {name}
+        </span>
+      )}
+    </>
   )
+}
+
+const plainText = (markdown: string): string => markdownToPlainText(markdown).replace(/\s+/g, ' ')
+
+/**
+ * The short accessible name of a question: its first line of prose, as plain text. A table, code block or long body must not flatten into
+ * the control's name, so `described` says the full question belongs in the description instead (#2033).
+ */
+export function questionLabel(question: string): { name: string; described: boolean } {
+  const prose = question
+    .trim()
+    .split(/\n\s*\n/)
+    .find((block) => !/^\s*(\||```)/.test(block))
+  const name = plainText(prose?.split('\n')[0] ?? '') || 'Question'
+  return { name, described: plainText(question) !== name }
+}
+
+/** The ids a control is named and described by: the short name when the question has more than one line of prose, else the heading itself. */
+function fieldLabelIds(idPrefix: string, question: string): { labelledBy: string; describedBy: string | undefined } {
+  const { described } = questionLabel(question)
+  return described ? { labelledBy: `${idPrefix}-heading-name`, describedBy: `${idPrefix}-heading` } : { labelledBy: `${idPrefix}-heading`, describedBy: undefined }
+}
+
+function describedByIds(idPrefix: string, question: string, error: string | null | undefined): string | undefined {
+  const ids = [fieldLabelIds(idPrefix, question).describedBy, error ? `${idPrefix}-error` : undefined].filter(Boolean)
+  return ids.length > 0 ? ids.join(' ') : undefined
 }
 
 function FieldError({ id, error }: { id: string; error: string | null | undefined }) {
@@ -37,12 +74,12 @@ export function allowsNegative(min: number | undefined): boolean {
 }
 
 /** Props the text-like controls share: the label, the requirement and the error are tied to the control, not just drawn beside it. */
-function controlA11y(idPrefix: string, required: boolean, error: string | null | undefined) {
+function controlA11y(idPrefix: string, required: boolean, error: string | null | undefined, question: string) {
   return {
-    'aria-labelledby': `${idPrefix}-heading`,
+    'aria-labelledby': fieldLabelIds(idPrefix, question).labelledBy,
     'aria-required': required,
     'aria-invalid': error ? true : undefined,
-    'aria-describedby': error ? `${idPrefix}-error` : undefined
+    'aria-describedby': describedByIds(idPrefix, question, error)
   } as const
 }
 
@@ -106,15 +143,15 @@ export function ChoiceField({ field, value, disabled, idPrefix, showInvalid, off
         otherSelected={value.otherSelected}
         disabled={disabled}
         idPrefix={idPrefix}
-        groupLabelledBy={headingId}
+        groupLabelledBy={fieldLabelIds(idPrefix, field.question).labelledBy}
         groupRequired={field.required}
         groupInvalid={error ? true : undefined}
-        groupDescribedBy={error ? errorId : undefined}
+        groupDescribedBy={describedByIds(idPrefix, field.question, error)}
         offerOther={offerOther}
         other={{
           visible: value.otherSelected,
           text: value.otherText,
-          ariaLabel: `Other answer for ${field.question}`,
+          ariaLabel: `Other answer for ${questionLabel(field.question).name}`,
           invalid: showInvalid && value.otherText.trim().length === 0,
           focusOnShow: true,
           onTextChange: (otherText) => onChange({ ...value, otherText }),
@@ -145,7 +182,7 @@ export function TextField({ field, value, disabled, idPrefix, error, onChange, o
     value,
     readOnly: disabled,
     'aria-disabled': disabled,
-    ...controlA11y(idPrefix, field.required, error),
+    ...controlA11y(idPrefix, field.required, error, field.question),
     onBlur,
     onChange: (event: React.ChangeEvent<HTMLInputElement & HTMLTextAreaElement>) => onChange(event.target.value)
   }
@@ -189,10 +226,10 @@ export function DropdownField({ field, value, disabled, idPrefix, error, onChang
       >
         <SelectTrigger
           id={triggerId}
-          {...controlA11y(idPrefix, field.required, error)}
+          {...controlA11y(idPrefix, field.required, error, field.question)}
           // Focus moves into the list while it is open, which is not the user leaving the field.
           onBlur={() => !open && onBlur?.()}
-          aria-labelledby={`${headingId} ${triggerId}`}
+          aria-labelledby={`${fieldLabelIds(idPrefix, field.question).labelledBy} ${triggerId}`}
           aria-disabled={disabled}
           className="w-full"
         >
@@ -223,7 +260,7 @@ interface InputFieldProps {
 
 /** A number, range, email or url control. The value stays text; `toFormData` turns number and range into numbers. */
 export function InputField({ field, value, disabled, idPrefix, error, onChange, onBlur }: InputFieldProps) {
-  const a11y = controlA11y(idPrefix, field.required, error)
+  const a11y = controlA11y(idPrefix, field.required, error, field.question)
   const text = {
     value,
     readOnly: disabled,

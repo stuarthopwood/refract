@@ -1,6 +1,7 @@
 import * as React from 'react'
 import type { ExtraProps } from 'react-markdown'
 import { CircleAlert, Info, Lightbulb, OctagonAlert, TriangleAlert, type LucideIcon } from 'lucide-react'
+import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { cn } from '@/lib/utils'
 
 // Per-render options for the shared `Markdown`, read by the module-level renderers below through
@@ -11,6 +12,8 @@ export interface MarkdownOptions {
   // `chat` mutes the inline-code chip (`--chat-code-*`); `default` keeps the `--md-code-*` chip.
   variant?: 'default' | 'chat'
   resolveImage?: (url: string) => Promise<string | null>
+  // See `inert` on Markdown's props.
+  inert?: boolean
 }
 
 export const MarkdownOptionsContext = React.createContext<MarkdownOptions>({ githubStyle: false })
@@ -73,17 +76,21 @@ export function MarkdownBlockquote({ className, children, node: _node, ...props 
   )
 }
 
+// The scroll wrapper is keyboard-focusable so a wide table can be scrolled without a pointer, which needs a role and a name
+// for the focus stop to be announced. Inert text lives inside a button, where a focus stop would nest interactive content.
 export function MarkdownTable({ className, node: _node, ...props }: React.ComponentProps<'table'> & ExtraProps) {
-  const { githubStyle } = React.useContext(MarkdownOptionsContext)
+  const { githubStyle, inert } = React.useContext(MarkdownOptionsContext)
+  const scrollRegion = inert ? {} : { tabIndex: 0, role: 'region', 'aria-label': 'Scrollable table' }
+  const focusRing = inert ? '' : INSET_FOCUS_OUTLINE_CLASS
   if (githubStyle) {
     return (
-      <div className="overflow-x-auto">
+      <div className={cn('overflow-x-auto', focusRing)} {...scrollRegion}>
         <table className={cn('w-max max-w-full border-collapse text-left text-sm', className)} {...props} />
       </div>
     )
   }
   return (
-    <div className="overflow-x-auto rounded-md border border-border">
+    <div className={cn('overflow-x-auto rounded-md border border-border', focusRing)} {...scrollRegion}>
       <table className={cn('w-full border-collapse text-left text-sm', className)} {...props} />
     </div>
   )
