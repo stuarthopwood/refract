@@ -330,6 +330,18 @@ async fn away_sends_no_steer_while_the_session_is_idle() {
     fx.finish().await;
 }
 
+#[tokio::test]
+async fn away_sends_no_steer_once_the_session_has_left_away() {
+    let fx = away_fixture().await;
+    fx.agent.state.lock().await.status = SessionStatus::Working;
+    leave_for_test(&fx.agent).await;
+
+    send_steer(&fx.agent, Kind::Answered).await;
+
+    assert_eq!(prompt_count(&fx.rpcs().await), 0);
+    fx.finish().await;
+}
+
 /// Waits, by polling the slot rather than sleeping a guessed time, until every steer has settled.
 async fn until_steer_idle(fx: &Fixture) {
     for _ in 0..12_000 {
