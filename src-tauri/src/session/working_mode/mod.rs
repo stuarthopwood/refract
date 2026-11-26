@@ -195,10 +195,7 @@ pub(in crate::session) async fn on_launched(agent: &SessionAgent) -> bool {
 async fn relaunch_if_stale(agent: &SessionAgent, restart: impl FnOnce(&SessionAgent)) -> bool {
     let stale = agent.with_working_mode_state(|s| launch_is_stale(s)).await;
     if stale {
-        log::info!(
-            "working_mode: relaunching {} for a mode change made during start",
-            agent.session_id()
-        );
+        log::info!("working_mode: relaunching for a mode change made during start");
         restart(agent);
     }
     stale
@@ -322,10 +319,7 @@ fn restart(agent: &SessionAgent) {
     let agent = agent.arc();
     tokio::spawn(async move {
         let Some(slot) = RestartSlot::claim(&agent).await else {
-            log::info!(
-                "working_mode: restart for {} already in flight",
-                agent.session_id()
-            );
+            log::info!("working_mode: a restart is already in flight");
             return;
         };
         agent.shutdown().await;
