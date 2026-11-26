@@ -31,3 +31,13 @@
 - [x] T013 Record retention as decided, not set: no `cacheRetention` override (global or per-agent); `providers.cacheRetention: long` for main Sessions is dropped (FR-003).
 - [x] T014 Drop the detached-budget upstream draft: `upstream/upstream-detached-budget.md` removed; FR-007 now lists two drafts (supersedes T008's third file).
 - [ ] T015 AC1 (idle-expiry cache writes down by half) stays open pending the post-release measurement (~2026-11-12). Shipped earlier in PR #1684: `providers.cacheWarming=idle` and `softRequestBudget` 80 to 60 (`values.rs:87-88,225-227`); unchanged here.
+
+## Phase 6: Convergence (2026-11-26, issue #2209)
+
+Written before the build. Spec 121 was amended first (Clarifications, Session 2026-11-26; FR-010 to FR-013). Rust only; no renderer change.
+
+- [x] T016 [US2] Spec 121 amended per #2209 Decided: `set_cache_warming` RPC and `excludeFromContext` dropped (FR-012); the per-agent `cacheRetention` probe recorded with OMP source evidence (`task/executor.ts:975-1004`, `session/settings-stream-fn.ts:48-49,74`, `config/settings-schema.ts:5331-5405`); `long` set globally only (FR-010), which supersedes T013 and the `cacheRetention` clause of FR-003.
+- [x] T017 [US2] `values.rs`: add `providers.cacheRetention` to `KEYS`, `default_for` (`long`), `CACHE_RETENTION_MODES` and a `validate` arm per FR-010, US2/AC1; tests `cache_retention_accepts_known_modes_only`, `cache_retention_defaults_to_long_and_a_bad_listed_value_falls_back`.
+- [x] T018 [US2] `overlay.rs`: `renders_nested_yaml_with_version_header` asserts the `providers:` block with `cacheRetention: "long"`; `default_overlay_omits_model_overrides` stops listing `cacheRetention` among absent keys per FR-003, FR-010.
+- [x] T019 [US2] `migrate.rs`: `Marker` gains `#[serde(default)] cache_retention_applied`; a fresh `attempt` records it; `ensure_with` applies `long` once for an existing marker without it (unset or `auto` only; a failed write warns and retries next launch) per FR-011; tests `an_existing_install_gets_long_once`, `an_unlisted_retention_is_set_too`, `a_deliberate_cache_retention_is_kept`, `a_failed_cache_retention_write_leaves_the_flag_unset_for_a_retry`, `a_fresh_migration_records_cache_retention_applied`. The `ipc/token_guard_tests.rs` `migrated` helper now writes `cacheRetentionApplied: true` so its write-sequence assertions stay about the key under test.
+- [x] T020 [US2] Docs and verify: `cargo test --lib token_guard` (77 passed), `cargo clippy --all-targets -- -D warnings` clean; AC "cache writes down" is measured from `usage.db` `cache_write` after release (FR-013, #2209 Decided), never `stats.db` (ADR 0006).
