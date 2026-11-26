@@ -38,7 +38,7 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
   const colorClass = subagentStatusTextClass(counts)
   return (
     // A tint, not a left border, marks the running Stage; the glyph and word still carry the status (#1927).
-    <div className={cn('flex min-w-0 items-start gap-2 rounded px-2', status === 'running' && 'bg-[color-mix(in_oklab,var(--state-working)_10%,transparent)]')}>
+    <div className={cn('flex min-w-0 items-start gap-2 rounded px-2', status === 'running' && 'bg-state-working-tint')}>
       {/* Status is in the row's accessible name; the glyph keeps it from being colour-only. */}
       <span aria-hidden="true" className={ICON_SLOT_CLASS}>
         <SubagentStatusGlyph status={status} />

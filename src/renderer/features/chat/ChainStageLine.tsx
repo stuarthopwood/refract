@@ -3,9 +3,8 @@ import * as React from 'react'
 import { ChevronRightIcon, PanelRightOpenIcon } from 'lucide-react'
 import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/IconButton'
 import { FadeCollapse } from '@/components/FadeCollapse'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { StageHeader } from '../subagents/card/StageHeader'
 import { stageAccessibleName, stageAgentItemClass, stageAgentsGridClass, stageRowModel } from '../subagents/card/stageRowModel'
 import type { SubAgentItem } from '../subagents/viewModel'
@@ -31,27 +30,21 @@ function ChainAgentEntry({ item, agent, sessionId }: { item: SubagentItem; agent
         <SubagentRow item={item} agent={agent} showGoal={false} variant="card" />
       </div>
       {match && sessionId && (
-        <Tooltip>
-          <TooltipTrigger asChild aria-describedby={undefined}>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              className="shrink-0"
-              aria-label={`Open ${item.name} in the subagents panel`}
-              onClick={(event) =>
-                openHostedPanel('subagents', sessionId, {
-                  selectSubagentId: match.id,
-                  selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
-                  opener: event.currentTarget
-                })
-              }
-            >
-              <PanelRightOpenIcon aria-hidden className="size-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Open in subagents panel</TooltipContent>
-        </Tooltip>
+        <IconButton
+          variant="ghost"
+          size="icon-xs"
+          className="shrink-0"
+          label={`Open ${item.name} in the subagents panel`}
+          onClick={(event) =>
+            openHostedPanel('subagents', sessionId, {
+              selectSubagentId: match.id,
+              selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
+              opener: event.currentTarget
+            })
+          }
+        >
+          <PanelRightOpenIcon aria-hidden className="size-4" />
+        </IconButton>
       )}
     </div>
   )
@@ -111,17 +104,16 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
             : undefined
         }
         trailing={
-          <Button
+          <IconButton
             ref={chevronRef}
-            type="button"
             variant="ghost"
             size="icon-xs"
             aria-expanded={expanded}
-            aria-label={`${speechHeading} agents`}
+            label={`${speechHeading} agents`}
             onClick={() => onOpenChange(!expanded)}
           >
             <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', expanded && 'rotate-90')} />
-          </Button>
+          </IconButton>
         }
       />
       {/* pl-8 = icon slot plus gap, so "Uses:" starts under the title. */}

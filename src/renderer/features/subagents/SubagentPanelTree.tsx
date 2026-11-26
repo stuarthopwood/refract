@@ -5,7 +5,7 @@ import type { FocusEvent, KeyboardEvent } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { FileChipList, FileChipTabbableContext } from '@/components/FileChip'
-import { Button } from '@/components/ui/button'
+import { IconButton } from '@/components/IconButton'
 import { cn } from '@/lib/utils'
 import { ICON_SLOT_CLASS } from '../chat/CollapsedLine'
 import { StageUsesLine } from '../chat/StageDependencies'
@@ -107,9 +107,9 @@ const StageTreeRow = memo(function StageTreeRow({ row, index, tabbable, sessionI
         fullOutcome={focused}
         trailing={
           // The row itself takes Enter, Space and the arrow keys, so this stays out of the tab order and out of the one tab stop.
-          <Button type="button" variant="ghost" size="icon-xs" tabIndex={-1} aria-label={`${open ? 'Collapse' : 'Expand'} ${heading}`} onClick={() => onToggleStage(stage.id, !open)}>
+          <IconButton variant="ghost" size="icon-xs" tabIndex={-1} label={`${open ? 'Collapse' : 'Expand'} ${heading}`} onClick={() => onToggleStage(stage.id, !open)}>
             <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', open && 'rotate-90')} />
-          </Button>
+          </IconButton>
         }
       />
       {/* pl-8 = icon slot plus gap, so "Uses:" starts under the title, as on the card. These links stay tab stops: they are the only
