@@ -13,9 +13,9 @@ vi.mock('@/state', () => ({
 }))
 import { AskedUserRow } from './AskedUserRow'
 
-const display = vi.hoisted(() => ({ expandAnsweredAsks: false }))
+const display = vi.hoisted(() => ({ expandAnsweredAsks: false, stored: undefined as unknown }))
 vi.mock('@/state', () => ({
-  useSettingsStore: (select: (s: { settings: object }) => unknown) => select({ settings: { transcriptDisplay: display } })
+  useSettingsStore: (select: (s: { settings: object }) => unknown) => select({ settings: { transcriptDisplay: display.stored === undefined ? display : display.stored } })
 }))
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -99,5 +99,24 @@ describe('answered ask rows follow Expand answered questions (#1747)', () => {
   it('Given the setting on, When a cancelled ask renders, Then it stays collapsed', () => {
     const html = render(tool({ args: DB_ARGS, output: 'The developer cancelled the questions.' }), true)
     expect(html).toMatch(/<button[^>]*aria-expanded="false"/)
+  })
+
+  it.each([
+    ['answered-by-away', { results: [{ id: 'db', selectedOptions: ['Postgres'], byAway: true }] }, '1 answered by Away Mode', true],
+    ['timed-out', { results: [{ id: 'db', timedOut: true }] }, 'timed out', false]
+  ])('Given the setting on, When a %s ask renders, Then it is open only if the card counts as answered', (_status, details, header, open) => {
+    const html = render(tool({ args: DB_ARGS, details }), true)
+    expect(html).toContain(header)
+    expect(html).toMatch(new RegExp(`<button[^>]*aria-expanded="${open}"`))
+  })
+
+  it.each([
+    ['no transcriptDisplay at all', undefined],
+    ['a transcriptDisplay without the key', {}]
+  ])('Given %s, When an answered ask renders, Then it falls back to open', (_name, stored) => {
+    display.stored = stored
+    const html = renderToStaticMarkup(createElement(AskedUserRow, { item: tool({ args: DB_ARGS, details: answered }) }))
+    display.stored = undefined
+    expect(html).toMatch(/<button[^>]*aria-expanded="true"/)
   })
 })
