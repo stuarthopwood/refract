@@ -9,7 +9,7 @@ export type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
 // `endedAt` is undefined unless every item has both `startedAt` and `durationMs`, so a member with no
 // duration cannot understate the total.
-export function stageTimeRange(items: readonly SubagentItem[]): { startedAt?: number; endedAt?: number } {
+export function stageTimeRange(items: readonly { startedAt?: number; durationMs?: number }[]): { startedAt?: number; endedAt?: number } {
   let startedAt: number | undefined
   let maxEnd: number | undefined
   let everyItemSettled = true
