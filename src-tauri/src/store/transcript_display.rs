@@ -11,7 +11,10 @@ pub struct TranscriptDisplaySettings {
     #[serde(rename = "toolNames", default)]
     pub tool_names: bool,
     /// Open answered Ask rows in the transcript; default `true` (#1747).
-    #[serde(rename = "expandAnsweredAsks", default = "default_expand_answered_asks")]
+    #[serde(
+        rename = "expandAnsweredAsks",
+        default = "default_expand_answered_asks"
+    )]
     pub expand_answered_asks: bool,
 }
 
