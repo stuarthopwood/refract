@@ -1,4 +1,4 @@
-// #1847: the 14d, mtd and ytd ranges. Bounds are local midnights derived from the request's offset.
+// #1847: the 14d, mtd and ytd ranges. 14d is rolling; mtd and ytd bounds are local midnights derived from the request's offset.
 
 use super::*;
 use crate::usage::timeutil::parse_iso_ms;
@@ -137,4 +137,88 @@ fn ytd_splits_the_edge_hour_in_a_half_hour_zone() {
     let ctx = ctx_at("2026-03-10T12:00:00Z", 330);
     let s = summary(&conn, &filters("ytd"), &ctx).unwrap();
     assert_eq!((s.calls, s.spend_usd), (2, 2.0));
+}
+
+#[test]
+fn mtd_follows_the_local_month_when_utc_is_still_in_the_previous_one() {
+    // 23:00 UTC on 31 October is 01:00 on 1 November at UTC+2, so the local month is November.
+    let ctx = ctx_at("2026-10-31T23:00:00Z", 120);
+    assert_eq!(from_of("mtd", &ctx), at("2026-10-31T22:00:00Z"));
+
+    let conn = scratch_db();
+    record_at(&conn, "before", "2026-10-31T21:30:00Z");
+    record_at(&conn, "after", "2026-10-31T22:30:00Z");
+    assert_eq!(summary(&conn, &filters("mtd"), &ctx).unwrap().calls, 1);
+}
+
+#[test]
+fn the_edge_predicate_picks_the_same_rows_as_the_hour_expression_it_replaced() {
+    let conn = scratch_db();
+    let (r_lo, r_hi) = (at("2025-12-31T19:00:00Z"), at("2026-03-10T12:00:00Z"));
+    let hour = |ts: i64| ts - ts % HOUR_MS;
+    let stamps = [
+        r_lo - HOUR_MS,
+        r_lo - 1,
+        r_lo,
+        r_lo + 1,
+        at("2026-01-15T08:30:00Z"),
+        r_hi - 1,
+        r_hi,
+        r_hi + 1,
+        r_hi + HOUR_MS - 1,
+        r_hi + HOUR_MS,
+    ];
+    for (i, ts) in stamps.iter().enumerate() {
+        let row = MessageRow {
+            entry_id: format!("e{i}"),
+            ts: *ts,
+            session_id: "s".into(),
+            ..MessageRow::default()
+        };
+        assert!(record_message(&conn, "file", &row).unwrap());
+    }
+    let pick = |predicate: &str| -> Vec<i64> {
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT ts FROM messages WHERE {predicate} ORDER BY ts"
+            ))
+            .unwrap();
+        stmt.query_map([r_lo, r_hi], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap()
+    };
+    let old = pick("(ts - ts % 3600000 < ?1 OR ts - ts % 3600000 >= ?2)");
+    let new = pick("(ts < ?1 OR ts >= ?2)");
+    assert_eq!(new, old);
+    let expected: Vec<i64> = stamps
+        .iter()
+        .copied()
+        .filter(|ts| hour(*ts) < r_lo || hour(*ts) >= r_hi)
+        .collect();
+    assert_eq!(new, expected);
+}
+
+#[test]
+fn the_range_list_matches_the_tabs_the_renderer_sends() {
+    // Mirrored by `USAGE_RANGE_TABS` in `UsageFilters.test.ts`; change both together.
+    assert_eq!(
+        RANGES,
+        ["today", "7d", "14d", "30d", "mtd", "ytd", "all", "custom"]
+    );
+}
+
+#[test]
+fn an_unknown_range_error_does_not_echo_the_value() {
+    let hostile = Filters {
+        range: "x'; DROP TABLE messages; --".into(),
+        ..Filters::default()
+    };
+    let ctx = ctx_at("2026-11-26T12:00:00Z", 0);
+    for err in [
+        hostile.validate().unwrap_err(),
+        hostile.window(&ctx).unwrap_err(),
+    ] {
+        assert_eq!(err.to_string(), "invalid argument: unknown range");
+    }
 }

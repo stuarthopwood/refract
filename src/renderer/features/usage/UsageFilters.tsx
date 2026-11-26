@@ -9,13 +9,13 @@ import { Input } from '@/components/ui/input'
 import { DEFAULT_USAGE_FILTERS, useUsageStore } from '@/state/usage-store'
 import type { UsageFilters as Filters, UsageRange } from '../../../shared/ipc-usage'
 
-const RANGES: Array<{ value: UsageRange; label: string }> = [
+export const USAGE_RANGE_TABS: ReadonlyArray<{ value: UsageRange; label: string; ariaLabel?: string }> = [
   { value: 'today', label: 'Today' },
   { value: '7d', label: '7 days' },
   { value: '14d', label: '14 days' },
   { value: '30d', label: '30 days' },
-  { value: 'mtd', label: 'MTD' },
-  { value: 'ytd', label: 'YTD' },
+  { value: 'mtd', label: 'MTD', ariaLabel: 'Month to date' },
+  { value: 'ytd', label: 'YTD', ariaLabel: 'Year to date' },
   { value: 'all', label: 'All' },
   { value: 'custom', label: 'Custom' }
 ]
@@ -85,7 +85,7 @@ function fromDateInput(value: string, endOfDay: boolean): number | undefined {
     return (
       <div data-usage-filters className="max-h-[40vh] shrink-0 overflow-y-auto">
         <ListToolbar>
-          <FilterTabs ariaLabel="Date range" tabs={RANGES} value={filters.range} onValueChange={(range) => patch({ range })} />
+          <FilterTabs ariaLabel="Date range" tabs={USAGE_RANGE_TABS} value={filters.range} onValueChange={(range) => patch({ range })} />
           {filters.range === 'custom' && (
             <>
               <label className="flex items-center gap-2 text-xs">

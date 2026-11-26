@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { UsageFilters } from './UsageFilters'
+import { USAGE_RANGE_TABS, UsageFilters } from './UsageFilters'
 
 const markup = () => renderToStaticMarkup(createElement(UsageFilters))
 
@@ -24,5 +24,19 @@ describe('UsageFilters date range tabs', () => {
     const html = markup()
     expect(html).toContain('overflow-x-auto')
     expect(html).toMatch(/role="tablist"[^>]*class="[^"]*\bw-max\b[^"]*"[^>]*aria-label="Date range"/)
+  })
+
+  it('sends exactly the values the Rust RANGES list accepts, in order', () => {
+    // Mirrored by `the_range_list_matches_the_tabs_the_renderer_sends` in queries_ranges.test.rs.
+    expect(USAGE_RANGE_TABS.map((tab) => tab.value)).toEqual(['today', '7d', '14d', '30d', 'mtd', 'ytd', 'all', 'custom'])
+    const html = markup()
+    for (const { value } of USAGE_RANGE_TABS) expect(html).toContain(`-trigger-${value}"`)
+  })
+
+  it('names the MTD and YTD tabs in full for assistive technology', () => {
+    const html = markup()
+    expect(html).toMatch(/<button[^>]*aria-label="Month to date"[^>]*>MTD<\/button>/)
+    expect(html).toMatch(/<button[^>]*aria-label="Year to date"[^>]*>YTD<\/button>/)
+    expect(html).not.toMatch(/<button[^>]*aria-label="7 days"/)
   })
 })

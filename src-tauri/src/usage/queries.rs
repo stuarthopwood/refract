@@ -208,11 +208,7 @@ impl Filters {
                     self.to.map(|v| v.clamp(-MAX_CUSTOM_MS, MAX_CUSTOM_MS)),
                 )
             }
-            other => {
-                return Err(QueryError::InvalidArgument(format!(
-                    "unknown range {other:?}"
-                )))
-            }
+            _ => return Err(QueryError::InvalidArgument("unknown range".into())),
         })
     }
 
@@ -272,10 +268,7 @@ impl Filters {
     /// Checks the allowlists and that a custom range is not inverted. `ipc/usage.rs` calls it too.
     pub fn validate(&self) -> QueryResult<()> {
         if !RANGES.contains(&self.range.as_str()) {
-            return Err(QueryError::InvalidArgument(format!(
-                "unknown range {:?}",
-                self.range
-            )));
+            return Err(QueryError::InvalidArgument("unknown range".into()));
         }
         if let Some(agent) = self.agent_type.as_deref() {
             if !AGENT_TYPES.contains(&agent) {
@@ -350,13 +343,13 @@ impl Filters {
             let r_lo = from + (HOUR_MS - from.rem_euclid(HOUR_MS)) % HOUR_MS;
             let ph = w.bind(Value::Integer(r_lo));
             rollup_c.push(format!("hour >= {ph}"));
-            edge.push(format!("{hour_expr} < {ph}"));
+            edge.push(format!("ts < {ph}"));
         }
         if let Some(to) = to {
             let r_hi = hour_start(to + 1);
             let ph = w.bind(Value::Integer(r_hi));
             rollup_c.push(format!("hour < {ph}"));
-            edge.push(format!("{hour_expr} >= {ph}"));
+            edge.push(format!("ts >= {ph}"));
         }
         fact_c.push(format!("({})", edge.join(" OR ")));
         Ok(format!(
