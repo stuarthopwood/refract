@@ -51,6 +51,10 @@ pub struct State {
     mode: WorkingMode,
     launched_plan: bool,
     pending: Option<WorkingMode>,
+    /// A plan restart is shutting the process down or waiting to relaunch it. A second request in
+    /// that window would shut down the relaunched process, so it is dropped: the restart in flight
+    /// reads the latest mode when it starts, and `on_launched` catches a change that lands later.
+    restarting: bool,
     away: away::Log,
 }
 
@@ -182,6 +186,11 @@ fn launch_is_stale(s: &State) -> bool {
 /// A plan switch made while OMP was starting saw no process, so it asked for no restart; once the new
 /// process is up, relaunch it if it started in the other mode. Returns whether a restart was requested.
 pub(in crate::session) async fn on_launched(agent: &SessionAgent) -> bool {
+    relaunch_if_stale(agent, restart).await
+}
+
+/// `restart` is the seam that lets a test observe the request without relaunching a process.
+async fn relaunch_if_stale(agent: &SessionAgent, restart: impl FnOnce(&SessionAgent)) -> bool {
     let stale = agent.with_working_mode_state(|s| launch_is_stale(s)).await;
     if stale {
         log::info!(
@@ -259,10 +268,22 @@ pub async fn set_mode(agent: &SessionAgent, raw: &str) -> Result<Value, AgentErr
     Ok(json!({ "mode": target, "pending": matches!(applied, Applied::Pending) }))
 }
 
+/// Takes the single restart slot; `false` when a restart is already in flight.
+fn claim_restart(s: &mut State) -> bool {
+    !std::mem::replace(&mut s.restarting, true)
+}
+
 /// Spawned: stopping OMP waits on its exit, which the frame listener that may be calling us would block.
 fn restart(agent: &SessionAgent) {
     let agent = agent.arc();
     tokio::spawn(async move {
+        if !agent.with_working_mode_state(claim_restart).await {
+            log::info!(
+                "working_mode: restart for {} already in flight",
+                agent.session_id()
+            );
+            return;
+        }
         agent.shutdown().await;
         // start() is a no-op while the old process is still recorded; its exit handler clears it asynchronously.
         for _ in 0..100 {
@@ -273,9 +294,15 @@ fn restart(agent: &SessionAgent) {
         }
         tokio::time::sleep(std::time::Duration::from_millis(300)).await;
         // A delete may have claimed the Session during the waits above; starting now would race the worktree removal.
-        if crate::ipc::sessions_lifecycle::delete_in_flight::refuse_if_deleting(agent.session_id())
-            .is_err()
-        {
+        let deleting = crate::ipc::sessions_lifecycle::delete_in_flight::refuse_if_deleting(
+            agent.session_id(),
+        )
+        .is_err();
+        // Released before start(): the new process runs `on_launched`, which may need a restart of its own.
+        agent
+            .with_working_mode_state(|s| s.restarting = false)
+            .await;
+        if deleting {
             return;
         }
         if let Err(err) = agent.start().await {
@@ -284,15 +311,16 @@ fn restart(agent: &SessionAgent) {
     });
 }
 
+/// Applies a waiting switch to `s`: the target and whether it needs a restart, or `None` when nothing waits.
+fn settle_pending(s: &mut State) -> Option<(WorkingMode, bool)> {
+    let target = s.pending.take()?;
+    s.mode = target;
+    Some((target, (target == WorkingMode::Plan) != s.launched_plan))
+}
+
 /// Applies a waiting plan switch once the turn has settled.
 pub(in crate::session) async fn on_turn_settled(agent: &SessionAgent) {
-    let applied = agent
-        .with_working_mode_state(|s| {
-            let target = s.pending.take()?;
-            s.mode = target;
-            Some((target, (target == WorkingMode::Plan) != s.launched_plan))
-        })
-        .await;
+    let applied = agent.with_working_mode_state(settle_pending).await;
     let Some((target, needs_restart)) = applied else {
         return;
     };

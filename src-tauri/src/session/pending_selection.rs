@@ -65,6 +65,11 @@ pub(super) async fn wire(agent: &SessionAgent) -> Option<Value> {
     agent.with_model_state(|s| s.pending.to_wire()).await
 }
 
+/// The queued role or model, if any; plan mode reads it to tell a user's pick from its own switch.
+pub(super) async fn queued_target(agent: &SessionAgent) -> Option<Target> {
+    agent.with_model_state(|s| s.pending.target.clone()).await
+}
+
 fn changed(agent: &SessionAgent) {
     agent.events().emit_session_list_changed();
 }

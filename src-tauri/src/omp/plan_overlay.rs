@@ -11,13 +11,45 @@ const FILE_NAME: &str = "plan-mode-approval.yml";
 /// `ast_edit`; omp has no separate notebook, rename or delete tool, those go through `edit`).
 const WRITE_TOOLS: [&str; 3] = ["write", "edit", "ast_edit"];
 
-/// `bash` cannot be told apart from a file change by name, so it asks every time instead of being denied.
+/// Every other tool omp 18.22.2 declares at the `write` or `exec` tier (`approval` in `src/tools`,
+/// `src/task`, `src/lsp`, `src/security`; `ssh` is the user-facing exec tool). A tool whose tier
+/// depends on its arguments (`github`, `debug`, `lsp`, `hub`, `learn`, `context_notes`) is listed
+/// whole, because the overlay is keyed by tool name and cannot tell a read call from a write call.
+/// They ask instead of being denied: `bash` cannot be told apart from a file change by name, and a
+/// denied `task` would block read-only exploration agents.
+const PROMPT_TOOLS: [&str; 20] = [
+    "bash",
+    "eval",
+    "ssh",
+    "browser",
+    "computer",
+    "task",
+    "github",
+    "debug",
+    "lsp",
+    "hub",
+    "security_scan",
+    "security_publish",
+    "manage_skill",
+    "learn",
+    "context_notes",
+    "new_context",
+    "generate_image",
+    "tts",
+    "vibe_spawn",
+    "vibe_send",
+];
+
+/// Plan mode is a strong default, not a sandbox: a tool the user allowlisted in omp's own settings,
+/// a remembered `bash` approval or an MCP / `xd://` device that writes still can (ADR 0014, FR-152).
 pub fn render() -> String {
     let mut out = String::from("tools:\n  approval:\n");
     for tool in WRITE_TOOLS {
         out.push_str(&format!("    {tool}: deny\n"));
     }
-    out.push_str("    bash: prompt\n");
+    for tool in PROMPT_TOOLS {
+        out.push_str(&format!("    {tool}: prompt\n"));
+    }
     out
 }
 

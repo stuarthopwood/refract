@@ -1,7 +1,7 @@
 use super::*;
 
-fn role(name: &str) -> Option<Target> {
-    Some(Target::Role(name.to_string()))
+fn role(name: &str) -> Target {
+    Target::Role(name.to_string())
 }
 
 fn on_role(name: &str) -> Selection<'_> {
@@ -9,6 +9,7 @@ fn on_role(name: &str) -> Selection<'_> {
         pinned: false,
         role: Some(name),
         last_model: Some(("anthropic", "haiku")),
+        queued: None,
     }
 }
 
@@ -17,6 +18,7 @@ fn pinned() -> Selection<'static> {
         pinned: true,
         role: None,
         last_model: Some(("anthropic", "haiku")),
+        queued: None,
     }
 }
 
@@ -46,10 +48,10 @@ fn entering_plan_over_a_pinned_model_remembers_the_pin() {
     let swap = entered(&pinned());
     assert_eq!(
         swap.restore,
-        Some(Target::Model {
+        Target::Model {
             provider: "anthropic".to_string(),
             model_id: "haiku".to_string()
-        })
+        }
     );
 }
 
@@ -96,10 +98,10 @@ fn leaving_plan_restores_a_pinned_model() {
     assert_eq!(
         step,
         Step::Leave {
-            restore: Some(Target::Model {
+            restore: Target::Model {
                 provider: "anthropic".to_string(),
                 model_id: "haiku".to_string()
-            })
+            }
         }
     );
 }
@@ -112,6 +114,73 @@ fn a_choice_made_during_plan_mode_survives_leaving_it() {
         Step::Forget
     );
     assert_eq!(step(false, Some(&swap), &pinned(), true), Step::Forget);
+}
+
+#[test]
+fn a_role_that_names_nothing_restores_the_default_role() {
+    // `temporary` is omp's ad-hoc switch marker, `fallback` a retry marker; neither is a role to go back to.
+    for marker in ["temporary", "fallback", ""] {
+        let swap = entered(&on_role(marker));
+        assert_eq!(swap.restore, role("default"), "role {marker:?}");
+    }
+    let unknown = Selection {
+        role: None,
+        ..on_role("slow")
+    };
+    assert_eq!(entered(&unknown).restore, role("default"));
+}
+
+#[test]
+fn a_pin_with_no_recorded_model_restores_the_default_role() {
+    let swap = entered(&Selection {
+        last_model: None,
+        ..pinned()
+    });
+    assert_eq!(swap.restore, role("default"));
+}
+
+#[test]
+fn a_role_the_user_queued_while_stopped_becomes_the_restore_target() {
+    let queued = role("smol");
+    let selection = Selection {
+        queued: Some(&queued),
+        ..on_role("slow")
+    };
+    assert_eq!(
+        step(true, None, &selection, true),
+        Step::Enter {
+            swap: Swap {
+                restore: role("smol")
+            },
+            apply: true
+        }
+    );
+}
+
+#[test]
+fn plans_own_queued_switch_is_not_a_user_pick() {
+    let queued = role(PLAN_ROLE);
+    let selection = Selection {
+        queued: Some(&queued),
+        ..on_role("plan")
+    };
+    let swap = entered(&selection);
+    assert_eq!(swap.restore, role("default"));
+    assert!(matches!(
+        step(false, Some(&swap), &selection, true),
+        Step::Leave { .. }
+    ));
+}
+
+#[test]
+fn a_pick_queued_while_stopped_survives_leaving_plan() {
+    let swap = entered(&on_role("slow"));
+    let queued = role("smol");
+    let selection = Selection {
+        queued: Some(&queued),
+        ..on_role("plan")
+    };
+    assert_eq!(step(false, Some(&swap), &selection, true), Step::Forget);
 }
 
 #[test]
@@ -208,19 +277,12 @@ async fn leaving_plan_queues_the_displaced_role_back_and_ends_the_stint() {
     assert!(agent.with_model_state(|s| s.plan_swap.is_none()).await);
 }
 
-/// omp writes `role: "temporary"` for a `/switch @plan`, and the plan-mode restart re-reads that file.
-#[tokio::test]
-async fn leaving_plan_restores_the_role_after_the_restart_re_reads_an_ad_hoc_switch() {
-    let agent = agent_on_role("slow").await;
-    set_launched_plan_for_test(&agent, true).await;
-    on_launch_with(&agent, plan_role_is_set).await;
-    agent
-        .with_model_state(|s| s.current_role = Some("plan".to_string()))
-        .await;
+async fn point_conversation_at(agent: &SessionAgent, role_in_file: &str) {
     let dir = crate::test_scratch::path(format!("plan-role-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();
     let file = dir.join("conversation.jsonl");
-    let entry = r#"{"type":"model_change","id":"a1","model":"p/m","role":"temporary"}"#;
+    let entry =
+        format!(r#"{{"type":"model_change","id":"a1","model":"p/m","role":"{role_in_file}"}}"#);
     tokio::fs::write(&file, format!("{entry}\n")).await.unwrap();
     let patch = crate::store::registry::SessionPatch {
         current_conversation: Some(Some(file.to_string_lossy().into_owned())),
@@ -233,6 +295,18 @@ async fn leaving_plan_restores_the_role_after_the_restart_re_reads_an_ad_hoc_swi
         .update_session(agent.session_id(), patch)
         .await
         .unwrap();
+}
+
+/// omp writes `role: "temporary"` for a `/switch @plan`, and the plan-mode restart re-reads that file.
+#[tokio::test]
+async fn leaving_plan_restores_the_role_after_the_restart_re_reads_an_ad_hoc_switch() {
+    let agent = agent_on_role("slow").await;
+    set_launched_plan_for_test(&agent, true).await;
+    on_launch_with(&agent, plan_role_is_set).await;
+    agent
+        .with_model_state(|s| s.current_role = Some("plan".to_string()))
+        .await;
+    point_conversation_at(&agent, "temporary").await;
     set_launched_plan_for_test(&agent, false).await;
 
     model_support::seed_role_at_launch(&agent).await;
@@ -240,4 +314,52 @@ async fn leaving_plan_restores_the_role_after_the_restart_re_reads_an_ad_hoc_swi
 
     assert_eq!(queued_role(&agent).await.as_deref(), Some("slow"));
     assert!(agent.with_model_state(|s| s.plan_swap.is_none()).await);
+}
+
+/// The app restarts with the mode persisted as Plan: the file says `temporary`, nothing is carried
+/// in memory, so the role before plan mode is lost. Leaving plan must still land on `default`.
+#[tokio::test]
+async fn an_app_restart_in_plan_mode_leaves_to_the_default_role() {
+    let fx = agent_fixture(false).await;
+    let agent = fx.agent;
+    point_conversation_at(&agent, "temporary").await;
+    set_launched_plan_for_test(&agent, true).await;
+    model_support::seed_role_at_launch(&agent).await;
+    assert_eq!(
+        agent
+            .with_model_state(|s| s.current_role.clone())
+            .await
+            .as_deref(),
+        Some("temporary")
+    );
+
+    on_launch_with(&agent, plan_role_is_set).await;
+    assert_eq!(queued_role(&agent).await.as_deref(), Some("plan"));
+    // omp applied the switch (the file still reads `temporary`) and the user then leaves plan mode.
+    agent
+        .with_model_state(|s| s.current_role = Some("plan".to_string()))
+        .await;
+    set_launched_plan_for_test(&agent, false).await;
+    model_support::seed_role_at_launch(&agent).await;
+    on_launch_with(&agent, plan_role_is_set).await;
+
+    assert_eq!(queued_role(&agent).await.as_deref(), Some("default"));
+    assert!(agent.with_model_state(|s| s.plan_swap.is_none()).await);
+}
+
+#[tokio::test]
+async fn a_role_queued_while_stopped_is_restored_not_overwritten_by_the_plan_launch() {
+    let agent = agent_on_role("slow").await;
+    pending_selection::queue(&agent, role("smol")).await;
+    set_launched_plan_for_test(&agent, true).await;
+
+    on_launch_with(&agent, plan_role_is_set).await;
+    assert_eq!(queued_role(&agent).await.as_deref(), Some("plan"));
+    agent
+        .with_model_state(|s| s.current_role = Some("plan".to_string()))
+        .await;
+    set_launched_plan_for_test(&agent, false).await;
+    on_launch_with(&agent, plan_role_is_set).await;
+
+    assert_eq!(queued_role(&agent).await.as_deref(), Some("smol"));
 }

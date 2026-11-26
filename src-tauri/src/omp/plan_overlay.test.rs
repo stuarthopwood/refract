@@ -1,11 +1,35 @@
 use super::*;
 
 #[test]
-fn plan_overlay_denies_every_write_tool_and_asks_for_bash() {
-    assert_eq!(
-        render(),
-        "tools:\n  approval:\n    write: deny\n    edit: deny\n    ast_edit: deny\n    bash: prompt\n"
-    );
+fn plan_overlay_denies_every_write_tool_and_asks_for_every_exec_or_write_tool() {
+    let denied = ["write", "edit", "ast_edit"];
+    let asked = [
+        "bash",
+        "eval",
+        "ssh",
+        "browser",
+        "computer",
+        "task",
+        "github",
+        "debug",
+        "lsp",
+        "hub",
+        "security_scan",
+        "security_publish",
+        "manage_skill",
+        "learn",
+        "context_notes",
+        "new_context",
+        "generate_image",
+        "tts",
+        "vibe_spawn",
+        "vibe_send",
+    ];
+    let expected: String = std::iter::once("tools:\n  approval:\n".to_string())
+        .chain(denied.iter().map(|t| format!("    {t}: deny\n")))
+        .chain(asked.iter().map(|t| format!("    {t}: prompt\n")))
+        .collect();
+    assert_eq!(render(), expected);
 }
 
 #[tokio::test]

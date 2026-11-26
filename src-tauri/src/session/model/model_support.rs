@@ -325,7 +325,7 @@ pub(super) async fn resolve_current_selection(agent: &SessionAgent) -> (bool, Op
         .await;
     if !needs_reprobe && (pinned || cached_role.is_some()) {
         // A fallback role outranks a stale pin.
-        let effective_pinned = pinned && cached_role.as_deref() != Some("fallback");
+        let effective_pinned = pinned && cached_role.as_deref() != Some(FALLBACK_MARKER_ROLE);
         return (effective_pinned, cached_role);
     }
     let Some(path) = agent.current_conversation_path().await else {
@@ -372,13 +372,15 @@ pub(super) async fn resolve_current_selection(agent: &SessionAgent) -> (bool, Op
             (s.pinned, s.current_role.clone())
         })
         .await;
-    let effective_pinned = state_pinned && state_role.as_deref() != Some("fallback");
+    let effective_pinned = state_pinned && state_role.as_deref() != Some(FALLBACK_MARKER_ROLE);
     (effective_pinned, state_role)
 }
 
 /// What omp writes as the `role` of a `model_change` made by `/switch @<role>`. It names no role,
 /// so the Conversation file cannot say which role such a switch applied.
-const AD_HOC_ROLE: &str = "temporary";
+pub(super) const AD_HOC_ROLE: &str = "temporary";
+/// The role value a retry onto a fallback model leaves behind; it names no role either.
+pub(super) const FALLBACK_MARKER_ROLE: &str = "fallback";
 
 /// The role a freshly launched process runs on: the Conversation file's latest entry, else the
 /// configured `default`, which OMP starts on. A pinned Session never claims a role (#1878).

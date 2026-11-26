@@ -229,7 +229,7 @@ impl OmpProcess {
             Some(path) => path.clone(),
             None => executables::resolve_omp().map_err(ProcessError::new)?,
         };
-        let (args, launch_warnings) = super::process_args::build_args(opts).await;
+        let (args, launch_warnings) = super::process_args::build_args(opts).await?;
         warnings.extend(launch_warnings);
 
         let mut command = Command::new(&omp_path);
