@@ -35,8 +35,8 @@ describe('UsageFilters date range tabs', () => {
 
   it('names the MTD and YTD tabs in full for assistive technology', () => {
     const html = markup()
-    expect(html).toMatch(/<button[^>]*aria-label="Month to date"[^>]*>MTD<\/button>/)
-    expect(html).toMatch(/<button[^>]*aria-label="Year to date"[^>]*>YTD<\/button>/)
+    expect(html).toMatch(/<button[^>]*aria-label="MTD, month to date"[^>]*>MTD<\/button>/)
+    expect(html).toMatch(/<button[^>]*aria-label="YTD, year to date"[^>]*>YTD<\/button>/)
     expect(html).not.toMatch(/<button[^>]*aria-label="7 days"/)
   })
 })

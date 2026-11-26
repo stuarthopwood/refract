@@ -14,8 +14,8 @@ export const USAGE_RANGE_TABS: ReadonlyArray<{ value: UsageRange; label: string;
   { value: '7d', label: '7 days' },
   { value: '14d', label: '14 days' },
   { value: '30d', label: '30 days' },
-  { value: 'mtd', label: 'MTD', ariaLabel: 'Month to date' },
-  { value: 'ytd', label: 'YTD', ariaLabel: 'Year to date' },
+  { value: 'mtd', label: 'MTD', ariaLabel: 'MTD, month to date' },
+  { value: 'ytd', label: 'YTD', ariaLabel: 'YTD, year to date' },
   { value: 'all', label: 'All' },
   { value: 'custom', label: 'Custom' }
 ]

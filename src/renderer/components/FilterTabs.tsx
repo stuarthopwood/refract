@@ -8,7 +8,7 @@ const FILTER_TAB_TRIGGER_CLASS = 'focus-visible:outline-offset-[-2px] focus-visi
 export interface FilterTabsProps<T extends string> {
   value: T
   onValueChange(value: T): void
-  /** `ariaLabel` names a tab whose visible label is an abbreviation; it also shows as the hover tooltip. */
+  /** `ariaLabel` names a tab whose visible label is an abbreviation; it also shows as the hover tooltip. It must contain the visible label text (WCAG 2.5.3). */
   tabs: ReadonlyArray<{ value: T; label: string; ariaLabel?: string }>
   revealKey?: string
   ariaLabel?: string
