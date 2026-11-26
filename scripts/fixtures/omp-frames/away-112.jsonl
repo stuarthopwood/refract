@@ -20,6 +20,10 @@
 {"__wait__":["extension_ui_response"]}
 {"type":"extension_ui_request","id":"q-2","method":"input","title":"Name the release"}
 {"__wait__":["extension_ui_response"]}
+{"type":"extension_ui_request","id":"c-1","method":"confirm","title":"Delete the build folder?"}
+{"__wait__":["extension_ui_response"]}
+{"type":"extension_ui_request","id":"f-1","method":"form","title":"Release details","html":"<form><select name=\"channel\"><option>stable</option><option>beta</option></select><input name=\"notes\"></form>"}
+{"__wait__":["extension_ui_response"]}
 {"type":"tool_execution_start","toolCallId":"bash-1","toolName":"bash","args":{"command":"pnpm install"},"intent":"Installing dependencies"}
 {"type":"extension_ui_request","id":"appr-1","method":"select","title":"Allow tool: bash\nCommand: pnpm install","options":["Approve","Deny"]}
 {"__wait__":["extension_ui_response"]}
