@@ -206,6 +206,22 @@ _Avoid_: DAG, gate topology, pipeline
 The right region's first occupant (spec 004), opened by activating the Subagents **Readout chip**: a tree of the **Session**'s subagents (issue #563; the **Session** is the root, started agents the first level, their own child agents the next once the tracker knows the parent), each with a **Status icon** plus state word, showing a selected one's live stream (text and tool calls) as it runs.
 _Avoid_: Subagent sidebar, task panel
 
+**Stage view-model**:
+The typed, derived shape (`ChatScenario`, `StageItem`, `SubAgentItem`) that both the Subagents card in the chat and the **Subagent panel** render, built once by one pure module in `src/renderer/features/subagents/viewModel/` from transcript `subagent` items plus the readout summary overlay, so neither surface derives its own titles, counts or labels (issue #1925, ADR 0013). Rust supplies raw data and the synthesis cache, never this shape.
+_Avoid_: Stage model, card data, DTO
+
+**Overall goal**:
+The one-line purpose of a **Stage**'s `task()` call, at most 120 characters, written once per `task()` call by a cheap `tiny`-role model call and cached on disk by `toolCallId`. Absent when the `tiny` role is unset or the call fails; the card then shows the heuristic **Stage** title (issue #1925, ADR 0013).
+_Avoid_: Summary, headline, task description
+
+**Agent role**:
+A short label for what one subagent does, at most 40 characters ("A11y and WCAG audit"), written in the same cached `tiny`-role call as the **Overall goal**. Distinct from a model role (Default, Smol, Slow, Plan) and from a **Role colour**; it names a job, not a model (issue #1925, ADR 0013).
+_Avoid_: Type, persona, model role (for this)
+
+**Files touched**:
+The best-effort list of files a subagent wrote or edited, at most 50, collected in Rust from the rolling `recentTools` window of its heartbeat frames. A file can be missing when it scrolled out of the window between frames, so the UI never presents the list as complete. Live only; it is not replayed after a restart (issue #1925, ADR 0013).
+_Avoid_: Changed files, diff, files changed
+
 **Spine**:
 The 1px neutral `border-divider` line down the left of an expanded group row's members, marking that they belong to that header; decorative, state lives on each member's own icon, never coloured or animated (issue #565). The **Stage** group and **Subagent chain** use it as their shared connector.
 _Avoid_: rail (taken by Icon rail), guide rail, thread, timeline, connector
