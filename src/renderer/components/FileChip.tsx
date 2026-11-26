@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { FileIcon } from 'lucide-react'
-import { Badge, badgeVariants } from '@/components/ui/badge'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /** Last segment of a path in either separator style: agents report Windows and POSIX paths alike. */
@@ -27,17 +28,23 @@ export function splitFileChips(files: readonly string[], limit: number = FILE_CH
   return { shown: unique.slice(0, limit), hidden: unique.slice(limit) }
 }
 
+/** Lets a host that is already one tab stop (the panel's tree row, which renders the shared card body) take every nested "+N" out of the tab order without threading a prop through the card. */
+export const FileChipTabbableContext = React.createContext(true)
+
 interface FileChipListProps {
   files: readonly string[] | undefined
   /** The accessible name of the group, e.g. "Files touched". */
   label: string
   limit?: number
+  /** False takes the "+N" button out of the tab order, for a host that is already one tab stop and shows the whole list elsewhere; defaults to the nearest `FileChipTabbableContext`. */
+  tabbable?: boolean
   className?: string
 }
 
 // Renders nothing for no files, so a caller never leaves an empty row. The "+N" control is a real button
 // (keyboard and screen-reader reachable), unlike a hover-only tooltip on a chip.
-export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, className }: FileChipListProps) {
+export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, className }: FileChipListProps) {
+  const inheritedTabbable = React.useContext(FileChipTabbableContext)
   const [expanded, setExpanded] = React.useState(false)
   const { shown, hidden } = splitFileChips(files ?? [], limit)
   if (shown.length === 0) return null
@@ -48,15 +55,17 @@ export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, className 
       ))}
       {expanded && hidden.map((path) => <FileChip key={path} path={path} />)}
       {hidden.length > 0 && (
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="xs"
+          tabIndex={(tabbable ?? inheritedTabbable) ? undefined : -1}
           aria-expanded={expanded}
           onClick={() => setExpanded((open) => !open)}
-          className={cn(badgeVariants({ variant: 'outline' }), 'cursor-pointer text-muted-foreground hover:bg-muted hover:text-foreground')}
+          className="text-muted-foreground"
         >
           {expanded ? 'Show fewer' : `+${hidden.length}`}
           {!expanded && <span className="sr-only"> more files</span>}
-        </button>
+        </Button>
       )}
     </div>
   )

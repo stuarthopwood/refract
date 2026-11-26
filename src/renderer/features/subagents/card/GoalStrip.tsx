@@ -10,7 +10,7 @@ export function GoalStrip({ goal, className }: { goal: string | undefined; class
   return (
     <Tooltip>
       <TooltipTrigger asChild aria-describedby={undefined}>
-        <div data-slot="goal-strip" className={cn('flex items-start gap-2 border-t border-divider bg-surface-1 px-3 py-1.5 text-xs', className)}>
+        <div data-slot="goal-strip" className={cn('flex items-start gap-2 border-t border-divider bg-surface-1 px-2 py-2 text-xs', className)}>
           <span aria-hidden="true" className={cn(ICON_SLOT_CLASS, 'text-muted-foreground')}>
             <TargetIcon className="size-3.5" />
           </span>

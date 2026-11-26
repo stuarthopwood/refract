@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { FILE_CHIP_LIMIT, FileChip, FileChipList, fileBasename, splitFileChips } from './FileChip'
+import { FILE_CHIP_LIMIT, FileChip, FileChipList, FileChipTabbableContext, fileBasename, splitFileChips } from './FileChip'
 
 describe('fileBasename (#1928)', () => {
   it('takes the last segment of a POSIX path', () => {
@@ -77,5 +77,19 @@ describe('FileChipList (#1928)', () => {
     expect(html.match(/data-slot="badge"/g)).toHaveLength(4)
     expect(html).not.toContain('>e.ts<')
     expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*>\+2<span class="sr-only"> more files<\/span><\/button>/)
+  })
+})
+
+describe('FileChipList tabbable mode', () => {
+  const six = ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts']
+
+  it('keeps the "+N" button out of the tab order when tabbable is false', () => {
+    expect(renderToStaticMarkup(createElement(FileChipList, { files: six, label: 'Files touched', tabbable: false }))).toMatch(/<button[^>]*tabindex="-1"/)
+  })
+
+  it('inherits the same from a host that sets the context, and is tabbable by default', () => {
+    const files = createElement(FileChipList, { files: six, label: 'Files touched' })
+    expect(renderToStaticMarkup(createElement(FileChipTabbableContext.Provider, { value: false }, files))).toContain('tabindex="-1"')
+    expect(renderToStaticMarkup(files)).not.toContain('tabindex')
   })
 })

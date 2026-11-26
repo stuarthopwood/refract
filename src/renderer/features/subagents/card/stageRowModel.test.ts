@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SubAgentItem } from '../viewModel/types'
-import { stageAgentItemClass, stageAgentsGridClass, stageRowModel, type StageRowView } from './stageRowModel'
+import { stageAccessibleName, stageAgentItemClass, stageAgentsGridClass, stageRowModel, type StageRowView } from './stageRowModel'
 
 const agent = (name: string, overrides: Partial<SubAgentItem> = {}): SubAgentItem => ({
   id: name,
@@ -57,6 +57,26 @@ describe('stageRowModel', () => {
       expect(stageRowModel(view([agent('A')], { rawLabel: 'Gate' })).rawLabel).toBeUndefined()
       expect(stageRowModel(view([agent('A')])).rawLabel).toBeUndefined()
     })
+  })
+})
+
+describe('stageAccessibleName', () => {
+  const stage = { number: 2, cleanTitle: 'Gate' as string | null, rollupText: '3 done', status: 'finished' as const, durationMs: undefined as number | undefined }
+
+  it('joins the heading and the roll-up, with no status word for a settled Stage', () => {
+    expect(stageAccessibleName(stage)).toBe('Stage 2, Gate, 3 done')
+  })
+
+  it('adds "Running" while running and leaves the ticking duration out', () => {
+    expect(stageAccessibleName({ ...stage, status: 'running', durationMs: 65_000 })).toBe('Stage 2, Gate, 3 done, Running')
+  })
+
+  it('adds the duration once the Stage has settled', () => {
+    expect(stageAccessibleName({ ...stage, durationMs: 65_000 })).toMatch(/^Stage 2, Gate, 3 done, 1m/)
+  })
+
+  it('falls back to the bare Stage number without a title', () => {
+    expect(stageAccessibleName({ ...stage, cleanTitle: null })).toBe('Stage 2, 3 done')
   })
 })
 

@@ -74,7 +74,7 @@ describe('SubagentRow card variant (#1928, FR-148)', () => {
     expect(html).toContain('running now')
     expect(html).toContain('>1 done<')
     expect(html).toContain('>+3 queued<')
-    expect(html).toContain('border-state-working/50')
+    expect(html).toContain('border-state-working-border')
     expect(html).not.toContain('aria-live')
   })
 

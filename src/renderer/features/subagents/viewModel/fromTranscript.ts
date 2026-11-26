@@ -2,6 +2,7 @@ import type { SubagentSummary } from '../../../../shared/model'
 import type { GroupedTranscriptItem } from '../../chat/groupToolItems'
 import { chatRowStatus } from '../subagentStatus'
 import { deriveScenario, type AgentInput, type StageInput } from './derive'
+import { runFacts } from './runFacts'
 import { splitSubagentRuns, type RunSlot, type TranscriptSubagentItem } from './runs'
 import type { ChatScenario } from './types'
 
@@ -15,7 +16,7 @@ function summaryIndex(summaries: readonly SubagentSummary[]): Map<string, Subage
 }
 
 // The summary wins wherever both sources carry a field: it is the live one (ADR 0013).
-function overlay(item: TranscriptSubagentItem, summary: SubagentSummary | undefined): AgentInput {
+function overlay(item: TranscriptSubagentItem, resultSummary: string | undefined, summary: SubagentSummary | undefined): AgentInput {
   return {
     id: item.id,
     toolCallId: item.toolCallId,
@@ -27,26 +28,20 @@ function overlay(item: TranscriptSubagentItem, summary: SubagentSummary | undefi
     background: summary?.background,
     role: summary?.role ?? item.role,
     overallGoal: summary?.overallGoal ?? item.overallGoal,
-    result: item.result,
+    resultSummary,
     taskSummary: summary?.taskSummary,
     filesTouched: summary?.filesTouched,
     recentSteps: summary?.recentSteps
   }
 }
 
-/** The shared `task()` context of a run: each distinct item context once, in order. */
-export function runContext(items: readonly TranscriptSubagentItem[]): string | undefined {
-  const contexts = [...new Set(items.map((item) => item.context).filter((c): c is string => Boolean(c)))]
-  return contexts.length > 0 ? contexts.join('\n\n') : undefined
-}
-
 function toStageInput(items: readonly TranscriptSubagentItem[], summaries: ReadonlyMap<string, SubagentSummary>): StageInput {
-  const context = runContext(items)
+  const { context, agentRefs, resultSummaries } = runFacts(items)
   return {
     id: `stage:${items[0]!.id}`,
     context,
-    refText: [context ?? '', ...items.map((item) => item.task)].join('\n'),
-    agents: items.map((item) => overlay(item, summaries.get(agentKey(item.toolCallId, item.specIndex))))
+    agentRefs,
+    agents: items.map((item, index) => overlay(item, resultSummaries[index], summaries.get(agentKey(item.toolCallId, item.specIndex))))
   }
 }
 

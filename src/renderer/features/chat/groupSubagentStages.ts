@@ -1,8 +1,8 @@
 import type { SubagentSummary } from '../../../shared/model'
 import type { StageItem } from '../subagents/viewModel'
-import { runContext } from '../subagents/viewModel/fromTranscript'
+import { fromTranscriptRuns } from '../subagents/viewModel/fromTranscript'
+import { runFacts } from '../subagents/viewModel/runFacts'
 import { splitSubagentRuns, type TranscriptSubagentItem } from '../subagents/viewModel/runs'
-import { selectScenarioFromTranscript } from '../subagents/viewModel/selectors'
 import type { GroupedTranscriptItem } from './groupToolItems'
 
 export type { StageDependency } from './stageMeta'
@@ -27,7 +27,7 @@ export function isStageGroup(item: { kind: string }): item is StageGroup {
 /** Positions Stages in the transcript; the Stage runs and their derived fields come from the shared view-model scenario. */
 export function groupSubagentStages(items: GroupedTranscriptItem[], summaries: readonly SubagentSummary[]): StageGroupedItem[] {
   const slots = splitSubagentRuns(items)
-  const { stages } = selectScenarioFromTranscript(items, summaries)
+  const { stages } = fromTranscriptRuns(slots, summaries)
   const result: StageGroupedItem[] = []
   let runIndex = 0
   for (const slot of slots) {
@@ -42,7 +42,7 @@ export function groupSubagentStages(items: GroupedTranscriptItem[], summaries: r
       items: slot.items,
       stageIndex: view.number,
       totalStages: stages.length,
-      context: runContext(slot.items),
+      context: runFacts(slot.items).context,
       view
     })
   }

@@ -64,15 +64,16 @@ export function SubagentBody({ item, showGoal }: SubagentRowProps) {
 
 // The card variant's body (#1928): name, role, what it did, provenance and files, then a live
 // heartbeat and sub-steps while it runs. Every optional part renders nothing when absent, so no
-// empty row or gap is left behind.
-function SubagentCardBody({ item, agent, showGoal }: SubagentRowProps & { agent: SubAgentItem }) {
+// empty row or gap is left behind. `children` is the footer: the chat adds its input/output toggle,
+// the panel (which has its own detail pane) adds nothing, so it needs no transcript item (#1930).
+export function SubagentCardBody({ agent, children }: { agent: SubAgentItem; children?: React.ReactNode }) {
   const { status, duration, name, role, whatItDid, triggeredBy, filesTouched, liveDetail, subSteps } = agent
   const running = status === 'running'
   const hasProvenanceRow = causalBadgeText(triggeredBy) != null || (filesTouched?.length ?? 0) > 0
   const hasLive = running && (heartbeatText(liveDetail) != null || (subSteps?.length ?? 0) > 0)
   return (
-    <div className={cn('min-w-0 space-y-1.5 rounded-lg border bg-surface-subtle p-2', running ? 'border-state-working/50' : 'border-border')}>
-      <div className="flex min-w-0 items-center gap-1.5 text-xs">
+    <div className={cn('min-w-0 space-y-2 rounded-lg border bg-surface-subtle p-2', running ? 'border-state-working-border' : 'border-border')}>
+      <div className="flex min-w-0 items-center gap-2 text-xs">
         <span className="flex shrink-0 items-center gap-1">
           <SubagentStatusGlyph status={status} />
           {status !== 'finished' && <span aria-hidden="true" className="text-muted-foreground">{SUBAGENT_STATUS_LABEL[status]}</span>}
@@ -93,12 +94,12 @@ function SubagentCardBody({ item, agent, showGoal }: SubagentRowProps & { agent:
         </div>
       )}
       {hasLive && (
-        <div className="space-y-1.5 border-t border-divider pt-1.5">
+        <div className="space-y-2 border-t border-divider pt-2">
           <Heartbeat liveDetail={liveDetail} />
           <SubStepList steps={subSteps} />
         </div>
       )}
-      <SubagentBody item={item} showGoal={showGoal} />
+      {children}
     </div>
   )
 }
@@ -107,7 +108,13 @@ function SubagentCardBody({ item, agent, showGoal }: SubagentRowProps & { agent:
 // grouped by `groupToolItems`, identity is the stable `item.id` (so a later activation can
 // reopen the same subagent's full transcript panel, spec 004).
 export function SubagentRow({ item, agent, showGoal, variant = 'default' }: SubagentRowProps & { agent: SubAgentItem; variant?: 'default' | 'card' }) {
-  if (variant === 'card') return <SubagentCardBody item={item} agent={agent} showGoal={showGoal} />
+  if (variant === 'card') {
+    return (
+      <SubagentCardBody agent={agent}>
+        <SubagentBody item={item} showGoal={showGoal} />
+      </SubagentCardBody>
+    )
+  }
   const { status, duration, whatItDid: resultSummary } = agent
   const meta = (
     <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">

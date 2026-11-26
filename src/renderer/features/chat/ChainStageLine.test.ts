@@ -20,7 +20,8 @@ vi.mock('../right-pane/hosted-panel-actions', () => ({ openHostedPanel: vi.fn() 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { TranscriptSubagentItem } from '../subagents/viewModel/runs'
 import { subagentItem } from '../subagents/viewModel/testFixtures'
-import { ChainStageLine, stageToggleRowId } from './ChainStageLine'
+import { panelStageToggleId } from '../subagents/subagentPanelRows'
+import { ChainStageLine, shouldMoveFocusToChevron, stageToggleRowId } from './ChainStageLine'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 
 const setManualOpen = (sessionId: string, rowId: string, open: boolean) => {
@@ -146,8 +147,18 @@ describe('ChainStageLine open state (FR-149)', () => {
   })
 
   describe('given an automatic expand or collapse', () => {
-    it('is not announced as a log addition', () => {
-      expect(render(RUNNING_GATE())).toContain('aria-live="off"')
+    it('is not announced as a log addition, and the running outcome line never speaks', () => {
+      expect(render(RUNNING_GATE())).toMatch(/<div role="group"[^>]*aria-live="off"[^>]*data-status="running"/)
+    })
+  })
+
+  describe('given focus inside a Stage that auto-collapses', () => {
+    it('hands it to the chevron only on an expanded-to-collapsed change with focus in the content', () => {
+      expect(shouldMoveFocusToChevron(true, false, true)).toBe(true)
+      expect(shouldMoveFocusToChevron(true, false, false)).toBe(false)
+      expect(shouldMoveFocusToChevron(false, false, true)).toBe(false)
+      expect(shouldMoveFocusToChevron(true, true, true)).toBe(false)
+      expect(shouldMoveFocusToChevron(false, true, true)).toBe(false)
     })
   })
 })
@@ -163,14 +174,35 @@ describe('ChainStageLine reduced motion (FR-149 e)', () => {
 describe('given a running Stage', () => {
   const running = stageOf([subagentItem({ name: 'Solo', status: 'running' })])
 
-  it('tints the header with a color-mix of the working state and draws no coloured border', () => {
+  it('tints the header with the working-state tint token and draws no coloured border', () => {
     const html = render(running)
-    expect(html).toContain('color-mix(in_oklab,var(--state-working)_10%,transparent)')
+    expect(html).toContain('bg-state-working-tint')
     expect(html).not.toMatch(/border-l-(state|severity)/)
     expect(html).toContain('data-status="running"')
   })
 
   it('does not tint a settled Stage', () => {
-    expect(render(SOLO())).not.toContain('color-mix')
+    expect(render(SOLO())).not.toContain('bg-state-working-tint')
+  })
+})
+
+describe('Stage toggle keys (FR-150 d)', () => {
+  it('keeps the card and the panel on separate keys', () => {
+    const stage = GATE()
+    expect(stageToggleRowId(stage.id)).toBe(`card:${stage.id}`)
+    expect(panelStageToggleId(stage.id)).toBe(`panel:${stage.id}`)
+  })
+
+  it('leaves a settled card collapsed when only the panel opened that Stage', () => {
+    const stage = GATE()
+    setManualOpen('s1', panelStageToggleId(stage.id), true)
+    expect(render(stage, 's1')).not.toContain('<ol')
+  })
+
+  it('leaves the panel key untouched when the card opens that Stage', () => {
+    const stage = GATE()
+    setManualOpen('s1', stageToggleRowId(stage.id), true)
+    expect(toggles.bySession.s1?.[panelStageToggleId(stage.id)]).toBeUndefined()
+    expect(render(stage, 's1')).toContain('<ol')
   })
 })
