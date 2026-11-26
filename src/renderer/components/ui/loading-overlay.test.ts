@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { LoadingOverlay } from './loading-overlay'
 
-const render = (props: { loading: boolean; delayMs?: number; overlay?: string }) =>
+const render = (props: { loading: boolean; delayMs?: number; overlay?: string; inertWhileLoading?: boolean }) =>
   renderToStaticMarkup(createElement(LoadingOverlay, { ...props, children: createElement('p', null, 'Stats') }))
 
 describe('LoadingOverlay default card', () => {
@@ -16,6 +16,10 @@ describe('LoadingOverlay default card', () => {
     expect(html).toContain('backdrop-blur-sm')
     expect(html).toContain('animate-spin')
     expect(html).toContain('Loading')
+  })
+
+  it('stops_the_spinner_for_people_who_prefer_reduced_motion', () => {
+    expect(render({ loading: true, delayMs: 0 })).toContain('motion-reduce:animate-none')
   })
 
   it('keeps_the_card_decorative_so_the_callers_polite_status_announces_it', () => {
@@ -33,6 +37,24 @@ describe('LoadingOverlay default card', () => {
     const html = render({ loading: false })
     expect(html).not.toContain('Loading')
     expect(html).not.toContain('inert')
+  })
+})
+
+describe('LoadingOverlay inertWhileLoading', () => {
+  it('is_inert_blocks_pointer_and_sets_aria_busy_by_default', () => {
+    const html = render({ loading: true, delayMs: 0 })
+    expect(html).toContain('inert')
+    expect(html).toContain('pointer-events-none')
+    expect(html).toContain('aria-busy="true"')
+  })
+
+  it('keeps_the_content_interactive_but_blurred_when_false', () => {
+    const html = render({ loading: true, delayMs: 0, inertWhileLoading: false })
+    expect(html).not.toContain('inert')
+    expect(html).not.toContain('pointer-events-none')
+    expect(html).not.toContain('aria-busy="true"')
+    expect(html).toContain('blur-sm')
+    expect(html).toContain('Loading')
   })
 })
 

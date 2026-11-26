@@ -21,6 +21,7 @@ import { SpendChart } from './SpendChart'
 import { TokenMixChart } from './TokenMixChart'
 import { UsageEmptyState } from './UsageEmptyState'
 import { UsageFilters, clearUsageFilters, countActiveFilters } from './UsageFilters'
+import { refreshAnnouncement } from './refreshAnnouncement'
 import { ModelTable, ProjectTable, ToolTable, TopSessionsTable } from './UsageTables'
 
 export function UsageView({ reservesWindowControls = true }: { reservesWindowControls?: boolean }) {
@@ -46,6 +47,15 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
     wasRunning.current = running
   }, [running, seen, announce])
 
+  // Only a refresh of loaded figures announces; the first load shows section skeletons instead.
+  const updating = s.refreshing && s.loaded
+  const wasUpdating = useRef(false)
+  useEffect(() => {
+    const text = refreshAnnouncement(wasUpdating.current, updating)
+    if (text) announce(text)
+    wasUpdating.current = updating
+  }, [updating, announce])
+
   // Null status is the first paint before start() answers; a dashboard skeleton there flashes then swaps.
   // A failed start leaves it null, so that case falls through to the error section.
   const scanPending = status === null ? s.error === null : !status.scanCompleted
@@ -67,9 +77,14 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
         {announcement}
       </div>
       <UsageFilters />
-      {/* The overlay sits inside the scroll container so its sticky card stays in view while the stats scroll. First load keeps the section skeletons, so only a refresh of loaded figures blurs. */}
+      {/* The overlay sits inside the scroll container so its sticky card stays in view while the stats scroll. First load keeps the section skeletons, so only a refresh of loaded figures blurs. It stays interactive so a bucket, sort or page control keeps focus; this wrapper owns `aria-busy`. */}
       <div aria-busy={s.refreshing} className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
-        <LoadingOverlay loading={s.refreshing && s.loaded} className="flex flex-1 flex-col" contentClassName="flex flex-1 flex-col gap-8">
+        <LoadingOverlay
+          loading={updating}
+          inertWhileLoading={false}
+          className="flex flex-1 flex-col"
+          contentClassName="flex flex-1 flex-col gap-8"
+        >
           {showProgress && status && (
             <ProgressStrip
               value={status.sessionsDone}

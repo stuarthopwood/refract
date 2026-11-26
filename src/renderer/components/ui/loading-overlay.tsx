@@ -15,10 +15,12 @@ interface LoadingOverlayProps {
   overlay?: ReactNode
   /** Quiet period before the blur and card appear, so fast fetches never flash them. */
   delayMs?: number
+  /** Default true. False keeps the blurred content interactive, so a control the user is using keeps its focus and clicks, and leaves `aria-busy` to the caller. */
+  inertWhileLoading?: boolean
 }
 
 /** Blurs non-interactive content behind a centred card while a refetch is in flight. The default card is visual only; the caller's polite status announces it. */
-export function LoadingOverlay({ loading, children, className, contentClassName, overlay, delayMs = 150 }: LoadingOverlayProps) {
+export function LoadingOverlay({ loading, children, className, contentClassName, overlay, delayMs = 150, inertWhileLoading = true }: LoadingOverlayProps) {
   const [elapsed, setElapsed] = useState(false)
   useEffect(() => {
     if (!loading || delayMs <= 0) {
@@ -30,7 +32,7 @@ export function LoadingOverlay({ loading, children, className, contentClassName,
   }, [loading, delayMs])
   const visible = loading && (delayMs <= 0 || elapsed)
   return (
-    <div className={cn('relative', className)} aria-busy={loading && !overlay}>
+    <div className={cn('relative', className)} aria-busy={loading && !overlay && inertWhileLoading}>
       {visible &&
         (overlay ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-scrim-bg">{overlay}</div>
@@ -42,7 +44,7 @@ export function LoadingOverlay({ loading, children, className, contentClassName,
               aria-hidden
               className="absolute top-16 left-1/2 flex w-max -translate-x-1/2 items-center gap-2 rounded-xl bg-background/90 px-6 py-4 text-base text-muted-foreground backdrop-blur-sm"
             >
-              <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
+              <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin motion-reduce:animate-none" />
               Loading
             </div>
           </div>
@@ -50,10 +52,10 @@ export function LoadingOverlay({ loading, children, className, contentClassName,
       <div
         className={cn(
           BLUR_TRANSITION_CLASS,
-          visible && cn('pointer-events-none select-none', BLURRED_CONTENT_CLASS),
+          visible && cn(inertWhileLoading && 'pointer-events-none select-none', BLURRED_CONTENT_CLASS),
           contentClassName
         )}
-        inert={loading}
+        inert={loading && inertWhileLoading}
       >
         {children}
       </div>
