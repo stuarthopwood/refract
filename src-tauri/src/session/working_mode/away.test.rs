@@ -158,6 +158,46 @@ fn a_word_that_merely_starts_with_a_negative_is_not_one() {
 }
 
 #[test]
+fn format_characters_cannot_pad_a_label_past_the_cap_or_out_of_it() {
+    let padding = "\u{200b}".repeat(LABEL_CAP + 10);
+    let leading = format!("{padding}No");
+    let trailing = format!("No{padding}");
+    assert_eq!(safe_position(["Yes", leading.as_str()]), Some(1));
+    assert_eq!(safe_position(["Yes", trailing.as_str()]), Some(1));
+    // Real text past the cap is still not a bare negative word.
+    let long = format!("No{}", "x".repeat(LABEL_CAP));
+    assert_eq!(negative_position(["Yes", long.as_str()]), None);
+}
+
+#[test]
+fn a_standing_instruction_or_an_approval_is_not_the_safe_option() {
+    for label in [
+        "Never ask again",
+        "Don't ask again \u{2013} always allow",
+        "Don\u{2019}t ask again - always allow",
+        "Stop asking",
+        "Never ask me again",
+        "Do not ask again",
+    ] {
+        assert_eq!(negative_position(["Allow once", label]), None, "{label}");
+        assert_eq!(safe_position([label, "No"]), Some(1), "{label}");
+    }
+}
+
+#[test]
+fn a_short_refusal_phrase_is_still_the_safe_option() {
+    for label in [
+        "Never mind",
+        "Stop here",
+        "Don't allow",
+        "Do not approve",
+        "Never allow",
+    ] {
+        assert_eq!(negative_position(["Go", label]), Some(1), "{label}");
+    }
+}
+
+#[test]
 fn only_one_steer_slot_is_held_at_a_time() {
     let slot = Log::default().steer_slot();
     let mut first = slot.begin(Kind::Answered).expect("the slot is free");

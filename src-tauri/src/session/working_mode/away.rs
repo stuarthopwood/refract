@@ -31,6 +31,14 @@ const SAFE_PREFIXES: [&str; 23] = [
 ];
 /// A label longer than this cannot be a bare negative word, and the cap bounds the folding work.
 const LABEL_CAP: usize = 64;
+/// Prefixes that also open a standing instruction ("Never ask again", "Stop asking") or an approval
+/// ("Don't ask again, always allow"), so a longer phrase is not read as a refusal.
+const GUARDED_PREFIXES: [&str; 4] = ["never", "stop", "don't", "do not"];
+const SHORT_REFUSAL_WORDS: usize = 4;
+const APPROVING: [&str; 5] = ["allow", "always", "approv", "yes", "trust"];
+const STANDING: &[&str] = &["ask", "again", "remember", "prompt", "warn", "notif"];
+/// Approving words a guarded lead word negates when they come right after it ("Never allow").
+const NEGATED_BY_LEAD: [&str; 3] = ["allow", "approv", "trust"];
 
 /// Declaration order is the strength order a steer coalesces by: Denied > Cancelled > Answered.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -147,11 +155,14 @@ fn is_format(c: char) -> bool {
     )
 }
 
-/// NFKC-folded, format-stripped, lower-cased label with single spaces and straight apostrophes.
-fn fold(label: &str) -> String {
-    let folded: String = label
-        .chars()
-        .take(LABEL_CAP)
+/// NFKC-folded, format-stripped, lower-cased label with single spaces and straight apostrophes, and
+/// whether it was longer than `LABEL_CAP`. Format characters go before the cap, so padding a label
+/// with them can neither push its text past the cap nor out of it.
+fn fold(label: &str) -> (String, bool) {
+    let mut visible = label.chars().filter(|c| !is_format(*c));
+    let head: String = visible.by_ref().take(LABEL_CAP).collect();
+    let truncated = visible.next().is_some();
+    let folded: String = head
         .nfkc()
         .filter(|c| !is_format(*c))
         .flat_map(char::to_lowercase)
@@ -160,14 +171,52 @@ fn fold(label: &str) -> String {
             c => c,
         })
         .collect();
-    folded.split_whitespace().collect::<Vec<_>>().join(" ")
+    (
+        folded.split_whitespace().collect::<Vec<_>>().join(" "),
+        truncated,
+    )
+}
+
+/// The text after `prefix` when the prefix ends on a word boundary.
+fn after_word<'a>(folded: &'a str, prefix: &str) -> Option<&'a str> {
+    folded
+        .strip_prefix(prefix)
+        .filter(|rest| rest.chars().next().is_none_or(|c| !c.is_alphanumeric()))
+}
+
+fn words(text: &str) -> impl Iterator<Item = &str> {
+    text.split(|c: char| !c.is_alphanumeric() && c != '\'')
+        .filter(|word| !word.is_empty())
+}
+
+/// "Never ask again" and "Stop asking" are standing instructions, not a refusal of this request, and
+/// "Don't ask again - always allow" approves it. So these prefixes read as a refusal only in a short
+/// phrase with no approving or standing-instruction word; "Don't allow" is fine because the lead
+/// word negates the word right after it.
+fn is_short_refusal(folded: &str, rest: &str) -> bool {
+    if folded.split_whitespace().count() > SHORT_REFUSAL_WORDS {
+        return false;
+    }
+    let mut rest_words = words(rest).peekable();
+    if rest_words
+        .peek()
+        .is_some_and(|first| NEGATED_BY_LEAD.iter().any(|w| first.starts_with(w)))
+    {
+        rest_words.next();
+    }
+    !rest_words.any(|word| {
+        APPROVING
+            .iter()
+            .chain(STANDING)
+            .any(|marker| word.starts_with(marker))
+    })
 }
 
 fn starts_with_negative(folded: &str) -> bool {
     SAFE_PREFIXES.iter().any(|prefix| {
-        folded
-            .strip_prefix(prefix)
-            .is_some_and(|rest| rest.chars().next().is_none_or(|c| !c.is_alphanumeric()))
+        after_word(folded, prefix).is_some_and(|rest| {
+            !GUARDED_PREFIXES.contains(prefix) || is_short_refusal(folded, rest)
+        })
     })
 }
 
@@ -181,8 +230,8 @@ fn is_bare_negative(folded: &str) -> bool {
 pub fn negative_position<'a>(labels: impl IntoIterator<Item = &'a str>) -> Option<usize> {
     let mut first_prefixed = None;
     for (i, label) in labels.into_iter().enumerate() {
-        let folded = fold(label);
-        if label.chars().nth(LABEL_CAP).is_none() && is_bare_negative(&folded) {
+        let (folded, truncated) = fold(label);
+        if !truncated && is_bare_negative(&folded) {
             return Some(i);
         }
         if first_prefixed.is_none() && starts_with_negative(&folded) {
@@ -450,6 +499,11 @@ pub(in crate::session) async fn send_steer(agent: &SessionAgent, kind: Kind) {
 }
 
 async fn deliver_steer(agent: &SessionAgent, kind: Kind) {
+    // A steer queued while Away can outlive it: leaving Away must not be followed by a message
+    // that tells the agent the user is away.
+    if !super::is_away(agent).await {
+        return;
+    }
     // Not atomic with the send below: a turn can settle in between. Accepted, the window is
     // milliseconds and closing it would hold a lock across the RPC.
     if !matches!(
