@@ -3,7 +3,7 @@
 // by a divider. A `role="group"` inside the existing Sessions `<nav>` (never a nested landmark).
 // `aria-current` gives the open view a visible AND accessible signal, never colour alone (FR-030).
 import { useEffect, type ComponentType, type ReactNode } from 'react'
-import { ChartColumnIcon, CircleDotIcon, GitPullRequestIcon, HouseIcon } from 'lucide-react'
+import { CircleDotIcon, GaugeIcon, GitPullRequestIcon, HouseIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { SIDEBAR_NAV_BUTTON_CLASS } from '@/components/sidebarNavButtonClass'
 import { Button } from '@/components/ui/button'
@@ -117,7 +117,7 @@ export function ViewsNavGroup() {
         )}
       </NavItem>
       <NavItem active={view === 'issues'} icon={CircleDotIcon} text="Issues" label="Issues" onClick={openIssues} />
-      <NavItem active={view === 'usage'} icon={ChartColumnIcon} text="Usage" label="Usage" onClick={openUsage} />
+      <NavItem active={view === 'usage'} icon={GaugeIcon} text="Usage" label="Usage" onClick={openUsage} />
       <div role="separator" className="mx-2 mt-2 border-t border-divider" />
     </div>
   )

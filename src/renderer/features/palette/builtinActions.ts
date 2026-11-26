@@ -1,4 +1,4 @@
-import { ArrowLeftRightIcon, BarChart3Icon, CommandIcon, MessagesSquareIcon, PanelRightIcon, PauseIcon, PlayIcon, PlusIcon, RotateCcwIcon, SettingsIcon, SquareIcon, XIcon } from 'lucide-react'
+import { ArrowLeftRightIcon, CommandIcon, GaugeIcon, MessagesSquareIcon, PanelRightIcon, PauseIcon, PlayIcon, PlusIcon, RotateCcwIcon, SettingsIcon, SquareIcon, XIcon } from 'lucide-react'
 import { canTogglePause, setAllPaused, setSessionPaused } from '@/features/chat/pauseActions'
 import { closeChatPane } from '@/features/chat/closeChatPane'
 import { stopAndRestore } from '@/features/chat/restoreQueue'
@@ -182,7 +182,7 @@ const BUILTIN_ACTIONS: readonly PaletteAction[] = [
   },
   {
     id: 'open-usage',
-    icon: BarChart3Icon,
+    icon: GaugeIcon,
     label: 'Open Usage',
     group: 'General',
     when: () => useViewStore.getState().view !== 'usage',
