@@ -93,6 +93,17 @@ describe('OptionNoteSlot (#1987)', () => {
     expect(html).toContain('aria-label="Remove note on Alpha"')
   })
 
+  it('draws the saved-note bar flush with the option row: no top border or indent, buttons centred on the text line, balanced vertical padding (#2184)', () => {
+    const html = slot(true, notes({ texts: { A: 'ship it' } }))
+    const bar = /<div class="([^"]*bg-severity-warning-bg[^"]*)"/.exec(html)?.[1]?.split(' ') ?? []
+    expect(bar).toEqual(expect.arrayContaining(['items-center', 'py-1', 'bg-severity-warning-bg']))
+    expect(bar).not.toContain('border-t')
+    expect(bar).not.toContain('border-border')
+    expect(bar).not.toContain('ml-6')
+    expect(bar).not.toContain('items-start')
+    expect(bar).not.toContain('pt-2')
+  })
+
   it('renders the editor, labelled, capped and tied to its keyboard hint, while its option is being edited', () => {
     const html = slot(true, notes({ texts: { A: 'draft' }, editing: 'A' }))
     expect(html).toContain('aria-label="Note on Alpha"')
