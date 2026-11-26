@@ -269,3 +269,7 @@ pub fn scan(
     }
     report
 }
+
+#[cfg(test)]
+#[path = "copilot_cli.test.rs"]
+mod tests;

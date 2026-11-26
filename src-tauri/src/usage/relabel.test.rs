@@ -9,8 +9,19 @@ use serde_json::json;
 use super::*;
 use crate::usage::{ingest, schema};
 
+const TABLES: [&str; 7] = [
+    "file_offsets",
+    "messages",
+    "tool_calls",
+    "user_messages",
+    "message_rollup",
+    "tool_rollup",
+    "session_rollup",
+];
+
 struct Fixture {
     root: PathBuf,
+    db: PathBuf,
     conn: Connection,
 }
 
@@ -27,6 +38,7 @@ impl Fixture {
         std::fs::create_dir_all(dir.join("sessions")).unwrap();
         Self {
             root: dir.join("sessions"),
+            db: dir.join("usage.db"),
             conn: schema::open_db(&dir.join("usage.db")).unwrap(),
         }
     }
@@ -95,6 +107,52 @@ impl Fixture {
             .query_row("SELECT sum(cost_total) FROM message_rollup", [], |r| {
                 r.get(0)
             })
+            .unwrap()
+    }
+
+    /// Rewrites the database into the shape version 4 left (Projects keyed by the name `label`) and
+    /// reopens it, so the real v4 to v5 migration produces the `@legacy:` rows.
+    fn migrate_from_v4(&mut self, label: &str) {
+        let c = &self.conn;
+        c.execute_batch("DROP TABLE projects").unwrap();
+        for table in TABLES {
+            c.execute_batch(&format!(
+                "ALTER TABLE {table} RENAME COLUMN project_id TO project_label; \
+                 UPDATE {table} SET project_label = '{label}'"
+            ))
+            .unwrap();
+        }
+        c.execute_batch("PRAGMA user_version = 4").unwrap();
+        drop(std::mem::replace(
+            &mut self.conn,
+            Connection::open_in_memory().unwrap(),
+        ));
+        self.conn = schema::open_db(&self.db).unwrap();
+    }
+
+    /// Rows per Project id in every table that carries one.
+    fn legacy_rows(&self) -> i64 {
+        TABLES
+            .iter()
+            .map(|table| {
+                self.conn
+                    .query_row(
+                        &format!("SELECT count(*) FROM {table} WHERE project_id LIKE '@legacy:%'"),
+                        [],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .unwrap()
+            })
+            .sum()
+    }
+
+    fn rollup_cost(&self, id: &str) -> f64 {
+        self.conn
+            .query_row(
+                "SELECT coalesce(sum(cost_total), 0) FROM message_rollup WHERE project_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
             .unwrap()
     }
 }
@@ -204,4 +262,76 @@ fn a_second_pass_changes_nothing() {
     let once = fx.by_id();
     fx.relabel(&registered());
     assert_eq!(fx.by_id(), once);
+}
+
+#[test]
+fn a_project_renamed_and_then_removed_keeps_the_new_name() {
+    let mut fx = seeded();
+    fx.relabel(&registered());
+    fx.relabel(&ProjectIndex::from_triples([(
+        "C:\\Repos\\personal\\pinion".to_string(),
+        "pinion-app".to_string(),
+        "Refract".to_string(),
+    )]));
+
+    fx.relabel(&ProjectIndex::from_pairs([]));
+
+    assert_eq!(fx.name_of("pinion-app").as_deref(), Some("Refract"));
+    assert_eq!(fx.by_id().get("pinion-app"), Some(&2));
+}
+
+const PINION_CWD: &str = "C:\\Repos\\personal\\pinion";
+const PINION_FOLDER: &str = "--C--Repos-personal-pinion--";
+
+fn refract() -> ProjectIndex {
+    ProjectIndex::from_triples([(
+        PINION_CWD.to_string(),
+        "repo-1".to_string(),
+        "Refract".to_string(),
+    )])
+}
+
+/// A v4 database whose one session file is labelled `Refract`, migrated to v5 but not yet relabelled.
+fn migrated_v4() -> Fixture {
+    let mut fx = Fixture::new("v4");
+    fx.seed(PINION_FOLDER, "a", Some(PINION_CWD), &ProjectIndex::from_pairs([]));
+    fx.migrate_from_v4("Refract");
+    fx
+}
+
+#[test]
+fn a_migrated_v4_file_moves_from_its_legacy_id_to_the_real_id_with_totals_unchanged() {
+    let mut fx = migrated_v4();
+    assert_eq!(fx.by_id(), counts(&[("@legacy:Refract", 1)]));
+    assert!(fx.legacy_rows() > 0);
+    let cost = fx.total_cost();
+
+    fx.relabel(&refract());
+
+    assert_eq!(fx.by_id(), counts(&[("repo-1", 1)]));
+    assert_eq!(fx.message_ids(), counts(&[("repo-1", 1)]));
+    assert_eq!(fx.rollup_cost("repo-1"), cost);
+    assert_eq!(fx.legacy_rows(), 0);
+    assert_eq!(fx.name_of("repo-1").as_deref(), Some("Refract"));
+    assert_eq!(fx.name_of("@legacy:Refract"), None);
+}
+
+#[test]
+fn relabelling_a_legacy_file_adds_to_a_real_id_rollup_row_that_already_exists() {
+    let mut fx = migrated_v4();
+    // Ingest after the upgrade but before the relabel: the same hour, model and agent land under the real id.
+    fx.seed(PINION_FOLDER, "x", Some(PINION_CWD), &refract());
+    assert_eq!(fx.by_id(), counts(&[("@legacy:Refract", 1), ("repo-1", 1)]));
+    let cost = fx.total_cost();
+
+    fx.relabel(&refract());
+
+    assert_eq!(fx.by_id(), counts(&[("repo-1", 2)]));
+    assert_eq!(fx.rollup_cost("repo-1"), cost);
+    assert_eq!(fx.legacy_rows(), 0);
+    let rows: i64 = fx
+        .conn
+        .query_row("SELECT count(*) FROM message_rollup", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rows, 1);
 }

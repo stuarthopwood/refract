@@ -321,21 +321,27 @@ pub fn relabel_file(conn: &Connection, session_file: &str, new: &str) -> rusqlit
             params![new, sign, session_file],
         )?;
     }
-    for table in ["messages", "tool_calls", "user_messages"] {
+    for table in ["messages", "tool_calls", "user_messages", "session_rollup"] {
         conn.execute(
             &format!("UPDATE {table} SET project_id = ?1 WHERE session_file = ?2"),
             params![new, session_file],
         )?;
     }
-    conn.execute(
-        "UPDATE session_rollup SET project_id = ?1 WHERE session_file = ?2",
-        params![new, session_file],
-    )?;
+    Ok(())
+}
+
+/// Drops rollup rows that net to nothing and clamps rounding residue at zero. Relabelling runs it
+/// once after every file has moved, not per file, because each statement scans a whole rollup table.
+pub fn clean_rollups(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM message_rollup WHERE calls <= 0", [])?;
     conn.execute(
         "DELETE FROM tool_rollup WHERE calls <= 0 AND errors <= 0",
         [],
     )?;
+    clamp_negative_costs(conn)
+}
+
+fn clamp_negative_costs(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE message_rollup SET cost_total = max(cost_total, 0.0), cost_input = max(cost_input, 0.0), \
          cost_output = max(cost_output, 0.0), cost_cache_read = max(cost_cache_read, 0.0), \
@@ -368,13 +374,6 @@ pub fn forget_file_messages(conn: &Connection, session_file: &str) -> rusqlite::
         [session_file],
     )?;
     conn.execute("DELETE FROM message_rollup WHERE calls <= 0", [])?;
-    conn.execute(
-        "UPDATE message_rollup SET cost_total = max(cost_total, 0.0), cost_input = max(cost_input, 0.0), \
-         cost_output = max(cost_output, 0.0), cost_cache_read = max(cost_cache_read, 0.0), \
-         cost_cache_write = max(cost_cache_write, 0.0), credits = max(credits, 0.0) \
-         WHERE cost_total < 0 OR cost_input < 0 OR cost_output < 0 OR cost_cache_read < 0 \
-         OR cost_cache_write < 0 OR credits < 0",
-        [],
-    )?;
+    clamp_negative_costs(conn)?;
     Ok(())
 }

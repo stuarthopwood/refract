@@ -1,33 +1,69 @@
-import { describe, expect, it } from 'vitest'
-import type { UsageBreakdownRow } from '../../shared/ipc-usage'
-import { mergeProjects } from './usage-store'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { UsageFilters, UsageProjectOption } from '../../shared/ipc-usage'
+import { projectLabels, withKnownProject } from './usage-projects'
+import { useUsageStore } from './usage-store'
 
-const totals = { calls: 1, tokens: 1, usd: 1, credits: 1 }
-const row = (id: string, label: string): UsageBreakdownRow => ({ id, label, ...totals })
+const project = (id: string, name: string, removed = false): UsageProjectOption => ({ id, name, removed })
 
-describe('usage Project filter options', () => {
-  it('lists each Project by id and name', () => {
-    expect(mergeProjects([], [row('r-1', 'Refract'), row('@personal', 'Personal')], null)).toEqual([
-      { id: '@personal', name: 'Personal' },
-      { id: 'r-1', name: 'Refract' }
-    ])
+describe('usage Project picker labels', () => {
+  it('shows each Project by its name, never its id', () => {
+    const labels = projectLabels([project('r-1', 'Refract'), project('@personal', 'Personal')])
+    expect([...labels.values()]).toEqual(['Refract', 'Personal'])
   })
 
-  it('shows a renamed Project once, under its new name', () => {
-    const before = mergeProjects([], [row('r-1', 'Refract')], null)
-    expect(mergeProjects(before, [row('r-1', 'Pinion')], null)).toEqual([{ id: 'r-1', name: 'Pinion' }])
+  it('tells two Projects with one name apart by "(removed)", not by id', () => {
+    const labels = projectLabels([project('r-1', 'Refract'), project('r-old', 'Refract', true)])
+    expect(labels.get('r-1')).toBe('Refract')
+    expect(labels.get('r-old')).toBe('Refract (removed)')
   })
 
-  it('keeps a Project that is absent from the current rows, so a chosen filter never empties its own picker', () => {
-    const before = mergeProjects([], [row('r-1', 'Refract')], null)
-    expect(mergeProjects(before, [], 'r-1')).toEqual([{ id: 'r-1', name: 'Refract' }])
+  it('numbers duplicates that are still identical after the qualifier', () => {
+    const labels = projectLabels([project('a', 'Refract', true), project('b', 'Refract', true)])
+    expect(labels.get('a')).toBe('Refract (removed)')
+    expect(labels.get('b')).toBe('Refract (removed) (2)')
+  })
+})
+
+describe('usage saved Project filter', () => {
+  const filters: UsageFilters = { range: '7d', project: 'r-9' }
+
+  it('drops a Project that is not a known id', () => {
+    expect(withKnownProject(filters, [project('r-1', 'Refract')])).toEqual({ range: '7d', project: null })
   })
 
-  it('falls back to the id for a chosen Project nobody has named yet', () => {
-    expect(mergeProjects([], [], 'r-9')).toEqual([{ id: 'r-9', name: 'r-9' }])
+  it('keeps a known Project', () => {
+    expect(withKnownProject(filters, [project('r-9', 'Pinion')])).toBe(filters)
+  })
+})
+
+describe('usage store loadPrefs', () => {
+  const getPrefs = vi.fn()
+  const projects = vi.fn()
+  const setPrefs = vi.fn()
+
+  beforeEach(() => {
+    vi.stubGlobal('window', { refract: { usage: { getPrefs, projects, setPrefs } } })
+    useUsageStore.setState({ prefsLoaded: false, filters: { range: '7d' } })
+    setPrefs.mockResolvedValue({ ok: true })
   })
 
-  it('ignores rows without an id', () => {
-    expect(mergeProjects([], [{ label: 'x', ...totals }], null)).toEqual([])
+  it('drops a saved Project filter whose id has no name, and persists the cleared filter', async () => {
+    getPrefs.mockResolvedValue({ ok: true, value: { jokes: true, filters: { range: '7d', project: 'Refract' } } })
+    projects.mockResolvedValue({ ok: true, value: [project('r-1', 'Refract')] })
+
+    await useUsageStore.getState().loadPrefs()
+
+    expect(useUsageStore.getState().filters.project).toBeNull()
+    expect(setPrefs).toHaveBeenCalledWith({ filters: { range: '7d', project: null } })
+  })
+
+  it('keeps a saved Project filter whose id is known', async () => {
+    getPrefs.mockResolvedValue({ ok: true, value: { jokes: true, filters: { range: '7d', project: 'r-1' } } })
+    projects.mockResolvedValue({ ok: true, value: [project('r-1', 'Refract')] })
+
+    await useUsageStore.getState().loadPrefs()
+
+    expect(useUsageStore.getState().filters.project).toBe('r-1')
+    expect(useUsageStore.getState().options.projects).toEqual([project('r-1', 'Refract')])
   })
 })

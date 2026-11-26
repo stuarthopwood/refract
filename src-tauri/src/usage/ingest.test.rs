@@ -299,3 +299,63 @@ fn row_saved_before_the_tail_window_existed_records_it_without_a_reset() {
     assert_eq!(tail_len, 256);
     assert_eq!((fx.count("messages"), rollup_calls(&fx)), (2, 2));
 }
+
+fn stamped(fx: &Fixture) -> (String, String, Option<String>) {
+    let on_file: String = fx
+        .conn
+        .query_row("SELECT project_id FROM file_offsets", [], |r| r.get(0))
+        .unwrap();
+    let on_message: String = fx
+        .conn
+        .query_row("SELECT project_id FROM messages", [], |r| r.get(0))
+        .unwrap();
+    let name = fx
+        .conn
+        .query_row(
+            "SELECT name FROM projects WHERE project_id = ?1",
+            [&on_file],
+            |r| r.get(0),
+        )
+        .ok();
+    (on_file, on_message, name)
+}
+
+#[test]
+fn a_project_cwd_stamps_the_registry_id_and_records_its_name() {
+    let mut fx = Fixture::new("stamp-project");
+    fx.projects = ProjectIndex::from_triples([(
+        "C:\\Work\\proj".to_string(),
+        "repo-7".to_string(),
+        "Proj Name".to_string(),
+    )]);
+    append(&fx.file, &header());
+    append(&fx.file, &assistant("a1", 1_790_000_000_000, 0.5, vec![]));
+
+    fx.ingest();
+
+    assert_eq!(
+        stamped(&fx),
+        ("repo-7".to_string(), "repo-7".to_string(), Some("Proj Name".to_string()))
+    );
+    let rollup_id: String = fx
+        .conn
+        .query_row("SELECT project_id FROM message_rollup", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(rollup_id, "repo-7");
+}
+
+#[test]
+fn the_personal_home_cwd_stamps_the_personal_id() {
+    let mut fx = Fixture::new("stamp-personal");
+    fx.projects = ProjectIndex::from_pairs([("C:\\Work\\other", "other")])
+        .with_personal_home("C:\\Work\\proj\\src");
+    append(&fx.file, &header());
+    append(&fx.file, &assistant("a1", 1_790_000_000_000, 0.5, vec![]));
+
+    fx.ingest();
+
+    assert_eq!(
+        stamped(&fx),
+        ("@personal".to_string(), "@personal".to_string(), Some("Personal".to_string()))
+    );
+}

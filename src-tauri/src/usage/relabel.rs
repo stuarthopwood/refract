@@ -5,7 +5,7 @@ use std::path::Path;
 
 use rusqlite::{params, Connection};
 
-use super::project_label::{folder_name_fallback, is_stable_id, ProjectIndex, Resolved};
+use super::project_label::{folder_name_fallback, is_stable_id, ProjectIndex, ProjectRef, Resolved};
 use super::rollup;
 
 struct Row {
@@ -28,18 +28,26 @@ pub fn relabel(
     root: &Path,
     projects: &ProjectIndex,
 ) -> rusqlite::Result<()> {
-    for known in projects.known() {
-        rollup::upsert_project(conn, &known.id, &known.name)?;
-    }
     let rows = load_rows(conn)?;
     let mut resolved = resolve_all(&rows, root, projects);
     merge_folder_case(&mut resolved);
-    for (row, new) in rows.iter().zip(resolved) {
-        if !matches!(new, Resolved::Project(_)) && is_stable_id(&row.id) {
-            continue;
-        }
-        let new = new.into_ref();
-        rollup::upsert_project(conn, &new.id, &new.name)?;
+    let targets: Vec<(&Row, ProjectRef)> = rows
+        .iter()
+        .zip(resolved)
+        .filter(|(row, new)| matches!(new, Resolved::Project(_)) || !is_stable_id(&row.id))
+        .map(|(row, new)| (row, new.into_ref()))
+        .collect();
+    // One transaction for every name write: each autocommitted upsert would fsync on its own.
+    let names = conn.transaction()?;
+    for project in projects.known() {
+        rollup::upsert_project(&names, &project.id, &project.name)?;
+    }
+    for (_, new) in &targets {
+        rollup::upsert_project(&names, &new.id, &new.name)?;
+    }
+    names.commit()?;
+    let mut moved = false;
+    for (row, new) in targets {
         if new.id == row.id {
             continue;
         }
@@ -50,7 +58,25 @@ pub fn relabel(
             params![new.id, row.file],
         )?;
         tx.commit()?;
+        moved = true;
     }
+    if moved {
+        rollup::clean_rollups(conn)?;
+        prune_legacy_names(conn)?;
+    }
+    Ok(())
+}
+
+/// Drops the `@legacy:` names no row points at any more, so the picker lists a Project once.
+fn prune_legacy_names(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM projects WHERE project_id LIKE '@legacy:%' \
+         AND project_id NOT IN (SELECT project_id FROM file_offsets) \
+         AND project_id NOT IN (SELECT project_id FROM message_rollup) \
+         AND project_id NOT IN (SELECT project_id FROM tool_rollup) \
+         AND project_id NOT IN (SELECT project_id FROM session_rollup)",
+        [],
+    )?;
     Ok(())
 }
 

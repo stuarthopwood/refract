@@ -5,6 +5,7 @@
 // host emits at most one a second).
 import { create } from 'zustand'
 import type {
+  UsageProjectOption,
   UsageBreakdownRow,
   UsageBudget,
   UsageCallRow,
@@ -17,14 +18,9 @@ import type {
   UsageTokenMixRow,
   UsageTopSession
 } from '../../shared/ipc-usage'
+import { withKnownProject } from './usage-projects'
 
 export const DEFAULT_USAGE_FILTERS: UsageFilters = { range: '7d' }
-
-/** A Project the filter can pick: the id is sent, the name shown. */
-export interface UsageProjectOption {
-  id: string
-  name: string
-}
 export const CALLS_PAGE_SIZE = 25
 
 export interface UsageCallsState {
@@ -54,7 +50,7 @@ interface UsageState {
   calls: UsageCallsState
   frustration: UsageFrustration | null
   budget: UsageBudget | null
-  /** Every Project, model and reasoning level seen so far, so a chosen filter never empties its own picker. */
+  /** Every named Project, and every model and reasoning level seen so far, so a chosen filter never empties its own picker. */
   options: { projects: UsageProjectOption[]; models: string[]; reasonings: string[] }
   loadPrefs(): Promise<void>
   open(): Promise<void>
@@ -81,14 +77,6 @@ function mergeOptions(existing: string[], rows: UsageBreakdownRow[], extra: (str
   return [...set].sort((a, b) => a.localeCompare(b))
 }
 
-/** Keeps every Project seen so far under its latest name; a chosen Project absent from the rows stays listed by its id. */
-export function mergeProjects(existing: UsageProjectOption[], rows: UsageBreakdownRow[], chosen: string | null | undefined): UsageProjectOption[] {
-  const byId = new Map(existing.map((p) => [p.id, p]))
-  for (const row of rows) if (row.id) byId.set(row.id, { id: row.id, name: row.label })
-  if (chosen && !byId.has(chosen)) byId.set(chosen, { id: chosen, name: chosen })
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
-}
-
 export const useUsageStore = create<UsageState>((set, get) => ({
   filters: DEFAULT_USAGE_FILTERS,
   jokes: true,
@@ -111,8 +99,17 @@ export const useUsageStore = create<UsageState>((set, get) => ({
   options: { projects: [], models: [], reasonings: [] },
   async loadPrefs() {
     if (get().prefsLoaded) return
-    const result = await window.refract.usage.getPrefs()
-    if (result.ok) set({ jokes: result.value.jokes, filters: result.value.filters, prefsLoaded: true })
+    const [prefs, projects] = await Promise.all([window.refract.usage.getPrefs(), window.refract.usage.projects()])
+    if (!prefs.ok) return
+    // A saved Project that has no recorded name is dropped, so the picker never shows an id.
+    const filters = projects.ok ? withKnownProject(prefs.value.filters, projects.value) : prefs.value.filters
+    set({
+      jokes: prefs.value.jokes,
+      filters,
+      prefsLoaded: true,
+      options: { ...get().options, projects: projects.ok ? projects.value : get().options.projects }
+    })
+    if (filters !== prefs.value.filters) void window.refract.usage.setPrefs({ filters })
   },
   async open() {
     await get().loadPrefs()
@@ -170,7 +167,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
     const { filters, bucket, calls } = get()
     const api = window.refract.usage
     const offset = tz()
-    const [summary, timeseries, tokenMix, byProject, byModel, byTool, top, callPage, frustration, budget] = await Promise.all([
+    const [summary, timeseries, tokenMix, byProject, byModel, byTool, top, callPage, frustration, budget, projectOptions] = await Promise.all([
       api.summary(filters, offset),
       api.timeseries(filters, bucket, offset),
       api.tokenMix(filters, offset),
@@ -180,7 +177,8 @@ export const useUsageStore = create<UsageState>((set, get) => ({
       api.topSessions(filters, offset),
       api.calls(filters, calls.sort, { index: calls.pageIndex, size: CALLS_PAGE_SIZE }, offset),
       api.frustration(filters, offset),
-      get().budget ? Promise.resolve(null) : api.budget()
+      get().budget ? Promise.resolve(null) : api.budget(),
+      api.projects()
     ])
     if (mine !== sequence) return
     const failure = [summary, timeseries, tokenMix, byProject, byModel, byTool, top, callPage, frustration].find((r) => !r.ok)
@@ -201,7 +199,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
       frustration: frustration.ok ? frustration.value : state.frustration,
       budget: budget && budget.ok ? budget.value : state.budget,
       options: {
-        projects: mergeProjects(state.options.projects, projects, filters.project),
+        projects: projectOptions.ok ? projectOptions.value : state.options.projects,
         models: mergeOptions(state.options.models, models, [filters.model]),
         reasonings: mergeOptions(
           state.options.reasonings,

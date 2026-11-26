@@ -6,7 +6,11 @@ use std::time::Duration;
 
 use rusqlite::{Connection, ErrorCode, OptionalExtension, TransactionBehavior};
 
+use super::project_label::LEGACY_PREFIX;
+
 pub const USER_VERSION: i64 = 5;
+/// The `prefs` key that holds the Usage view's saved filters.
+pub const PREF_FILTERS: &str = "filters";
 /// Older files are rebuilt; versions 2, 3 and 4 are migrated in place.
 const MIN_MIGRATABLE: i64 = 2;
 
@@ -25,7 +29,8 @@ ALTER TABLE tool_rollup RENAME COLUMN cost_share TO cost_usd;
 /// Spend is keyed by a stable Project id, not the Project's name. Each existing label becomes a
 /// `@legacy:` id (its name kept in `projects`) until the next relabel pass maps its files to real
 /// ids from their stored cwd; the column rename rewrites the rollup primary keys in place, so no
-/// OMP file is re-read and no row is dropped.
+/// OMP file is re-read and no row is dropped. The names come from the per-file and rollup tables
+/// alone: every fact row's label also sits in one of them, and scanning the fact tables would be slow.
 const MIGRATE_4_TO_5: &str = "
 CREATE TABLE IF NOT EXISTS projects (
   project_id TEXT PRIMARY KEY,
@@ -33,8 +38,7 @@ CREATE TABLE IF NOT EXISTS projects (
 ) WITHOUT ROWID;
 INSERT OR IGNORE INTO projects (project_id, name)
   SELECT '@legacy:' || project_label, project_label FROM (
-    SELECT project_label FROM file_offsets UNION SELECT project_label FROM messages
-    UNION SELECT project_label FROM tool_calls UNION SELECT project_label FROM user_messages
+    SELECT project_label FROM file_offsets
     UNION SELECT project_label FROM message_rollup UNION SELECT project_label FROM tool_rollup
     UNION SELECT project_label FROM session_rollup
   ) WHERE project_label <> '';
@@ -239,7 +243,41 @@ fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
         _ => DDL.to_string(),
     };
     tx.execute_batch(&format!("{ddl}PRAGMA user_version = {USER_VERSION};"))?;
+    if (MIN_MIGRATABLE..=4).contains(&version) {
+        migrate_saved_filter(&tx)?;
+    }
     tx.commit()
+}
+
+/// A saved Project filter holds a name before version 5, and the filter now takes an id: the name
+/// becomes its `@legacy:` id (which relabel later maps), or the filter is cleared when it is empty.
+fn migrate_saved_filter(conn: &Connection) -> rusqlite::Result<()> {
+    let has_prefs: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'prefs')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_prefs {
+        return Ok(());
+    }
+    let Some(stored) = prefs_get(conn, PREF_FILTERS)? else {
+        return Ok(());
+    };
+    let Ok(mut filters) = serde_json::from_str::<serde_json::Value>(&stored) else {
+        return Ok(());
+    };
+    let Some(object) = filters.as_object_mut() else {
+        return Ok(());
+    };
+    let rewritten = match object.get("project") {
+        None | Some(serde_json::Value::Null) => return Ok(()),
+        Some(serde_json::Value::String(name)) if !name.trim().is_empty() => {
+            serde_json::Value::String(format!("{LEGACY_PREFIX}{name}"))
+        }
+        Some(_) => serde_json::Value::Null,
+    };
+    object.insert("project".into(), rewritten);
+    prefs_set(conn, PREF_FILTERS, &filters.to_string())
 }
 
 fn is_rebuildable(err: &rusqlite::Error) -> bool {
