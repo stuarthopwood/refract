@@ -162,12 +162,19 @@ pub async fn get_model_roles() -> Result<HashMap<String, String>, OmpConfigError
 
 /// Retries once on an empty record, since an empty read can be transient. A non-empty partial read is not detected.
 pub async fn get_model_roles_reliable() -> Result<HashMap<String, String>, OmpConfigError> {
-    let first = get_model_roles().await?;
+    get_model_roles_reliable_with(&RealOmpExecutor).await
+}
+
+/// `get_model_roles_reliable` on a caller-supplied executor, so a test never reaches the real `omp`.
+pub async fn get_model_roles_reliable_with(
+    executor: &dyn OmpExecutor,
+) -> Result<HashMap<String, String>, OmpConfigError> {
+    let first = get_model_roles_with(executor).await?;
     if !first.is_empty() {
         return Ok(first);
     }
     log::debug!("get_model_roles_reliable: empty modelRoles, retrying once");
-    let retry = get_model_roles().await?;
+    let retry = get_model_roles_with(executor).await?;
     if !retry.is_empty() {
         log::debug!(
             "get_model_roles_reliable: retry recovered {} modelRoles keys",

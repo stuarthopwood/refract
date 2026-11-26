@@ -16,6 +16,10 @@ use subagents_progress::{
     queue_patch_ops, subscribe_to_subagent_frames, summaries_to_value, RecentStep,
 };
 
+#[path = "subagents_synthesis_hook.rs"]
+mod subagents_synthesis_hook;
+use subagents_synthesis_hook::SynthesisState;
+
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
 /// Task-summary budget, separate from `NAME_OR_TASK_MAX_CHARS` (#700/#701).
 const TASK_SUMMARY_MAX_CHARS: usize = 100;
@@ -81,6 +85,8 @@ pub(super) struct State {
     /// Coalesced patch ops for the visible subagent since the last flush.
     pending_patch_ops: Vec<Value>,
     patch_timer_pending: bool,
+    /// Executor, cache and per-call dedupe for the `tiny` labelling of each `task()` call (#1925).
+    synthesis: SynthesisState,
 }
 
 fn now_ms() -> i64 {
@@ -487,4 +493,5 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
         .await;
     emit_subagents_update(agent, summaries_value).await;
     super::readout::schedule_readout_update(agent).await;
+    subagents_synthesis_hook::on_task_start(agent, tool_call_id, args).await;
 }
