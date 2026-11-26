@@ -4,6 +4,7 @@
 use std::ffi::OsString;
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -44,6 +45,8 @@ pub struct Status {
 
 static RUN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+/// Set when this launch has tried the cache retention catch-up, so a failing `omp` costs one read per launch, not one per call.
+static CATCH_UP_TRIED: AtomicBool = AtomicBool::new(false);
 
 fn marker_path(dir: &Path) -> PathBuf {
     dir.join(MARKER_FILE)
@@ -139,10 +142,11 @@ fn backup_path(config: &Path, date: &str, taken: impl Fn(&Path) -> bool) -> Path
 }
 
 /// Backs up, writes Refract's set with the user's `token-guard.json` choices on top, then marks done and retires the file.
-/// A key whose value in `current` (one `omp config list`) already equals the target is not written again.
+/// A key whose value in `current` (one `omp config list`, `None` when the read failed) already equals the target is not written again.
+/// `providers.cacheRetention` is written only over an unset or `auto` value; a failed read leaves it for the next launch's catch-up.
 async fn attempt<W, F>(
     dir: &Path,
-    current: &Value,
+    current: Option<&Value>,
     config: Option<&Path>,
     date: &str,
     write: W,
@@ -170,7 +174,10 @@ where
     // A positive thresholdTokens would beat the percent, so Refract pins it off.
     wanted.insert("compaction.thresholdTokens".to_string(), json!(-1));
     for (key, value) in wanted {
-        if values::raw_value(current, &key) == Some(&value) {
+        if current.and_then(|c| values::raw_value(c, &key)) == Some(&value) {
+            continue;
+        }
+        if key == CACHE_RETENTION_KEY && !current.is_some_and(retention_is_unset) {
             continue;
         }
         write(key.clone(), value)
@@ -180,7 +187,7 @@ where
     let marker = Marker {
         backup_path: backup,
         notice_dismissed: false,
-        cache_retention_applied: true,
+        cache_retention_applied: current.is_some(),
     };
     write_json_file(&marker_path(dir), &marker)
         .await
@@ -220,12 +227,23 @@ pub async fn ensure(dir: &Path) -> bool {
 
 /// `ensure` through an injected `omp` executor; `config` is the file the backup copies.
 pub async fn ensure_with(executor: &dyn OmpExecutor, dir: &Path, config: Option<&Path>) -> bool {
+    ensure_once_per_launch(executor, dir, config, &CATCH_UP_TRIED).await
+}
+
+/// `ensure_with` with the once-per-launch catch-up flag injected, so tests do not share the process-wide one.
+async fn ensure_once_per_launch(
+    executor: &dyn OmpExecutor,
+    dir: &Path,
+    config: Option<&Path>,
+    catch_up_tried: &AtomicBool,
+) -> bool {
     if skipped() {
         return false;
     }
     let _guard = RUN_LOCK.lock().await;
     if let Some(marker) = read_marker(dir).await {
-        if !marker.cache_retention_applied {
+        // Tried even when it fails: the flag stays unset on disk, so the next launch retries.
+        if !marker.cache_retention_applied && !catch_up_tried.swap(true, Ordering::SeqCst) {
             catch_up_cache_retention(executor, dir, config, marker).await;
         }
         return true;
@@ -233,9 +251,9 @@ pub async fn ensure_with(executor: &dyn OmpExecutor, dir: &Path, config: Option<
     // A retry in flight reads as `pending`, not as the previous attempt's failure.
     *LAST_ERROR.lock().expect("poisoned") = None;
     // A failed read only costs the skipped-write saving: the writes then report omp's own error.
-    let current = list_config_with(executor, &[]).await.unwrap_or(Value::Null);
+    let current = list_config_with(executor, &[]).await.ok();
     let write = |key, value| write_to_omp(executor, config, key, value);
-    match attempt(dir, &current, config, &today(), write).await {
+    match attempt(dir, current.as_ref(), config, &today(), write).await {
         Ok(()) => {
             *LAST_ERROR.lock().expect("poisoned") = None;
             true
@@ -272,6 +290,13 @@ async fn catch_up_cache_retention(
     }
 }
 
+/// omp's unset retention is `auto`; a missing or non-string value counts as unset. Anything else is the user's choice.
+fn retention_is_unset(current: &Value) -> bool {
+    values::raw_value(current, CACHE_RETENTION_KEY)
+        .and_then(Value::as_str)
+        .is_none_or(|v| v == "auto")
+}
+
 /// Moves omp's unset retention (`auto`) to `long` once for an install migrated earlier; a value the user chose stays.
 async fn apply_cache_retention<W, F>(
     dir: &Path,
@@ -283,10 +308,7 @@ where
     W: Fn(String, Value) -> F,
     F: Future<Output = Result<(), String>>,
 {
-    let unset = values::raw_value(current, CACHE_RETENTION_KEY)
-        .and_then(Value::as_str)
-        .is_none_or(|v| v == "auto");
-    if unset {
+    if retention_is_unset(current) {
         write(CACHE_RETENTION_KEY.to_string(), json!("long"))
             .await
             .map_err(|err| format!("Could not write {CACHE_RETENTION_KEY}: {err}"))?;
@@ -338,7 +360,7 @@ pub async fn dismiss_notice(dir: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::omp::config::OmpConfigError;
+    use crate::omp::config::{OmpConfigError, OmpConfigErrorCode};
     use std::pin::Pin;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -418,7 +440,7 @@ mod tests {
                 }
             }
         };
-        let err = attempt(&dir, &Value::Null, Some(&config), "2026-11-06", failing)
+        let err = attempt(&dir, None, Some(&config), "2026-11-06", failing)
             .await
             .unwrap_err();
         assert!(err.contains("boom"));
@@ -430,7 +452,7 @@ mod tests {
             written.lock().unwrap().push((k, v));
             async { Ok(()) }
         };
-        attempt(&dir, &Value::Null, Some(&config), "2026-11-06", ok)
+        attempt(&dir, None, Some(&config), "2026-11-06", ok)
             .await
             .unwrap();
         let marker = read_marker(&dir).await.expect("marker");
@@ -459,11 +481,9 @@ mod tests {
     async fn success_marks_done_and_retires_the_file() {
         let dir = scratch("done");
         std::fs::write(legacy::path(&dir), r#"{"version":2,"overrides":{}}"#).unwrap();
-        attempt(&dir, &Value::Null, None, "2026-11-06", |_, _| async {
-            Ok(())
-        })
-        .await
-        .unwrap();
+        attempt(&dir, None, None, "2026-11-06", |_, _| async { Ok(()) })
+            .await
+            .unwrap();
         assert!(is_done(&dir).await);
         assert_eq!(status(&dir).await.status, "done");
         assert!(!legacy::path(&dir).exists());
@@ -484,7 +504,7 @@ mod tests {
             written.lock().unwrap().push(k);
             async { Ok(()) }
         };
-        attempt(&dir, &current, None, "2026-11-06", ok)
+        attempt(&dir, Some(&current), None, "2026-11-06", ok)
             .await
             .unwrap();
         let written = written.lock().unwrap();
@@ -593,7 +613,7 @@ mod tests {
             written.lock().unwrap().push((k, v));
             async { Ok(()) }
         };
-        attempt(&dir, &Value::Null, None, "2026-11-26", ok)
+        attempt(&dir, Some(&Value::Null), None, "2026-11-26", ok)
             .await
             .unwrap();
         assert!(
@@ -606,6 +626,140 @@ mod tests {
             .lock()
             .unwrap()
             .contains(&(CACHE_RETENTION_KEY.to_string(), json!("long"))));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// What `attempt` wrote for one fresh migration against `current`, and the marker it left.
+    async fn fresh_migration(
+        name: &str,
+        current: Option<&Value>,
+    ) -> (Vec<(String, Value)>, Marker) {
+        let dir = scratch(name);
+        let written = std::sync::Mutex::new(Vec::new());
+        let ok = |k: String, v: Value| {
+            written.lock().unwrap().push((k, v));
+            async { Ok(()) }
+        };
+        attempt(&dir, current, None, "2026-11-26", ok)
+            .await
+            .unwrap();
+        let marker = read_marker(&dir).await.expect("marker");
+        let _ = std::fs::remove_dir_all(&dir);
+        (written.into_inner().unwrap(), marker)
+    }
+
+    fn writes_retention(written: &[(String, Value)]) -> bool {
+        written.iter().any(|(k, _)| k == CACHE_RETENTION_KEY)
+    }
+
+    #[tokio::test]
+    async fn a_fresh_migration_keeps_a_deliberate_cache_retention() {
+        for chosen in ["short", "none", "long"] {
+            let current = json!({ "providers.cacheRetention": { "value": chosen } });
+            let (written, marker) =
+                fresh_migration(&format!("fresh-kept-{chosen}"), Some(&current)).await;
+            assert!(!writes_retention(&written), "{chosen}");
+            assert!(marker.cache_retention_applied, "{chosen}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fresh_migration_sets_long_over_auto_or_a_non_string() {
+        for stored in [json!("auto"), json!(7)] {
+            let current = json!({ "providers.cacheRetention": { "value": stored } });
+            let (written, _) = fresh_migration("fresh-unset", Some(&current)).await;
+            assert!(written.contains(&(CACHE_RETENTION_KEY.to_string(), json!("long"))));
+        }
+    }
+
+    #[tokio::test]
+    async fn a_fresh_migration_skips_cache_retention_when_the_config_read_failed() {
+        let (written, marker) = fresh_migration("fresh-unread", None).await;
+        assert!(!writes_retention(&written));
+        assert!(!marker.cache_retention_applied);
+    }
+
+    /// Answers `omp config list` with `list` (an error when `None`) and every other call with `{}`; records each call's subcommand.
+    struct ScriptedOmp {
+        list: Option<String>,
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl ScriptedOmp {
+        fn new(list: Option<&str>) -> Self {
+            Self {
+                list: list.map(str::to_string),
+                calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl OmpExecutor for ScriptedOmp {
+        fn call<'a>(
+            &'a self,
+            args: &'a [String],
+            _failure_message: &'a str,
+            _strip_env_vars: &'a [&'a str],
+        ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+            let subcommand = args.get(1).cloned().unwrap_or_default();
+            self.calls.lock().unwrap().push(subcommand.clone());
+            let result = match (subcommand.as_str(), &self.list) {
+                ("list", Some(list)) => Ok(list.clone()),
+                ("list", None) => Err(OmpConfigError::new(
+                    OmpConfigErrorCode::OmpFailed,
+                    "omp is not answering",
+                )),
+                _ => Ok("{}".to_string()),
+            };
+            Box::pin(async move { result })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failing_config_read_writes_nothing_and_is_not_retried_this_launch() {
+        if skipped() {
+            return;
+        }
+        let dir = scratch("catch-up-unreadable");
+        aged_marker(&dir);
+        let omp = ScriptedOmp::new(None);
+        let tried = AtomicBool::new(false);
+        assert!(ensure_once_per_launch(&omp, &dir, None, &tried).await);
+        assert_eq!(omp.calls(), vec!["list"]);
+        assert!(
+            !read_marker(&dir)
+                .await
+                .expect("marker")
+                .cache_retention_applied
+        );
+        assert!(ensure_once_per_launch(&omp, &dir, None, &tried).await);
+        assert_eq!(omp.calls(), vec!["list"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn after_a_successful_catch_up_a_second_run_makes_no_further_calls() {
+        if skipped() {
+            return;
+        }
+        let dir = scratch("catch-up-done");
+        aged_marker(&dir);
+        let omp = ScriptedOmp::new(Some(r#"{"providers.cacheRetention":{"value":"auto"}}"#));
+        let tried = AtomicBool::new(false);
+        assert!(ensure_once_per_launch(&omp, &dir, None, &tried).await);
+        assert_eq!(omp.calls(), vec!["list", "set"]);
+        assert!(
+            read_marker(&dir)
+                .await
+                .expect("marker")
+                .cache_retention_applied
+        );
+        assert!(ensure_once_per_launch(&omp, &dir, None, &tried).await);
+        assert_eq!(omp.calls(), vec!["list", "set"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
