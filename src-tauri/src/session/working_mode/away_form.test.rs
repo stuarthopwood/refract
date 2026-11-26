@@ -137,9 +137,60 @@ fn a_radio_group_or_select_picks_the_safe_option_not_the_first() {
 }
 
 #[test]
-fn a_marked_radio_option_still_beats_the_safe_one() {
-    let data = form_defaults(
-        "<input type=\"radio\" name=\"ok\" value=\"yes\" checked><input type=\"radio\" name=\"ok\" value=\"no\">",
+fn a_marked_choice_wins_only_when_no_enabled_sibling_reads_as_negative() {
+    let marked = form_defaults(
+        "<input type=\"radio\" name=\"a\" value=\"x\"><input type=\"radio\" name=\"a\" value=\"y\" checked>\
+         <select name=\"b\"><option>One</option><option selected>Two</option></select>",
     );
-    assert_eq!(data, json!({ "ok": "yes" }));
+    assert_eq!(marked, json!({ "a": "y", "b": "Two" }));
+
+    let disabled = form_defaults(
+        "<input type=\"radio\" name=\"ok\" value=\"yes\" checked><input type=\"radio\" name=\"ok\" value=\"no\" disabled>",
+    );
+    assert_eq!(disabled, json!({ "ok": "yes" }));
+}
+
+#[test]
+fn a_negative_sibling_beats_a_pre_marked_choice() {
+    let data = form_defaults(
+        "<input type=\"radio\" name=\"ok\" value=\"yes\" checked><input type=\"radio\" name=\"ok\" value=\"no\">\
+         <select name=\"go\"><option selected>Approve</option><option>Decline</option></select>",
+    );
+    assert_eq!(data, json!({ "ok": "no", "go": "Decline" }));
+}
+
+#[test]
+fn a_radio_is_labelled_by_a_label_for_its_id() {
+    let data = form_defaults(
+        "<input type=\"radio\" id=\"r1\" name=\"ok\" value=\"a\" checked><label for=\"r1\">Yes</label>\
+         <input type=\"radio\" id=\"r2\" name=\"ok\" value=\"b\"><label for=\"r2\">Decline</label>",
+    );
+    assert_eq!(data, json!({ "ok": "b" }));
+}
+
+#[test]
+fn a_label_before_its_control_still_names_it() {
+    let data = form_defaults(
+        "<label for=\"r1\">Approve</label><input type=\"radio\" id=\"r1\" name=\"ok\" value=\"a\" checked>\
+         <label for=\"r2\">Not now</label><input type=\"radio\" id=\"r2\" name=\"ok\" value=\"b\">",
+    );
+    assert_eq!(data, json!({ "ok": "b" }));
+}
+
+#[test]
+fn a_radio_is_labelled_by_a_wrapping_label() {
+    let data = form_defaults(
+        "<label>Yes <input type=\"radio\" name=\"ok\" value=\"a\" checked></label>\
+         <label><span>Deny</span> <input type=\"radio\" name=\"ok\" value=\"b\"></label>",
+    );
+    assert_eq!(data, json!({ "ok": "b" }));
+}
+
+#[test]
+fn a_radio_without_a_value_takes_its_label_as_the_value() {
+    let data = form_defaults(
+        "<input type=\"radio\" id=\"r1\" name=\"ok\"><label for=\"r1\">Go ahead</label>\
+         <input type=\"radio\" id=\"r2\" name=\"ok\"><label for=\"r2\">Stop</label>",
+    );
+    assert_eq!(data, json!({ "ok": "Stop" }));
 }

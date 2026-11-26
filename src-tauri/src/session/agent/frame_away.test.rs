@@ -6,8 +6,8 @@ use serde_json::{json, Value};
 use crate::session::agent::pause_subagents::fixture::{fixture, fixture_with, Fixture, Stub};
 use crate::session::agent::SessionStatus;
 use crate::session::working_mode::away::{
-    enter_for_test, leave_for_test, on_request, send_steer, summarise, sweep, Kind, ANSWERED_STEER,
-    ASK_FALLBACK, CANCELLED_STEER, DENIED_STEER,
+    enter_for_test, leave_for_test, on_request, send_steer, steer_idle, summarise, sweep, Kind,
+    ANSWERED_STEER, ASK_FALLBACK, CANCELLED_STEER, DENIED_STEER,
 };
 use crate::session::working_mode::decorate_prompt;
 
@@ -330,8 +330,20 @@ async fn away_sends_no_steer_while_the_session_is_idle() {
     fx.finish().await;
 }
 
-#[tokio::test]
-async fn a_burst_of_replies_sends_one_steer_while_it_is_in_flight() {
+/// Waits, by polling the slot rather than sleeping a guessed time, until every steer has settled.
+async fn until_steer_idle(fx: &Fixture) {
+    for _ in 0..12_000 {
+        if steer_idle(&fx.agent).await {
+            return;
+        }
+        tokio::task::yield_now().await;
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
+    panic!("the steer never settled");
+}
+
+/// A first steer is held in flight at the stub; the caller then asks for `kinds` while it is.
+async fn gated_steer_with_pending(kinds: &[Kind]) -> Fixture {
     let fx = fixture_with(Stub {
         gated: Some("prompt"),
         ..Stub::default()
@@ -339,16 +351,76 @@ async fn a_burst_of_replies_sends_one_steer_while_it_is_in_flight() {
     .await;
     enter_for_test(&fx.agent).await;
     fx.agent.state.lock().await.status = SessionStatus::Working;
-    for id in ["b-1", "b-2", "b-3"] {
-        let frame = dialog(id, "select", json!({ "title": id, "options": ["Red"] }));
-        fx.agent.handle_frame(frame).await;
-    }
-    fx.until_notices(3).await;
+    let frame = dialog(
+        "b-1",
+        "select",
+        json!({ "title": "b-1", "options": ["Red"] }),
+    );
+    fx.agent.handle_frame(frame).await;
     fx.until_rpc("prompt").await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    for kind in kinds {
+        // Returns at once: the slot is taken, so each call only notes its kind.
+        send_steer(&fx.agent, *kind).await;
+    }
+    assert_eq!(
+        prompt_count(&fx.rpcs().await),
+        1,
+        "only the first is in flight"
+    );
+    fx
+}
+
+#[tokio::test]
+async fn a_burst_of_replies_adds_one_more_steer_not_one_each() {
+    let fx = gated_steer_with_pending(&[Kind::Answered, Kind::Answered, Kind::Answered]).await;
+
+    fx.release().await;
+    fx.until_rpc_count("prompt", 2).await;
+    until_steer_idle(&fx).await;
+
+    let prompts: Vec<Value> = fx
+        .rpcs()
+        .await
+        .into_iter()
+        .filter(|cmd| cmd["type"] == "prompt")
+        .collect();
+    assert_eq!(
+        prompts.len(),
+        2,
+        "the in-flight steer plus one for the burst"
+    );
+    assert_eq!(prompts[1]["message"], ANSWERED_STEER);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn the_strongest_kind_seen_during_a_steer_is_the_one_sent_after_it() {
+    let fx = gated_steer_with_pending(&[Kind::Cancelled, Kind::Denied, Kind::Answered]).await;
+
+    fx.release().await;
+    fx.until_rpc_count("prompt", 2).await;
+    until_steer_idle(&fx).await;
+
+    let prompts: Vec<Value> = fx
+        .rpcs()
+        .await
+        .into_iter()
+        .filter(|cmd| cmd["type"] == "prompt")
+        .collect();
+    assert_eq!(prompts.len(), 2);
+    assert_eq!(prompts[0]["message"], ANSWERED_STEER);
+    assert_eq!(prompts[1]["message"], DENIED_STEER);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn no_extra_steer_follows_when_nothing_arrived_during_it() {
+    let fx = gated_steer_with_pending(&[]).await;
+
+    fx.release().await;
+    until_steer_idle(&fx).await;
 
     assert_eq!(prompt_count(&fx.rpcs().await), 1);
-    fx.release().await;
     fx.finish().await;
 }
 
@@ -390,15 +462,18 @@ async fn a_request_raced_by_on_request_and_sweep_is_answered_once() {
 
     tokio::join!(on_request(&fx.agent, request), sweep(&fx.agent));
 
-    fx.until_rpc("extension_ui_response").await;
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    // Both calls have returned, so the reply and the log entry are final: a second answer would
+    // already be in the stub's log and the transcript.
+    assert!(fx.agent.pending_requests().await.is_empty());
+    assert_eq!(fx.notices().await.len(), 1, "one log entry");
+    fx.until_rpc("prompt").await;
+    until_steer_idle(&fx).await;
     let cmds = fx.rpcs().await;
     let replies = cmds
         .iter()
         .filter(|c| c["type"] == "extension_ui_response")
         .count();
     assert_eq!(replies, 1, "one reply");
-    assert_eq!(fx.notices().await.len(), 1, "one log entry");
     assert_eq!(prompt_count(&cmds), 1, "one steer");
     fx.finish().await;
 }
