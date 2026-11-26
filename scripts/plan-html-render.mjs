@@ -18,7 +18,7 @@ th,td{border:1px solid var(--line);padding:.3rem .5rem;text-align:left;vertical-
 .fits{border-color:var(--ok)}.misses{border-color:var(--bad)}.tag{font-weight:600}
 `;
 
-const link = (repo, number) => `<a href="https://github.com/${esc(repo)}/issues/${number}">#${number}</a>`;
+const link = (repo, number) => `<a href="https://github.com/${esc(repo)}/issues/${Number(number)}">#${Number(number)}</a>`;
 
 function bar(done, total) {
   const pct = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -47,10 +47,10 @@ function renderHeader(m) {
 function renderForecast(m) {
   const f = m.forecast;
   const rows = f.weeks.map((w) => [esc(w.start), String(w.count)]);
-  const avg = f.avg.toFixed(1);
+  const avg = String(f.rate);
   let verdict;
   if (f.remaining === 0) verdict = ['fits', 'no open v1 issues remain.'];
-  else if (f.avg === 0) verdict = ['misses', `no completed issues in the last 2 full weeks, so ${f.remaining} open v1 issues cannot be forecast and v1 does not fit.`];
+  else if (f.rate === 0) verdict = ['misses', `no completed issues in the last 2 full weeks, so ${f.remaining} open v1 issues cannot be forecast and v1 does not fit.`];
   else if (f.weeksNeeded <= f.weeksLeft) verdict = ['fits', `v1 fits. ${f.remaining} open issues need ${f.weeksNeeded.toFixed(1)} weeks at ${avg}/week; ${f.weeksLeft.toFixed(1)} weeks are left.`];
   else verdict = ['misses', `v1 does not fit. ${f.remaining} open issues need ${f.weeksNeeded.toFixed(1)} weeks at ${avg}/week; only ${f.weeksLeft.toFixed(1)} weeks are left.`];
   return `<section><h2>Forecast</h2>
@@ -70,7 +70,7 @@ function renderSchedule(m) {
 ${table(`Issues scheduled for the week starting ${b.start}`, ['Issue', 'Title', 'Priority', 'Type'], rows)}`;
   }).join('\n');
   return `<section><h2>Projected schedule</h2>
-<p class="muted">Projection at ${Math.max(1, Math.round(m.forecast.avg))} issues per week (rate rounded to whole issues) from Monday ${esc(s.startDate)}. Order: p0, p1, p2 bugs, then other p2, p3 and unlabelled; within a priority, docs/PLAN.md Queue order, then issue number.</p>
+<p class="muted">Projection at ${m.forecast.rate} issues per week (rate rounded to whole issues) from Monday ${esc(s.startDate)}. Order: p0, p1, p2 bugs, then other p2, p3 and unlabelled; within a priority, docs/PLAN.md Queue order, then issue number.</p>
 ${parts}</section>`;
 }
 
@@ -93,6 +93,7 @@ export function renderPage(m) {
   const epics = m.groups.map((g) => renderGroup(m, g)).join('\n');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
 <title>Refract v1 plan</title><style>${CSS}</style></head>
 <body>${renderHeader(m)}
 <main>${renderForecast(m)}

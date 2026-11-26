@@ -12,7 +12,6 @@ const REPO = 'stuarthopwood/refract';
 const [OWNER, NAME] = REPO.split('/');
 const V1_MILESTONE = 'v1';
 const DEADLINE = Date.UTC(2026, 11, 31);
-const SCHEDULE_START = Date.UTC(2026, 10, 30);
 const DAY = 86_400_000;
 const PRIORITIES = ['p0', 'p1', 'p2', 'p3'];
 const TYPES = ['bug', 'feature', 'enhancement', 'chore', 'design', 'idea'];
@@ -63,7 +62,7 @@ function fetchEpics() {
   for (;;) {
     const { search } = graphql(SEARCH_QUERY, { q: `repo:${REPO} is:issue in:title "Epic:"`, cursor });
     for (const node of search.nodes) {
-      if (!node.title?.startsWith('Epic:')) continue;
+      if (!node?.title?.startsWith('Epic:')) continue;
       let page = node.subIssues;
       const children = [...page.nodes];
       while (page.pageInfo.hasNextPage) {
@@ -85,6 +84,10 @@ const milestoneExists = () =>
 function queueRanks() {
   const text = readFileSync(path.join(repoRoot, 'docs', 'PLAN.md'), 'utf8');
   const start = text.indexOf('\n## Queue');
+  if (start === -1) {
+    console.warn('docs/PLAN.md has no "## Queue" heading; schedule ties fall back to issue number.');
+    return new Map();
+  }
   const end = text.indexOf('\n## ', start + 1);
   const ranks = new Map();
   for (const line of text.slice(start, end === -1 ? undefined : end).split('\n')) {
@@ -146,23 +149,23 @@ function scheduleRank(issue) {
   return issue.priority === 'p3' ? 4 : 5;
 }
 
-function buildSchedule(openV1, avg, ranks) {
+function buildSchedule(openV1, rate, ranks, scheduleStart) {
   const sorted = [...openV1].sort((a, b) =>
     scheduleRank(a) - scheduleRank(b)
     || (ranks.get(a.number) ?? Infinity) - (ranks.get(b.number) ?? Infinity)
     || a.number - b.number);
   const buckets = [];
-  if (avg > 0) {
+  if (rate > 0) {
     for (let k = 0, from = 0; from < sorted.length; k += 1) {
-      const to = Math.min(sorted.length, Math.ceil(avg * (k + 1)));
-      const start = SCHEDULE_START + k * 7 * DAY;
+      const to = Math.min(sorted.length, rate * (k + 1));
+      const start = scheduleStart + k * 7 * DAY;
       if (to > from) {
         buckets.push({ start: isoDate(start), end: isoDate(Math.min(start + 6 * DAY, Math.max(DEADLINE, start))), late: start > DEADLINE, issues: sorted.slice(from, to) });
       }
       from = to;
     }
   }
-  return { startDate: isoDate(SCHEDULE_START), buckets };
+  return { startDate: isoDate(scheduleStart), buckets };
 }
 
 function main() {
@@ -184,9 +187,11 @@ function main() {
   const weeks = weeklyThroughput(now);
   const recent = weeks.slice(-2);
   const avg = recent.reduce((sum, w) => sum + w.count, 0) / recent.length;
+  // One whole-issue rate drives both the verdict and the schedule so they cannot disagree.
+  const rate = avg > 0 ? Math.max(1, Math.round(avg)) : 0;
   const today = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
   const daysLeft = Math.max(0, Math.ceil((DEADLINE - today) / DAY));
-  const forecast = { weeks, avg, remaining: openV1.length, weeksLeft: daysLeft / 7, weeksNeeded: avg > 0 ? openV1.length / avg : Infinity };
+  const forecast = { weeks, rate, remaining: openV1.length, weeksLeft: daysLeft / 7, weeksNeeded: rate > 0 ? openV1.length / rate : Infinity };
 
   const html = renderPage({
     repo: REPO,
@@ -196,7 +201,7 @@ function main() {
     v1Exists,
     v1: { total: allV1.length, closed: allV1.length - openV1.length },
     forecast,
-    schedule: buildSchedule(openV1, Math.max(1, Math.round(avg)), ranks),
+    schedule: buildSchedule(openV1, rate, ranks, mondayOf(now) + 7 * DAY),
     groups,
   });
   writeFileSync(path.join(repoRoot, 'docs', 'plan.html'), html);
