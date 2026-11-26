@@ -219,6 +219,58 @@ line two</textarea></label>
     expect(parseAskHtml(manyOptions(201))).toBeNull()
   })
 
+  test('Given a legend holding a Markdown table, When parsed, Then the table keeps its rows on separate lines', () => {
+    const [field] = parseAskHtml(`<fieldset><legend>Pick one:
+  | Name | Size |
+  |------|------|
+  | A    |  1   |
+</legend><input type="radio" name="t" value="a">A</fieldset>`) ?? []
+    expect(field?.question).toBe('Pick one:\n| Name | Size |\n|------|------|\n| A | 1 |')
+  })
+
+  test('Given a preceding paragraph holding a Markdown list and a fenced block, When parsed, Then lines, nesting, blank lines and the code survive verbatim', () => {
+    const [field] = parseAskHtml('<p>Which?\n\n- one\n  - two\n\n```ts\nconst a   =\t1\n```</p><input type="radio" name="l" value="x">X') ?? []
+    expect(field?.question).toBe('Which?\n\n- one\n  - two\n\n```ts\nconst a   =\t1\n```')
+  })
+
+  test('Given a label wrapped across source lines, When parsed, Then the soft break reads as one space', () => {
+    const [field] = parseAskHtml('<label>Choose a\n      colour <input name="c"></label>') ?? []
+    expect(field?.question).toBe('Choose a colour')
+  })
+
+  test('Given a Python fence indented by the HTML source, When parsed, Then only the source indent goes and the code keeps its own', () => {
+    const [field] = parseAskHtml(`<fieldset><legend>
+    Run this?
+
+    \`\`\`python
+    def f(x):
+        return x  +  1
+    \`\`\`
+  </legend><input type="radio" name="p" value="a">A</fieldset>`) ?? []
+    expect(field?.question).toBe('Run this?\n\n```python\ndef f(x):\n    return x  +  1\n```')
+  })
+
+  test('Given a nested list with a wrapped item, When parsed, Then nesting stays and the wrapped prose joins its item', () => {
+    const [field] = parseAskHtml(`<legend>Pick:
+  - one
+    - nested
+  - two that
+    wraps
+  1) third
+</legend><input type="radio" name="n" value="a">A`) ?? []
+    expect(field?.question).toBe('Pick:\n- one\n  - nested\n- two that wraps\n1) third')
+  })
+
+  test('Given a heading followed by prose, When parsed, Then the heading keeps its own line', () => {
+    const [field] = parseAskHtml('<legend>Intro\n# Title\nbody text\nmore</legend><input type="radio" name="h" value="a">A') ?? []
+    expect(field?.question).toBe('Intro\n# Title\nbody text more')
+  })
+
+  test('Given plain single-line question text with stray spaces, When parsed, Then it is unchanged apart from collapsed spaces', () => {
+    const [field] = parseAskHtml('<fieldset><legend>  Which   database?  </legend><input type="radio" name="p" value="a">A</fieldset>') ?? []
+    expect(field?.question).toBe('Which database?')
+  })
+
   test('Given the same html twice, When parsed, Then the second read reuses the first result', () => {
     expect(parseAskHtml(PROBE_FORM)).toBe(parseAskHtml(PROBE_FORM))
   })

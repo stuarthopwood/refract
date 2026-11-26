@@ -51,18 +51,18 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 
 **Daily-driver focus (Stuart, 2026-11-18).** Refract is now Stuart's daily driver, so the next build focus is four themes, in order, ranked above #2050 and all other backlog: 1) #2015 interactive Checklist (enhanced todo list; **done**), 2) #1990 Ask card and Session Q&A redesign (Ask tool), 3) #1931 Subagents card and right-pane panel (the "subagent DAG panel" and agent side panel; no separate graph epic), 4) #3 built-in terminal (grill when reached). They sit after the agent-Sessions epic #1304 slices (#1858, #1859, #1860, #1861, #1862), which stay first. The three epics below are promoted into the active block accordingly (rows DD-1 to DD-3, before #3).
 
-**v1 scope (Stuart, 2026-11-26).** v1 ships by 2026-12-31, before paid AI credits start on 2027-01-01. It holds every open p0 and p1 issue plus the p2 bugs: 109 issues on the GitHub milestone `v1`. Every open issue is a sub-issue of one of the 25 epics below; open the epic on GitHub for its children. Run `pnpm plan:html` to write `docs/plan.html`, a page with v1 progress, the epics and a weekly forecast from live GitHub data.
+**v1 scope (Stuart, 2026-11-26).** v1 ships by 2026-12-31, before paid AI credits start on 2027-01-01. It holds every open p0 and p1 issue plus the p2 bugs: 113 issues on the GitHub milestone `v1` (counts as of 2026-11-26). Every open issue is a sub-issue of one of the 25 epics below; open the epic on GitHub for its children. Run `pnpm plan:html` to write `docs/plan.html`, a page with v1 progress, the epics and a weekly forecast from live GitHub data; it is the live source when this table drifts.
 
 | Epic | Area | Open issues | In v1 |
 |---|---|---|---|
-| #2222 | Chat transcript: tool-call rows, scroll, header, Markdown and message rendering | 44 | 14 |
+| #2222 | Chat transcript: tool-call rows, scroll, header, Markdown and message rendering | 46 | 16 |
 | #2229 | Themes, design system and visual polish | 28 | 14 |
 | #1810 | Tests, CI, release, and installer/updater | 14 | 9 |
 | #1901 | Performance: instant PR and Issue views, faster startup, lower process memory | 11 | 7 |
-| #2224 | Ask card, approvals and working modes (Plan, Away) | 11 | 7 |
+| #2224 | Ask card, approvals and working modes (Plan, Away) | 12 | 8 |
 | #2225 | Session list and Conversations: history, tree, search, delete and retention | 25 | 6 |
 | #2230 | Usage and cost: Usage view, token guard and cache writes | 14 | 6 |
-| #1272 | Agents and subagents (Agents panel, parked agents, personas, child Sessions, cross-Session messaging) | 11 | 5 |
+| #1272 | Agents and subagents (Agents panel, parked agents, personas, child Sessions, cross-Session messaging) | 12 | 6 |
 | #1136 | Composer input and attachments | 17 | 5 |
 | #2050 | Pre-installed commands, skills and hooks | 6 | 4 |
 | #1135 | Git changes panel | 9 | 4 |
@@ -129,7 +129,9 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p1 later | #1928 | **Feat, Subagents card (child of #1931):** sub-agent cards with role, provenance, files, and live heartbeat | `done`, merged via PR #2212 `b058d624` |
 | p1 later | #1929 | **Feat, Subagents card (child of #1931):** collapse, expand, auto-focus, and stage transitions | `done`, merged via PR #2212 `b058d624` |
 | p1 later | #1930 | **Feat, Subagents right-pane panel (child of #1931):** apply the redesigned view-model and layout | `done`, merged via PR #2213 `58e10267` |
-| p1 later | #2235 | **UI Polish, Subagents card (p1, `design`, child of #2222):** drop the nested borders (Stage spine `SpineList.tsx:27`, agent box, Prompt code box) and keep only the outer border; show elevation with stepped background tints from the surface tokens; check the #1930 panel for the same nesting | Filed 2026-11-26 (Stuart, screenshot); follows #1931 |
+| p1 later | #2235 | **UI Polish, Subagents card (p1, `design`, child of #2222):** drop the nested borders (Stage spine `SpineList.tsx:27`, agent box, Prompt code box) and keep only the outer border; show elevation with stepped background tints from the surface tokens; the panel gets the same treatment in #2240 | Filed 2026-11-26 (Stuart, screenshot); follows #1931; build with #2240 |
+| p1 later | #2240 | **UI Polish, Subagents panel (p1, `design`, `right-pane`, child of #1272):** tints instead of nested borders (same treatment as #2235), padding between the selected agent's left accent and its content, one vertical scroll bar per split region (`SubagentPanel.tsx:135` and `:145`) and none on the panel, and no horizontal scroll (long paths wrap or truncate with a tooltip) | Filed 2026-11-26 (Stuart, screenshot); follows #1930; build with #2235 |
+| p1 later | #2242 | **UI Polish, Subagents card (p1, `design`, `chat`, child of #2222):** render agent results as Markdown with the raw `<task-result …>` wrapper stripped (likely `resultSummary` via `viewModel/derive.ts` `whatItDid` and `stageRowModel.ts:30`, unproven), much more whitespace from the spacing tokens, parallel agents stacked at full width unless each card stays about 320 px or wider, Stage titles from the goal or agent name rather than raw brief text, remove the open-in-side-panel icon button, and make the whole agent card a button that opens the agent in the side panel (chips and **See input & output** stay separate) | Filed 2026-11-26 (Stuart, two screenshots: "cramped and hard to parse"); follows #1931; build with #2235 |
 | 1e | #3 | **P0 Built-in terminal:** right-panel terminal with tabs and multiple shells per Session | Raised p3 to P0 (Stuart 2026-11-06); not grilled yet, so grill first; full row C6 (needs C1 and B2; the PTY route must be re-chosen for the Rust build) |
 | 1f | #433 | **P1 Composer working-mode menu:** per-Session single choice of Interactive, Plan mode, Grill mode and Away mode beside the Approval mode pill; Plan via `/plan` if a probe proves it works over RPC, otherwise a restart at idle; Away owns the away policy (auto-answer questions, deny leftover approvals after 5 minutes, never auto-approve) that #479 reuses | Raised p3 to P1 (Stuart 2026-11-02, grilled); after #695 (its "Start in plan mode" setting sets the default mode); gate passed, awaiting merge (Lane AU, spec 112; follow-ups #1568) |
 | 2 | #1200 | Long-PR layout bug: app frame stops filling the window, list column blank, two scrollbars | Bug, filed p1 2026-10-23; breaks the Pull requests view on real PRs; done (PR #1217) |
@@ -1565,3 +1567,7 @@ Also filed 2026-11-26 (gate review of fix PR #2216 `98f1bc39`): **#2218** (`p2`,
 Also filed 2026-11-26 (Stuart, v1 plan): epics **#2222** (chat transcript), **#2223** (chat readouts), **#2224** (Ask card, approvals and modes), **#2225** (Session list and Conversations), **#2226** (Checklist), **#2227** (right pane panels), **#2228** (Settings and OMP configuration), **#2229** (themes and visual polish), **#2230** (usage and cost), **#2231** (OMP transport), **#2232** (accessibility). Seven existing epics were retitled to their wider scope (#1135, #1136, #1137, #1272, #1273, #1810, #1901). All 341 open issues are linked as sub-issues, and the 109 v1 issues are on milestone `v1`.
 
 Also filed 2026-11-26 (Stuart): **#2235** (`p1`, `design`, `chat`, child of #2222) Subagents card: drop nested borders and show elevation with background tints; **#2236** (`p0`, `bug`, child of #2224) Away Mode cancels subagent tasks and the agent cannot tell why. #2031 was raised from p1 to p0. All three are on milestone `v1`.
+
+Also filed 2026-11-26 (Stuart): **#2240** (`p1`, `design`, `right-pane`, child of #1272, milestone `v1`) Subagents panel: tints instead of nested borders, selected-agent padding, one scroll bar and no horizontal scroll.
+
+Also filed 2026-11-26 (Stuart): **#2242** (`p1`, `design`, `chat`, child of #2222, milestone `v1`) Subagents card: render task results as Markdown, looser spacing, whole card opens the agent. The v1 scope table was recounted the same day: 113 v1 issues.

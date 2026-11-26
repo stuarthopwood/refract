@@ -3,6 +3,7 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { INSET_FOCUS_OUTLINE_CLASS, RESTING_FOCUS_CLASS } from '@/components/ui/focus-classes'
+import { Markdown } from '@/features/chat/Markdown'
 import { cn } from '@/lib/utils'
 import {
   askedUserDigestAnswer,
@@ -64,10 +65,10 @@ function FullAnswer({ answer, multi }: { answer: AskedUserAnswer; multi: boolean
   )
 }
 
-function FullQuestion({ question }: { question: AskedUserQuestion }) {
+function FullQuestion({ question, id }: { question: AskedUserQuestion; id: string }) {
   return (
     <div data-asked-question className="space-y-1">
-      <p className="whitespace-pre-line text-sm font-medium">{question.prompt}</p>
+      <Markdown id={id} text={question.prompt} className="font-medium" />
       {question.answers.length > 0 ? (
         <ul className="space-y-1">
           {question.answers.map((answer, index) => (
@@ -116,7 +117,7 @@ export function AskedUserLine({ model, defaultOpen = false, ref }: AskedUserLine
         {open ? (
           <div className="space-y-4">
             {model.questions.map((question, index) => (
-              <FullQuestion key={`${question.prompt}-${index}`} question={question} />
+              <FullQuestion key={`${question.prompt}-${index}`} question={question} id={`${bodyId}-question-${index}`} />
             ))}
           </div>
         ) : (

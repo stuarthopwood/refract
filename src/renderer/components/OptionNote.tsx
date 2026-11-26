@@ -84,7 +84,7 @@ interface OptionNoteViewProps {
 /** A saved note under its option: the "Note:" label (not colour) carries it, with inline Edit and remove. */
 export function OptionNoteView({ text, optionLabel, disabled, onEdit, onRemove }: OptionNoteViewProps) {
   return (
-    <div className="ml-6 flex items-start gap-2 border-t border-border bg-severity-warning-bg pt-2 text-xs">
+    <div className="flex items-center gap-2 bg-severity-warning-bg py-1 text-xs">
       <p className="min-w-0 flex-1 break-words">
         <span className="font-medium text-severity-warning">Note:</span> {text}
       </p>
@@ -164,6 +164,9 @@ export interface AskChoiceNotes {
   onRemove: (value: string) => void
 }
 
+/** Right padding for an option row that can show the hover hint, so the overlaid "Note [N]" button never covers the option's text or a table in its description. Held on every row, picked or not, so picking never reflows the text. */
+export const OPTION_NOTE_HINT_ROW_CLASS = 'pr-20'
+
 interface OptionNoteSlotProps {
   value: string
   label: string
@@ -183,7 +186,7 @@ export function OptionNoteSlot({ value, label, picked, disabled, notes }: Option
         hasNote={false}
         disabled={disabled}
         onClick={() => notes.onEdit(value)}
-        className="absolute inset-y-0 right-2 my-auto border-border bg-background opacity-0 group-focus-within/option:opacity-100 group-hover/option:opacity-100"
+        className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-focus-within/option:opacity-100 group-hover/option:opacity-100"
       />
     )
   }

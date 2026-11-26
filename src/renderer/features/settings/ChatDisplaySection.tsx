@@ -61,6 +61,13 @@ export function ChatDisplaySection() {
           onCheckedChange={(checked) => void setTranscriptDisplay('toolNames', checked)}
         />
         <SettingSwitchRow
+          id="transcript-display-expand-answered-asks"
+          label="Expand answered questions"
+          description="Show each answered Ask question with its options and your answer. Off shows a one-line summary you can open."
+          checked={transcriptDisplay.expandAnsweredAsks}
+          onCheckedChange={(checked) => void setTranscriptDisplay('expandAnsweredAsks', checked)}
+        />
+        <SettingSwitchRow
           id="show-finished-turn-times"
           label="Show finished turn times"
           description="How long each turn took, shown under it (and read out by screen readers) once it finishes. A turn that is still running always shows its timer."
