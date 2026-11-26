@@ -20,6 +20,7 @@ vi.mock('../right-pane/hosted-panel-actions', () => ({ openHostedPanel: vi.fn() 
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { TranscriptSubagentItem } from '../subagents/viewModel/runs'
 import { subagentItem } from '../subagents/viewModel/testFixtures'
+import { panelStageToggleId } from '../subagents/subagentPanelRows'
 import { ChainStageLine, stageToggleRowId } from './ChainStageLine'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 
@@ -172,5 +173,26 @@ describe('given a running Stage', () => {
 
   it('does not tint a settled Stage', () => {
     expect(render(SOLO())).not.toContain('color-mix')
+  })
+})
+
+describe('Stage toggle keys (FR-150 d)', () => {
+  it('keeps the card and the panel on separate keys', () => {
+    const stage = GATE()
+    expect(stageToggleRowId(stage.id)).toBe(`card:${stage.id}`)
+    expect(panelStageToggleId(stage.id)).toBe(`panel:${stage.id}`)
+  })
+
+  it('leaves a settled card collapsed when only the panel opened that Stage', () => {
+    const stage = GATE()
+    setManualOpen('s1', panelStageToggleId(stage.id), true)
+    expect(render(stage, 's1')).not.toContain('<ol')
+  })
+
+  it('leaves the panel key untouched when the card opens that Stage', () => {
+    const stage = GATE()
+    setManualOpen('s1', stageToggleRowId(stage.id), true)
+    expect(toggles.bySession.s1?.[panelStageToggleId(stage.id)]).toBeUndefined()
+    expect(render(stage, 's1')).toContain('<ol')
   })
 })
