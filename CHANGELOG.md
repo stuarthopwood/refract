@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.43.0 (2026-11-26)
+
+### Features
+
+- feat(subagents): tiny-role synthesis and summary fields for the Subagents card (#1925) (https://github.com/stuarthopwood/refract/pull/2210)
+- feat(subagents): shared Subagents view-model for card and panel (#1925) (https://github.com/stuarthopwood/refract/pull/2211)
+- feat(chat): redesigned Subagents chat card (#1926, #1927, #1928, #1929) (https://github.com/stuarthopwood/refract/pull/2212)
+- feat(subagents): right-pane Subagents panel on the shared view-model (#1930) (https://github.com/stuarthopwood/refract/pull/2213)
+
+### Fixes
+
+- fix(subagents): stop real-clock and lock races in the lib suite (https://github.com/stuarthopwood/refract/pull/2216)
+
+### Other
+
+- docs(subagents): spec, ADR 0013 and grill record for the shared view-model (#1925) (https://github.com/stuarthopwood/refract/pull/2207)
+- docs(subagents): spec and convergence phases for the card redesign children (#1926-#1930) (https://github.com/stuarthopwood/refract/pull/2208)
+- docs(plan): mark DD-3 Subagents card redesign done (#1931) (https://github.com/stuarthopwood/refract/pull/2215)
+
 ## v0.42.1 (2026-11-25)
 
 ### Fixes
