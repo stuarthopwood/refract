@@ -60,7 +60,7 @@ function fetchEpics() {
   const epics = [];
   let cursor = null;
   for (;;) {
-    const { search } = graphql(SEARCH_QUERY, { q: `repo:${REPO} is:issue in:title "Epic:"`, cursor });
+    const { search } = graphql(SEARCH_QUERY, { q: `repo:${REPO} is:issue is:open in:title "Epic:"`, cursor });
     for (const node of search.nodes) {
       if (!node?.title?.startsWith('Epic:')) continue;
       let page = node.subIssues;
