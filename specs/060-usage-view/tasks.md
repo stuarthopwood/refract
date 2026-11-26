@@ -74,3 +74,15 @@ Findings: the spec Tool rows and Schema version decisions (amended 2026-11-11), 
 - [X] C-13 `format.ts`, `UsageTables.tsx`, `NoData.tsx`: percentage, the labelled no-data dash when absent, unpriced rows sorted below 0%, with `format.test.ts` coverage per the Tool rows decision (met)
 - [X] C-14 `scripts/verify-tauri-1845.mjs` live driver: seeds a version 3 `usage.db` holding `cost_share` rows, proves the migration and screenshots the tools table with percentages and the labelled dash (met)
 - [X] C-15 Verify: `pnpm ci:local`, the C-14 driver; PR `fix(usage): tool Cost share shows a percentage`, `Refs #1845`. Depends on C-11 to C-14. (met)
+
+## Phase 6: Convergence (#2035, stable Project id)
+
+Findings: FR-009 and FR-015 (partial): attribution was a cwd-derived `project_label` string in the rollup primary keys, so a renamed or removed Project split or orphaned its history and the filter listed worktree codenames; the Personal Session had no bucket.
+
+- [X] C-16 `schema.rs`: `user_version` 5, `projects` table, in-place rename of `project_label` to `project_id` with `@legacy:<label>` values per the Migration decision (partial)
+- [X] C-17 `project_label.rs`, `rollup.rs`, `ingest.rs`, `copilot_cli.rs`: resolve to `ProjectRef{id, name}`, stamp the id on every row, upsert the mapping, `@personal` bucket per the Buckets decision (partial)
+- [X] C-18 `relabel.rs`, `scan.rs`, `service.rs`: per-pass upsert of registered Projects before relabel; relabel moves rows by id (partial)
+- [X] C-19 `queries.rs`, `queries_tables.rs`, `ipc/usage.rs`, `ipc-usage.ts`: filter by id, join `projects` for the display name, breakdown rows carry `id` (partial)
+- [X] C-20 `UsageFilters.tsx`, `usage-store.ts`: the Project filter lists `{id, name}` and sends the id (partial)
+- [X] C-21 Co-located tests: v4 to v5 migration keeps rows and names, Personal bucket, rename shows the new name on the same rows, removal keeps rows and last name, the copilot writer stamps the id (missing)
+- [X] C-22 Docs: `spec.md`, `data-model.md`, `contracts/ipc.md`, `CONTEXT.md` Project label (met)

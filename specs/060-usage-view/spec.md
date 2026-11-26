@@ -46,6 +46,13 @@ Grill outcomes are Stuart's (2026-11-04, grill-with-docs, recorded on #1655, non
 - **Rewrite detection (Decided (Stuart, grill-with-docs 2026-11-04, recorded on #1656)):** a session file OMP rewrote with the same head, at least as long as the stored offset, resumed inside new content and skipped rows. Ingest also fingerprints the up-to-256 bytes that end at the stored offset; a mismatch restarts the file from byte 0 and the `(file, entry id)` dedupe keeps rows unique. Rows a rewrite removed stay in `usage.db` (usage history is append-only).
 - **Migration (Decided (Skippy, delegated by Stuart 2026-11-05)):** `user_version` 2 to 3 adds `tail_len` and `tail_hash` with `ALTER TABLE`, defaulting to 0 (unknown: the next pass records the window without a reset). A rebuild would drop the rows a rewrite removed, so version 2 is migrated in place; version 1 still rebuilds.
 
+### Session 2026-11-26 (#2035)
+
+- **Stable Project id (Decided (Stuart, 2026-11-17, recorded on #2035)):** usage is attributed by the Project's registry `repository_id`, stamped on every row at ingest, and the name is resolved from a retained `projects(project_id, name)` lookup, so a renamed Project shows its new name on the same rows and a removed one keeps its rows under its last name. The Project filter lists `{id, name}` and sends the id.
+- **Buckets (Decided (Skippy, delegated by Stuart 2026-11-26)):** Personal Sessions have no `repository_id`, so they get their own `@personal` bucket (shown as "Personal"), not Other. Scratch and temp cwds stay `@other` ("Other"); a cwd under no Project keeps its folder name as `@folder:<name>`.
+- **Migration (Decided (Skippy, delegated by Stuart 2026-11-26)):** `user_version` 4 to 5 renames `project_label` to `project_id` in place, including in the rollup primary keys, and turns each stored label into `@legacy:<label>`. It does not rebuild from OMP files, because rows OMP rewrote away would vanish. The next relabel pass moves a legacy row to its real id when its cwd resolves.
+- **Name upsert (Decided (Skippy, delegated by Stuart 2026-11-26)):** each ingest pass upserts the id-to-name mapping of every registered Project before relabelling, and the second writer (`copilot_cli.rs`) stamps the id too.
+
 ## Functional requirements
 
 - FR-001: `MainView` gains `'usage'`; a left-nav Usage entry (ChartColumnIcon) sits in the GitHub nav group after Issues, `aria-current` when active.
@@ -56,13 +63,13 @@ Grill outcomes are Stuart's (2026-11-04, grill-with-docs, recorded on #1655, non
 - FR-006: Ingest starts during app setup (Tauri `setup`, after app state exists), not when the view opens, then rescans every five minutes for the life of the app (#1655). `usage.start()` stays as an idempotent IPC: it returns `UsageStatus` and queues an incremental scan, which also retries a launch start that failed. There is no `usage.stop`; nothing ends ingest short of quitting. `usage.status()` reports sessions seen, sessions done, and whether an ingest is running. A `usage.progress` event reports the same.
 - FR-007: A Refract Session's `message_end` nudges the worker for that Session's file.
 - FR-008: `usage.summary(filters)` returns the cards; `usage.timeseries(filters, bucket, tzOffsetMinutes)`; `usage.tokenMix(filters)`; `usage.breakdown(filters, by)` for `project`, `model`, `tool`; `usage.topSessions(filters)`; `usage.calls(filters, sort, page)`; `usage.frustration(filters)`. All SQL-side, over rollups where the shape allows.
-- FR-009: Filters are `{range, from?, to?, project?, model?, reasoning?, agentType?}`; every card, chart and table honours them.
+- FR-009: Filters are `{range, from?, to?, project?, model?, reasoning?, agentType?}`, where `project` is a stable Project id (#2035); every card, chart and table honours them.
 - FR-010: `usage.budget()` returns the Copilot row (from `plan_snapshot()`), the other-provider rows (from `omp usage --json`, spawned with argv and no shell, 10 second timeout, cached 5 minutes), and a reason when unavailable.
 - FR-011: `usage.getPrefs()` and `usage.setPrefs(patch)` persist `jokes` (default true) and the last filters.
 - FR-012: The Usage view shows the budget card, the headline cards, charts, tables, the frustration card (jokes on) and captions (jokes on). Empty state names the folder searched. First-open progress shows `role="progressbar"` with a value and a polite live region on completion.
 - FR-013: Charts offer "View as table"; series differ by pattern and direct label as well as colour; tables sort with the keyboard and expose `aria-sort`; each card is one readable unit (value plus caption).
 - FR-014: The top-ten table opens the Session when Refract knows its Conversation file; otherwise the row is not a link.
-- FR-015: No prompt prose is stored or sent to the renderer. The call log shows timestamp, Project, model, reasoning, agent type, tokens, cost or credits, and duration.
+- FR-015: No prompt prose is stored or sent to the renderer. The call log shows timestamp, Project (its current name), model, reasoning, agent type, tokens, cost or credits, and duration.
 - FR-016: `src/shared/ipc.ts` gains no lines; the contract is `src/shared/ipc-usage.ts`. Every new Rust file is under 600 lines.
 - FR-017: `REFRACT_OMP_SESSIONS_DIR` overrides the sessions folder.
 - FR-018: Slice 2 uses shared components only (ADR 0003); a chart primitive is added to `components/ui/`.

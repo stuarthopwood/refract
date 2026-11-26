@@ -98,7 +98,14 @@ function fromDateInput(value: string, endOfDay: boolean): number | undefined {
               </label>
             </>
           )}
-          <OptionSelect label="Project" anyLabel="All projects" value={filters.project} options={options.projects} onChange={(project) => patch({ project })} />
+          <OptionSelect
+            label="Project"
+            anyLabel="All projects"
+            value={filters.project}
+            options={options.projects.map((p) => p.id)}
+            optionLabel={(id) => options.projects.find((p) => p.id === id)?.name ?? id}
+            onChange={(project) => patch({ project })}
+          />
           <OptionSelect label="Model" anyLabel="All models" value={filters.model} options={options.models} onChange={(model) => patch({ model })} />
           <OptionSelect
             label="Reasoning level"

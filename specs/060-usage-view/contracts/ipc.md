@@ -8,7 +8,7 @@ export interface UsageFilters {
   range: UsageRange
   from?: number // ms, custom only
   to?: number
-  project?: string | null // project label
+  project?: string | null // stable Project id (UsageBreakdownRow.id), not a display name
   model?: string | null
   reasoning?: string | null
  agentType?: 'main' | 'subagent' | null
@@ -25,7 +25,7 @@ export interface UsageStatus { running: boolean; sessionsSeen: number; sessionsD
 | `usage.summary` | `filters` | spend USD, credits, calls, total tokens, cache hit rate, avg context per call, tool calls, tool error rate, active days, sessions (distinct session files), month-to-date USD and month active days (month fields ignore the date range) |
 | `usage.timeseries` | `filters, bucket: 'day'\|'hour', tzOffsetMinutes` | `{ bucketStart, byModel: {model, usd, credits}[] }[]` |
 | `usage.tokenMix` | `filters` | `{ type: 'input'\|'cacheWrite'\|'cacheRead'\|'output', tokens, usd, costShare }[]` |
-| `usage.breakdown` | `filters, by: 'project'\|'model'\|'tool'` | rows: label (and reasoning for model), calls, tokens, usd, credits; tools add errors, result chars, cost share (0 to 1, a fraction of the window's tool spend; absent when no tool call was priced) |
+| `usage.breakdown` | `filters, by: 'project'\|'model'\|'tool'` | rows: `id` (Project rows only: the stable Project id the `project` filter takes) and label (a Project's current name; reasoning too for model), calls, tokens, usd, credits; tools add errors, result chars, cost share (0 to 1, a fraction of the window's tool spend; absent when no tool call was priced) |
 | `usage.topSessions` | `filters` | ten rows: sessionId, label, project, usd, credits, calls, `conversationKnown` |
 | `usage.calls` | `filters, sort: {key, dir}, page: {index, size<=100}` | `{ rows, total }`; `key` from an allowlist |
 | `usage.frustration` | `filters` | `{ yelling, profanity, blame, messages, daily: {day, mood}[] }` |

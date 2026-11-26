@@ -121,7 +121,7 @@ fn resume_after_append_and_dedupe_on_reread() {
 }
 
 #[test]
-fn model_change_replay_credits_and_project_label() {
+fn model_change_replay_credits_and_project_id() {
     let mut fx = Fixture::new("replay");
     append(&fx.file, &header());
     append(&fx.file, &assistant("a1", 1_790_000_000_000, 0.5, vec![]));
@@ -135,7 +135,7 @@ fn model_change_replay_credits_and_project_label() {
     ) = fx
         .conn
         .query_row(
-            "SELECT provider, model, reasoning, project_label, credits FROM messages",
+            "SELECT provider, model, reasoning, project_id, credits FROM messages",
             [],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
         )

@@ -20,10 +20,23 @@ fn version(conn: &Connection) -> i64 {
         .unwrap()
 }
 
+/// Turns a fresh file back into the shape version 4 left: Projects keyed by a name in `project_label`.
+const AS_VERSION_4: &str = "
+DROP TABLE projects;
+ALTER TABLE file_offsets RENAME COLUMN project_id TO project_label;
+ALTER TABLE messages RENAME COLUMN project_id TO project_label;
+ALTER TABLE tool_calls RENAME COLUMN project_id TO project_label;
+ALTER TABLE user_messages RENAME COLUMN project_id TO project_label;
+ALTER TABLE message_rollup RENAME COLUMN project_id TO project_label;
+ALTER TABLE tool_rollup RENAME COLUMN project_id TO project_label;
+ALTER TABLE session_rollup RENAME COLUMN project_id TO project_label;
+";
+
 #[test]
 fn version_2_database_keeps_its_rows_and_gains_the_tail_columns() {
     let path = scratch_db("migrate-2");
     let conn = open_db(&path).unwrap();
+    conn.execute_batch(AS_VERSION_4).unwrap();
     conn.execute_batch(
         "ALTER TABLE file_offsets DROP COLUMN tail_len;
          ALTER TABLE tool_calls RENAME COLUMN cost_usd TO cost_share;
@@ -53,6 +66,7 @@ fn version_2_database_keeps_its_rows_and_gains_the_tail_columns() {
 /// A file as version 3 left it: the dollar columns still named `cost_share`, holding rows.
 fn write_v3_db(path: &Path) {
     let conn = open_db(path).unwrap();
+    conn.execute_batch(AS_VERSION_4).unwrap();
     conn.execute_batch(
         "ALTER TABLE tool_calls RENAME COLUMN cost_usd TO cost_share;
          ALTER TABLE tool_rollup RENAME COLUMN cost_usd TO cost_share;
@@ -81,6 +95,63 @@ fn version_3_database_keeps_its_tool_history_under_the_renamed_column() {
         .unwrap();
     assert_eq!((call, rollup), (1.5, 1.5));
     assert!(conn.prepare("SELECT cost_share FROM tool_calls").is_err());
+    assert!(std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .all(|e| !e.unwrap().file_name().to_string_lossy().contains(".bak-")));
+}
+
+/// A file as version 4 left it: Projects keyed by name, rows spread over several tables.
+fn write_v4_db(path: &Path) {
+    let conn = open_db(path).unwrap();
+    conn.execute_batch(AS_VERSION_4).unwrap();
+    conn.execute_batch(
+        "INSERT INTO file_offsets (session_file, offset, project_label) VALUES ('f', 9, 'Refract');
+         INSERT INTO tool_calls (session_file, tool_call_id, ts, entry_id, tool, cost_usd, project_label)
+           VALUES ('f', 'c1', 1000, 'e1', 'bash', 1.5, 'Refract');
+         INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, cost_usd)
+           VALUES (0, 'Refract', 'bash', 'main', 2, 3.0);
+         INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, cost_usd)
+           VALUES (0, 'Other', 'bash', 'main', 1, 0.5);
+         PRAGMA user_version = 4;",
+    )
+    .unwrap();
+}
+
+#[test]
+fn version_4_database_keeps_every_row_and_name_under_a_legacy_project_id() {
+    let path = scratch_db("migrate-4");
+    write_v4_db(&path);
+
+    let conn = open_db(&path).unwrap();
+
+    assert_eq!(version(&conn), USER_VERSION);
+    let rollup: Vec<(String, i64)> = conn
+        .prepare("SELECT project_id, calls FROM tool_rollup ORDER BY project_id")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        rollup,
+        vec![("@legacy:Other".to_string(), 1), ("@legacy:Refract".to_string(), 2)]
+    );
+    let offset_id: String = conn
+        .query_row("SELECT project_id FROM file_offsets", [], |r| r.get(0))
+        .unwrap();
+    let call_id: String = conn
+        .query_row("SELECT project_id FROM tool_calls", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!((offset_id.as_str(), call_id.as_str()), ("@legacy:Refract", "@legacy:Refract"));
+    let name: String = conn
+        .query_row(
+            "SELECT name FROM projects WHERE project_id = '@legacy:Refract'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(name, "Refract");
+    assert!(conn.prepare("SELECT project_label FROM tool_rollup").is_err());
     assert!(std::fs::read_dir(path.parent().unwrap())
         .unwrap()
         .all(|e| !e.unwrap().file_name().to_string_lossy().contains(".bak-")));

@@ -128,7 +128,7 @@ fn summary_and_calls_read_what_was_recorded() {
             provider: "github-copilot".into(),
             model: model.into(),
             agent_type: "main".into(),
-            project_label: "proj".into(),
+            project_id: "proj".into(),
             input: 10,
             cache_read: 90,
             total_tokens: 100,
@@ -201,7 +201,7 @@ fn priced_tool_call<'a>(id: &'a str, tool: &'a str, cost_usd: f64) -> ToolCallRo
         ts: NOW - 60_000,
         tool,
         cost_usd,
-        project_label: "proj",
+        project_id: "proj",
         model: "m1",
         reasoning: "",
         agent_type: "main",
@@ -274,7 +274,7 @@ fn tool_cost_share_denominator_follows_the_project_filter() {
     let conn = scratch_db();
     record_tool_call(&conn, "file", &priced_tool_call("1", "bash", 3.0)).unwrap();
     let other_project = ToolCallRow {
-        project_label: "elsewhere",
+        project_id: "elsewhere",
         ..priced_tool_call("2", "read", 9.0)
     };
     record_tool_call(&conn, "file", &other_project).unwrap();
@@ -288,6 +288,45 @@ fn tool_cost_share_denominator_follows_the_project_filter() {
 }
 
 #[test]
+fn project_breakdown_filters_by_id_and_shows_the_current_name() {
+    let conn = scratch_db();
+    crate::usage::rollup::upsert_project(&conn, "proj", "Refract").unwrap();
+    record_tool_call(&conn, "file", &priced_tool_call("1", "bash", 3.0)).unwrap();
+    let row = MessageRow {
+        entry_id: "a".into(),
+        ts: NOW - 60_000,
+        session_id: "s".into(),
+        provider: "github-copilot".into(),
+        model: "m1".into(),
+        agent_type: "main".into(),
+        project_id: "proj".into(),
+        total_tokens: 100,
+        cost_total: 1.0,
+        ..MessageRow::default()
+    };
+    assert!(record_message(&conn, "file", &row).unwrap());
+    let unnamed = MessageRow {
+        entry_id: "b".into(),
+        project_id: "gone".into(),
+        ..row.clone()
+    };
+    assert!(record_message(&conn, "file", &unnamed).unwrap());
+
+    let rows = breakdown(&conn, &filters("7d"), BreakdownBy::Project, &ctx()).unwrap();
+
+    let named = rows.iter().find(|r| r.id.as_deref() == Some("proj")).unwrap();
+    assert_eq!(named.label, "Refract");
+    // A row whose name was never recorded falls back to its id rather than vanishing.
+    let fallback = rows.iter().find(|r| r.id.as_deref() == Some("gone")).unwrap();
+    assert_eq!(fallback.label, "gone");
+    let by_name = Filters {
+        project: Some("Refract".into()),
+        ..filters("7d")
+    };
+    assert!(breakdown(&conn, &by_name, BreakdownBy::Project, &ctx()).unwrap().is_empty());
+}
+
+#[test]
 fn half_hour_zone_day_buckets_read_exact_rows() {
     let conn = scratch_db();
     let row = MessageRow {
@@ -297,7 +336,7 @@ fn half_hour_zone_day_buckets_read_exact_rows() {
         provider: "github-copilot".into(),
         model: "m1".into(),
         agent_type: "main".into(),
-        project_label: "proj".into(),
+        project_id: "proj".into(),
         total_tokens: 100,
         cost_total: 1.0,
         credits: Some(100.0),
@@ -323,7 +362,7 @@ fn record_call(conn: &Connection, id: &str, file: &str, agent: &str, ago: i64) {
         provider: "github-copilot".into(),
         model: "m1".into(),
         agent_type: agent.into(),
-        project_label: "proj".into(),
+        project_id: "proj".into(),
         total_tokens: 100,
         cost_total: 1.0,
         ..MessageRow::default()

@@ -28,7 +28,7 @@ fn record_at(conn: &Connection, id: &str, iso: &str) {
         provider: "github-copilot".into(),
         model: "m1".into(),
         agent_type: "main".into(),
-        project_label: "proj".into(),
+        project_id: "proj".into(),
         total_tokens: 100,
         cost_total: 1.0,
         ..MessageRow::default()

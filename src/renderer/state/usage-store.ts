@@ -19,6 +19,12 @@ import type {
 } from '../../shared/ipc-usage'
 
 export const DEFAULT_USAGE_FILTERS: UsageFilters = { range: '7d' }
+
+/** A Project the filter can pick: the id is sent, the name shown. */
+export interface UsageProjectOption {
+  id: string
+  name: string
+}
 export const CALLS_PAGE_SIZE = 25
 
 export interface UsageCallsState {
@@ -49,7 +55,7 @@ interface UsageState {
   frustration: UsageFrustration | null
   budget: UsageBudget | null
   /** Every Project, model and reasoning level seen so far, so a chosen filter never empties its own picker. */
-  options: { projects: string[]; models: string[]; reasonings: string[] }
+  options: { projects: UsageProjectOption[]; models: string[]; reasonings: string[] }
   loadPrefs(): Promise<void>
   open(): Promise<void>
   close(): void
@@ -73,6 +79,14 @@ function mergeOptions(existing: string[], rows: UsageBreakdownRow[], extra: (str
   for (const row of rows) set.add(row.label)
   for (const value of extra) if (value) set.add(value)
   return [...set].sort((a, b) => a.localeCompare(b))
+}
+
+/** Keeps every Project seen so far under its latest name; a chosen Project absent from the rows stays listed by its id. */
+export function mergeProjects(existing: UsageProjectOption[], rows: UsageBreakdownRow[], chosen: string | null | undefined): UsageProjectOption[] {
+  const byId = new Map(existing.map((p) => [p.id, p]))
+  for (const row of rows) if (row.id) byId.set(row.id, { id: row.id, name: row.label })
+  if (chosen && !byId.has(chosen)) byId.set(chosen, { id: chosen, name: chosen })
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
 }
 
 export const useUsageStore = create<UsageState>((set, get) => ({
@@ -187,7 +201,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
       frustration: frustration.ok ? frustration.value : state.frustration,
       budget: budget && budget.ok ? budget.value : state.budget,
       options: {
-        projects: mergeOptions(state.options.projects, projects, [filters.project]),
+        projects: mergeProjects(state.options.projects, projects, filters.project),
         models: mergeOptions(state.options.models, models, [filters.model]),
         reasonings: mergeOptions(
           state.options.reasonings,

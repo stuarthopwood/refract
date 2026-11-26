@@ -56,11 +56,11 @@ impl Fixture {
         relabel(&mut self.conn, &self.root, projects).unwrap();
     }
 
-    /// Calls per label across the rollup.
-    fn by_label(&self) -> BTreeMap<String, i64> {
+    /// Calls per Project id across the rollup.
+    fn by_id(&self) -> BTreeMap<String, i64> {
         let mut stmt = self
             .conn
-            .prepare("SELECT project_label, sum(calls) FROM message_rollup GROUP BY project_label")
+            .prepare("SELECT project_id, sum(calls) FROM message_rollup GROUP BY project_id")
             .unwrap();
         let rows = stmt
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
@@ -68,15 +68,26 @@ impl Fixture {
         rows.map(Result::unwrap).collect()
     }
 
-    fn message_labels(&self) -> BTreeMap<String, i64> {
+    fn message_ids(&self) -> BTreeMap<String, i64> {
         let mut stmt = self
             .conn
-            .prepare("SELECT project_label, count(*) FROM messages GROUP BY project_label")
+            .prepare("SELECT project_id, count(*) FROM messages GROUP BY project_id")
             .unwrap();
         let rows = stmt
             .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
             .unwrap();
         rows.map(Result::unwrap).collect()
+    }
+
+    /// The display name the lookup table holds for `id`.
+    fn name_of(&self, id: &str) -> Option<String> {
+        self.conn
+            .query_row(
+                "SELECT name FROM projects WHERE project_id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .ok()
     }
 
     fn total_cost(&self) -> f64 {
@@ -140,41 +151,57 @@ fn relabels_rows_to_projects_other_and_one_merged_folder_without_changing_totals
     let mut fx = seeded();
     let cost = fx.total_cost();
     assert_eq!(
-        fx.by_label(),
+        fx.by_id(),
         counts(&[
-            ("Repos-personal-pinion", 1),
-            ("pinion", 1),
-            ("Second-Brain", 1),
-            ("Other", 2),
-            ("second-brain", 1),
+            ("@folder:repos-personal-pinion", 1),
+            ("@folder:pinion", 1),
+            ("@folder:second-brain", 2),
+            ("@other", 2),
         ])
     );
 
     fx.relabel(&registered());
 
-    let expected = counts(&[("Other", 2), ("Second-Brain", 2), ("pinion-app", 2)]);
-    assert_eq!(fx.by_label(), expected);
-    assert_eq!(fx.message_labels(), expected);
+    let expected = counts(&[("@other", 2), ("@folder:second-brain", 2), ("pinion-app", 2)]);
+    assert_eq!(fx.by_id(), expected);
+    assert_eq!(fx.message_ids(), expected);
     assert_eq!(fx.total_cost(), cost);
+    assert_eq!(fx.name_of("@folder:second-brain").as_deref(), Some("Second-Brain"));
+    assert_eq!(fx.name_of("@other").as_deref(), Some("Other"));
 }
 
 #[test]
-fn a_registry_change_moves_rows_back_and_forth() {
+fn a_removed_project_keeps_its_rows_and_last_name() {
     let mut fx = seeded();
     fx.relabel(&registered());
     fx.relabel(&ProjectIndex::from_pairs([]));
 
-    let labels = fx.by_label();
-    assert_eq!(labels.get("pinion"), Some(&2));
-    assert!(!labels.contains_key("pinion-app"));
-    assert_eq!(labels.values().sum::<i64>(), 6);
+    let ids = fx.by_id();
+    assert_eq!(ids.get("pinion-app"), Some(&2));
+    assert_eq!(ids.values().sum::<i64>(), 6);
+    assert_eq!(fx.name_of("pinion-app").as_deref(), Some("pinion-app"));
+}
+
+#[test]
+fn a_renamed_project_shows_the_new_name_with_the_same_rows() {
+    let mut fx = seeded();
+    fx.relabel(&registered());
+    let renamed = ProjectIndex::from_triples([(
+        "C:\\Repos\\personal\\pinion".to_string(),
+        "pinion-app".to_string(),
+        "Refract".to_string(),
+    )]);
+    fx.relabel(&renamed);
+
+    assert_eq!(fx.by_id().get("pinion-app"), Some(&2));
+    assert_eq!(fx.name_of("pinion-app").as_deref(), Some("Refract"));
 }
 
 #[test]
 fn a_second_pass_changes_nothing() {
     let mut fx = seeded();
     fx.relabel(&registered());
-    let once = fx.by_label();
+    let once = fx.by_id();
     fx.relabel(&registered());
-    assert_eq!(fx.by_label(), once);
+    assert_eq!(fx.by_id(), once);
 }

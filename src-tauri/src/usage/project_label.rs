@@ -17,6 +17,11 @@ pub const LEGACY_PREFIX: &str = "@legacy:";
 const FOLDER_PREFIX: &str = "@folder:";
 const WORKTREES_DIR: &str = "pinion-worktrees";
 
+/// A registry Project id or the Personal bucket: attribution that survives the Project's removal.
+pub fn is_stable_id(id: &str) -> bool {
+    id == PERSONAL_ID || (!id.is_empty() && !id.starts_with('@'))
+}
+
 /// Normalises a path for comparison: strips `\\?\`, folds slashes, lower-cases.
 pub fn normalise_path(raw: &str) -> String {
     let trimmed = raw.trim();
@@ -158,8 +163,8 @@ impl ProjectIndex {
             ))
         });
         let index = Self::from_triples(projects.chain(worktrees).chain(roots));
-        match (registry.personal_session(), dirs::home_dir()) {
-            (Some(_), Some(home)) => index.with_personal_home(&home.to_string_lossy()),
+        match (registry.sessions.iter().any(|s| s.is_personal()), dirs::home_dir()) {
+            (true, Some(home)) => index.with_personal_home(&home.to_string_lossy()),
             _ => index,
         }
     }

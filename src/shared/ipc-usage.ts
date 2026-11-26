@@ -31,6 +31,7 @@ export interface UsageFilters {
   /** Milliseconds since the epoch; `custom` only. */
   from?: number
   to?: number
+  /** A stable Project id (`UsageBreakdownRow.id`), not a display name. */
   project?: string | null
   model?: string | null
   reasoning?: string | null
@@ -84,6 +85,9 @@ export interface UsageTokenMixRow {
 export type UsageBreakdownBy = 'project' | 'model' | 'tool'
 
 export interface UsageBreakdownRow {
+  /** Project rows only: the stable Project id, the value of `UsageFilters.project`. */
+  id?: string
+  /** Project rows carry the Project's current name, not its id. */
   label: string
   /** Model rows only. */
   reasoning?: string
