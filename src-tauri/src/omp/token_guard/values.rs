@@ -50,6 +50,7 @@ const KEYS: &[(&str, Kind)] = &[
     ("snapcompact.systemPrompt", Kind::Text),
     ("task.softRequestBudget", Kind::Int),
     ("providers.cacheWarming", Kind::Text),
+    ("providers.cacheRetention", Kind::Text),
     ("task.maxConcurrency", Kind::Int),
     ("autolearn.autoContinue", Kind::Bool),
     ("advisor.reviewMode", Kind::Text),
@@ -87,6 +88,7 @@ pub fn default_for(key: &str) -> Option<Value> {
         "snapcompact.systemPrompt" => json!("none"),
         "task.softRequestBudget" => json!(60),
         "providers.cacheWarming" => json!("idle"),
+        "providers.cacheRetention" => json!("long"),
         "task.maxConcurrency" => json!(6),
         "autolearn.autoContinue" => json!(false),
         "advisor.reviewMode" => json!("agent-end"),
@@ -116,6 +118,7 @@ const METHODS: &[&str] = &["remote", "snapcompact", "shake", "handoff", "soft"];
 const REVIEW_MODES: &[&str] = &["agent-end", "turn"];
 const TODO_EAGER_MODES: &[&str] = &["default", "preferred", "always"];
 const CACHE_WARMING_MODES: &[&str] = &["off", "streaming", "idle"];
+const CACHE_RETENTION_MODES: &[&str] = &["auto", "short", "long", "none"];
 /// The agent clamps a percent threshold to this range.
 const PERCENT_RANGE: std::ops::RangeInclusive<u64> = 1..=99;
 const MODEL_THRESHOLD_MAX_TOKENS: u64 = 100_000_000;
@@ -195,6 +198,7 @@ pub fn validate(key: &str, value: &Value) -> Result<(), String> {
         (Kind::Bool, _) => value.is_boolean(),
         (Kind::Text, "advisor.reviewMode") => is_member(value, REVIEW_MODES),
         (Kind::Text, "providers.cacheWarming") => is_member(value, CACHE_WARMING_MODES),
+        (Kind::Text, "providers.cacheRetention") => is_member(value, CACHE_RETENTION_MODES),
         (Kind::Text, "todo.eager") => is_member(value, TODO_EAGER_MODES),
         (Kind::Text, _) => is_text(value),
         (Kind::TextList, _) => value.as_array().is_some_and(|items| {
@@ -525,6 +529,33 @@ mod tests {
         }
         assert!(validate("providers.cacheWarming", &json!("always")).is_err());
         assert!(validate("providers.cacheWarming", &json!("")).is_err());
+    }
+
+    #[test]
+    fn cache_retention_accepts_known_modes_only() {
+        for ok in ["auto", "short", "long", "none"] {
+            assert!(
+                validate("providers.cacheRetention", &json!(ok)).is_ok(),
+                "{ok}"
+            );
+        }
+        assert!(validate("providers.cacheRetention", &json!("1h")).is_err());
+        assert!(validate("providers.cacheRetention", &json!("")).is_err());
+    }
+
+    #[test]
+    fn cache_retention_defaults_to_long_and_a_bad_listed_value_falls_back() {
+        assert_eq!(defaults()["providers.cacheRetention"], json!("long"));
+        let short = json!({ "providers.cacheRetention": { "value": "short" } });
+        assert_eq!(
+            effective_from_list(&short)["providers.cacheRetention"],
+            json!("short")
+        );
+        let bad = json!({ "providers.cacheRetention": { "value": "forever" } });
+        assert_eq!(
+            effective_from_list(&bad)["providers.cacheRetention"],
+            json!("long")
+        );
     }
 
     #[test]

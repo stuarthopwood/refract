@@ -145,7 +145,7 @@ mod tests {
         let text = render(&defaults());
         assert!(text.starts_with("# refract-overlay-version: 2\n"));
         assert!(text.contains("task:\n  maxConcurrency: 6\n  softRequestBudget: 60\n"));
-        assert!(text.contains("providers:\n  cacheWarming: \"idle\"\n"));
+        assert!(text.contains("providers:\n  cacheRetention: \"long\"\n  cacheWarming: \"idle\"\n"));
         assert!(text.contains("  thresholdPercent: 70\n"));
         assert!(text.contains("  thresholdTokens: -1\n"));
         assert!(text.contains("  modelThresholds: {}\n"));
@@ -155,14 +155,9 @@ mod tests {
     }
 
     #[test]
-    fn default_overlay_omits_cache_retention_and_overrides() {
+    fn default_overlay_omits_model_overrides() {
         let text = render(&defaults());
-        for absent in [
-            "cacheRetention",
-            "modelOverrides",
-            "promptCache",
-            "agentSoftRequestBudget",
-        ] {
+        for absent in ["modelOverrides", "promptCache", "agentSoftRequestBudget"] {
             assert!(!text.contains(absent), "{absent}");
         }
     }

@@ -4,6 +4,7 @@
 use std::ffi::OsString;
 use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, Once};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -18,6 +19,7 @@ use crate::store::atomic_json::write_json_file;
 const MARKER_FILE: &str = "token-guard-migration.json";
 const PENDING_FILE: &str = "token-guard-migration-backup.json";
 const RETIRED_SUFFIX: &str = ".migrated";
+const CACHE_RETENTION_KEY: &str = "providers.cacheRetention";
 
 #[derive(Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
@@ -25,6 +27,9 @@ struct Marker {
     backup_path: Option<String>,
     #[serde(default)]
     notice_dismissed: bool,
+    /// `providers.cacheRetention: long` joined the token guard after the first migration (#2209).
+    #[serde(default)]
+    cache_retention_applied: bool,
 }
 
 /// What `tokenGuard.get` reports as `migration`.
@@ -40,6 +45,8 @@ pub struct Status {
 
 static RUN_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static LAST_ERROR: Mutex<Option<String>> = Mutex::new(None);
+/// Set when this launch has tried the cache retention catch-up, so a failing `omp` costs one read per launch, not one per call.
+static CATCH_UP_TRIED: AtomicBool = AtomicBool::new(false);
 
 fn marker_path(dir: &Path) -> PathBuf {
     dir.join(MARKER_FILE)
@@ -135,10 +142,11 @@ fn backup_path(config: &Path, date: &str, taken: impl Fn(&Path) -> bool) -> Path
 }
 
 /// Backs up, writes Refract's set with the user's `token-guard.json` choices on top, then marks done and retires the file.
-/// A key whose value in `current` (one `omp config list`) already equals the target is not written again.
+/// A key whose value in `current` (one `omp config list`, `None` when the read failed) already equals the target is not written again.
+/// `providers.cacheRetention` is written only over an unset or `auto` value; a failed read leaves it for the next launch's catch-up.
 async fn attempt<W, F>(
     dir: &Path,
-    current: &Value,
+    current: Option<&Value>,
     config: Option<&Path>,
     date: &str,
     write: W,
@@ -166,7 +174,10 @@ where
     // A positive thresholdTokens would beat the percent, so Refract pins it off.
     wanted.insert("compaction.thresholdTokens".to_string(), json!(-1));
     for (key, value) in wanted {
-        if values::raw_value(current, &key) == Some(&value) {
+        if current.and_then(|c| values::raw_value(c, &key)) == Some(&value) {
+            continue;
+        }
+        if key == CACHE_RETENTION_KEY && !current.is_some_and(retention_is_unset) {
             continue;
         }
         write(key.clone(), value)
@@ -176,6 +187,7 @@ where
     let marker = Marker {
         backup_path: backup,
         notice_dismissed: false,
+        cache_retention_applied: current.is_some(),
     };
     write_json_file(&marker_path(dir), &marker)
         .await
@@ -215,19 +227,33 @@ pub async fn ensure(dir: &Path) -> bool {
 
 /// `ensure` through an injected `omp` executor; `config` is the file the backup copies.
 pub async fn ensure_with(executor: &dyn OmpExecutor, dir: &Path, config: Option<&Path>) -> bool {
+    ensure_once_per_launch(executor, dir, config, &CATCH_UP_TRIED).await
+}
+
+/// `ensure_with` with the once-per-launch catch-up flag injected, so tests do not share the process-wide one.
+async fn ensure_once_per_launch(
+    executor: &dyn OmpExecutor,
+    dir: &Path,
+    config: Option<&Path>,
+    catch_up_tried: &AtomicBool,
+) -> bool {
     if skipped() {
         return false;
     }
     let _guard = RUN_LOCK.lock().await;
-    if read_marker(dir).await.is_some() {
+    if let Some(marker) = read_marker(dir).await {
+        // Tried even when it fails: the flag stays unset on disk, so the next launch retries.
+        if !marker.cache_retention_applied && !catch_up_tried.swap(true, Ordering::SeqCst) {
+            catch_up_cache_retention(executor, dir, config, marker).await;
+        }
         return true;
     }
     // A retry in flight reads as `pending`, not as the previous attempt's failure.
     *LAST_ERROR.lock().expect("poisoned") = None;
     // A failed read only costs the skipped-write saving: the writes then report omp's own error.
-    let current = list_config_with(executor, &[]).await.unwrap_or(Value::Null);
+    let current = list_config_with(executor, &[]).await.ok();
     let write = |key, value| write_to_omp(executor, config, key, value);
-    match attempt(dir, &current, config, &today(), write).await {
+    match attempt(dir, current.as_ref(), config, &today(), write).await {
         Ok(()) => {
             *LAST_ERROR.lock().expect("poisoned") = None;
             true
@@ -238,6 +264,62 @@ pub async fn ensure_with(executor: &dyn OmpExecutor, dir: &Path, config: Option<
             false
         }
     }
+}
+
+/// A failed catch-up only warns: the launch goes on and the next one retries.
+async fn catch_up_cache_retention(
+    executor: &dyn OmpExecutor,
+    dir: &Path,
+    config: Option<&Path>,
+    marker: Marker,
+) {
+    // Without a successful read the user's own value is unknown, so nothing is written.
+    let current = match list_config_with(executor, &[]).await {
+        Ok(current) => current,
+        Err(err) => {
+            log::warn!(
+                "token guard: could not read the omp config for cache retention: {}",
+                err.message
+            );
+            return;
+        }
+    };
+    let write = |key, value| write_to_omp(executor, config, key, value);
+    if let Err(err) = apply_cache_retention(dir, marker, &current, write).await {
+        log::warn!("token guard: cache retention catch-up failed: {err}");
+    }
+}
+
+/// omp's unset retention is `auto`; a missing or non-string value counts as unset. Anything else is the user's choice.
+fn retention_is_unset(current: &Value) -> bool {
+    values::raw_value(current, CACHE_RETENTION_KEY)
+        .and_then(Value::as_str)
+        .is_none_or(|v| v == "auto")
+}
+
+/// Moves omp's unset retention (`auto`) to `long` once for an install migrated earlier; a value the user chose stays.
+async fn apply_cache_retention<W, F>(
+    dir: &Path,
+    marker: Marker,
+    current: &Value,
+    write: W,
+) -> Result<(), String>
+where
+    W: Fn(String, Value) -> F,
+    F: Future<Output = Result<(), String>>,
+{
+    if retention_is_unset(current) {
+        write(CACHE_RETENTION_KEY.to_string(), json!("long"))
+            .await
+            .map_err(|err| format!("Could not write {CACHE_RETENTION_KEY}: {err}"))?;
+    }
+    let marker = Marker {
+        cache_retention_applied: true,
+        ..marker
+    };
+    write_json_file(&marker_path(dir), &marker)
+        .await
+        .map_err(|err| format!("Could not record the cache retention: {err}"))
 }
 
 pub async fn status(dir: &Path) -> Status {
@@ -275,202 +357,7 @@ pub async fn dismiss_notice(dir: &Path) -> Result<(), String> {
         .map_err(|err| format!("Could not save the migration notice: {err}"))
 }
 
+// Tests live in a sibling file, as in `ipc/token_guard.rs`.
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::omp::config::OmpConfigError;
-    use std::pin::Pin;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
-    #[test]
-    fn date_is_utc_calendar_day() {
-        assert_eq!(date_string(0), "1970-01-01");
-        assert_eq!(date_string(1_794_000_000), "2026-11-06");
-    }
-
-    #[test]
-    fn scratch_data_dir_without_agent_dir_skips_the_migration() {
-        let scratch = std::env::temp_dir().to_string_lossy().into_owned();
-        assert!(shares_real_agent_dir(true, Some(scratch.clone()), None));
-        assert!(shares_real_agent_dir(
-            true,
-            Some(scratch.clone()),
-            Some(OsString::new())
-        ));
-    }
-
-    #[test]
-    fn a_scratch_agent_dir_a_real_data_dir_or_a_release_build_runs_it() {
-        let scratch = std::env::temp_dir().to_string_lossy().into_owned();
-        assert!(!shares_real_agent_dir(
-            true,
-            Some(scratch.clone()),
-            Some(OsString::from(&scratch))
-        ));
-        assert!(!shares_real_agent_dir(true, None, None));
-        assert!(!shares_real_agent_dir(
-            true,
-            Some("relative/dir".to_string()),
-            None
-        ));
-        assert!(!shares_real_agent_dir(false, Some(scratch), None));
-    }
-
-    #[test]
-    fn backup_name_gets_a_suffix_on_collision() {
-        let config = Path::new("/a/config.yml");
-        let base = "/a/config.yml.refract-backup-2026-11-06";
-        assert_eq!(
-            backup_path(config, "2026-11-06", |_| false),
-            PathBuf::from(base)
-        );
-        let taken = [base.to_string(), format!("{base}-2")];
-        let name = backup_path(config, "2026-11-06", |p| {
-            taken.iter().any(|t| Path::new(t) == p)
-        });
-        assert_eq!(name, PathBuf::from(format!("{base}-3")));
-    }
-
-    fn scratch(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("refract-mig-{name}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    #[tokio::test]
-    async fn failure_keeps_the_file_then_a_retry_completes() {
-        let dir = scratch("retry");
-        let config = dir.join("config.yml");
-        std::fs::write(&config, "a: 1\n").unwrap();
-        std::fs::write(
-            legacy::path(&dir),
-            r#"{"version":2,"overrides":{"task.maxConcurrency":3}}"#,
-        )
-        .unwrap();
-        let calls = AtomicUsize::new(0);
-        let failing = |_: String, _: Value| {
-            let n = calls.fetch_add(1, Ordering::SeqCst);
-            async move {
-                if n == 2 {
-                    Err("boom".to_string())
-                } else {
-                    Ok(())
-                }
-            }
-        };
-        let err = attempt(&dir, &Value::Null, Some(&config), "2026-11-06", failing)
-            .await
-            .unwrap_err();
-        assert!(err.contains("boom"));
-        assert!(legacy::path(&dir).exists());
-        assert!(read_marker(&dir).await.is_none());
-
-        let written = std::sync::Mutex::new(Vec::new());
-        let ok = |k: String, v: Value| {
-            written.lock().unwrap().push((k, v));
-            async { Ok(()) }
-        };
-        attempt(&dir, &Value::Null, Some(&config), "2026-11-06", ok)
-            .await
-            .unwrap();
-        let marker = read_marker(&dir).await.expect("marker");
-        let backup = marker.backup_path.unwrap();
-        assert!(backup.ends_with("refract-backup-2026-11-06"));
-        assert_eq!(std::fs::read_to_string(&backup).unwrap(), "a: 1\n");
-        let backups = std::fs::read_dir(&dir)
-            .unwrap()
-            .filter(|e| {
-                e.as_ref()
-                    .unwrap()
-                    .file_name()
-                    .to_string_lossy()
-                    .contains("refract-backup")
-            })
-            .count();
-        assert_eq!(backups, 1);
-        assert!(!legacy::path(&dir).exists());
-        let written = written.lock().unwrap();
-        assert!(written.contains(&("task.maxConcurrency".to_string(), json!(3))));
-        assert!(written.contains(&("compaction.thresholdTokens".to_string(), json!(-1))));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[tokio::test]
-    async fn success_marks_done_and_retires_the_file() {
-        let dir = scratch("done");
-        std::fs::write(legacy::path(&dir), r#"{"version":2,"overrides":{}}"#).unwrap();
-        attempt(&dir, &Value::Null, None, "2026-11-06", |_, _| async {
-            Ok(())
-        })
-        .await
-        .unwrap();
-        assert!(is_done(&dir).await);
-        assert_eq!(status(&dir).await.status, "done");
-        assert!(!legacy::path(&dir).exists());
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[tokio::test]
-    async fn keys_already_at_the_target_are_not_written_again() {
-        let dir = scratch("skip");
-        std::fs::write(
-            legacy::path(&dir),
-            r#"{"version":2,"overrides":{"task.maxConcurrency":3,"task.softRequestBudget":7}}"#,
-        )
-        .unwrap();
-        let current = json!({ "task.maxConcurrency": { "value": 3 } });
-        let written = std::sync::Mutex::new(Vec::new());
-        let ok = |k: String, _: Value| {
-            written.lock().unwrap().push(k);
-            async { Ok(()) }
-        };
-        attempt(&dir, &current, None, "2026-11-06", ok)
-            .await
-            .unwrap();
-        let written = written.lock().unwrap();
-        assert!(!written.contains(&"task.maxConcurrency".to_string()));
-        assert!(written.contains(&"task.softRequestBudget".to_string()));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    /// An `omp` that must never be called: a run that finds the marker writes and reads nothing.
-    struct NeverCalled(AtomicUsize);
-
-    impl OmpExecutor for NeverCalled {
-        fn call<'a>(
-            &'a self,
-            _args: &'a [String],
-            _failure_message: &'a str,
-            _strip_env_vars: &'a [&'a str],
-        ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
-            self.0.fetch_add(1, Ordering::SeqCst);
-            Box::pin(async { Ok("{}".to_string()) })
-        }
-    }
-
-    #[tokio::test]
-    async fn a_second_run_waits_on_the_lock_then_finds_the_marker_and_writes_nothing() {
-        if skipped() {
-            return;
-        }
-        let dir = scratch("lock");
-        let held = RUN_LOCK.lock().await;
-        let omp = std::sync::Arc::new(NeverCalled(AtomicUsize::new(0)));
-        let waiting = {
-            let (omp, dir) = (std::sync::Arc::clone(&omp), dir.clone());
-            tokio::spawn(async move { ensure_with(&*omp, &dir, None).await })
-        };
-        // Yielding lets the spawned run execute as far as it can on this single-threaded runtime: a run that
-        // ignored the lock would finish (and call omp) long before the marker below exists.
-        for _ in 0..50 {
-            tokio::task::yield_now().await;
-        }
-        assert!(!waiting.is_finished(), "the run must wait on the lock");
-        assert_eq!(omp.0.load(Ordering::SeqCst), 0);
-        std::fs::write(marker_path(&dir), "{}").unwrap();
-        drop(held);
-        assert!(waiting.await.unwrap());
-        assert_eq!(omp.0.load(Ordering::SeqCst), 0);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-}
+#[path = "migrate_tests.rs"]
+mod tests;
