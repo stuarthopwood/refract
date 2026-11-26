@@ -219,6 +219,25 @@ line two</textarea></label>
     expect(parseAskHtml(manyOptions(201))).toBeNull()
   })
 
+  test('Given a legend holding a Markdown table, When parsed, Then the table keeps its rows on separate lines', () => {
+    const [field] = parseAskHtml(`<fieldset><legend>Pick one:
+  | Name | Size |
+  |------|------|
+  | A    |  1   |
+</legend><input type="radio" name="t" value="a">A</fieldset>`) ?? []
+    expect(field?.question).toBe('Pick one:\n| Name | Size |\n|------|------|\n| A | 1 |')
+  })
+
+  test('Given a preceding paragraph holding a Markdown list and a fenced block, When parsed, Then lines and blank lines survive', () => {
+    const [field] = parseAskHtml('<p>Which?\n\n- one\n  - two\n\n```ts\nconst a   =\t1\n```</p><input type="radio" name="l" value="x">X') ?? []
+    expect(field?.question).toBe('Which?\n\n- one\n- two\n\n```ts\nconst a = 1\n```')
+  })
+
+  test('Given plain single-line question text with stray spaces, When parsed, Then it is unchanged apart from collapsed spaces', () => {
+    const [field] = parseAskHtml('<fieldset><legend>  Which   database?  </legend><input type="radio" name="p" value="a">A</fieldset>') ?? []
+    expect(field?.question).toBe('Which database?')
+  })
+
   test('Given the same html twice, When parsed, Then the second read reuses the first result', () => {
     expect(parseAskHtml(PROBE_FORM)).toBe(parseAskHtml(PROBE_FORM))
   })

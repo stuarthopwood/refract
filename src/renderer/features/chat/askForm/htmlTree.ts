@@ -156,13 +156,24 @@ export function closestAncestor(node: HtmlNode, tag: string): HtmlElement | null
   return null
 }
 
-/** Visible text with whitespace collapsed; control elements contribute nothing. */
-export function textContent(node: HtmlNode): string {
+/**
+ * Visible text with whitespace collapsed; control elements contribute nothing. With `keepLines`
+ * line breaks survive (runs of other whitespace still collapse and each line is trimmed), so
+ * question text written as Markdown keeps its tables, lists and code blocks.
+ */
+export function textContent(node: HtmlNode, keepLines = false): string {
   const parts: string[] = []
   const walk = (n: HtmlNode) => {
     if (n.type === 'text') parts.push(n.text)
     else if (!NON_TEXT_TAGS[n.tag]) n.children.forEach(walk)
   }
   walk(node)
-  return parts.join('').replace(/\s+/g, ' ').trim()
+  const text = parts.join('')
+  if (!keepLines) return text.replace(/\s+/g, ' ').trim()
+  return text
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/[^\S\n]+/g, ' ').trim())
+    .join('\n')
+    .trim()
 }
