@@ -1,4 +1,5 @@
 import * as React from 'react'
+import { Markdown } from '@/features/chat/Markdown'
 import { RecommendedBadge } from '@/components/RecommendedBadge'
 import { CHECKBOX_BOX_CLASS, CheckboxIndicator, CheckboxItem, OPTION_MARK_CLASS, OPTION_RECOMMENDED_ROW_CLASS, OPTION_ROW_CLASS } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -117,9 +118,9 @@ function OptionLabel({ option, labelId, descId, reasonId }: { option: AskChoiceO
         </span>
       )}
       {option.description && (
-        <span id={descId} className="col-start-2 w-full min-w-0 break-words text-xs text-muted-foreground">
-          {option.description}
-        </span>
+        <div id={descId} className="col-start-2 w-full min-w-0">
+          <Markdown id={descId} text={option.description} className="text-xs text-muted-foreground" />
+        </div>
       )}
     </>
   )

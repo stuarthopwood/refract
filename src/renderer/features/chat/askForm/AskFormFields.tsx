@@ -9,17 +9,19 @@ import { NumberField } from '@/components/ui/NumberField'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
+import { Markdown } from '../Markdown'
 import type { AskFieldValue } from './answerPlan'
 import type { AskFormChoiceField, AskFormInputField, AskFormSelectField, AskFormTextField } from './parseAskHtml'
 
 type ChoiceValue = Extract<AskFieldValue, { kind: 'choice' }>
 
+/** The question is Markdown (sanitised GFM, the same renderer as the legacy ask card); ", required" sits beside a one-line question and drops below a block such as a table. */
 function FieldHeading({ id, question, required }: { id: string; question: string; required: boolean }) {
   return (
-    <p id={id} className="whitespace-pre-line break-words text-sm font-medium">
-      {question}
-      {required && <span className="font-normal text-muted-foreground">, required</span>}
-    </p>
+    <div id={id} className="flex flex-wrap items-baseline break-words">
+      <Markdown id={`${id}-md`} text={question} className="font-medium [&_p]:whitespace-pre-line" />
+      {required && <span className="text-sm text-muted-foreground">, required</span>}
+    </div>
   )
 }
 

@@ -1,10 +1,17 @@
 // The repo has no jsdom: each field is rendered to a string and the markup is asserted on.
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import type { AskFieldValue } from './answerPlan'
 import { allowsNegative, ChoiceField, DropdownField, InputField, TextField } from './AskFormFields'
 import type { AskFormChoiceField, AskFormInputField, AskFormSelectField, AskFormTextField } from './parseAskHtml'
+
+// The real Markdown renderer is under test (#2033); the state barrel it imports needs a browser `window`, so it is stubbed.
+vi.mock('@/state', () => ({
+  notifyPersistentError: vi.fn(),
+  useSessionsStore: (select: (state: { sessions: [] }) => unknown) => select({ sessions: [] })
+}))
 
 const noop = () => undefined
 const EMPTY_CHOICE: Extract<AskFieldValue, { kind: 'choice' }> = { kind: 'choice', selected: [], otherSelected: false, otherText: '' }
@@ -59,6 +66,29 @@ describe('field error presentation', () => {
 
   it('lets a long question wrap', () => {
     expect(choice(RADIO, null)).toMatch(/id="f0-heading"[^>]*class="[^"]*break-words/)
+  })
+
+  it('renders a GFM table in the question as a table with header cells, and keeps the ", required" cue and heading id (#2033)', () => {
+    const question = 'Which plan?\n\n| Plan | Cost |\n| --- | --- |\n| Fast | high |'
+    const html = choice({ ...RADIO, question }, null)
+    expect(html).toContain('<table')
+    expect(html).toContain('<th')
+    expect(html).not.toContain('| --- |')
+    expect(html).toMatch(/id="f0-heading"/)
+    expect(html).toContain(', required')
+  })
+
+  it('renders bold and links in the question as Markdown (#2033)', () => {
+    const field = createElement(TextField, { field: { ...TEXT, question: 'Why **now**? See [docs](https://example.com)' }, value: '', disabled: false, idPrefix: 'f3', onChange: noop })
+    const html = renderToStaticMarkup(createElement(TooltipProvider, null, field))
+    expect(html).toContain('<strong>now</strong>')
+    expect(html).toContain('href="https://example.com/"')
+  })
+
+  it('renders a malformed table in the question as text, not a table (#2033)', () => {
+    const html = choice({ ...RADIO, question: '| A | B |\n| 1 | 2 |' }, null)
+    expect(html).not.toContain('<table')
+    expect(html).toContain('| 1 | 2 |')
   })
 
   it('ties the error to a single-choice group and marks it invalid and required', () => {
