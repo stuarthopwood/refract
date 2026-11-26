@@ -76,10 +76,11 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   );
   await addRepository(cdp, repo);
   await createSessionViaQuickCreate(cdp, repoName);
-  // A plan switch made before OMP is up records the mode without a restart, so wait for the launch first.
-  for (let i = 0; i < 60 && !ompLines(ompLog).some((l) => l.includes('scenario=away-112')); i++) await sleep(500);
-  assert(ompLines(ompLog).some((l) => l.includes('scenario=away-112')), 'the Session launched OMP before the mode checks');
-  await sleep(1500);
+  // A plan switch made while OMP is still starting records the mode without a restart, so wait for the handshake to end first.
+  const started = () => ompLines(ompLog).some((l) => l.includes('RECV') && l.includes('set_subagent_subscription'));
+  for (let i = 0; i < 60 && !started(); i++) await sleep(500);
+  assert(started(), 'the Session finished starting OMP before the mode checks');
+  await sleep(2000);
 
   // ---- Menu, default state, keyboard ----
   await waitMode(cdp, 'Interactive');
