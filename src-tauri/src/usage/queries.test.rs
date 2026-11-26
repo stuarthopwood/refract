@@ -477,3 +477,6 @@ fn session_file_without_jsonl_suffix_matches_itself_and_its_folder_only() {
     };
     assert_eq!(summary(&conn, &one, &ctx()).unwrap().calls, 2);
 }
+
+#[path = "queries_ranges.test.rs"]
+mod ranges;

@@ -6,10 +6,10 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::queries_session as session;
-use super::timeutil::{hour_start, iso_date, DAY_MS, HOUR_MS};
+use super::timeutil::{hour_start, iso_date, month_start_local, year_start_local, DAY_MS, HOUR_MS};
 
 /// The range names a renderer may send.
-pub const RANGES: [&str; 5] = ["today", "7d", "30d", "all", "custom"];
+pub const RANGES: [&str; 8] = ["today", "7d", "14d", "30d", "mtd", "ytd", "all", "custom"];
 /// The agent-type filter values.
 pub const AGENT_TYPES: [&str; 3] = ["main", "subagent", "advisor"];
 /// Widest time-zone offset in minutes either way.
@@ -191,7 +191,11 @@ impl Filters {
                 (Some((now + off).div_euclid(DAY_MS) * DAY_MS - off), None)
             }
             "7d" => (Some(now - 7 * DAY_MS), None),
+            "14d" => (Some(now - 14 * DAY_MS), None),
             "30d" => (Some(now - 30 * DAY_MS), None),
+            // Local-midnight starts, so MTD on the 1st equals Today and YTD on 1 Jan equals Today.
+            "mtd" => (Some(month_start_local(now, ctx.offset_ms())), None),
+            "ytd" => (Some(year_start_local(now, ctx.offset_ms())), None),
             "all" => (None, None),
             "custom" => {
                 if let (Some(from), Some(to)) = (self.from, self.to) {

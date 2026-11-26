@@ -12,7 +12,10 @@ import type { UsageFilters as Filters, UsageRange } from '../../../shared/ipc-us
 const RANGES: Array<{ value: UsageRange; label: string }> = [
   { value: 'today', label: 'Today' },
   { value: '7d', label: '7 days' },
+  { value: '14d', label: '14 days' },
   { value: '30d', label: '30 days' },
+  { value: 'mtd', label: 'MTD' },
+  { value: 'ytd', label: 'YTD' },
   { value: 'all', label: 'All' },
   { value: 'custom', label: 'Custom' }
 ]
