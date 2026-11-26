@@ -1,5 +1,9 @@
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
 use serde_json::json;
 
+use super::super::test_support::agent_fixture;
 use super::*;
 
 fn rows(progress: &Value) -> Vec<Value> {
@@ -58,65 +62,78 @@ fn beat(tools: Value) -> Value {
     json!({ "recentTools": tools })
 }
 
-#[test]
-fn files_touched_collects_write_and_edit_paths_once_in_first_seen_order() {
-    let mut e = entry();
-    let changed = accumulate_heartbeat(
-        &mut e,
-        &beat(json!([
-            { "tool": "write", "args": "src/b.rs", "endMs": 1 },
-            { "tool": "read", "args": "src/skip.rs", "endMs": 2 },
-            { "tool": "edit", "args": { "path": "src/a.rs" }, "endMs": 3 },
-            { "tool": "edit", "args": "src/b.rs", "endMs": 4 }
-        ])),
+/// A visible agent holding one running entry `t1:a`, with every `subagents:update` payload recorded.
+async fn watched_agent() -> (Arc<SessionAgent>, Arc<Mutex<Vec<Value>>>) {
+    let fx = agent_fixture(true).await;
+    let emits = Arc::new(Mutex::new(Vec::new()));
+    let sink = emits.clone();
+    fx.agent
+        .events()
+        .set_subagents_probe(move |value| sink.lock().unwrap().push(value.clone()));
+    fx.agent
+        .with_subagents_state(|s| s.summaries.push(entry()))
+        .await;
+    (fx.agent, emits)
+}
+
+fn heartbeat_frame(n: i64) -> Value {
+    json!({
+        "parentToolCallId": "t1",
+        "index": 0,
+        "progress": { "recentTools": [{ "tool": "bash", "args": format!("c{n}"), "endMs": n }] }
+    })
+}
+
+async fn past_the_coalescing_window() {
+    tokio::time::sleep(Duration::from_millis(SUMMARIES_COALESCE_MS * 2)).await;
+}
+
+#[tokio::test]
+async fn many_heartbeats_inside_one_window_emit_once_with_the_latest_steps() {
+    let (agent, emits) = watched_agent().await;
+
+    for n in 0..20 {
+        apply_subagent_frame(&agent, "subagent_progress", &heartbeat_frame(n)).await;
+    }
+    assert!(
+        emits.lock().unwrap().is_empty(),
+        "nothing emits before the window closes"
     );
-    assert!(changed);
-    assert_eq!(e.files_touched, vec!["src/b.rs", "src/a.rs"]);
+    past_the_coalescing_window().await;
+
+    let emits = emits.lock().unwrap();
+    assert_eq!(emits.len(), 1);
+    assert_eq!(emits[0][0]["recentSteps"][0]["target"], "c19");
 }
 
-#[test]
-fn files_touched_dedupes_across_heartbeats() {
-    let mut e = entry();
-    let tools = beat(json!([{ "tool": "write", "args": "x.rs", "endMs": 1 }]));
-    accumulate_heartbeat(&mut e, &tools);
-    assert!(!accumulate_heartbeat(&mut e, &tools));
-    assert_eq!(e.files_touched, vec!["x.rs"]);
+#[tokio::test]
+async fn a_settle_emits_at_once_and_the_pending_window_adds_nothing() {
+    let (agent, emits) = watched_agent().await;
+    apply_subagent_frame(&agent, "subagent_progress", &heartbeat_frame(1)).await;
+
+    let settle = json!({ "parentToolCallId": "t1", "index": 0, "status": "completed" });
+    apply_subagent_frame(&agent, "subagent_lifecycle", &settle).await;
+    {
+        let now = emits.lock().unwrap();
+        assert_eq!(now.len(), 1, "the settle does not wait for the window");
+        assert_eq!(now[0][0]["status"], "finished");
+        assert_eq!(now[0][0]["recentSteps"][0]["target"], "c1");
+    }
+    past_the_coalescing_window().await;
+
+    assert_eq!(emits.lock().unwrap().len(), 1);
 }
 
-#[test]
-fn files_touched_stops_at_fifty() {
-    let mut e = entry();
-    let tools: Vec<Value> = (0..60)
-        .map(|n| json!({ "tool": "write", "args": format!("f{n}.rs"), "endMs": n }))
-        .collect();
-    accumulate_heartbeat(&mut e, &beat(Value::Array(tools)));
-    assert_eq!(e.files_touched.len(), 50);
-    assert_eq!(e.files_touched[0], "f0.rs");
-    assert_eq!(e.files_touched[49], "f49.rs");
-}
+#[tokio::test]
+async fn heartbeats_in_a_later_window_emit_again() {
+    let (agent, emits) = watched_agent().await;
 
-#[test]
-fn recent_steps_keep_the_newest_five_in_order_with_their_fields() {
-    let mut e = entry();
-    let tools: Vec<Value> = (0..8)
-        .map(|n| json!({ "tool": "bash", "args": format!("c{n}"), "intent": "Run", "isError": n == 7, "endMs": n }))
-        .collect();
-    accumulate_heartbeat(&mut e, &beat(Value::Array(tools)));
-    assert_eq!(e.recent_steps.len(), 5);
-    assert_eq!(e.recent_steps[0].end_ms, Some(3));
-    assert_eq!(e.recent_steps[4].target.as_deref(), Some("c7"));
-    assert_eq!(e.recent_steps[4].is_error, Some(true));
-    assert_eq!(e.recent_steps[4].intent.as_deref(), Some("Run"));
-}
+    apply_subagent_frame(&agent, "subagent_progress", &heartbeat_frame(1)).await;
+    past_the_coalescing_window().await;
+    apply_subagent_frame(&agent, "subagent_progress", &heartbeat_frame(2)).await;
+    past_the_coalescing_window().await;
 
-#[test]
-fn a_frame_without_recent_tools_changes_nothing() {
-    let mut e = entry();
-    assert!(!accumulate_heartbeat(
-        &mut e,
-        &json!({ "status": "running" })
-    ));
-    assert!(e.files_touched.is_empty() && e.recent_steps.is_empty());
+    assert_eq!(emits.lock().unwrap().len(), 2);
 }
 
 #[test]

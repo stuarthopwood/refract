@@ -11,16 +11,24 @@ use crate::omp::transcript::synthesis_labels::SynthesisLookup;
 
 use super::agent::SessionAgent;
 
+#[path = "subagents_heartbeat.rs"]
+mod subagents_heartbeat;
+use subagents_heartbeat::RecentStep;
+
 #[path = "subagents_progress.rs"]
 mod subagents_progress;
 use subagents_progress::{
     apply_jobs, apply_progress_to_batch, apply_subagent_frame, emit_subagents_update,
-    queue_patch_ops, subscribe_to_subagent_frames, summaries_to_value, RecentStep,
+    queue_patch_ops, subscribe_to_subagent_frames, summaries_to_value,
 };
 
 #[path = "subagents_synthesis_hook.rs"]
 mod subagents_synthesis_hook;
 use subagents_synthesis_hook::SynthesisState;
+
+#[cfg(test)]
+#[path = "subagents_test_support.rs"]
+mod test_support;
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
 /// Task-summary budget, separate from `NAME_OR_TASK_MAX_CHARS` (#700/#701).
@@ -87,6 +95,9 @@ pub(super) struct State {
     /// Coalesced patch ops for the visible subagent since the last flush.
     pending_patch_ops: Vec<Value>,
     patch_timer_pending: bool,
+    /// Heartbeat-only changes since the last `subagents:update`; flushed by one timer per window (#1925).
+    summaries_dirty: bool,
+    summaries_timer_pending: bool,
     /// Executor, cache and per-call dedupe for the `tiny` labelling of each `task()` call (#1925).
     synthesis: SynthesisState,
 }

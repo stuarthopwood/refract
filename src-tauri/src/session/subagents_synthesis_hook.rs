@@ -5,16 +5,24 @@ use std::collections::HashSet;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde_json::Value;
+use tokio::sync::{OnceCell, Semaphore};
 
 use super::{emit_subagents_update, read_task_specs, subagent_name_or_task, summaries_to_value};
 use crate::ipc::model_roles::get_model_roles_reliable_with;
 use crate::omp::config::{OmpExecutor, RealOmpExecutor};
 use crate::omp::transcript::synthesis_labels::SynthesisLookup;
 use crate::session::agent::SessionAgent;
-use crate::session::subagents_synthesis::{synthesize, Synthesis, SynthesisInput};
+use crate::session::subagents_synthesis::{
+    resolve_tiny_selector, run_synthesis, Synthesis, SynthesisInput,
+};
 use crate::session::subagents_synthesis_cache::{session_cache_dir, SynthesisCache};
 
+/// Model calls in flight at once per Session, so a burst of `task()` calls cannot fan out.
+const MAX_CONCURRENT_SYNTHESES: usize = 2;
+
 type SharedCache = Arc<Mutex<SynthesisCache>>;
+/// The `tiny` selector read once per Session; the inner `None` caches "no usable tiny".
+type TinySelector = Arc<OnceCell<Option<String>>>;
 
 /// Per-Session synthesis bookkeeping, held in the subagents `State`.
 pub(super) struct SynthesisState {
@@ -24,6 +32,9 @@ pub(super) struct SynthesisState {
     cache: Option<SharedCache>,
     /// A `toolCallId` is handled once, so a repeated start frame cannot cost a second model call.
     started: HashSet<String>,
+    /// A role change in Settings is not seen until the Session restarts, which is the price of one read per Session.
+    tiny: TinySelector,
+    permits: Arc<Semaphore>,
 }
 
 impl Default for SynthesisState {
@@ -32,8 +43,17 @@ impl Default for SynthesisState {
             exec: Arc::new(RealOmpExecutor),
             cache: None,
             started: HashSet::new(),
+            tiny: Arc::default(),
+            permits: Arc::new(Semaphore::new(MAX_CONCURRENT_SYNTHESES)),
         }
     }
+}
+
+/// What the detached task needs from the Session's state.
+struct Runner {
+    exec: Arc<dyn OmpExecutor>,
+    tiny: TinySelector,
+    permits: Arc<Semaphore>,
 }
 
 fn lock(cache: &SharedCache) -> MutexGuard<'_, SynthesisCache> {
@@ -75,12 +95,24 @@ pub(super) async fn on_task_start(agent: &SessionAgent, tool_call_id: &str, args
             })
             .collect(),
     };
-    let exec = agent
-        .with_subagents_state(|s| s.synthesis.exec.clone())
+    // A Session whose `tiny` was already found unusable spawns nothing at all.
+    let runner = agent
+        .with_subagents_state(|s| {
+            let synthesis = &s.synthesis;
+            (!matches!(synthesis.tiny.get(), Some(None))).then(|| Runner {
+                exec: synthesis.exec.clone(),
+                tiny: synthesis.tiny.clone(),
+                permits: synthesis.permits.clone(),
+            })
+        })
         .await;
+    let Some(runner) = runner else {
+        log::debug!("subagent synthesis: no usable tiny role, skipped");
+        return;
+    };
     let agent = agent.arc();
     // Detached on purpose: the turn must not wait on a label.
-    tokio::spawn(synthesise_and_apply(agent, exec, cache, input));
+    tokio::spawn(synthesise_and_apply(agent, runner, cache, input));
 }
 
 /// The Session's cache as the transcript's label source; `None` when the id is not safe as a folder name.
@@ -121,18 +153,33 @@ async fn session_cache(agent: &SessionAgent) -> Option<SharedCache> {
 
 async fn synthesise_and_apply(
     agent: Arc<SessionAgent>,
-    exec: Arc<dyn OmpExecutor>,
+    runner: Runner,
     cache: SharedCache,
     input: SynthesisInput,
 ) {
-    let model_roles = match get_model_roles_reliable_with(exec.as_ref()).await {
-        Ok(roles) => roles,
+    let exec = runner.exec.as_ref();
+    let selector = runner
+        .tiny
+        .get_or_try_init(|| async {
+            let roles = get_model_roles_reliable_with(exec).await?;
+            Ok::<_, crate::omp::config::OmpConfigError>(resolve_tiny_selector(&roles))
+        })
+        .await;
+    let selector = match selector {
+        Ok(Some(selector)) => selector,
+        Ok(None) => {
+            log::debug!("subagent synthesis: no usable tiny role, skipped");
+            return;
+        }
         Err(err) => {
             log::warn!("subagent synthesis: could not read modelRoles: {err}");
             return;
         }
     };
-    let Some(synthesis) = synthesize(exec.as_ref(), &model_roles, &input).await else {
+    let Ok(_permit) = runner.permits.acquire().await else {
+        return;
+    };
+    let Some(synthesis) = run_synthesis(exec, selector, &input).await else {
         return;
     };
     let (id, entry) = (input.tool_call_id, synthesis.clone());
