@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::{emit_subagents_update, read_task_specs, subagent_name_or_task, summaries_to_value};
 use crate::ipc::model_roles::get_model_roles_reliable_with;
 use crate::omp::config::{OmpExecutor, RealOmpExecutor};
+use crate::omp::transcript::synthesis_labels::SynthesisLookup;
 use crate::session::agent::SessionAgent;
 use crate::session::subagents_synthesis::{synthesize, Synthesis, SynthesisInput};
 use crate::session::subagents_synthesis_cache::{session_cache_dir, SynthesisCache};
@@ -19,7 +20,7 @@ type SharedCache = Arc<Mutex<SynthesisCache>>;
 pub(super) struct SynthesisState {
     /// Runs the model call and the role read; a test swaps in a call-counting fake.
     exec: Arc<dyn OmpExecutor>,
-    /// Loaded on the first `task()` call of the Session, so a Session that never delegates reads no file.
+    /// Loaded on first need, a `task()` call or a transcript replaying history, so a Session that does neither reads no file.
     cache: Option<SharedCache>,
     /// A `toolCallId` is handled once, so a repeated start frame cannot cost a second model call.
     started: HashSet<String>,
@@ -80,6 +81,19 @@ pub(super) async fn on_task_start(agent: &SessionAgent, tool_call_id: &str, args
     let agent = agent.arc();
     // Detached on purpose: the turn must not wait on a label.
     tokio::spawn(synthesise_and_apply(agent, exec, cache, input));
+}
+
+/// The Session's cache as the transcript's label source; `None` when the id is not safe as a folder name.
+pub(super) async fn lookup(agent: &SessionAgent) -> Option<Arc<dyn SynthesisLookup>> {
+    let cache: Arc<dyn SynthesisLookup> = session_cache(agent).await?;
+    Some(cache)
+}
+
+/// Hands the cache to the Session's transcript, so replayed and live rows carry the stored labels.
+pub(super) async fn attach_to_transcript(agent: &SessionAgent) {
+    if let Some(lookup) = lookup(agent).await {
+        agent.attach_synthesis_lookup(lookup).await;
+    }
 }
 
 /// The Session's cache, loaded from disk once; `None` when the id is not safe to use as a folder name.
@@ -161,6 +175,8 @@ async fn apply_synthesis(agent: &SessionAgent, tool_call_id: &str, synthesis: &S
     if let Some(value) = summaries_value {
         emit_subagents_update(agent, value).await;
     }
+    // After the cache write, so a transcript row built before the synthesis landed picks the labels up.
+    agent.relabel_transcript_subagents().await;
 }
 
 #[cfg(test)]

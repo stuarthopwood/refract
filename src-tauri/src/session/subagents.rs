@@ -2,10 +2,12 @@
 // A `task` end frame applies only real per-index statuses, since blanket overrides break async batches.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 
 use crate::omp::process::ReadyWaitStage;
+use crate::omp::transcript::synthesis_labels::SynthesisLookup;
 
 use super::agent::SessionAgent;
 
@@ -253,6 +255,17 @@ pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
     )
     .await;
     subscribe_to_subagent_frames(agent).await;
+}
+
+/// Launch hook: hands the Session's synthesis cache to its transcript before history merges in, so
+/// replayed cards carry their labels (ADR 0013 Q4).
+pub(super) async fn attach_synthesis_labels(agent: &SessionAgent) {
+    subagents_synthesis_hook::attach_to_transcript(agent).await;
+}
+
+/// The Session's synthesis cache as a read-only label source, for history shown without a live transcript.
+pub(crate) async fn synthesis_lookup(agent: &SessionAgent) -> Option<Arc<dyn SynthesisLookup>> {
+    subagents_synthesis_hook::lookup(agent).await
 }
 
 /// Conversation hook: clears the previous Conversation's subagents (#577).

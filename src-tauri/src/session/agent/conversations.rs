@@ -73,7 +73,9 @@ impl SessionAgent {
             .await;
         {
             let mut state = self.state.lock().await;
-            state.transcript = TranscriptState::new();
+            state
+                .transcript
+                .replace_keeping_lookup(TranscriptState::new());
             state.handoff.note_live = false;
             super::checklist_cards::clear(&mut state);
             // A failed-handoff notice belongs to the Conversation it failed in (#1861).
@@ -192,7 +194,7 @@ impl SessionAgent {
             state.pending_agent_notice.clear();
             state.checklist_line_due = true;
             state.pause.cancelled.clear();
-            state.transcript = if complete {
+            let next = if complete {
                 let mut fresh = TranscriptState::from_history(&messages);
                 fresh.set_terminated_unexpectedly(terminated_unexpectedly);
                 let _ = fresh.settle_interrupted_tool_rows();
@@ -200,6 +202,7 @@ impl SessionAgent {
             } else {
                 TranscriptState::new()
             };
+            state.transcript.replace_keeping_lookup(next);
             super::queued_handoff::mark_note(&mut state);
             super::checklist_cards::reload(&mut state, &records);
         }

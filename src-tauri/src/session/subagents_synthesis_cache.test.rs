@@ -116,3 +116,22 @@ fn the_session_folder_is_under_the_data_dir_and_refuses_an_id_that_is_not_plain(
         assert_eq!(session_cache_dir(data, evil), None, "{evil}");
     }
 }
+
+#[test]
+fn the_cache_labels_a_card_by_spec_index_and_a_miss_is_unlabelled() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = SynthesisCache::load(dir.path());
+    cache
+        .insert_and_persist("t1", synthesis("Ship it"))
+        .unwrap();
+    let reloaded = SynthesisCache::load(dir.path());
+
+    let first = reloaded.labels("t1", 0);
+    assert_eq!(first.role.as_deref(), Some("Builder"));
+    assert_eq!(first.overall_goal.as_deref(), Some("Ship it"));
+    let second = reloaded.labels("t1", 1);
+    assert_eq!(second.role, None);
+    assert_eq!(second.overall_goal.as_deref(), Some("Ship it"));
+    assert_eq!(reloaded.labels("t1", 9).role, None);
+    assert_eq!(reloaded.labels("t2", 0), SubagentLabels::default());
+}

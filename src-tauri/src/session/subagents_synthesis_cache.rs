@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::subagents_synthesis::Synthesis;
 use crate::checklist::store::is_plain_id;
+use crate::omp::transcript::synthesis_labels::{SubagentLabels, SynthesisLookup};
 
 const CACHE_FILE: &str = "subagent-synthesis.json";
 
@@ -71,6 +72,17 @@ impl SynthesisCache {
             let _ = std::fs::remove_file(&tmp);
         }
         written
+    }
+}
+
+impl SynthesisLookup for SynthesisCache {
+    fn labels(&self, tool_call_id: &str, spec_index: u32) -> SubagentLabels {
+        self.get(tool_call_id)
+            .map(|synthesis| SubagentLabels {
+                role: synthesis.roles.get(spec_index as usize).cloned().flatten(),
+                overall_goal: synthesis.overall_goal.clone(),
+            })
+            .unwrap_or_default()
     }
 }
 
