@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { LoaderCircleIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { BLUR_TRANSITION_CLASS, BLURRED_CONTENT_CLASS } from './blur-content'
 import { cn } from '@/lib/utils'
@@ -36,10 +37,12 @@ export function LoadingOverlay({ loading, children, className, contentClassName,
         ) : (
           // Zero-height sticky anchor keeps the card in view when the content scrolls.
           <div className="sticky top-0 z-10 h-0">
+            {/* Same surface as the chat start-up notice (`SessionStartNotice`), so every loading card in the app looks alike. */}
             <div
               aria-hidden
-              className="absolute top-16 left-1/2 -translate-x-1/2 rounded-md border border-border bg-background/90 px-4 py-2 text-sm shadow-md backdrop-blur-sm"
+              className="absolute top-16 left-1/2 flex w-max -translate-x-1/2 items-center gap-2 rounded-xl bg-background/90 px-6 py-4 text-base text-muted-foreground backdrop-blur-sm"
             >
+              <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
               Loading
             </div>
           </div>

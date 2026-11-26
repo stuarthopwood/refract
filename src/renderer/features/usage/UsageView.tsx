@@ -8,6 +8,7 @@ import { ScreenHeader } from '@/components/ScreenHeader'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
+import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { useUsageStore } from '@/state/usage-store'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
 import { useViewStore } from '@/state'
@@ -66,52 +67,52 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
         {announcement}
       </div>
       <UsageFilters />
-      <div
-        aria-busy={s.refreshing}
-        className={`flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto p-4 transition-opacity ${s.refreshing ? 'opacity-60' : ''}`}
-      >
-        {showProgress && status && (
-          <ProgressStrip
-            value={status.sessionsDone}
-            max={status.sessionsSeen}
-            label={`${s.jokes ? 'Counting your sins' : 'Reading sessions'}: ${status.sessionsDone} of ${status.sessionsSeen} sessions`}
-          />
-        )}
-        {s.error && <ScreenSection title="Usage figures" error={`Some figures could not be loaded: ${s.error}`} />}
-        {scanPending ? (
-          <ScreenSection title="Usage figures" loading busy />
-        ) : nothingFound ? (
-          <UsageEmptyState sessionsDir={status.sessionsDir} found={status.found} jokes={s.jokes} />
-        ) : filteredEmpty ? (
-          <Empty>
-            <EmptyHeader>
-              <EmptyTitle>No usage matches these filters.</EmptyTitle>
-            </EmptyHeader>
-            <EmptyContent>
-              <Button variant="ghost" onClick={clearUsageFilters}>
-                Clear filters
-              </Button>
-            </EmptyContent>
-          </Empty>
-        ) : (
-          <>
-            <BudgetCard budget={s.budget} jokes={s.jokes} />
-            <ScreenSection title="Overview" loading={!s.loaded || s.summary === null}>
-              {s.summary && <HeadlineCards summary={s.summary} jokes={s.jokes} />}
-            </ScreenSection>
-            <AverageCards summary={s.summary} loading={!s.loaded || s.summary === null} />
-            <div className="grid gap-8 lg:grid-cols-[3fr_2fr]">
-              <SpendChart buckets={s.timeseries} bucket={s.bucket} onBucketChange={s.setBucket} loading={pending(s.timeseries.length === 0)} />
-              <TokenMixChart rows={s.tokenMix} loading={pending(s.tokenMix.length === 0)} />
-            </div>
-            {s.jokes && s.frustration && <FrustrationCard frustration={s.frustration} />}
-            <ProjectTable rows={s.byProject} loading={pending(s.byProject.length === 0)} />
-            <ModelTable rows={s.byModel} loading={pending(s.byModel.length === 0)} />
-            <ToolTable rows={s.byTool} loading={pending(s.byTool.length === 0)} />
-            <TopSessionsTable rows={s.topSessions} loading={pending(s.topSessions.length === 0)} />
-            <CallLogTable loading={pending(s.calls.rows.length === 0)} />
-          </>
-        )}
+      {/* The overlay sits inside the scroll container so its sticky card stays in view while the stats scroll. First load keeps the section skeletons, so only a refresh of loaded figures blurs. */}
+      <div aria-busy={s.refreshing} className="flex min-h-0 flex-1 flex-col overflow-y-auto p-4">
+        <LoadingOverlay loading={s.refreshing && s.loaded} className="flex flex-1 flex-col" contentClassName="flex flex-1 flex-col gap-8">
+          {showProgress && status && (
+            <ProgressStrip
+              value={status.sessionsDone}
+              max={status.sessionsSeen}
+              label={`${s.jokes ? 'Counting your sins' : 'Reading sessions'}: ${status.sessionsDone} of ${status.sessionsSeen} sessions`}
+            />
+          )}
+          {s.error && <ScreenSection title="Usage figures" error={`Some figures could not be loaded: ${s.error}`} />}
+          {scanPending ? (
+            <ScreenSection title="Usage figures" loading busy />
+          ) : nothingFound ? (
+            <UsageEmptyState sessionsDir={status.sessionsDir} found={status.found} jokes={s.jokes} />
+          ) : filteredEmpty ? (
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>No usage matches these filters.</EmptyTitle>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="ghost" onClick={clearUsageFilters}>
+                  Clear filters
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <>
+              <BudgetCard budget={s.budget} jokes={s.jokes} />
+              <ScreenSection title="Overview" loading={!s.loaded || s.summary === null}>
+                {s.summary && <HeadlineCards summary={s.summary} jokes={s.jokes} />}
+              </ScreenSection>
+              <AverageCards summary={s.summary} loading={!s.loaded || s.summary === null} />
+              <div className="grid gap-8 lg:grid-cols-[3fr_2fr]">
+                <SpendChart buckets={s.timeseries} bucket={s.bucket} onBucketChange={s.setBucket} loading={pending(s.timeseries.length === 0)} />
+                <TokenMixChart rows={s.tokenMix} loading={pending(s.tokenMix.length === 0)} />
+              </div>
+              {s.jokes && s.frustration && <FrustrationCard frustration={s.frustration} />}
+              <ProjectTable rows={s.byProject} loading={pending(s.byProject.length === 0)} />
+              <ModelTable rows={s.byModel} loading={pending(s.byModel.length === 0)} />
+              <ToolTable rows={s.byTool} loading={pending(s.byTool.length === 0)} />
+              <TopSessionsTable rows={s.topSessions} loading={pending(s.topSessions.length === 0)} />
+              <CallLogTable loading={pending(s.calls.rows.length === 0)} />
+            </>
+          )}
+        </LoadingOverlay>
       </div>
     </section>
   )
