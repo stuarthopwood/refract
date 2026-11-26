@@ -207,3 +207,37 @@ async fn leaving_plan_queues_the_displaced_role_back_and_ends_the_stint() {
     assert_eq!(queued_role(&agent).await.as_deref(), Some("slow"));
     assert!(agent.with_model_state(|s| s.plan_swap.is_none()).await);
 }
+
+/// omp writes `role: "temporary"` for a `/switch @plan`, and the plan-mode restart re-reads that file.
+#[tokio::test]
+async fn leaving_plan_restores_the_role_after_the_restart_re_reads_an_ad_hoc_switch() {
+    let agent = agent_on_role("slow").await;
+    set_launched_plan_for_test(&agent, true).await;
+    on_launch_with(&agent, plan_role_is_set).await;
+    agent
+        .with_model_state(|s| s.current_role = Some("plan".to_string()))
+        .await;
+    let dir = crate::test_scratch::path(format!("plan-role-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let file = dir.join("conversation.jsonl");
+    let entry = r#"{"type":"model_change","id":"a1","model":"p/m","role":"temporary"}"#;
+    tokio::fs::write(&file, format!("{entry}\n")).await.unwrap();
+    let patch = crate::store::registry::SessionPatch {
+        current_conversation: Some(Some(file.to_string_lossy().into_owned())),
+        ..Default::default()
+    };
+    agent
+        .registry()
+        .lock()
+        .await
+        .update_session(agent.session_id(), patch)
+        .await
+        .unwrap();
+    set_launched_plan_for_test(&agent, false).await;
+
+    model_support::seed_role_at_launch(&agent).await;
+    on_launch_with(&agent, plan_role_is_set).await;
+
+    assert_eq!(queued_role(&agent).await.as_deref(), Some("slow"));
+    assert!(agent.with_model_state(|s| s.plan_swap.is_none()).await);
+}
