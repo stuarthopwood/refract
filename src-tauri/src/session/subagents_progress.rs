@@ -101,6 +101,7 @@ pub(super) async fn apply_progress_to_batch(
                         changed = true;
                     }
                 }
+                changed |= accumulate_heartbeat(entry, progress);
 
                 if status_changed {
                     settles.extend(settle_of(entry));
@@ -241,6 +242,7 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
                         entry.duration_ms = Some(d);
                     }
                 }
+                changed |= accumulate_heartbeat(entry, progress);
                 let stream_id = entry.id.clone();
                 let is_visible = s.visible_id.as_deref() == Some(stream_id.as_str());
                 let new_rows = apply_subagent_progress_in_place(s, &stream_id, progress);
@@ -364,6 +366,92 @@ fn apply_subagent_progress_in_place(
     new_rows
 }
 
+/// Caps for the heartbeat-derived summary fields (#1925).
+const MAX_FILES_TOUCHED: usize = 50;
+const MAX_RECENT_STEPS: usize = 5;
+
+/// One recent tool call kept on a summary for the "what is it doing" line (#1925).
+#[derive(Debug, Clone, PartialEq)]
+pub(super) struct RecentStep {
+    tool: String,
+    intent: Option<String>,
+    target: Option<String>,
+    is_error: Option<bool>,
+    end_ms: Option<i64>,
+}
+
+/// The call's path: `args` is a preview string today, but an object with a `path` key is also read.
+fn tool_path(entry: &Value) -> Option<String> {
+    let args = entry.get("args")?;
+    let raw = match args {
+        Value::String(text) => text.as_str(),
+        Value::Object(_) => args.get("path").and_then(Value::as_str)?,
+        _ => return None,
+    };
+    let trimmed = raw.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+fn recent_step(entry: &Value) -> Option<RecentStep> {
+    let text = |key: &str| entry.get(key).and_then(Value::as_str).map(str::to_string);
+    Some(RecentStep {
+        tool: text("tool")?,
+        intent: text("intent"),
+        target: tool_path(entry),
+        is_error: entry.get("isError").and_then(Value::as_bool),
+        end_ms: entry.get("endMs").and_then(Value::as_i64),
+    })
+}
+
+fn step_value(step: &RecentStep) -> Value {
+    let mut obj = json!({ "tool": step.tool });
+    if let Some(intent) = &step.intent {
+        obj["intent"] = json!(intent);
+    }
+    if let Some(target) = &step.target {
+        obj["target"] = json!(target);
+    }
+    if let Some(is_error) = step.is_error {
+        obj["isError"] = json!(is_error);
+    }
+    if let Some(end_ms) = step.end_ms {
+        obj["endMs"] = json!(end_ms);
+    }
+    obj
+}
+
+/// Folds one heartbeat into the summary: new written or edited paths (deduplicated, capped,
+/// first-seen order) and the latest steps. A frame without `recentTools` changes nothing.
+/// Returns whether the summary changed, so the caller emits only then.
+fn accumulate_heartbeat(entry: &mut SummaryEntry, progress: &Value) -> bool {
+    let Some(tools) = progress.get("recentTools").and_then(Value::as_array) else {
+        return false;
+    };
+    let mut changed = false;
+    for tool in tools {
+        if !matches!(
+            tool.get("tool").and_then(Value::as_str),
+            Some("write" | "edit")
+        ) {
+            continue;
+        }
+        let Some(path) = tool_path(tool) else {
+            continue;
+        };
+        if entry.files_touched.len() < MAX_FILES_TOUCHED && !entry.files_touched.contains(&path) {
+            entry.files_touched.push(path);
+            changed = true;
+        }
+    }
+    let mut steps: Vec<RecentStep> = tools.iter().filter_map(recent_step).collect();
+    steps.drain(..steps.len().saturating_sub(MAX_RECENT_STEPS));
+    if !steps.is_empty() && steps != entry.recent_steps {
+        entry.recent_steps = steps;
+        changed = true;
+    }
+    changed
+}
+
 pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
     Value::Array(
         summaries
@@ -398,6 +486,19 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
                     obj.as_object_mut()
                         .expect("summary entry serialises to a JSON object")
                         .insert("background".to_string(), json!(true));
+                }
+                if let Some(role) = &e.role {
+                    obj["role"] = json!(role);
+                }
+                if let Some(goal) = &e.overall_goal {
+                    obj["overallGoal"] = json!(goal);
+                }
+                if !e.files_touched.is_empty() {
+                    obj["filesTouched"] = json!(e.files_touched);
+                }
+                if !e.recent_steps.is_empty() {
+                    obj["recentSteps"] =
+                        Value::Array(e.recent_steps.iter().map(step_value).collect());
                 }
                 obj
             })

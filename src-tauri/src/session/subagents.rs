@@ -13,7 +13,7 @@ use super::agent::SessionAgent;
 mod subagents_progress;
 use subagents_progress::{
     apply_jobs, apply_progress_to_batch, apply_subagent_frame, emit_subagents_update,
-    queue_patch_ops, subscribe_to_subagent_frames, summaries_to_value,
+    queue_patch_ops, subscribe_to_subagent_frames, summaries_to_value, RecentStep,
 };
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
@@ -57,6 +57,14 @@ pub(super) struct SummaryEntry {
     duration_ms: Option<i64>,
     /// #712: OMP reported `detached: true` (an async background job).
     background: bool,
+    /// Synthesised role label, at most 40 characters; `None` until the side call lands (#1925).
+    role: Option<String>,
+    /// Synthesised goal of the whole `task()` call, repeated on each of its agents (#1925).
+    overall_goal: Option<String>,
+    /// Paths this agent wrote or edited, first-seen order; live only, never replayed (#1925).
+    files_touched: Vec<String>,
+    /// Latest heartbeat steps, newest last (#1925).
+    recent_steps: Vec<RecentStep>,
 }
 
 /// Subagent runtime state held inside `AgentState`, reached via `with_subagents_state`.
@@ -460,6 +468,10 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
             started_at,
             duration_ms: None,
             background: false,
+            role: None,
+            overall_goal: None,
+            files_touched: Vec::new(),
+            recent_steps: Vec::new(),
         });
     }
 
