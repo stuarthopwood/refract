@@ -415,6 +415,7 @@ impl SessionAgent {
         self.emit_patch_reset().await;
         // A choice made while stopped applies before the first prompt.
         crate::session::pending_selection::drain(self).await;
+        crate::session::working_mode::on_launched(self).await;
         Ok(())
     }
 

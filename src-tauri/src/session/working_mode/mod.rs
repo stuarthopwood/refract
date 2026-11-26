@@ -175,6 +175,58 @@ pub(in crate::session) async fn decorate_prompt(agent: &SessionAgent, text: Stri
     format!("{text}{HIDDEN_INSTRUCTION_OPEN}{instruction}")
 }
 
+fn launch_is_stale(s: &State) -> bool {
+    (s.mode == WorkingMode::Plan) != s.launched_plan
+}
+
+/// A plan switch made while OMP was starting saw no process, so it asked for no restart; once the new
+/// process is up, relaunch it if it started in the other mode. Returns whether a restart was requested.
+pub(in crate::session) async fn on_launched(agent: &SessionAgent) -> bool {
+    let stale = agent.with_working_mode_state(|s| launch_is_stale(s)).await;
+    if stale {
+        log::info!(
+            "working_mode: relaunching {} for a mode change made during start",
+            agent.session_id()
+        );
+        restart(agent);
+    }
+    stale
+}
+
+/// Records `target` in `s` and says what the switch needs. A restart is only for a process that is already
+/// recorded: one still starting reads the mode when it launches, or is caught by `on_launched` if it did not.
+fn decide(
+    s: &mut State,
+    target: WorkingMode,
+    status: SessionStatus,
+    has_process: bool,
+) -> (WorkingMode, Applied) {
+    let previous = s.mode;
+    s.pending = None;
+    if previous == target {
+        return (previous, Applied::Same);
+    }
+    // Leaving Away takes effect at once, even when the plan switch must wait.
+    let current = if previous == WorkingMode::Away {
+        WorkingMode::Interactive
+    } else {
+        previous
+    };
+    let needs_restart = has_process && (target == WorkingMode::Plan) != s.launched_plan;
+    if needs_restart && matches!(status, SessionStatus::Working | SessionStatus::NeedsYou) {
+        s.mode = current;
+        s.pending = Some(target);
+        return (previous, Applied::Pending);
+    }
+    s.mode = target;
+    let applied = if needs_restart {
+        Applied::Restart
+    } else {
+        Applied::Switched
+    };
+    (previous, applied)
+}
+
 /// `workingMode.set`: applies the mode, or queues a plan switch until the turn ends.
 pub async fn set_mode(agent: &SessionAgent, raw: &str) -> Result<Value, AgentError> {
     let target = WorkingMode::parse(raw).ok_or_else(|| {
@@ -183,32 +235,7 @@ pub async fn set_mode(agent: &SessionAgent, raw: &str) -> Result<Value, AgentErr
     ensure_loaded(agent).await;
     let (previous, applied) = agent
         .with_working_mode_and_status(|s, status, has_process| {
-            let previous = s.mode;
-            s.pending = None;
-            if previous == target {
-                return (previous, Applied::Same);
-            }
-            // Leaving Away takes effect at once, even when the plan switch must wait.
-            let current = if previous == WorkingMode::Away {
-                WorkingMode::Interactive
-            } else {
-                previous
-            };
-            let needs_restart = has_process && (target == WorkingMode::Plan) != s.launched_plan;
-            if needs_restart && matches!(status, SessionStatus::Working | SessionStatus::NeedsYou) {
-                s.mode = current;
-                s.pending = Some(target);
-                return (previous, Applied::Pending);
-            }
-            s.mode = target;
-            (
-                previous,
-                if needs_restart {
-                    Applied::Restart
-                } else {
-                    Applied::Switched
-                },
-            )
+            decide(s, target, status, has_process)
         })
         .await;
     if matches!(applied, Applied::Same) {
