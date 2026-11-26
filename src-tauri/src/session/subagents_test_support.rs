@@ -7,14 +7,14 @@ use crate::session::agent::SessionAgent;
 use crate::store::registry::Session;
 
 /// A Session's agent plus the scratch data folder it lives in.
-pub(super) struct AgentFixture {
+pub(in crate::session) struct AgentFixture {
     pub agent: Arc<SessionAgent>,
     pub id: String,
     pub dir: PathBuf,
 }
 
 /// Builds an agent for a fresh Session; `visible` decides whether `subagents:update` is pushed live.
-pub(super) async fn agent_fixture(visible: bool) -> AgentFixture {
+pub(in crate::session) async fn agent_fixture(visible: bool) -> AgentFixture {
     let id = format!("session-synth-{}", uuid::Uuid::new_v4());
     let dir = crate::test_scratch::path(format!("refract-synth-hook-{}", uuid::Uuid::new_v4()));
     tokio::fs::create_dir_all(&dir).await.unwrap();

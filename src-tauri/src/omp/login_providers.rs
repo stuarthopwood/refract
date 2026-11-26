@@ -68,7 +68,7 @@ pub async fn read_omp_login_providers() -> Option<Vec<OmpLoginProvider>> {
         approval_mode: ApprovalMode::Ask,
         omp_path: None,
         no_session: true,
-        plan_mode: None,
+        plan_mode: false,
         extra_config: None,
         stacked_prs: false,
         pass_cwd_flag: false,

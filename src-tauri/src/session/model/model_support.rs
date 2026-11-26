@@ -325,7 +325,7 @@ pub(super) async fn resolve_current_selection(agent: &SessionAgent) -> (bool, Op
         .await;
     if !needs_reprobe && (pinned || cached_role.is_some()) {
         // A fallback role outranks a stale pin.
-        let effective_pinned = pinned && cached_role.as_deref() != Some("fallback");
+        let effective_pinned = pinned && cached_role.as_deref() != Some(FALLBACK_MARKER_ROLE);
         return (effective_pinned, cached_role);
     }
     let Some(path) = agent.current_conversation_path().await else {
@@ -372,30 +372,48 @@ pub(super) async fn resolve_current_selection(agent: &SessionAgent) -> (bool, Op
             (s.pinned, s.current_role.clone())
         })
         .await;
-    let effective_pinned = state_pinned && state_role.as_deref() != Some("fallback");
+    let effective_pinned = state_pinned && state_role.as_deref() != Some(FALLBACK_MARKER_ROLE);
     (effective_pinned, state_role)
 }
 
+/// What omp writes as the `role` of a `model_change` made by `/switch @<role>`. It names no role,
+/// so the Conversation file cannot say which role such a switch applied.
+pub(super) const AD_HOC_ROLE: &str = "temporary";
+/// The role value a retry onto a fallback model leaves behind; it names no role either.
+pub(super) const FALLBACK_MARKER_ROLE: &str = "fallback";
+
 /// The role a freshly launched process runs on: the Conversation file's latest entry, else the
 /// configured `default`, which OMP starts on. A pinned Session never claims a role (#1878).
-pub(super) fn role_after_launch(pinned: bool, probed: Option<String>) -> Option<String> {
+/// An ad-hoc entry keeps the role the previous process lifetime was on (`carried`), because the
+/// plan-mode restart would otherwise lose the Plan role the Session was on and with it the role
+/// to restore (#1946).
+pub(super) fn role_after_launch(
+    pinned: bool,
+    probed: Option<String>,
+    carried: Option<String>,
+) -> Option<String> {
     if pinned {
         return None;
     }
-    Some(probed.unwrap_or_else(|| "default".to_string()))
+    match probed {
+        Some(role) if role == AD_HOC_ROLE => Some(carried.unwrap_or(role)),
+        Some(role) => Some(role),
+        None => Some("default".to_string()),
+    }
 }
 
 /// Reads the Session's role as its process starts or resumes, so the composer chip names it from
 /// the first paint instead of waiting for a later `model_change` frame (#1878).
 pub(super) async fn seed_role_at_launch(agent: &SessionAgent) {
     ensure_pin_seeded(agent).await;
+    let carried = agent.with_model_state(|s| s.current_role.clone()).await;
     // A new process lifetime re-reads the file; bumping the generation drops any stale write-back.
     reset_role_cache(agent).await;
     let (pinned, probed) = resolve_current_selection(agent).await;
-    if let Some(role) = role_after_launch(pinned, probed) {
+    if let Some(role) = role_after_launch(pinned, probed, carried) {
         agent
             .with_model_state(|s| {
-                if s.current_role.is_none() {
+                if s.current_role.as_deref().is_none_or(|r| r == AD_HOC_ROLE) {
                     s.current_role = Some(role);
                 }
             })
@@ -410,20 +428,39 @@ mod launch_role_tests {
 
     #[test]
     fn fresh_session_runs_on_the_default_role() {
-        assert_eq!(role_after_launch(false, None).as_deref(), Some("default"));
+        assert_eq!(
+            role_after_launch(false, None, None).as_deref(),
+            Some("default")
+        );
     }
 
     #[test]
     fn resumed_session_keeps_the_role_its_file_names() {
         assert_eq!(
-            role_after_launch(false, Some("slow".into())).as_deref(),
+            role_after_launch(false, Some("slow".into()), Some("plan".into())).as_deref(),
             Some("slow")
         );
     }
 
     #[test]
     fn pinned_session_claims_no_role() {
-        assert_eq!(role_after_launch(true, Some("slow".into())), None);
-        assert_eq!(role_after_launch(true, None), None);
+        assert_eq!(role_after_launch(true, Some("slow".into()), None), None);
+        assert_eq!(role_after_launch(true, None, None), None);
+    }
+
+    #[test]
+    fn an_ad_hoc_switch_keeps_the_role_the_last_process_was_on() {
+        assert_eq!(
+            role_after_launch(false, Some("temporary".into()), Some("plan".into())).as_deref(),
+            Some("plan")
+        );
+    }
+
+    #[test]
+    fn an_ad_hoc_switch_with_nothing_carried_stays_as_the_file_has_it() {
+        assert_eq!(
+            role_after_launch(false, Some("temporary".into()), None).as_deref(),
+            Some("temporary")
+        );
     }
 }

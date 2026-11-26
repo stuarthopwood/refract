@@ -1,7 +1,6 @@
 // Generated `token-guard-overlay.yml`; only a Session launched before the migration to the global config reads it.
 
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -102,25 +101,6 @@ pub async fn write_legacy(dir: &Path, values: &ValueMap) -> io::Result<PathBuf> 
     Ok(file)
 }
 
-/// Legacy variant of `write_legacy` with a per-Session plan state.
-pub async fn write_legacy_plan_variant(
-    dir: &Path,
-    values: &ValueMap,
-    plan: bool,
-) -> io::Result<PathBuf> {
-    let file = plan_variant_path(dir, plan);
-    super::write_atomic_if_changed(&file, render(values).as_bytes()).await?;
-    Ok(file)
-}
-
-fn plan_variant_path(dir: &Path, plan: bool) -> PathBuf {
-    dir.join(if plan {
-        "token-guard-overlay-plan-on.yml"
-    } else {
-        "token-guard-overlay-plan-off.yml"
-    })
-}
-
 fn is_generated_overlay(text: &str) -> bool {
     text.starts_with(HEADER_PREFIX)
 }
@@ -144,43 +124,15 @@ pub fn legacy_session_launched() -> bool {
 }
 
 /// A Session launched while the migration was pending keeps reading its legacy overlay between
-/// turns, and that overlay beats the global config. Rewrites every Refract-generated legacy overlay
+/// turns, and that overlay beats the global config. Rewrites the Refract-generated legacy overlay
 /// still on disk so a Settings write reaches those Sessions too; a file Refract did not generate is
-/// never touched. The one-key plan variants are left alone: they set `plan.defaultOnStartup`, which
-/// only applies at startup.
+/// never touched.
 pub async fn refresh_legacy(dir: &Path, values: &ValueMap) -> io::Result<()> {
-    refresh_legacy_with(dir, values, |file, text| async move {
-        super::write_atomic_if_changed(&file, text.as_bytes()).await
-    })
-    .await
-}
-
-async fn refresh_legacy_with<W, F>(dir: &Path, values: &ValueMap, write: W) -> io::Result<()>
-where
-    W: Fn(PathBuf, String) -> F,
-    F: Future<Output = io::Result<()>>,
-{
     let base = path(dir);
     if is_generated_file(&base).await {
-        write(base, render(values)).await?;
-    }
-    for plan in [true, false] {
-        let file = plan_variant_path(dir, plan);
-        if is_generated_file(&file).await {
-            let mut with_plan = values.clone();
-            with_plan.insert("plan.defaultOnStartup".to_string(), plan.into());
-            write(file, render(&with_plan)).await?;
-        }
+        super::write_atomic_if_changed(&base, render(values).as_bytes()).await?;
     }
     Ok(())
-}
-
-/// A per-Session working mode overrides the global `plan.defaultOnStartup` through this one-key overlay.
-pub async fn write_plan_variant(dir: &Path, plan: bool) -> io::Result<PathBuf> {
-    let file = plan_variant_path(dir, plan);
-    let text = format!("plan:\n  defaultOnStartup: {plan}\n");
-    super::write_atomic_if_changed(&file, text.as_bytes()).await?;
-    Ok(file)
 }
 
 #[cfg(test)]
@@ -230,30 +182,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rewrites_the_legacy_overlay_and_full_plan_variants() {
+    async fn rewrites_the_generated_legacy_overlay() {
         let dir = scratch("rewrites");
         write_legacy(&dir, &with_budget(60)).await.unwrap();
-        write_legacy_plan_variant(&dir, &with_budget(60), true)
-            .await
-            .unwrap();
         refresh_legacy(&dir, &with_budget(25)).await.unwrap();
         let base = std::fs::read_to_string(path(&dir)).unwrap();
         assert!(base.contains("softRequestBudget: 25\n"));
-        let on = std::fs::read_to_string(plan_variant_path(&dir, true)).unwrap();
-        assert!(on.contains("softRequestBudget: 25\n"));
-        assert!(on.contains("defaultOnStartup: true\n"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[tokio::test]
-    async fn leaves_one_key_plan_variants_and_absent_files_alone() {
+    async fn leaves_absent_files_alone() {
         let dir = scratch("untouched");
-        write_plan_variant(&dir, false).await.unwrap();
         refresh_legacy(&dir, &with_budget(25)).await.unwrap();
         assert!(!path(&dir).exists());
-        assert!(!plan_variant_path(&dir, true).exists());
-        let off = std::fs::read_to_string(plan_variant_path(&dir, false)).unwrap();
-        assert_eq!(off, "plan:\n  defaultOnStartup: false\n");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -262,37 +204,8 @@ mod tests {
         let dir = scratch("foreign");
         let foreign = "task:\n  softRequestBudget: 7\n";
         std::fs::write(path(&dir), foreign).unwrap();
-        std::fs::write(plan_variant_path(&dir, true), foreign).unwrap();
         refresh_legacy(&dir, &with_budget(25)).await.unwrap();
         assert_eq!(std::fs::read_to_string(path(&dir)).unwrap(), foreign);
-        let on = std::fs::read_to_string(plan_variant_path(&dir, true)).unwrap();
-        assert_eq!(on, foreign);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[tokio::test]
-    async fn an_unwritable_plan_variant_is_an_error_after_the_base_overlay_is_rewritten() {
-        let dir = scratch("unwritable");
-        write_legacy(&dir, &with_budget(60)).await.unwrap();
-        write_legacy_plan_variant(&dir, &with_budget(60), true)
-            .await
-            .unwrap();
-        let blocked = plan_variant_path(&dir, true);
-        let result = refresh_legacy_with(&dir, &with_budget(25), |file, text| {
-            let blocked = blocked.clone();
-            async move {
-                if file == blocked {
-                    return Err(io::Error::new(io::ErrorKind::PermissionDenied, "read-only"));
-                }
-                super::super::write_atomic_if_changed(&file, text.as_bytes()).await
-            }
-        })
-        .await;
-        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
-        let base = std::fs::read_to_string(path(&dir)).unwrap();
-        assert!(base.contains("softRequestBudget: 25\n"));
-        let on = std::fs::read_to_string(blocked).unwrap();
-        assert!(on.contains("softRequestBudget: 60\n"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

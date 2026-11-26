@@ -306,7 +306,7 @@ async fn check_omp_signed_in() -> Check {
         approval_mode: ApprovalMode::Ask,
         omp_path: None,
         no_session: true,
-        plan_mode: None,
+        plan_mode: false,
         extra_config: None,
         stacked_prs: false,
         pass_cwd_flag: false,

@@ -28,7 +28,7 @@ use subagents_synthesis_hook::SynthesisState;
 
 #[cfg(test)]
 #[path = "subagents_test_support.rs"]
-mod test_support;
+pub(in crate::session) mod test_support;
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
 /// Task-summary budget, separate from `NAME_OR_TASK_MAX_CHARS` (#700/#701).

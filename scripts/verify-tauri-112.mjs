@@ -76,7 +76,7 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   );
   await addRepository(cdp, repo);
   await createSessionViaQuickCreate(cdp, repoName);
-  // A plan switch made while OMP is still starting records the mode without a restart, so wait for the handshake to end first.
+  // Waits for the handshake so the plan switch below takes the idle restart path; a switch during start is covered by the Rust tests.
   const started = () => ompLines(ompLog).some((l) => l.includes('RECV') && l.includes('set_subagent_subscription'));
   for (let i = 0; i < 60 && !started(); i++) await sleep(500);
   assert(started(), 'the Session finished starting OMP before the mode checks');
@@ -98,9 +98,10 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   await pressKey(cdp, 13, 'Enter', 'Enter');
   await waitMode(cdp, 'Plan mode');
   assert((await triggerName(cdp)).startsWith('Plan mode'), 'keyboard ArrowDown + Enter selects Plan mode at idle');
-  for (let i = 0; i < 40 && !ompLines(ompLog).some((l) => l.includes('argv=') && l.includes('plan-on')); i++) await sleep(500);
-  const planLaunch = ompLines(ompLog).filter((l) => l.includes('argv=') && l.includes('plan-on'));
-  assert(planLaunch.length > 0, 'the Session restarted with the plan-on overlay in its --config argv');
+  const isPlanLaunch = (l) => l.includes('argv=') && l.includes('plan-mode-approval.yml');
+  for (let i = 0; i < 40 && !ompLines(ompLog).some(isPlanLaunch); i++) await sleep(500);
+  const planLaunch = ompLines(ompLog).filter(isPlanLaunch);
+  assert(planLaunch.length > 0, 'the Session restarted with the plan mode approval overlay in its --config argv');
   await waitMode(cdp, 'Plan mode');
   await cdp.screenshot(path.join(SHOTS_DIR, '03-plan.png'));
 

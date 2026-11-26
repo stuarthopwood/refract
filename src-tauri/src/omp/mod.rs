@@ -5,6 +5,7 @@ pub mod diff;
 pub mod image_store;
 pub mod images;
 pub mod login_providers;
+pub mod plan_overlay;
 pub mod process;
 pub mod process_args;
 pub mod redact;

@@ -65,6 +65,11 @@ pub(super) async fn wire(agent: &SessionAgent) -> Option<Value> {
     agent.with_model_state(|s| s.pending.to_wire()).await
 }
 
+/// The queued role or model, if any; plan mode reads it to tell a user's pick from its own switch.
+pub(super) async fn queued_target(agent: &SessionAgent) -> Option<Target> {
+    agent.with_model_state(|s| s.pending.target.clone()).await
+}
+
 fn changed(agent: &SessionAgent) {
     agent.events().emit_session_list_changed();
 }
@@ -116,6 +121,27 @@ async fn set_target(agent: &SessionAgent, target: Option<Target>) {
 async fn set_thinking(agent: &SessionAgent, level: Option<String>) {
     agent.with_model_state(|s| s.pending.thinking = level).await;
     changed(agent);
+}
+
+/// Queues a role or model for the next drain; plan mode uses it so the switch rides the launch's own drain (#1946).
+pub(super) async fn queue(agent: &SessionAgent, target: Target) {
+    set_target(agent, Some(target)).await;
+}
+
+/// Drops the queued role or model only when it is exactly `target`; any other is the user's pick.
+pub(super) async fn unqueue(agent: &SessionAgent, target: &Target) {
+    let cleared = agent
+        .with_model_state(|s| {
+            let matches = s.pending.target.as_ref() == Some(target);
+            if matches {
+                s.pending.target = None;
+            }
+            matches
+        })
+        .await;
+    if cleared {
+        changed(agent);
+    }
 }
 
 async fn lock_drain(agent: &SessionAgent) -> OwnedMutexGuard<()> {
