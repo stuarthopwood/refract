@@ -3,7 +3,10 @@
 // The only cancels are the ones with nothing to answer with; each is logged and steered.
 // Pure helpers are public so goal mode (#479) can reuse the same policy.
 
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+
 use serde_json::{json, Value};
+use unicode_normalization::UnicodeNormalization;
 
 use crate::session::agent::{AskQuestion, PendingRequest, SessionAgent, SessionStatus};
 
@@ -19,12 +22,18 @@ const STEER_TIMEOUT_MS: u64 = 60_000;
 const LOG_CAP: usize = 200;
 const TEXT_CAP: usize = 200;
 
-/// Labels that read as the cautious answer; matched at the start of a label, on a word boundary.
-const SAFE_PREFIXES: [&str; 11] = [
-    "no", "deny", "block", "reject", "cancel", "skip", "stay", "refine", "don't", "do not", "keep",
+/// Labels that read as the cautious answer; matched at the start of a label on a word boundary, or
+/// as the whole label.
+const SAFE_PREFIXES: [&str; 23] = [
+    "no", "nope", "none", "never", "not now", "not yet", "deny", "decline", "disallow", "refuse",
+    "reject", "block", "cancel", "abort", "stop", "dismiss", "skip", "later", "stay", "refine",
+    "don't", "do not", "keep",
 ];
+/// A label longer than this cannot be a bare negative word, and the cap bounds the folding work.
+const LABEL_CAP: usize = 64;
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// Declaration order is the strength order a steer coalesces by: Denied > Cancelled > Answered.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
     Answered,
     Cancelled,
@@ -42,7 +51,7 @@ pub struct Entry {
 pub struct Log {
     entries: Vec<Entry>,
     dropped: usize,
-    steering: bool,
+    steer: Arc<SteerSlot>,
 }
 
 impl Log {
@@ -62,41 +71,132 @@ impl Log {
         )
     }
 
-    /// True for the caller that now owns the steer slot; false while another steer is in flight.
-    fn begin_steer(&mut self) -> bool {
-        !std::mem::replace(&mut self.steering, true)
-    }
-
-    fn end_steer(&mut self) {
-        self.steering = false;
+    fn steer_slot(&self) -> Arc<SteerSlot> {
+        Arc::clone(&self.steer)
     }
 }
 
-fn is_negative(label: &str) -> bool {
-    let head: String = label
-        .trim_start()
+/// Whether a steer is in flight, and the strongest kind that asked for one meanwhile. Behind a std
+/// mutex that is never held across an await, so `SteerGuard` can release it from `Drop`.
+#[derive(Default)]
+struct SteerSlot(Mutex<SteerState>);
+
+#[derive(Default)]
+struct SteerState {
+    in_flight: bool,
+    pending: Option<Kind>,
+}
+
+impl SteerSlot {
+    fn state(&self) -> MutexGuard<'_, SteerState> {
+        self.0.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The guard for the caller that now owns the slot; `None` while a steer is in flight, after
+    /// noting `kind` so the owner sends one more steer of the strongest kind it missed.
+    fn begin(self: &Arc<Self>, kind: Kind) -> Option<SteerGuard> {
+        let mut state = self.state();
+        if state.in_flight {
+            state.pending = state.pending.max(Some(kind));
+            return None;
+        }
+        state.in_flight = true;
+        Some(SteerGuard {
+            slot: Arc::clone(self),
+            held: true,
+        })
+    }
+}
+
+/// Owns the steer slot; dropping it (normally, on panic or when the task is aborted) frees the slot.
+struct SteerGuard {
+    slot: Arc<SteerSlot>,
+    held: bool,
+}
+
+impl SteerGuard {
+    /// The kind to steer once more, or `None` after releasing the slot. Deciding and releasing under
+    /// one lock means no request can note a kind in between and then be left unsent.
+    fn next(&mut self) -> Option<Kind> {
+        let mut state = self.slot.state();
+        let more = state.pending.take();
+        if more.is_none() {
+            state.in_flight = false;
+            self.held = false;
+        }
+        more
+    }
+}
+
+impl Drop for SteerGuard {
+    fn drop(&mut self) {
+        if self.held {
+            let mut state = self.slot.state();
+            state.in_flight = false;
+            state.pending = None;
+        }
+    }
+}
+
+/// Zero-width and bidi format characters hide in front of a label without changing how it reads.
+fn is_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00ad}' | '\u{061c}' | '\u{180e}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}'
+            | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206f}' | '\u{feff}'
+    )
+}
+
+/// NFKC-folded, format-stripped, lower-cased label with single spaces and straight apostrophes.
+fn fold(label: &str) -> String {
+    let folded: String = label
         .chars()
-        .take(7)
+        .take(LABEL_CAP)
+        .nfkc()
+        .filter(|c| !is_format(*c))
         .flat_map(char::to_lowercase)
-        .map(|c| if c == '\u{2019}' { '\'' } else { c })
+        .map(|c| match c {
+            '\u{2018}' | '\u{2019}' | '\u{02bc}' => '\'',
+            c => c,
+        })
         .collect();
+    folded.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn starts_with_negative(folded: &str) -> bool {
     SAFE_PREFIXES.iter().any(|prefix| {
-        head.strip_prefix(prefix)
+        folded
+            .strip_prefix(prefix)
             .is_some_and(|rest| rest.chars().next().is_none_or(|c| !c.is_alphanumeric()))
     })
 }
 
-/// The position of the first label that reads as the safe (negative) answer, else the first label;
-/// `None` when there are no labels. An unattended pick must not approve, so "Yes" never beats "No".
-pub fn safe_position<'a>(labels: impl IntoIterator<Item = &'a str>) -> Option<usize> {
-    let mut seen = 0;
+fn is_bare_negative(folded: &str) -> bool {
+    SAFE_PREFIXES.contains(&folded.trim_end_matches(|c: char| !c.is_alphanumeric()))
+}
+
+/// The position of the label that reads as the cautious answer, if any: a label that is a negative
+/// word on its own ("No", "Deny.") beats the first one that merely starts with one ("Skip tests and
+/// deploy").
+pub fn negative_position<'a>(labels: impl IntoIterator<Item = &'a str>) -> Option<usize> {
+    let mut first_prefixed = None;
     for (i, label) in labels.into_iter().enumerate() {
-        if is_negative(label) {
+        let folded = fold(label);
+        if label.chars().nth(LABEL_CAP).is_none() && is_bare_negative(&folded) {
             return Some(i);
         }
-        seen = i + 1;
+        if first_prefixed.is_none() && starts_with_negative(&folded) {
+            first_prefixed = Some(i);
+        }
     }
-    (seen > 0).then_some(0)
+    first_prefixed
+}
+
+/// The position of the label that reads as the safe (negative) answer, else the first label; `None`
+/// when there are no labels. An unattended pick must not approve, so "Yes" never beats "No".
+pub fn safe_position<'a>(labels: impl IntoIterator<Item = &'a str>) -> Option<usize> {
+    let labels: Vec<&str> = labels.into_iter().collect();
+    negative_position(labels.iter().copied()).or_else(|| (!labels.is_empty()).then_some(0))
 }
 
 fn clip(text: &str) -> String {
@@ -175,6 +275,14 @@ pub(in crate::session) async fn leave_for_test(agent: &SessionAgent) {
     agent
         .with_working_mode_state(|s| s.mode = super::WorkingMode::Interactive)
         .await;
+}
+
+/// Whether no steer is in flight or waiting, so a test knows the coalescing has run its course.
+#[cfg(test)]
+pub(in crate::session) async fn steer_idle(agent: &SessionAgent) -> bool {
+    let slot = agent.with_working_mode_state(|s| s.away.steer_slot()).await;
+    let state = slot.state();
+    !state.in_flight && state.pending.is_none()
 }
 
 /// Called after the request is registered; a no-op unless the Session is in Away mode.
@@ -324,33 +432,43 @@ fn steer(agent: &SessionAgent, kind: Kind) {
     tokio::spawn(async move { send_steer(&agent, kind).await });
 }
 
-/// One steer at a time: a burst of replies while it is in flight rides on it instead of piling up.
+/// One steer at a time: replies that land while it is in flight ride on one more steer of the
+/// strongest kind among them, sent when it ends, instead of piling up.
 pub(in crate::session) async fn send_steer(agent: &SessionAgent, kind: Kind) {
-    if !agent
-        .with_working_mode_state(|s| s.away.begin_steer())
-        .await
-    {
+    let slot = agent.with_working_mode_state(|s| s.away.steer_slot()).await;
+    let Some(mut guard) = slot.begin(kind) else {
         return;
+    };
+    let mut kind = kind;
+    loop {
+        deliver_steer(agent, kind).await;
+        match guard.next() {
+            Some(more) => kind = more,
+            None => return,
+        }
     }
+}
+
+async fn deliver_steer(agent: &SessionAgent, kind: Kind) {
     // Not atomic with the send below: a turn can settle in between. Accepted, the window is
     // milliseconds and closing it would hold a lock across the RPC.
-    if matches!(
+    if !matches!(
         agent.status().await,
         SessionStatus::Working | SessionStatus::NeedsYou
     ) {
-        let message = match kind {
-            Kind::Answered => ANSWERED_STEER,
-            Kind::Denied => DENIED_STEER,
-            Kind::Cancelled => CANCELLED_STEER,
-        };
-        let steer = json!({
-            "type": "prompt",
-            "message": message,
-            "streamingBehavior": "steer",
-        });
-        let _ = agent.request_rpc(steer, STEER_TIMEOUT_MS).await;
+        return;
     }
-    agent.with_working_mode_state(|s| s.away.end_steer()).await;
+    let message = match kind {
+        Kind::Answered => ANSWERED_STEER,
+        Kind::Denied => DENIED_STEER,
+        Kind::Cancelled => CANCELLED_STEER,
+    };
+    let steer = json!({
+        "type": "prompt",
+        "message": message,
+        "streamingBehavior": "steer",
+    });
+    let _ = agent.request_rpc(steer, STEER_TIMEOUT_MS).await;
 }
 
 /// For dialogs Refract cannot answer at all (malformed, unsupported); the caller still cancels them.

@@ -134,6 +134,8 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   assert(!!denial && !responses(ompLog).some((l) => l.includes('Approve"')), `approval appr-1 was denied, never approved: ${denial}`);
   const steers = ompLines(ompLog).filter((l) => l.includes('[Automatic, Away mode]'));
   assert(steers.length >= 1, `the burst of automatic actions sent a coalesced reason steer (${steers.length} seen)`);
+  assert(steers.some((l) => l.includes('Answered by Away Mode')), `an answer steer "Answered by Away Mode" was sent (${steers.length} steers)`);
+  assert(steers.some((l) => l.includes('Not approved by Away Mode')), `a denial steer "Not approved by Away Mode" was sent (${steers.length} steers)`);
   await cdp.waitFor(`document.body.innerText.includes('away111done')`, { timeoutMs: 20_000, label: 'turn finished' });
   await cdp.screenshot(path.join(SHOTS_DIR, '07-away-denied.png'));
 

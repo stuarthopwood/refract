@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use serde_json::{json, Map, Number, Value};
 
-use super::away::{safe_position, ASK_FALLBACK};
+use super::away::{negative_position, safe_position, ASK_FALLBACK};
 
 /// Matches the key cap `validate_form_data` enforces on a submission.
 const MAX_FIELDS: usize = 100;
@@ -168,6 +168,58 @@ fn text_at(events: &[Event], at: usize) -> &str {
     }
 }
 
+/// Label text a control gets from a `<label>`: by `for` id, or by wrapping it. Maps are keyed by the
+/// control's `id` and by the event index of a wrapped control.
+#[derive(Default)]
+struct Labels {
+    by_id: HashMap<String, String>,
+    wrapping: HashMap<usize, String>,
+}
+
+impl Labels {
+    fn read(events: &[Event]) -> Self {
+        let mut labels = Self::default();
+        for (start, event) in events.iter().enumerate() {
+            let Event::Open(label) = event else { continue };
+            if label.name != "label" {
+                continue;
+            }
+            // A label ends at its close tag or the next label, so a stray open one stays cheap.
+            let mut text = String::new();
+            let mut inside = Vec::new();
+            for (at, inner) in events.iter().enumerate().skip(start + 1) {
+                match inner {
+                    Event::Close(name) if name == "label" => break,
+                    Event::Open(tag) if tag.name == "label" => break,
+                    Event::Open(tag) if tag.name == "input" => inside.push(at),
+                    Event::Text(part) => text.push_str(part),
+                    _ => {}
+                }
+            }
+            let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            if text.is_empty() {
+                continue;
+            }
+            if let Some(id) = label.attr("for").filter(|id| !id.is_empty()) {
+                labels.by_id.entry(id.to_string()).or_insert(text.clone());
+            }
+            for at in inside {
+                labels.wrapping.entry(at).or_insert(text.clone());
+            }
+        }
+        labels
+    }
+
+    /// The label for the input at `at`: its `<label for>`, else a wrapping `<label>`, else the text
+    /// right after it.
+    fn of<'a>(&'a self, tag: &Tag, at: usize, events: &'a [Event]) -> &'a str {
+        tag.attr("id")
+            .and_then(|id| self.by_id.get(id))
+            .or_else(|| self.wrapping.get(&at))
+            .map_or_else(|| text_at(events, at + 1), String::as_str)
+    }
+}
+
 fn number(raw: &str) -> Option<Value> {
     let raw = raw.trim();
     if let Ok(whole) = raw.parse::<i64>() {
@@ -187,9 +239,11 @@ fn text_or_fallback(text: &str) -> Value {
     })
 }
 
-/// A single-choice field takes its marked choice, else the safe (negative) one, else the first, among
-/// the enabled ones. A multi-choice field submits only checked choices the form marks required: it
-/// never ticks boxes on the user's behalf, and an empty one is left out.
+/// A single-choice field takes the safe (negative) choice among the enabled ones; with none, its
+/// marked choice, else the first. A pre-marked "Yes" must not win over an enabled "No" or "Decline":
+/// the form's default is the user's likely answer, not the cautious one. A multi-choice field
+/// submits only checked choices the form marks required: it never ticks boxes on the user's behalf,
+/// and an empty one is left out.
 fn pick(choices: &[Choice], many: bool) -> Option<Value> {
     let enabled: Vec<&Choice> = choices.iter().filter(|c| !c.disabled).collect();
     let picked: Vec<&str> = if many {
@@ -198,6 +252,8 @@ fn pick(choices: &[Choice], many: bool) -> Option<Value> {
             .filter(|c| c.checked && c.keeps_check)
             .map(|c| c.value.as_str())
             .collect()
+    } else if let Some(i) = negative_position(enabled.iter().map(|c| c.text())) {
+        vec![enabled[i].value.as_str()]
     } else if let Some(marked) = enabled.iter().rev().find(|c| c.checked) {
         vec![marked.value.as_str()]
     } else {
@@ -333,6 +389,7 @@ pub fn form_defaults(html: &str) -> Value {
     let events = tokenize(capped(html));
     let mut fields: Vec<Field> = Vec::new();
     let mut groups: HashMap<(String, bool), usize> = HashMap::new();
+    let labels = Labels::read(&events);
     let mut at = 0;
     while at < events.len() && fields.len() < MAX_FIELDS {
         let Event::Open(tag) = &events[at] else {
@@ -341,7 +398,10 @@ pub fn form_defaults(html: &str) -> Value {
         };
         at += 1;
         match tag.name.as_str() {
-            "input" => read_input(tag, text_at(&events, at), &mut fields, &mut groups),
+            "input" => {
+                let label = labels.of(tag, at - 1, &events);
+                read_input(tag, label, &mut fields, &mut groups);
+            }
             "textarea" => {
                 if let Some(name) = tag.attr("name").map(str::trim).filter(|n| !n.is_empty()) {
                     let body = match events.get(at) {
