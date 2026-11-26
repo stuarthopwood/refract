@@ -2,6 +2,8 @@
 // itself (only its TUI does), so Refract queues a switch to the Plan role when a plan launch starts
 // and queues the previous role or pinned model back once a non-plan launch follows.
 
+use std::future::Future;
+
 use crate::session::pending_selection::Target;
 
 use super::super::agent::SessionAgent;
@@ -29,9 +31,14 @@ pub(super) struct Selection<'a> {
 pub(super) enum Step {
     Keep,
     /// First plan launch: remember `restore`, and queue the Plan role when `apply`.
-    Enter { swap: Swap, apply: bool },
+    Enter {
+        swap: Swap,
+        apply: bool,
+    },
     /// First non-plan launch after a plan stint: queue `restore` back, if any.
-    Leave { restore: Option<Target> },
+    Leave {
+        restore: Option<Target>,
+    },
     /// The stint ended but the user chose another role or model meanwhile; leave that choice alone.
     Forget,
 }
@@ -78,12 +85,35 @@ pub(super) fn step(
 
 async fn last_model(agent: &SessionAgent) -> Option<(String, String)> {
     let registry = agent.registry().lock().await;
-    let model = registry.get_session(agent.session_id())?.last_model.as_ref()?;
+    let model = registry
+        .get_session(agent.session_id())?
+        .last_model
+        .as_ref()?;
     Some((model.provider.clone(), model.id.clone()))
+}
+
+/// Whether omp's role map resolves `modelRoles.plan`.
+async fn plan_role_configured() -> bool {
+    match crate::ipc::model_roles::get_model_roles_reliable().await {
+        Ok(map) => model_support::resolve_role_selector(&map, PLAN_ROLE).is_some(),
+        Err(err) => {
+            log::warn!("plan_role: could not read the model roles: {err}");
+            false
+        }
+    }
 }
 
 /// Runs at every launch, after the role is seeded; the launch's closing drain applies what it queues.
 pub(super) async fn on_launch(agent: &SessionAgent) {
+    on_launch_with(agent, plan_role_configured).await;
+}
+
+/// `plan_configured` is the seam that lets a test drive the launch without spawning omp.
+async fn on_launch_with<F, Fut>(agent: &SessionAgent, plan_configured: F)
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = bool>,
+{
     let launched_plan = crate::session::working_mode::launched_plan(agent).await;
     let swap = agent.with_model_state(|s| s.plan_swap.clone()).await;
     if launched_plan == swap.is_some() {
@@ -97,24 +127,17 @@ pub(super) async fn on_launch(agent: &SessionAgent) {
         last_model: last.as_ref().map(|(p, i)| (p.as_str(), i.as_str())),
     };
     // Only an entering launch needs omp's role map, so a restart inside a plan stint skips the read.
-    let plan_configured = if launched_plan {
-        match crate::ipc::model_roles::get_model_roles_reliable().await {
-            Ok(map) => model_support::resolve_role_selector(&map, PLAN_ROLE).is_some(),
-            Err(err) => {
-                log::warn!("plan_role: could not read the model roles: {err}");
-                false
-            }
-        }
-    } else {
-        false
-    };
+    let plan_configured = launched_plan && plan_configured().await;
     match step(launched_plan, swap.as_ref(), &selection, plan_configured) {
         Step::Keep => {}
         Step::Enter { swap, apply } => {
             agent.with_model_state(|s| s.plan_swap = Some(swap)).await;
             if apply {
-                crate::session::pending_selection::queue(agent, Target::Role(PLAN_ROLE.to_string()))
-                    .await;
+                crate::session::pending_selection::queue(
+                    agent,
+                    Target::Role(PLAN_ROLE.to_string()),
+                )
+                .await;
             }
         }
         Step::Leave { restore } => {

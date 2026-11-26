@@ -135,6 +135,22 @@ pub(in crate::session) async fn launched_plan(agent: &SessionAgent) -> bool {
     agent.with_working_mode_state(|s| s.launched_plan).await
 }
 
+/// Marks a fixture agent as launched in plan mode or not, without the persistence `set_mode` does.
+#[cfg(test)]
+pub(in crate::session) async fn set_launched_plan_for_test(agent: &SessionAgent, plan: bool) {
+    agent
+        .with_working_mode_state(|s| {
+            s.loaded = true;
+            s.launched_plan = plan;
+            s.mode = if plan {
+                WorkingMode::Plan
+            } else {
+                WorkingMode::Interactive
+            };
+        })
+        .await;
+}
+
 fn instruction_for(mode: WorkingMode) -> Option<&'static str> {
     match mode {
         WorkingMode::Plan => Some(PLAN_INSTRUCTION),

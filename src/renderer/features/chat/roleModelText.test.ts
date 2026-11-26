@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { CpuIcon, LifeBuoyIcon, PinIcon, TurtleIcon } from 'lucide-react'
+import { ClipboardListIcon, CpuIcon, LifeBuoyIcon, PinIcon, TurtleIcon } from 'lucide-react'
 
 // `./roleModelText` pulls in the state barrel, whose DEV block touches `window`; `environment: 'node'` has none.
 vi.hoisted(() => {
@@ -33,6 +33,10 @@ describe('roleShown', () => {
 
   it('names a known role with its icon', () => {
     expect(roleShown('slow', false, 'Claude Opus 5.5')).toMatchObject({ pinned: false, role: 'slow', roleLabel: 'Slow', Icon: TurtleIcon })
+  })
+
+  it('shows the Plan role with the clipboard icon while a Session is in plan mode (#2116)', () => {
+    expect(roleShown('plan', false, 'Claude Opus 5.5')).toMatchObject({ pinned: false, role: 'plan', roleLabel: 'Plan', Icon: ClipboardListIcon })
   })
 
   it('shows an unrecognised role by its raw name with the generic icon', () => {
