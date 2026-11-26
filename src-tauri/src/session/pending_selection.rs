@@ -8,7 +8,22 @@ pub(super) async fn unqueue(agent: &SessionAgent, target: &Target) {
             if matches {
                 s.pending.target = None;
             }
+/// Drops the queued role or model only when it is exactly `target`; any other is the user's pick.
+pub(super) async fn unqueue(agent: &SessionAgent, target: &Target) {
+    let cleared = agent
+        .with_model_state(|s| {
+            let matches = s.pending.target.as_ref() == Some(target);
+            if matches {
+                s.pending.target = None;
+            }
             matches
+        })
+        .await;
+    if cleared {
+        changed(agent);
+    }
+}
+
         })
         .await;
     if cleared {
