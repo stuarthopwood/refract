@@ -39,6 +39,8 @@ export interface CollapsedLineProps {
   defaultOpen?: boolean
   triggerAriaLabel?: string
   action?: React.ReactNode
+  /** Full-width content between the header and the body, outside the trigger button so its own roles (a progressbar) stay exposed and it stays visible while collapsed. */
+  belowHeader?: React.ReactNode
   detail?: React.ReactNode
   hideDetailWhenOpen?: boolean
   children?: React.ReactNode
@@ -71,6 +73,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     defaultOpen,
     triggerAriaLabel,
     action,
+    belowHeader,
     detail,
     hideDetailWhenOpen,
     children,
@@ -240,6 +243,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         )}
         {action !== undefined && <span className="absolute right-2 top-0 flex translate-y-0.5">{action}</span>}
       </div>
+      {belowHeader}
       {detailMounted && (
         <p
           id={detailId}

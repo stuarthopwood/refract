@@ -1,4 +1,8 @@
 # Refract
+**Goal strip**:
+The line under the Subagents card header that shows the **Overall goal** with a target glyph, clamped to two lines, with the full text in a tooltip. It is not rendered when the goal is absent, and it never derives a fallback (issue #1926, FR-146).
+_Avoid_: banner, summary bar, subtitle
+
 
 Refract is a desktop app for working with a coding agent, one isolated copy of a project per unit of work. This file is the shared vocabulary for specs, plans, and code.
 
@@ -221,6 +225,14 @@ _Avoid_: Type, persona, model role (for this)
 **Files touched**:
 The best-effort list of files a subagent wrote or edited, at most 50, collected in Rust from the rolling `recentTools` window of its heartbeat frames. A file can be missing when it scrolled out of the window between frames, so the UI never presents the list as complete. Live only; it is not replayed after a restart (issue #1925, ADR 0013).
 _Avoid_: Changed files, diff, files changed
+
+**Heartbeat**:
+The one live line on a running subagent's card: the view-model's `liveDetail` (last activity plus any bottleneck), shown verbatim with a pulse that stops under reduced motion. It is not a live region and has no client staleness timer; the view-model owns any bottleneck wording (issue #1928).
+_Avoid_: Status line, ticker, last-seen
+
+**Sub-step**:
+One entry of a running subagent's checklist (done, running or pending), at most 6 shown with the running step always visible; extra done steps fold to "N done" and extra pending to "+N queued" (issue #1928).
+_Avoid_: Task, todo, phase (a **Stage** is the group of agents)
 
 **Spine**:
 The 1px neutral `border-divider` line down the left of an expanded group row's members, marking that they belong to that header; decorative, state lives on each member's own icon, never coloured or animated (issue #565). The **Stage** group and **Subagent chain** use it as their shared connector.
