@@ -6,10 +6,10 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use super::queries_session as session;
-use super::timeutil::{hour_start, iso_date, DAY_MS, HOUR_MS};
+use super::timeutil::{hour_start, iso_date, month_start_local, year_start_local, DAY_MS, HOUR_MS};
 
 /// The range names a renderer may send.
-pub const RANGES: [&str; 5] = ["today", "7d", "30d", "all", "custom"];
+pub const RANGES: [&str; 8] = ["today", "7d", "14d", "30d", "mtd", "ytd", "all", "custom"];
 /// The agent-type filter values.
 pub const AGENT_TYPES: [&str; 3] = ["main", "subagent", "advisor"];
 /// Widest time-zone offset in minutes either way.
@@ -191,7 +191,11 @@ impl Filters {
                 (Some((now + off).div_euclid(DAY_MS) * DAY_MS - off), None)
             }
             "7d" => (Some(now - 7 * DAY_MS), None),
+            "14d" => (Some(now - 14 * DAY_MS), None),
             "30d" => (Some(now - 30 * DAY_MS), None),
+            // Local-midnight starts, so MTD on the 1st equals Today and YTD on 1 Jan equals Today.
+            "mtd" => (Some(month_start_local(now, ctx.offset_ms())), None),
+            "ytd" => (Some(year_start_local(now, ctx.offset_ms())), None),
             "all" => (None, None),
             "custom" => {
                 if let (Some(from), Some(to)) = (self.from, self.to) {
@@ -204,11 +208,7 @@ impl Filters {
                     self.to.map(|v| v.clamp(-MAX_CUSTOM_MS, MAX_CUSTOM_MS)),
                 )
             }
-            other => {
-                return Err(QueryError::InvalidArgument(format!(
-                    "unknown range {other:?}"
-                )))
-            }
+            _ => return Err(QueryError::InvalidArgument("unknown range".into())),
         })
     }
 
@@ -268,10 +268,7 @@ impl Filters {
     /// Checks the allowlists and that a custom range is not inverted. `ipc/usage.rs` calls it too.
     pub fn validate(&self) -> QueryResult<()> {
         if !RANGES.contains(&self.range.as_str()) {
-            return Err(QueryError::InvalidArgument(format!(
-                "unknown range {:?}",
-                self.range
-            )));
+            return Err(QueryError::InvalidArgument("unknown range".into()));
         }
         if let Some(agent) = self.agent_type.as_deref() {
             if !AGENT_TYPES.contains(&agent) {
@@ -346,13 +343,13 @@ impl Filters {
             let r_lo = from + (HOUR_MS - from.rem_euclid(HOUR_MS)) % HOUR_MS;
             let ph = w.bind(Value::Integer(r_lo));
             rollup_c.push(format!("hour >= {ph}"));
-            edge.push(format!("{hour_expr} < {ph}"));
+            edge.push(format!("ts < {ph}"));
         }
         if let Some(to) = to {
             let r_hi = hour_start(to + 1);
             let ph = w.bind(Value::Integer(r_hi));
             rollup_c.push(format!("hour < {ph}"));
-            edge.push(format!("{hour_expr} >= {ph}"));
+            edge.push(format!("ts >= {ph}"));
         }
         fact_c.push(format!("({})", edge.join(" OR ")));
         Ok(format!(

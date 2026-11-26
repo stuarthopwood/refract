@@ -8,7 +8,8 @@ const FILTER_TAB_TRIGGER_CLASS = 'focus-visible:outline-offset-[-2px] focus-visi
 export interface FilterTabsProps<T extends string> {
   value: T
   onValueChange(value: T): void
-  tabs: ReadonlyArray<{ value: T; label: string }>
+  /** `ariaLabel` names a tab whose visible label is an abbreviation; it also shows as the hover tooltip. It must contain the visible label text (WCAG 2.5.3). */
+  tabs: ReadonlyArray<{ value: T; label: string; ariaLabel?: string }>
   revealKey?: string
   ariaLabel?: string
 }
@@ -63,7 +64,14 @@ export function FilterTabs<T extends string>({ value, onValueChange, tabs, revea
         <TabsList aria-label={ariaLabel} className="w-max shrink-0">
           {tabs.map((tab) => (
             // No TabsContent is rendered, so Radix's aria-controls would point at nothing.
-            <TabsTrigger key={tab.value} value={tab.value} aria-controls={undefined} className={FILTER_TAB_TRIGGER_CLASS}>
+            <TabsTrigger
+              key={tab.value}
+              value={tab.value}
+              aria-controls={undefined}
+              aria-label={tab.ariaLabel}
+              title={tab.ariaLabel}
+              className={FILTER_TAB_TRIGGER_CLASS}
+            >
               {tab.label}
             </TabsTrigger>
           ))}

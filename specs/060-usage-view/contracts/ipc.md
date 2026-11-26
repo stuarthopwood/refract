@@ -3,7 +3,7 @@
 Types live in `src/shared/ipc-usage.ts` (not `ipc.ts`). All handlers return `Result<T>` like the other channels. Every result is aggregate or labelled metadata; none carries prompt prose.
 
 ```ts
-export type UsageRange = 'today' | '7d' | '30d' | 'all' | 'custom'
+export type UsageRange = 'today' | '7d' | '14d' | '30d' | 'mtd' | 'ytd' | 'all' | 'custom'
 export interface UsageFilters {
   range: UsageRange
   from?: number // ms, custom only
