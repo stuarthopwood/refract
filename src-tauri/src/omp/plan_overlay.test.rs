@@ -6,7 +6,6 @@ fn plan_overlay_denies_every_write_tool_and_asks_for_every_exec_or_write_tool() 
     let asked = [
         "bash",
         "eval",
-        "ssh",
         "browser",
         "computer",
         "task",

@@ -12,15 +12,14 @@ const FILE_NAME: &str = "plan-mode-approval.yml";
 const WRITE_TOOLS: [&str; 3] = ["write", "edit", "ast_edit"];
 
 /// Every other tool omp 18.22.2 declares at the `write` or `exec` tier (`approval` in `src/tools`,
-/// `src/task`, `src/lsp`, `src/security`; `ssh` is the user-facing exec tool). A tool whose tier
+/// `src/task`, `src/lsp`, `src/security`; `ssh` is not a tool in this version). A tool whose tier
 /// depends on its arguments (`github`, `debug`, `lsp`, `hub`, `learn`, `context_notes`) is listed
 /// whole, because the overlay is keyed by tool name and cannot tell a read call from a write call.
 /// They ask instead of being denied: `bash` cannot be told apart from a file change by name, and a
 /// denied `task` would block read-only exploration agents.
-const PROMPT_TOOLS: [&str; 20] = [
+const PROMPT_TOOLS: [&str; 19] = [
     "bash",
     "eval",
-    "ssh",
     "browser",
     "computer",
     "task",

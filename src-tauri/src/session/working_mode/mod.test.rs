@@ -75,6 +75,56 @@ fn only_one_restart_can_be_in_flight() {
     );
 }
 
+/// The drop releases on the runtime, so a test waits for it rather than asserting at once.
+async fn restart_slot_frees_soon(agent: &Arc<SessionAgent>) -> bool {
+    for _ in 0..100 {
+        if RestartSlot::claim(agent).await.is_some() {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    false
+}
+
+#[tokio::test]
+async fn an_aborted_restart_frees_the_slot() {
+    let fx = crate::session::subagents::test_support::agent_fixture(false).await;
+    let agent = fx.agent.arc();
+    let held = RestartSlot::claim(&agent).await.expect("the slot is free");
+    let task = tokio::spawn(async move {
+        let _held = held;
+        std::future::pending::<()>().await;
+    });
+    task.abort();
+    assert!(task.await.is_err());
+
+    assert!(restart_slot_frees_soon(&agent).await);
+}
+
+#[tokio::test]
+async fn a_panicking_restart_frees_the_slot() {
+    let fx = crate::session::subagents::test_support::agent_fixture(false).await;
+    let agent = fx.agent.arc();
+    let held = RestartSlot::claim(&agent).await.expect("the slot is free");
+    let task = tokio::spawn(async move {
+        let _held = held;
+        panic!("a restart that panics");
+    });
+    assert!(task.await.is_err());
+
+    assert!(restart_slot_frees_soon(&agent).await);
+}
+
+#[tokio::test]
+async fn a_released_slot_can_be_claimed_again_and_a_held_one_cannot() {
+    let fx = crate::session::subagents::test_support::agent_fixture(false).await;
+    let agent = fx.agent.arc();
+    let first = RestartSlot::claim(&agent).await.expect("the slot is free");
+    assert!(RestartSlot::claim(&agent).await.is_none());
+    first.release().await;
+    assert!(RestartSlot::claim(&agent).await.is_some());
+}
+
 #[tokio::test]
 async fn a_stale_launch_asks_for_one_restart() {
     let fx = crate::session::subagents::test_support::agent_fixture(false).await;

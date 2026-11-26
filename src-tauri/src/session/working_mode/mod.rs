@@ -5,6 +5,8 @@ pub mod away;
 mod away_form;
 mod store;
 
+use std::sync::Arc;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
@@ -273,17 +275,59 @@ fn claim_restart(s: &mut State) -> bool {
     !std::mem::replace(&mut s.restarting, true)
 }
 
+/// Owns the restart slot. A panic or an aborted task would otherwise leave it taken for good, and
+/// every later plan switch would be dropped as "already in flight".
+struct RestartSlot {
+    agent: Option<Arc<SessionAgent>>,
+}
+
+impl RestartSlot {
+    async fn claim(agent: &Arc<SessionAgent>) -> Option<Self> {
+        agent
+            .with_working_mode_state(claim_restart)
+            .await
+            .then(|| Self {
+                agent: Some(Arc::clone(agent)),
+            })
+    }
+
+    /// The normal release: awaited, so the slot is free before the caller goes on.
+    async fn release(mut self) {
+        if let Some(agent) = self.agent.take() {
+            agent
+                .with_working_mode_state(|s| s.restarting = false)
+                .await;
+        }
+    }
+}
+
+impl Drop for RestartSlot {
+    /// The state lock is async, so the release runs on the runtime; with none left there is nothing to free.
+    fn drop(&mut self) {
+        let Some(agent) = self.agent.take() else {
+            return;
+        };
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                agent
+                    .with_working_mode_state(|s| s.restarting = false)
+                    .await;
+            });
+        }
+    }
+}
+
 /// Spawned: stopping OMP waits on its exit, which the frame listener that may be calling us would block.
 fn restart(agent: &SessionAgent) {
     let agent = agent.arc();
     tokio::spawn(async move {
-        if !agent.with_working_mode_state(claim_restart).await {
+        let Some(slot) = RestartSlot::claim(&agent).await else {
             log::info!(
                 "working_mode: restart for {} already in flight",
                 agent.session_id()
             );
             return;
-        }
+        };
         agent.shutdown().await;
         // start() is a no-op while the old process is still recorded; its exit handler clears it asynchronously.
         for _ in 0..100 {
@@ -299,9 +343,7 @@ fn restart(agent: &SessionAgent) {
         )
         .is_err();
         // Released before start(): the new process runs `on_launched`, which may need a restart of its own.
-        agent
-            .with_working_mode_state(|s| s.restarting = false)
-            .await;
+        slot.release().await;
         if deleting {
             return;
         }

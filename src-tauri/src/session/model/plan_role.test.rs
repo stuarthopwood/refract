@@ -347,6 +347,36 @@ async fn an_app_restart_in_plan_mode_leaves_to_the_default_role() {
     assert!(agent.with_model_state(|s| s.plan_swap.is_none()).await);
 }
 
+/// Plan queued its switch, then the stint ended before the drain applied it: the Session never
+/// reached the Plan role, so nothing is restored and the queued switch must not land afterwards.
+#[tokio::test]
+async fn forgetting_the_stint_clears_plans_own_unapplied_switch() {
+    let agent = agent_on_role("slow").await;
+    set_launched_plan_for_test(&agent, true).await;
+    on_launch_with(&agent, plan_role_is_set).await;
+    assert_eq!(queued_role(&agent).await.as_deref(), Some("plan"));
+    set_launched_plan_for_test(&agent, false).await;
+
+    on_launch_with(&agent, plan_role_is_set).await;
+
+    assert_eq!(queued_role(&agent).await, None);
+    assert!(agent.with_model_state(|s| s.plan_swap.is_none()).await);
+}
+
+#[tokio::test]
+async fn forgetting_the_stint_keeps_a_switch_the_user_queued() {
+    let agent = agent_on_role("slow").await;
+    set_launched_plan_for_test(&agent, true).await;
+    on_launch_with(&agent, plan_role_is_set).await;
+    pending_selection::queue(&agent, role("smol")).await;
+    set_launched_plan_for_test(&agent, false).await;
+
+    on_launch_with(&agent, plan_role_is_set).await;
+
+    assert_eq!(queued_role(&agent).await.as_deref(), Some("smol"));
+    assert!(agent.with_model_state(|s| s.plan_swap.is_none()).await);
+}
+
 #[tokio::test]
 async fn a_role_queued_while_stopped_is_restored_not_overwritten_by_the_plan_launch() {
     let agent = agent_on_role("slow").await;

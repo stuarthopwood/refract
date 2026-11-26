@@ -1,5 +1,21 @@
 // Queued role/model/reasoning changes drain at idle, never mid-turn (#766).
 // The drain guard keeps a prompt from overtaking an in-flight apply.
+/// Drops the queued role or model only when it is exactly `target`; any other is the user's pick.
+pub(super) async fn unqueue(agent: &SessionAgent, target: &Target) {
+    let cleared = agent
+        .with_model_state(|s| {
+            let matches = s.pending.target.as_ref() == Some(target);
+            if matches {
+                s.pending.target = None;
+            }
+            matches
+        })
+        .await;
+    if cleared {
+        changed(agent);
+    }
+}
+
 
 use serde_json::{json, Value};
 use tokio::sync::OwnedMutexGuard;

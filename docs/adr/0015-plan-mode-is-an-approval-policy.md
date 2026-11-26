@@ -7,8 +7,9 @@ omp has no plan toggle under rpc-ui and its own plan-mode guard never runs there
 **Decision:**
 
 - A plan launch adds `plan-mode-approval.yml` to `--config`. `write`, `edit` and `ast_edit` are `deny`, which holds under every approval mode, `yolo` included.
-- Every other tool omp 18.22.2 declares at the `write` or `exec` tier is `prompt`: `bash`, `eval`, `ssh`, `browser`, `computer`, `task`, `github`, `debug`, `lsp`, `hub`, `security_scan`, `security_publish`, `manage_skill`, `learn`, `context_notes`, `new_context`, `generate_image`, `tts`, `vibe_spawn`, `vibe_send`. A tool whose tier depends on its arguments is listed whole, because the overlay is keyed by tool name. These ask instead of being denied: `bash` cannot be told from a file change by name, and a denied `task` would block read-only exploration.
+- Every other tool omp 18.22.2 declares at the `write` or `exec` tier is `prompt`: `bash`, `eval`, `browser`, `computer`, `task`, `github`, `debug`, `lsp`, `hub`, `security_scan`, `security_publish`, `manage_skill`, `learn`, `context_notes`, `new_context`, `generate_image`, `tts`, `vibe_spawn`, `vibe_send`. A tool whose tier depends on its arguments is listed whole, because the overlay is keyed by tool name. These ask instead of being denied: `bash` cannot be told from a file change by name, and a denied `task` would block read-only exploration. `task` prompts by design for that reason. `ssh` is not a tool in omp 18.22.2, so it has no key.
 - If the overlay cannot be written, the launch fails with an error. Refract never starts a plan-mode process without the deny.
+- `ssh://` reads, MCP tools and extension tools are not gated by the overlay; it keys only omp's built-in tool names.
 
 **Consequences:**
 

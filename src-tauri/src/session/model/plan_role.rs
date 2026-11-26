@@ -174,7 +174,13 @@ where
             agent.with_model_state(|s| s.plan_swap = None).await;
             crate::session::pending_selection::queue(agent, restore).await;
         }
-        Step::Forget => agent.with_model_state(|s| s.plan_swap = None).await,
+        // Plan's own switch may still be queued if the drain never ran; left alone it would put the
+        // Session on the Plan role after plan mode ended. Only that exact target is Plan's to clear.
+        Step::Forget => {
+            agent.with_model_state(|s| s.plan_swap = None).await;
+            crate::session::pending_selection::unqueue(agent, &Target::Role(PLAN_ROLE.to_string()))
+                .await;
+        }
     }
 }
 
