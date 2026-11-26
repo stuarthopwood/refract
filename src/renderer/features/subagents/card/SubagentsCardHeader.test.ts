@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { ProgressSegmentState } from '@/components/ProgressStrip'
 import type { SubagentRowStatus } from '../subagentStatus'
-import { SubagentsCardHeader } from './SubagentsCardHeader'
+import { stagesDoneText, SubagentsCardHeader } from './SubagentsCardHeader'
 
 // CollapsedLine imports the renderer state barrel, which needs a browser `window`.
 vi.mock('@/state', () => ({ useSettingsStore: (select: (state: { settings: object }) => unknown) => select({ settings: {} }) }))
@@ -99,5 +99,13 @@ describe('SubagentsCardHeader', () => {
     expect(html).toContain('bg-chat-card-bg')
     expect(html).toContain('ring-divider')
     expect(html).not.toMatch(/zinc-|emerald-|#0d0d10/)
+  })
+})
+
+describe('stagesDoneText', () => {
+  it('announces for the chat card and stays silent for the panel', () => {
+    // Mutation: ignore the flag (both surfaces would announce at once) or drop the card's text.
+    expect(stagesDoneText(true)).toBe('All stages done')
+    expect(stagesDoneText(false)).toBeUndefined()
   })
 })

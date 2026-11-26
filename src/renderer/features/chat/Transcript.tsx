@@ -18,11 +18,11 @@ import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
 import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
 import { LinkContext } from './Markdown'
-import { groupAdvisoryItems, isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
-import { groupToolItems, isToolGroup } from './groupToolItems'
-import { groupThoughtItems } from './groupThoughtItems'
-import { groupMidTurnProse } from './groupMidTurnProse'
-import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
+import type { AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
+import { isToolGroup } from './groupToolItems'
+import { reuseUnchangedTurns, splitIntoTurns, type Turn } from './splitIntoTurns'
+import { groupTurnStages } from './groupTurnStages'
+import { isStageGroup } from './groupSubagentStages'
 import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
@@ -78,28 +78,6 @@ function useRepositoryUserName(repositoryId: string | null): string | undefined 
     }
   }, [repositoryId])
   return name
-}
-
-interface Turn {
-  userItem: UserItem | null
-  items: TranscriptItem[]
-}
-
-// Any items ahead of the first `user` item (should not normally occur) form a leading turn with no
-// total-time line (`userItem: null`).
-function splitIntoTurns(items: TranscriptItem[]): Turn[] {
-  const turns: Turn[] = []
-  let current: Turn = { userItem: null, items: [] }
-  for (const item of items) {
-    if (item.kind === 'user') {
-      if (current.items.length > 0) turns.push(current)
-      current = { userItem: item, items: [item] }
-    } else {
-      current.items.push(item)
-    }
-  }
-  turns.push(current)
-  return turns
 }
 
 interface TurnTotalLineProps {
@@ -209,7 +187,12 @@ export function Transcript({
   }, [items])
   const handleAdvisoryReveal = React.useCallback(() => setSuppressLogAnnouncements(true), [])
 
-  const turns = React.useMemo(() => splitIntoTurns(items), [items])
+  const previousTurnsRef = React.useRef<Turn[]>([])
+  const turns = React.useMemo(() => {
+    const next = reuseUnchangedTurns(previousTurnsRef.current, splitIntoTurns(items))
+    previousTurnsRef.current = next
+    return next
+  }, [items])
 
   const [revealedEarlier, setRevealedEarlier] = React.useState(false)
   const [revealedAnnouncement, setRevealedAnnouncement] = React.useState('')
@@ -222,12 +205,7 @@ export function Transcript({
 
   const subagentSummaries = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
   const turnsWithStages = React.useMemo(
-    () =>
-      visibleTurns.map((turn) => {
-        const viewItems = transcriptDisplay.thinking ? turn.items : turn.items.filter((item) => item.kind !== 'thinking')
-        const groupedWithStages = groupMidTurnProse(groupAdvisoryItems(groupSubagentStages(groupThoughtItems(groupToolItems(viewItems)), subagentSummaries)))
-        return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
-      }),
+    () => visibleTurns.map((turn) => ({ turn, ...groupTurnStages(turn.items, transcriptDisplay.thinking, subagentSummaries) })),
     [visibleTurns, transcriptDisplay.thinking, subagentSummaries]
   )
 

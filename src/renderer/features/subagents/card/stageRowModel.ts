@@ -1,7 +1,18 @@
-// What a Stage header shows, derived from the shared view-model so the chat card and any later surface agree (#1927, FR-147).
+// What a Stage header shows, derived from the shared view-model so the chat card and the panel agree (#1927, #1930, FR-147, FR-150).
+import { formatElapsed } from '../../chat/formatElapsed'
+import { stageHeading } from '../../chat/stageMeta'
+import { SUBAGENT_STATUS_LABEL } from '../subagentStatus'
 import type { StageItem, SubAgentItem } from '../viewModel/types'
 
 export type StageRowView = Pick<StageItem, 'agents' | 'cleanTitle' | 'outcomeSummary' | 'rawLabel' | 'status'>
+
+/** The Stage row's spoken name: heading, roll-up, "Running" while running, and the duration once settled (a ticking value is never spoken). */
+export function stageAccessibleName(stage: Pick<StageItem, 'number' | 'cleanTitle' | 'rollupText' | 'status' | 'durationMs'>): string {
+  const parts = [stageHeading(stage.number, stage.cleanTitle, true), stage.rollupText]
+  if (stage.status === 'running') parts.push(SUBAGENT_STATUS_LABEL.running)
+  else if (stage.durationMs != null) parts.push(formatElapsed(stage.durationMs))
+  return parts.join(', ')
+}
 
 export interface StageRowModel {
   /** The one agent a single-agent Stage shows as an inline chip; null for several agents. */

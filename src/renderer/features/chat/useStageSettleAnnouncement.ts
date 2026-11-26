@@ -1,7 +1,6 @@
 import * as React from 'react'
 import { useClearedAnnouncement } from '../../lib/use-cleared-announcement'
 import type { StageGroup } from './groupSubagentStages'
-import { stageSettleSummary } from './subagentChainStatus'
 
 interface TurnWithStages {
   stages: StageGroup[]
@@ -31,7 +30,7 @@ export function useStageSettleAnnouncement(turnsWithStages: readonly TurnWithSta
       if (!seenIds.has(id)) stageRunningRef.current.delete(id)
     }
     // Only the last Stage settled in one pass is announced.
-    if (lastSettled) announce(`Stage ${lastSettled.stageIndex} finished, ${stageSettleSummary(lastSettled)}`)
+    if (lastSettled) announce(`Stage ${lastSettled.stageIndex} finished, ${lastSettled.view.rollupText}`)
   }, [turnsWithStages, announce])
   return stageAnnouncement
 }

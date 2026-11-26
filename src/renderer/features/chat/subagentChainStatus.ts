@@ -2,7 +2,6 @@
 // `SubagentChainRow.tsx` and `ChainStageLine.tsx` (#1008).
 import type { TranscriptItem } from '../../../shared/model'
 import type { SubagentRowStatus } from '../subagents/subagentStatus'
-import type { StageGroup } from './groupSubagentStages'
 
 export type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
@@ -14,9 +13,4 @@ export function overallStatus(counts: Record<SubagentRowStatus, number>): Subage
   if (counts.exited > 0) return 'exited'
   if (counts.parked > 0) return 'parked'
   return 'finished'
-}
-
-/** Settled roll-up text ("5 done", "4 done, 1 failed"); read from the view-model so the Transcript.tsx announcer matches the Stage header. */
-export function stageSettleSummary(group: StageGroup): string {
-  return group.view.rollupText
 }

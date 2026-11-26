@@ -1,6 +1,6 @@
 {
   "src/renderer/App.tsx": {
-    "commentLines": 53,
+    "commentLines": 48,
     "maxBlock": 19
   },
   "src/renderer/components/ui/dropdown-menu.tsx": {
@@ -22,9 +22,5 @@
   "src/renderer/features/settings/ProviderSwitch.tsx": {
     "commentLines": 15,
     "maxBlock": 5
-  },
-  "src/renderer/features/subagents/SubagentPanel.tsx": {
-    "commentLines": 48,
-    "maxBlock": 11
   }
 }

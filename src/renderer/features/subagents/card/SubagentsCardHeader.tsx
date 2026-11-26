@@ -29,24 +29,11 @@ export interface SubagentsCardHeaderProps {
   children?: React.ReactNode
 }
 
-export function SubagentsCardHeader({
-  status,
-  headerStats,
-  stageStates,
-  goal,
-  durationMs,
-  open,
-  onOpenChange,
-  action,
-  className,
-  contentClassName,
-  children
-}: SubagentsCardHeaderProps) {
-  const total = stageStates.length
-  const done = stageStates.filter((state) => state === 'done').length
+/** "Running · 1m 2s" beside the stats; shared with the panel's header (FR-150). */
+export function SubagentsHeaderMeta({ status, durationMs }: { status: SubagentRowStatus; durationMs: number | undefined }) {
   const statusVisible = status !== 'finished'
   // aria-hidden: the trigger's name states the status and settled duration, so the ticking visible copy must not be read out.
-  const meta = (
+  return (
     <span aria-hidden="true" className="flex min-w-0 shrink items-center gap-1 text-xs text-muted-foreground">
       {statusVisible && (
         <span className="min-w-0 truncate" title={SUBAGENT_STATUS_LABEL[status]}>
@@ -62,14 +49,65 @@ export function SubagentsCardHeader({
       )}
     </span>
   )
+}
 
+/** The live region's text when every Stage settles; only the chat card announces, so the panel next to it passes `false` and stays silent. */
+export function stagesDoneText(announceDone: boolean): string | undefined {
+  return announceDone ? 'All stages done' : undefined
+}
+
+/** The segmented stage bar and the Goal strip under a header; shared with the panel's header (FR-150). The panel passes `announceDone={false}`: only the chat card speaks "All stages done". */
+export function SubagentsHeaderBelow({
+  stageStates,
+  goal,
+  goalClassName,
+  announceDone = true
+}: {
+  stageStates: readonly ProgressSegmentState[]
+  goal?: string
+  goalClassName?: string
+  announceDone?: boolean
+}) {
+  const total = stageStates.length
+  const done = stageStates.filter((state) => state === 'done').length
+  return (
+    <>
+      {total > 0 && (
+        <ProgressStrip
+          className="px-2 pb-2"
+          label={formatProgressText(done, total)}
+          value={done}
+          max={total}
+          segments={stageStates}
+          valueText={formatProgressValueText(done, total)}
+          doneText={stagesDoneText(announceDone)}
+        />
+      )}
+      <GoalStrip goal={goal} className={goalClassName} />
+    </>
+  )
+}
+
+export function SubagentsCardHeader({
+  status,
+  headerStats,
+  stageStates,
+  goal,
+  durationMs,
+  open,
+  onOpenChange,
+  action,
+  className,
+  contentClassName,
+  children
+}: SubagentsCardHeaderProps) {
   return (
     <CollapsedLine
       icon={<SubagentStatusGlyph status={status} />}
       label="Subagents"
       summary={headerStats}
       summaryWrap
-      meta={meta}
+      meta={<SubagentsHeaderMeta status={status} durationMs={durationMs} />}
       metaClassName="min-w-0 shrink"
       open={open}
       onOpenChange={onOpenChange}
@@ -78,22 +116,7 @@ export function SubagentsCardHeader({
       contentClassName={contentClassName}
       triggerAriaLabel={formatHeaderTriggerLabel(headerStats, status, durationMs)}
       action={action}
-      belowHeader={
-        <>
-          {total > 0 && (
-            <ProgressStrip
-              className="px-2 pb-2"
-              label={formatProgressText(done, total)}
-              value={done}
-              max={total}
-              segments={stageStates}
-              valueText={formatProgressValueText(done, total)}
-              doneText="All stages done"
-            />
-          )}
-          <GoalStrip goal={goal} className={open ? undefined : 'rounded-b-lg'} />
-        </>
-      }
+      belowHeader={<SubagentsHeaderBelow stageStates={stageStates} goal={goal} goalClassName={open ? undefined : 'rounded-b-lg'} />}
     >
       {children}
     </CollapsedLine>

@@ -172,7 +172,7 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
       triggerAriaLabel={triggerAriaLabel}
       contentClassName={total > 1 ? SPINE_HOST_CONTENT_CLASS : LABEL_COLUMN_CONTENT_CLASS}
     >
-      {/* aria-live="off": inside the transcript's role="log", so the brief/Uses line is not announced as a log addition. */}
+      {/* aria-live="off": the brief/Uses lines are static context, so an automatic expand must not announce them. */}
       <div aria-live="off" className="space-y-1">
         {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
         {/* A context-less solo Stage's goal renders here, before "Uses:", matching the context-bearing order. */}
