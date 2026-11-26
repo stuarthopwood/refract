@@ -1,15 +1,9 @@
 // The one set of derivations both entry points share, so the chat card and the panel can never disagree on a title or a count.
 import type { SubagentRecentStep } from '../../../../shared/model'
 import { formatElapsed } from '../../chat/formatElapsed'
-import {
-  extractContextLabel,
-  extractResultSummary,
-  resolveStageDependencies,
-  stageRollupText,
-  unsettledRollupText,
-  type StageDependency
-} from '../../chat/stageMeta'
+import { extractContextLabel, resolveStageDependencies, stageRollupText, type StageDependency } from '../../chat/stageMeta'
 import { overallStatus } from '../../chat/subagentChainStatus'
+import { formatHeaderStats } from '../card/headerStats'
 import { summarizeSubagentStatuses, type SubagentRowStatus } from '../subagentStatus'
 import { cleanTitle } from './cleanTitle'
 import type { ChatScenario, StageItem, SubAgentItem, SubStep } from './types'
@@ -43,8 +37,8 @@ export interface AgentInput {
   background?: boolean
   role?: string
   overallGoal?: string
-  /** The raw result text; its first line becomes `whatItDid`. */
-  result?: string
+  /** The one-line summary of the agent's result (its first useful line), already extracted by the entry point. */
+  resultSummary?: string
   taskSummary?: string
   filesTouched?: string[]
   recentSteps?: SubagentRecentStep[]
@@ -55,8 +49,8 @@ export interface StageInput {
   id: string
   /** The shared `task()` context, when the source has one. */
   context?: string
-  /** The text scanned for `agent://` references, which differs by source. */
-  refText: string
+  /** The `agent://` ids this Stage's source text names, already extracted by the entry point. */
+  agentRefs: readonly string[]
   agents: AgentInput[]
 }
 
@@ -72,8 +66,9 @@ function deriveSubSteps(steps: readonly SubagentRecentStep[]): SubStep[] {
   }))
 }
 
-function deriveAgent(input: AgentInput, triggeredBy: string | undefined): SubAgentItem {
-  const whatItDid = (input.result != null ? extractResultSummary(input.result) : undefined) ?? input.taskSummary
+/** Exported for its own tests; the entry points reach it through `deriveScenario`. */
+export function deriveAgent(input: AgentInput, triggeredBy: string | undefined): SubAgentItem {
+  const whatItDid = input.resultSummary ?? input.taskSummary
   const steps = input.recentSteps ?? []
   const lastStep = steps[steps.length - 1]
   const subSteps = steps.length > 0 ? deriveSubSteps(steps).map((s) => (input.status === 'running' ? s : { ...s, status: 'done' as const })) : undefined
@@ -109,7 +104,7 @@ export function deriveScenario(stages: readonly StageInput[]): ChatScenario {
   resolveStageDependencies(
     drafts,
     (item: AgentInput) => item.name,
-    (draft) => draft.input.refText
+    (draft) => draft.input.agentRefs
   )
 
   const stageItems = drafts.map((draft): StageItem => {
@@ -155,13 +150,7 @@ export function deriveHeader(stages: readonly StageItem[]): Omit<ChatScenario, '
   const { startedAt, endedAt } = stageTimeRange(agents)
   const totalDurationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
   const overallGoal = stages.find((stage) => stage.overallGoal)?.overallGoal
-  const headerStats = [
-    `${stages.length} ${stages.length === 1 ? 'stage' : 'stages'}`,
-    `${agents.length} ${agents.length === 1 ? 'agent' : 'agents'}`,
-    unsettledRollupText(totals)
-  ]
-    .filter((part) => part.length > 0)
-    .join(', ')
+  const headerStats = formatHeaderStats({ stageCount: stages.length, agentCount: agents.length, statusCounts: totals })
   return {
     headerStats,
     rollupText: stageRollupText(totals, agents.length, totals.running > 0),

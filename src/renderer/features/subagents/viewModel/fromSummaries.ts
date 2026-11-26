@@ -1,4 +1,5 @@
 import type { SubagentSummary } from '../../../../shared/model'
+import { extractAgentRefs } from '../../chat/stageMeta'
 import { deriveScenario, type StageInput } from './derive'
 import type { ChatScenario } from './types'
 
@@ -6,7 +7,7 @@ function toStageInput(run: readonly SubagentSummary[]): StageInput {
   return {
     id: `stage:${run[0]!.toolCallId}`,
     // A summary carries no context and no task text, so the title falls back to the names and `agent://` refs come from names alone.
-    refText: run.map((item) => item.nameOrTask).join('\n'),
+    agentRefs: extractAgentRefs(run.map((item) => item.nameOrTask).join('\n')),
     agents: run.map((item) => ({
       id: item.id,
       toolCallId: item.toolCallId,
