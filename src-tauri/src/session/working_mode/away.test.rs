@@ -198,6 +198,36 @@ fn a_short_refusal_phrase_is_still_the_safe_option() {
 }
 
 #[test]
+fn every_negative_prefix_is_guarded_against_approvals_and_standing_rules() {
+    for label in [
+        "No more prompts \u{2013} always allow",
+        "Skip confirmations from now on",
+        "Keep allowing",
+        "Stay trusted",
+        "Not now, always allow",
+    ] {
+        assert_eq!(negative_position(["Allow once", label]), None, "{label}");
+        assert_eq!(safe_position([label, "No"]), Some(1), "{label}");
+    }
+    assert_eq!(negative_position(["Go", "Keep both"]), Some(1));
+    assert_eq!(negative_position(["Go", "Skip this step"]), Some(1));
+}
+
+#[test]
+fn invisible_fillers_and_selectors_cannot_split_a_word() {
+    assert_eq!(fold("al\u{034f}low always").0, "allow always");
+    for hidden in [
+        '\u{034f}', '\u{115f}', '\u{1160}', '\u{3164}', '\u{ffa0}', '\u{fe00}', '\u{fe0f}',
+        '\u{e0000}', '\u{e0020}', '\u{e007f}',
+    ] {
+        let label = format!("Keep al{hidden}lowing");
+        assert_eq!(negative_position(["Go", label.as_str()]), None, "{hidden:?}");
+        let padded = format!("N{hidden}o");
+        assert_eq!(safe_position(["Yes", padded.as_str()]), Some(1), "{hidden:?}");
+    }
+}
+
+#[test]
 fn only_one_steer_slot_is_held_at_a_time() {
     let slot = Log::default().steer_slot();
     let mut first = slot.begin(Kind::Answered).expect("the slot is free");

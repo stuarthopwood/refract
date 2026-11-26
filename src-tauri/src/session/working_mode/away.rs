@@ -31,13 +31,14 @@ const SAFE_PREFIXES: [&str; 23] = [
 ];
 /// A label longer than this cannot be a bare negative word, and the cap bounds the folding work.
 const LABEL_CAP: usize = 64;
-/// Prefixes that also open a standing instruction ("Never ask again", "Stop asking") or an approval
-/// ("Don't ask again, always allow"), so a longer phrase is not read as a refusal.
-const GUARDED_PREFIXES: [&str; 4] = ["never", "stop", "don't", "do not"];
+/// Lead words that negate an approving word right after them ("Never allow"). Every prefix also has
+/// to pass the short-refusal check, since "No more prompts - always allow" and "Skip confirmations
+/// from now on" open with a negative word yet approve or set a standing rule.
+const NEGATING_LEADS: [&str; 4] = ["never", "stop", "don't", "do not"];
 const SHORT_REFUSAL_WORDS: usize = 4;
 const APPROVING: [&str; 5] = ["allow", "always", "approv", "yes", "trust"];
 const STANDING: &[&str] = &["ask", "again", "remember", "prompt", "warn", "notif"];
-/// Approving words a guarded lead word negates when they come right after it ("Never allow").
+/// Approving words a negating lead word cancels when they come right after it.
 const NEGATED_BY_LEAD: [&str; 3] = ["allow", "approv", "trust"];
 
 /// Declaration order is the strength order a steer coalesces by: Denied > Cancelled > Answered.
@@ -146,12 +147,15 @@ impl Drop for SteerGuard {
     }
 }
 
-/// Zero-width and bidi format characters hide in front of a label without changing how it reads.
+/// Zero-width, bidi, joiner, filler, variation-selector and tag characters hide in front of a label
+/// without changing how it reads.
 fn is_format(c: char) -> bool {
     matches!(
         c,
-        '\u{00ad}' | '\u{061c}' | '\u{180e}' | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}'
-            | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206f}' | '\u{feff}'
+        '\u{00ad}' | '\u{034f}' | '\u{061c}' | '\u{115f}' | '\u{1160}' | '\u{180e}'
+            | '\u{200b}'..='\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2060}'..='\u{2064}'
+            | '\u{2066}'..='\u{206f}' | '\u{3164}' | '\u{fe00}'..='\u{fe0f}' | '\u{feff}'
+            | '\u{ffa0}' | '\u{e0000}'..='\u{e007f}'
     )
 }
 
@@ -190,17 +194,18 @@ fn words(text: &str) -> impl Iterator<Item = &str> {
 }
 
 /// "Never ask again" and "Stop asking" are standing instructions, not a refusal of this request, and
-/// "Don't ask again - always allow" approves it. So these prefixes read as a refusal only in a short
-/// phrase with no approving or standing-instruction word; "Don't allow" is fine because the lead
-/// word negates the word right after it.
-fn is_short_refusal(folded: &str, rest: &str) -> bool {
+/// "Don't ask again - always allow" or "Keep allowing" approves it. So a prefix reads as a refusal
+/// only in a short phrase with no approving or standing-instruction word; "Don't allow" is fine
+/// because a negating lead word cancels the word right after it.
+fn is_short_refusal(prefix: &str, folded: &str, rest: &str) -> bool {
     if folded.split_whitespace().count() > SHORT_REFUSAL_WORDS {
         return false;
     }
     let mut rest_words = words(rest).peekable();
-    if rest_words
-        .peek()
-        .is_some_and(|first| NEGATED_BY_LEAD.iter().any(|w| first.starts_with(w)))
+    if NEGATING_LEADS.contains(&prefix)
+        && rest_words
+            .peek()
+            .is_some_and(|first| NEGATED_BY_LEAD.iter().any(|w| first.starts_with(w)))
     {
         rest_words.next();
     }
@@ -214,9 +219,7 @@ fn is_short_refusal(folded: &str, rest: &str) -> bool {
 
 fn starts_with_negative(folded: &str) -> bool {
     SAFE_PREFIXES.iter().any(|prefix| {
-        after_word(folded, prefix).is_some_and(|rest| {
-            !GUARDED_PREFIXES.contains(prefix) || is_short_refusal(folded, rest)
-        })
+        after_word(folded, prefix).is_some_and(|rest| is_short_refusal(prefix, folded, rest))
     })
 }
 
