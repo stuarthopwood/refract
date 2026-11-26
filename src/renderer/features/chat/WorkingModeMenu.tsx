@@ -7,7 +7,7 @@ const MODE_ITEMS: ModePillItem<WorkingMode>[] = [
   { value: 'interactive', label: 'Interactive', hint: 'Normal turns; you answer questions.', icon: MousePointerClickIcon },
   { value: 'plan', label: 'Plan mode', hint: 'Plans first. Restarts the Session to switch.', icon: ListChecksIcon },
   { value: 'grill', label: 'Grill mode', hint: 'Interviews you one question at a time before any code edits.', icon: MessagesSquareIcon },
-  { value: 'away', label: 'Away mode', hint: 'Answers questions itself; denies approvals after 5 minutes.', icon: BellOffIcon }
+  { value: 'away', label: 'Away mode', hint: 'Answers questions itself; denies approvals.', icon: BellOffIcon }
 ]
 
 /** Per-Session working-mode picker; Approval mode stays app-wide in its own pill. */

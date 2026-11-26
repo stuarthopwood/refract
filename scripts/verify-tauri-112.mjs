@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Live CDP check for the composer working-mode menu (#433): menu keyboard use, per-mode state, Away auto-answer and
-// approval denial (shortened via the debug-only REFRACT_AWAY_APPROVAL_TIMEOUT_MS), the summary card and the plan switch.
+// Live CDP check for the composer working-mode menu (#433, #2031): menu keyboard use, per-mode state, Away answering every
+// dialog (ask, select, input, confirm, form) and denying an approval at once, the summary card and the plan switch.
 // Usage: CARGO_TARGET_DIR=<shared target dir> REFRACT_112_SHOTS_DIR=<evidence dir> node scripts/verify-tauri-112.mjs
 
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, copyFileSync, existsSync } from 'node:fs';
@@ -18,7 +18,6 @@ const REPO_ROOT = path.resolve(__dirname, '..');
 const BUILD_OUTPUT_DIR = requireSharedCargoTarget(REPO_ROOT);
 const SHOTS_DIR = process.env.REFRACT_112_SHOTS_DIR || path.join(tmpdir(), 'refract-112-shots');
 mkdirSync(SHOTS_DIR, { recursive: true });
-const AWAY_TIMEOUT_MS = 3000;
 
 const REPORT = [];
 let passed = 0;
@@ -77,6 +76,11 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   );
   await addRepository(cdp, repo);
   await createSessionViaQuickCreate(cdp, repoName);
+  // A plan switch made while OMP is still starting records the mode without a restart, so wait for the handshake to end first.
+  const started = () => ompLines(ompLog).some((l) => l.includes('RECV') && l.includes('set_subagent_subscription'));
+  for (let i = 0; i < 60 && !started(); i++) await sleep(500);
+  assert(started(), 'the Session finished starting OMP before the mode checks');
+  await sleep(2000);
 
   // ---- Menu, default state, keyboard ----
   await waitMode(cdp, 'Interactive');
@@ -118,16 +122,26 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   const askResp = responses(ompLog).find((l) => l.includes('"answers"'));
   assert(!!askResp && askResp.includes('SQLite'), `Away answered the ask with the recommended option: ${askResp}`);
   await cdp.screenshot(path.join(SHOTS_DIR, '06-away-answered.png'));
-  await cdp.waitFor(`document.body.innerText.includes('Pick a deploy target')`, { timeoutMs: 20_000, label: 'select question cancelled and recorded' });
-  const cancelled = responses(ompLog).find((l) => l.includes('"id":"q-1"') && l.includes('"cancelled":true'));
-  assert(!!cancelled && !responses(ompLog).some((l) => l.includes('Production')), `Away cancelled the select question, picked nothing: ${cancelled}`);
+  await cdp.waitFor(`document.body.innerText.includes('Pick a deploy target')`, { timeoutMs: 20_000, label: 'select question answered and recorded' });
+  const picked = responses(ompLog).find((l) => l.includes('"id":"q-1"') && l.includes('"value":"Staging"'));
+  assert(!!picked && !responses(ompLog).some((l) => l.includes('"cancelled":true')), `Away answered the select with its safe option (none negative, so the first), never cancelled: ${picked}`);
   await cdp.waitFor(`document.body.innerText.includes('Name the release')`, { timeoutMs: 20_000, label: 'input question answered and recorded' });
   const typed = responses(ompLog).find((l) => l.includes('"id":"q-2"') && l.includes('The user is away. Choose the best option yourself'));
   assert(!!typed, `Away answered the input question with the away reply: ${typed}`);
-  await cdp.waitFor(`document.body.innerText.includes('Not approved: the user is away')`, { timeoutMs: AWAY_TIMEOUT_MS + 25_000, label: 'approval denied after the shortened timeout' });
+  await cdp.waitFor(`document.body.innerText.includes('Delete the build folder?')`, { timeoutMs: 20_000, label: 'confirm answered and recorded' });
+  const declined = responses(ompLog).find((l) => l.includes('"id":"c-1"') && l.includes('"confirmed":false'));
+  assert(!!declined, `Away answered the confirm No: ${declined}`);
+  await cdp.waitFor(`document.body.innerText.includes("the agent's form")`, { timeoutMs: 20_000, label: 'form answered and recorded' });
+  const form = responses(ompLog).find((l) => l.includes('"id":"f-1"') && l.includes('"channel":"stable"'));
+  assert(!!form && !form.includes('cancelled'), `Away submitted the form with its default values: ${form}`);
+  await cdp.waitFor(`document.body.innerText.includes('Not approved: the user is away')`, { timeoutMs: 20_000, label: 'approval denied at once' });
   const denial = responses(ompLog).find((l) => l.includes('"id":"appr-1"') && l.includes('"value":"Deny"'));
   assert(!!denial && !responses(ompLog).some((l) => l.includes('Approve"')), `approval appr-1 was denied, never approved: ${denial}`);
+  const steers = ompLines(ompLog).filter((l) => l.includes('[Automatic, Away mode]'));
+  assert(steers.length >= 1, `the burst of automatic actions sent a coalesced reason steer (${steers.length} seen)`);
+  assert(steers.some((l) => l.includes('Answered by Away Mode')), `an answer steer "Answered by Away Mode" was sent (${steers.length} steers)`);
   await cdp.waitFor(`document.body.innerText.includes('away111done')`, { timeoutMs: 20_000, label: 'turn finished' });
+  // The fake OMP never acks a steer, so the denial's follow-up steer stays queued behind the in-flight one; frame_away.test.rs covers it.
   await cdp.screenshot(path.join(SHOTS_DIR, '07-away-denied.png'));
 
   await pickByClick(cdp, 'Interactive');
@@ -169,8 +183,9 @@ async function main() {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_DEBUG_LOG: ompLog,
-        REFRACT_FAKE_OMP_SCENARIO: 'away-112',
-        REFRACT_AWAY_APPROVAL_TIMEOUT_MS: String(AWAY_TIMEOUT_MS)
+        // Without the ack every Session start stalls 10 s on set_host_tools, past the plan-restart wait.
+        REFRACT_FAKE_OMP_HOST_TOOL_RECORD: path.join(SHOTS_DIR, 'host-tools.jsonl'),
+        REFRACT_FAKE_OMP_SCENARIO: 'away-112'
       }
     });
     child = launched.child;

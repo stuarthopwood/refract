@@ -10,7 +10,7 @@ Epic #1990 needs per-option notes, several recommended options, and a reason per
 - Native `ask` is off in every Refract Session: the per-launch `--config` overlay (`src-tauri/src/agent_tools/overlay.rs`) sets `ask.enabled: false` and pre-approves `refract_ask`. If the overlay cannot override the setting, a `--tools` allow-list is the fallback. Plain `omp` outside Refract keeps its native `ask`.
 - Input: the native `ask` shape plus optional per-option `recommended` and `reason`; the question-level `recommended` index goes. Single-choice allows at most one recommended option; multi-select allows several.
 - Result: numbered plain text Refract composes, one entry per question with the quoted question, the picked options by letter and label, "(recommended)" where it applies, each note on its own line under its option (at most 1000 characters), and "Typed:" for free text.
-- No timer. The card waits until the developer answers or cancels, or the turn is aborted; cancel and abort return a plain cancelled result. Away Mode stays with #2031.
+- No timer. The card waits until the developer answers or cancels, or the turn is aborted; cancel and abort return a plain cancelled result. Away Mode answers it ([ADR 0014](0014-away-mode-answers-never-cancels.md)).
 
 **Considered options:**
 
