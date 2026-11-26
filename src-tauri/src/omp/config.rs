@@ -104,33 +104,32 @@ pub trait OmpExecutor: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
         self.call(args, failure_message, strip_env_vars)
     }
+
+    /// One `omp config get/set/list` or `--version` call. The default runs it under the config
+    /// deadline with no lock; `RealOmpExecutor` serialises these calls process-wide.
+    fn call_config<'a>(
+        &'a self,
+        args: &'a [String],
+        failure_message: &'a str,
+        strip_env_vars: &'a [&'a str],
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        Box::pin(async move {
+            let call = self.call(args, failure_message, strip_env_vars);
+            match tokio::time::timeout(Duration::from_millis(TIMEOUT_MS), call).await {
+                Ok(result) => result,
+                Err(_) => Err(timeout_error()),
+            }
+        })
+    }
 }
 
 pub struct RealOmpExecutor;
 
-/// Serialises every `omp config get/set` call process-wide (`omp models` never touches config).
+/// Serialises every real `omp config get/set` call process-wide (`omp models` never touches config).
 /// Concurrent `omp` on one scratch cwd was suspected, not confirmed, to return partial config.
+/// Only `RealOmpExecutor` takes it: an in-process executor has no `omp` process to protect, and
+/// sharing the lock would queue it behind every real call in the process.
 static OMP_INVOCATION_LOCK: AsyncMutex<()> = AsyncMutex::const_new(());
-
-/// The deadline starts once the lock is held: a call queued behind slow edits must not time out
-/// before it has run at all.
-async fn call_config_locked(
-    executor: &dyn OmpExecutor,
-    args: &[String],
-    failure_message: &str,
-    strip_env_vars: &[&str],
-) -> Result<String, OmpConfigError> {
-    let _permit = OMP_INVOCATION_LOCK.lock().await;
-    match tokio::time::timeout(
-        Duration::from_millis(TIMEOUT_MS),
-        executor.call(args, failure_message, strip_env_vars),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => Err(timeout_error()),
-    }
-}
 
 impl OmpExecutor for RealOmpExecutor {
     fn call<'a>(
@@ -164,6 +163,27 @@ impl OmpExecutor for RealOmpExecutor {
             let cwd = ensure_scratch_dir().await?;
             let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
             run_omp(&arg_refs, failure_message, strip_env_vars, &cwd, timeout).await
+        })
+    }
+
+    /// Holds the process-wide lock across the call, so a queued config call runs its own full
+    /// deadline once it is released and cannot time out while it waits.
+    fn call_config<'a>(
+        &'a self,
+        args: &'a [String],
+        failure_message: &'a str,
+        strip_env_vars: &'a [&'a str],
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        Box::pin(async move {
+            // A refused call never starts `omp`, so it must not queue behind a real one.
+            #[cfg(test)]
+            {
+                if let Some(refusal) = refuse_real_omp::refuse() {
+                    return Err(refusal);
+                }
+            }
+            let _permit = OMP_INVOCATION_LOCK.lock().await;
+            self.call(args, failure_message, strip_env_vars).await
         })
     }
 }
@@ -449,13 +469,9 @@ pub async fn get_config_with(
         key.to_string(),
         "--json".to_string(),
     ];
-    let stdout = call_config_locked(
-        executor,
-        &args,
-        "Could not read omp config.",
-        strip_env_vars,
-    )
-    .await?;
+    let stdout = executor
+        .call_config(&args, "Could not read omp config.", strip_env_vars)
+        .await?;
     parse_object_json(&stdout)
 }
 
@@ -473,13 +489,9 @@ pub async fn list_config_with(
         "list".to_string(),
         "--json".to_string(),
     ];
-    let stdout = call_config_locked(
-        executor,
-        &args,
-        "Could not read omp config.",
-        strip_env_vars,
-    )
-    .await?;
+    let stdout = executor
+        .call_config(&args, "Could not read omp config.", strip_env_vars)
+        .await?;
     parse_object_json(&stdout)
 }
 
@@ -504,13 +516,9 @@ pub async fn set_config_with(
         "--".to_string(),
         value_arg,
     ];
-    let stdout = call_config_locked(
-        executor,
-        &args,
-        "Could not save omp config.",
-        strip_env_vars,
-    )
-    .await?;
+    let stdout = executor
+        .call_config(&args, "Could not save omp config.", strip_env_vars)
+        .await?;
     parse_object_json(&stdout)
 }
 
@@ -519,8 +527,9 @@ pub async fn installed_version_with(
     executor: &dyn OmpExecutor,
 ) -> Result<(u32, u32, u32), OmpConfigError> {
     let args = vec!["--version".to_string()];
-    let stdout =
-        call_config_locked(executor, &args, "Could not read the omp version.", &[]).await?;
+    let stdout = executor
+        .call_config(&args, "Could not read the omp version.", &[])
+        .await?;
     find_version(&stdout)
         .map(|(_, major, minor, patch)| (major, minor, patch))
         .ok_or_else(|| {
