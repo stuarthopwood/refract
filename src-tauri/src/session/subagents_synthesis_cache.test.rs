@@ -166,7 +166,7 @@ fn a_discarded_cache_never_recreates_the_session_folder() {
     let session = dir.path().join("gone");
     let mut cache = SynthesisCache::load(&session);
     let pending = cache.insert("t1", synthesis("One")).unwrap();
-    cache.discard();
+    cache.discarder().discard();
     pending.write().unwrap();
     assert!(!session.exists());
 }
@@ -208,12 +208,46 @@ async fn removing_a_session_cache_deletes_its_files_and_empty_folder_only() {
     let mut cache = SynthesisCache::load(&dir);
     cache.insert_and_persist("t1", synthesis("One")).unwrap();
     std::fs::write(dir.join("subagent-synthesis.json.1.2.tmp"), "torn").unwrap();
-    let other = session_cache_dir(data.path(), "s2").unwrap();
-    std::fs::create_dir_all(&other).unwrap();
 
     remove_session_cache(data.path(), "s1").await;
-    remove_session_cache(data.path(), "../s2").await;
 
     assert!(!dir.exists());
-    assert!(other.exists());
+}
+
+#[tokio::test]
+async fn removing_a_session_cache_keeps_the_folder_and_any_unrelated_file_in_it() {
+    let data = tempfile::tempdir().unwrap();
+    let dir = session_cache_dir(data.path(), "s1").unwrap();
+    let mut cache = SynthesisCache::load(&dir);
+    cache.insert_and_persist("t1", synthesis("One")).unwrap();
+    std::fs::write(dir.join("subagent-synthesis.json.1.2.tmp"), "torn").unwrap();
+    std::fs::write(dir.join("notes.txt"), "mine").unwrap();
+
+    remove_session_cache(data.path(), "s1").await;
+
+    assert!(!dir.join(CACHE_FILE).exists());
+    assert!(tmp_files(&dir).is_empty());
+    assert_eq!(
+        std::fs::read_to_string(dir.join("notes.txt")).unwrap(),
+        "mine"
+    );
+}
+
+#[tokio::test]
+async fn a_traversing_session_id_removes_nothing_outside_the_sessions_folder() {
+    let data = tempfile::tempdir().unwrap();
+    // `data/sessions/../s2` is `data/s2`: where a traversing id would reach.
+    let outside = data.path().join("s2");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("sentinel"), "keep").unwrap();
+    std::fs::write(outside.join(CACHE_FILE), "{}").unwrap();
+    std::fs::create_dir_all(data.path().join("sessions")).unwrap();
+
+    remove_session_cache(data.path(), "../s2").await;
+
+    assert_eq!(
+        std::fs::read_to_string(outside.join("sentinel")).unwrap(),
+        "keep"
+    );
+    assert!(outside.join(CACHE_FILE).exists());
 }
