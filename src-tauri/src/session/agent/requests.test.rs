@@ -1,7 +1,7 @@
 // Unit tests for `is_chat_answer`. Scoped to that one function.
 
 use super::*;
-use crate::session::agent::AskOption;
+use crate::session::agent::{AskOption, AskQuestion};
 
 #[test]
 fn is_chat_answer_accepts_every_documented_shape() {
@@ -532,4 +532,22 @@ fn is_chat_answer_accepts_form_data_and_rejects_malformed_data() {
     assert!(!is_chat_answer(&json!({ "data": "x" })));
     assert!(!is_chat_answer(&json!({ "data": [] })));
     assert!(!is_chat_answer(&json!({ "data": { "a": false } })));
+}
+
+#[test]
+fn an_approval_title_with_a_multibyte_detail_line_does_not_panic() {
+    for detail in ["éé", "ééé", "😀😀"] {
+        let frame = json!({
+            "id": "a1",
+            "method": "select",
+            "title": format!("Allow tool: x\n{detail}"),
+            "options": ["Allow", "Deny"],
+        });
+        match classify_dialog(&frame) {
+            DialogClassification::Request(PendingRequest::Approval { target, .. }) => {
+                assert_eq!(target, "x");
+            }
+            _ => panic!("expected an approval card"),
+        }
+    }
 }

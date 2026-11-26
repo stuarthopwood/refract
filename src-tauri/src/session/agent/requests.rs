@@ -2,14 +2,14 @@
 
 use serde_json::{json, Value};
 
-use crate::agent_tools::ask_result::AskAnswer;
 use crate::omp::transcript::RequestResolution;
 
+use super::ask_answers::{host_ask_reply, validate_ask_answers};
 use super::ask_frame::parse_ask_questions;
 use super::commands::string_array;
 use super::form_frame::{build_form_response, validate_form_data};
 use super::launch_support::truncate;
-use super::{AgentError, AskQuestion, PendingRequest, SessionAgent, SessionStatus};
+use super::{AgentError, PendingRequest, SessionAgent, SessionStatus};
 
 impl SessionAgent {
     /// Writes the `extension_ui_response` for a pending request and marks it resolved. The
@@ -39,13 +39,14 @@ impl SessionAgent {
     ) -> Result<(), AgentError> {
         // A Refract-owned card (agent tool channel) completes in-process; omp never saw its id.
         let owned = crate::agent_tools::approval::is_owned(&request_id);
-        let (request, proc) = {
-            let state = self.state.lock().await;
-            let request = state
+        // The request leaves `pending` in the same lock section that finds it, so concurrent answerers
+        // (Away's `on_request` and `sweep`, or the renderer) cannot both reply, log and steer.
+        let (index, request, proc) = {
+            let mut state = self.state.lock().await;
+            let index = state
                 .pending
                 .iter()
-                .find(|r| r.request_id() == request_id)
-                .cloned()
+                .position(|r| r.request_id() == request_id)
                 .ok_or_else(|| {
                     AgentError::new(
                         "not-found",
@@ -57,7 +58,7 @@ impl SessionAgent {
                 })?;
             let proc = state.process.clone();
             // A host-call card is answered in-process, so it needs no live omp process either.
-            if proc.is_none() && !owned && !request.is_host_ask() {
+            if proc.is_none() && !owned && !state.pending[index].is_host_ask() {
                 return Err(AgentError::new(
                     "agent-not-running",
                     format!(
@@ -66,29 +67,21 @@ impl SessionAgent {
                     ),
                 ));
             }
-            (request, proc)
+            (index, state.pending.remove(index), proc)
         };
-        // A host ask whose call is gone (cancelled or settled elsewhere) reaches no one.
-        let mut late_ask = false;
-        if let PendingRequest::Ask {
-            questions,
-            host_call: true,
-            ..
-        } = &request
-        {
-            let reply = host_ask_reply(questions, &answer, by_away)
-                .map_err(|err| AgentError::new("invalid-argument", err))?;
-            late_ask = !self.agent_tools.answer_ask(&request_id, reply);
-        } else if owned {
-            let decision = crate::agent_tools::approval::decision(&answer);
-            self.agent_tools.answer_approval(&request_id, decision);
-        } else if let Some(proc) = proc {
-            let response = build_dialog_response(&request_id, &request, &answer)
-                .map_err(|err| AgentError::new("invalid-argument", err))?;
-            proc.send_raw(response)
-                .await
-                .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
-        }
+        let delivered = self
+            .deliver_answer(&request_id, &request, &answer, by_away, owned, proc)
+            .await;
+        let late_ask = match delivered {
+            Ok(late_ask) => late_ask,
+            Err(err) => {
+                // Nothing reached omp, so the request is still waiting for an answer.
+                let mut state = self.state.lock().await;
+                let at = index.min(state.pending.len());
+                state.pending.insert(at, request);
+                return Err(err);
+            }
+        };
 
         // `cancelled: true` wins, then `approve`, otherwise a question answer; a late answer is no answer.
         // `{data, cancelled: false}` is an answer, so only an explicit `true` cancels.
@@ -105,8 +98,7 @@ impl SessionAgent {
         };
         self.upsert_request_row(&request_id, Some(resolved)).await;
         let became_working = {
-            let mut state = self.state.lock().await;
-            state.pending.retain(|r| r.request_id() != request_id);
+            let state = self.state.lock().await;
             state.pending.is_empty() && state.status == SessionStatus::NeedsYou
         };
         self.events
@@ -124,6 +116,40 @@ impl SessionAgent {
             ));
         }
         Ok(())
+    }
+
+    /// Sends the answer to whoever is waiting for it; true when a host ask's call is already gone.
+    async fn deliver_answer(
+        &self,
+        request_id: &str,
+        request: &PendingRequest,
+        answer: &Value,
+        by_away: bool,
+        owned: bool,
+        proc: Option<std::sync::Arc<crate::omp::process::OmpProcess>>,
+    ) -> Result<bool, AgentError> {
+        // A host ask whose call is gone (cancelled or settled elsewhere) reaches no one.
+        if let PendingRequest::Ask {
+            questions,
+            host_call: true,
+            ..
+        } = request
+        {
+            let reply = host_ask_reply(questions, answer, by_away)
+                .map_err(|err| AgentError::new("invalid-argument", err))?;
+            return Ok(!self.agent_tools.answer_ask(request_id, reply));
+        }
+        if owned {
+            let decision = crate::agent_tools::approval::decision(answer);
+            self.agent_tools.answer_approval(request_id, decision);
+        } else if let Some(proc) = proc {
+            let response = build_dialog_response(request_id, request, answer)
+                .map_err(|err| AgentError::new("invalid-argument", err))?;
+            proc.send_raw(response)
+                .await
+                .map_err(|err| AgentError::new("prompt-failed", err.to_string()))?;
+        }
+        Ok(false)
     }
 }
 
@@ -173,7 +199,11 @@ fn pick_approval_target(tool: &str, details: &[String]) -> String {
     const LABELS: &[&str] = &["Path:", "File:", "Command:"];
     if let Some(first) = details.first() {
         for label in LABELS {
-            if first.len() >= label.len() && first[..label.len()].eq_ignore_ascii_case(label) {
+            // `get` because the label length can land inside a multi-byte character of the title.
+            if first
+                .get(..label.len())
+                .is_some_and(|head| head.eq_ignore_ascii_case(label))
+            {
                 return truncate(first[label.len()..].trim(), MAX_TARGET_LENGTH);
             }
         }
@@ -337,139 +367,6 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
-}
-
-/// The reply for a host-call card: `None` for the developer's cancel, else the validated answers.
-/// `by_away` comes from the caller, never from the JSON, so no payload can claim it.
-fn host_ask_reply(
-    questions: &[AskQuestion],
-    answer: &Value,
-    by_away: bool,
-) -> Result<Option<Vec<AskAnswer>>, String> {
-    if answer.get("cancelled") == Some(&Value::Bool(true)) {
-        return Ok(None);
-    }
-    let answers = answer
-        .get("answers")
-        .and_then(Value::as_array)
-        .ok_or_else(|| "expected an answers array for the ask request".to_string())?;
-    validate_ask_answers(questions, answers)?;
-    let mut replies: Vec<AskAnswer> = serde_json::from_value(Value::Array(answers.clone()))
-        .map_err(|err| format!("malformed answers: {err}"))?;
-    for reply in &mut replies {
-        reply.by_away = by_away;
-    }
-    Ok(Some(replies))
-}
-
-const MAX_NOTE_CHARS: usize = 1000;
-
-/// Each note names an offered option that is also picked, in at most `MAX_NOTE_CHARS` characters.
-fn validate_notes(
-    question: &AskQuestion,
-    selected: &[Value],
-    notes: Option<&Value>,
-) -> Result<(), String> {
-    let Some(notes) = notes else {
-        return Ok(());
-    };
-    let id = &question.id;
-    let notes = notes
-        .as_array()
-        .ok_or_else(|| format!("answer {id} has a non-array notes"))?;
-    for note in notes {
-        let option = note
-            .get("option")
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("answer {id} has a note without an option"))?;
-        let text = note
-            .get("text")
-            .and_then(Value::as_str)
-            .ok_or_else(|| format!("answer {id} has a note without text"))?;
-        if !question.options.iter().any(|o| o.label == option) {
-            return Err(format!(
-                "answer {id} has a note on an option not offered: {option}"
-            ));
-        }
-        if !selected.iter().any(|label| label.as_str() == Some(option)) {
-            return Err(format!(
-                "answer {id} has a note on an option not picked: {option}"
-            ));
-        }
-        if text.chars().count() > MAX_NOTE_CHARS {
-            return Err(format!(
-                "answer {id} has a note over {MAX_NOTE_CHARS} characters"
-            ));
-        }
-    }
-    Ok(())
-}
-
-/// Rejects answers that do not match the pending question: wrong count, order, or label.
-const MAX_ASK_CUSTOM_INPUT_LEN: usize = 4096;
-
-fn validate_ask_answers(questions: &[AskQuestion], answers: &[Value]) -> Result<(), String> {
-    if answers.len() != questions.len() {
-        return Err(format!(
-            "expected {} answers, got {}",
-            questions.len(),
-            answers.len()
-        ));
-    }
-    for (question, answer) in questions.iter().zip(answers) {
-        let obj = answer
-            .as_object()
-            .ok_or_else(|| "answer entry is not an object".to_string())?;
-        let id = obj
-            .get("id")
-            .and_then(Value::as_str)
-            .ok_or_else(|| "answer entry has no id".to_string())?;
-        if id != question.id {
-            return Err(format!(
-                "answer id {id} does not match expected {}",
-                question.id
-            ));
-        }
-        let selected = obj
-            .get("selectedOptions")
-            .and_then(Value::as_array)
-            .ok_or_else(|| format!("answer {id} has no selectedOptions array"))?;
-        let mut selected_count = 0usize;
-        for label in selected {
-            let label = label
-                .as_str()
-                .ok_or_else(|| format!("answer {id} has a non-string selectedOptions entry"))?;
-            if !question.options.iter().any(|o| o.label == label) {
-                return Err(format!(
-                    "answer {id} selected an option not offered: {label}"
-                ));
-            }
-            selected_count += 1;
-        }
-        if !question.multi && selected_count > 1 {
-            return Err(format!(
-                "answer {id} is single-choice but selected {selected_count} options"
-            ));
-        }
-        validate_notes(question, selected, obj.get("notes"))?;
-        match obj.get("customInput") {
-            None => {}
-            Some(Value::String(text)) => {
-                if text.chars().count() > MAX_ASK_CUSTOM_INPUT_LEN {
-                    return Err(format!(
-                        "answer {id} customInput exceeds {MAX_ASK_CUSTOM_INPUT_LEN} characters"
-                    ));
-                }
-                if !question.multi && selected_count > 0 {
-                    return Err(format!(
-                        "answer {id} is single-choice but sent both an option and customInput"
-                    ));
-                }
-            }
-            Some(_) => return Err(format!("answer {id} has a non-string customInput")),
-        }
-    }
-    Ok(())
 }
 
 /// Finds the plain approve option by position: OMP maps any unknown label to deny (#1140).

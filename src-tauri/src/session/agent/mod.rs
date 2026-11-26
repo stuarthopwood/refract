@@ -14,6 +14,7 @@ use crate::omp::transcript::{NoticeLevel, RequestResolution, TranscriptItem, Tra
 use crate::store::registry::{RegistryStore, Session};
 use crate::store::settings::{ApprovalMode, SettingsStore};
 
+mod ask_answers;
 mod ask_frame;
 mod chat;
 mod chat_restore;

@@ -1,12 +1,18 @@
 // Default answers for an OMP `form` dialog, so Away Mode can submit it with nobody there to fill it.
 // A small tolerant tokenizer, not a validator: OMP checks the submitted data itself.
 
+use std::collections::HashMap;
+
 use serde_json::{json, Map, Number, Value};
 
-use super::away::ASK_FALLBACK;
+use super::away::{safe_position, ASK_FALLBACK};
 
 /// Matches the key cap `validate_form_data` enforces on a submission.
 const MAX_FIELDS: usize = 100;
+/// A form is a few KiB; the cap keeps a hostile one from costing a long scan.
+const MAX_HTML_BYTES: usize = 256 * 1024;
+/// Per choice group, so the duplicate check stays cheap on a huge list.
+const MAX_CHOICES: usize = 1000;
 
 struct Tag {
     name: String,
@@ -34,8 +40,23 @@ enum Event {
 
 struct Choice {
     value: String,
+    /// The text a person reads for it; empty when the control has none.
+    label: String,
     checked: bool,
     disabled: bool,
+    /// A pre-checked checkbox stays ticked only when the form marks it required; options and radios
+    /// have no such gate.
+    keeps_check: bool,
+}
+
+impl Choice {
+    fn text(&self) -> &str {
+        if self.label.is_empty() {
+            &self.value
+        } else {
+            &self.label
+        }
+    }
 }
 
 enum Field {
@@ -166,27 +187,23 @@ fn text_or_fallback(text: &str) -> Value {
     })
 }
 
-/// The checked choices; a single-choice field with none checked takes its first enabled one, as a
-/// browser would, while a multi-choice field stays empty rather than ticking boxes on the user's behalf.
+/// A single-choice field takes its marked choice, else the safe (negative) one, else the first, among
+/// the enabled ones. A multi-choice field submits only checked choices the form marks required: it
+/// never ticks boxes on the user's behalf, and an empty one is left out.
 fn pick(choices: &[Choice], many: bool) -> Option<Value> {
-    let checked: Vec<&str> = choices
-        .iter()
-        .filter(|c| c.checked && !c.disabled)
-        .map(|c| c.value.as_str())
-        .collect();
-    let picked = if checked.is_empty() {
-        if many {
-            return None;
-        }
-        choices
+    let enabled: Vec<&Choice> = choices.iter().filter(|c| !c.disabled).collect();
+    let picked: Vec<&str> = if many {
+        enabled
             .iter()
-            .find(|c| !c.disabled)
-            .map(|c| vec![c.value.as_str()])
-            .unwrap_or_default()
-    } else if many {
-        checked
+            .filter(|c| c.checked && c.keeps_check)
+            .map(|c| c.value.as_str())
+            .collect()
+    } else if let Some(marked) = enabled.iter().rev().find(|c| c.checked) {
+        vec![marked.value.as_str()]
     } else {
-        checked[checked.len() - 1..].to_vec()
+        safe_position(enabled.iter().map(|c| c.text()))
+            .map(|i| vec![enabled[i].value.as_str()])
+            .unwrap_or_default()
     };
     let first = *picked.first()?;
     Some(if many && choices.len() > 1 {
@@ -196,7 +213,12 @@ fn pick(choices: &[Choice], many: bool) -> Option<Value> {
     })
 }
 
-fn read_input(tag: &Tag, trailing: &str, fields: &mut Vec<Field>) {
+fn read_input(
+    tag: &Tag,
+    trailing: &str,
+    fields: &mut Vec<Field>,
+    groups: &mut HashMap<(String, bool), usize>,
+) {
     let kind = tag
         .attr("type")
         .unwrap_or("text")
@@ -216,25 +238,29 @@ fn read_input(tag: &Tag, trailing: &str, fields: &mut Vec<Field>) {
             }
             let choice = Choice {
                 value: value.to_string(),
+                label: trailing.to_string(),
                 checked: tag.has("checked"),
                 disabled: tag.has("disabled"),
+                keeps_check: radio || tag.has("required"),
             };
-            let group = fields.iter_mut().find_map(|field| match field {
-                Field::Group {
-                    name: n,
-                    radio: r,
-                    choices,
-                } if n == name && *r == radio => Some(choices),
-                _ => None,
-            });
-            match group {
-                Some(choices) if choices.iter().any(|c| c.value == choice.value) => {}
-                Some(choices) => choices.push(choice),
-                None => fields.push(Field::Group {
-                    name: name.to_string(),
-                    radio,
-                    choices: vec![choice],
-                }),
+            match groups.get(&(name.to_string(), radio)) {
+                Some(&index) => {
+                    if let Field::Group { choices, .. } = &mut fields[index] {
+                        if choices.len() < MAX_CHOICES
+                            && !choices.iter().any(|c| c.value == choice.value)
+                        {
+                            choices.push(choice);
+                        }
+                    }
+                }
+                None => {
+                    groups.insert((name.to_string(), radio), fields.len());
+                    fields.push(Field::Group {
+                        name: name.to_string(),
+                        radio,
+                        choices: vec![choice],
+                    });
+                }
             }
         }
         "number" | "range" => {
@@ -267,11 +293,13 @@ fn read_select(tag: &Tag, events: &[Event], from: usize, fields: &mut Vec<Field>
             Event::Open(option) if option.name == "option" => {
                 let label = text_at(events, at + 1);
                 let value = option.attr("value").unwrap_or(label);
-                if !choices.iter().any(|c| c.value == value) {
+                if choices.len() < MAX_CHOICES && !choices.iter().any(|c| c.value == value) {
                     choices.push(Choice {
                         value: value.to_string(),
+                        label: label.to_string(),
                         checked: option.has("selected"),
                         disabled: option.has("disabled"),
+                        keeps_check: true,
                     });
                 }
             }
@@ -289,20 +317,31 @@ fn read_select(tag: &Tag, events: &[Event], from: usize, fields: &mut Vec<Field>
     at
 }
 
-/// The `data` object Away Mode submits: the first (or marked) option of each choice field, and the Away
-/// fallback text for an empty text field. Controls without a `name` are left out, as a submit would.
+/// The longest prefix of `html` within `MAX_HTML_BYTES`, cut on a character boundary.
+fn capped(html: &str) -> &str {
+    let mut end = html.len().min(MAX_HTML_BYTES);
+    while !html.is_char_boundary(end) {
+        end -= 1;
+    }
+    &html[..end]
+}
+
+/// The `data` object Away Mode submits: the safe (negative) option of each choice field, else its
+/// first, and the Away fallback text for an empty text field. Controls without a `name` are left out,
+/// as a submit would. Only the first `MAX_HTML_BYTES` of the form and `MAX_FIELDS` fields are read.
 pub fn form_defaults(html: &str) -> Value {
-    let events = tokenize(html);
+    let events = tokenize(capped(html));
     let mut fields: Vec<Field> = Vec::new();
+    let mut groups: HashMap<(String, bool), usize> = HashMap::new();
     let mut at = 0;
-    while at < events.len() {
+    while at < events.len() && fields.len() < MAX_FIELDS {
         let Event::Open(tag) = &events[at] else {
             at += 1;
             continue;
         };
         at += 1;
         match tag.name.as_str() {
-            "input" => read_input(tag, text_at(&events, at), &mut fields),
+            "input" => read_input(tag, text_at(&events, at), &mut fields, &mut groups),
             "textarea" => {
                 if let Some(name) = tag.attr("name").map(str::trim).filter(|n| !n.is_empty()) {
                     let body = match events.get(at) {
@@ -326,11 +365,9 @@ pub fn form_defaults(html: &str) -> Value {
                 choices,
             } => (name, pick(&choices, !radio)),
         };
-        let Some(value) = value else { continue };
-        if data.len() >= MAX_FIELDS && !data.contains_key(&name) {
-            break;
+        if let Some(value) = value {
+            data.insert(name, value);
         }
-        data.insert(name, value);
     }
     Value::Object(data)
 }

@@ -119,7 +119,7 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   await cdp.screenshot(path.join(SHOTS_DIR, '06-away-answered.png'));
   await cdp.waitFor(`document.body.innerText.includes('Pick a deploy target')`, { timeoutMs: 20_000, label: 'select question answered and recorded' });
   const picked = responses(ompLog).find((l) => l.includes('"id":"q-1"') && l.includes('"value":"Staging"'));
-  assert(!!picked && !responses(ompLog).some((l) => l.includes('"cancelled":true')), `Away answered the select with its first option, never cancelled: ${picked}`);
+  assert(!!picked && !responses(ompLog).some((l) => l.includes('"cancelled":true')), `Away answered the select with its safe option (none negative, so the first), never cancelled: ${picked}`);
   await cdp.waitFor(`document.body.innerText.includes('Name the release')`, { timeoutMs: 20_000, label: 'input question answered and recorded' });
   const typed = responses(ompLog).find((l) => l.includes('"id":"q-2"') && l.includes('The user is away. Choose the best option yourself'));
   assert(!!typed, `Away answered the input question with the away reply: ${typed}`);
@@ -133,7 +133,7 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   const denial = responses(ompLog).find((l) => l.includes('"id":"appr-1"') && l.includes('"value":"Deny"'));
   assert(!!denial && !responses(ompLog).some((l) => l.includes('Approve"')), `approval appr-1 was denied, never approved: ${denial}`);
   const steers = ompLines(ompLog).filter((l) => l.includes('[Automatic, Away mode]'));
-  assert(steers.length >= 5, `each automatic action sent a reason steer (${steers.length} seen)`);
+  assert(steers.length >= 1, `the burst of automatic actions sent a coalesced reason steer (${steers.length} seen)`);
   await cdp.waitFor(`document.body.innerText.includes('away111done')`, { timeoutMs: 20_000, label: 'turn finished' });
   await cdp.screenshot(path.join(SHOTS_DIR, '07-away-denied.png'));
 

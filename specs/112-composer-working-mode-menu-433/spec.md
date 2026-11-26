@@ -18,7 +18,7 @@ A per-Session single-choice working-mode menu beside the Approval mode pill: Int
 3. Grill: while on, each prompt gets a hidden instruction (interview one question at a time with a recommended answer, against CONTEXT.md and docs/adr, no code edits until told). No restart. The instruction is not shown in the transcript.
 4. Away (policy lives in `session/working_mode/away.rs`, reusable by #479):
    - `ask` requests are answered at once with the recommended option; with none, the reply is "The user is away. Choose the best option yourself, state your choice, and continue."
-   - Approvals: Approval mode decides first. Any still pending are denied after 5 minutes with "Not approved: the user is away. Pick a safe alternative or skip this step and continue." Never auto-approved. `REFRACT_AWAY_APPROVAL_TIMEOUT_MS` shortens the timer for live checks only.
+   - Approvals: Approval mode decides first. Any still pending are denied at once with "Not approved: the user is away. Pick a safe alternative or skip this step and continue." Never auto-approved. The rules are FR-151.
    - Every automatic answer or denial is recorded as a transcript notice starting "Automatic (Away mode)" with the original question.
    - Leaving Away posts a "While you were away" summary notice.
    - Away never starts a turn.
@@ -29,7 +29,7 @@ A per-Session single-choice working-mode menu beside the Approval mode pill: Int
 - Plan proposal/approval over RPC is unverified (needs a billed run); no review pane is built.
 - Away's reason steers are best-effort prompts; OMP may ignore them.
 - Grill is not applied to queued follow-ups, only prompts sent while idle.
-- Away answers every dialog and denies every approval at once, and never cancels, so the agent's turn is not stopped: a `select` gets its first option, a `confirm` gets No, a form gets its default values, an `input`/`editor` dialog gets "The user is away. Choose the best option yourself, state your choice, and continue.", and each is recorded and followed by one reason steer. The rules are FR-151 in spec 001 and ADR 0014.
+- Away answers every dialog and denies every approval at once, and never cancels except where there is nothing to answer with, so the agent's turn is not stopped: a `select` gets the safe (negative) option, else its first, a `confirm` gets No, a form gets its default values, an `input`/`editor` dialog gets "The user is away. Choose the best option yourself, state your choice, and continue.", and each is recorded and followed by one reason steer. The rules are FR-151 in spec 001 and ADR 0014.
 - The restart for a Plan switch may briefly flash a stopped state.
 
 ## Out of scope

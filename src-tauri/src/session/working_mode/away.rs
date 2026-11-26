@@ -1,5 +1,6 @@
 // Away policy (#433, #2031): answers every request at once and denies approvals. Never approves,
-// never cancels (a cancel stops the agent's turn), never starts a turn.
+// never cancels a request it can answer (a cancel stops the agent's turn), never starts a turn.
+// The only cancels are the ones with nothing to answer with; each is logged and steered.
 // Pure helpers are public so goal mode (#479) can reuse the same policy.
 
 use serde_json::{json, Value};
@@ -12,12 +13,21 @@ pub const APPROVAL_DENIAL: &str =
     "Not approved: the user is away. Pick a safe alternative or skip this step and continue.";
 pub const ANSWERED_STEER: &str = "[Automatic, Away mode] Answered by Away Mode: the user is away. Proceed on your best judgement.";
 pub const DENIED_STEER: &str = "[Automatic, Away mode] Not approved by Away Mode: the user is away. Pick a safe alternative or skip this step and continue.";
+pub const CANCELLED_STEER: &str = "[Automatic, Away mode] Your dialog had nothing Away Mode could answer it with, so it was cancelled: the user is away. Proceed on your best judgement.";
 
 const STEER_TIMEOUT_MS: u64 = 60_000;
+const LOG_CAP: usize = 200;
+const TEXT_CAP: usize = 200;
+
+/// Labels that read as the cautious answer; matched at the start of a label, on a word boundary.
+const SAFE_PREFIXES: [&str; 11] = [
+    "no", "deny", "block", "reject", "cancel", "skip", "stay", "refine", "don't", "do not", "keep",
+];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Answered,
+    Cancelled,
     Denied,
 }
 
@@ -29,15 +39,70 @@ pub struct Entry {
 }
 
 #[derive(Default)]
-pub struct Log(Vec<Entry>);
+pub struct Log {
+    entries: Vec<Entry>,
+    dropped: usize,
+    steering: bool,
+}
 
 impl Log {
+    /// Past the cap an entry is only counted, so a long Away stretch cannot grow the log without bound.
     pub(super) fn push(&mut self, entry: Entry) {
-        self.0.push(entry);
+        if self.entries.len() < LOG_CAP {
+            self.entries.push(entry);
+        } else {
+            self.dropped += 1;
+        }
     }
 
-    pub(super) fn take(&mut self) -> Vec<Entry> {
-        std::mem::take(&mut self.0)
+    pub(super) fn take(&mut self) -> (Vec<Entry>, usize) {
+        (
+            std::mem::take(&mut self.entries),
+            std::mem::take(&mut self.dropped),
+        )
+    }
+
+    /// True for the caller that now owns the steer slot; false while another steer is in flight.
+    fn begin_steer(&mut self) -> bool {
+        !std::mem::replace(&mut self.steering, true)
+    }
+
+    fn end_steer(&mut self) {
+        self.steering = false;
+    }
+}
+
+fn is_negative(label: &str) -> bool {
+    let head: String = label
+        .trim_start()
+        .chars()
+        .take(7)
+        .flat_map(char::to_lowercase)
+        .map(|c| if c == '\u{2019}' { '\'' } else { c })
+        .collect();
+    SAFE_PREFIXES.iter().any(|prefix| {
+        head.strip_prefix(prefix)
+            .is_some_and(|rest| rest.chars().next().is_none_or(|c| !c.is_alphanumeric()))
+    })
+}
+
+/// The position of the first label that reads as the safe (negative) answer, else the first label;
+/// `None` when there are no labels. An unattended pick must not approve, so "Yes" never beats "No".
+pub fn safe_position<'a>(labels: impl IntoIterator<Item = &'a str>) -> Option<usize> {
+    let mut seen = 0;
+    for (i, label) in labels.into_iter().enumerate() {
+        if is_negative(label) {
+            return Some(i);
+        }
+        seen = i + 1;
+    }
+    (seen > 0).then_some(0)
+}
+
+fn clip(text: &str) -> String {
+    match text.char_indices().nth(TEXT_CAP) {
+        Some((end, _)) => format!("{}…", &text[..end]),
+        None => text.to_string(),
     }
 }
 
@@ -144,7 +209,7 @@ pub(in crate::session) async fn on_request(agent: &SessionAgent, request: Pendin
 }
 
 /// A cancelled dialog stops the agent's turn, so every dialog gets an answer: a select takes its
-/// first option, a confirm says No (the safe answer), text gets the away reply.
+/// safe (negative) option, a confirm says No, text gets the away reply.
 async fn answer_question(
     agent: &SessionAgent,
     request_id: String,
@@ -152,21 +217,33 @@ async fn answer_question(
     input_kind: &str,
     options: Vec<String>,
 ) {
-    let (answer, outcome) = match (input_kind, options.first()) {
-        ("text", _) => (
+    let (answer, kind, outcome) = match input_kind {
+        "text" => (
             json!({ "value": ASK_FALLBACK }),
+            Kind::Answered,
             "the away reply".to_string(),
         ),
-        ("confirm", _) => (json!({ "confirmed": false }), "No".to_string()),
-        (_, Some(first)) => (json!({ "value": first }), first.clone()),
-        // An empty select has nothing to pick, so the only reply left is the cancel.
-        (_, None) => (
-            json!({ "cancelled": true }),
-            "no option to pick".to_string(),
+        "confirm" => (
+            json!({ "confirmed": false }),
+            Kind::Answered,
+            "No".to_string(),
         ),
+        _ => match safe_position(options.iter().map(String::as_str)) {
+            Some(i) => (
+                json!({ "value": options[i] }),
+                Kind::Answered,
+                options[i].clone(),
+            ),
+            // An empty select has nothing to pick, so the only reply left is the cancel.
+            None => (
+                json!({ "cancelled": true }),
+                Kind::Cancelled,
+                "no option to pick, so it was cancelled".to_string(),
+            ),
+        },
     };
     match agent.answer_request(request_id, answer).await {
-        Ok(()) => record(agent, Kind::Answered, title, outcome).await,
+        Ok(()) => record(agent, kind, title, outcome).await,
         Err(err) => log::warn!("away: could not answer question: {err}"),
     }
 }
@@ -217,10 +294,14 @@ async fn deny_approval(agent: &SessionAgent, request_id: String, what: String) {
 }
 
 async fn record(agent: &SessionAgent, kind: Kind, question: String, outcome: String) {
+    let (question, outcome) = (clip(&question), clip(&outcome));
     let text = match kind {
         Kind::Answered => format!("Automatic (Away mode): answered \"{question}\" with {outcome}."),
         Kind::Denied => {
             format!("Automatic (Away mode): denied approval for \"{question}\". {outcome}")
+        }
+        Kind::Cancelled => {
+            format!("Automatic (Away mode): cancelled \"{question}\": {outcome}.")
         }
     };
     agent
@@ -239,47 +320,79 @@ async fn record(agent: &SessionAgent, kind: Kind, question: String, outcome: Str
 /// Tells the agent why it got an automatic reply. Spawned because the frame loop that raised the
 /// request must keep reading the prompt's reply.
 fn steer(agent: &SessionAgent, kind: Kind) {
-    let message = match kind {
-        Kind::Answered => ANSWERED_STEER,
-        Kind::Denied => DENIED_STEER,
-    };
     let agent = agent.arc();
-    tokio::spawn(async move {
-        if !matches!(
-            agent.status().await,
-            SessionStatus::Working | SessionStatus::NeedsYou
-        ) {
-            return;
-        }
+    tokio::spawn(async move { send_steer(&agent, kind).await });
+}
+
+/// One steer at a time: a burst of replies while it is in flight rides on it instead of piling up.
+pub(in crate::session) async fn send_steer(agent: &SessionAgent, kind: Kind) {
+    if !agent
+        .with_working_mode_state(|s| s.away.begin_steer())
+        .await
+    {
+        return;
+    }
+    // Not atomic with the send below: a turn can settle in between. Accepted, the window is
+    // milliseconds and closing it would hold a lock across the RPC.
+    if matches!(
+        agent.status().await,
+        SessionStatus::Working | SessionStatus::NeedsYou
+    ) {
+        let message = match kind {
+            Kind::Answered => ANSWERED_STEER,
+            Kind::Denied => DENIED_STEER,
+            Kind::Cancelled => CANCELLED_STEER,
+        };
         let steer = json!({
             "type": "prompt",
             "message": message,
             "streamingBehavior": "steer",
         });
         let _ = agent.request_rpc(steer, STEER_TIMEOUT_MS).await;
-    });
+    }
+    agent.with_working_mode_state(|s| s.away.end_steer()).await;
+}
+
+/// For dialogs Refract cannot answer at all (malformed, unsupported); the caller still cancels them.
+/// Returns whether Away Mode handled the notice, so the caller skips its own.
+pub(in crate::session) async fn on_unanswerable(agent: &SessionAgent, what: String) -> bool {
+    super::ensure_loaded(agent).await;
+    if !super::is_away(agent).await {
+        return false;
+    }
+    let outcome = "nothing to answer it with, so it was cancelled".to_string();
+    record(agent, Kind::Cancelled, what, outcome).await;
+    true
 }
 
 /// The "While you were away" card, posted when leaving Away.
 pub(in crate::session) async fn summarise(agent: &SessionAgent) {
-    let entries = agent.with_working_mode_state(|s| s.away.take()).await;
-    let text = if entries.is_empty() {
-        "While you were away: nothing needed you.".to_string()
-    } else {
-        let lines = entries
-            .iter()
-            .map(|e| match e.kind {
-                Kind::Answered => format!("- Answered \"{}\" with {}.", e.question, e.outcome),
-                Kind::Denied => format!("- Denied approval for \"{}\".", e.question),
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!(
-            "While you were away, {} automatic action(s):\n{lines}",
-            entries.len()
-        )
-    };
-    agent.lane_notice(text, "info").await;
+    let (entries, dropped) = agent.with_working_mode_state(|s| s.away.take()).await;
+    agent
+        .lane_notice(summary_text(&entries, dropped), "info")
+        .await;
+}
+
+fn summary_text(entries: &[Entry], dropped: usize) -> String {
+    if entries.is_empty() {
+        return "While you were away: nothing needed you.".to_string();
+    }
+    let mut lines: Vec<String> = entries
+        .iter()
+        .map(|e| match e.kind {
+            Kind::Answered => format!("- Answered \"{}\" with {}.", e.question, e.outcome),
+            Kind::Denied => format!("- Denied approval for \"{}\".", e.question),
+            Kind::Cancelled => format!("- Cancelled \"{}\": {}.", e.question, e.outcome),
+        })
+        .collect();
+    if dropped > 0 {
+        lines.push(format!("- +{dropped} more"));
+    }
+    format!(
+        "While you were away, {} automatic action(s):\n{}",
+        entries.len() + dropped,
+        lines.join("\n")
+    )
 }
 
 #[cfg(test)]

@@ -37,14 +37,16 @@ fn a_radio_group_takes_the_checked_choice_else_the_first() {
 }
 
 #[test]
-fn checkboxes_stay_unticked_unless_the_form_ticked_them() {
+fn a_pre_checked_checkbox_stays_unticked_unless_the_form_requires_it() {
     let data = form_defaults(
         "<input type=\"checkbox\" name=\"agree\" value=\"yes\">\
+         <input type=\"checkbox\" name=\"news\" value=\"on\" checked>\
+         <input type=\"checkbox\" name=\"terms\" value=\"ok\" checked required>\
          <input type=\"checkbox\" name=\"tags\" value=\"a\" checked>\
-         <input type=\"checkbox\" name=\"tags\" value=\"b\" checked>\
+         <input type=\"checkbox\" name=\"tags\" value=\"b\" checked required>\
          <input type=\"checkbox\" name=\"tags\" value=\"c\">",
     );
-    assert_eq!(data, json!({ "tags": ["a", "b"] }));
+    assert_eq!(data, json!({ "terms": "ok", "tags": ["b"] }));
 }
 
 #[test]
@@ -97,4 +99,47 @@ fn a_form_with_more_than_the_field_cap_is_truncated_to_the_cap() {
         .collect();
     let data = form_defaults(&html);
     assert_eq!(data.as_object().unwrap().len(), MAX_FIELDS);
+}
+
+#[test]
+fn a_large_form_stops_at_the_field_cap_and_the_html_cap() {
+    let big: String = (0..50_000)
+        .map(|i| format!("<input name=\"f{i}\">"))
+        .collect();
+    assert!(big.len() > MAX_HTML_BYTES);
+    let data = form_defaults(&big);
+    assert_eq!(data.as_object().unwrap().len(), MAX_FIELDS);
+
+    let padded = format!("{}<input name=\"late\">", "é".repeat(MAX_HTML_BYTES));
+    assert_eq!(form_defaults(&padded), json!({}));
+}
+
+#[test]
+fn a_huge_radio_group_is_read_in_bounded_time() {
+    let html: String = (0..20_000)
+        .map(|i| format!("<input type=\"radio\" name=\"g\" value=\"v{i}\">"))
+        .collect();
+    let data = form_defaults(&html);
+    assert_eq!(data, json!({ "g": "v0" }));
+}
+
+#[test]
+fn a_radio_group_or_select_picks_the_safe_option_not_the_first() {
+    let data = form_defaults(
+        "<input type=\"radio\" name=\"ok\" value=\"yes\">Yes<input type=\"radio\" name=\"ok\" value=\"no\">No\
+         <select name=\"env\"><option>Staging</option><option>Production</option></select>\
+         <select name=\"go\"><option>Approve and execute</option><option>Refine plan</option></select>",
+    );
+    assert_eq!(
+        data,
+        json!({ "ok": "no", "env": "Staging", "go": "Refine plan" })
+    );
+}
+
+#[test]
+fn a_marked_radio_option_still_beats_the_safe_one() {
+    let data = form_defaults(
+        "<input type=\"radio\" name=\"ok\" value=\"yes\" checked><input type=\"radio\" name=\"ok\" value=\"no\">",
+    );
+    assert_eq!(data, json!({ "ok": "yes" }));
 }

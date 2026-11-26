@@ -175,16 +175,22 @@ impl SessionAgent {
             }
             DialogClassification::Malformed { id } => {
                 self.reply_cancelled(id).await;
-                self.append_notice("Couldn't show the agent's question.".to_string(), "error")
-                    .await;
+                let what = "the agent's question".to_string();
+                if !crate::session::working_mode::away::on_unanswerable(self, what).await {
+                    self.append_notice("Couldn't show the agent's question.".to_string(), "error")
+                        .await;
+                }
             }
             DialogClassification::Unsupported { id, method } => {
                 self.reply_cancelled(id).await;
-                self.append_notice(
-                    format!("Refract can't show the agent's \"{method}\" dialog yet, so it was cancelled."),
-                    "warning",
-                )
-                .await;
+                let what = format!("the agent's \"{method}\" dialog");
+                if !crate::session::working_mode::away::on_unanswerable(self, what).await {
+                    self.append_notice(
+                        format!("Refract can't show the agent's \"{method}\" dialog yet, so it was cancelled."),
+                        "warning",
+                    )
+                    .await;
+                }
             }
             DialogClassification::Request(request) => {
                 // push_pending_request handles the row, NeedsYou, and the emit in one call.
