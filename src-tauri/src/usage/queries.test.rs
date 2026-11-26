@@ -314,16 +314,24 @@ fn project_breakdown_filters_by_id_and_shows_the_current_name() {
 
     let rows = breakdown(&conn, &filters("7d"), BreakdownBy::Project, &ctx()).unwrap();
 
-    let named = rows.iter().find(|r| r.id.as_deref() == Some("proj")).unwrap();
+    let named = rows
+        .iter()
+        .find(|r| r.id.as_deref() == Some("proj"))
+        .unwrap();
     assert_eq!(named.label, "Refract");
     // A row whose name was never recorded is labelled, never shown by its raw id.
-    let fallback = rows.iter().find(|r| r.id.as_deref() == Some("gone")).unwrap();
+    let fallback = rows
+        .iter()
+        .find(|r| r.id.as_deref() == Some("gone"))
+        .unwrap();
     assert_eq!(fallback.label, "Unknown project");
     let by_name = Filters {
         project: Some("Refract".into()),
         ..filters("7d")
     };
-    assert!(breakdown(&conn, &by_name, BreakdownBy::Project, &ctx()).unwrap().is_empty());
+    assert!(breakdown(&conn, &by_name, BreakdownBy::Project, &ctx())
+        .unwrap()
+        .is_empty());
 }
 
 #[test]
@@ -331,7 +339,11 @@ fn calls_name_the_project_per_row_and_sort_by_that_name_across_pages() {
     let conn = scratch_db();
     crate::usage::rollup::upsert_project(&conn, "p-b", "Beta").unwrap();
     crate::usage::rollup::upsert_project(&conn, "p-a", "Alpha").unwrap();
-    for (id, project, ago) in [("1", "p-b", 3_000), ("2", "p-a", 2_000), ("3", "gone", 1_000)] {
+    for (id, project, ago) in [
+        ("1", "p-b", 3_000),
+        ("2", "p-a", 2_000),
+        ("3", "gone", 1_000),
+    ] {
         let row = MessageRow {
             entry_id: id.into(),
             ts: NOW - ago,
@@ -351,12 +363,18 @@ fn calls_name_the_project_per_row_and_sort_by_that_name_across_pages() {
         dir: "asc".into(),
     };
     let page = |index| {
-        calls(&conn, &filters("7d"), &sort, Page { index, size: 2 }, &ctx())
-            .unwrap()
-            .rows
-            .into_iter()
-            .map(|r| r.project)
-            .collect::<Vec<_>>()
+        calls(
+            &conn,
+            &filters("7d"),
+            &sort,
+            Page { index, size: 2 },
+            &ctx(),
+        )
+        .unwrap()
+        .rows
+        .into_iter()
+        .map(|r| r.project)
+        .collect::<Vec<_>>()
     };
     assert_eq!(page(0), ["Alpha", "Beta"]);
     assert_eq!(page(1), ["Unknown project"]);

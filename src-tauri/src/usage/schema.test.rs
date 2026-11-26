@@ -158,7 +158,9 @@ fn version_4_migration_rekeys_every_table_and_leaves_an_unlabelled_row_unlabelle
         .unwrap();
     assert_eq!(unlabelled, "");
     let names: i64 = conn
-        .query_row("SELECT count(*) FROM projects WHERE name = ''", [], |r| r.get(0))
+        .query_row("SELECT count(*) FROM projects WHERE name = ''", [], |r| {
+            r.get(0)
+        })
         .unwrap();
     assert_eq!(names, 0);
 }
@@ -172,14 +174,22 @@ fn version_4_migration_maps_a_saved_project_name_to_its_legacy_id() {
     let path = scratch_db("migrate-4-prefs");
     write_v4_db(&path);
     let conn = Connection::open(&path).unwrap();
-    prefs_set(&conn, PREF_FILTERS, r#"{"range":"7d","project":"Refract","model":"m"}"#).unwrap();
+    prefs_set(
+        &conn,
+        PREF_FILTERS,
+        r#"{"range":"7d","project":"Refract","model":"m"}"#,
+    )
+    .unwrap();
     drop(conn);
 
     let conn = open_db(&path).unwrap();
 
     let filters = saved_filters(&conn);
     assert_eq!(filters["project"], "@legacy:Refract");
-    assert_eq!((&filters["range"], &filters["model"]), (&"7d".into(), &"m".into()));
+    assert_eq!(
+        (&filters["range"], &filters["model"]),
+        (&"7d".into(), &"m".into())
+    );
 }
 
 #[test]
@@ -212,7 +222,10 @@ fn version_4_database_keeps_every_row_and_name_under_a_legacy_project_id() {
         .collect();
     assert_eq!(
         rollup,
-        vec![("@legacy:Other".to_string(), 1), ("@legacy:Refract".to_string(), 2)]
+        vec![
+            ("@legacy:Other".to_string(), 1),
+            ("@legacy:Refract".to_string(), 2)
+        ]
     );
     let offset_id: String = conn
         .query_row("SELECT project_id FROM file_offsets", [], |r| r.get(0))
@@ -220,7 +233,10 @@ fn version_4_database_keeps_every_row_and_name_under_a_legacy_project_id() {
     let call_id: String = conn
         .query_row("SELECT project_id FROM tool_calls", [], |r| r.get(0))
         .unwrap();
-    assert_eq!((offset_id.as_str(), call_id.as_str()), ("@legacy:Refract", "@legacy:Refract"));
+    assert_eq!(
+        (offset_id.as_str(), call_id.as_str()),
+        ("@legacy:Refract", "@legacy:Refract")
+    );
     let name: String = conn
         .query_row(
             "SELECT name FROM projects WHERE project_id = '@legacy:Refract'",
@@ -229,7 +245,9 @@ fn version_4_database_keeps_every_row_and_name_under_a_legacy_project_id() {
         )
         .unwrap();
     assert_eq!(name, "Refract");
-    assert!(conn.prepare("SELECT project_label FROM tool_rollup").is_err());
+    assert!(conn
+        .prepare("SELECT project_label FROM tool_rollup")
+        .is_err());
     assert!(std::fs::read_dir(path.parent().unwrap())
         .unwrap()
         .all(|e| !e.unwrap().file_name().to_string_lossy().contains(".bak-")));

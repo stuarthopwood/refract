@@ -321,10 +321,7 @@ fn sort_columns(key: &str) -> QueryResult<(&'static str, &'static str)> {
     Ok(match key {
         "ts" => ("ts", "m.ts"),
         "model" => ("model", "m.model"),
-        "project" => (
-            MESSAGE_PROJECT_NAME,
-            "coalesce(p.name, 'Unknown project')",
-        ),
+        "project" => (MESSAGE_PROJECT_NAME, "coalesce(p.name, 'Unknown project')"),
         "tokens" => ("total_tokens", "m.total_tokens"),
         "usd" => ("cost_total", "m.cost_total"),
         "credits" => ("credits", "m.credits"),

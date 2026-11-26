@@ -1,12 +1,14 @@
 // Recomputes the stored Project id of every session file from its cwd (or session folder).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use rusqlite::{params, Connection};
 
-use super::project_label::{folder_name_fallback, is_stable_id, ProjectIndex, ProjectRef, Resolved};
-use super::rollup;
+use super::project_label::{
+    folder_name_fallback, is_stable_id, ProjectIndex, ProjectRef, Resolved, LEGACY_PREFIX,
+};
+use super::{rollup, schema};
 
 struct Row {
     file: String,
@@ -46,7 +48,8 @@ pub fn relabel(
         rollup::upsert_project(&names, &new.id, &new.name)?;
     }
     names.commit()?;
-    let mut moved = false;
+    // Where each `@legacy:` id's files went, so a saved filter on it can follow them.
+    let mut moved_to: HashMap<String, HashSet<String>> = HashMap::new();
     for (row, new) in targets {
         if new.id == row.id {
             continue;
@@ -58,26 +61,76 @@ pub fn relabel(
             params![new.id, row.file],
         )?;
         tx.commit()?;
-        moved = true;
+        if row.id.starts_with(LEGACY_PREFIX) {
+            moved_to.entry(row.id.clone()).or_default().insert(new.id);
+        }
     }
-    if moved {
-        rollup::clean_rollups(conn)?;
-        prune_legacy_names(conn)?;
-    }
-    Ok(())
+    // Unconditional: a legacy id left orphaned by an earlier pass must still be cleaned up.
+    let tx = conn.transaction()?;
+    rollup::clean_rollups(&tx)?;
+    migrate_saved_filter(&tx, &moved_to)?;
+    prune_legacy_names(&tx)?;
+    tx.commit()
 }
+
+/// A `@legacy:` id no row points at any more; `project_id` names the candidate column.
+const UNREFERENCED_LEGACY: &str = "project_id LIKE '@legacy:%' \
+     AND project_id NOT IN (SELECT project_id FROM file_offsets) \
+     AND project_id NOT IN (SELECT project_id FROM message_rollup) \
+     AND project_id NOT IN (SELECT project_id FROM tool_rollup) \
+     AND project_id NOT IN (SELECT project_id FROM session_rollup)";
 
 /// Drops the `@legacy:` names no row points at any more, so the picker lists a Project once.
 fn prune_legacy_names(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute(
-        "DELETE FROM projects WHERE project_id LIKE '@legacy:%' \
-         AND project_id NOT IN (SELECT project_id FROM file_offsets) \
-         AND project_id NOT IN (SELECT project_id FROM message_rollup) \
-         AND project_id NOT IN (SELECT project_id FROM tool_rollup) \
-         AND project_id NOT IN (SELECT project_id FROM session_rollup)",
+        &format!("DELETE FROM projects WHERE {UNREFERENCED_LEGACY}"),
         [],
     )?;
     Ok(())
+}
+
+/// A saved Project filter on a `@legacy:` id that is about to be pruned follows its files to the
+/// one real id they all moved to, and is cleared otherwise, so it never points at a name that is gone.
+fn migrate_saved_filter(
+    conn: &Connection,
+    moved_to: &HashMap<String, HashSet<String>>,
+) -> rusqlite::Result<()> {
+    let Some(stored) = schema::prefs_get(conn, schema::PREF_FILTERS)? else {
+        return Ok(());
+    };
+    let Ok(mut filters) = serde_json::from_str::<serde_json::Value>(&stored) else {
+        return Ok(());
+    };
+    let Some(object) = filters.as_object_mut() else {
+        return Ok(());
+    };
+    let Some(id) = object
+        .get("project")
+        .and_then(|v| v.as_str())
+        .filter(|id| id.starts_with(LEGACY_PREFIX))
+        .map(str::to_owned)
+    else {
+        return Ok(());
+    };
+    let orphaned: bool = conn.query_row(
+        &format!(
+            "SELECT EXISTS (SELECT 1 FROM (SELECT ?1 AS project_id) WHERE {UNREFERENCED_LEGACY})"
+        ),
+        [&id],
+        |row| row.get(0),
+    )?;
+    if !orphaned {
+        return Ok(());
+    }
+    let target = match moved_to.get(&id) {
+        Some(ids) if ids.len() == 1 => ids.iter().next().cloned(),
+        _ => None,
+    };
+    object.insert(
+        "project".into(),
+        target.map_or(serde_json::Value::Null, serde_json::Value::String),
+    );
+    schema::prefs_set(conn, schema::PREF_FILTERS, &filters.to_string())
 }
 
 fn load_rows(conn: &Connection) -> rusqlite::Result<Vec<Row>> {

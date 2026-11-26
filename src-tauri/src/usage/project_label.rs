@@ -163,7 +163,10 @@ impl ProjectIndex {
             ))
         });
         let index = Self::from_triples(projects.chain(worktrees).chain(roots));
-        match (registry.sessions.iter().any(|s| s.is_personal()), dirs::home_dir()) {
+        match (
+            registry.sessions.iter().any(|s| s.is_personal()),
+            dirs::home_dir(),
+        ) {
             (true, Some(home)) => index.with_personal_home(&home.to_string_lossy()),
             _ => index,
         }
@@ -258,7 +261,8 @@ impl ProjectIndex {
         session_file: &Path,
         sessions_root: &Path,
     ) -> ProjectRef {
-        self.resolve_for(cwd, session_file, sessions_root).into_ref()
+        self.resolve_for(cwd, session_file, sessions_root)
+            .into_ref()
     }
 
     fn is_scratch(&self, normalised: &str) -> bool {

@@ -335,7 +335,11 @@ fn a_project_cwd_stamps_the_registry_id_and_records_its_name() {
 
     assert_eq!(
         stamped(&fx),
-        ("repo-7".to_string(), "repo-7".to_string(), Some("Proj Name".to_string()))
+        (
+            "repo-7".to_string(),
+            "repo-7".to_string(),
+            Some("Proj Name".to_string())
+        )
     );
     let rollup_id: String = fx
         .conn
@@ -356,6 +360,10 @@ fn the_personal_home_cwd_stamps_the_personal_id() {
 
     assert_eq!(
         stamped(&fx),
-        ("@personal".to_string(), "@personal".to_string(), Some("Personal".to_string()))
+        (
+            "@personal".to_string(),
+            "@personal".to_string(),
+            Some("Personal".to_string())
+        )
     );
 }

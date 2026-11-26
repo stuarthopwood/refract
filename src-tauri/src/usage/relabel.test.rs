@@ -45,6 +45,18 @@ impl Fixture {
 
     /// One session file with a single 0.5-cost assistant message, ingested under `projects`.
     fn seed(&mut self, folder: &str, name: &str, cwd: Option<&str>, projects: &ProjectIndex) {
+        self.seed_model(folder, name, cwd, projects, "github-copilot/claude-sonnet");
+    }
+
+    /// `seed` with a chosen model, so two files in one hour keep separate rollup rows.
+    fn seed_model(
+        &mut self,
+        folder: &str,
+        name: &str,
+        cwd: Option<&str>,
+        projects: &ProjectIndex,
+        model_name: &str,
+    ) {
         let dir = self.root.join(folder);
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join(format!("{name}.jsonl"));
@@ -58,7 +70,7 @@ impl Fixture {
             "usage":{"input":10,"output":5,"cacheRead":0,"cacheWrite":0,"totalTokens":15,
                      "cost":{"input":0.1,"output":0.1,"cacheRead":0.0,"cacheWrite":0.0,"total":0.5}}}});
         let model = json!({"type":"model_change","id":"m1","timestamp":"2026-10-01T10:00:01.000Z",
-            "model":"github-copilot/claude-sonnet"});
+            "model":model_name});
         let mut file = std::fs::File::create(&path).unwrap();
         writeln!(file, "{header}\n{model}\n{message}").unwrap();
         ingest::ingest_file(&mut self.conn, &path, "main", &self.root, projects).unwrap();
@@ -220,11 +232,18 @@ fn relabels_rows_to_projects_other_and_one_merged_folder_without_changing_totals
 
     fx.relabel(&registered());
 
-    let expected = counts(&[("@other", 2), ("@folder:second-brain", 2), ("pinion-app", 2)]);
+    let expected = counts(&[
+        ("@other", 2),
+        ("@folder:second-brain", 2),
+        ("pinion-app", 2),
+    ]);
     assert_eq!(fx.by_id(), expected);
     assert_eq!(fx.message_ids(), expected);
     assert_eq!(fx.total_cost(), cost);
-    assert_eq!(fx.name_of("@folder:second-brain").as_deref(), Some("Second-Brain"));
+    assert_eq!(
+        fx.name_of("@folder:second-brain").as_deref(),
+        Some("Second-Brain")
+    );
     assert_eq!(fx.name_of("@other").as_deref(), Some("Other"));
 }
 
@@ -294,7 +313,12 @@ fn refract() -> ProjectIndex {
 /// A v4 database whose one session file is labelled `Refract`, migrated to v5 but not yet relabelled.
 fn migrated_v4() -> Fixture {
     let mut fx = Fixture::new("v4");
-    fx.seed(PINION_FOLDER, "a", Some(PINION_CWD), &ProjectIndex::from_pairs([]));
+    fx.seed(
+        PINION_FOLDER,
+        "a",
+        Some(PINION_CWD),
+        &ProjectIndex::from_pairs([]),
+    );
     fx.migrate_from_v4("Refract");
     fx
 }
@@ -334,4 +358,103 @@ fn relabelling_a_legacy_file_adds_to_a_real_id_rollup_row_that_already_exists() 
         .query_row("SELECT count(*) FROM message_rollup", [], |r| r.get(0))
         .unwrap();
     assert_eq!(rows, 1);
+}
+
+const OTHER_CWD: &str = "C:\\Repos\\personal\\other";
+
+fn both_projects() -> ProjectIndex {
+    ProjectIndex::from_triples([
+        (
+            PINION_CWD.to_string(),
+            "repo-1".to_string(),
+            "Refract".to_string(),
+        ),
+        (
+            OTHER_CWD.to_string(),
+            "repo-2".to_string(),
+            "Other app".to_string(),
+        ),
+    ])
+}
+
+impl Fixture {
+    /// Saves a Usage filter the way the panel does, before the v4 to v5 migration reads it.
+    fn save_filter(&self, filters: serde_json::Value) {
+        schema::prefs_set(&self.conn, schema::PREF_FILTERS, &filters.to_string()).unwrap();
+    }
+
+    fn saved_project(&self) -> serde_json::Value {
+        let stored = schema::prefs_get(&self.conn, schema::PREF_FILTERS)
+            .unwrap()
+            .unwrap();
+        serde_json::from_str::<serde_json::Value>(&stored).unwrap()["project"].clone()
+    }
+}
+
+#[test]
+fn a_saved_filter_on_a_migrated_name_follows_its_files_to_the_real_id() {
+    let mut fx = Fixture::new("filter-follow");
+    fx.seed(
+        PINION_FOLDER,
+        "a",
+        Some(PINION_CWD),
+        &ProjectIndex::from_pairs([]),
+    );
+    fx.save_filter(json!({"range": "7d", "project": "Refract"}));
+    fx.migrate_from_v4("Refract");
+    assert_eq!(fx.saved_project(), json!("@legacy:Refract"));
+
+    fx.relabel(&refract());
+
+    assert_eq!(fx.saved_project(), json!("repo-1"));
+    assert_eq!(fx.name_of("@legacy:Refract"), None);
+}
+
+#[test]
+fn a_saved_filter_is_cleared_when_its_legacy_files_split_across_real_ids() {
+    let mut fx = Fixture::new("filter-split");
+    let none = ProjectIndex::from_pairs([]);
+    fx.seed(PINION_FOLDER, "a", Some(PINION_CWD), &none);
+    fx.seed_model(
+        "--C--Repos-personal-other--",
+        "b",
+        Some(OTHER_CWD),
+        &none,
+        "github-copilot/gpt-5",
+    );
+    fx.save_filter(json!({"range": "7d", "project": "Refract"}));
+    fx.migrate_from_v4("Refract");
+
+    fx.relabel(&both_projects());
+
+    assert_eq!(fx.saved_project(), json!(null));
+    assert_eq!(fx.by_id(), counts(&[("repo-1", 1), ("repo-2", 1)]));
+    assert_eq!(fx.name_of("@legacy:Refract"), None);
+}
+
+#[test]
+fn an_orphaned_legacy_name_is_pruned_and_its_filter_cleared_even_when_no_file_moves() {
+    let mut fx = Fixture::new("filter-orphan");
+    fx.conn
+        .execute(
+            "INSERT INTO projects (project_id, name) VALUES ('@legacy:Ghost', 'Ghost')",
+            [],
+        )
+        .unwrap();
+    fx.save_filter(json!({"range": "7d", "project": "@legacy:Ghost"}));
+
+    fx.relabel(&ProjectIndex::from_pairs([]));
+
+    assert_eq!(fx.name_of("@legacy:Ghost"), None);
+    assert_eq!(fx.saved_project(), json!(null));
+}
+
+#[test]
+fn a_saved_filter_on_a_real_id_is_left_alone() {
+    let mut fx = migrated_v4();
+    fx.save_filter(json!({"range": "7d", "project": "repo-9"}));
+
+    fx.relabel(&refract());
+
+    assert_eq!(fx.saved_project(), json!("repo-9"));
 }
