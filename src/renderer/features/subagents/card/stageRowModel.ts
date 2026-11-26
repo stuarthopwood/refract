@@ -6,11 +6,11 @@ import type { StageItem, SubAgentItem } from '../viewModel/types'
 
 export type StageRowView = Pick<StageItem, 'agents' | 'cleanTitle' | 'outcomeSummary' | 'rawLabel' | 'status'>
 
-/** The Stage row's spoken name: heading, roll-up, "Running" only while running, and the duration when known. */
+/** The Stage row's spoken name: heading, roll-up, "Running" while running, and the duration once settled (a ticking value is never spoken). */
 export function stageAccessibleName(stage: Pick<StageItem, 'number' | 'cleanTitle' | 'rollupText' | 'status' | 'durationMs'>): string {
   const parts = [stageHeading(stage.number, stage.cleanTitle, true), stage.rollupText]
   if (stage.status === 'running') parts.push(SUBAGENT_STATUS_LABEL.running)
-  if (stage.durationMs != null) parts.push(formatElapsed(stage.durationMs))
+  else if (stage.durationMs != null) parts.push(formatElapsed(stage.durationMs))
   return parts.join(', ')
 }
 

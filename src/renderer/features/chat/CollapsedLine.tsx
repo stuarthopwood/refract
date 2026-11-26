@@ -231,7 +231,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         >
           {row}
           <span className="flex h-5 shrink-0 items-center">
-            <ChevronRightIcon className={cn('size-4 text-muted-foreground transition-transform', actualOpen && 'rotate-90')} />
+            <ChevronRightIcon className={cn('size-4 text-muted-foreground transition-transform motion-reduce:transition-none', actualOpen && 'rotate-90')} />
           </span>
           {/* Reserves the action's column in every expandable row so all chevrons share one x; the action is laid over it below. */}
           <span aria-hidden="true" className="h-5 w-6 shrink-0" />

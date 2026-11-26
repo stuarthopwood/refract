@@ -16,7 +16,7 @@ vi.mock('@/state', () => {
 vi.mock('../right-pane/hosted-panel-actions', () => ({ openHostedPanel: vi.fn() }))
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SubagentSummary } from '../../../shared/model'
-import { PanelHeader, PanelTree } from './SubagentPanelTree'
+import { AgentDetailSummary, PanelHeader, PanelTree } from './SubagentPanelTree'
 import { buildPanelRows } from './subagentPanelRows'
 import { selectScenarioFromSummaries } from './viewModel'
 import { subagentSummary } from './viewModel/testFixtures'
@@ -127,5 +127,44 @@ describe('PanelHeader', () => {
     const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(PanelHeader, { scenario, status: 'running', durationMs: 65_000 })))
     expect(html).toContain('Ship the release')
     expect(html).toContain('1m')
+  })
+})
+
+describe('PanelTree accessibility', () => {
+  const [stage] = selectScenarioFromSummaries(PAIR).stages
+  const detailed = { ...stage!.agents[0]!, role: 'Reviewer', duration: '2m', whatItDid: 'Found 3 issues', filesTouched: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts'] }
+
+  it('keeps the short aria-label and points aria-describedby at hidden outcome, role, duration and files text', () => {
+    readout.subagents = PAIR
+    const rows = buildPanelRows([{ ...stage!, agents: [detailed, stage!.agents[1]!] }], () => true)
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
+    )
+    const row = html.match(/<div[^>]*role="treeitem"[^>]*aria-label="Alpha, Finished"[^>]*>/)![0]
+    const id = row.match(/aria-describedby="([^"]+)"/)![1]!
+    expect(html).toContain(`<span id="${id}" hidden="">Reviewer. 2m. Found 3 issues. Files touched: a.ts, b.ts, c.ts, d.ts, e.ts, f.ts</span>`)
+  })
+
+  it('takes the nested "+N" files button out of the tab order inside a row', () => {
+    const rows = buildPanelRows([{ ...stage!, agents: [detailed, stage!.agents[1]!] }], () => true)
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
+    )
+    expect(html).toMatch(/<button[^>]*tabindex="-1"[^>]*aria-expanded="false"/)
+  })
+
+  it('lets the focused or selected agent row show its whole outcome', () => {
+    expect(render(PAIR, { selectedKey: 'x' })).toContain('line-clamp-none')
+  })
+
+  it('lists every file and the whole outcome in the detail pane, with no "+N" fold', () => {
+    const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AgentDetailSummary, { agent: detailed })))
+    expect(html).toContain('Found 3 issues')
+    expect(html).toContain('f.ts')
+    expect(html).not.toContain('<button')
+  })
+
+  it('renders nothing for an agent with neither outcome nor files', () => {
+    expect(renderToStaticMarkup(createElement(AgentDetailSummary, { agent: { ...detailed, whatItDid: undefined, filesTouched: undefined } }))).toBe('')
   })
 })

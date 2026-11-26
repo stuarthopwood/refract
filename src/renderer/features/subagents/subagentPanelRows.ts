@@ -1,8 +1,15 @@
 // The panel's flat tree: one row per Stage, plus one per agent of every open Stage (FR-150). Pure so the keyboard model,
 // the row order and the accessible names are tested without a DOM.
-import { stageAccessibleName } from './card/stageRowModel'
+import { fileBasename } from '@/components/FileChip'
+import { stageAccessibleName, stageRowModel } from './card/stageRowModel'
 import { SUBAGENT_STATUS_LABEL } from './subagentStatus'
-import type { StageItem, SubAgentItem } from './viewModel'
+import { FILES_TOUCHED_LABEL, type ChatScenario, type StageItem, type SubAgentItem } from './viewModel'
+
+/** The header's duration: the wall clock from the first Stage while running (so it ticks), the view-model's total once settled. */
+export function panelDurationMs(scenario: Pick<ChatScenario, 'startedAt' | 'totalDurationMs'>, running: boolean, now: number): number | undefined {
+  if (scenario.startedAt == null) return undefined
+  return running ? now - scenario.startedAt : scenario.totalDurationMs
+}
 
 /** The panel's own toggle key for a Stage; `panel:` keeps it apart from the chat card's `card:` key (FR-150 d). */
 export const panelStageToggleId = (stageId: string): string => `panel:${stageId}`
@@ -11,6 +18,8 @@ interface PanelRowBase {
   key: string
   /** What typeahead matches against. */
   label: string
+  /** The row's `aria-describedby` text: what the short `aria-label` leaves out (outcome, role, duration, files). Empty when there is none. */
+  description: string
   depth: 0 | 1
   posinset: number
   setsize: number
@@ -42,6 +51,25 @@ export function agentPanelAriaLabel(agent: SubAgentItem): string {
   return [agent.name, SUBAGENT_STATUS_LABEL[agent.status], agent.background ? 'Background' : undefined].filter(Boolean).join(', ')
 }
 
+/** A Stage's description is its one outcome line, the same text the header shows. */
+export function stagePanelDescription(stage: StageItem): string {
+  return stageRowModel(stage).outcome ?? ''
+}
+
+/** An agent's role, settled duration (a running one ticks, so it is left out), outcome and the whole file list; the row's visible text, spoken on demand. */
+export function agentPanelDescription(agent: SubAgentItem): string {
+  const files = [...new Set(agent.filesTouched ?? [])].map(fileBasename)
+  return [
+    agent.role,
+    agent.status === 'running' ? undefined : agent.duration,
+    agent.whatItDid,
+    files.length > 0 ? `${FILES_TOUCHED_LABEL}: ${files.join(', ')}` : undefined
+  ]
+    .map((part) => part?.trim())
+    .filter(Boolean)
+    .join('. ')
+}
+
 /** What typeahead matches for a Stage: its clean title, else "Stage N" (the heading the header falls back to). */
 export function stagePanelLabel(stage: StageItem): string {
   return stage.cleanTitle ?? `Stage ${stage.number}`
@@ -55,6 +83,7 @@ export function buildPanelRows(stages: readonly StageItem[], isOpen: (stage: Sta
       kind: 'stage',
       key: stage.id,
       label: stagePanelLabel(stage),
+      description: stagePanelDescription(stage),
       depth: 0,
       posinset: index + 1,
       setsize: stages.length,
@@ -68,6 +97,7 @@ export function buildPanelRows(stages: readonly StageItem[], isOpen: (stage: Sta
         kind: 'agent',
         key: agent.key,
         label: agent.name,
+        description: agentPanelDescription(agent),
         depth: 1,
         posinset: agentIndex + 1,
         setsize: stage.agents.length,

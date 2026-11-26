@@ -21,7 +21,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import type { TranscriptSubagentItem } from '../subagents/viewModel/runs'
 import { subagentItem } from '../subagents/viewModel/testFixtures'
 import { panelStageToggleId } from '../subagents/subagentPanelRows'
-import { ChainStageLine, stageToggleRowId } from './ChainStageLine'
+import { ChainStageLine, shouldMoveFocusToChevron, stageToggleRowId } from './ChainStageLine'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 
 const setManualOpen = (sessionId: string, rowId: string, open: boolean) => {
@@ -147,8 +147,18 @@ describe('ChainStageLine open state (FR-149)', () => {
   })
 
   describe('given an automatic expand or collapse', () => {
-    it('is not announced as a log addition', () => {
-      expect(render(RUNNING_GATE())).toContain('aria-live="off"')
+    it('is not announced as a log addition, and the running outcome line never speaks', () => {
+      expect(render(RUNNING_GATE())).toMatch(/<div role="group"[^>]*aria-live="off"[^>]*data-status="running"/)
+    })
+  })
+
+  describe('given focus inside a Stage that auto-collapses', () => {
+    it('hands it to the chevron only on an expanded-to-collapsed change with focus in the content', () => {
+      expect(shouldMoveFocusToChevron(true, false, true)).toBe(true)
+      expect(shouldMoveFocusToChevron(true, false, false)).toBe(false)
+      expect(shouldMoveFocusToChevron(false, false, true)).toBe(false)
+      expect(shouldMoveFocusToChevron(true, true, true)).toBe(false)
+      expect(shouldMoveFocusToChevron(false, true, true)).toBe(false)
     })
   })
 })
