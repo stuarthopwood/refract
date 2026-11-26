@@ -43,10 +43,10 @@ export function SubStepList({ steps }: { steps: readonly SubStep[] | undefined }
   if (steps == null || steps.length === 0) return null
   const { visible, doneFolded, queued } = foldSubSteps(steps)
   return (
-    <ul aria-label="Sub-steps" className="space-y-0.5 text-xs">
-      {doneFolded > 0 && <li className="pl-5 text-muted-foreground">{doneFolded} done</li>}
+    <ul aria-label="Sub-steps" className="space-y-1 text-xs">
+      {doneFolded > 0 && <li className="pl-6 text-muted-foreground">{doneFolded} done</li>}
       {visible.map(({ step, index }) => (
-        <li key={index} className="flex items-center gap-1.5">
+        <li key={index} className="flex items-center gap-2">
           <StepGlyph step={step} />
           <span className={cn('min-w-0 truncate', step.status === 'running' ? 'font-medium text-card-foreground' : 'text-muted-foreground')}>
             {step.label}
@@ -54,7 +54,7 @@ export function SubStepList({ steps }: { steps: readonly SubStep[] | undefined }
           </span>
         </li>
       ))}
-      {queued > 0 && <li className="pl-5 text-muted-foreground">+{queued} queued</li>}
+      {queued > 0 && <li className="pl-6 text-muted-foreground">+{queued} queued</li>}
     </ul>
   )
 }

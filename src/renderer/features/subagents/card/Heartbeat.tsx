@@ -9,7 +9,7 @@ export function Heartbeat({ liveDetail }: { liveDetail: string | undefined }) {
   const text = heartbeatText(liveDetail)
   if (text == null) return null
   return (
-    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+    <p className="flex items-start gap-2 text-xs text-muted-foreground">
       <span aria-hidden className="mt-1 size-1.5 shrink-0 animate-pulse rounded-full bg-state-working motion-reduce:animate-none" />
       <span className="min-w-0 break-words">{text}</span>
     </p>

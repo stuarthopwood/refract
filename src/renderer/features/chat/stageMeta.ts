@@ -138,7 +138,7 @@ export function extractResultSummary(result: string): string | undefined {
 export function resolveStageDependencies<
   Item extends { toolCallId: string; specIndex: number },
   Stage extends { stageIndex: number; items: Item[]; dependencies: StageDependency[] }
->(stages: Stage[], nameOf: (item: Item) => string, textOf: (stage: Stage) => string): void {
+>(stages: Stage[], nameOf: (item: Item) => string, refsOf: (stage: Stage) => readonly string[]): void {
   const occurrencesByAgentId = new Map<string, Array<{ stageIndex: number; toolCallId: string; specIndex: number }>>()
   for (const stage of stages) {
     for (const item of stage.items) {
@@ -149,10 +149,9 @@ export function resolveStageDependencies<
     }
   }
   for (const stage of stages) {
-    const text = textOf(stage)
     const seenAgentIds = new Set<string>()
     const dependencies: StageDependency[] = []
-    for (const agentId of extractAgentRefs(text)) {
+    for (const agentId of refsOf(stage)) {
       const occurrences = occurrencesByAgentId.get(agentId)
       if (!occurrences || seenAgentIds.has(agentId)) continue
       let latest: { stageIndex: number; toolCallId: string; specIndex: number } | undefined

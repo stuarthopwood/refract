@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { assistantText, subagentItem, subagentSummary } from './testFixtures'
-import { EMPTY_SCENARIO, selectScenarioFromSummaries, selectScenarioFromTranscript } from './selectors'
+import { subagentSummary } from './testFixtures'
+import { EMPTY_SCENARIO, selectScenarioFromSummaries } from './selectors'
 
 describe('selectScenarioFromSummaries', () => {
   it('returns the same object for the same array', () => {
@@ -17,20 +17,5 @@ describe('selectScenarioFromSummaries', () => {
     expect(selectScenarioFromSummaries([])).toBe(EMPTY_SCENARIO)
     expect(selectScenarioFromSummaries([])).toBe(selectScenarioFromSummaries([]))
     expect(EMPTY_SCENARIO.stages).toEqual([])
-  })
-})
-
-describe('selectScenarioFromTranscript', () => {
-  const items = [assistantText('t1'), subagentItem({ name: 'A' })]
-  const summaries = [subagentSummary({ nameOrTask: 'A' })]
-
-  it('returns the same object while both inputs keep their identity', () => {
-    expect(selectScenarioFromTranscript(items, summaries)).toBe(selectScenarioFromTranscript(items, summaries))
-  })
-
-  it('recomputes when either input is replaced', () => {
-    const base = selectScenarioFromTranscript(items, summaries)
-    expect(selectScenarioFromTranscript([...items], summaries)).not.toBe(base)
-    expect(selectScenarioFromTranscript(items, [...summaries])).not.toBe(base)
   })
 })

@@ -18,11 +18,10 @@ import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
 import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
 import { LinkContext } from './Markdown'
-import { groupAdvisoryItems, isAdvisoryRun, type AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
-import { groupToolItems, isToolGroup } from './groupToolItems'
-import { groupThoughtItems } from './groupThoughtItems'
-import { groupMidTurnProse } from './groupMidTurnProse'
-import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
+import type { AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
+import { isToolGroup } from './groupToolItems'
+import { groupTurnStages } from './groupTurnStages'
+import { isStageGroup } from './groupSubagentStages'
 import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
@@ -222,12 +221,7 @@ export function Transcript({
 
   const subagentSummaries = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
   const turnsWithStages = React.useMemo(
-    () =>
-      visibleTurns.map((turn) => {
-        const viewItems = transcriptDisplay.thinking ? turn.items : turn.items.filter((item) => item.kind !== 'thinking')
-        const groupedWithStages = groupMidTurnProse(groupAdvisoryItems(groupSubagentStages(groupThoughtItems(groupToolItems(viewItems)), subagentSummaries)))
-        return { turn, groupedWithStages, stages: groupedWithStages.filter(isStageGroup) }
-      }),
+    () => visibleTurns.map((turn) => ({ turn, ...groupTurnStages(turn.items, transcriptDisplay.thinking, subagentSummaries) })),
     [visibleTurns, transcriptDisplay.thinking, subagentSummaries]
   )
 
