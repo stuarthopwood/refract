@@ -1,5 +1,30 @@
 # Changelog
 
+## v0.44.0 (2026-11-26)
+
+### Features
+
+- feat(chat): expand answered Ask questions by default (https://github.com/stuarthopwood/refract/pull/2248)
+
+### Fixes
+
+- fix(chat): even out the Ask card option note bar (https://github.com/stuarthopwood/refract/pull/2245)
+- fix(chat): drop the border and fill from the Ask card hover note hint (https://github.com/stuarthopwood/refract/pull/2246)
+- fix(chat): render Ask card questions and option descriptions as Markdown (https://github.com/stuarthopwood/refract/pull/2247)
+- fix(away): answer every dialog safely and tell the agent why (https://github.com/stuarthopwood/refract/pull/2250)
+- fix(plan): enforce plan mode under rpc-ui and switch to the Plan role (https://github.com/stuarthopwood/refract/pull/2251)
+
+### Other
+
+- docs/plan 2026 11 25 peer steer (https://github.com/stuarthopwood/refract/pull/2220)
+- docs(plan): place #2218 and #2219 (https://github.com/stuarthopwood/refract/pull/2221)
+- docs(plan): record the v1 scope, 25 epics and #2209 (https://github.com/stuarthopwood/refract/pull/2234)
+- chore(plan): add pnpm plan:html to build the v1 plan page (https://github.com/stuarthopwood/refract/pull/2233)
+- docs(plan): put the Away Mode fixes first and add #2235 (https://github.com/stuarthopwood/refract/pull/2237)
+- docs(plan): add #2240 Subagents panel polish (https://github.com/stuarthopwood/refract/pull/2241)
+- docs(plan): add #2242 Subagents card polish and recount v1 (https://github.com/stuarthopwood/refract/pull/2243)
+- docs(plan): regenerate plan.html for 113 v1 issues (https://github.com/stuarthopwood/refract/pull/2244)
+
 ## v0.43.0 (2026-11-26)
 
 ### Features
