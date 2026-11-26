@@ -84,7 +84,7 @@ interface OptionNoteViewProps {
 /** A saved note under its option: the "Note:" label (not colour) carries it, with inline Edit and remove. */
 export function OptionNoteView({ text, optionLabel, disabled, onEdit, onRemove }: OptionNoteViewProps) {
   return (
-    <div className="ml-6 flex items-start gap-2 border-t border-border bg-severity-warning-bg pt-2 text-xs">
+    <div className="flex items-center gap-2 bg-severity-warning-bg py-1 text-xs">
       <p className="min-w-0 flex-1 break-words">
         <span className="font-medium text-severity-warning">Note:</span> {text}
       </p>
