@@ -76,8 +76,10 @@ async fn inject_saved_history(
     session: &crate::store::registry::Session,
     agent: &crate::session::SessionAgent,
 ) {
+    use crate::omp::transcript::synthesis_labels::labelled_copy;
     use crate::session::saved_history::{notice_for, SavedHistory};
     use crate::session::saved_history_cache::load_saved_history;
+    use crate::session::subagents::synthesis_lookup;
     let stopped = runtime.get("status").and_then(Value::as_str) == Some("stopped");
     let has_live = runtime
         .get("transcript")
@@ -96,7 +98,11 @@ async fn inject_saved_history(
     let transcript = match notice_for(&history) {
         Some(notice) => serde_json::json!([notice]),
         None => match history {
-            SavedHistory::Items(items) => serde_json::json!(items),
+            // A copy, so the shared cached history never carries a label a later synthesis writes.
+            SavedHistory::Items(items) => match synthesis_lookup(agent).await {
+                Some(lookup) => serde_json::json!(labelled_copy(&items, lookup.as_ref())),
+                None => serde_json::json!(items),
+            },
             _ => return,
         },
     };

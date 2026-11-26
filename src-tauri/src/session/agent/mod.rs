@@ -40,6 +40,7 @@ mod start_with_message;
 mod status;
 mod sync_from_state;
 mod tool_host;
+mod transcript_labels;
 mod types;
 pub use chat::{outcome_name, MessageDelivery};
 pub use command_wait::COMMANDS_WAIT;

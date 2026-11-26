@@ -93,6 +93,17 @@ pub trait OmpExecutor: Send + Sync {
         failure_message: &'a str,
         strip_env_vars: &'a [&'a str],
     ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>>;
+    /// Like `call`, with the process deadline set by the caller. An executor with no deadline of its
+    /// own ignores it, so the caller must still bound the future.
+    fn call_with_timeout<'a>(
+        &'a self,
+        args: &'a [String],
+        failure_message: &'a str,
+        strip_env_vars: &'a [&'a str],
+        _timeout: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        self.call(args, failure_message, strip_env_vars)
+    }
 }
 
 pub struct RealOmpExecutor;
@@ -128,6 +139,21 @@ impl OmpExecutor for RealOmpExecutor {
         failure_message: &'a str,
         strip_env_vars: &'a [&'a str],
     ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        self.call_with_timeout(
+            args,
+            failure_message,
+            strip_env_vars,
+            Duration::from_millis(TIMEOUT_MS),
+        )
+    }
+
+    fn call_with_timeout<'a>(
+        &'a self,
+        args: &'a [String],
+        failure_message: &'a str,
+        strip_env_vars: &'a [&'a str],
+        timeout: Duration,
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
         Box::pin(async move {
             #[cfg(test)]
             {
@@ -137,7 +163,7 @@ impl OmpExecutor for RealOmpExecutor {
             }
             let cwd = ensure_scratch_dir().await?;
             let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
-            run_omp(&arg_refs, failure_message, strip_env_vars, &cwd).await
+            run_omp(&arg_refs, failure_message, strip_env_vars, &cwd, timeout).await
         })
     }
 }
@@ -226,6 +252,7 @@ async fn run_omp(
     failure_message: &str,
     strip_env_vars: &[&str],
     cwd: &Path,
+    timeout: Duration,
 ) -> Result<String, OmpConfigError> {
     let omp_path =
         resolve_omp().map_err(|err| OmpConfigError::new(OmpConfigErrorCode::OmpNotFound, err))?;
@@ -252,7 +279,7 @@ async fn run_omp(
     let logged_args = &args[..args.len().min(3)];
     let start = std::time::Instant::now();
     let timeout_result = tokio::time::timeout(
-        Duration::from_millis(TIMEOUT_MS),
+        timeout,
         read_capped_output(&mut child, stdout_pipe, stderr_pipe, MAX_STDOUT_BYTES),
     )
     .await;
