@@ -15,7 +15,7 @@ th,td{border:1px solid var(--line);padding:.3rem .5rem;text-align:left;vertical-
 .fits{border-color:var(--ok)}.misses{border-color:var(--bad)}.tag{font-weight:600}
 </style></head>
 <body><header><h1>Refract v1 plan</h1>
-<p class="muted">Generated 2026-11-26T14:54:34.957Z from live GitHub data for stuarthopwood/refract. v1 ships by 2026-12-31: <strong>35 days left</strong>.</p>
+<p class="muted">Generated 2026-11-26T14:58:36.998Z from live GitHub data for stuarthopwood/refract. v1 ships by 2026-12-31: <strong>35 days left</strong>.</p>
 <h2>v1 progress</h2><div class="bar" aria-hidden="true"><span style="width:0%"></span></div><span class="val">0 of 109 closed (0%)</span></header>
 <main><section><h2>Forecast</h2>
 <p>Completed issues per ISO week (Monday start), last 4 full weeks. Projection rate: <strong>35 per week</strong>. Remaining open v1 issues: <strong>109</strong>.</p>
@@ -31,6 +31,7 @@ th,td{border:1px solid var(--line);padding:.3rem .5rem;text-align:left;vertical-
 <p class="muted">Projection at 35 issues per week (rate rounded to whole issues) from Monday 2026-11-30. Order: p0, p1, p2 bugs, then other p2, p3 and unlabelled; within a priority, docs/PLAN.md Queue order, then issue number.</p>
 <h3>Week 2026-11-30 to 2026-12-06</h3>
 <table><caption class="sr">Issues scheduled for the week starting 2026-11-30</caption><thead><tr><th scope="col">Issue</th><th scope="col">Title</th><th scope="col">Priority</th><th scope="col">Type</th></tr></thead><tbody>
+<tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2209">#2209</a></th><td>Feat: Minimise cache writes</td><td>p0</td><td>feature</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/3">#3</a></th><td>Right panel: built-in terminal with tabs and multiple shells per Session</td><td>p0</td><td>feature</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/518">#518</a></th><td>Perf: ask OMP for message_update deltas (set_event_filter messageUpdates) so long answers do not resend the whole message each frame</td><td>p0</td><td>idea</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2046">#2046</a></th><td>Feat: Pre-installed commands (prompt macros) + ship /readme</td><td>p0</td><td>feature</td></tr>
@@ -40,7 +41,6 @@ th,td{border:1px solid var(--line);padding:.3rem .5rem;text-align:left;vertical-
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2161">#2161</a></th><td>Feat: Conversations: delete Conversations, show their size, add retention, and remove a Session&#39;s logs on delete (session logs near 3 GB)</td><td>p0</td><td>feature</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2171">#2171</a></th><td>Bug: Theme: Amber Obsidian fails with &quot;theme.set expects a known theme id&quot; (missing from the Rust ThemeId enum); add a theme-id parity check</td><td>p0</td><td>bug</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2202">#2202</a></th><td>Bug: Sessions: messages from another Session&#39;s agent wait in the queue for Send now when the target is busy; steer them in</td><td>p0</td><td>bug</td></tr>
-<tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2209">#2209</a></th><td>Feat: Minimise cache writes</td><td>p0</td><td>feature</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2116">#2116</a></th><td>Bug: plan working mode does not stop file edits under rpc-ui</td><td>p1</td><td>bug</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2180">#2180</a></th><td>UI Polish: Ask card: the hover Note shortcut hint drops its border and background and stops filling the row height, matching the selected option&#39;s hint</td><td>p1</td><td>design</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/2184">#2184</a></th><td>UI Polish: Ask card: the option note bar drops its top border and indent and centres its text, Edit note hint and close button vertically</td><td>p1</td><td>design</td></tr>
@@ -589,22 +589,6 @@ th,td{border:1px solid var(--line);padding:.3rem .5rem;text-align:left;vertical-
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/814">#814</a></th><td>Chore: Rust: keep crate files under the 600-line cap: split omp/transcript.rs and omp/process.rs, agent.rs via R1</td><td>p2</td><td>chore</td><td>no</td><td>open</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/807">#807</a></th><td>Chore: split Markdown.tsx (997 lines): CodeBlock, MermaidBlock, links and lists into their own files</td><td>p3</td><td>chore</td><td>no</td><td>open</td></tr>
 <tr><th scope="row"><a href="https://github.com/stuarthopwood/refract/issues/813">#813</a></th><td>Chore: split src/shared/ipc.ts (906 lines) by domain behind a re-exporting ipc.ts, after the Rust parity check lands</td><td>p3</td><td>chore</td><td>no</td><td>open</td></tr>
-</tbody></table></section>
-<section><h3><a href="https://github.com/stuarthopwood/refract/issues/1931">#1931</a> Epic: Redesign the Subagents chat card for goal clarity and live sub-agent feedback</h3><p>0 open, 0 closed, 0 in v1 (0 open)</p><div class="bar" aria-hidden="true"><span style="width:0%"></span></div><span class="val">0 of 0 closed (0%)</span>
-<table><caption class="sr">Issues in Epic: Redesign the Subagents chat card for goal clarity and live sub-agent feedback</caption><thead><tr><th scope="col">Issue</th><th scope="col">Title</th><th scope="col">Priority</th><th scope="col">Type</th><th scope="col">v1</th><th scope="col">State</th></tr></thead><tbody>
-
-</tbody></table></section>
-<section><h3><a href="https://github.com/stuarthopwood/refract/issues/1990">#1990</a> Epic: Ask tool card &amp; Session Q&amp;A transcript redesign</h3><p>0 open, 0 closed, 0 in v1 (0 open)</p><div class="bar" aria-hidden="true"><span style="width:0%"></span></div><span class="val">0 of 0 closed (0%)</span>
-<table><caption class="sr">Issues in Epic: Ask tool card &amp; Session Q&amp;A transcript redesign</caption><thead><tr><th scope="col">Issue</th><th scope="col">Title</th><th scope="col">Priority</th><th scope="col">Type</th><th scope="col">v1</th><th scope="col">State</th></tr></thead><tbody>
-
-</tbody></table></section>
-<section><h3><a href="https://github.com/stuarthopwood/refract/issues/2008">#2008</a> Epic: Personal Agent (single project-less session)</h3><p>0 open, 0 closed, 0 in v1 (0 open)</p><div class="bar" aria-hidden="true"><span style="width:0%"></span></div><span class="val">0 of 0 closed (0%)</span>
-<table><caption class="sr">Issues in Epic: Personal Agent (single project-less session)</caption><thead><tr><th scope="col">Issue</th><th scope="col">Title</th><th scope="col">Priority</th><th scope="col">Type</th><th scope="col">v1</th><th scope="col">State</th></tr></thead><tbody>
-
-</tbody></table></section>
-<section><h3><a href="https://github.com/stuarthopwood/refract/issues/2015">#2015</a> Epic: Interactive agentic todo/plan lists (bespoke, fully interactive)</h3><p>0 open, 0 closed, 0 in v1 (0 open)</p><div class="bar" aria-hidden="true"><span style="width:0%"></span></div><span class="val">0 of 0 closed (0%)</span>
-<table><caption class="sr">Issues in Epic: Interactive agentic todo/plan lists (bespoke, fully interactive)</caption><thead><tr><th scope="col">Issue</th><th scope="col">Title</th><th scope="col">Priority</th><th scope="col">Type</th><th scope="col">v1</th><th scope="col">State</th></tr></thead><tbody>
-
 </tbody></table></section>
 <section><h3>Unassigned</h3><p class="muted">Open issues and v1 issues that are not a sub-issue of any epic yet.</p><p>0 open, 0 closed, 0 in v1 (0 open)</p><div class="bar" aria-hidden="true"><span style="width:0%"></span></div><span class="val">0 of 0 closed (0%)</span>
 <table><caption class="sr">Issues in Unassigned</caption><thead><tr><th scope="col">Issue</th><th scope="col">Title</th><th scope="col">Priority</th><th scope="col">Type</th><th scope="col">v1</th><th scope="col">State</th></tr></thead><tbody>
