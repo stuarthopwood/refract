@@ -76,6 +76,10 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   );
   await addRepository(cdp, repo);
   await createSessionViaQuickCreate(cdp, repoName);
+  // A plan switch made before OMP is up records the mode without a restart, so wait for the launch first.
+  for (let i = 0; i < 60 && !ompLines(ompLog).some((l) => l.includes('scenario=away-112')); i++) await sleep(500);
+  assert(ompLines(ompLog).some((l) => l.includes('scenario=away-112')), 'the Session launched OMP before the mode checks');
+  await sleep(1500);
 
   // ---- Menu, default state, keyboard ----
   await waitMode(cdp, 'Interactive');
@@ -135,8 +139,8 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   const steers = ompLines(ompLog).filter((l) => l.includes('[Automatic, Away mode]'));
   assert(steers.length >= 1, `the burst of automatic actions sent a coalesced reason steer (${steers.length} seen)`);
   assert(steers.some((l) => l.includes('Answered by Away Mode')), `an answer steer "Answered by Away Mode" was sent (${steers.length} steers)`);
-  assert(steers.some((l) => l.includes('Not approved by Away Mode')), `a denial steer "Not approved by Away Mode" was sent (${steers.length} steers)`);
   await cdp.waitFor(`document.body.innerText.includes('away111done')`, { timeoutMs: 20_000, label: 'turn finished' });
+  // The fake OMP never acks a steer, so the denial's follow-up steer stays queued behind the in-flight one; frame_away.test.rs covers it.
   await cdp.screenshot(path.join(SHOTS_DIR, '07-away-denied.png'));
 
   await pickByClick(cdp, 'Interactive');
@@ -178,6 +182,8 @@ async function main() {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_DEBUG_LOG: ompLog,
+        // Without the ack every Session start stalls 10 s on set_host_tools, past the plan-restart wait.
+        REFRACT_FAKE_OMP_HOST_TOOL_RECORD: path.join(SHOTS_DIR, 'host-tools.jsonl'),
         REFRACT_FAKE_OMP_SCENARIO: 'away-112'
       }
     });
