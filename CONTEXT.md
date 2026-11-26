@@ -1,4 +1,8 @@
 # Refract
+**Goal strip**:
+The line under the Subagents card header that shows the **Overall goal** with a target glyph, clamped to two lines, with the full text in a tooltip. It is not rendered when the goal is absent, and it never derives a fallback (issue #1926, FR-146).
+_Avoid_: banner, summary bar, subtitle
+
 
 Refract is a desktop app for working with a coding agent, one isolated copy of a project per unit of work. This file is the shared vocabulary for specs, plans, and code.
 
