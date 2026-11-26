@@ -4,17 +4,10 @@ import { cn } from '@/lib/utils'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
 import { ToolIcon } from '@/components/ToolIcon'
 import { resolveToolDisplay } from './toolDisplay'
-import {
-  chatRowStatus,
-  isSubagentSuccessStatus,
-  SUBAGENT_STATUS_LABEL,
-  SUBAGENT_SUCCESS_TEXT_CLASS,
-  SubagentStatusGlyph
-} from '../subagents/subagentStatus'
+import { isSubagentSuccessStatus, SUBAGENT_STATUS_LABEL, SUBAGENT_SUCCESS_TEXT_CLASS, SubagentStatusGlyph } from '../subagents/subagentStatus'
 import { CodeBlock, inferOutputBlock } from './Markdown'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
-import { formatElapsed } from './formatElapsed'
-import { extractResultSummary } from './stageMeta'
+import type { SubAgentItem } from '../subagents/viewModel'
 import { SubagentGoalPreview } from './SubagentGoalPreview'
 
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
@@ -68,20 +61,15 @@ export function SubagentBody({ item, showGoal }: SubagentRowProps) {
 // One collapsed line per subagent a batch `task` call started (docs/DESIGN.md "Chat"): never
 // grouped by `groupToolItems`, identity is the stable `item.id` (so a later activation can
 // reopen the same subagent's full transcript panel, spec 004).
-export function SubagentRow({ item, showGoal }: SubagentRowProps) {
-  const status = chatRowStatus(item.status)
-  const duration =
-    item.status !== 'running' && item.durationMs != null ? (
-      <span className="tabular-nums">{formatElapsed(item.durationMs)}</span>
-    ) : undefined
+export function SubagentRow({ item, agent, showGoal }: SubagentRowProps & { agent: SubAgentItem }) {
+  const { status, duration, whatItDid: resultSummary } = agent
   const meta = (
     <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
       <SubagentStatusGlyph status={status} />
       {status !== 'finished' && <span aria-hidden="true">{SUBAGENT_STATUS_LABEL[status]}</span>}
-      {duration}
+      {status !== 'running' && duration != null && <span className="tabular-nums">{duration}</span>}
     </span>
   )
-  const resultSummary = item.result != null ? extractResultSummary(item.result) : undefined
   return (
     // #565 decision 10: this row is always a `SpineList` member (its only caller,
     // `SubagentChainRow.tsx`'s non-solo branch), so its own expanded body starts at the same label

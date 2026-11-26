@@ -9,10 +9,27 @@ import {
   unsettledRollupText,
   type StageDependency
 } from '../../chat/stageMeta'
-import { overallStatus, stageTimeRange } from '../../chat/subagentChainStatus'
+import { overallStatus } from '../../chat/subagentChainStatus'
 import { summarizeSubagentStatuses, type SubagentRowStatus } from '../subagentStatus'
 import { cleanTitle } from './cleanTitle'
 import type { ChatScenario, StageItem, SubAgentItem, SubStep } from './types'
+
+// `endedAt` is undefined unless every agent has both `startedAt` and `durationMs`, so a member with no duration cannot understate the total.
+function stageTimeRange(items: readonly { startedAt?: number; durationMs?: number }[]): { startedAt?: number; endedAt?: number } {
+  let startedAt: number | undefined
+  let maxEnd: number | undefined
+  let everyItemSettled = true
+  for (const item of items) {
+    if (item.startedAt != null && (startedAt === undefined || item.startedAt < startedAt)) startedAt = item.startedAt
+    if (item.startedAt == null || item.durationMs == null) {
+      everyItemSettled = false
+      continue
+    }
+    const end = item.startedAt + item.durationMs
+    if (maxEnd === undefined || end > maxEnd) maxEnd = end
+  }
+  return { startedAt, endedAt: everyItemSettled ? maxEnd : undefined }
+}
 
 /** One agent, already merged from whatever sources the entry point has. */
 export interface AgentInput {

@@ -34,9 +34,14 @@ function overlay(item: TranscriptSubagentItem, summary: SubagentSummary | undefi
   }
 }
 
-function toStageInput(items: readonly TranscriptSubagentItem[], summaries: ReadonlyMap<string, SubagentSummary>): StageInput {
+/** The shared `task()` context of a run: each distinct item context once, in order. */
+export function runContext(items: readonly TranscriptSubagentItem[]): string | undefined {
   const contexts = [...new Set(items.map((item) => item.context).filter((c): c is string => Boolean(c)))]
-  const context = contexts.length > 0 ? contexts.join('\n\n') : undefined
+  return contexts.length > 0 ? contexts.join('\n\n') : undefined
+}
+
+function toStageInput(items: readonly TranscriptSubagentItem[], summaries: ReadonlyMap<string, SubagentSummary>): StageInput {
+  const context = runContext(items)
   return {
     id: `stage:${items[0]!.id}`,
     context,

@@ -1,7 +1,7 @@
 export { cleanTitle } from './cleanTitle'
 export { FILES_TOUCHED_EMPTY_TEXT, FILES_TOUCHED_LABEL, filesTouchedDisplay } from './filesTouchedLabel'
 export { fromSummaries } from './fromSummaries'
-export { fromTranscript, fromTranscriptRuns } from './fromTranscript'
+export { fromTranscript, fromTranscriptRuns, runContext } from './fromTranscript'
 export { splitSubagentRuns, type RunSlot, type TranscriptSubagentItem } from './runs'
 export { EMPTY_SCENARIO, selectScenarioFromSummaries, selectScenarioFromTranscript } from './selectors'
 export type { ChatScenario, StageItem, SubAgentItem, SubStep } from './types'
