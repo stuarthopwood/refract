@@ -51,6 +51,36 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 
 **Daily-driver focus (Stuart, 2026-11-18).** Refract is now Stuart's daily driver, so the next build focus is four themes, in order, ranked above #2050 and all other backlog: 1) #2015 interactive Checklist (enhanced todo list; **done**), 2) #1990 Ask card and Session Q&A redesign (Ask tool), 3) #1931 Subagents card and right-pane panel (the "subagent DAG panel" and agent side panel; no separate graph epic), 4) #3 built-in terminal (grill when reached). They sit after the agent-Sessions epic #1304 slices (#1858, #1859, #1860, #1861, #1862), which stay first. The three epics below are promoted into the active block accordingly (rows DD-1 to DD-3, before #3).
 
+**v1 scope (Stuart, 2026-11-26).** v1 ships by 2026-12-31, before paid AI credits start on 2027-01-01. It holds every open p0 and p1 issue plus the p2 bugs: 109 issues on the GitHub milestone `v1`. Every open issue is a sub-issue of one of the 25 epics below; open the epic on GitHub for its children. Run `pnpm plan:html` to write `docs/plan.html`, a page with v1 progress, the epics and a weekly forecast from live GitHub data.
+
+| Epic | Area | Open issues | In v1 |
+|---|---|---|---|
+| #2222 | Chat transcript: tool-call rows, scroll, header, Markdown and message rendering | 44 | 14 |
+| #2229 | Themes, design system and visual polish | 28 | 14 |
+| #1810 | Tests, CI, release, and installer/updater | 14 | 9 |
+| #1901 | Performance: instant PR and Issue views, faster startup, lower process memory | 11 | 7 |
+| #2224 | Ask card, approvals and working modes (Plan, Away) | 11 | 7 |
+| #2225 | Session list and Conversations: history, tree, search, delete and retention | 25 | 6 |
+| #2230 | Usage and cost: Usage view, token guard and cache writes | 14 | 6 |
+| #1272 | Agents and subagents (Agents panel, parked agents, personas, child Sessions, cross-Session messaging) | 11 | 5 |
+| #1136 | Composer input and attachments | 17 | 5 |
+| #2050 | Pre-installed commands, skills and hooks | 6 | 4 |
+| #1135 | Git changes panel | 9 | 4 |
+| #2226 | Checklist: dependencies, polish and agent tooling | 7 | 4 |
+| #2227 | Right pane panels: terminal, File Explorer, Jira, FDB and rail polish | 13 | 4 |
+| #2231 | OMP transport and process integration | 13 | 4 |
+| #2232 | Accessibility: WCAG gate leftovers, contrast and screen readers | 10 | 4 |
+| #2060 | Personal Agent companion | 3 | 3 |
+| #1273 | Pull requests polish | 9 | 3 |
+| #2228 | Settings, command palette and OMP configuration | 22 | 2 |
+| #1918 | Road to V1: testing, documentation and a well-organised codebase | 17 | 1 |
+| #1271 | Worktree lifecycle | 7 | 1 |
+| #1137 | verify-script hygiene | 14 | 1 |
+| #2223 | Chat readouts: status pills, banners, pause and turn timers | 11 | 1 |
+| #2093 | Extension UI support | 8 | 0 |
+| #1804 | Built-in browser | 10 | 0 |
+| #1134 | God-file splits | 7 | 0 |
+
 | Order | Issue | Work | Why here |
 |---|---|---|---|
 | 1 | #1212 | **P0 Token guard:** launch `--config` overlay with the token settings, snapcompact tool-result imaging and snapcompact-first compaction, post-turn shake above 60k context, long-conversation Hand off at 300/500 calls, Refract-owned rules via `--append-system-prompt`; replaces #1184's global reset (PR #1189) | P0 (Stuart 2026-10-23); token budget; probe RPC `compact` method selection first; done (PR #1215), Lows in #1216 |
@@ -65,7 +95,8 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | 1c.4 | #1860 | **P0 Agent Sessions slice 4, archive, stop, pause and delete with approval (child of #1304):** `archive_session`, `unarchive_session`, `stop_session`, `pause_session`, `resume_session`, `delete_session` (always asks, even in `yolo`; reuses #1591's background delete) | Filed P0 (Stuart 2026-11-10, the #1304 split); needs #1859; pause and resume need #477; grilled. **Done** (PR #2057, merged 2026-11-17, spec 134 `specs/134-session-end-tools-1860`, ADR 0009) |
 | 1c.5 | #1861 | **P0 Agent Sessions slice 5, Conversation handoff (child of #1304):** `list_conversations`, `new_conversation`, `switch_conversation` in the same Session | Filed P0 (Stuart 2026-11-10, the #1304 split); needs #1193 and #1858; shares the handoff path with #1827 (`/new <prompt>`); grilled 2026-11-17 and 2026-11-18. **Done** (PR #2102, spec 135; all 15 plan scenarios pass with the fake omp via `scripts/verify-tauri-1861.mjs`; review Lows and the tree-gate wait in #2101) |
 | 1c.6 | #1862 | **P0 Agent Sessions slice 6, Session list tree UI (child of #1304, `design`):** nested, collapsible child rows with a child count and a "from <parent>" line; archiving a parent asks about its children; tree pattern a11y and a polite live region | Filed P0 (Stuart 2026-11-10, the #1304 split); needs #1859 and #1860; grilled 2026-11-18. **Done** (PR #2084, merged 2026-11-19, spec 136 `specs/136-session-tree-1862`; plumbing: `collapsedParentIds` on `SessionListCollapse` and `includeChildren` on `sessions.archive`); review Lows in #2085 |
-| 1d | #1672 | **P0 Token guard cache writes:** `providers.cacheWarming` pinned to `idle` (new token guard key), `task.softRequestBudget` default 80 to 60 (a stored 80 is dropped once), no `cacheRetention` override; two upstream drafts kept in `specs/121-token-guard-cache-writes/upstream/`, not filed; detached/revived budget fixed upstream (OMP 18.17.0), spec 121 converged. **Done** (PR #1684, merged 2026-11-05, release v0.28.0, spec 121); the two measurement ACs stay open on the issue | Filed P0 (Stuart 2026-11-04); cache writes are 41% of cost |
+| 1d | #1672 | **P0 Token guard cache writes:** `providers.cacheWarming` pinned to `idle` (new token guard key), `task.softRequestBudget` default 80 to 60 (a stored 80 is dropped once), no `cacheRetention` override; two upstream drafts kept in `specs/121-token-guard-cache-writes/upstream/`, not filed; detached/revived budget fixed upstream (OMP 18.17.0), spec 121 converged. **Done** (PR #1684, merged 2026-11-05, release v0.28.0, spec 121); closed 2026-11-26, its open measurement ACs folded into #2209 | Filed P0 (Stuart 2026-11-04); cache writes are 41% of cost |
+| 1d.0 | #2209 | **P0 Minimise cache writes (child of #2230):** a cache warming setting (`off`, `streaming`, `idle`) sent over the OMP RPC protocol, audit `providers.cacheRetention` defaults (`long` for main Sessions, short for subagents), and #1672's leftovers: the two measurement ACs and the 1.5x subagent budget cap | Filed 2026-11-26 (Stuart); replaces #1672 as the one p0 for cache writes; grill before Spec Kit |
 | 1d.1 | #2070 | **Bug, Session usage (p1, `bug`):** Conversation (all time) total excludes the conversation's own subagent and advisor spend, so it does not match the Session total for a single-conversation session; fix Conversation scope to a prefix match on the conversation base name (the `.jsonl` file plus its sibling folder), symmetric with Session scope, and keep a "main thread only" figure/toggle | Filed 2026-11-18 (Stuart); **bumped above the DD themes** (Stuart 2026-11-18), daily-driver correctness bug; `src-tauri/src/usage/queries_session.rs:36-39`, `src/renderer/features/usage/store/session-usage-store.ts:180`; **built and live-checked, PR pending** (branch `fix/2070-conversation-usage-scope`; converge on spec 123, Main agent is a third scope segment; `scripts/verify-tauri-2070.mjs` 16/16, `pnpm ci:local` 23/23) |
 | 1d.2 | #2075 | **Feat, Right pane file/diff tabs (p1, child of #1135):** open files and diffs as their own tabs in the right pane, make the center chat pane collapsible, and raise or remove the 520px right-pane width cap; reuse `PanelTabBar` | Filed 2026-11-18 (Stuart); **bumped near the DD themes** (daily-driver friction); supersedes #1102 and #732 (center main-area tabs), both closed; #878 retargets. **Done on merge** (spec 137 `specs/137-right-pane-tabs-2075/`, branch `feat/2075-right-pane-tabs`; document tabs, collapsible chat, Wide 640 preset and a 4096 px sanity ceiling; live-checked at 240, 320 and wide; six-reviewer gate passed after three fix rounds); review Lows and Mediums in #2106 |
 | 1d.3 | #2111 | **Bug, Composer files-changed pill:** the pill shows the cumulative branch-vs-base diff capped at 200 (`git/diff_stat.rs:11,100-160` via `session/readout.rs:434` `diff_stat(worktree, base_branch)`), not the working tree, so it reads "200 (partial)" when the actual uncommitted count is 3. Point it at the working-tree-vs-HEAD source to match the Git changes panel (`git/changes_status.rs:18-30`), and show "200+" when capped | Filed 2026-11-20 (Stuart); **bumped above the DD themes** (daily-driver correctness); pill `ComposerStatusLine.tsx:21` -> `DiffStatLine` (`sessionDisplay.tsx:238`); refs #435, #1279 |
@@ -794,6 +825,7 @@ One agent, read-only. The supported OMP range is moving to a **minimum of 18.6.3
 - **Menus and the footer (Stuart, 2026-11-24):** #2173 makes menu separators use the app's `--divider` and lifts every menu and popover one surface step lighter, app-wide through the shared menu classes (not profile-only); the "footer" Stuart wants gone is the empty bottom status bar, already covered by #137, so it was not filed twice.
 - **Checklist upkeep (Stuart, 2026-11-24):** agents keep the checklist current without being asked; Stuart's own sessions get this from his shared context, and #2176 puts a generic version in the `refract_checklist` tool description so every Refract user's agent gets it.
 - **Peer Session messages (Stuart, 2026-11-25):** #2202 sends `refract_send_session_message` messages as a steer when the target is working or waiting on a question or approval, so they no longer wait for **Send now**; paused targets still hold them, and developer-typed messages keep the follow-up queue; p0.
+- **v1 plan (Stuart, 2026-11-26):** v1 ships by 2026-12-31 with every p0 and p1 issue plus the p2 bugs (GitHub milestone `v1`, 109 issues); every open issue is a sub-issue of one of 25 GitHub epics (14 existing, 11 new: #2222 to #2232); `pnpm plan:html` generates `docs/plan.html` from live GitHub data; #2209 absorbs #1672's open items and #1672 is closed.
 
 ## Decisions still needed from Stuart
 
@@ -1526,3 +1558,5 @@ Also filed 2026-11-24 (Stuart, UI polish): **#2189** (p1, `design`, `chat`) Chat
 Also filed 2026-11-25 (Stuart): **#2202** (p0, `bug`) Sessions: peer messages are steered into a busy or waiting target instead of queuing behind the turn until **Send now**; paused targets still hold them; developer-typed follow-ups unchanged.
 
 Also filed 2026-11-26 (gate review of fix PR #2216 `98f1bc39`): **#2218** (`p2`, `bug`) real omp config calls lose their deadline before the process starts, and **#2219** (`p2`, `chore`) a test that real omp config calls serialise under `OMP_INVOCATION_LOCK`. Both are Queue rows after #1190 and both touch only `src-tauri/src/omp/config.rs` and `src-tauri/src/omp/config_tests.rs`, so one agent at a time.
+
+Also filed 2026-11-26 (Stuart, v1 plan): epics **#2222** (chat transcript), **#2223** (chat readouts), **#2224** (Ask card, approvals and modes), **#2225** (Session list and Conversations), **#2226** (Checklist), **#2227** (right pane panels), **#2228** (Settings and OMP configuration), **#2229** (themes and visual polish), **#2230** (usage and cost), **#2231** (OMP transport), **#2232** (accessibility). Seven existing epics were retitled to their wider scope (#1135, #1136, #1137, #1272, #1273, #1810, #1901). All 341 open issues are linked as sub-issues, and the 109 v1 issues are on milestone `v1`.
