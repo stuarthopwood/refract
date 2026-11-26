@@ -50,11 +50,12 @@ function renderForecast(m) {
   const avg = f.avg.toFixed(1);
   let verdict;
   if (f.remaining === 0) verdict = ['fits', 'no open v1 issues remain.'];
-  else if (f.avg === 0) verdict = ['misses', `no completed issues in the last 4 weeks, so ${f.remaining} open v1 issues cannot be forecast and v1 does not fit.`];
+  else if (f.avg === 0) verdict = ['misses', `no completed issues in the last 2 full weeks, so ${f.remaining} open v1 issues cannot be forecast and v1 does not fit.`];
   else if (f.weeksNeeded <= f.weeksLeft) verdict = ['fits', `v1 fits. ${f.remaining} open issues need ${f.weeksNeeded.toFixed(1)} weeks at ${avg}/week; ${f.weeksLeft.toFixed(1)} weeks are left.`];
   else verdict = ['misses', `v1 does not fit. ${f.remaining} open issues need ${f.weeksNeeded.toFixed(1)} weeks at ${avg}/week; only ${f.weeksLeft.toFixed(1)} weeks are left.`];
   return `<section><h2>Forecast</h2>
-<p>Completed issues per ISO week (Monday start), last 4 full weeks. Average: <strong>${avg} per week</strong>. Remaining open v1 issues: <strong>${f.remaining}</strong>.</p>
+<p>Completed issues per ISO week (Monday start), last 4 full weeks. Projection rate: <strong>${avg} per week</strong>. Remaining open v1 issues: <strong>${f.remaining}</strong>.</p>
+<p class="muted">The projection uses the last two full weeks because earlier weeks include bulk triage closes.</p>
 ${table('Completed issues per week', ['Week starting', 'Completed'], rows)}
 <p class="verdict ${verdict[0]}"><span class="tag">Projection.</span> ${esc(verdict[1])}</p></section>`;
 }
@@ -69,7 +70,7 @@ function renderSchedule(m) {
 ${table(`Issues scheduled for the week starting ${b.start}`, ['Issue', 'Title', 'Priority', 'Type'], rows)}`;
   }).join('\n');
   return `<section><h2>Projected schedule</h2>
-<p class="muted">Projection at ${m.forecast.avg.toFixed(1)} issues per week from Monday ${esc(s.startDate)}. Order: p0, p1, p2 bugs, then other p2, p3 and unlabelled; within a priority, docs/PLAN.md Queue order, then issue number.</p>
+<p class="muted">Projection at ${Math.max(1, Math.round(m.forecast.avg))} issues per week (rate rounded to whole issues) from Monday ${esc(s.startDate)}. Order: p0, p1, p2 bugs, then other p2, p3 and unlabelled; within a priority, docs/PLAN.md Queue order, then issue number.</p>
 ${parts}</section>`;
 }
 

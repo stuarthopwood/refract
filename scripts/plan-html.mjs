@@ -182,7 +182,8 @@ function main() {
   const openV1 = allV1.filter((i) => i.state === 'OPEN');
 
   const weeks = weeklyThroughput(now);
-  const avg = weeks.reduce((sum, w) => sum + w.count, 0) / weeks.length;
+  const recent = weeks.slice(-2);
+  const avg = recent.reduce((sum, w) => sum + w.count, 0) / recent.length;
   const today = Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate());
   const daysLeft = Math.max(0, Math.ceil((DEADLINE - today) / DAY));
   const forecast = { weeks, avg, remaining: openV1.length, weeksLeft: daysLeft / 7, weeksNeeded: avg > 0 ? openV1.length / avg : Infinity };
@@ -195,7 +196,7 @@ function main() {
     v1Exists,
     v1: { total: allV1.length, closed: allV1.length - openV1.length },
     forecast,
-    schedule: buildSchedule(openV1, avg, ranks),
+    schedule: buildSchedule(openV1, Math.max(1, Math.round(avg)), ranks),
     groups,
   });
   writeFileSync(path.join(repoRoot, 'docs', 'plan.html'), html);
