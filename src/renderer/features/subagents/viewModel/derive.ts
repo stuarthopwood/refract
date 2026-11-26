@@ -95,7 +95,6 @@ export function deriveScenario(stages: readonly StageInput[]): ChatScenario {
     (draft) => draft.input.refText
   )
 
-  const allAgents = stages.flatMap((stage) => stage.agents)
   const stageItems = drafts.map((draft): StageItem => {
     const { input } = draft
     const agents = input.agents
@@ -122,28 +121,33 @@ export function deriveScenario(stages: readonly StageInput[]): ChatScenario {
       dependencies: draft.dependencies,
       agents: derived,
       ...(rawLabel ? { rawLabel } : {}),
+      ...(overallGoal ? { overallGoal } : {}),
       ...(outcomeSummary ? { outcomeSummary } : {}),
       ...(startedAt != null ? { startedAt } : {}),
       ...(durationMs != null ? { durationMs, duration: formatElapsed(durationMs) } : {})
     }
   })
 
-  const totals = summarizeSubagentStatuses(allAgents.map((agent) => agent.status))
-  const isRunning = totals.running > 0
-  const { startedAt, endedAt } = stageTimeRange(allAgents)
+  return { ...deriveHeader(stageItems), stages: stageItems }
+}
+
+/** The whole-run roll-up over already-derived Stages, so a surface holding only Stages (the chat's per-turn group) needs no second derivation. */
+export function deriveHeader(stages: readonly StageItem[]): Omit<ChatScenario, 'stages'> {
+  const agents = stages.flatMap((stage) => stage.agents)
+  const totals = summarizeSubagentStatuses(agents.map((agent) => agent.status))
+  const { startedAt, endedAt } = stageTimeRange(agents)
   const totalDurationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
-  const overallGoal = stageItems.length > 0 ? allAgents.find((agent) => agent.overallGoal)?.overallGoal : undefined
+  const overallGoal = stages.find((stage) => stage.overallGoal)?.overallGoal
   const headerStats = [
     `${stages.length} ${stages.length === 1 ? 'stage' : 'stages'}`,
-    `${allAgents.length} ${allAgents.length === 1 ? 'agent' : 'agents'}`,
+    `${agents.length} ${agents.length === 1 ? 'agent' : 'agents'}`,
     unsettledRollupText(totals)
   ]
     .filter((part) => part.length > 0)
     .join(', ')
   return {
     headerStats,
-    rollupText: stageRollupText(totals, allAgents.length, isRunning),
-    stages: stageItems,
+    rollupText: stageRollupText(totals, agents.length, totals.running > 0),
     ...(overallGoal ? { overallGoal } : {}),
     ...(startedAt != null ? { startedAt } : {}),
     ...(totalDurationMs != null ? { totalDurationMs, totalDuration: formatElapsed(totalDurationMs) } : {})

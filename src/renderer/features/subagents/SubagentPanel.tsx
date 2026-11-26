@@ -11,16 +11,13 @@ import { ToolGroupRow } from '../chat/ToolRow'
 import { formatElapsed } from '../chat/formatElapsed'
 import { LinkContext, Markdown } from '../chat/Markdown'
 import { NoticeRow } from '../chat/NoticeRow'
-import { stageRollupText } from '../chat/stageMeta'
-import { overallStatus } from '../chat/subagentChainStatus'
-import { groupSubagentsIntoPanelStages } from './groupSubagentPanelStages'
+import { selectScenarioFromSummaries, type SubAgentItem } from './viewModel'
 import {
   isSubagentSuccessStatus,
   SUBAGENT_STATUS_LABEL,
   SUBAGENT_SUCCESS_TEXT_CLASS,
   SubagentStatusGlyph,
-  SubagentStatusIcon,
-  summarizeSubagentStatuses
+  SubagentStatusIcon
 } from './subagentStatus'
 
 interface SubagentTreeNode {
@@ -39,44 +36,30 @@ interface SubagentTreeNode {
 }
 
 export function buildSubagentTree(subagents: SubagentSummary[]): SubagentTreeNode[] {
-  return groupSubagentsIntoPanelStages(subagents).map((stage) => {
-    if (stage.items.length === 1) {
-      const item = stage.items[0]!
-      return {
-        id: item.id,
-        key: `${item.toolCallId}:${item.specIndex}`,
-        nameOrTask: item.nameOrTask,
-        status: item.status,
-        durationMs: item.durationMs,
-        background: item.background,
-        children: [],
-        isStage: false
-      }
-    }
-    const counts = summarizeSubagentStatuses(stage.items.map((item) => item.status))
-    const aggregateStatus = overallStatus(counts)
-    const label = stage.label ?? `${stage.items.length} agents`
-    const rollupText = stageRollupText(counts, stage.items.length, aggregateStatus === 'running')
+  const toNode = (agent: SubAgentItem): SubagentTreeNode => ({
+    id: agent.id,
+    key: agent.key,
+    nameOrTask: agent.name,
+    status: agent.status,
+    durationMs: agent.durationMs,
+    background: agent.background,
+    children: [],
+    isStage: false
+  })
+  return selectScenarioFromSummaries(subagents).stages.map((stage) => {
+    if (stage.isSingleAgent) return toNode(stage.agents[0]!)
+    const label = stage.cleanTitle ?? `${stage.agents.length} agents`
     const usesText = stage.dependencies.length > 0 ? `Uses: ${stage.dependencies.map((d) => d.agentId).join(', ')}` : undefined
     return {
       id: '',
-      key: stage.key,
+      key: stage.id,
       nameOrTask: label,
-      status: aggregateStatus,
-      children: stage.items.map((item) => ({
-        id: item.id,
-        key: `${item.toolCallId}:${item.specIndex}`,
-        nameOrTask: item.nameOrTask,
-        status: item.status,
-        durationMs: item.durationMs,
-        background: item.background,
-        children: [],
-        isStage: false
-      })),
+      status: stage.status,
+      children: stage.agents.map(toNode),
       isStage: true,
-      rollupText,
+      rollupText: stage.rollupText,
       usesText,
-      ariaLabel: `${label}, ${rollupText}${aggregateStatus !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[aggregateStatus]}` : ''}${usesText ? `, ${usesText}` : ''}`
+      ariaLabel: `${label}, ${stage.rollupText}${stage.status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[stage.status]}` : ''}${usesText ? `, ${usesText}` : ''}`
     }
   })
 }
