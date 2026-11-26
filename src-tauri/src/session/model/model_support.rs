@@ -66,13 +66,18 @@ const THINKING_LEVEL_SUFFIXES: [&str; 9] = [
     "off", "minimal", "low", "medium", "high", "xhigh", "max", "auto", "inherit",
 ];
 
+/// `selector` without a trailing thinking-level suffix.
+pub(in crate::session) fn selector_base(selector: &str) -> &str {
+    match selector.rsplit_once(':') {
+        Some((head, suffix)) if THINKING_LEVEL_SUFFIXES.contains(&suffix) => head,
+        _ => selector,
+    }
+}
+
 /// Whether `selector` (a role value or typed `/switch` token) already names the live model.
 /// Deeper alias chains and candidate lists are never guessed; the caller reports them as unresolved.
 pub(super) fn selector_matches_model(selector: &str, model: &Value) -> bool {
-    let base = match selector.rsplit_once(':') {
-        Some((head, suffix)) if THINKING_LEVEL_SUFFIXES.contains(&suffix) => head,
-        _ => selector,
-    };
+    let base = selector_base(selector);
     if base.starts_with('@') || base.contains(',') {
         return false;
     }
@@ -177,7 +182,7 @@ fn direct_selector_with_fallback<'a>(
 
 /// Resolves a role the same way OMP does, so a legitimate no-op switch is not reported as failed.
 /// Follows one `@alias` or `*` hop only; a self-reference or deeper chain counts as unresolved.
-pub(super) fn resolve_role_selector<'a>(
+pub(in crate::session) fn resolve_role_selector<'a>(
     model_roles: &'a std::collections::HashMap<String, String>,
     role: &str,
 ) -> Option<&'a str> {

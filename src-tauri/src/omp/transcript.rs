@@ -19,6 +19,7 @@ use subagent_items::{
     try_apply_async_result, upsert_subagent_items,
 };
 mod notice_prefixes;
+pub mod synthesis_labels;
 use notice_prefixes::{COMMAND_OUTPUT_NOTICE_PREFIX, STARTUP_NOTICE_PREFIX};
 mod warning_collapse;
 use warning_collapse::collapse_repeated_warning;
@@ -123,6 +124,11 @@ pub enum TranscriptItem {
         result: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         job_id: Option<String>,
+        /// Read from the Session's synthesis cache and never computed here (ADR 0013 Q4).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        role: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        overall_goal: Option<String>,
         /// The owning assistant message's id; the renderer groups Stage membership by it (#563).
         /// Empty briefly between `tool_execution_start` and the message snapshot echoing the call.
         #[serde(default)]
@@ -1630,27 +1636,24 @@ fn items_from_history(messages: &[Value]) -> Vec<Arc<TranscriptItem>> {
 
 /// One Session's current `TranscriptItem[]`; items sit behind `Arc` so only changed ones get a
 /// fresh pointer and `diff_transcript` can use `Arc::ptr_eq`.
+#[derive(Default)]
 pub struct TranscriptState {
     items: Vec<Arc<TranscriptItem>>,
     has_user_acted: bool,
     terminated_unexpectedly: bool,
+    synthesis: Option<Arc<dyn synthesis_labels::SynthesisLookup>>,
 }
 
 impl TranscriptState {
     pub fn new() -> Self {
-        Self {
-            items: Vec::new(),
-            has_user_acted: false,
-            terminated_unexpectedly: false,
-        }
+        Self::default()
     }
 
     /// Converts `get_messages` history (the trailing settle pass is not run here).
     pub fn from_history(messages: &[Value]) -> Self {
         Self {
             items: items_from_history(messages),
-            has_user_acted: false,
-            terminated_unexpectedly: false,
+            ..Self::default()
         }
     }
 
@@ -1667,6 +1670,7 @@ impl TranscriptState {
         let (settled, _) =
             settle_interrupted_tool_rows_items(history_items, terminated_unexpectedly);
         self.items = merge_history_with_live(&settled, &self.items);
+        self.relabel_subagents();
     }
 
     /// Appends a notice an OMP extension raised through `ctx.ui.notify` (#2114). The source is set here,
@@ -1687,6 +1691,7 @@ impl TranscriptState {
     pub fn apply_frame(&mut self, frame: &Value, turn_abort_requested: bool) {
         let items = std::mem::take(&mut self.items);
         self.items = apply_frame_items(items, frame, self.has_user_acted, turn_abort_requested);
+        self.relabel_subagents();
     }
 
     pub fn items(&self) -> &[Arc<TranscriptItem>] {
@@ -1729,11 +1734,5 @@ impl TranscriptState {
             settle_interrupted_tool_rows_items(self.items.clone(), self.terminated_unexpectedly);
         self.items = next;
         changed
-    }
-}
-
-impl Default for TranscriptState {
-    fn default() -> Self {
-        Self::new()
     }
 }

@@ -2,12 +2,18 @@
 // A `task` end frame applies only real per-index statuses, since blanket overrides break async batches.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 use serde_json::{json, Value};
 
 use crate::omp::process::ReadyWaitStage;
+use crate::omp::transcript::synthesis_labels::SynthesisLookup;
 
 use super::agent::SessionAgent;
+
+#[path = "subagents_heartbeat.rs"]
+mod subagents_heartbeat;
+use subagents_heartbeat::RecentStep;
 
 #[path = "subagents_progress.rs"]
 mod subagents_progress;
@@ -15,6 +21,14 @@ use subagents_progress::{
     apply_jobs, apply_progress_to_batch, apply_subagent_frame, emit_subagents_update,
     queue_patch_ops, subscribe_to_subagent_frames, summaries_to_value,
 };
+
+#[path = "subagents_synthesis_hook.rs"]
+mod subagents_synthesis_hook;
+use subagents_synthesis_hook::SynthesisState;
+
+#[cfg(test)]
+#[path = "subagents_test_support.rs"]
+mod test_support;
 
 const NAME_OR_TASK_MAX_CHARS: usize = 60;
 /// Task-summary budget, separate from `NAME_OR_TASK_MAX_CHARS` (#700/#701).
@@ -57,6 +71,14 @@ pub(super) struct SummaryEntry {
     duration_ms: Option<i64>,
     /// #712: OMP reported `detached: true` (an async background job).
     background: bool,
+    /// Synthesised role label, at most 40 characters; `None` until the side call lands (#1925).
+    role: Option<String>,
+    /// Synthesised goal of the whole `task()` call, repeated on each of its agents (#1925).
+    overall_goal: Option<String>,
+    /// Paths this agent wrote or edited, first-seen order; live only, never replayed (#1925).
+    files_touched: Vec<String>,
+    /// Latest heartbeat steps, newest last (#1925).
+    recent_steps: Vec<RecentStep>,
 }
 
 /// Subagent runtime state held inside `AgentState`, reached via `with_subagents_state`.
@@ -73,6 +95,11 @@ pub(super) struct State {
     /// Coalesced patch ops for the visible subagent since the last flush.
     pending_patch_ops: Vec<Value>,
     patch_timer_pending: bool,
+    /// Heartbeat-only changes since the last `subagents:update`; flushed by one timer per window (#1925).
+    summaries_dirty: bool,
+    summaries_timer_pending: bool,
+    /// Executor, cache and per-call dedupe for the `tiny` labelling of each `task()` call (#1925).
+    synthesis: SynthesisState,
 }
 
 fn now_ms() -> i64 {
@@ -239,6 +266,22 @@ pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
     )
     .await;
     subscribe_to_subagent_frames(agent).await;
+}
+
+/// Launch hook: hands the Session's synthesis cache to its transcript before history merges in, so
+/// replayed cards carry their labels (ADR 0013 Q4).
+pub(super) async fn attach_synthesis_labels(agent: &SessionAgent) {
+    subagents_synthesis_hook::attach_to_transcript(agent).await;
+}
+
+/// The Session's synthesis cache as a read-only label source, for history shown without a live transcript.
+pub(crate) async fn synthesis_lookup(agent: &SessionAgent) -> Option<Arc<dyn SynthesisLookup>> {
+    subagents_synthesis_hook::lookup(agent).await
+}
+
+/// Session delete hook: stops the synthesis cache writing, before its folder is removed.
+pub(crate) async fn discard_synthesis_cache(agent: &SessionAgent) {
+    subagents_synthesis_hook::discard_cache(agent).await;
 }
 
 /// Conversation hook: clears the previous Conversation's subagents (#577).
@@ -460,6 +503,10 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
             started_at,
             duration_ms: None,
             background: false,
+            role: None,
+            overall_goal: None,
+            files_touched: Vec::new(),
+            recent_steps: Vec::new(),
         });
     }
 
@@ -475,4 +522,5 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
         .await;
     emit_subagents_update(agent, summaries_value).await;
     super::readout::schedule_readout_update(agent).await;
+    subagents_synthesis_hook::on_task_start(agent, tool_call_id, args).await;
 }

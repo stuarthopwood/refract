@@ -368,6 +368,8 @@ impl SessionAgent {
 
         // A concurrent exit may clear `process` during the history fetch.
         self.fail_if_process_changed(&proc, failure_prefix).await?;
+        // Before the merge below, so replayed `task()` cards are labelled from the cache in the same pass.
+        crate::session::subagents::attach_synthesis_labels(self).await;
 
         let current_mode = self.settings.lock().await.get().approval_mode;
         {

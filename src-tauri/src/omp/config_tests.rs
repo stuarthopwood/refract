@@ -173,3 +173,30 @@ async fn read_capped_output_kills_the_child_and_returns_immediately_once_stdout_
         "child should have been killed by read_capped_output, not left running"
     );
 }
+
+/// Implements only `call`, so `call_with_timeout` is the trait's default.
+struct CallOnly(std::sync::Mutex<Vec<Vec<String>>>);
+
+impl OmpExecutor for CallOnly {
+    fn call<'a>(
+        &'a self,
+        args: &'a [String],
+        _failure_message: &'a str,
+        _strip_env_vars: &'a [&'a str],
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        self.0.lock().unwrap().push(args.to_vec());
+        Box::pin(async { Ok("reply".to_string()) })
+    }
+}
+
+#[tokio::test]
+async fn the_default_call_with_timeout_delegates_to_call() {
+    let exec = CallOnly(std::sync::Mutex::new(Vec::new()));
+    let args = vec!["--version".to_string()];
+    let reply = exec
+        .call_with_timeout(&args, "failed", &[], Duration::from_secs(1))
+        .await
+        .unwrap();
+    assert_eq!(reply, "reply");
+    assert_eq!(*exec.0.lock().unwrap(), vec![args]);
+}

@@ -67,6 +67,11 @@ struct TranscriptPatchPayload<'a> {
 /// Shared across clones, so a probe set on the agent's sink is seen by every holder.
 #[cfg(test)]
 type StatusProbe = std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>>>;
+/// Sees every `subagents:update` payload, so a test can count and inspect the emits.
+#[cfg(test)]
+type SubagentsProbe = std::sync::Arc<
+    std::sync::Mutex<Option<std::sync::Arc<dyn Fn(&serde_json::Value) + Send + Sync>>>,
+>;
 
 /// One typed emit method per event this build fires. Cheap to clone, so each holder keeps its own
 /// copy. Emits no-op until `lib.rs`'s `setup` fills `app_handle`.
@@ -79,6 +84,8 @@ pub struct EventSink {
     status_probe: StatusProbe,
     #[cfg(test)]
     conversation_probe: StatusProbe,
+    #[cfg(test)]
+    subagents_probe: SubagentsProbe,
 }
 
 impl EventSink {
@@ -93,6 +100,8 @@ impl EventSink {
             status_probe: Default::default(),
             #[cfg(test)]
             conversation_probe: Default::default(),
+            #[cfg(test)]
+            subagents_probe: Default::default(),
         }
     }
 
@@ -111,6 +120,15 @@ impl EventSink {
     #[cfg(test)]
     pub(crate) fn set_conversation_probe(&self, probe: impl Fn() + Send + Sync + 'static) {
         *self.conversation_probe.lock().unwrap() = Some(std::sync::Arc::new(probe));
+    }
+
+    /// Test seam: runs at every `subagents:update` emit with its `subagents` array.
+    #[cfg(test)]
+    pub(crate) fn set_subagents_probe(
+        &self,
+        probe: impl Fn(&serde_json::Value) + Send + Sync + 'static,
+    ) {
+        *self.subagents_probe.lock().unwrap() = Some(std::sync::Arc::new(probe));
     }
 
     pub(crate) fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
@@ -330,6 +348,10 @@ impl EventSink {
 
     /// `subagents:update`: the Session's `SubagentSummary[]`, kept until a new Conversation starts.
     pub fn emit_subagents_update(&self, session_id: &str, subagents: serde_json::Value) {
+        #[cfg(test)]
+        if let Some(probe) = self.subagents_probe.lock().unwrap().as_ref() {
+            probe(&subagents);
+        }
         self.send(
             SUBAGENTS_UPDATE,
             serde_json::json!({ "sessionId": session_id, "subagents": subagents }),

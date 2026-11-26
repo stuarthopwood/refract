@@ -96,6 +96,14 @@ interface ProcessRecord { pid: number; startTime: string; sessionId: string }
 
 One record per running `omp` root process, written when it starts and removed when it exits. `startTime` is the process creation time as read from Windows. At app start, every record whose pid is still running with the same creation time and an `omp` image name is stopped (`taskkill /T /F`); every other record is discarded. This is the fallback for a run where job-object assignment failed (see research.md decision 4).
 
+### `sessions/<sessionId>/subagent-synthesis.json` (issue #1925)
+
+```ts
+type SubagentSynthesisCache = Record<string /* toolCallId */, { overallGoal?: string; roles: (string | null)[] /* by spec index */ }>;
+```
+
+The model-written labels of each live `task()` call, so a restart or replay shows them with no new model call. Written atomically (temp file then rename) once per `toolCallId` when the `tiny`-role call returns; an absent or corrupt file is read as empty, and a history item with no entry stays unlabelled. Lives under the data folder, not the worktree. `role` and `overallGoal` are mirrored on the in-memory `SubagentSummary`; `filesTouched` and `recentSteps` are held only in memory.
+
 ## Derived from OMP (not stored by Refract)
 
 ### Conversation
