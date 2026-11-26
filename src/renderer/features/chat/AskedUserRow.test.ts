@@ -2,21 +2,23 @@
 // The repo has no jsdom, so the row is rendered to a string; the expanded view is covered in AskedUserLine.test.ts. Dispatch cases render with "Expand answered questions" off so the digest is asserted (#1747).
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { TranscriptItem } from '../../../shared/model'
 
+const display = vi.hoisted(() => ({ expandAnsweredAsks: false, stored: undefined as unknown }))
 // The row renders questions through the real Markdown renderer (#2033); the state barrel it imports needs a browser `window`, so it is stubbed.
 vi.mock('@/state', () => ({
   notifyPersistentError: vi.fn(),
   useSyntaxTheme: () => 'github-dark',
-  useSessionsStore: (select: (state: { sessions: [] }) => unknown) => select({ sessions: [] })
+  useSessionsStore: (select: (state: { sessions: [] }) => unknown) => select({ sessions: [] }),
+  useSettingsStore: (select: (s: { settings: object }) => unknown) => select({ settings: { transcriptDisplay: display.stored === undefined ? display : display.stored } })
 }))
 import { AskedUserRow } from './AskedUserRow'
 
-const display = vi.hoisted(() => ({ expandAnsweredAsks: false, stored: undefined as unknown }))
-vi.mock('@/state', () => ({
-  useSettingsStore: (select: (s: { settings: object }) => unknown) => select({ settings: { transcriptDisplay: display.stored === undefined ? display : display.stored } })
-}))
+// A case that sets `stored` must not leak into the next one, even when its assertion fails.
+beforeEach(() => {
+  display.stored = undefined
+})
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -116,7 +118,6 @@ describe('answered ask rows follow Expand answered questions (#1747)', () => {
   ])('Given %s, When an answered ask renders, Then it falls back to open', (_name, stored) => {
     display.stored = stored
     const html = renderToStaticMarkup(createElement(AskedUserRow, { item: tool({ args: DB_ARGS, details: answered }) }))
-    display.stored = undefined
     expect(html).toMatch(/<button[^>]*aria-expanded="true"/)
   })
 })
