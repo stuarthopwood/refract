@@ -3,6 +3,8 @@
 // its heuristics; nothing here retries, and nothing falls back to `default` or `smol`.
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -10,11 +12,12 @@ use serde_json::Value;
 
 use super::model::model_support::{resolve_role_selector, selector_base};
 use crate::ipc::model_roles::assert_valid_selector;
-use crate::omp::config::OmpExecutor;
+use crate::omp::config::{ensure_scratch_dir, OmpExecutor};
+use crate::process::executables::resolve_omp;
 
 const TASK_MAX_CHARS: usize = 2_000;
 const CONTEXT_MAX_CHARS: usize = 4_000;
-/// Shared across the agents, so a wide `task()` call cannot push the argv past the Windows command-line limit.
+/// Shared across the agents, so a wide `task()` call cannot make a prompt the small model chokes on.
 const AGENT_TEXT_BUDGET_CHARS: usize = 20_000;
 const MIN_TASK_CHARS: usize = 200;
 const NAME_MAX_CHARS: usize = 80;
@@ -39,6 +42,22 @@ pub struct SynthesisInput {
 pub struct Synthesis {
     pub overall_goal: Option<String>,
     pub roles: Vec<Option<String>>,
+}
+
+impl Synthesis {
+    /// The same label caps `parse_reply` applies, for labels read back from a disk file anyone can edit.
+    pub fn clamped(self) -> Self {
+        Self {
+            overall_goal: self
+                .overall_goal
+                .and_then(|goal| clean_label(&goal, GOAL_MAX_CHARS)),
+            roles: self
+                .roles
+                .into_iter()
+                .map(|role| role.and_then(|role| clean_label(&role, ROLE_MAX_CHARS)))
+                .collect(),
+        }
+    }
 }
 
 /// The model's whole input: instructions, the cleaned shared context and each agent's capped task.
@@ -223,10 +242,29 @@ pub async fn run_synthesis(
     selector: &str,
     input: &SynthesisInput,
 ) -> Option<Synthesis> {
+    run_synthesis_with(exec, selector, input, resolve_omp().ok().as_deref()).await
+}
+
+/// `run_synthesis` with the resolved `omp` path given, so a test can choose it. An unresolved path
+/// is left for the executor to report.
+async fn run_synthesis_with(
+    exec: &dyn OmpExecutor,
+    selector: &str,
+    input: &SynthesisInput,
+    omp_path: Option<&Path>,
+) -> Option<Synthesis> {
     if input.agents.is_empty() || assert_valid_selector(selector).is_err() {
         return None;
     }
-    let args = omp_args(selector, &build_prompt(input));
+    if omp_path.is_some_and(is_batch_shim) {
+        log::warn!(
+            "subagent synthesis skipped: omp resolves to a batch shim that mangles arguments"
+        );
+        return None;
+    }
+    // The prompt rides in a file, not argv, so its size never meets the command-line limit; it is deleted on drop.
+    let prompt_file = PromptFile::write(&build_prompt(input)).await?;
+    let args = omp_args(selector, &prompt_file.message_arg());
     let call = exec.call_with_timeout(&args, FAILURE_MESSAGE, &[], SYNTHESIS_TIMEOUT);
     // The outer bound covers an executor that ignores the deadline it was given.
     let reply = match tokio::time::timeout(SYNTHESIS_TIMEOUT, call).await {
@@ -247,9 +285,61 @@ pub async fn run_synthesis(
     parsed
 }
 
+/// `.cmd` and `.bat` shims re-parse their arguments through `cmd.exe`, which mangles them.
+fn is_batch_shim(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("cmd") || ext.eq_ignore_ascii_case("bat"))
+}
+
+static PROMPT_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// One prompt file in the shared `omp` scratch cwd; dropping it deletes the file, so success, error
+/// and timeout all clean up.
+struct PromptFile {
+    path: PathBuf,
+}
+
+impl PromptFile {
+    async fn write(prompt: &str) -> Option<Self> {
+        let dir = match ensure_scratch_dir().await {
+            Ok(dir) => dir,
+            Err(err) => {
+                log::warn!("subagent synthesis: no scratch dir: {}", err.message);
+                return None;
+            }
+        };
+        let name = format!(
+            "synthesis-prompt-{}-{}.md",
+            std::process::id(),
+            PROMPT_COUNTER.fetch_add(1, Ordering::Relaxed)
+        );
+        let file = Self {
+            path: dir.join(name),
+        };
+        if let Err(err) = tokio::fs::write(&file.path, prompt).await {
+            log::warn!("subagent synthesis: could not write the prompt file: {err}");
+            return None;
+        }
+        Some(file)
+    }
+
+    /// The file name relative to the scratch cwd the call runs in, with omp's `@` file prefix.
+    fn message_arg(&self) -> String {
+        let name = self.path.file_name().and_then(|n| n.to_str());
+        format!("@{}", name.unwrap_or_default())
+    }
+}
+
+impl Drop for PromptFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
 /// The flags switch off everything that could spend tokens or read project state besides this one prompt,
 /// including title generation, which would be a second model call.
-fn omp_args(selector: &str, prompt: &str) -> Vec<String> {
+fn omp_args(selector: &str, message: &str) -> Vec<String> {
     [
         "-p",
         "--no-session",
@@ -264,7 +354,7 @@ fn omp_args(selector: &str, prompt: &str) -> Vec<String> {
     .iter()
     .map(|flag| (*flag).to_string())
     // `--model=` keeps a selector that starts with `-` from being read as a flag.
-    .chain([format!("--model={selector}"), prompt.to_string()])
+    .chain([format!("--model={selector}"), message.to_string()])
     .collect()
 }
 

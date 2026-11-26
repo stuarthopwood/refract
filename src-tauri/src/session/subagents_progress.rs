@@ -6,6 +6,7 @@ use std::time::Duration;
 use serde_json::{json, Value};
 
 use super::super::agent::SessionAgent;
+use super::subagents_heartbeat::{accumulate_heartbeat, step_value};
 use super::{State, SummaryEntry, SummaryStatus};
 use crate::omp::transcript::subagent_items::{classify_progress_status, ProgressOutcome};
 
@@ -68,7 +69,8 @@ pub(super) async fn apply_progress_to_batch(
             if batch_indices.is_empty() {
                 return (None, Vec::new(), Vec::new());
             }
-            let mut changed = false;
+            let mut immediate = false;
+            let mut heartbeat = false;
             let mut settles: Vec<TranscriptSettle> = Vec::new();
             let mut visible_ops: Vec<Value> = Vec::new();
             for (i, progress) in progress_list.iter().enumerate() {
@@ -92,16 +94,16 @@ pub(super) async fn apply_progress_to_batch(
                 let status_changed = entry.status != new_status;
                 if status_changed {
                     entry.status = new_status;
-                    changed = true;
+                    immediate = true;
                 }
                 // Duration updates are stored but do not emit a broadcast by themselves.
                 if new_duration.is_some() && entry.duration_ms != new_duration {
                     entry.duration_ms = new_duration;
                     if new_status != SummaryStatus::Running {
-                        changed = true;
+                        immediate = true;
                     }
                 }
-                changed |= accumulate_heartbeat(entry, progress);
+                heartbeat |= accumulate_heartbeat(entry, progress);
 
                 if status_changed {
                     settles.extend(settle_of(entry));
@@ -117,14 +119,15 @@ pub(super) async fn apply_progress_to_batch(
                     );
                 }
             }
-            let summaries_value = changed.then(|| summaries_to_value(&s.summaries));
+            let summaries_value = snapshot_for_emit(s, immediate, heartbeat);
             (summaries_value, visible_ops, settles)
         })
         .await;
 
     agent.settle_transcript_subagents(&settles).await;
-    if let Some(value) = summaries_value {
-        emit_subagents_update(agent, value).await;
+    match summaries_value {
+        Some(value) => emit_subagents_update(agent, value).await,
+        None => flush_heartbeat_emit(agent).await,
     }
     if !visible_ops.is_empty() {
         queue_patch_ops(agent, visible_ops).await;
@@ -164,7 +167,7 @@ pub(super) async fn apply_jobs(agent: &SessionAgent, jobs: &[Value]) {
                 }
                 settles.extend(settle_of(entry));
             }
-            (changed.then(|| summaries_to_value(&s.summaries)), settles)
+            (snapshot_for_emit(s, changed, false), settles)
         })
         .await;
     agent.settle_transcript_subagents(&settles).await;
@@ -205,22 +208,22 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
     let (summaries_value, visible_ops, settles) = agent
         .with_subagents_state(|s| {
             let mut settles: Vec<TranscriptSettle> = Vec::new();
-            let (changed, ops) = (|| {
+            let (immediate, heartbeat, ops) = (|| {
                 let Some(target) = s
                     .summaries
                     .iter()
                     .position(|e| e.tool_call_id == parent && u64::from(e.spec_index) == index)
                 else {
-                    return (false, Vec::new());
+                    return (false, false, Vec::new());
                 };
-                let mut changed = false;
+                let mut immediate = false;
                 let entry = &mut s.summaries[target];
                 if detached && !entry.background {
                     entry.background = true;
-                    changed = true;
+                    immediate = true;
                 }
                 if entry.status != SummaryStatus::Running {
-                    return (changed, Vec::new());
+                    return (immediate, false, Vec::new());
                 }
                 if is_lifecycle {
                     let status = payload.get("status").and_then(Value::as_str).unwrap_or("");
@@ -230,19 +233,19 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
                         entry.status = new_status;
                         entry.duration_ms = Some(entry.duration_ms.unwrap_or(0).max(observed));
                         settles.extend(settle_of(entry));
-                        changed = true;
+                        immediate = true;
                     }
-                    return (changed, Vec::new());
+                    return (immediate, false, Vec::new());
                 }
                 let Some(progress) = payload.get("progress") else {
-                    return (changed, Vec::new());
+                    return (immediate, false, Vec::new());
                 };
                 if let Some(d) = progress.get("durationMs").and_then(Value::as_i64) {
                     if d > 0 {
                         entry.duration_ms = Some(d);
                     }
                 }
-                changed |= accumulate_heartbeat(entry, progress);
+                let heartbeat = accumulate_heartbeat(entry, progress);
                 let stream_id = entry.id.clone();
                 let is_visible = s.visible_id.as_deref() == Some(stream_id.as_str());
                 let new_rows = apply_subagent_progress_in_place(s, &stream_id, progress);
@@ -254,19 +257,16 @@ pub(super) async fn apply_subagent_frame(agent: &SessionAgent, frame_type: &str,
                 } else {
                     Vec::new()
                 };
-                (changed, ops)
+                (immediate, heartbeat, ops)
             })();
-            (
-                changed.then(|| summaries_to_value(&s.summaries)),
-                ops,
-                settles,
-            )
+            (snapshot_for_emit(s, immediate, heartbeat), ops, settles)
         })
         .await;
     agent.settle_transcript_subagents(&settles).await;
     let settled = summaries_value.is_some();
-    if let Some(value) = summaries_value {
-        emit_subagents_update(agent, value).await;
+    match summaries_value {
+        Some(value) => emit_subagents_update(agent, value).await,
+        None => flush_heartbeat_emit(agent).await,
     }
     if !visible_ops.is_empty() {
         queue_patch_ops(agent, visible_ops).await;
@@ -366,92 +366,6 @@ fn apply_subagent_progress_in_place(
     new_rows
 }
 
-/// Caps for the heartbeat-derived summary fields (#1925).
-const MAX_FILES_TOUCHED: usize = 50;
-const MAX_RECENT_STEPS: usize = 5;
-
-/// One recent tool call kept on a summary for the "what is it doing" line (#1925).
-#[derive(Debug, Clone, PartialEq)]
-pub(super) struct RecentStep {
-    tool: String,
-    intent: Option<String>,
-    target: Option<String>,
-    is_error: Option<bool>,
-    end_ms: Option<i64>,
-}
-
-/// The call's path: `args` is a preview string today, but an object with a `path` key is also read.
-fn tool_path(entry: &Value) -> Option<String> {
-    let args = entry.get("args")?;
-    let raw = match args {
-        Value::String(text) => text.as_str(),
-        Value::Object(_) => args.get("path").and_then(Value::as_str)?,
-        _ => return None,
-    };
-    let trimmed = raw.trim();
-    (!trimmed.is_empty()).then(|| trimmed.to_string())
-}
-
-fn recent_step(entry: &Value) -> Option<RecentStep> {
-    let text = |key: &str| entry.get(key).and_then(Value::as_str).map(str::to_string);
-    Some(RecentStep {
-        tool: text("tool")?,
-        intent: text("intent"),
-        target: tool_path(entry),
-        is_error: entry.get("isError").and_then(Value::as_bool),
-        end_ms: entry.get("endMs").and_then(Value::as_i64),
-    })
-}
-
-fn step_value(step: &RecentStep) -> Value {
-    let mut obj = json!({ "tool": step.tool });
-    if let Some(intent) = &step.intent {
-        obj["intent"] = json!(intent);
-    }
-    if let Some(target) = &step.target {
-        obj["target"] = json!(target);
-    }
-    if let Some(is_error) = step.is_error {
-        obj["isError"] = json!(is_error);
-    }
-    if let Some(end_ms) = step.end_ms {
-        obj["endMs"] = json!(end_ms);
-    }
-    obj
-}
-
-/// Folds one heartbeat into the summary: new written or edited paths (deduplicated, capped,
-/// first-seen order) and the latest steps. A frame without `recentTools` changes nothing.
-/// Returns whether the summary changed, so the caller emits only then.
-fn accumulate_heartbeat(entry: &mut SummaryEntry, progress: &Value) -> bool {
-    let Some(tools) = progress.get("recentTools").and_then(Value::as_array) else {
-        return false;
-    };
-    let mut changed = false;
-    for tool in tools {
-        if !matches!(
-            tool.get("tool").and_then(Value::as_str),
-            Some("write" | "edit")
-        ) {
-            continue;
-        }
-        let Some(path) = tool_path(tool) else {
-            continue;
-        };
-        if entry.files_touched.len() < MAX_FILES_TOUCHED && !entry.files_touched.contains(&path) {
-            entry.files_touched.push(path);
-            changed = true;
-        }
-    }
-    let mut steps: Vec<RecentStep> = tools.iter().filter_map(recent_step).collect();
-    steps.drain(..steps.len().saturating_sub(MAX_RECENT_STEPS));
-    if !steps.is_empty() && steps != entry.recent_steps {
-        entry.recent_steps = steps;
-        changed = true;
-    }
-    changed
-}
-
 pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
     Value::Array(
         summaries
@@ -514,6 +428,54 @@ pub(super) async fn emit_subagents_update(agent: &SessionAgent, value: Value) {
     agent
         .events()
         .emit_subagents_update(agent.session_id(), value);
+}
+
+/// Heartbeats arrive many times a second, so their `subagents:update` is capped to one per window.
+const SUMMARIES_COALESCE_MS: u64 = 200;
+
+/// The snapshot to emit now, or `None` when the change can wait for the coalescing window.
+/// A status, duration or background change is `immediate`; a heartbeat alone only marks the state dirty.
+fn snapshot_for_emit(s: &mut State, immediate: bool, heartbeat: bool) -> Option<Value> {
+    if immediate {
+        s.summaries_dirty = false;
+        return Some(summaries_to_value(&s.summaries));
+    }
+    s.summaries_dirty |= heartbeat;
+    None
+}
+
+/// Starts the one-per-window timer while heartbeats left the summaries dirty; the timer reads the
+/// latest snapshot when it fires, so every heartbeat inside the window shares one emit.
+async fn flush_heartbeat_emit(agent: &SessionAgent) {
+    if !agent.is_visible() {
+        return;
+    }
+    let should_spawn = agent
+        .with_subagents_state(|s| {
+            if !s.summaries_dirty || s.summaries_timer_pending {
+                return false;
+            }
+            s.summaries_timer_pending = true;
+            true
+        })
+        .await;
+    if !should_spawn {
+        return;
+    }
+    let agent = agent.arc();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(SUMMARIES_COALESCE_MS)).await;
+        let value = agent
+            .with_subagents_state(|s| {
+                s.summaries_timer_pending = false;
+                // An immediate emit in the window already carried these steps.
+                std::mem::take(&mut s.summaries_dirty).then(|| summaries_to_value(&s.summaries))
+            })
+            .await;
+        if let Some(value) = value {
+            emit_subagents_update(&agent, value).await;
+        }
+    });
 }
 
 /// Coalesces subagent patch ops to one emit per `PATCH_COALESCE_MS`, and never emits for a hidden Session.

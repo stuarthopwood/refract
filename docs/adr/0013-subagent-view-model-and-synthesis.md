@@ -34,3 +34,12 @@ Every field is optional, so an older Rust build, an unset `tiny` role and a repl
 - `filesTouched` and `recentSteps` are live only. After a restart a finished agent shows no files, because the heartbeat is not replayed.
 - The `tiny` call is the first Rust-initiated model call in Refract. The runner goes through the same `omp` executor the config reads use, so tests substitute a fake and no test spends tokens.
 - Revisit Q8 if a user asks for an opt-out, and Q5 if OMP ships a per-feature cheap-model hook.
+
+## Runtime limits
+
+- A failed synthesis is not retried within a Session (in-memory dedupe); an app restart may retry once.
+- Heartbeat-only summary emits coalesce to one per 200 ms; settles emit at once.
+- Model roles are read once per Session, including the "no usable tiny" outcome.
+- At most 2 synthesis calls run per Session at a time.
+- The prompt is passed as an `@file` in the scratch cwd, never argv; the file is deleted after the call.
+- The cache is removed when the Session is deleted.

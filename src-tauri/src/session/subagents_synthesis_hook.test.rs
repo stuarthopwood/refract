@@ -2,6 +2,7 @@
 use std::future::Future;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex as StdMutex;
 use std::time::Duration;
 
@@ -9,7 +10,6 @@ use serde_json::json;
 
 use super::*;
 use crate::omp::config::OmpConfigError;
-use crate::store::registry::Session;
 
 type CallFuture<'a> = Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>>;
 
@@ -20,14 +20,25 @@ struct FakeExec {
     roles: serde_json::Value,
     reply: String,
     calls: StdMutex<Vec<Vec<String>>>,
+    /// How long each model call takes, so a test can see calls overlap.
+    model_delay: Duration,
+    in_flight: AtomicUsize,
+    peak_in_flight: AtomicUsize,
 }
 
 impl FakeExec {
     fn new(roles: serde_json::Value, reply: &str) -> Arc<Self> {
+        Self::slow(roles, reply, Duration::ZERO)
+    }
+
+    fn slow(roles: serde_json::Value, reply: &str, model_delay: Duration) -> Arc<Self> {
         Arc::new(Self {
             roles,
             reply: reply.to_string(),
             calls: StdMutex::new(Vec::new()),
+            model_delay,
+            in_flight: AtomicUsize::new(0),
+            peak_in_flight: AtomicUsize::new(0),
         })
     }
 
@@ -57,13 +68,18 @@ impl OmpExecutor for FakeExec {
         _strip_env_vars: &'a [&'a str],
     ) -> CallFuture<'a> {
         self.calls.lock().unwrap().push(args.to_vec());
-        let body = if args.first().map(String::as_str) == Some("config") {
-            json!({ "key": "modelRoles", "value": self.roles, "type": "record", "description": "" })
-                .to_string()
-        } else {
-            self.reply.clone()
-        };
-        Box::pin(async move { Ok(body) })
+        let is_config = args.first().map(String::as_str) == Some("config");
+        Box::pin(async move {
+            if is_config {
+                return Ok(json!({ "key": "modelRoles", "value": self.roles, "type": "record", "description": "" })
+                    .to_string());
+            }
+            let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+            self.peak_in_flight.fetch_max(now, Ordering::SeqCst);
+            tokio::time::sleep(self.model_delay).await;
+            self.in_flight.fetch_sub(1, Ordering::SeqCst);
+            Ok(self.reply.clone())
+        })
     }
 }
 
@@ -79,70 +95,16 @@ struct Fixture {
 }
 
 async fn fixture(exec: Arc<FakeExec>) -> Fixture {
-    let id = format!("session-synth-{}", uuid::Uuid::new_v4());
-    let dir = crate::test_scratch::path(format!("refract-synth-hook-{}", uuid::Uuid::new_v4()));
-    tokio::fs::create_dir_all(&dir).await.unwrap();
-    let mut registry_store = crate::store::registry::RegistryStore::open(&dir)
-        .await
-        .unwrap();
-    registry_store
-        .add_repository(crate::store::registry::Repository {
-            id: "repo-synth".to_string(),
-            path: dir.join("repo").to_string_lossy().into_owned(),
-            name: "repo".to_string(),
-            default_branch: "main".to_string(),
-            added_at: "2026-11-26T00:00:00.000Z".to_string(),
-            color: None,
-        })
-        .await
-        .unwrap();
-    registry_store
-        .add_session(Session {
-            id: id.clone(),
-            kind: crate::store::session_kind::SessionKind::Project,
-            repository_id: Some("repo-synth".to_string()),
-            name: "test".to_string(),
-            branch: Some("feat/test".to_string()),
-            base_branch: Some("main".to_string()),
-            worktree_path: Some(dir.join("worktree").to_string_lossy().into_owned()),
-            session_dir: None,
-            current_conversation: None,
-            last_message_count: None,
-            last_model: None,
-            last_thinking_level: None,
-            created_at: "2026-11-26T00:00:00.000Z".to_string(),
-            last_activity_at: "2026-11-26T00:00:00.000Z".to_string(),
-            archived_at: None,
-            hidden_at: None,
-            paused_held: None,
-            current_turn_subagents: None,
-            stopped_on_request_conversation: None,
-            stopped_on_request_at_size: None,
-            pinned_model: false,
-            origin_issue: None,
-            parent_session_id: None,
-        })
-        .await
-        .unwrap();
-    let registry = Arc::new(tokio::sync::Mutex::new(registry_store));
-    let settings = Arc::new(tokio::sync::Mutex::new(
-        crate::store::settings::SettingsStore::open(&dir)
-            .await
-            .unwrap(),
-    ));
-    let events =
-        crate::events::EventSink::new(Arc::new(std::sync::Mutex::new(None)), registry.clone());
-    let manager = crate::session::manager::SessionManager::new(registry, settings, events);
-    let agent = manager.get_or_create_agent(&id);
+    let base = super::super::test_support::agent_fixture(false).await;
     let injected = exec.clone();
-    agent
+    base.agent
         .with_subagents_state(|s| s.synthesis.exec = injected)
         .await;
     Fixture {
-        agent,
+        agent: base.agent,
         exec,
-        id,
-        dir,
+        id: base.id,
+        dir: base.dir,
     }
 }
 
@@ -220,13 +182,15 @@ async fn a_second_start_for_the_same_tool_call_makes_no_second_call() {
 async fn a_cache_hit_labels_the_cards_without_any_call() {
     let fx = fixture(FakeExec::new(roles_with_tiny(), GOOD_REPLY)).await;
     SynthesisCache::load(&cache_dir(&fx))
-        .insert_and_persist(
+        .insert(
             "call-1",
             Synthesis {
                 overall_goal: Some("From disk".to_string()),
                 roles: vec![None, Some("Cached builder".to_string())],
             },
         )
+        .unwrap()
+        .write()
         .unwrap();
 
     super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;
@@ -260,6 +224,47 @@ async fn an_unset_tiny_role_makes_no_model_call_and_leaves_the_cards_unlabelled(
         .iter()
         .all(|c| c.get("role").is_none() && c.get("overallGoal").is_none()));
     assert_eq!(SynthesisCache::load(&cache_dir(&fx)).get("call-1"), None);
+}
+
+#[tokio::test]
+async fn a_second_task_call_with_tiny_unset_makes_no_omp_call_at_all() {
+    let fx = fixture(FakeExec::new(
+        json!({ "default": "anthropic/claude-big" }),
+        GOOD_REPLY,
+    ))
+    .await;
+
+    super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;
+    while fx.exec.config_reads() == 0 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    settle().await;
+    super::super::handle_task_start(&fx.agent, "call-2", &task_args()).await;
+    settle().await;
+
+    assert_eq!(fx.exec.config_reads(), 1);
+    assert_eq!(fx.exec.model_calls(), 0);
+}
+
+#[tokio::test]
+async fn a_burst_of_task_calls_reads_the_roles_once_and_runs_two_model_calls_at_a_time() {
+    let fx = fixture(FakeExec::slow(
+        roles_with_tiny(),
+        GOOD_REPLY,
+        Duration::from_millis(60),
+    ))
+    .await;
+
+    for n in 0..5 {
+        super::super::handle_task_start(&fx.agent, &format!("call-{n}"), &task_args()).await;
+    }
+    while fx.exec.model_calls() < 5 {
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    settle().await;
+
+    assert_eq!(fx.exec.config_reads(), 1);
+    assert_eq!(fx.exec.peak_in_flight.load(Ordering::SeqCst), 2);
 }
 
 #[tokio::test]

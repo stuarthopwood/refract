@@ -384,3 +384,60 @@ async fn set_model_role_with_clearing_an_already_unset_role_skips_the_set_call()
     // Only the stripped-env merge-read runs when nothing changed.
     assert_eq!(fake.calls.lock().await.len(), 1);
 }
+
+/// Answers each `get` with the next record in `reads` (the last one repeats), counting the calls.
+struct ScriptedReads {
+    reads: Vec<Value>,
+    served: std::sync::atomic::AtomicUsize,
+}
+
+impl OmpExecutor for ScriptedReads {
+    fn call<'a>(
+        &'a self,
+        _args: &'a [String],
+        _failure_message: &'a str,
+        _strip_env_vars: &'a [&'a str],
+    ) -> Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>> {
+        let n = self
+            .served
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let value = self.reads[n.min(self.reads.len() - 1)].clone();
+        Box::pin(async move {
+            Ok(serde_json::json!({ "key": "modelRoles", "value": value, "type": "record", "description": "" })
+                .to_string())
+        })
+    }
+}
+
+fn scripted(reads: Vec<Value>) -> ScriptedReads {
+    ScriptedReads {
+        reads,
+        served: std::sync::atomic::AtomicUsize::new(0),
+    }
+}
+
+#[tokio::test]
+async fn the_reliable_read_retries_once_on_an_empty_record_and_recovers() {
+    let exec = scripted(vec![
+        serde_json::json!({}),
+        serde_json::json!({ "tiny": "a/small" }),
+    ]);
+    let roles = get_model_roles_reliable_with(&exec).await.unwrap();
+    assert_eq!(roles.get("tiny"), Some(&"a/small".to_string()));
+    assert_eq!(exec.served.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn the_reliable_read_returns_empty_when_the_retry_is_empty_too_and_never_retries_twice() {
+    let exec = scripted(vec![serde_json::json!({})]);
+    let roles = get_model_roles_reliable_with(&exec).await.unwrap();
+    assert!(roles.is_empty());
+    assert_eq!(exec.served.load(std::sync::atomic::Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn the_reliable_read_makes_one_call_when_the_first_record_has_roles() {
+    let exec = scripted(vec![serde_json::json!({ "tiny": "a/small" })]);
+    get_model_roles_reliable_with(&exec).await.unwrap();
+    assert_eq!(exec.served.load(std::sync::atomic::Ordering::SeqCst), 1);
+}

@@ -9,6 +9,17 @@ fn synthesis(goal: &str) -> Synthesis {
     }
 }
 
+/// Insert then write, the two steps the hook splits around the cache lock.
+trait InsertAndPersist {
+    fn insert_and_persist(&mut self, id: &str, synthesis: Synthesis) -> io::Result<()>;
+}
+
+impl InsertAndPersist for SynthesisCache {
+    fn insert_and_persist(&mut self, id: &str, synthesis: Synthesis) -> io::Result<()> {
+        self.insert(id, synthesis)?.write()
+    }
+}
+
 fn tmp_files(dir: &Path) -> Vec<String> {
     std::fs::read_dir(dir)
         .unwrap()
@@ -134,4 +145,75 @@ fn the_cache_labels_a_card_by_spec_index_and_a_miss_is_unlabelled() {
     assert_eq!(second.overall_goal.as_deref(), Some("Ship it"));
     assert_eq!(reloaded.labels("t1", 9).role, None);
     assert_eq!(reloaded.labels("t2", 0), SubagentLabels::default());
+}
+
+#[test]
+fn an_older_snapshot_written_late_never_replaces_a_newer_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = SynthesisCache::load(dir.path());
+    let first = cache.insert("t1", synthesis("One")).unwrap();
+    let second = cache.insert("t2", synthesis("Two")).unwrap();
+    second.write().unwrap();
+    first.write().unwrap();
+    let reloaded = SynthesisCache::load(dir.path());
+    assert_eq!(reloaded.get("t1"), Some(&synthesis("One")));
+    assert_eq!(reloaded.get("t2"), Some(&synthesis("Two")));
+}
+
+#[test]
+fn a_discarded_cache_never_recreates_the_session_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let session = dir.path().join("gone");
+    let mut cache = SynthesisCache::load(&session);
+    let pending = cache.insert("t1", synthesis("One")).unwrap();
+    cache.discard();
+    pending.write().unwrap();
+    assert!(!session.exists());
+}
+
+#[test]
+fn labels_read_from_disk_are_cut_to_the_same_caps_as_a_model_reply() {
+    let dir = tempfile::tempdir().unwrap();
+    let long = "x".repeat(5_000);
+    let file = serde_json::json!({ "t1": { "overallGoal": long, "roles": [long, "  "] } });
+    std::fs::write(dir.path().join("subagent-synthesis.json"), file.to_string()).unwrap();
+    let loaded = SynthesisCache::load(dir.path());
+    let entry = loaded.get("t1").unwrap();
+    assert!(entry.overall_goal.as_deref().unwrap().chars().count() <= 120);
+    assert!(entry.roles[0].as_deref().unwrap().chars().count() <= 40);
+    assert_eq!(entry.roles[1], None);
+}
+
+#[test]
+fn an_oversized_file_is_treated_as_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let padding = " ".repeat(1_048_577);
+    let file = format!(r#"{{"t1": {{"overallGoal": "Fine", "roles": []}}{padding}}}"#);
+    std::fs::write(dir.path().join("subagent-synthesis.json"), file).unwrap();
+    assert_eq!(SynthesisCache::load(dir.path()).get("t1"), None);
+}
+
+#[test]
+fn loading_sweeps_leftover_temp_files() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("subagent-synthesis.json.1.2.tmp"), "torn").unwrap();
+    let _ = SynthesisCache::load(dir.path());
+    assert!(tmp_files(dir.path()).is_empty());
+}
+
+#[tokio::test]
+async fn removing_a_session_cache_deletes_its_files_and_empty_folder_only() {
+    let data = tempfile::tempdir().unwrap();
+    let dir = session_cache_dir(data.path(), "s1").unwrap();
+    let mut cache = SynthesisCache::load(&dir);
+    cache.insert_and_persist("t1", synthesis("One")).unwrap();
+    std::fs::write(dir.join("subagent-synthesis.json.1.2.tmp"), "torn").unwrap();
+    let other = session_cache_dir(data.path(), "s2").unwrap();
+    std::fs::create_dir_all(&other).unwrap();
+
+    remove_session_cache(data.path(), "s1").await;
+    remove_session_cache(data.path(), "../s2").await;
+
+    assert!(!dir.exists());
+    assert!(other.exists());
 }

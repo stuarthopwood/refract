@@ -148,14 +148,20 @@ async fn remove(
         }
     }
 
-    state
-        .registry
-        .lock()
-        .await
-        .remove_session(id)
-        .await
-        .map_err(map_registry_error)?;
+    // Before the registry entry goes, so a synthesis still in flight cannot recreate the cache folder.
+    if let Some(agent) = state.session_manager.get_agent(id) {
+        crate::session::subagents::discard_synthesis_cache(&agent).await;
+    }
+    let data_dir = {
+        let mut registry = state.registry.lock().await;
+        registry
+            .remove_session(id)
+            .await
+            .map_err(map_registry_error)?;
+        registry.data_dir().to_path_buf()
+    };
     state.session_manager.remove_agent(id);
+    crate::session::subagents_synthesis_cache::remove_session_cache(&data_dir, id).await;
     // After the agent is gone, so nothing live can write the file back; the registry entry is
     // already removed, so a failure here only leaves an orphan file and must not fail the delete.
     if let Err(err) = state.session_manager.checklists().discard(id).await {
