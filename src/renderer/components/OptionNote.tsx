@@ -164,6 +164,9 @@ export interface AskChoiceNotes {
   onRemove: (value: string) => void
 }
 
+/** Right padding for an option row that can show the hover hint, so the overlaid "Note [N]" button never covers the option's text or a table in its description. Held on every row, picked or not, so picking never reflows the text. */
+export const OPTION_NOTE_HINT_ROW_CLASS = 'pr-20'
+
 interface OptionNoteSlotProps {
   value: string
   label: string
