@@ -199,8 +199,12 @@ _Avoid_: Version, sequence number
 _Avoid_: Plan tool, todo tool
 
 **Working mode**:
-How a **Session** is told to work: Refract's `WorkingMode` in `src/shared/workingMode.ts`, one of `interactive`, `plan`, `grill` or `away`. Plan mode is one value of it. "Plan" means only this mode; the **Checklist** is a separate feature. OMP also has its own plan mode, which is a different thing from Refract's.
+How a **Session** is told to work: Refract's `WorkingMode` in `src/shared/workingMode.ts`, one of `interactive`, `plan`, `grill` or `away` (see **Away Mode**). Plan mode is one value of it. "Plan" means only this mode; the **Checklist** is a separate feature. OMP also has its own plan mode, which is a different thing from Refract's.
 _Avoid_: Plan (for the Checklist), OMP plan mode (for Refract's plan mode), agent mode
+
+**Away Mode**:
+The **Working mode** for when the developer is not at the computer. Refract answers every question and approval for the agent so the turn keeps going, and never cancels one: a choice takes its first option, a yes-or-no question gets No, an approval is denied, and a form is submitted with its defaults. Each automatic action is tagged as coming from Away Mode and told to the agent with a reason, and the developer sees them in a "While you were away" summary on return. The agent is also told it is unattended, so it does not ask and decides on its own judgement (#2031, #2236, ADR 0014).
+_Avoid_: unattended mode, auto mode, autopilot
 
 **Subagent chain**:
 The per-turn summary row listing a turn's **Stages** and their agents with status and duration (issue #563); its stage-to-stage list is also connected by a **Spine** (issue #565).
