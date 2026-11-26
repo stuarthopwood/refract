@@ -352,18 +352,51 @@ async fn a_batch_shim_omp_makes_no_call() {
     }
 }
 
+/// The prompt file the fake saw on its one call, which must be gone once `run_synthesis` returned.
+fn assert_the_one_prompt_file_is_gone(exec: &FakeExec) {
+    let files = exec.prompt_files.lock().unwrap();
+    assert_eq!(files.len(), 1);
+    assert!(files[0].1.is_some(), "the file existed while the call ran");
+    assert!(!files[0].0.exists(), "the file outlived the call");
+}
+
 #[tokio::test]
-async fn a_failed_call_is_none_and_is_not_retried() {
+async fn a_failed_call_is_none_is_not_retried_and_removes_its_prompt_file() {
     let exec = FakeExec::new(Behaviour::Fail);
     assert_eq!(run_synthesis(&exec, "a/small", &input(2)).await, None);
     assert_eq!(exec.call_count(), 1);
+    assert_the_one_prompt_file_is_gone(&exec);
+}
+
+#[tokio::test]
+async fn two_concurrent_calls_use_distinct_prompt_files_and_remove_both() {
+    let exec = FakeExec::replying(GOOD_REPLY);
+    let (input_a, input_b) = (input(2), input(2));
+    let (first, second) = tokio::join!(
+        run_synthesis(&exec, "a/small", &input_a),
+        run_synthesis(&exec, "a/small", &input_b)
+    );
+    assert!(first.is_some() && second.is_some());
+    let files = exec.prompt_files.lock().unwrap();
+    assert_eq!(files.len(), 2);
+    assert_ne!(files[0].0, files[1].0);
+    let messages: Vec<String> = exec
+        .calls
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|(args, _)| args.last().cloned().unwrap())
+        .collect();
+    assert_ne!(messages[0], messages[1]);
+    assert!(files.iter().all(|(path, _)| !path.exists()));
 }
 
 #[tokio::test(start_paused = true)]
-async fn a_call_that_never_returns_times_out_to_none_and_is_not_retried() {
+async fn a_call_that_never_returns_times_out_to_none_is_not_retried_and_removes_its_prompt_file() {
     let exec = FakeExec::new(Behaviour::Hang);
     assert_eq!(run_synthesis(&exec, "a/small", &input(2)).await, None);
     assert_eq!(exec.call_count(), 1);
+    assert_the_one_prompt_file_is_gone(&exec);
 }
 
 #[tokio::test]

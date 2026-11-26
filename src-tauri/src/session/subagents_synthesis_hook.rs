@@ -36,6 +36,8 @@ pub(super) struct SynthesisState {
     /// A role change in Settings is not seen until the Session restarts, which is the price of one read per Session.
     tiny: TinySelector,
     permits: Arc<Semaphore>,
+    /// Set when the Session is deleted, even if its cache was never loaded: nothing loads, spawns or writes after.
+    discarded: bool,
 }
 
 impl Default for SynthesisState {
@@ -46,6 +48,7 @@ impl Default for SynthesisState {
             started: HashSet::new(),
             tiny: Arc::default(),
             permits: Arc::new(Semaphore::new(MAX_CONCURRENT_SYNTHESES)),
+            discarded: false,
         }
     }
 }
@@ -129,24 +132,33 @@ pub(super) async fn attach_to_transcript(agent: &SessionAgent) {
     }
 }
 
-/// Session delete: refuses later cache writes, so a synthesis still in flight cannot recreate the folder.
+/// Session delete: refuses later cache loads and writes, so a `task()` start or a synthesis still in
+/// flight cannot recreate the folder.
 pub(super) async fn discard_cache(agent: &SessionAgent) {
     let cache = agent
-        .with_subagents_state(|s| s.synthesis.cache.clone())
+        .with_subagents_state(|s| {
+            s.synthesis.discarded = true;
+            s.synthesis.cache.clone()
+        })
         .await;
     if let Some(cache) = cache {
-        // Waits for a write in flight, which is blocking disk work.
-        let _ = tokio::task::spawn_blocking(move || lock(&cache).discard()).await;
+        // Cloned out of the cache lock first: waiting for a write in flight is blocking disk work.
+        let discarder = lock(&cache).discarder();
+        let _ = tokio::task::spawn_blocking(move || discarder.discard()).await;
     }
 }
 
-/// The Session's cache, loaded from disk once; `None` when the id is not safe to use as a folder name.
+/// The Session's cache, loaded from disk once; `None` when the id is not safe to use as a folder name
+/// or the Session was deleted.
 async fn session_cache(agent: &SessionAgent) -> Option<SharedCache> {
-    if let Some(cache) = agent
-        .with_subagents_state(|s| s.synthesis.cache.clone())
-        .await
-    {
-        return Some(cache);
+    let (discarded, loaded_already) = agent
+        .with_subagents_state(|s| (s.synthesis.discarded, s.synthesis.cache.clone()))
+        .await;
+    if discarded {
+        return None;
+    }
+    if loaded_already.is_some() {
+        return loaded_already;
     }
     let dir = {
         let registry = agent.registry().lock().await;
@@ -156,11 +168,12 @@ async fn session_cache(agent: &SessionAgent) -> Option<SharedCache> {
         .await
         .ok()?;
     let loaded = Arc::new(Mutex::new(loaded));
-    Some(
-        agent
-            .with_subagents_state(|s| s.synthesis.cache.get_or_insert(loaded).clone())
-            .await,
-    )
+    // Re-checked under the state lock, because a delete may have landed while the file was loading.
+    agent
+        .with_subagents_state(|s| {
+            (!s.synthesis.discarded).then(|| s.synthesis.cache.get_or_insert(loaded).clone())
+        })
+        .await
 }
 
 async fn synthesise_and_apply(

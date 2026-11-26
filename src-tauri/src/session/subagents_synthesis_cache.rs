@@ -116,9 +116,20 @@ impl SynthesisCache {
         })
     }
 
-    /// Refuses every later write. Waits for a write in flight, so none lands after the folder is removed.
-    pub fn discard(&self) {
-        lock_writer(&self.writer).discarded = true;
+    /// A handle that outlives the cache's own lock, so waiting for a write in flight never holds it.
+    pub fn discarder(&self) -> Discarder {
+        Discarder(self.writer.clone())
+    }
+}
+
+/// Refuses every later write of one cache.
+#[derive(Debug)]
+pub struct Discarder(SharedWriter);
+
+impl Discarder {
+    /// Waits for a write in flight, so none lands after the folder is removed.
+    pub fn discard(self) {
+        lock_writer(&self.0).discarded = true;
     }
 }
 

@@ -84,29 +84,41 @@ fn heartbeat_frame(n: i64) -> Value {
     })
 }
 
-async fn past_the_coalescing_window() {
-    tokio::time::sleep(Duration::from_millis(SUMMARIES_COALESCE_MS * 2)).await;
+/// Runs the clock to `ms` into the window; the paused clock moves only here, so no test waits in real time.
+async fn advance_ms(ms: u64) {
+    // Lets a freshly spawned timer task register its sleep before the clock moves.
+    tokio::task::yield_now().await;
+    tokio::time::advance(Duration::from_millis(ms)).await;
+    // Lets the woken timer task run to its emit.
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
 }
 
-#[tokio::test]
+async fn past_the_coalescing_window() {
+    advance_ms(SUMMARIES_COALESCE_MS).await;
+}
+
+#[tokio::test(start_paused = true)]
 async fn many_heartbeats_inside_one_window_emit_once_with_the_latest_steps() {
     let (agent, emits) = watched_agent().await;
 
     for n in 0..20 {
         apply_subagent_frame(&agent, "subagent_progress", &heartbeat_frame(n)).await;
     }
+    advance_ms(SUMMARIES_COALESCE_MS - 1).await;
     assert!(
         emits.lock().unwrap().is_empty(),
         "nothing emits before the window closes"
     );
-    past_the_coalescing_window().await;
+    advance_ms(1).await;
 
     let emits = emits.lock().unwrap();
     assert_eq!(emits.len(), 1);
     assert_eq!(emits[0][0]["recentSteps"][0]["target"], "c19");
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn a_settle_emits_at_once_and_the_pending_window_adds_nothing() {
     let (agent, emits) = watched_agent().await;
     apply_subagent_frame(&agent, "subagent_progress", &heartbeat_frame(1)).await;
@@ -124,7 +136,7 @@ async fn a_settle_emits_at_once_and_the_pending_window_adds_nothing() {
     assert_eq!(emits.lock().unwrap().len(), 1);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn heartbeats_in_a_later_window_emit_again() {
     let (agent, emits) = watched_agent().await;
 
@@ -134,6 +146,29 @@ async fn heartbeats_in_a_later_window_emit_again() {
     past_the_coalescing_window().await;
 
     assert_eq!(emits.lock().unwrap().len(), 2);
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_hidden_session_emits_nothing_for_heartbeats_or_a_settle() {
+    let fx = agent_fixture(false).await;
+    let emits = Arc::new(Mutex::new(Vec::new()));
+    let sink = emits.clone();
+    fx.agent
+        .events()
+        .set_subagents_probe(move |value| sink.lock().unwrap().push(value.clone()));
+    fx.agent
+        .with_subagents_state(|s| s.summaries.push(entry()))
+        .await;
+
+    apply_subagent_frame(&fx.agent, "subagent_progress", &heartbeat_frame(1)).await;
+    past_the_coalescing_window().await;
+    let settle = json!({ "parentToolCallId": "t1", "index": 0, "status": "completed" });
+    apply_subagent_frame(&fx.agent, "subagent_lifecycle", &settle).await;
+    past_the_coalescing_window().await;
+
+    assert!(emits.lock().unwrap().is_empty());
+    let kept = fx.agent.with_subagents_state(|s| s.summaries.len()).await;
+    assert_eq!(kept, 1, "the hidden Session still tracks its entry");
 }
 
 #[test]

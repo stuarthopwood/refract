@@ -20,26 +20,39 @@ struct FakeExec {
     roles: serde_json::Value,
     reply: String,
     calls: StdMutex<Vec<Vec<String>>>,
-    /// How long each model call takes, so a test can see calls overlap.
-    model_delay: Duration,
+    /// When set, a model call blocks until a permit is released, so a test controls how long calls overlap.
+    gate: Option<Semaphore>,
     in_flight: AtomicUsize,
     peak_in_flight: AtomicUsize,
 }
 
 impl FakeExec {
     fn new(roles: serde_json::Value, reply: &str) -> Arc<Self> {
-        Self::slow(roles, reply, Duration::ZERO)
+        Self::build(roles, reply, None)
     }
 
-    fn slow(roles: serde_json::Value, reply: &str, model_delay: Duration) -> Arc<Self> {
+    fn gated(roles: serde_json::Value, reply: &str) -> Arc<Self> {
+        Self::build(roles, reply, Some(Semaphore::new(0)))
+    }
+
+    fn build(roles: serde_json::Value, reply: &str, gate: Option<Semaphore>) -> Arc<Self> {
         Arc::new(Self {
             roles,
             reply: reply.to_string(),
             calls: StdMutex::new(Vec::new()),
-            model_delay,
+            gate,
             in_flight: AtomicUsize::new(0),
             peak_in_flight: AtomicUsize::new(0),
         })
+    }
+
+    /// Lets `n` blocked model calls finish.
+    fn release(&self, n: usize) {
+        self.gate.as_ref().expect("a gated executor").add_permits(n);
+    }
+
+    fn in_flight(&self) -> usize {
+        self.in_flight.load(Ordering::SeqCst)
     }
 
     fn config_reads(&self) -> usize {
@@ -76,7 +89,12 @@ impl OmpExecutor for FakeExec {
             }
             let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
             self.peak_in_flight.fetch_max(now, Ordering::SeqCst);
-            tokio::time::sleep(self.model_delay).await;
+            if let Some(gate) = &self.gate {
+                gate.acquire()
+                    .await
+                    .expect("the gate is never closed")
+                    .forget();
+            }
             self.in_flight.fetch_sub(1, Ordering::SeqCst);
             Ok(self.reply.clone())
         })
@@ -135,6 +153,17 @@ async fn wait_for(agent: &SessionAgent, done: impl Fn(&[Value]) -> bool) {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
     panic!("the summaries never reached the expected state");
+}
+
+/// Polls until `done` holds, and fails the test instead of hanging when it never does.
+async fn poll_until(what: &str, mut done: impl FnMut() -> bool) {
+    for _ in 0..500 {
+        if done() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("timed out waiting until {what}");
 }
 
 /// Gives a detached task that must do nothing time to prove it did nothing.
@@ -213,9 +242,7 @@ async fn an_unset_tiny_role_makes_no_model_call_and_leaves_the_cards_unlabelled(
     .await;
 
     super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;
-    while fx.exec.config_reads() == 0 {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    poll_until("the roles were read", || fx.exec.config_reads() > 0).await;
     settle().await;
 
     assert_eq!(fx.exec.model_calls(), 0);
@@ -235,9 +262,7 @@ async fn a_second_task_call_with_tiny_unset_makes_no_omp_call_at_all() {
     .await;
 
     super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;
-    while fx.exec.config_reads() == 0 {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    poll_until("the roles were read", || fx.exec.config_reads() > 0).await;
     settle().await;
     super::super::handle_task_start(&fx.agent, "call-2", &task_args()).await;
     settle().await;
@@ -248,20 +273,22 @@ async fn a_second_task_call_with_tiny_unset_makes_no_omp_call_at_all() {
 
 #[tokio::test]
 async fn a_burst_of_task_calls_reads_the_roles_once_and_runs_two_model_calls_at_a_time() {
-    let fx = fixture(FakeExec::slow(
-        roles_with_tiny(),
-        GOOD_REPLY,
-        Duration::from_millis(60),
-    ))
-    .await;
+    let fx = fixture(FakeExec::gated(roles_with_tiny(), GOOD_REPLY)).await;
 
     for n in 0..5 {
         super::super::handle_task_start(&fx.agent, &format!("call-{n}"), &task_args()).await;
     }
-    while fx.exec.model_calls() < 5 {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    poll_until("two model calls are in flight", || fx.exec.in_flight() == 2).await;
     settle().await;
+    assert_eq!(
+        fx.exec.model_calls(),
+        2,
+        "a third call started past the cap"
+    );
+
+    fx.exec.release(5);
+    poll_until("all five model calls ran", || fx.exec.model_calls() == 5).await;
+    poll_until("every call finished", || fx.exec.in_flight() == 0).await;
 
     assert_eq!(fx.exec.config_reads(), 1);
     assert_eq!(fx.exec.peak_in_flight.load(Ordering::SeqCst), 2);
@@ -272,9 +299,7 @@ async fn an_unusable_reply_leaves_the_cards_unlabelled_and_is_not_retried() {
     let fx = fixture(FakeExec::new(roles_with_tiny(), "no json here")).await;
 
     super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;
-    while fx.exec.model_calls() == 0 {
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
+    poll_until("the model was called", || fx.exec.model_calls() > 0).await;
     super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;
     settle().await;
 
@@ -300,4 +325,37 @@ async fn each_tool_call_is_labelled_by_its_own_cache_entry() {
     assert_eq!(fx.exec.model_calls(), 2);
     let saved = SynthesisCache::load(&cache_dir(&fx));
     assert!(saved.get("call-1").is_some() && saved.get("call-2").is_some());
+}
+
+#[tokio::test]
+async fn a_delete_during_a_slow_synthesis_leaves_no_session_folder() {
+    let fx = fixture(FakeExec::gated(roles_with_tiny(), GOOD_REPLY)).await;
+    super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;
+    poll_until("the model call is in flight", || fx.exec.in_flight() == 1).await;
+
+    super::super::discard_synthesis_cache(&fx.agent).await;
+    fx.exec.release(1);
+    wait_for(&fx.agent, |s| s.iter().all(|e| e.get("role").is_some())).await;
+
+    assert!(
+        !cache_dir(&fx).exists(),
+        "the finished synthesis recreated the folder"
+    );
+}
+
+#[tokio::test]
+async fn a_task_start_after_a_delete_on_a_never_loaded_cache_calls_nothing_and_writes_nothing() {
+    let fx = fixture(FakeExec::new(roles_with_tiny(), GOOD_REPLY)).await;
+
+    super::super::discard_synthesis_cache(&fx.agent).await;
+    super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;
+    settle().await;
+
+    assert_eq!(fx.exec.config_reads(), 0);
+    assert_eq!(fx.exec.model_calls(), 0);
+    assert!(!cache_dir(&fx).exists());
+    assert!(summaries(&fx.agent)
+        .await
+        .iter()
+        .all(|c| c.get("role").is_none()));
 }
