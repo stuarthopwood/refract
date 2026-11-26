@@ -101,6 +101,35 @@ async fn set_transcript_display_persists_across_a_reopen() {
     assert!(reopened.get().transcript_display.tool_calls);
 }
 
+#[tokio::test]
+async fn expand_answered_asks_defaults_on_and_survives_a_partial_transcript_display() {
+    let store = open_scratch_store(None).await;
+    assert!(store.get().transcript_display.expand_answered_asks);
+    let older = open_scratch_store(Some(json!({
+        "version": 1, "approvalMode": "ask", "sessionReadout": {}, "split": null,
+        "theme": "dark", "watermarkEnabled": true,
+        "transcriptDisplay": { "thinking": false, "toolCalls": true }
+    })))
+    .await;
+    assert!(older.get().transcript_display.expand_answered_asks);
+    assert!(!older.get().transcript_display.thinking);
+}
+
+#[tokio::test]
+async fn set_expand_answered_asks_persists_across_a_reopen() {
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let mut first = SettingsStore::open(&dir).await.unwrap();
+    let after = first
+        .set_transcript_display("expandAnsweredAsks", false)
+        .await
+        .unwrap();
+    assert!(!after.transcript_display.expand_answered_asks);
+    assert!(after.transcript_display.thinking);
+    let reopened = SettingsStore::open(&dir).await.unwrap();
+    assert!(!reopened.get().transcript_display.expand_answered_asks);
+}
+
 /// Unknown keys round-trip untouched so renderer features can add fields later (#791).
 #[tokio::test]
 async fn unknown_keys_round_trip_untouched_across_an_unrelated_setter_and_a_reopen() {

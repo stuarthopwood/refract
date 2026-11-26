@@ -297,15 +297,15 @@ pub fn settings_set_activity_text(state: AppState, args: Vec<Value>) -> HandlerF
     })
 }
 
-/// `field` must be one of the three known `TranscriptDisplaySettings` keys (#457, #469), else
+/// `field` must be one of the known `TranscriptDisplaySettings` keys (#457, #469, #1747), else
 /// `invalid-argument`, before reaching the store's per-field merge.
 pub fn settings_set_transcript_display(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let field = match arg_str(&args, 0) {
-            Some(field @ ("thinking" | "toolCalls" | "toolNames")) => field.to_string(),
+            Some(field @ ("thinking" | "toolCalls" | "toolNames" | "expandAnsweredAsks")) => field.to_string(),
             _ => {
                 return Err(invalid_argument(
-                    "settings.setTranscriptDisplay expects field 'thinking' | 'toolCalls' | 'toolNames'",
+                    "settings.setTranscriptDisplay expects field 'thinking' | 'toolCalls' | 'toolNames' | 'expandAnsweredAsks'",
                 ))
             }
         };
