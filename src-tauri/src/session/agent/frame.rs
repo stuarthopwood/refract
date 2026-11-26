@@ -401,3 +401,7 @@ mod notice_tests;
 #[cfg(test)]
 #[path = "frame_dialog.test.rs"]
 mod dialog_tests;
+
+#[cfg(test)]
+#[path = "frame_away.test.rs"]
+mod away_tests;

@@ -280,26 +280,3 @@ async fn fire_and_forget_methods_and_an_unanswerable_frame_get_no_reply_and_no_n
     }
     fx.finish().await;
 }
-
-#[tokio::test]
-async fn away_mode_cancels_a_form_card_instead_of_leaving_the_agent_waiting() {
-    let fx = fixture(&[], &[]).await;
-    crate::session::working_mode::away::enter_for_test(&fx.agent).await;
-
-    fx.agent.handle_frame(form_frame("form-5")).await;
-    fx.until_rpc("extension_ui_response").await;
-
-    assert_eq!(
-        responses(&fx).await,
-        vec![json!({ "type": "extension_ui_response", "id": "form-5", "cancelled": true })]
-    );
-    assert!(fx.agent.pending_requests().await.is_empty());
-    assert_eq!(
-        fx.notices().await,
-        vec![
-            "Automatic (Away mode): question \"the agent's form\" cancelled because the user is away."
-                .to_string()
-        ]
-    );
-    fx.finish().await;
-}

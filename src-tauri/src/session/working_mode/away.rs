@@ -1,7 +1,6 @@
-// Away policy (#433): answers asks at once and denies stale approvals. Never approves, never starts a turn.
+// Away policy (#433, #2031): answers every request at once and denies approvals. Never approves,
+// never cancels (a cancel stops the agent's turn), never starts a turn.
 // Pure helpers are public so goal mode (#479) can reuse the same policy.
-
-use std::time::Duration;
 
 use serde_json::{json, Value};
 
@@ -11,18 +10,15 @@ pub const ASK_FALLBACK: &str =
     "The user is away. Choose the best option yourself, state your choice, and continue.";
 pub const APPROVAL_DENIAL: &str =
     "Not approved: the user is away. Pick a safe alternative or skip this step and continue.";
-pub const QUESTION_DECLINED: &str = "cancelled because the user is away";
+pub const ANSWERED_STEER: &str = "[Automatic, Away mode] Answered by Away Mode: the user is away. Proceed on your best judgement.";
+pub const DENIED_STEER: &str = "[Automatic, Away mode] Not approved by Away Mode: the user is away. Pick a safe alternative or skip this step and continue.";
 
-const DEFAULT_APPROVAL_TIMEOUT: Duration = Duration::from_secs(5 * 60);
-// Test-only: shortens the denial delay for the live check; debug builds only.
-const TIMEOUT_ENV: &str = "REFRACT_AWAY_APPROVAL_TIMEOUT_MS";
 const STEER_TIMEOUT_MS: u64 = 60_000;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Answered,
     Denied,
-    Declined,
 }
 
 #[derive(Clone)]
@@ -43,19 +39,6 @@ impl Log {
     pub(super) fn take(&mut self) -> Vec<Entry> {
         std::mem::take(&mut self.0)
     }
-}
-
-pub fn approval_timeout() -> Duration {
-    if cfg!(debug_assertions) {
-        if let Some(ms) = std::env::var(TIMEOUT_ENV)
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .filter(|ms| *ms > 0)
-        {
-            return Duration::from_millis(ms);
-        }
-    }
-    DEFAULT_APPROVAL_TIMEOUT
 }
 
 /// The recommended option(s) for each question, or the fallback text when none is recommended.
@@ -121,6 +104,14 @@ pub(in crate::session) async fn enter_for_test(agent: &SessionAgent) {
         .await;
 }
 
+/// Back to Interactive, for tests that compare a prompt before and after Away.
+#[cfg(test)]
+pub(in crate::session) async fn leave_for_test(agent: &SessionAgent) {
+    agent
+        .with_working_mode_state(|s| s.mode = super::WorkingMode::Interactive)
+        .await;
+}
+
 /// Called after the request is registered; a no-op unless the Session is in Away mode.
 pub(in crate::session) async fn on_request(agent: &SessionAgent, request: PendingRequest) {
     super::ensure_loaded(agent).await;
@@ -138,38 +129,59 @@ pub(in crate::session) async fn on_request(agent: &SessionAgent, request: Pendin
             tool,
             target,
             ..
-        } => watch_approval(agent, request_id, format!("{tool} {target}")).await,
+        } => deny_approval(agent, request_id, format!("{tool} {target}")).await,
         PendingRequest::Question {
             request_id,
             title,
+            options,
             input_kind,
             ..
-        } => answer_question(agent, request_id, title, input_kind == "text").await,
-        // The agent waits on a whole form, and no recommended answer exists to fill it with.
-        PendingRequest::Form { request_id, .. } => {
-            answer_question(agent, request_id, "the agent's form".to_string(), false).await
-        }
+        } => answer_question(agent, request_id, title, input_kind, options).await,
+        PendingRequest::Form {
+            request_id, html, ..
+        } => answer_form(agent, request_id, &html).await,
     }
 }
 
-// Free-text dialogs get the away reply; select/confirm may grant something, so they are cancelled, never picked.
-async fn answer_question(agent: &SessionAgent, request_id: String, title: String, text: bool) {
-    let (answer, kind, outcome) = if text {
-        (
+/// A cancelled dialog stops the agent's turn, so every dialog gets an answer: a select takes its
+/// first option, a confirm says No (the safe answer), text gets the away reply.
+async fn answer_question(
+    agent: &SessionAgent,
+    request_id: String,
+    title: String,
+    input_kind: &str,
+    options: Vec<String>,
+) {
+    let (answer, outcome) = match (input_kind, options.first()) {
+        ("text", _) => (
             json!({ "value": ASK_FALLBACK }),
-            Kind::Answered,
-            "the away reply",
-        )
-    } else {
-        (
+            "the away reply".to_string(),
+        ),
+        ("confirm", _) => (json!({ "confirmed": false }), "No".to_string()),
+        (_, Some(first)) => (json!({ "value": first }), first.clone()),
+        // An empty select has nothing to pick, so the only reply left is the cancel.
+        (_, None) => (
             json!({ "cancelled": true }),
-            Kind::Declined,
-            QUESTION_DECLINED,
-        )
+            "no option to pick".to_string(),
+        ),
     };
     match agent.answer_request(request_id, answer).await {
-        Ok(()) => record(agent, kind, title, outcome.to_string()).await,
+        Ok(()) => record(agent, Kind::Answered, title, outcome).await,
         Err(err) => log::warn!("away: could not answer question: {err}"),
+    }
+}
+
+async fn answer_form(agent: &SessionAgent, request_id: String, html: &str) {
+    let data = super::away_form::form_defaults(html);
+    match agent
+        .answer_request(request_id, json!({ "data": data }))
+        .await
+    {
+        Ok(()) => {
+            let title = "the agent's form".to_string();
+            record(agent, Kind::Answered, title, "default values".to_string()).await
+        }
+        Err(err) => log::warn!("away: could not answer form: {err}"),
     }
 }
 
@@ -193,35 +205,15 @@ async fn answer_ask(agent: &SessionAgent, request_id: String, questions: Vec<Ask
     }
 }
 
-async fn watch_approval(agent: &SessionAgent, request_id: String, what: String) {
-    let epoch = super::away_epoch(agent).await;
-    let agent = agent.arc();
-    tokio::spawn(async move {
-        tokio::time::sleep(approval_timeout()).await;
-        if !super::is_away(&agent).await || super::away_epoch(&agent).await != epoch {
-            return;
-        }
-        // A request answered meanwhile is gone, so this errors and nothing is denied twice.
-        if agent
-            .answer_request(request_id, json!({ "approve": false }))
-            .await
-            .is_err()
-        {
-            return;
-        }
-        record(&agent, Kind::Denied, what, APPROVAL_DENIAL.to_string()).await;
-        if matches!(
-            agent.status().await,
-            SessionStatus::Working | SessionStatus::NeedsYou
-        ) {
-            let steer = json!({
-                "type": "prompt",
-                "message": format!("[Automatic, Away mode] {APPROVAL_DENIAL}"),
-                "streamingBehavior": "steer",
-            });
-            let _ = agent.request_rpc(steer, STEER_TIMEOUT_MS).await;
-        }
-    });
+/// Denied at once: Refract has no dangerous-command detector, so the Approval path stays the gate.
+async fn deny_approval(agent: &SessionAgent, request_id: String, what: String) {
+    match agent
+        .answer_request(request_id, json!({ "approve": false }))
+        .await
+    {
+        Ok(()) => record(agent, Kind::Denied, what, APPROVAL_DENIAL.to_string()).await,
+        Err(err) => log::warn!("away: could not deny approval: {err}"),
+    }
 }
 
 async fn record(agent: &SessionAgent, kind: Kind, question: String, outcome: String) {
@@ -229,9 +221,6 @@ async fn record(agent: &SessionAgent, kind: Kind, question: String, outcome: Str
         Kind::Answered => format!("Automatic (Away mode): answered \"{question}\" with {outcome}."),
         Kind::Denied => {
             format!("Automatic (Away mode): denied approval for \"{question}\". {outcome}")
-        }
-        Kind::Declined => {
-            format!("Automatic (Away mode): question \"{question}\" {outcome}.")
         }
     };
     agent
@@ -244,6 +233,31 @@ async fn record(agent: &SessionAgent, kind: Kind, question: String, outcome: Str
         })
         .await;
     agent.lane_notice(text, "info").await;
+    steer(agent, kind);
+}
+
+/// Tells the agent why it got an automatic reply. Spawned because the frame loop that raised the
+/// request must keep reading the prompt's reply.
+fn steer(agent: &SessionAgent, kind: Kind) {
+    let message = match kind {
+        Kind::Answered => ANSWERED_STEER,
+        Kind::Denied => DENIED_STEER,
+    };
+    let agent = agent.arc();
+    tokio::spawn(async move {
+        if !matches!(
+            agent.status().await,
+            SessionStatus::Working | SessionStatus::NeedsYou
+        ) {
+            return;
+        }
+        let steer = json!({
+            "type": "prompt",
+            "message": message,
+            "streamingBehavior": "steer",
+        });
+        let _ = agent.request_rpc(steer, STEER_TIMEOUT_MS).await;
+    });
 }
 
 /// The "While you were away" card, posted when leaving Away.
@@ -257,7 +271,6 @@ pub(in crate::session) async fn summarise(agent: &SessionAgent) {
             .map(|e| match e.kind {
                 Kind::Answered => format!("- Answered \"{}\" with {}.", e.question, e.outcome),
                 Kind::Denied => format!("- Denied approval for \"{}\".", e.question),
-                Kind::Declined => format!("- Cancelled question \"{}\".", e.question),
             })
             .collect::<Vec<_>>()
             .join("\n");

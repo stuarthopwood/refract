@@ -2,6 +2,7 @@
 // Plan needs an OMP restart (rpc-ui has no plan toggle), so a change mid-turn waits for the settle.
 
 pub mod away;
+mod away_form;
 mod store;
 
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,7 @@ use crate::omp::transcript::file_attachment_markers::HIDDEN_INSTRUCTION_OPEN;
 use crate::session::agent::{AgentError, SessionAgent, SessionStatus};
 
 const GRILL_INSTRUCTION: &str = "Grill mode is on. Interview me about this request before acting: ask one question at a time, give your recommended answer with each question, and check it against CONTEXT.md and docs/adr in this repository. Do not edit files or run commands that change anything until I tell you to proceed.";
+const AWAY_INSTRUCTION: &str = "Away mode is on: you are unattended and I will not answer. Do not use the ask tool. Act on your best recommendation, or consult a subagent or do research. Stop only for a genuinely dangerous or irreversible operation. Put \"you are unattended, do not ask\" in every subagent brief you write.";
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -48,7 +50,6 @@ pub struct State {
     mode: WorkingMode,
     launched_plan: bool,
     pending: Option<WorkingMode>,
-    away_epoch: u64,
     away: away::Log,
 }
 
@@ -117,10 +118,6 @@ pub(in crate::session) async fn is_away(agent: &SessionAgent) -> bool {
         .await
 }
 
-async fn away_epoch(agent: &SessionAgent) -> u64 {
-    agent.with_working_mode_state(|s| s.away_epoch).await
-}
-
 /// Whether the next OMP launch starts in plan mode; recorded so a later switch knows if it needs a restart.
 pub(in crate::session) async fn plan_for_launch(agent: &SessionAgent) -> bool {
     ensure_loaded(agent).await;
@@ -132,17 +129,20 @@ pub(in crate::session) async fn plan_for_launch(agent: &SessionAgent) -> bool {
         .await
 }
 
-/// Appends the hidden Grill instruction; the transcript cuts it back off.
+/// Appends the hidden Grill or Away instruction; the transcript cuts it back off.
 pub(in crate::session) async fn decorate_prompt(agent: &SessionAgent, text: String) -> String {
     ensure_loaded(agent).await;
-    let grill = agent.with_working_mode_state(|s| s.mode).await == WorkingMode::Grill;
-    if grill && !text.trim_start().starts_with('/') {
-        // A user-typed marker would hide the rest of their own message in the transcript.
-        let text = text.replace(HIDDEN_INSTRUCTION_OPEN, "\n\n");
-        format!("{text}{HIDDEN_INSTRUCTION_OPEN}{GRILL_INSTRUCTION}")
-    } else {
-        text
+    let instruction = match agent.with_working_mode_state(|s| s.mode).await {
+        WorkingMode::Grill => GRILL_INSTRUCTION,
+        WorkingMode::Away => AWAY_INSTRUCTION,
+        _ => return text,
+    };
+    if text.trim_start().starts_with('/') {
+        return text;
     }
+    // A user-typed marker would hide the rest of their own message in the transcript.
+    let text = text.replace(HIDDEN_INSTRUCTION_OPEN, "\n\n");
+    format!("{text}{HIDDEN_INSTRUCTION_OPEN}{instruction}")
 }
 
 /// `workingMode.set`: applies the mode, or queues a plan switch until the turn ends.
@@ -171,9 +171,6 @@ pub async fn set_mode(agent: &SessionAgent, raw: &str) -> Result<Value, AgentErr
                 return (previous, Applied::Pending);
             }
             s.mode = target;
-            if target == WorkingMode::Away {
-                s.away_epoch += 1;
-            }
             (
                 previous,
                 if needs_restart {
@@ -236,9 +233,6 @@ pub(in crate::session) async fn on_turn_settled(agent: &SessionAgent) {
         .with_working_mode_state(|s| {
             let target = s.pending.take()?;
             s.mode = target;
-            if target == WorkingMode::Away {
-                s.away_epoch += 1;
-            }
             Some((target, (target == WorkingMode::Plan) != s.launched_plan))
         })
         .await;
