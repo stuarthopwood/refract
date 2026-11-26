@@ -64,8 +64,9 @@ export function SubagentBody({ item, showGoal }: SubagentRowProps) {
 
 // The card variant's body (#1928): name, role, what it did, provenance and files, then a live
 // heartbeat and sub-steps while it runs. Every optional part renders nothing when absent, so no
-// empty row or gap is left behind.
-function SubagentCardBody({ item, agent, showGoal }: SubagentRowProps & { agent: SubAgentItem }) {
+// empty row or gap is left behind. `children` is the footer: the chat adds its input/output toggle,
+// the panel (which has its own detail pane) adds nothing, so it needs no transcript item (#1930).
+export function SubagentCardBody({ agent, children }: { agent: SubAgentItem; children?: React.ReactNode }) {
   const { status, duration, name, role, whatItDid, triggeredBy, filesTouched, liveDetail, subSteps } = agent
   const running = status === 'running'
   const hasProvenanceRow = causalBadgeText(triggeredBy) != null || (filesTouched?.length ?? 0) > 0
@@ -98,7 +99,7 @@ function SubagentCardBody({ item, agent, showGoal }: SubagentRowProps & { agent:
           <SubStepList steps={subSteps} />
         </div>
       )}
-      <SubagentBody item={item} showGoal={showGoal} />
+      {children}
     </div>
   )
 }
@@ -107,7 +108,13 @@ function SubagentCardBody({ item, agent, showGoal }: SubagentRowProps & { agent:
 // grouped by `groupToolItems`, identity is the stable `item.id` (so a later activation can
 // reopen the same subagent's full transcript panel, spec 004).
 export function SubagentRow({ item, agent, showGoal, variant = 'default' }: SubagentRowProps & { agent: SubAgentItem; variant?: 'default' | 'card' }) {
-  if (variant === 'card') return <SubagentCardBody item={item} agent={agent} showGoal={showGoal} />
+  if (variant === 'card') {
+    return (
+      <SubagentCardBody agent={agent}>
+        <SubagentBody item={item} showGoal={showGoal} />
+      </SubagentCardBody>
+    )
+  }
   const { status, duration, whatItDid: resultSummary } = agent
   const meta = (
     <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
