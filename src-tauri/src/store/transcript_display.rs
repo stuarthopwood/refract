@@ -10,6 +10,13 @@ pub struct TranscriptDisplaySettings {
     /// Show the raw tool id on tool rows; default `false` (#469).
     #[serde(rename = "toolNames", default)]
     pub tool_names: bool,
+    /// Open answered Ask rows in the transcript; default `true` (#1747).
+    #[serde(rename = "expandAnsweredAsks", default = "default_expand_answered_asks")]
+    pub expand_answered_asks: bool,
+}
+
+fn default_expand_answered_asks() -> bool {
+    true
 }
 
 pub(super) fn parse(object: &Map<String, Value>) -> TranscriptDisplaySettings {
@@ -23,5 +30,6 @@ pub(super) fn parse(object: &Map<String, Value>) -> TranscriptDisplaySettings {
         thinking: flag("thinking", true),
         tool_calls: flag("toolCalls", true),
         tool_names: flag("toolNames", false),
+        expand_answered_asks: flag("expandAnsweredAsks", true),
     }
 }

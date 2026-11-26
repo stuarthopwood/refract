@@ -1,5 +1,5 @@
 // Dispatch coverage (T502): every finished ask, whichever source wrote it, reaches the one Asked-user line.
-// The repo has no jsdom, so the row is rendered to a string; the expanded view is covered in AskedUserLine.test.ts.
+// The repo has no jsdom, so the row is rendered to a string; the expanded view is covered in AskedUserLine.test.ts. Dispatch cases render with "Expand answered questions" off so the digest is asserted (#1747).
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
@@ -13,13 +13,19 @@ vi.mock('@/state', () => ({
 }))
 import { AskedUserRow } from './AskedUserRow'
 
+const display = vi.hoisted(() => ({ expandAnsweredAsks: false }))
+vi.mock('@/state', () => ({
+  useSettingsStore: (select: (s: { settings: object }) => unknown) => select({ settings: { transcriptDisplay: display } })
+}))
+
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
 function tool(partial: Partial<ToolItem>): ToolItem {
   return { kind: 'tool', id: 'a1', toolCallId: 'c1', tool: 'refract_ask', target: '', status: 'done', args: undefined, ...partial }
 }
 
-function render(item: ToolItem): string {
+function render(item: ToolItem, expandAnsweredAsks = false): string {
+  display.expandAnsweredAsks = expandAnsweredAsks
   return renderToStaticMarkup(createElement(AskedUserRow, { item }))
 }
 
@@ -70,5 +76,28 @@ describe('ask row dispatch to the Asked-user line (FR-139)', () => {
     const html = render(tool({ tool: 'ask', args, details: { selectedOptions: ['Postgres'], timedOut: true } }))
     expect(html).toContain('timed out, recommended answers applied')
     expect(html).toContain('→ Postgres')
+  })
+})
+
+describe('answered ask rows follow Expand answered questions (#1747)', () => {
+  const answered = { results: [{ id: 'db', selectedOptions: ['Postgres'] }] }
+
+  it('Given the setting on, When an answered ask renders, Then it is open and announces aria-expanded true', () => {
+    const html = render(tool({ args: DB_ARGS, details: answered }), true)
+    expect(html).toMatch(/<button[^>]*aria-expanded="true"/)
+    expect(html).toContain('Collapse')
+    expect(html).toContain('Postgres')
+    expect(html).not.toContain('data-asked-digest')
+  })
+
+  it('Given the setting off, When an answered ask renders, Then it is the collapsed digest with aria-expanded false', () => {
+    const html = render(tool({ args: DB_ARGS, details: answered }), false)
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"/)
+    expect(html).toContain('data-asked-digest')
+  })
+
+  it('Given the setting on, When a cancelled ask renders, Then it stays collapsed', () => {
+    const html = render(tool({ args: DB_ARGS, output: 'The developer cancelled the questions.' }), true)
+    expect(html).toMatch(/<button[^>]*aria-expanded="false"/)
   })
 })
