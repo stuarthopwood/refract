@@ -2,6 +2,7 @@
 // History replay never reaches `handle_task_start`, so a replayed card is labelled from the cache or not at all.
 
 use std::collections::HashSet;
+use std::io;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use serde_json::Value;
@@ -128,6 +129,17 @@ pub(super) async fn attach_to_transcript(agent: &SessionAgent) {
     }
 }
 
+/// Session delete: refuses later cache writes, so a synthesis still in flight cannot recreate the folder.
+pub(super) async fn discard_cache(agent: &SessionAgent) {
+    let cache = agent
+        .with_subagents_state(|s| s.synthesis.cache.clone())
+        .await;
+    if let Some(cache) = cache {
+        // Waits for a write in flight, which is blocking disk work.
+        let _ = tokio::task::spawn_blocking(move || lock(&cache).discard()).await;
+    }
+}
+
 /// The Session's cache, loaded from disk once; `None` when the id is not safe to use as a folder name.
 async fn session_cache(agent: &SessionAgent) -> Option<SharedCache> {
     if let Some(cache) = agent
@@ -183,16 +195,16 @@ async fn synthesise_and_apply(
         return;
     };
     let (id, entry) = (input.tool_call_id, synthesis.clone());
-    let persisted = tokio::task::spawn_blocking({
-        let cache = cache.clone();
-        let id = id.clone();
-        move || lock(&cache).insert_and_persist(&id, entry)
-    })
-    .await;
-    match persisted {
-        Ok(Ok(())) => {}
-        Ok(Err(err)) => log::warn!("subagent synthesis: could not save the labels: {err}"),
-        Err(err) => log::warn!("subagent synthesis: saving the labels failed: {err}"),
+    // Serialised under the lock, written after it is released, so a slow disk never stalls a label read.
+    let inserted = lock(&cache).insert(&id, entry);
+    let saved = match inserted {
+        Ok(pending) => tokio::task::spawn_blocking(move || pending.write())
+            .await
+            .unwrap_or_else(|err| Err(io::Error::other(err))),
+        Err(err) => Err(err),
+    };
+    if let Err(err) = saved {
+        log::warn!("subagent synthesis: could not save the labels: {err}");
     }
     apply_synthesis(&agent, &id, &synthesis).await;
 }

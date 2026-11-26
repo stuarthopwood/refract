@@ -10,7 +10,6 @@ use serde_json::json;
 
 use super::*;
 use crate::omp::config::OmpConfigError;
-use crate::store::registry::Session;
 
 type CallFuture<'a> = Pin<Box<dyn Future<Output = Result<String, OmpConfigError>> + Send + 'a>>;
 
@@ -183,13 +182,15 @@ async fn a_second_start_for_the_same_tool_call_makes_no_second_call() {
 async fn a_cache_hit_labels_the_cards_without_any_call() {
     let fx = fixture(FakeExec::new(roles_with_tiny(), GOOD_REPLY)).await;
     SynthesisCache::load(&cache_dir(&fx))
-        .insert_and_persist(
+        .insert(
             "call-1",
             Synthesis {
                 overall_goal: Some("From disk".to_string()),
                 roles: vec![None, Some("Cached builder".to_string())],
             },
         )
+        .unwrap()
+        .write()
         .unwrap();
 
     super::super::handle_task_start(&fx.agent, "call-1", &task_args()).await;

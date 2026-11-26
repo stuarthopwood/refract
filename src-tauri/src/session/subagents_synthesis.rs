@@ -41,6 +41,22 @@ pub struct Synthesis {
     pub roles: Vec<Option<String>>,
 }
 
+impl Synthesis {
+    /// The same label caps `parse_reply` applies, for labels read back from a disk file anyone can edit.
+    pub fn clamped(self) -> Self {
+        Self {
+            overall_goal: self
+                .overall_goal
+                .and_then(|goal| clean_label(&goal, GOAL_MAX_CHARS)),
+            roles: self
+                .roles
+                .into_iter()
+                .map(|role| role.and_then(|role| clean_label(&role, ROLE_MAX_CHARS)))
+                .collect(),
+        }
+    }
+}
+
 /// The model's whole input: instructions, the cleaned shared context and each agent's capped task.
 pub fn build_prompt(input: &SynthesisInput) -> String {
     let count = input.agents.len();

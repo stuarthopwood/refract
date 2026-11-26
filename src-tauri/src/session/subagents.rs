@@ -279,6 +279,11 @@ pub(crate) async fn synthesis_lookup(agent: &SessionAgent) -> Option<Arc<dyn Syn
     subagents_synthesis_hook::lookup(agent).await
 }
 
+/// Session delete hook: stops the synthesis cache writing, before its folder is removed.
+pub(crate) async fn discard_synthesis_cache(agent: &SessionAgent) {
+    subagents_synthesis_hook::discard_cache(agent).await;
+}
+
 /// Conversation hook: clears the previous Conversation's subagents (#577).
 pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     let had_any = agent
