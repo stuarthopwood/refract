@@ -126,7 +126,7 @@ async function runChecks(cdp, { repo, repoName, ompLog }) {
   await cdp.waitFor(`document.body.innerText.includes('Delete the build folder?')`, { timeoutMs: 20_000, label: 'confirm answered and recorded' });
   const declined = responses(ompLog).find((l) => l.includes('"id":"c-1"') && l.includes('"confirmed":false'));
   assert(!!declined, `Away answered the confirm No: ${declined}`);
-  await cdp.waitFor(`document.body.innerText.includes('the agent\'s form')`, { timeoutMs: 20_000, label: 'form answered and recorded' });
+  await cdp.waitFor(`document.body.innerText.includes("the agent's form")`, { timeoutMs: 20_000, label: 'form answered and recorded' });
   const form = responses(ompLog).find((l) => l.includes('"id":"f-1"') && l.includes('"channel":"stable"'));
   assert(!!form && !form.includes('cancelled'), `Away submitted the form with its default values: ${form}`);
   await cdp.waitFor(`document.body.innerText.includes('Not approved: the user is away')`, { timeoutMs: 20_000, label: 'approval denied at once' });
