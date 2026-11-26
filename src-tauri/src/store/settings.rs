@@ -532,6 +532,7 @@ impl SettingsStore {
             "thinking" => transcript_display.thinking = visible,
             "toolCalls" => transcript_display.tool_calls = visible,
             "toolNames" => transcript_display.tool_names = visible,
+            "expandAnsweredAsks" => transcript_display.expand_answered_asks = visible,
             _ => return Ok(self.data.clone()),
         }
         let next = Settings {

@@ -92,7 +92,7 @@ function precedingText(start: HtmlNode): string {
       const sib = siblings[k]
       if (!sib) continue
       if (containsControl(sib)) return ''
-      const text = textContent(sib)
+      const text = textContent(sib, true)
       if (text) return text
     }
     if (cur.parent.tag === 'fieldset' || cur.parent.tag === 'form') return ''
@@ -112,15 +112,15 @@ function trailingText(el: HtmlElement): string {
   return clean(parts.join(' '))
 }
 
-function controlLabel(el: HtmlElement, forLabels: ReadonlyMap<string, HtmlElement>): string {
+function controlLabel(el: HtmlElement, forLabels: ReadonlyMap<string, HtmlElement>, keepLines = false): string {
   const wrapping = closestAncestor(el, 'label')
   const id = el.attrs.get('id')
   const forLabel = id ? forLabels.get(id) : undefined
-  return (wrapping && textContent(wrapping)) || (forLabel && textContent(forLabel)) || clean(el.attrs.get('aria-label')) || ''
+  return (wrapping && textContent(wrapping, keepLines)) || (forLabel && textContent(forLabel, keepLines)) || clean(el.attrs.get('aria-label')) || ''
 }
 
 function legendOf(fieldset: HtmlElement): string {
-  for (const el of descendantElements(fieldset)) if (el.tag === 'legend') return textContent(el)
+  for (const el of descendantElements(fieldset)) if (el.tag === 'legend') return textContent(el, true)
   return ''
 }
 
@@ -269,7 +269,7 @@ function parseUncached(html: string): AskFormField[] | null {
     if (!isSelect && !isTextarea && !TYPED_INPUT_TYPES[type] && type !== 'text') return null
 
     const name = rawName || `field-${slots.length + 1}`
-    const question = controlLabel(el, forLabels) || precedingText(el) || clean(el.attrs.get('placeholder')) || name
+    const question = controlLabel(el, forLabels, true) || precedingText(el) || clean(el.attrs.get('placeholder')) || name
     const base = { name, ...(rawName ? {} : { unnamed: true as const }), question, required }
     if (isSelect) {
       const select = readSelect(el, base)

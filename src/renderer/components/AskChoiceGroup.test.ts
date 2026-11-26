@@ -3,6 +3,12 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+
+// The real Markdown renderer is under test (#2033); the state barrel it imports needs a browser `window`, so it is stubbed.
+vi.mock('@/state', () => ({
+  notifyPersistentError: vi.fn(),
+  useSessionsStore: (select: (state: { sessions: [] }) => unknown) => select({ sessions: [] })
+}))
 import { AskChoiceGroup, createArrowGuard, describedByOf, rowProps, type AskChoiceOption } from './AskChoiceGroup'
 
 const OPTIONS: AskChoiceOption[] = [
@@ -12,21 +18,25 @@ const OPTIONS: AskChoiceOption[] = [
 
 function render(multi: boolean, options: AskChoiceOption[] = OPTIONS, selected: string[] = []) {
   return renderToStaticMarkup(
-    createElement(AskChoiceGroup, {
-      multi,
-      options,
-      selected,
-      otherSelected: false,
-      disabled: false,
-      idPrefix: 'p',
-      groupLabel: 'Pick',
-      other: { visible: false, text: '', ariaLabel: 'Other answer', onTextChange: () => undefined },
-      onSelect: () => undefined,
-      onToggle: () => undefined,
-      onSelectOther: () => undefined,
-      onToggleOther: () => undefined,
-      onAcceptRecommended: () => undefined
-    })
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(AskChoiceGroup, {
+        multi,
+        options,
+        selected,
+        otherSelected: false,
+        disabled: false,
+        idPrefix: 'p',
+        groupLabel: 'Pick',
+        other: { visible: false, text: '', ariaLabel: 'Other answer', onTextChange: () => undefined },
+        onSelect: () => undefined,
+        onToggle: () => undefined,
+        onSelectOther: () => undefined,
+        onToggleOther: () => undefined,
+        onAcceptRecommended: () => undefined
+      })
+    )
   )
 }
 
@@ -286,6 +296,17 @@ describe('option notes slot (#1987)', () => {
   it('renders no note markers without the notes prop', () => {
     expect(render(false, OPTIONS, ['Alpha'])).not.toContain('data-ask-option')
   })
+
+  it.each([
+    ['single choice', false],
+    ['multiple choice', true]
+  ])('reserves right padding on every option row so the hover hint never overlaps text, %s', (_name, multi) => {
+    const html = renderWithNotes(multi, ['Alpha'])
+    // The trailing Other row has no note slot, so only the listed options are checked.
+    const rows = (html.match(/<button[^>]*role="(?:radio|checkbox)"[^>]*>/g) ?? []).slice(0, OPTIONS.length)
+    expect(rows).toHaveLength(OPTIONS.length)
+    for (const row of rows) expect(classTokens(row)).toContain('pr-20')
+  })
 })
 
 describe('disabled option, group state and Other row', () => {
@@ -349,5 +370,51 @@ describe('disabled option, group state and Other row', () => {
     expect(group).toContain('aria-required="true"')
     expect(group).toContain('aria-invalid="true"')
     expect(group).toContain('p-error')
+  })
+})
+
+describe.each([
+  ['single choice', false],
+  ['multiple choice', true]
+])('option descriptions render as Markdown (#2033), %s', (_name, multi) => {
+  const TABLE = '| Plan | Cost |\n| --- | --- |\n| Fast | **high** |'
+
+  it('renders a GFM table and bold text in a description, not raw pipes', () => {
+    const markup = render(multi, [{ value: 'a', label: 'Alpha', description: TABLE }])
+    expect(markup).toContain('<table')
+    expect(markup).toContain('<th')
+    expect(markup).toContain('<strong>high</strong>')
+    expect(markup).not.toContain('| --- |')
+  })
+
+  it('keeps the description wrapper id that the option row points aria-describedby at', () => {
+    const markup = render(multi, [{ value: 'a', label: 'Alpha', description: TABLE }])
+    expect(markup).toMatch(/aria-describedby="p-opt-0-desc"/)
+    expect(markup).toMatch(/<div id="p-opt-0-desc"[^>]*><div[^>]*>[\s\S]*<table/)
+  })
+
+  it('renders a malformed table (no separator row) as plain text, not a table', () => {
+    const markup = render(multi, [{ value: 'a', label: 'Alpha', description: '| Plan | Cost |\n| Fast | high |' }])
+    expect(markup).not.toContain('<table')
+    expect(markup).toContain('| Fast | high |')
+  })
+
+  it('does not load images or follow non-http links from a description', () => {
+    const markup = render(multi, [{ value: 'a', label: 'Alpha', description: '[x](javascript:alert(1)) ![i](https://example.com/i.png)' }])
+    expect(markup).not.toContain('javascript:')
+    expect(markup).not.toContain('<img')
+  })
+
+  it('renders a link in a description inert, so no link nests inside the option button and a click cannot change the pick', () => {
+    const markup = render(multi, [{ value: 'a', label: 'Alpha', description: 'See [the docs](https://example.com/docs)' }])
+    expect(markup).not.toContain('<a ')
+    expect(markup).not.toContain('href=')
+    expect(markup).toMatch(/<span class="[^"]*underline[^"]*">the docs<\/span>/)
+  })
+
+  it('keeps a table scroll region in a description out of the tab order and unnamed', () => {
+    const markup = render(multi, [{ value: 'a', label: 'Alpha', description: TABLE }])
+    expect(markup).not.toContain('tabindex="0"')
+    expect(markup).not.toContain('role="region"')
   })
 })

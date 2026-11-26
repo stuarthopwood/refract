@@ -71,6 +71,15 @@ describe('OptionNoteSlot (#1987)', () => {
     expect(html).not.toContain('kept')
   })
 
+  it('draws the hover hint like the selected hint: no border or fill, vertically centred and only as tall as its text, still revealed by opacity (#2180)', () => {
+    const html = slot(false, notes())
+    const classes = /<button[^>]*class="([^"]*)"/.exec(html)?.[1]?.split(' ') ?? []
+    expect(classes).toEqual(expect.arrayContaining(['top-1/2', '-translate-y-1/2', 'opacity-0']))
+    for (const stale of ['border-border', 'bg-background', 'inset-y-0', 'my-auto']) expect(classes).not.toContain(stale)
+    expect(html).toContain('aria-keyshortcuts="N"')
+    expect(html).toContain('aria-label="Add a note to Alpha"')
+  })
+
   it('shows nothing under an unpicked option once the card is busy', () => {
     expect(slot(false, notes(), true)).toBe('')
   })
@@ -91,6 +100,17 @@ describe('OptionNoteSlot (#1987)', () => {
     expect(html).toContain('bg-severity-warning-bg')
     expect(html).toContain('aria-label="Edit note on Alpha"')
     expect(html).toContain('aria-label="Remove note on Alpha"')
+  })
+
+  it('draws the saved-note bar flush with the option row: no top border or indent, buttons centred on the text line, balanced vertical padding (#2184)', () => {
+    const html = slot(true, notes({ texts: { A: 'ship it' } }))
+    const bar = /<div class="([^"]*bg-severity-warning-bg[^"]*)"/.exec(html)?.[1]?.split(' ') ?? []
+    expect(bar).toEqual(expect.arrayContaining(['items-center', 'py-1', 'bg-severity-warning-bg']))
+    expect(bar).not.toContain('border-t')
+    expect(bar).not.toContain('border-border')
+    expect(bar).not.toContain('ml-6')
+    expect(bar).not.toContain('items-start')
+    expect(bar).not.toContain('pt-2')
   })
 
   it('renders the editor, labelled, capped and tied to its keyboard hint, while its option is being edited', () => {
