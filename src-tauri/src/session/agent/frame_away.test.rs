@@ -351,14 +351,22 @@ async fn gated_steer_with_pending(kinds: &[Kind]) -> Fixture {
     .await;
     enter_for_test(&fx.agent).await;
     fx.agent.state.lock().await.status = SessionStatus::Working;
-    let frame = dialog("b-1", "select", json!({ "title": "b-1", "options": ["Red"] }));
+    let frame = dialog(
+        "b-1",
+        "select",
+        json!({ "title": "b-1", "options": ["Red"] }),
+    );
     fx.agent.handle_frame(frame).await;
     fx.until_rpc("prompt").await;
     for kind in kinds {
         // Returns at once: the slot is taken, so each call only notes its kind.
         send_steer(&fx.agent, *kind).await;
     }
-    assert_eq!(prompt_count(&fx.rpcs().await), 1, "only the first is in flight");
+    assert_eq!(
+        prompt_count(&fx.rpcs().await),
+        1,
+        "only the first is in flight"
+    );
     fx
 }
 
@@ -376,7 +384,11 @@ async fn a_burst_of_replies_adds_one_more_steer_not_one_each() {
         .into_iter()
         .filter(|cmd| cmd["type"] == "prompt")
         .collect();
-    assert_eq!(prompts.len(), 2, "the in-flight steer plus one for the burst");
+    assert_eq!(
+        prompts.len(),
+        2,
+        "the in-flight steer plus one for the burst"
+    );
     assert_eq!(prompts[1]["message"], ANSWERED_STEER);
     fx.finish().await;
 }
