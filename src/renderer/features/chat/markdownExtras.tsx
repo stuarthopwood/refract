@@ -1,6 +1,7 @@
 import * as React from 'react'
 import type { ExtraProps } from 'react-markdown'
 import { CircleAlert, Info, Lightbulb, OctagonAlert, TriangleAlert, type LucideIcon } from 'lucide-react'
+import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { cn } from '@/lib/utils'
 
 // Per-render options for the shared `Markdown`, read by the module-level renderers below through
@@ -80,7 +81,7 @@ export function MarkdownBlockquote({ className, children, node: _node, ...props 
 export function MarkdownTable({ className, node: _node, ...props }: React.ComponentProps<'table'> & ExtraProps) {
   const { githubStyle, inert } = React.useContext(MarkdownOptionsContext)
   const scrollRegion = inert ? {} : { tabIndex: 0, role: 'region', 'aria-label': 'Scrollable table' }
-  const focusRing = inert ? '' : 'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+  const focusRing = inert ? '' : INSET_FOCUS_OUTLINE_CLASS
   if (githubStyle) {
     return (
       <div className={cn('overflow-x-auto', focusRing)} {...scrollRegion}>

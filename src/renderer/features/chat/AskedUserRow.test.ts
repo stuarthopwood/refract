@@ -2,8 +2,15 @@
 // The repo has no jsdom, so the row is rendered to a string; the expanded view is covered in AskedUserLine.test.ts.
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { TranscriptItem } from '../../../shared/model'
+
+// The row renders questions through the real Markdown renderer (#2033); the state barrel it imports needs a browser `window`, so it is stubbed.
+vi.mock('@/state', () => ({
+  notifyPersistentError: vi.fn(),
+  useSyntaxTheme: () => 'github-dark',
+  useSessionsStore: (select: (state: { sessions: [] }) => unknown) => select({ sessions: [] })
+}))
 import { AskedUserRow } from './AskedUserRow'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>

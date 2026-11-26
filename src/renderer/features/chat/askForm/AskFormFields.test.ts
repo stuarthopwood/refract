@@ -158,6 +158,7 @@ describe('questionLabel (#2033)', () => {
   it.each([
     ['a one-line question', 'Pick one', 'Pick one', false],
     ['markup around a one-line question', '**Pick** [one](https://example.com)', 'Pick one', false],
+    ['a mid-line > and # that are not Markdown syntax', 'Is latency > 200ms? C# level', 'Is latency > 200ms? C# level', false],
     ['prose then a table', 'Which plan?\n\n| A | B |\n| - | - |\n| 1 | 2 |', 'Which plan?', true],
     ['a first paragraph of several lines', 'Line one\nline two', 'Line one', true],
     ['a table first, then prose', '| A | B |\n| - | - |\n\nPick a row', 'Pick a row', true],

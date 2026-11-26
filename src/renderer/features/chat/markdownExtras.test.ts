@@ -2,6 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { MarkdownOptionsContext, MarkdownTable, type MarkdownOptions } from './markdownExtras'
 
 function table(options: Partial<MarkdownOptions>) {
@@ -22,8 +23,10 @@ describe('MarkdownTable scroll region (#2033)', () => {
     expect(wrapper).toContain('overflow-x-auto')
   })
 
-  it('shows a focus ring on the region', () => {
-    expect(table({})).toContain('focus-visible:ring-2')
+  it('shows a focus outline on the region that forced-colors mode keeps, not a box-shadow ring it drops', () => {
+    const wrapper = table({}).match(/^<div[^>]*>/)?.[0] ?? ''
+    expect(wrapper).toContain(INSET_FOCUS_OUTLINE_CLASS)
+    expect(wrapper).not.toContain('focus-visible:ring')
   })
 
   it('is not focusable, named or a region when inert, because it sits inside an interactive control', () => {

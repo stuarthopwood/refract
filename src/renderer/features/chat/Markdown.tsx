@@ -225,6 +225,8 @@ const components: Components & Record<typeof ITEM_REF_TAG, (props: { children?: 
     const streaming = React.useContext(StreamingContext)
     const isFootnoteAnchor = 'data-footnote-ref' in props || 'data-footnote-backref' in props
     if (isFootnoteAnchor) {
+      // Inert like any other link while streaming or inside a control: a same-page anchor there is a focus stop that nests in a button.
+      if (streaming) return <span className={cn('underline underline-offset-2', className)}>{children}</span>
       return (
         <a {...props} href={href} className={cn('underline underline-offset-2', className)}>
           {children}

@@ -156,10 +156,63 @@ export function closestAncestor(node: HtmlNode, tag: string): HtmlElement | null
   return null
 }
 
+// A line that starts one of these is Markdown block syntax, so its line break carries meaning.
+const BLOCK_START = /^(?:[|>#]|[-*+](?:\s|$)|\d+[.)]|```|~~~)/
+const LIST_START = /^(?:[-*+](?:\s|$)|\d+[.)])/
+const FENCE_OPEN = /^(`{3,}|~{3,})/
+// A line after one of these must stay on its own line: joining would pull prose into a heading, table row or fence.
+const BREAKS_AFTER = /^(?:[|#]|```|~~~)/
+
+function indentOf(line: string): number {
+  return line.length - line.trimStart().length
+}
+
 /**
- * Visible text with whitespace collapsed; control elements contribute nothing. With `keepLines`
- * line breaks survive (runs of other whitespace still collapse and each line is trimmed), so
- * question text written as Markdown keeps its tables, lists and code blocks.
+ * Markdown source from the visible text. The source's own HTML formatting is removed (the common indent, soft wraps of
+ * prose) while Markdown structure is kept: blank lines, table rows, headings, quotes, lists with their nesting, and
+ * fenced code verbatim.
+ */
+function markdownLines(text: string): string {
+  const lines = text.replace(/\r\n?/g, '\n').split('\n')
+  // Text that starts mid-line follows an opening tag, so only the lines after it carry the source's indent.
+  const indented = lines.filter((line, k) => line.trim() !== '' && (k > 0 || lines[0]?.trim() === ''))
+  const common = indented.length > 0 ? Math.min(...indented.map(indentOf)) : 0
+  const out: string[] = []
+  let fence: string | null = null
+  let previous = ''
+  for (const [k, raw] of lines.entries()) {
+    const line = k === 0 ? raw : raw.slice(Math.min(common, indentOf(raw)))
+    const trimmed = line.trim()
+    const opener = FENCE_OPEN.exec(trimmed)?.[1]
+    if (fence !== null) {
+      const closes = opener !== undefined && opener.startsWith(fence.charAt(0)) && opener.length >= fence.length && trimmed === opener
+      out.push(closes ? trimmed : line.trimEnd())
+      if (closes) {
+        fence = null
+        previous = '```'
+      }
+      continue
+    }
+    if (trimmed === '') {
+      out.push('')
+      previous = ''
+      continue
+    }
+    if (opener !== undefined) fence = opener
+    const body = trimmed.replace(/\s+/g, ' ')
+    const keepBreak = BLOCK_START.test(body) || previous === '' || BREAKS_AFTER.test(previous)
+    const text = LIST_START.test(body) ? `${line.slice(0, indentOf(line))}${body}` : body
+    if (keepBreak || out.length === 0) out.push(text)
+    else out[out.length - 1] = `${out[out.length - 1] ?? ''} ${text}`
+    previous = body
+  }
+  return out.join('\n').trim()
+}
+
+/**
+ * Visible text with whitespace collapsed; control elements contribute nothing. With `keepLines` the text is read as
+ * Markdown source (see `markdownLines`), so question text keeps its tables, lists and code blocks while a label
+ * wrapped across source lines still reads as one line.
  */
 export function textContent(node: HtmlNode, keepLines = false): string {
   const parts: string[] = []
@@ -169,11 +222,5 @@ export function textContent(node: HtmlNode, keepLines = false): string {
   }
   walk(node)
   const text = parts.join('')
-  if (!keepLines) return text.replace(/\s+/g, ' ').trim()
-  return text
-    .replace(/\r\n?/g, '\n')
-    .split('\n')
-    .map((line) => line.replace(/[^\S\n]+/g, ' ').trim())
-    .join('\n')
-    .trim()
+  return keepLines ? markdownLines(text) : text.replace(/\s+/g, ' ').trim()
 }

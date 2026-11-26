@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Slider } from '@/components/ui/slider'
 import { Textarea } from '@/components/ui/textarea'
 import { Markdown } from '../Markdown'
+import { markdownToPlainText } from '../markdownPlainText'
 import type { AskFieldValue } from './answerPlan'
 import type { AskFormChoiceField, AskFormInputField, AskFormSelectField, AskFormTextField } from './parseAskHtml'
 
@@ -33,10 +34,10 @@ function FieldHeading({ id, question, required }: { id: string; question: string
   )
 }
 
-const stripMarkup = (text: string): string => text.replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1').replace(/[*`~#>]/g, '').replace(/\s+/g, ' ').trim()
+const plainText = (markdown: string): string => markdownToPlainText(markdown).replace(/\s+/g, ' ')
 
 /**
- * The short accessible name of a question: its first line of prose, markup stripped. A table, code block or long body must not flatten into
+ * The short accessible name of a question: its first line of prose, as plain text. A table, code block or long body must not flatten into
  * the control's name, so `described` says the full question belongs in the description instead (#2033).
  */
 export function questionLabel(question: string): { name: string; described: boolean } {
@@ -44,8 +45,8 @@ export function questionLabel(question: string): { name: string; described: bool
     .trim()
     .split(/\n\s*\n/)
     .find((block) => !/^\s*(\||```)/.test(block))
-  const name = stripMarkup(prose?.split('\n')[0] ?? '') || 'Question'
-  return { name, described: stripMarkup(question) !== name }
+  const name = plainText(prose?.split('\n')[0] ?? '') || 'Question'
+  return { name, described: plainText(question) !== name }
 }
 
 /** The ids a control is named and described by: the short name when the question has more than one line of prose, else the heading itself. */
