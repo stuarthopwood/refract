@@ -12,10 +12,18 @@ pub(super) async fn build_args(opts: &OmpProcessOptions) -> (Vec<String>, Vec<St
     if opts.no_session {
         args.push("--no-session".to_string());
     }
-    let (guard_args, warnings) =
-        super::token_guard::args::launch_args(&crate::data_dir(), opts.plan_mode, opts.stacked_prs)
-            .await;
+    let (guard_args, mut warnings) =
+        super::token_guard::args::launch_args(&crate::data_dir(), opts.stacked_prs).await;
     args.extend(guard_args);
+    if opts.plan_mode {
+        match super::plan_overlay::write(&crate::data_dir()).await {
+            Ok(path) => {
+                args.push("--config".to_string());
+                args.push(path.to_string_lossy().into_owned());
+            }
+            Err(err) => warnings.push(format!("could not write the plan mode overlay ({err})")),
+        }
+    }
     if let Some(path) = &opts.extra_config {
         args.push("--config".to_string());
         args.push(path.to_string_lossy().into_owned());

@@ -118,6 +118,11 @@ async fn set_thinking(agent: &SessionAgent, level: Option<String>) {
     changed(agent);
 }
 
+/// Queues a role or model for the next drain; plan mode uses it so the switch rides the launch's own drain (#1946).
+pub(super) async fn queue(agent: &SessionAgent, target: Target) {
+    set_target(agent, Some(target)).await;
+}
+
 async fn lock_drain(agent: &SessionAgent) -> OwnedMutexGuard<()> {
     let guard = agent.with_model_state(|s| s.drain_guard.clone()).await;
     guard.lock_owned().await

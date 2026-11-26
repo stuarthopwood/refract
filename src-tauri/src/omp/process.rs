@@ -64,8 +64,8 @@ pub struct OmpProcessOptions {
     pub omp_path: Option<PathBuf>,
     /// Appends `--no-session`, so omp does not persist the session (#362).
     pub no_session: bool,
-    /// Forces `plan.defaultOnStartup` for this process; `None` keeps the shared overlay (#433).
-    pub plan_mode: Option<bool>,
+    /// Launches in plan mode: write tools denied and `bash` asks, since rpc-ui has no plan toggle (#433, #2116).
+    pub plan_mode: bool,
     /// An extra `--config` overlay for this launch (omp accepts the flag repeatedly).
     pub extra_config: Option<PathBuf>,
     /// Adds the `gh stack` block to the Session rules (#1867).
@@ -84,7 +84,7 @@ impl OmpProcessOptions {
             approval_mode,
             omp_path: None,
             no_session: false,
-            plan_mode: None,
+            plan_mode: false,
             extra_config: None,
             stacked_prs: false,
             pass_cwd_flag: false,

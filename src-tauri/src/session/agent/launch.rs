@@ -217,8 +217,8 @@ impl SessionAgent {
         let approval_mode = self.settings.lock().await.get().approval_mode;
         let mut opts = OmpProcessOptions::new(work_dir.clone(), to_process_mode(approval_mode));
         opts.pass_cwd_flag = pass_cwd_flag;
-        // Always set, so a Session out of Plan overrides a global plan.defaultOnStartup.
-        opts.plan_mode = Some(crate::session::working_mode::plan_for_launch(self).await);
+        // Always set, so a restart out of Plan launches without the plan-mode tool policy.
+        opts.plan_mode = crate::session::working_mode::plan_for_launch(self).await;
         // Both launch sites read the depth here, so a restart after a re-parent sees the new one.
         let tool_access = {
             let registry = self.registry.lock().await;

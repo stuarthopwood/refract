@@ -10,6 +10,7 @@ use crate::omp::transcript::NoticeLevel;
 use super::agent::{AgentError, SessionAgent};
 
 pub(in crate::session) mod model_support;
+mod plan_role;
 
 use model_support::{
     friendly_model_text, is_switch_argument_token, model_value, post_notice, selector_matches_model,
@@ -40,6 +41,8 @@ pub(super) struct State {
     pub(super) role_generation: u64,
     /// Monotonic id source for this lane's transcript notices.
     notice_seq: u64,
+    /// Set while plan mode displaced the role or pin; holds what to restore (#1946).
+    pub(super) plan_swap: Option<plan_role::Swap>,
 }
 
 /// Outcome of the #740 sweep over live Sessions after a role's config value changes.
@@ -112,6 +115,7 @@ pub async fn current_selection(agent: &SessionAgent) -> (bool, Option<String>) {
 /// Runs once the process has launched and `get_state` is applied: seeds the role (#1878).
 pub(super) async fn on_launch(agent: &SessionAgent) {
     model_support::seed_role_at_launch(agent).await;
+    plan_role::on_launch(agent).await;
 }
 
 /// `cycleOrder` (read fresh each call) plus `"plan"` (#766): the Ctrl+R selector's listing and

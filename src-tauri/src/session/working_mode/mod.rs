@@ -11,6 +11,7 @@ use serde_json::{json, Map, Value};
 use crate::omp::transcript::file_attachment_markers::HIDDEN_INSTRUCTION_OPEN;
 use crate::session::agent::{AgentError, SessionAgent, SessionStatus};
 
+const PLAN_INSTRUCTION: &str = "Plan mode is on. Plan only: do not create, edit, rename or delete any file, and do not run commands that change anything. File writes are refused in this mode. Write the plan in your reply.";
 const GRILL_INSTRUCTION: &str = "Grill mode is on. Interview me about this request before acting: ask one question at a time, give your recommended answer with each question, and check it against CONTEXT.md and docs/adr in this repository. Do not edit files or run commands that change anything until I tell you to proceed.";
 const AWAY_INSTRUCTION: &str = "Away mode is on: you are unattended and I will not answer. Do not use the ask tool. Act on your best recommendation, or consult a subagent or do research. Stop only for a genuinely dangerous or irreversible operation. Put \"you are unattended, do not ask\" in every subagent brief you write.";
 
@@ -129,13 +130,26 @@ pub(in crate::session) async fn plan_for_launch(agent: &SessionAgent) -> bool {
         .await
 }
 
-/// Appends the hidden Grill or Away instruction; the transcript cuts it back off.
+/// Whether the process now running was launched in plan mode.
+pub(in crate::session) async fn launched_plan(agent: &SessionAgent) -> bool {
+    agent.with_working_mode_state(|s| s.launched_plan).await
+}
+
+fn instruction_for(mode: WorkingMode) -> Option<&'static str> {
+    match mode {
+        WorkingMode::Plan => Some(PLAN_INSTRUCTION),
+        WorkingMode::Grill => Some(GRILL_INSTRUCTION),
+        WorkingMode::Away => Some(AWAY_INSTRUCTION),
+        WorkingMode::Interactive => None,
+    }
+}
+
+/// Appends the hidden Plan, Grill or Away instruction; the transcript cuts it back off.
 pub(in crate::session) async fn decorate_prompt(agent: &SessionAgent, text: String) -> String {
     ensure_loaded(agent).await;
-    let instruction = match agent.with_working_mode_state(|s| s.mode).await {
-        WorkingMode::Grill => GRILL_INSTRUCTION,
-        WorkingMode::Away => AWAY_INSTRUCTION,
-        _ => return text,
+    let mode = agent.with_working_mode_state(|s| s.mode).await;
+    let Some(instruction) = instruction_for(mode) else {
+        return text;
     };
     if text.trim_start().starts_with('/') {
         return text;
@@ -268,3 +282,7 @@ pub(in crate::session) async fn on_exit(agent: &SessionAgent, requested: bool) {
         agent.emit_status().await;
     }
 }
+
+#[cfg(test)]
+#[path = "mod.test.rs"]
+mod tests;
