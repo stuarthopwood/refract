@@ -193,12 +193,12 @@ describe('AskedUserLine expanded question renders as Markdown (#2033)', () => {
     expect(html).toContain('>Which plan?</span>')
   })
 
-  it('strips an unsafe link and an image from the question', () => {
-    const html = open('Go [here](javascript:alert(1)) ![pic](https://example.com/i.png)')
+  it('renders an unsafe link as plain text and never inlines an image', () => {
+    const html = open('Go [here](javascript:alert(1))')
     // The card's aria-label quotes the raw prompt; only an href would be live.
     expect(html).not.toMatch(/href="javascript:/)
     expect(html).not.toContain('<a ')
-    expect(html).not.toContain('<img')
+    expect(open('![pic](https://example.com/i.png)')).not.toContain('<img')
   })
 
   it('renders a fenced code block in the question as a code block', () => {
