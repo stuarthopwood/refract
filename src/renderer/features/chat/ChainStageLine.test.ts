@@ -174,15 +174,15 @@ describe('ChainStageLine reduced motion (FR-149 e)', () => {
 describe('given a running Stage', () => {
   const running = stageOf([subagentItem({ name: 'Solo', status: 'running' })])
 
-  it('tints the header with a color-mix of the working state and draws no coloured border', () => {
+  it('tints the header with the working-state tint token and draws no coloured border', () => {
     const html = render(running)
-    expect(html).toContain('color-mix(in_oklab,var(--state-working)_10%,transparent)')
+    expect(html).toContain('bg-state-working-tint')
     expect(html).not.toMatch(/border-l-(state|severity)/)
     expect(html).toContain('data-status="running"')
   })
 
   it('does not tint a settled Stage', () => {
-    expect(render(SOLO())).not.toContain('color-mix')
+    expect(render(SOLO())).not.toContain('bg-state-working-tint')
   })
 })
 

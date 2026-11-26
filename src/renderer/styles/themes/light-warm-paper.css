@@ -213,6 +213,8 @@
   --status-pill-attention-fg: var(--state-needs-you);
   --status-pill-attention-border: color-mix(in oklab, var(--state-needs-you) 50%, transparent);
   --status-pill-attention-hover-bg: color-mix(in oklab, var(--state-needs-you) 20%, transparent);
+  --state-working-border: color-mix(in oklab, var(--state-working) 50%, transparent);
+  --state-working-tint: color-mix(in oklab, var(--state-working) 10%, transparent);
   --tooltip-bg: var(--popover);
   --tooltip-fg: var(--popover-foreground);
   --tooltip-border: var(--border);

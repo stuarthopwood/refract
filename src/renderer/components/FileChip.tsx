@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { FileIcon } from 'lucide-react'
-import { Badge, badgeVariants } from '@/components/ui/badge'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 /** Last segment of a path in either separator style: agents report Windows and POSIX paths alike. */
@@ -54,16 +55,17 @@ export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, 
       ))}
       {expanded && hidden.map((path) => <FileChip key={path} path={path} />)}
       {hidden.length > 0 && (
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="xs"
           tabIndex={(tabbable ?? inheritedTabbable) ? undefined : -1}
           aria-expanded={expanded}
           onClick={() => setExpanded((open) => !open)}
-          className={cn(badgeVariants({ variant: 'outline' }), 'cursor-pointer text-muted-foreground hover:bg-muted hover:text-foreground')}
+          className="text-muted-foreground"
         >
           {expanded ? 'Show fewer' : `+${hidden.length}`}
           {!expanded && <span className="sr-only"> more files</span>}
-        </button>
+        </Button>
       )}
     </div>
   )
