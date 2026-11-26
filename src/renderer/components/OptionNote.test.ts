@@ -71,6 +71,15 @@ describe('OptionNoteSlot (#1987)', () => {
     expect(html).not.toContain('kept')
   })
 
+  it('draws the hover hint like the selected hint: no border or fill, vertically centred and only as tall as its text, still revealed by opacity (#2180)', () => {
+    const html = slot(false, notes())
+    const classes = /<button[^>]*class="([^"]*)"/.exec(html)?.[1]?.split(' ') ?? []
+    expect(classes).toEqual(expect.arrayContaining(['top-1/2', '-translate-y-1/2', 'opacity-0']))
+    for (const stale of ['border-border', 'bg-background', 'inset-y-0', 'my-auto']) expect(classes).not.toContain(stale)
+    expect(html).toContain('aria-keyshortcuts="N"')
+    expect(html).toContain('aria-label="Add a note to Alpha"')
+  })
+
   it('shows nothing under an unpicked option once the card is busy', () => {
     expect(slot(false, notes(), true)).toBe('')
   })

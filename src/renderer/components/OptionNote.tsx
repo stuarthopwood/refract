@@ -183,7 +183,7 @@ export function OptionNoteSlot({ value, label, picked, disabled, notes }: Option
         hasNote={false}
         disabled={disabled}
         onClick={() => notes.onEdit(value)}
-        className="absolute inset-y-0 right-2 my-auto border-border bg-background opacity-0 group-focus-within/option:opacity-100 group-hover/option:opacity-100"
+        className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 group-focus-within/option:opacity-100 group-hover/option:opacity-100"
       />
     )
   }
