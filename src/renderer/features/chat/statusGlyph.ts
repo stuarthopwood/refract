@@ -4,7 +4,7 @@ import { CheckCircle2Icon, CirclePauseIcon, CircleStopIcon, LoaderCircleIcon, Un
 export type StatusGlyphKey = 'running' | 'neutral-done' | 'success-done' | 'error' | 'neutral-muted' | 'cancelled' | 'parked'
 
 export const STATUS_GLYPH: Record<StatusGlyphKey, { Icon: LucideIcon; className: string }> = {
-  running: { Icon: LoaderCircleIcon, className: 'animate-spin text-state-working' },
+  running: { Icon: LoaderCircleIcon, className: 'animate-spin motion-reduce:animate-none text-state-working' },
   'neutral-done': { Icon: CheckCircle2Icon, className: 'text-state-idle' },
   // Finished agents and Stages get a green check; tool rows keep `neutral-done`. (#941)
   'success-done': { Icon: CheckCircle2Icon, className: 'text-severity-success' },
