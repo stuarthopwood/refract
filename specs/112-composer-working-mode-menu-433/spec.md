@@ -27,10 +27,9 @@ A per-Session single-choice working-mode menu beside the Approval mode pill: Int
 ## Known gaps
 
 - Plan proposal/approval over RPC is unverified (needs a billed run); no review pane is built.
-- The denial reason is sent as a best-effort steer prompt; OMP may ignore it.
+- Away's reason steers are best-effort prompts; OMP may ignore them.
 - Grill is not applied to queued follow-ups, only prompts sent while idle.
-- Away answers input/editor dialogs with "The user is away. Choose the best option yourself, state your choice, and continue." and cancels select and confirm dialogs (OMP `PendingRequest::Question`) at once, recording both; they may grant something, so Away never picks an option.
-- `REFRACT_AWAY_APPROVAL_TIMEOUT_MS` shortens the 5-minute denial timer in debug builds only (live check).
+- Away answers every dialog and denies every approval at once, and never cancels, so the agent's turn is not stopped: a `select` gets its first option, a `confirm` gets No, a form gets its default values, an `input`/`editor` dialog gets "The user is away. Choose the best option yourself, state your choice, and continue.", and each is recorded and followed by one reason steer. The rules are FR-151 in spec 001 and ADR 0014.
 - The restart for a Plan switch may briefly flash a stopped state.
 
 ## Out of scope
