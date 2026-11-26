@@ -45,7 +45,7 @@ export function PanelHeader({ scenario, status, durationMs }: { scenario: ChatSc
 }
 
 /** The header with its own one-second clock: only this small subtree re-renders each tick, not the tree and the stream below it. */
-export function LivePanelHeader({ scenario, status }: { scenario: ChatScenario; status: SubagentRowStatus }) {
+export const LivePanelHeader = memo(function LivePanelHeader({ scenario, status }: { scenario: ChatScenario; status: SubagentRowStatus }) {
   const running = status === 'running'
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
@@ -55,7 +55,7 @@ export function LivePanelHeader({ scenario, status }: { scenario: ChatScenario; 
     return () => clearInterval(interval)
   }, [running])
   return <PanelHeader scenario={scenario} status={status} durationMs={panelDurationMs(scenario, running, now)} />
-}
+})
 
 interface RowHandlers {
   sessionId: string

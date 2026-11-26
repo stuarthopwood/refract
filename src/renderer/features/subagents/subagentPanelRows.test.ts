@@ -194,6 +194,10 @@ describe('panelDurationMs', () => {
     expect(panelDurationMs({ startedAt: 1_000, totalDurationMs: 9 }, true, 6_000)).toBe(5_000)
   })
 
+  it('never goes negative when the held clock is older than the first Stage', () => {
+    expect(panelDurationMs({ startedAt: 9_000, totalDurationMs: 9 }, true, 6_000)).toBe(0)
+  })
+
   it('uses the view-model total once settled, and nothing before a start is known', () => {
     expect(panelDurationMs({ startedAt: 1_000, totalDurationMs: 9 }, false, 6_000)).toBe(9)
     expect(panelDurationMs({ startedAt: undefined, totalDurationMs: 9 }, true, 6_000)).toBeUndefined()

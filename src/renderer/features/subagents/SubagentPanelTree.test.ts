@@ -153,8 +153,20 @@ describe('PanelTree accessibility', () => {
     expect(html).toMatch(/<button[^>]*tabindex="-1"[^>]*aria-expanded="false"/)
   })
 
-  it('lets the focused or selected agent row show its whole outcome', () => {
-    expect(render(PAIR, { selectedKey: 'x' })).toContain('line-clamp-none')
+  it('lets only the focused or selected agent row show its whole outcome', () => {
+    const rows = buildPanelRows([{ ...stage!, agents: [detailed, stage!.agents[1]!] }], () => true)
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
+    )
+    const rowTokens = html.match(/<div[^>]*aria-level="2"[^>]*>/)![0].match(/class="([^"]*)"/)![1]!.split(' ')
+    const outcomeTokens = html.match(/<p[^>]*class="([^"]*)"[^>]*>Found 3 issues<\/p>/)![1]!.split(' ')
+    // The markup escapes `&` in the attribute, so the arbitrary variant reads `[&amp;_p]`.
+    expect(rowTokens).toContain('aria-selected:[&amp;_p]:line-clamp-none')
+    expect(rowTokens).toContain('focus:[&amp;_p]:line-clamp-none')
+    const unscoped = rowTokens.filter((token) => token.endsWith('line-clamp-none') && !token.startsWith('aria-selected:') && !token.startsWith('focus:'))
+    expect(unscoped).toEqual([])
+    expect(outcomeTokens).toContain('line-clamp-2')
+    expect(outcomeTokens).not.toContain('line-clamp-none')
   })
 
   it('lists every file and the whole outcome in the detail pane, with no "+N" fold', () => {

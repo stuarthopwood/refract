@@ -5,10 +5,13 @@ import { stageAccessibleName, stageRowModel } from './card/stageRowModel'
 import { SUBAGENT_STATUS_LABEL } from './subagentStatus'
 import { FILES_TOUCHED_LABEL, type ChatScenario, type StageItem, type SubAgentItem } from './viewModel'
 
-/** The header's duration: the wall clock from the first Stage while running (so it ticks), the view-model's total once settled. */
+/**
+ * The header's duration: the wall clock from the first Stage while running (so it ticks), the view-model's total once settled.
+ * Clamped at zero because a settled-to-running render still holds the last tick's `now` until the effect refreshes it.
+ */
 export function panelDurationMs(scenario: Pick<ChatScenario, 'startedAt' | 'totalDurationMs'>, running: boolean, now: number): number | undefined {
   if (scenario.startedAt == null) return undefined
-  return running ? now - scenario.startedAt : scenario.totalDurationMs
+  return running ? Math.max(0, now - scenario.startedAt) : scenario.totalDurationMs
 }
 
 /** The panel's own toggle key for a Stage; `panel:` keeps it apart from the chat card's `card:` key (FR-150 d). */

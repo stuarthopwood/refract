@@ -20,6 +20,7 @@ import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollG
 import { LinkContext } from './Markdown'
 import type { AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
 import { isToolGroup } from './groupToolItems'
+import { reuseUnchangedTurns, splitIntoTurns, type Turn } from './splitIntoTurns'
 import { groupTurnStages } from './groupTurnStages'
 import { isStageGroup } from './groupSubagentStages'
 import { SubagentChainRow } from './SubagentChainRow'
@@ -77,28 +78,6 @@ function useRepositoryUserName(repositoryId: string | null): string | undefined 
     }
   }, [repositoryId])
   return name
-}
-
-interface Turn {
-  userItem: UserItem | null
-  items: TranscriptItem[]
-}
-
-// Any items ahead of the first `user` item (should not normally occur) form a leading turn with no
-// total-time line (`userItem: null`).
-function splitIntoTurns(items: TranscriptItem[]): Turn[] {
-  const turns: Turn[] = []
-  let current: Turn = { userItem: null, items: [] }
-  for (const item of items) {
-    if (item.kind === 'user') {
-      if (current.items.length > 0) turns.push(current)
-      current = { userItem: item, items: [item] }
-    } else {
-      current.items.push(item)
-    }
-  }
-  turns.push(current)
-  return turns
 }
 
 interface TurnTotalLineProps {
@@ -208,7 +187,12 @@ export function Transcript({
   }, [items])
   const handleAdvisoryReveal = React.useCallback(() => setSuppressLogAnnouncements(true), [])
 
-  const turns = React.useMemo(() => splitIntoTurns(items), [items])
+  const previousTurnsRef = React.useRef<Turn[]>([])
+  const turns = React.useMemo(() => {
+    const next = reuseUnchangedTurns(previousTurnsRef.current, splitIntoTurns(items))
+    previousTurnsRef.current = next
+    return next
+  }, [items])
 
   const [revealedEarlier, setRevealedEarlier] = React.useState(false)
   const [revealedAnnouncement, setRevealedAnnouncement] = React.useState('')

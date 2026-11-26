@@ -19,7 +19,8 @@ interface Entry {
   result: TurnStageGrouping
 }
 
-// Keyed on the turn's items array, which the transcript split replaces only when that turn's items change.
+// Keyed on the turn's items array. It hits only while that exact array is passed again: `reuseUnchangedTurns` keeps the previous
+// array for a turn whose items are unchanged, so a streaming delta misses for the growing turn alone, not every turn above it.
 const cache = new WeakMap<readonly TranscriptItem[], Entry>()
 
 function stagePass(base: GroupedTranscriptItem[], summaries: readonly SubagentSummary[]): TurnStageGrouping {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assistantText, subagentItem, subagentSummary } from '../subagents/viewModel/testFixtures'
+import type { TranscriptItem } from '../../../shared/model'
 import { groupTurnStages } from './groupTurnStages'
 
 describe('groupTurnStages', () => {
@@ -38,6 +39,20 @@ describe('groupTurnStages', () => {
 
     it('exposes the stage groups among the grouped rows', () => {
       expect(first.groupedWithStages.filter((row) => row.kind === 'stage-group')).toEqual(first.stages)
+    })
+  })
+
+  describe('given a turn with a thinking item', () => {
+    const items: TranscriptItem[] = [{ kind: 'thinking', id: 'th1', text: 'secret-musings', streaming: false }, assistantText('t1')]
+
+    it('drops the thinking item when thinking is hidden and keeps it when shown', () => {
+      expect(JSON.stringify(groupTurnStages(items, false, []).groupedWithStages)).not.toContain('secret-musings')
+      expect(JSON.stringify(groupTurnStages(items, true, []).groupedWithStages)).toContain('secret-musings')
+    })
+
+    it('keeps its hidden-thinking result when only the readout summaries change', () => {
+      const first = groupTurnStages(items, false, [])
+      expect(groupTurnStages(items, false, [subagentSummary({ nameOrTask: 'A' })])).toBe(first)
     })
   })
 })
