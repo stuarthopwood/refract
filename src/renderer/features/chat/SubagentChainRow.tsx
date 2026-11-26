@@ -20,6 +20,8 @@ import { stageHeading, extractContextLabel, extractResultSummary } from './stage
 import { joinMetaParts } from './toolRowLabels'
 import type { StageGroup } from './groupSubagentStages'
 import { deriveHeader } from '../subagents/viewModel/derive'
+import { SubagentsCardHeader } from '../subagents/card/SubagentsCardHeader'
+import { stageSegmentStates } from '../subagents/card/headerStats'
 import { useStickyDisclosure } from './useStickyDisclosure'
 import {
   chatRowStatus,
@@ -264,45 +266,22 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
 
   if (stages.length < 2) return null
 
-  const { startedAt, totalDurationMs, headerStats } = header
-  // Wall-clock from the first Stage's start; aria-hidden while running so a screen reader reads only the settled value.
+  const { startedAt, totalDurationMs, headerStats, overallGoal } = header
+  // Wall-clock from the first Stage's start while running, so the visible duration ticks; settled, the total.
   const durationMs = startedAt == null ? undefined : isRunning ? Date.now() - startedAt : totalDurationMs
-  const summary = headerStats
-  // The visible status word lives in `meta`; triggerAriaLabel restates it, so `meta` is aria-hidden.
-  const statusVisible = status !== 'finished'
-  const meta = (
-    <span aria-hidden="true" className="flex min-w-0 shrink items-center gap-1 text-xs text-muted-foreground">
-      {statusVisible && (
-        <span className="min-w-0 truncate" title={SUBAGENT_STATUS_LABEL[status]}>
-          {SUBAGENT_STATUS_LABEL[status]}
-        </span>
-      )}
-      {durationMs != null && (
-        // The separator is bundled in the hideable span so hiding the duration never leaves a dangling "·".
-        <span className="@max-[20rem]:hidden whitespace-nowrap">
-          {statusVisible && <span> · </span>}
-          <span className="tabular-nums">{formatElapsed(durationMs)}</span>
-        </span>
-      )}
-    </span>
-  )
 
   return (
-    <CollapsedLine
-      icon={<SubagentStatusGlyph status={status} />}
-      label="Subagents"
-      summary={summary}
-      summaryWrap
-      meta={meta}
-      metaClassName="min-w-0 shrink"
+    <SubagentsCardHeader
+      status={status}
+      headerStats={headerStats}
+      stageStates={stageSegmentStates(stages.map((stage) => stage.view))}
+      goal={overallGoal}
+      durationMs={durationMs}
       open={open}
       onOpenChange={onOpenChange}
-      className="mt-6 rounded-lg bg-chat-card-bg ring-1 ring-divider"
-      triggerClassName="group-hover/line:bg-row-hover-bg"
-      contentClassName={cn(SPINE_HOST_CONTENT_CLASS, 'pb-1')}
-      // The ticking duration is omitted from the accessible name while running so it does not change every second.
-      triggerAriaLabel={`Subagents, ${summary}${status !== 'finished' ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${!isRunning && durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}`}
       action={<ChainShowPanelButton sessionId={sessionId} />}
+      className="mt-6"
+      contentClassName={cn(SPINE_HOST_CONTENT_CLASS, 'pb-1')}
     >
       <SpineList gap="stage" elbows>
         {stages.map((stage) => (
@@ -311,6 +290,6 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
           </SpineItem>
         ))}
       </SpineList>
-    </CollapsedLine>
+    </SubagentsCardHeader>
   )
 }

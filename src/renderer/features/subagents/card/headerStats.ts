@@ -1,8 +1,9 @@
 // The Subagents card header's text and segment states as pure functions over the view-model's counts (FR-146),
 // so the chat card and the panel word them identically and the wording is testable without rendering.
 import type { ProgressSegmentState } from '@/components/ProgressStrip'
+import { formatElapsed } from '../../chat/formatElapsed'
 import { unsettledRollupText } from '../../chat/stageMeta'
-import type { SubagentRowStatus } from '../subagentStatus'
+import { SUBAGENT_STATUS_LABEL, type SubagentRowStatus } from '../subagentStatus'
 import type { StageItem } from '../viewModel'
 
 export interface HeaderCounts {
@@ -37,4 +38,12 @@ export function stageSegmentState(status: SubagentRowStatus): ProgressSegmentSta
 
 export function stageSegmentStates(stages: readonly Pick<StageItem, 'status'>[]): ProgressSegmentState[] {
   return stages.map((stage) => stageSegmentState(stage.status))
+}
+
+/** The header trigger's accessible name: the ticking duration is left out while running so the name does not change every second. */
+export function formatHeaderTriggerLabel(headerStats: string, status: SubagentRowStatus, durationMs: number | undefined): string {
+  const parts = ['Subagents', headerStats]
+  if (status !== 'finished') parts.push(SUBAGENT_STATUS_LABEL[status])
+  if (status !== 'running' && durationMs != null) parts.push(formatElapsed(durationMs))
+  return parts.join(', ')
 }
