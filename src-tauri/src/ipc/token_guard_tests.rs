@@ -103,7 +103,11 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 fn migrated(dir: &Path) {
-    std::fs::write(dir.join("token-guard-migration.json"), "{}").unwrap();
+    std::fs::write(
+        dir.join("token-guard-migration.json"),
+        r#"{"cacheRetentionApplied":true}"#,
+    )
+    .unwrap();
 }
 
 fn set_call(key: &str, json: &str) -> Vec<String> {
