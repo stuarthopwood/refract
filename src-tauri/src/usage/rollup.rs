@@ -16,7 +16,7 @@ pub struct MessageRow {
     pub reasoning: String,
     pub agent_type: String,
     pub purpose: Option<String>,
-    pub project_label: String,
+    pub project_id: String,
     pub input: i64,
     pub output: i64,
     pub cache_read: i64,
@@ -42,7 +42,7 @@ pub struct ToolCallRow<'a> {
     pub ts: i64,
     pub tool: &'a str,
     pub cost_usd: f64,
-    pub project_label: &'a str,
+    pub project_id: &'a str,
     pub model: &'a str,
     pub reasoning: &'a str,
     pub agent_type: &'a str,
@@ -57,18 +57,18 @@ pub struct UserMessageRow<'a> {
     pub yelling: i64,
     pub profanity: i64,
     pub blame: i64,
-    pub project_label: &'a str,
+    pub project_id: &'a str,
 }
 
 const INSERT_MESSAGE: &str = "INSERT OR IGNORE INTO messages (session_file, entry_id, ts, session_id, provider, model, \
-reasoning, agent_type, purpose, project_label, input, output, cache_read, cache_write, total_tokens, \
+reasoning, agent_type, purpose, project_id, input, output, cache_read, cache_write, total_tokens, \
 cost_total, cost_input, cost_output, cost_cache_read, cost_cache_write, credits, premium_requests, \
 duration_ms, ttft_ms, stop_reason) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25)";
 
-const UPSERT_MESSAGE_ROLLUP: &str = "INSERT INTO message_rollup (hour, project_label, model, reasoning, agent_type, calls, input, \
+const UPSERT_MESSAGE_ROLLUP: &str = "INSERT INTO message_rollup (hour, project_id, model, reasoning, agent_type, calls, input, \
 output, cache_read, cache_write, total_tokens, cost_total, cost_input, cost_output, cost_cache_read, \
 cost_cache_write, credits) VALUES (?1,?2,?3,?4,?5,1,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16) \
-ON CONFLICT(hour, project_label, model, reasoning, agent_type) DO UPDATE SET \
+ON CONFLICT(hour, project_id, model, reasoning, agent_type) DO UPDATE SET \
 calls = calls + 1, input = input + excluded.input, output = output + excluded.output, \
 cache_read = cache_read + excluded.cache_read, cache_write = cache_write + excluded.cache_write, \
 total_tokens = total_tokens + excluded.total_tokens, cost_total = cost_total + excluded.cost_total, \
@@ -77,15 +77,26 @@ cost_cache_read = cost_cache_read + excluded.cost_cache_read, \
 cost_cache_write = cost_cache_write + excluded.cost_cache_write, credits = credits + excluded.credits";
 
 const UPSERT_SESSION_ROLLUP: &str = "INSERT INTO session_rollup (session_file, session_id, first_ts, last_ts, calls, cost_total, credits, \
-project_label) VALUES (?1, ?2, ?3, ?3, 1, ?4, ?5, ?6) ON CONFLICT(session_file) DO UPDATE SET \
+project_id) VALUES (?1, ?2, ?3, ?3, 1, ?4, ?5, ?6) ON CONFLICT(session_file) DO UPDATE SET \
 first_ts = MIN(first_ts, excluded.first_ts), last_ts = MAX(last_ts, excluded.last_ts), \
 calls = calls + 1, cost_total = cost_total + excluded.cost_total, credits = credits + excluded.credits, \
-project_label = excluded.project_label";
+project_id = excluded.project_id";
 
-const UPSERT_TOOL_ROLLUP: &str = "INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, errors, result_chars, cost_usd) \
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(hour, project_label, tool, agent_type) DO UPDATE SET \
+const UPSERT_TOOL_ROLLUP: &str = "INSERT INTO tool_rollup (hour, project_id, tool, agent_type, calls, errors, result_chars, cost_usd) \
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(hour, project_id, tool, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, errors = errors + excluded.errors, \
 result_chars = result_chars + excluded.result_chars, cost_usd = cost_usd + excluded.cost_usd";
+
+/// Records or renames the name shown for a Project id; the id is never deleted, so a removed
+/// Project keeps its last-known name.
+pub fn upsert_project(conn: &Connection, project_id: &str, name: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO projects (project_id, name) VALUES (?1, ?2) \
+         ON CONFLICT(project_id) DO UPDATE SET name = excluded.name WHERE name <> excluded.name",
+        params![project_id, name],
+    )?;
+    Ok(())
+}
 
 /// Inserts a message; adds it to the rollups only when new. Returns whether it was new.
 pub fn record_message(
@@ -103,7 +114,7 @@ pub fn record_message(
         m.reasoning,
         m.agent_type,
         m.purpose,
-        m.project_label,
+        m.project_id,
         m.input,
         m.output,
         m.cache_read,
@@ -126,7 +137,7 @@ pub fn record_message(
     let credits = m.credits.unwrap_or(0.0);
     conn.prepare(UPSERT_MESSAGE_ROLLUP)?.execute(params![
         hour_start(m.ts),
-        m.project_label,
+        m.project_id,
         m.model,
         m.reasoning,
         m.agent_type,
@@ -148,7 +159,7 @@ pub fn record_message(
         m.ts,
         m.cost_total,
         credits,
-        m.project_label,
+        m.project_id,
     ])?;
     Ok(true)
 }
@@ -162,7 +173,7 @@ pub fn record_tool_call(
     let inserted = conn
         .prepare(
             "INSERT OR IGNORE INTO tool_calls (session_file, tool_call_id, ts, entry_id, tool, is_error, \
-             result_chars, cost_usd, project_label, model, reasoning, agent_type) \
+             result_chars, cost_usd, project_id, model, reasoning, agent_type) \
              VALUES (?1, ?2, ?3, ?4, ?5, NULL, 0, ?6, ?7, ?8, ?9, ?10)",
         )?
         .execute(params![
@@ -172,7 +183,7 @@ pub fn record_tool_call(
             t.entry_id,
             t.tool,
             t.cost_usd,
-            t.project_label,
+            t.project_id,
             t.model,
             t.reasoning,
             t.agent_type,
@@ -181,7 +192,7 @@ pub fn record_tool_call(
     if inserted {
         conn.prepare(UPSERT_TOOL_ROLLUP)?.execute(params![
             hour_start(t.ts),
-            t.project_label,
+            t.project_id,
             t.tool,
             t.agent_type,
             1i64,
@@ -215,9 +226,9 @@ pub fn record_tool_result(
     if !updated {
         return Ok(false);
     }
-    let (ts, label, tool, agent_type): (i64, String, String, String) = conn
+    let (ts, project_id, tool, agent_type): (i64, String, String, String) = conn
         .prepare(
-            "SELECT ts, project_label, tool, agent_type FROM tool_calls \
+            "SELECT ts, project_id, tool, agent_type FROM tool_calls \
              WHERE session_file = ?1 AND tool_call_id = ?2",
         )?
         .query_row(params![session_file, tool_call_id], |r| {
@@ -225,7 +236,7 @@ pub fn record_tool_result(
         })?;
     conn.prepare(UPSERT_TOOL_ROLLUP)?.execute(params![
         hour_start(ts),
-        label,
+        project_id,
         tool,
         agent_type,
         0i64,
@@ -244,7 +255,7 @@ pub fn record_user_message(
     Ok(conn
         .prepare(
             "INSERT OR IGNORE INTO user_messages (session_file, entry_id, ts, chars, yelling, profanity, \
-             blame, project_label) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+             blame, project_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         )?
         .execute(params![
             session_file,
@@ -254,28 +265,28 @@ pub fn record_user_message(
             u.yelling,
             u.profanity,
             u.blame,
-            u.project_label
+            u.project_id
         ])?
         == 1)
 }
 
-/// Adds (`?2` = 1) or subtracts (`?2` = -1) one file's messages that are not yet labelled `?1`,
-/// under `label`: `?1` for the new label, `project_label` for each row's own stored label.
-fn rollup_messages_of_file(label: &str) -> String {
+/// Adds (`?2` = 1) or subtracts (`?2` = -1) one file's messages that are not yet under project id `?1`,
+/// under `id_expr`: `?1` for the new id, `project_id` for each row's own stored id.
+fn rollup_messages_of_file(id_expr: &str) -> String {
     format!(
-        "INSERT INTO message_rollup (hour, project_label, model, reasoning, agent_type, calls, input, \
+        "INSERT INTO message_rollup (hour, project_id, model, reasoning, agent_type, calls, input, \
 output, cache_read, cache_write, total_tokens, cost_total, cost_input, cost_output, cost_cache_read, \
 cost_cache_write, credits) \
-SELECT ts - ts % 3600000, {label}, model, reasoning, agent_type, ?2 * count(*), ?2 * sum(input), ?2 * sum(output), \
+SELECT ts - ts % 3600000, {id_expr}, model, reasoning, agent_type, ?2 * count(*), ?2 * sum(input), ?2 * sum(output), \
 ?2 * sum(cache_read), ?2 * sum(cache_write), ?2 * sum(total_tokens), ?2 * sum(cost_total), \
 ?2 * sum(cost_input), ?2 * sum(cost_output), ?2 * sum(cost_cache_read), ?2 * sum(cost_cache_write), \
-?2 * sum(coalesce(credits, 0)) FROM messages WHERE session_file = ?3 AND project_label <> ?1 \
-GROUP BY ts - ts % 3600000, project_label, model, reasoning, agent_type {ROLLUP_MESSAGES_UPSERT}"
+?2 * sum(coalesce(credits, 0)) FROM messages WHERE session_file = ?3 AND project_id <> ?1 \
+GROUP BY ts - ts % 3600000, project_id, model, reasoning, agent_type {ROLLUP_MESSAGES_UPSERT}"
     )
 }
 
 const ROLLUP_MESSAGES_UPSERT: &str = "\
-ON CONFLICT(hour, project_label, model, reasoning, agent_type) DO UPDATE SET \
+ON CONFLICT(hour, project_id, model, reasoning, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, input = input + excluded.input, output = output + excluded.output, \
 cache_read = cache_read + excluded.cache_read, cache_write = cache_write + excluded.cache_write, \
 total_tokens = total_tokens + excluded.total_tokens, cost_total = cost_total + excluded.cost_total, \
@@ -283,41 +294,41 @@ cost_input = cost_input + excluded.cost_input, cost_output = cost_output + exclu
 cost_cache_read = cost_cache_read + excluded.cost_cache_read, \
 cost_cache_write = cost_cache_write + excluded.cost_cache_write, credits = credits + excluded.credits";
 
-fn rollup_tools_of_file(label: &str) -> String {
+fn rollup_tools_of_file(id_expr: &str) -> String {
     format!(
-        "INSERT INTO tool_rollup (hour, project_label, tool, agent_type, calls, errors, result_chars, cost_usd) \
-SELECT ts - ts % 3600000, {label}, tool, agent_type, ?2 * count(*), ?2 * sum(coalesce(is_error, 0)), \
-?2 * sum(result_chars), ?2 * sum(cost_usd) FROM tool_calls WHERE session_file = ?3 AND project_label <> ?1 \
-GROUP BY ts - ts % 3600000, project_label, tool, agent_type {ROLLUP_TOOLS_UPSERT}"
+        "INSERT INTO tool_rollup (hour, project_id, tool, agent_type, calls, errors, result_chars, cost_usd) \
+SELECT ts - ts % 3600000, {id_expr}, tool, agent_type, ?2 * count(*), ?2 * sum(coalesce(is_error, 0)), \
+?2 * sum(result_chars), ?2 * sum(cost_usd) FROM tool_calls WHERE session_file = ?3 AND project_id <> ?1 \
+GROUP BY ts - ts % 3600000, project_id, tool, agent_type {ROLLUP_TOOLS_UPSERT}"
     )
 }
 
 const ROLLUP_TOOLS_UPSERT: &str = "\
-ON CONFLICT(hour, project_label, tool, agent_type) DO UPDATE SET \
+ON CONFLICT(hour, project_id, tool, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, errors = errors + excluded.errors, \
 result_chars = result_chars + excluded.result_chars, cost_usd = cost_usd + excluded.cost_usd";
 
-/// Moves one file's rows to `new`, subtracting each row from its own stored label's rollup first.
+/// Moves one file's rows to project id `new`, subtracting each row from its own stored id's rollup first.
 /// Drops emptied rollup rows; runs inside a transaction.
 pub fn relabel_file(conn: &Connection, session_file: &str, new: &str) -> rusqlite::Result<()> {
-    for (label, sign) in [("project_label", -1i64), ("?1", 1i64)] {
+    for (id_expr, sign) in [("project_id", -1i64), ("?1", 1i64)] {
         conn.execute(
-            &rollup_messages_of_file(label),
+            &rollup_messages_of_file(id_expr),
             params![new, sign, session_file],
         )?;
         conn.execute(
-            &rollup_tools_of_file(label),
+            &rollup_tools_of_file(id_expr),
             params![new, sign, session_file],
         )?;
     }
     for table in ["messages", "tool_calls", "user_messages"] {
         conn.execute(
-            &format!("UPDATE {table} SET project_label = ?1 WHERE session_file = ?2"),
+            &format!("UPDATE {table} SET project_id = ?1 WHERE session_file = ?2"),
             params![new, session_file],
         )?;
     }
     conn.execute(
-        "UPDATE session_rollup SET project_label = ?1 WHERE session_file = ?2",
+        "UPDATE session_rollup SET project_id = ?1 WHERE session_file = ?2",
         params![new, session_file],
     )?;
     conn.execute("DELETE FROM message_rollup WHERE calls <= 0", [])?;
@@ -343,9 +354,9 @@ pub fn relabel_file(conn: &Connection, session_file: &str, new: &str) -> rusqlit
 /// Removes every message of one file and subtracts it from the rollups, so a source whose rows are
 /// replaced wholesale (Copilot CLI's per-session total) can be rewritten. Runs inside a transaction.
 pub fn forget_file_messages(conn: &Connection, session_file: &str) -> rusqlite::Result<()> {
-    // A NUL label differs from every stored label, so the subtracting statement selects all rows.
+    // A NUL id differs from every stored id, so the subtracting statement selects all rows.
     conn.execute(
-        &rollup_messages_of_file("project_label"),
+        &rollup_messages_of_file("project_id"),
         params!["\0", -1i64, session_file],
     )?;
     conn.execute(
