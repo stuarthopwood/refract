@@ -6071,3 +6071,19 @@ File map: `src/main/` no longer exists, so the issues' `SessionAgent.ts` reset-a
 ### Close-out
 
 - [ ] T779 [US1] Update `docs/PLAN.md` rows (epic #1272 children #1085, #490), `quickstart.md` and `contracts/ipc.md` (`agents:update`, `subagents:update`, `stageKey`) where T767 to T778 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check a Stage of five agents across a turn boundary and two Sessions in the panel.
+
+## Phase 136: Convergence (2026-11-27, epic #1136 child #1827, FR-208 to FR-211, SC-042)
+
+Needs #1861's `start_conversation_then_send` (already on main in `src-tauri/src/session/agent/start_with_message.rs`; `hand_off()` uses it). #1865 and #525 get their own specs; #2111 needs none.
+
+- [ ] T780 [US1] #1827: in `src-tauri/src/ipc/chat.rs` `chat_send`, beside the bare `/new` branch (`name == "new" && rest.is_empty()`, ~:175), add `name == "new" && !rest.is_empty()` calling `agent.start_conversation_then_send(FirstMessage { text: rest, handoff_note: false })` and returning `{ "queued": false }`; today it falls through to the `is_native_reserved` refusal (~:202), per FR-208 (missing). Tests: `src-tauri/src/ipc/chat.test.rs` (idle Session, Stopped Session, bare `/new` unchanged).
+- [ ] T781 [US1] #1827: in the same branch refuse `/new <prompt>` when `parsed_images` is non-empty, with the unsupported-arguments style `IpcError` and the existing attachment wording, before any Conversation starts, per FR-210 (missing). Tests: `src-tauri/src/ipc/chat.test.rs`.
+- [ ] T782 [US1] #1827: map `StartThenSendError` for `/new <prompt>` in `chat.rs`, mirroring `handoff.rs` (~:59): `BeforeNew` as the plain chat error, `AfterNew` as a distinct code (`new-prompt-send-failed`) whose message says the new Conversation exists and the message was not sent, per FR-209 (missing). Tests: `src-tauri/src/ipc/chat.test.rs` and `src-tauri/src/session/agent/start_with_message.test.rs` (stage reported, no second `start_new_conversation`).
+- [ ] T783 [US1] #1827: keep `new` in `NATIVE_RESERVED_COMMANDS` (`src-tauri/src/session/agent/commands.rs` ~:51) with a comment that `/new <prompt>` is handled in `ipc::chat` before the refusal, and change the `NATIVE_BUILT_COMMANDS` `new` description (~:71) to say a first message may follow, per FR-211 (partial). Tests: `src-tauri/src/session/agent/commands.test.rs`.
+- [ ] T784 [US1] #1827: in `src/shared/slash-commands.ts` make `isLocalNativeCommand` (~:104) true for `new` with any `rest` (still false for `pause <text>`), keep `new` in `NATIVE_RESERVED_COMMANDS` (~:34) and mirror the descriptor text (~:47), per FR-208, FR-211 (missing). Tests: `src/shared/slash-commands.test.ts` (the `runs bare /new and /pause without the agent` case at :12 gains `/new fresh start`, which today expects false).
+- [ ] T785 [US1] #1827: in `src/renderer/features/chat/MessageInput.tsx` extend the slash-command attachment refusal (~:343, `attachments.files.length > 0` only) to pending images for `/new <prompt>`, keep `runsWithoutAgent` (~:271) true for it, and apply the `isNewConversationCommand` scroll reset (~:347, bare only today) to `/new <prompt>`, per FR-208, FR-210 (partial). Tests: new `src/renderer/features/chat/MessageInput.test.tsx`.
+- [ ] T786 [US1] #1827: in `MessageInput.tsx`, on the `new-prompt-send-failed` error replace the draft with `<prompt>` (without `/new `), keep the error visible and announced, and restore the scroll state only as the bare `/new` failure path does, per FR-209 (missing). Tests: `src/renderer/features/chat/MessageInput.test.tsx`.
+
+### Close-out
+
+- [ ] T787 [US1] Update `docs/PLAN.md` rows (epic #1136 child #1827), `quickstart.md` and `contracts/ipc.md` (`chat.send` `/new <prompt>`, the new error code) where T780 to T786 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check `/new <prompt>` on an idle and a Stopped Session, with an image, and a forced `AfterNew` failure.
