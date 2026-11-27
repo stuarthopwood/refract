@@ -8,6 +8,7 @@ import { ChevronRightIcon, SearchXIcon } from 'lucide-react'
 import { FilterToggleButton } from '@/components/FilterToggleButton'
 import { FilterTabs } from '@/components/FilterTabs'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
+import { ListRowsSkeleton } from '@/components/LoadingSkeletons'
 import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { SearchField } from '@/components/SearchField'
 import { InlineStatus } from '@/components/InlineStatus'
@@ -234,7 +235,9 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
       <div className="min-h-0 flex-1 overflow-auto">
         {friendlyError ? (
           <InlineStatus tone="error">{friendlyError}</InlineStatus>
-        ) : itemCount === 0 && !loading ? (
+        ) : itemCount === 0 && loading ? (
+          <ListRowsSkeleton />
+        ) : itemCount === 0 ? (
           activeFilterCount > 0 ? (
             <Empty>
               <EmptyHeader>

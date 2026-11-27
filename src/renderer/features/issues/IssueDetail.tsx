@@ -3,6 +3,7 @@
 // untrusted GitHub text and renders as text or sanitised Markdown only.
 import { useEffect, useRef, useState } from 'react'
 import { CircleCheckIcon, CircleDotIcon } from 'lucide-react'
+import { DetailPaneSkeleton } from '@/components/LoadingSkeletons'
 import { ColourDot } from '@/components/ColourDot'
 import { InlineStatus } from '@/components/InlineStatus'
 import { OpenOnGitHubButton } from '@/components/OpenOnGitHubButton'
@@ -51,21 +52,16 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
   }, [repositoryId, number])
 
   if (!detail) {
+    if (!failed) return <DetailPaneSkeleton />
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-sm text-muted-foreground">
-        {failed ? (
-          <>
-            {error && (
-              <div role="alert" className="text-destructive">
-                {error}
-              </div>
-            )}
-            {/* Stays mounted while retrying so keyboard focus is not lost. */}
-            <RefreshButton loading={loading} onClick={() => void load()} label="Retry loading this issue" />
-          </>
-        ) : (
-          loading && 'Loading…'
+      <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-sm">
+        {error && (
+          <div role="alert" className="text-destructive">
+            {error}
+          </div>
         )}
+        {/* Stays mounted while retrying so keyboard focus is not lost. */}
+        <RefreshButton loading={loading} onClick={() => void load()} label="Retry loading this issue" />
       </div>
     )
   }
