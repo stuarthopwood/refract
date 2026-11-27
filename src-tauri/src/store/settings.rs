@@ -52,6 +52,10 @@ pub struct SessionListCollapse {
     /// Absent in a pre-#1862 file reads as empty, so every parent starts expanded.
     #[serde(default)]
     pub collapsed_parent_ids: Vec<String>,
+    /// Sessions whose nested Conversation list is open (#472). Absent in an older file reads as
+    /// empty, so every Session starts collapsed.
+    #[serde(default)]
+    pub expanded_conversation_session_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

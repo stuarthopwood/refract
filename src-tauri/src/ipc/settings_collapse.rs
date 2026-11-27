@@ -30,6 +30,14 @@ fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse,
     };
     let collapsed_repository_ids = id_list("collapsedRepositoryIds")?;
     let collapsed_parent_ids = id_list("collapsedParentIds")?;
+    // Optional so an older renderer build keeps working; a present but malformed list is rejected.
+    let expanded_conversation_session_ids = match object.get("expandedConversationSessionIds") {
+        None => Vec::new(),
+        Some(ids) => ids
+            .as_array()
+            .and_then(|ids| crate::store::settings::sanitize_collapsed_ids(ids))
+            .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?,
+    };
     let archived_open = object
         .get("archivedOpen")
         .and_then(Value::as_bool)
@@ -43,6 +51,7 @@ fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse,
         archived_open,
         show_hidden,
         collapsed_parent_ids,
+        expanded_conversation_session_ids,
     })
 }
 
@@ -99,5 +108,28 @@ mod tests {
         );
         assert_eq!(parsed.collapsed_repository_ids, ["r".to_string()]);
         assert!(parsed.archived_open && parsed.show_hidden);
+    }
+
+    #[test]
+    fn collapse_arg_expanded_conversation_ids_are_optional_but_not_malformed() {
+        let base = json!({
+            "collapsedRepositoryIds": [], "archivedOpen": false, "collapsedParentIds": []
+        });
+        let absent = parse_session_list_collapse_arg(&base).unwrap();
+        assert!(absent.expanded_conversation_session_ids.is_empty());
+        let arg = json!({
+            "collapsedRepositoryIds": [], "archivedOpen": false, "collapsedParentIds": [],
+            "expandedConversationSessionIds": ["a", "a", "b"]
+        });
+        let parsed = parse_session_list_collapse_arg(&arg).unwrap();
+        assert_eq!(
+            parsed.expanded_conversation_session_ids,
+            ["a".to_string(), "b".to_string()]
+        );
+        let bad = json!({
+            "collapsedRepositoryIds": [], "archivedOpen": false, "collapsedParentIds": [],
+            "expandedConversationSessionIds": "a"
+        });
+        assert!(parse_session_list_collapse_arg(&bad).is_err());
     }
 }
