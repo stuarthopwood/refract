@@ -6,6 +6,8 @@ import { ToolIcon } from '@/components/ToolIcon'
 import { resolveToolDisplay } from './toolDisplay'
 import { isSubagentSuccessStatus, SUBAGENT_STATUS_LABEL, SUBAGENT_SUCCESS_TEXT_CLASS, SubagentStatusGlyph } from '../subagents/subagentStatus'
 import { CodeBlock, inferOutputBlock } from './Markdown'
+import { plainSummary, stripTaskResultWrapper } from './stageMeta'
+import { ResultMarkdown } from '../subagents/card/ResultMarkdown'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { RowTrailing } from './toolRowParts'
 import { FILES_TOUCHED_LABEL, type SubAgentItem } from '../subagents/viewModel'
@@ -30,10 +32,11 @@ interface SubagentRowProps {
 // switch element type between solo and multi members).
 export function SubagentBody({ item, showGoal }: SubagentRowProps) {
   const taskBlock = React.useMemo(() => inferOutputBlock(item.task), [item.task])
-  const resultBlock = React.useMemo(() => (item.result != null ? inferOutputBlock(item.result) : null), [item.result])
+  const resultText = React.useMemo(() => (item.result != null ? stripTaskResultWrapper(item.result) : null), [item.result])
+  const resultBlock = React.useMemo(() => (resultText != null ? inferOutputBlock(resultText) : null), [resultText])
   const [open, setOpen] = React.useState(false)
   const contentId = React.useId()
-  const hasResult = item.result != null
+  const hasResult = resultText != null
   const label = (
     <>
       {open ? 'Hide' : 'See'} input{hasResult ? ' & output' : ''}
@@ -47,14 +50,15 @@ export function SubagentBody({ item, showGoal }: SubagentRowProps) {
         <div>
           <div className="mb-1 text-xs text-muted-foreground">Prompt</div>
           <div className="max-h-64 overflow-auto rounded-lg">
-            <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap />
+            <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap embedded />
           </div>
         </div>
-        {resultBlock != null && (
+        {resultText != null && resultBlock != null && (
           <div>
             <div className="mb-1 text-xs text-muted-foreground">Result</div>
             <div className="max-h-64 overflow-auto rounded-lg">
-              <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap />
+              {/* A diff or JSON result keeps its code block; prose is shared Markdown (#2242). */}
+              {resultBlock.lang != null ? <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap embedded /> : <ResultMarkdown text={resultText} interactive />}
             </div>
           </div>
         )}
@@ -73,7 +77,7 @@ export function SubagentCardBody({ agent, children }: { agent: SubAgentItem; chi
   const hasProvenanceRow = causalBadgeText(triggeredBy) != null || (filesTouched?.length ?? 0) > 0
   const hasLive = running && (heartbeatText(liveDetail) != null || (subSteps?.length ?? 0) > 0)
   return (
-    <div className={cn('min-w-0 space-y-2 rounded-lg border bg-surface-subtle p-2', running ? 'border-state-working-border' : 'border-border')}>
+    <div className="min-w-0 space-y-2 rounded-lg bg-surface-subtle p-2">
       <div className="flex min-w-0 items-center gap-2 text-xs">
         <span className="flex shrink-0 items-center gap-1">
           <SubagentStatusGlyph status={status} />
@@ -84,9 +88,9 @@ export function SubagentCardBody({ agent, children }: { agent: SubAgentItem; chi
         {!running && duration != null && <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{duration}</span>}
       </div>
       {whatItDid != null && whatItDid !== '' && (
-        <p title={whatItDid} className="line-clamp-2 text-sm text-card-foreground">
-          {whatItDid}
-        </p>
+        <div title={plainSummary(whatItDid)} className="text-sm text-card-foreground">
+          <ResultMarkdown text={whatItDid} lines={2} />
+        </div>
       )}
       {hasProvenanceRow && (
         <div className="flex min-w-0 flex-wrap items-center gap-1">
@@ -116,7 +120,8 @@ export function SubagentRow({ item, agent, showGoal, variant = 'default' }: Suba
       </SubagentCardBody>
     )
   }
-  const { status, duration, whatItDid: resultSummary } = agent
+  const { status, duration, whatItDid } = agent
+  const resultSummary = whatItDid != null ? plainSummary(whatItDid) : undefined
   const meta = (
     <RowTrailing
       icon={<SubagentStatusGlyph status={status} />}

@@ -12,6 +12,7 @@ import { StageUsesLine } from '../chat/StageDependencies'
 import { SubagentCardBody } from '../chat/SubagentRow'
 import { stageHeading } from '../chat/stageMeta'
 import { StageHeader } from './card/StageHeader'
+import { ResultMarkdown } from './card/ResultMarkdown'
 import { SubagentsHeaderBelow, SubagentsHeaderMeta } from './card/SubagentsCardHeader'
 import { formatHeaderTriggerLabel, stageSegmentStates } from './card/headerStats'
 import { panelDurationMs, type PanelAgentRow, type PanelRow, type PanelStageRow } from './subagentPanelRows'
@@ -159,7 +160,7 @@ export function AgentDetailSummary({ agent }: { agent: SubAgentItem }) {
   if (!outcome && files.length === 0) return null
   return (
     <section aria-label={`${agent.name} details`} className="space-y-1 px-1">
-      {outcome && <p className="break-words text-sm text-card-foreground">{outcome}</p>}
+      {outcome && <ResultMarkdown text={outcome} interactive className="break-words text-sm text-card-foreground" />}
       <FileChipList files={files} label={FILES_TOUCHED_LABEL} limit={files.length} />
     </section>
   )

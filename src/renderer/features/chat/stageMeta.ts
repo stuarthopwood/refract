@@ -121,18 +121,34 @@ export function extractAgentRefs(text: string): string[] {
 }
 
 const RESULT_SUMMARY_MAX_CHARS = 120
-const LEADING_MARKDOWN_MARKER_RE = /^[#*_`]+\s*/
+// Block markers only: inline emphasis and code survive so the card can render the line as Markdown.
+const LEADING_BLOCK_MARKER_RE = /^(?:#{1,6}\s+|>\s*|[-*+]\s+)+/
+// OMP wraps a finished agent's output in `<task-result id=".." ...>...</task-result>`; it is transport, never content.
+const TASK_RESULT_TAG_RE = /<\/?task-result\b[^>]*>/gi
 
-/** An agent's one-line result preview, shown when its owning Stage is expanded. */
+/** An agent's result text with OMP's `<task-result>` wrapper tags removed. */
+export function stripTaskResultWrapper(result: string): string {
+  return result.replace(TASK_RESULT_TAG_RE, '').trim()
+}
+
+/** An agent's one-line result preview as Markdown (wrapper and block markers removed), shown when its owning Stage is expanded. */
 export function extractResultSummary(result: string): string | undefined {
-  for (const rawLine of result.split('\n')) {
+  for (const rawLine of stripTaskResultWrapper(result).split('\n')) {
     const line = rawLine.trim()
     if (line.length === 0) continue
-    const stripped = line.replace(LEADING_MARKDOWN_MARKER_RE, '').trim()
+    const stripped = line.replace(LEADING_BLOCK_MARKER_RE, '').trim()
     if (stripped.length === 0) continue
     return stripped.length <= RESULT_SUMMARY_MAX_CHARS ? stripped : `${stripped.slice(0, RESULT_SUMMARY_MAX_CHARS).trimEnd()}\u2026`
   }
   return undefined
+}
+
+const INLINE_LINK_RE = /!?\[([^\]]*)\]\([^)]*\)/g
+const INLINE_MARKER_RE = /(\*\*|__|~~|[*`])/g
+
+/** `extractResultSummary` text as plain words, for tooltips, accessible names and rows that do not render Markdown. */
+export function plainSummary(markdown: string): string {
+  return markdown.replace(INLINE_LINK_RE, '$1').replace(INLINE_MARKER_RE, '')
 }
 
 export function resolveStageDependencies<

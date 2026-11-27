@@ -21,15 +21,17 @@ interface CodeBlockHeaderProps {
   wrap: { on: boolean; onChange: (on: boolean) => void } | null
   /** The menu's items, shown by the trailing kebab; null hides it. */
   items: ((kind: MenuKind) => React.ReactNode) | null
+  /** Drops the divider under the header: an embedded block has no outline, so the header shares the body's fill. */
+  embedded: boolean
 }
 
 // Header above every code block: the language when known and highlighted, else "text", so it never
 // claims a highlight the body lacks. `copyText` is the full value to copy (a caller may show a
 // truncated body, #524); the Copy button is always visible, hidden when empty so it never clears
 // the clipboard, and its label names the language so blocks are distinguishable to a screen reader.
-function CodeBlockHeader({ label, copyText, hideCopy, wrap, items }: CodeBlockHeaderProps) {
+function CodeBlockHeader({ label, copyText, hideCopy, wrap, items, embedded }: CodeBlockHeaderProps) {
   return (
-    <div className="flex items-center justify-between gap-2 border-b border-border bg-code-block px-2 py-1 font-code text-xs text-muted-foreground">
+    <div className={cn('flex items-center justify-between gap-2 bg-code-block px-2 py-1 font-code text-xs text-muted-foreground', !embedded && 'border-b border-border')}>
       <span className="truncate text-md-code-label">{label}</span>
       <div className="flex items-center gap-1">
         {wrap && (
@@ -85,6 +87,8 @@ export interface CodeBlockProps {
   streaming?: boolean
   // Set by a caller that collapses the block (the 200-line cap); adds Expand/Collapse to the menu.
   expandable?: { expanded: boolean; onToggle: () => void }
+  // A block nested inside a card that already draws one outline: no border of its own, only the `bg-code-block` step (#2235).
+  embedded?: boolean
 }
 
 /** The shared code-block renderer; every block's header carries Copy and Wrap controls and a context menu (#524, #471). */
@@ -97,7 +101,8 @@ export function CodeBlock({
   hideCopy = false,
   hideWrap = false,
   streaming = false,
-  expandable
+  expandable,
+  embedded = false
 }: CodeBlockProps) {
   const syntaxTheme = useSyntaxTheme()
   const [html, setHtml] = React.useState<string | null>(null)
@@ -194,13 +199,14 @@ export function CodeBlock({
   }
 
   return (
-    <TranscriptMenu disabled={menuDisabled} className="not-prose max-w-none overflow-hidden rounded-lg border border-border text-xs" items={items}>
+    <TranscriptMenu disabled={menuDisabled} className={cn('not-prose max-w-none overflow-hidden rounded-lg text-xs', !embedded && 'border border-border')} items={items}>
       <CodeBlockHeader
         label={label}
         copyText={fullText}
         hideCopy={hideCopy || streaming}
         wrap={hideWrap || streaming ? null : { on: wrapOn, onChange: setWrapOn }}
         items={menuDisabled ? null : items}
+        embedded={embedded}
       />
       <div className="flex">
         {gutter}

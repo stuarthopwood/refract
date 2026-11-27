@@ -159,14 +159,15 @@ describe('PanelTree accessibility', () => {
       createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
     )
     const rowTokens = html.match(/<div[^>]*aria-level="2"[^>]*>/)![0].match(/class="([^"]*)"/)![1]!.split(' ')
-    const outcomeTokens = html.match(/<p[^>]*class="([^"]*)"[^>]*>Found 3 issues<\/p>/)![1]!.split(' ')
+    // The outcome is shared Markdown now: the clamp class sits on its wrapper and targets the paragraph inside.
+    const outcomeTokens = html.match(/<div[^>]*class="([^"]*)"[^>]*><p[^>]*>Found 3 issues<\/p>/)![1]!.split(' ')
     // The markup escapes `&` in the attribute, so the arbitrary variant reads `[&amp;_p]`.
     expect(rowTokens).toContain('aria-selected:[&amp;_p]:line-clamp-none')
     expect(rowTokens).toContain('focus:[&amp;_p]:line-clamp-none')
     const unscoped = rowTokens.filter((token) => token.endsWith('line-clamp-none') && !token.startsWith('aria-selected:') && !token.startsWith('focus:'))
     expect(unscoped).toEqual([])
-    expect(outcomeTokens).toContain('line-clamp-2')
-    expect(outcomeTokens).not.toContain('line-clamp-none')
+    expect(outcomeTokens).toContain('[&amp;_p]:line-clamp-2')
+    expect(outcomeTokens).not.toContain('[&amp;_p]:line-clamp-none')
   })
 
   it('lists every file and the whole outcome in the detail pane, with no "+N" fold', () => {

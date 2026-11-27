@@ -280,7 +280,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       className="mt-6"
       contentClassName={cn(SPINE_HOST_CONTENT_CLASS, 'pb-1')}
     >
-      <SpineList gap="stage" elbows>
+      <SpineList gap="stage" bare>
         {stages.map((stage) => (
           <SpineItem key={stage.id} isNew={!seenStageIds.has(stage.id) && isRunning}>
             <ChainStageLine stage={stage} sessionId={sessionId} />

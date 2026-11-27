@@ -60,7 +60,7 @@ describe('ChainStageLine', () => {
 
     it('shows the clean title and the persistent one-line outcome', () => {
       expect(html).toContain('Stage 1 \u00b7 Solo')
-      expect(html).toMatch(/data-stage-outcome[^>]*>Fixed the flaky test</)
+      expect(html).toMatch(/data-stage-outcome[^>]*>[\s\S]*?<p[^>]*>Fixed the flaky test<\/p>/)
     })
 
     it('shows the agent as an inline chip and no parallel badge', () => {
@@ -87,7 +87,8 @@ describe('ChainStageLine', () => {
   describe('given each agent in the Stage list', () => {
     it('renders it as a card, not a collapsed line', () => {
       const html = render(RUNNING_GATE())
-      expect(html.match(/rounded-lg border bg-surface-subtle/g)).toHaveLength(2)
+      expect(html.match(/rounded-lg bg-surface-subtle/g)).toHaveLength(2)
+      expect(html).not.toMatch(/rounded-lg border/)
       expect(html).toContain('GateA')
       expect(html).toContain('GateB')
     })
@@ -105,7 +106,7 @@ describe('ChainStageLine open state (FR-149)', () => {
     })
 
     it('truncates the outcome to one line while collapsed', () => {
-      expect(render(SOLO())).toMatch(/class="[^"]*\btruncate\b[^"]*"[^>]*data-stage-outcome/)
+      expect(render(SOLO())).toMatch(/data-stage-outcome[^>]*>\s*<div[^>]*\[&amp;_p\]:truncate/)
     })
 
     it('stays open once the developer opened it, and wraps the outcome in full', () => {
@@ -113,7 +114,8 @@ describe('ChainStageLine open state (FR-149)', () => {
       setManualOpen('s1', stageToggleRowId(stage.id), true)
       const html = render(stage, 's1')
       expect(html).toContain('<ol')
-      expect(html).toMatch(/class="[^"]*\bbreak-words\b[^"]*"[^>]*data-stage-outcome/)
+      expect(html).not.toMatch(/data-stage-outcome[^>]*>\s*<div[^>]*\[&amp;_p\]:truncate/)
+      expect(html).toMatch(/data-stage-outcome[^>]*>[\s\S]*?<p[^>]*>Fixed the flaky test<\/p>/)
     })
   })
 

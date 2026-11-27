@@ -1,6 +1,26 @@
 import { describe, expect, it } from 'vitest'
 import { summarizeSubagentStatuses } from '../subagents/subagentStatus'
-import { extractContextLabel, stripWorktreePaths, unsettledRollupText } from './stageMeta'
+import { extractContextLabel, extractResultSummary, plainSummary, stripTaskResultWrapper, stripWorktreePaths, unsettledRollupText } from './stageMeta'
+
+describe('extractResultSummary (#2242)', () => {
+  const wrapped = '<task-result id="AwaySpecLane" agent="task" status="completed" duration="3m31s">\n## Fixed the **flaky** test\nMore detail\n</task-result>'
+
+  it('drops the OMP <task-result> wrapper and the heading marker, keeping inline Markdown for the card to render', () => {
+    expect(extractResultSummary(wrapped)).toBe('Fixed the **flaky** test')
+  })
+
+  it('returns undefined for a wrapper with nothing inside', () => {
+    expect(extractResultSummary('<task-result id="A" status="completed"></task-result>')).toBeUndefined()
+  })
+
+  it('removes only the wrapper tags in stripTaskResultWrapper', () => {
+    expect(stripTaskResultWrapper(wrapped)).toBe('## Fixed the **flaky** test\nMore detail')
+  })
+
+  it('flattens a summary to plain words for tooltips and accessible names', () => {
+    expect(plainSummary('Fixed **two** `a.ts` bugs, see [the PR](https://x.test/1)')).toBe('Fixed two a.ts bugs, see the PR')
+  })
+})
 
 describe('stripWorktreePaths', () => {
   it('removes a Windows backslash worktree path and the whitespace it leaves', () => {

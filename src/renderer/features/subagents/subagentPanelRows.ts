@@ -1,6 +1,7 @@
 // The panel's flat tree: one row per Stage, plus one per agent of every open Stage (FR-150). Pure so the keyboard model,
 // the row order and the accessible names are tested without a DOM.
 import { fileBasename } from '@/components/FileChip'
+import { plainSummary } from '../chat/stageMeta'
 import { stageAccessibleName, stageRowModel } from './card/stageRowModel'
 import { SUBAGENT_STATUS_LABEL } from './subagentStatus'
 import { FILES_TOUCHED_LABEL, type ChatScenario, type StageItem, type SubAgentItem } from './viewModel'
@@ -56,7 +57,7 @@ export function agentPanelAriaLabel(agent: SubAgentItem): string {
 
 /** A Stage's description is its one outcome line, the same text the header shows. */
 export function stagePanelDescription(stage: StageItem): string {
-  return stageRowModel(stage).outcome ?? ''
+  return stageRowModel(stage).outcomePlain ?? ''
 }
 
 /** An agent's role, settled duration (a running one ticks, so it is left out), outcome and the whole file list; the row's visible text, spoken on demand. */
@@ -65,7 +66,7 @@ export function agentPanelDescription(agent: SubAgentItem): string {
   return [
     agent.role,
     agent.status === 'running' ? undefined : agent.duration,
-    agent.whatItDid,
+    agent.whatItDid != null ? plainSummary(agent.whatItDid) : undefined,
     files.length > 0 ? `${FILES_TOUCHED_LABEL}: ${files.join(', ')}` : undefined
   ]
     .map((part) => part?.trim())
