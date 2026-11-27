@@ -76,6 +76,10 @@ pub struct GhRawResult {
 /// Resolves `gh`: the portable install is rechecked every call (no relaunch needed); the `PATH`
 /// fallback is cached. Shared with `updates::gh_client` (#829).
 pub(crate) fn resolve_gh() -> Result<std::path::PathBuf, ()> {
+    #[cfg(test)]
+    if super::gh_fake::is_active() {
+        return Ok(PathBuf::from("gh"));
+    }
     if let Some(dir) = dirs::data_local_dir() {
         let candidate = dir.join("refract").join("tools").join("gh").join("gh.exe");
         if candidate.is_file() {
@@ -95,6 +99,10 @@ pub async fn gh_raw(
     not_found_code: Option<GhErrorCode>,
     timeout: Duration,
 ) -> Result<GhRawResult, GhError> {
+    #[cfg(test)]
+    if let Some(result) = super::gh_fake::run(args) {
+        return Ok(result);
+    }
     let gh_path = resolve_gh().map_err(|_| {
         GhError::new(
             not_found_code.unwrap_or(GhErrorCode::GhUnavailable),

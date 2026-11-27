@@ -9,6 +9,8 @@ pub mod install_on_quit;
 pub mod installer;
 pub mod signature;
 pub mod state;
+#[cfg(test)]
+mod test_support;
 
 use std::path::Path;
 
@@ -293,3 +295,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "cycle.test.rs"]
+mod cycle_tests;
