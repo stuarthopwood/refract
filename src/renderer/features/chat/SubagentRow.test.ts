@@ -12,6 +12,20 @@ vi.mock('@/state', () => ({
   useSettingsStore: (select: (s: { settings: object }) => unknown) => select({ settings: {} })
 }))
 vi.mock('../right-pane/hosted-panel-actions', () => ({ openHostedPanel }))
+// Wraps the real `ListCardButton` to capture the `onClick` the sub-card hands it: the repo has no jsdom, so a click cannot be dispatched.
+const listCard = vi.hoisted(() => ({ onClick: null as null | ((event: { currentTarget: unknown }) => void) }))
+vi.mock('@/components/ListCardButton', async (importOriginal) => {
+  // Same reason as the Markdown mock below: the hoisted factory cannot see the file's static imports.
+  const original = await importOriginal<{ ListCardButton: (props: ListCardButtonProps) => ReactElement }>()
+  const { createElement: h } = await import('react')
+  return {
+    ...original,
+    ListCardButton: (props: ListCardButtonProps) => {
+      listCard.onClick = props.onClick as unknown as typeof listCard.onClick
+      return h(original.ListCardButton as never, props)
+    }
+  }
+})
 // `Markdown` echoes its props so the card tests can assert it is the renderer used, with the options the card needs.
 vi.mock('./Markdown', async () => {
   // vi.mock is hoisted above the file's imports, so the factory cannot see `createElement`; a dynamic import is the vitest-sanctioned way.
@@ -24,9 +38,11 @@ vi.mock('./Markdown', async () => {
   }
 })
 
+import type { ReactElement } from 'react'
+import type { ListCardButtonProps } from '@/components/ListCardButton'
 import type { TranscriptItem } from '../../../shared/model'
 import type { SubAgentItem } from '../subagents/viewModel'
-import { SubagentCardBody, SubagentCardButton, openSubagentInPanel, subagentCardButtonName } from './SubagentRow'
+import { SubagentCardBody, SubagentCardButton, subagentCardButtonName } from './SubagentRow'
 
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
@@ -79,6 +95,13 @@ describe('SubagentCardBody (#1928, FR-148)', () => {
     expect(html).not.toContain('aria-live')
   })
 
+  it('draws the running spinner and heartbeat dot in accent-text, the contrast-checked tone, never state-working (#2318, FR-179)', () => {
+    const html = render(agent({ status: 'running', liveDetail: 'On it', subSteps: [{ label: 'step', status: 'running' }] }))
+    expect(html).toContain('bg-accent-text')
+    expect(html).toContain('text-accent-text')
+    expect(html).not.toContain('state-working')
+  })
+
   it('hides the heartbeat and sub-steps once the agent is no longer running', () => {
     const html = render(agent({ status: 'finished', liveDetail: 'stale', subSteps: manySteps }))
     expect(html).not.toContain('stale')
@@ -99,12 +122,11 @@ describe('SubagentCardBody (#1928, FR-148)', () => {
     expect(html).not.toContain('fixes issue from')
   })
 
-  it('draws a divider hairline and the surface-1 step, never the bare 3:1 control border (#2318, rule 1 and 7)', () => {
+  it('draws no card shape of its own (the button or the panel row owns it) and never the bare 3:1 control border (#2318, rule 1 and 7)', () => {
     const html = render(agent({ status: 'running', role: 'Gate', whatItDid: 'Done' }))
-    expect(html).toContain('border-divider')
-    expect(html).toContain('bg-surface-1')
     const tokens = [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) => match[1]!.split(' '))
-    expect(tokens).toContain('border')
+    expect(tokens).not.toContain('bg-surface-1')
+    expect(tokens).not.toContain('border')
     expect(tokens).not.toContain('border-border')
     expect(tokens).not.toContain('bg-surface-subtle')
   })
@@ -123,6 +145,13 @@ describe('SubagentCardBody flat (#2318, FR-176)', () => {
     expect(html).toContain('border-l-2 border-divider')
     expect(html).toContain('Accessibility Gate')
     for (const gone of ['GateA11y', 'Flagged one defect', '2m', 'bg-surface-1']) expect(html).not.toContain(gone)
+  })
+
+  it('shows no heartbeat for a running agent (the Stage header carries its live focus) and no divider above its sub-steps', () => {
+    const html = render(agent({ status: 'running', liveDetail: 'On scenario (f)', subSteps: [{ label: 'running now', status: 'running' }] }), true)
+    expect(html).not.toContain('On scenario (f)')
+    expect(html).toContain('running now')
+    expect(html).not.toContain('border-t')
   })
 })
 
@@ -145,9 +174,42 @@ describe('SubagentCardButton (#2318, FR-178)', () => {
     expect(button()).not.toContain('<button')
   })
 
-  it('opens the panel on that agent with the button as the opener (what Enter, Space and click all run)', () => {
-    const opener = {} as HTMLElement
-    openSubagentInPanel('s1', { id: 'sa1', toolCallId: 't1', specIndex: 0 }, opener)
+  it('opens the panel on that agent with the button itself as the opener (what Enter, Space and click all run)', () => {
+    readout.subagents = [{ id: 'sa1', toolCallId: 't1', specIndex: 0 }]
+    button()
+    const opener = { tagName: 'BUTTON' } as unknown as HTMLElement
+    openHostedPanel.mockClear()
+    listCard.onClick!({ currentTarget: opener })
+    expect(openHostedPanel).toHaveBeenCalledTimes(1)
     expect(openHostedPanel).toHaveBeenCalledWith('subagents', 's1', { selectSubagentId: 'sa1', selectSubagentKey: 't1:0', opener })
+    expect(openHostedPanel.mock.calls[0]![2].opener).not.toBeNull()
+  })
+
+  it('is the surface card: a block button on bg-surface-1 with a divider edge, and only phrasing content inside it', () => {
+    readout.subagents = [{ id: 'sa1', toolCallId: 't1', specIndex: 0 }]
+    const html = button(agent({ role: 'Gate', whatItDid: 'Flagged **one** [defect](https://x.test)', status: 'running', liveDetail: 'live', subSteps: [{ label: 'step', status: 'running' }] }))
+    expect(html).toContain('bg-surface-1')
+    expect(html).toContain('border-divider')
+    const inside = html.slice(html.indexOf('<button'), html.indexOf('</button>'))
+    expect(inside).toMatch(/^<button[^>]*class="[^"]*\bblock\b/)
+    expect(inside).not.toMatch(/<(p|ul|ol|li|a)[ >]/)
+    expect(inside).toContain('Flagged one defect')
+  })
+
+  it('points aria-describedby at the outcome text, and leaves it off when there is none', () => {
+    readout.subagents = [{ id: 'sa1', toolCallId: 't1', specIndex: 0 }]
+    const html = button(agent({ whatItDid: 'Flagged one defect' }))
+    const id = html.match(/aria-describedby="([^"]+)"/)![1]!
+    expect(html).toMatch(new RegExp(`<span id="${id}"[^>]*>Flagged one defect</span>`))
+    expect(button(agent())).not.toContain('aria-describedby')
+  })
+
+  it('names the flat single-agent button too, and draws no card fill for it', () => {
+    readout.subagents = [{ id: 'sa1', toolCallId: 't1', specIndex: 0 }]
+    const html = renderToStaticMarkup(createElement(SubagentCardButton, { item: ITEM, agent: agent({ role: 'Gate' }), sessionId: 's1', flat: true, stageTitle: 'Other title' }))
+    expect(html.match(/<button/g)).toHaveLength(1)
+    expect(html).toContain('aria-label="GateA11y, Finished, open in Subagents panel"')
+    expect(html).not.toContain('bg-surface-1')
+    expect(html).toContain('border-l-2 border-divider')
   })
 })

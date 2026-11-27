@@ -40,12 +40,14 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
   const hasLive = running && ((!flat && heartbeatText(liveDetail) != null) || (subSteps?.length ?? 0) > 0)
   const hasRole = role != null && role !== ''
   const flatLead = hasRole ? role : fallbackLabel
+  // The sub-card button (`interactive` false) holds this body, and a button may hold only phrasing content: spans (`block`/`flex`), never `p`/`ul`/`li`,
+  // so its outcome is plain text there; the panel's tree row is a `div` and keeps the shared Markdown.
   return (
-    <div className={cn('min-w-0 space-y-2', flat && 'min-h-5 border-l-2 border-divider py-1 pl-3')}>
+    <span className={cn('block min-w-0 space-y-2', flat && 'min-h-5 border-l-2 border-divider py-1 pl-3')}>
       {flat ? (
-        flatLead && <div className="min-w-0 truncate text-xs text-muted-foreground">{flatLead}</div>
+        flatLead && <span className="block min-w-0 truncate text-xs text-muted-foreground">{flatLead}</span>
       ) : (
-        <div className="flex min-w-0 items-center gap-2 text-xs">
+        <span className="flex min-w-0 items-center gap-2 text-xs">
           <span className="flex shrink-0 items-center gap-1">
             <SubagentStatusGlyph status={status} />
             {status !== 'finished' && <span aria-hidden="true" className="text-muted-foreground">{SUBAGENT_STATUS_LABEL[status]}</span>}
@@ -53,26 +55,31 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
           <span className="min-w-0 truncate font-mono text-sm font-semibold text-card-foreground">{name}</span>
           {hasRole && <span className="min-w-0 truncate text-muted-foreground">{role}</span>}
           {!running && duration != null && <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{duration}</span>}
-        </div>
+        </span>
       )}
-      {!flat && whatItDid != null && whatItDid !== '' && (
-        <div id={outcomeId} title={plainSummary(whatItDid)} className="text-sm text-card-foreground">
-          <ResultMarkdown text={whatItDid} lines={2} />
-        </div>
-      )}
+      {!flat && whatItDid != null && whatItDid !== '' &&
+        (interactive ? (
+          <div id={outcomeId} title={plainSummary(whatItDid)} className="text-sm text-card-foreground">
+            <ResultMarkdown text={whatItDid} lines={2} />
+          </div>
+        ) : (
+          <span id={outcomeId} title={plainSummary(whatItDid)} className="block line-clamp-2 break-words text-sm text-card-foreground">
+            {plainSummary(whatItDid)}
+          </span>
+        ))}
       {hasProvenanceRow && (
-        <div className="flex min-w-0 flex-wrap items-center gap-1">
+        <span className="flex min-w-0 flex-wrap items-center gap-1">
           <CausalBadge triggeredBy={triggeredBy} />
           <FileChipList files={filesTouched} label={FILES_TOUCHED_LABEL} interactive={interactive} />
-        </div>
+        </span>
       )}
       {hasLive && (
-        <div className={cn('space-y-2', !flat && 'border-t border-divider pt-2')}>
+        <span className={cn('block space-y-2', !flat && 'border-t border-divider pt-2')}>
           {!flat && <Heartbeat liveDetail={liveDetail} />}
           <SubStepList steps={subSteps} />
-        </div>
+        </span>
       )}
-    </div>
+    </span>
   )
 }
 
