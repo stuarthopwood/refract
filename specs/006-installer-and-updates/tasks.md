@@ -225,3 +225,11 @@ Appended by `/speckit.converge` on 2026-11-27: `pnpm release` pushed `main`, whi
 - [x] T044 FR-038, FR-039 (missing): `release.mjs --finish vX.Y.Z`: `gh pr list` proves the PR merged, the squash commit is on `origin/main` and carries the version, annotated tag, tag push (resumable), then print the `release:local --notes-from-changelog` commands for a detached worktree.
 - [x] T045 FR-040 (missing): `--dry-run` prints both phase plans; the recovery text names the failed step and its resume command. Co-located tests in `scripts/release-pr.test.mjs`.
 - [x] T046 Docs: README "Releasing" describes the two-phase flow; `docs/PLAN.md` is left to the controller.
+
+## Phase 13: Convergence (issue #1966, FR-041)
+
+Appended by `/speckit.converge` on 2026-11-27: the installer put gh in place but no gh-stack extension, so stacked-PR flows had no `gh stack`. Task ids continue after the #1980 and #2128 phases (start at T047).
+
+- [x] T047 [US2] FR-041 (missing): add `src-tauri/src/updates/gh_stack_install.rs` (`GH_STACK_PINNED_TAG`, an injectable `GhRunner`, plan from `gh extension list`: skip when pinned, replace when another version, install otherwise) and run it from `install_github_cli` after the gh copy succeeds, with a failure reported as a `gh-stack` step and never failing the gh install.
+- [x] T048 [US2] FR-041 (missing): add `gh-stack` to the `Dependency` enum, `readiness.installDependency` (retry on its own) and `src/shared/updates.ts`'s `InstallableDependency`; update `contracts/ipc.md` and `data-model.md`.
+- [x] T049 [US2] FR-041 (missing): Rust unit tests for the skip/run/replace/failure decision with a fake runner in `gh_stack_install/tests.rs`.

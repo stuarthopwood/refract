@@ -13,6 +13,7 @@ use crate::git::git::git_raw;
 use crate::omp::process::{ApprovalMode, OmpProcess, OmpProcessOptions};
 use crate::updates::dependency_install::{self, Dependency, DependencyInstallProgress};
 use crate::updates::gh_client::{self, GithubCliStatus};
+use crate::updates::gh_stack_install;
 
 use super::{AppState, Dispatcher, HandlerFuture, IpcError};
 
@@ -514,17 +515,18 @@ fn readiness_install_dependency(state: AppState, args: Vec<Value>) -> HandlerFut
         let Some(raw) = args.first().and_then(Value::as_str) else {
             return Err(IpcError::new(
                 "invalid-argument",
-                "readiness.installDependency expects one of 'git' | 'omp' | 'github-cli'",
+                "readiness.installDependency expects one of 'git' | 'omp' | 'github-cli' | 'gh-stack'",
             ));
         };
         let dependency = match raw {
             "git" => Dependency::Git,
             "omp" => Dependency::Omp,
             "github-cli" => Dependency::GithubCli,
+            "gh-stack" => Dependency::GhStack,
             _ => {
                 return Err(IpcError::new(
                     "invalid-argument",
-                    "readiness.installDependency expects one of 'git' | 'omp' | 'github-cli'",
+                    "readiness.installDependency expects one of 'git' | 'omp' | 'github-cli' | 'gh-stack'",
                 ))
             }
         };
@@ -555,6 +557,7 @@ fn readiness_install_dependency(state: AppState, args: Vec<Value>) -> HandlerFut
             Dependency::Git => dependency_install::install_git(on_progress).await,
             Dependency::Omp => dependency_install::install_omp(on_progress).await,
             Dependency::GithubCli => dependency_install::install_github_cli(on_progress).await,
+            Dependency::GhStack => gh_stack_install::install_gh_stack(on_progress).await,
         };
 
         IN_FLIGHT

@@ -362,6 +362,12 @@ draft, are never offered as an update by User Story 3's check.
 - **FR-040** (issue #2128): `--dry-run` MUST print the plan of both phases without a side effect.
   Every failure after the release commit exists MUST name the failed step and the command that
   resumes from it.
+- **FR-041** (issue #1966): After the GitHub CLI is installed from the checklist, Refract MUST also
+  install gh's `github/gh-stack` extension, pinned to one release tag held in a single constant,
+  using that same gh (no second binary is bundled). The step MUST be skipped when `gh extension
+  list` already shows gh-stack at the pinned tag, and MUST replace gh-stack when another version
+  is installed. A failure MUST be reported as its own `gh-stack` install step with an actionable
+  reason, and MUST NOT fail the GitHub CLI install or block the rest of the install.
 
 ### Key Entities
 

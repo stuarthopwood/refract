@@ -40,7 +40,7 @@ One event per step of a dependency Install action (FR-006, FR-010).
 
 | Field | Type | Notes |
 |---|---|---|
-| `dependency` | `'git' \| 'omp' \| 'github-cli'` | Which Install action this progress belongs to. |
+| `dependency` | `'git' \| 'omp' \| 'github-cli' \| 'gh-stack'` | Which Install action this progress belongs to. |
 | `phase` | `'downloading' \| 'running' \| 'done' \| 'failed'` | `'downloading'` is Refract's own HTTPS fetch of the vendor installer; `'running'` is the spawned installer process; `'done'` triggers an automatic `readiness.check()`; `'failed'` carries `detail`. |
 | `detail` | `string?` | Set only on `'failed'`: an actionable reason (exit code, HTTP status, or a caught error's message), never a raw stack trace. |
 

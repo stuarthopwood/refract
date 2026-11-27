@@ -4,6 +4,7 @@ pub mod checksum;
 pub mod dependency_install;
 mod dependency_install_http;
 pub mod gh_client;
+pub mod gh_stack_install;
 pub mod install_on_quit;
 pub mod installer;
 pub mod signature;
