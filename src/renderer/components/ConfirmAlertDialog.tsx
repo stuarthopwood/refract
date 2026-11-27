@@ -33,6 +33,7 @@ export function ConfirmAlertDialog({
   secondaryLabel,
   confirmDisabled = false,
   confirmRef,
+  cancelRef,
   onCancel,
   onSecondary,
   onConfirm,
@@ -61,6 +62,8 @@ export function ConfirmAlertDialog({
   confirmDisabled?: boolean
   /** Lets the caller move focus here before content that holds it is removed. */
   confirmRef?: Ref<HTMLButtonElement>
+  /** Lets the caller move focus to Cancel/Close when the content that held focus is replaced. */
+  cancelRef?: Ref<HTMLButtonElement>
   onCancel(): void
   onSecondary?(): void
   onConfirm?(): void
@@ -97,6 +100,7 @@ export function ConfirmAlertDialog({
         )}
         <AlertDialogFooter className={cn(!confirmLabel && 'max-sm:items-end group-data-[size=sm]/alert-dialog-content:grid-cols-1 group-data-[size=sm]/alert-dialog-content:justify-items-end')}>
           <AlertDialogCancel
+            ref={cancelRef}
             aria-disabled={busy}
             className="aria-disabled:opacity-50"
             onClick={(event) => {

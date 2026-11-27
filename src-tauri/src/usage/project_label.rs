@@ -297,7 +297,7 @@ fn has_segments(path: &str, seq: &str) -> bool {
 }
 
 /// Resolves `.` and `..` textually; `normalise_path` does not, and a worktrees root is built with `..`.
-fn resolve_dots(normalised: &str) -> String {
+pub(crate) fn resolve_dots(normalised: &str) -> String {
     let mut parts: Vec<&str> = Vec::new();
     for part in normalised.split('\\') {
         match part {
