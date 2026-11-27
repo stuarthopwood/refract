@@ -29,7 +29,7 @@ function jumpSetup() {
 /** Frames enough for the jump loop to reach its settle. */
 const SETTLE_FRAMES = 4
 
-describe('a jump away from the end during a streaming turn (#1021)', () => {
+describe('a jump away from the end during a streaming turn (#459)', () => {
   it('keeps the target where it landed because autoScroll is off, so the scroller does not drag back', () => {
     const { harness: h, jump, targetTop, onLanded } = jumpSetup()
     const row = h.viewport.addRow(TARGET_OFFSET)
@@ -57,14 +57,13 @@ describe('a jump away from the end during a streaming turn (#1021)', () => {
     expect(h.follow.getState().newContent).toBe(true)
   })
 
-  it('does not drag the view back after a user wheel', () => {
+  it('stays where the user left it after a wheel on a settled jump, because the jump detached from autoscroll', () => {
     const { harness: h, jump } = jumpSetup()
     jump(h.viewport.addRow(TARGET_OFFSET))
     h.frames(SETTLE_FRAMES)
     h.stream(300)
     h.frame()
 
-    h.root.dispatch('wheel', h.viewport)
     h.userScrollUp(120)
     const parked = h.viewport.scrollTop
     h.stream(300)
@@ -114,7 +113,7 @@ describe('a jump away from the end during a streaming turn (#1021)', () => {
   })
 })
 
-describe('after a settled jump (#1021)', () => {
+describe('after a settled jump (#459)', () => {
   const USER = { kind: 'user', id: 'u1' }
   const REPLY = { kind: 'assistant', id: 'a1' }
 
@@ -145,15 +144,54 @@ describe('after a settled jump (#1021)', () => {
     h.frame()
     expect(h.follow.getState()).toMatchObject({ suppressed: true, isAtEnd: false })
   })
+})
 
-  it('stays where a navigation key such as PageUp leaves the view', () => {
-    const { harness: h } = settledJump()
+describe('user input while a jump is still landing (#459)', () => {
+  /** One frame in: the loop has written its first target but has not settled, so its input listeners are live. */
+  function landingJump() {
+    const setup = jumpSetup()
+    const row = setup.harness.viewport.addRow(TARGET_OFFSET)
+    setup.jump(row)
+    setup.harness.frame()
+    expect(setup.harness.landingRef.current).toBe(true)
+    return { ...setup, row }
+  }
+
+  it('hands the view to the user on a wheel and stops re-asserting the target', () => {
+    const { harness: h, onLanded, targetTop, row } = landingJump()
+    expect(h.viewport.scrollTop).toBe(targetTop(row))
+
+    h.root.dispatch('wheel', h.viewport)
+    expect(h.landingRef.current).toBe(false)
+    h.userScrollUp(120)
+    const parked = h.viewport.scrollTop
+    h.stream(300)
+    h.frames(SETTLE_FRAMES)
+    expect(h.viewport.scrollTop).toBe(parked)
+    expect(onLanded).not.toHaveBeenCalled()
+    expect(h.follow.getState()).toMatchObject({ suppressed: true, isAtEnd: false })
+  })
+
+  it('hands the view to the user on a navigation key such as PageUp', () => {
+    const { harness: h, onLanded, targetTop, row } = landingJump()
+    expect(h.viewport.scrollTop).toBe(targetTop(row))
+
     h.root.dispatch('keydown', h.viewport, 'PageUp')
+    expect(h.landingRef.current).toBe(false)
     h.userScrollUp(200)
     const parked = h.viewport.scrollTop
     h.stream(300)
-    h.frames(3)
+    h.frames(SETTLE_FRAMES)
     expect(h.viewport.scrollTop).toBe(parked)
+    expect(onLanded).not.toHaveBeenCalled()
+  })
+
+  it('keeps landing through a key that does not scroll', () => {
+    const { harness: h, onLanded } = landingJump()
+    h.root.dispatch('keydown', h.viewport, 'a')
+    expect(h.landingRef.current).toBe(true)
+    h.frames(SETTLE_FRAMES)
+    expect(onLanded).toHaveBeenCalledTimes(1)
   })
 })
 
