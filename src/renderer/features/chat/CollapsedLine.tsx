@@ -23,6 +23,8 @@ export interface CollapsedLineProps {
   leading?: React.ReactNode
   icon: React.ReactNode
   iconTooltip?: string
+  /** True when the accessible name already says the tooltip text; the trigger then skips the description so it is not announced twice. */
+  iconTooltipInName?: boolean
   label?: React.ReactNode
   /** One-line summary that truncates with an ellipsis; omit for a line with nothing to summarise. */
   summary?: React.ReactNode
@@ -62,6 +64,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     labelShimmer,
     icon,
     iconTooltip,
+    iconTooltipInName,
     label,
     summary,
     meta,
@@ -122,7 +125,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           }
         }
 
-  const describedBy = [showDetail ? detailId : null, iconTooltip === undefined ? null : tooltipDescId].filter(Boolean).join(' ') || undefined
+  const tooltipDescribes = iconTooltip !== undefined && !iconTooltipInName
+  const describedBy = [showDetail ? detailId : null, tooltipDescribes ? tooltipDescId : null].filter(Boolean).join(' ') || undefined
 
   const row = (
     <>
@@ -251,7 +255,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           {/* Reserves the action's column in every expandable row so all chevrons share one x; the action is laid over it below. */}
           <span aria-hidden="true" className="h-5 w-6 shrink-0" />
         </CollapsibleTrigger>
-        {iconTooltip !== undefined && (
+        {tooltipDescribes && (
           <span id={tooltipDescId} className="sr-only">
             {iconTooltip}
           </span>

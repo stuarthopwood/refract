@@ -24,11 +24,19 @@ export function useToolTargets(): ToolTargets {
 }
 
 // The row summary's target chip (Show only) and the row tooltip text (the raw tool id, plus the full target on Hover). Hide and
-// Hover keep the target out of the row, but the accessible name still carries it (`toolAriaHead`).
-export function toolTargetDisplay(mode: ToolTargets, rawId: string, target: string | undefined): { chip: React.ReactNode | undefined; tooltip: string } {
+// Hover keep the target out of the row, but the accessible name still carries it (`toolAriaHead`). `tooltipInName` is true when
+// that name already says the whole Hover tooltip (the target, and the raw id while it is shown), so the tooltip is not read twice.
+export function toolTargetDisplay(
+  mode: ToolTargets,
+  rawId: string,
+  target: string | undefined,
+  rawIdInName: boolean
+): { chip: React.ReactNode | undefined; tooltip: string; tooltipInName: boolean } {
+  const hoverTarget = mode === 'hover' && !!target
   return {
     chip: mode === 'show' ? toolTargetChip(target) : undefined,
-    tooltip: mode === 'hover' && target ? `${rawId}: ${target}` : rawId
+    tooltip: hoverTarget ? `${rawId}: ${target}` : rawId,
+    tooltipInName: hoverTarget && rawIdInName
   }
 }
 

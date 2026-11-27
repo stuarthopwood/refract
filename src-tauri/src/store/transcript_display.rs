@@ -2,7 +2,7 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
-/// Where tool rows show their target: hidden, in a tooltip on the verb, or in the row (#1758).
+/// Where tool rows show their target: hidden, in a tooltip on the row icon, or in the row (#1758).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum ToolTargets {

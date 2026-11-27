@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/state', () => ({ useSettingsStore: (select: (s: unknown) => unknown) => select({ settings: {} }) }))
 import { CollapsedLine } from './CollapsedLine'
-import { isRowExpandable, isTextClipped } from './useSummaryTruncation'
+import { isRowExpandable, isTextClipped, latchClipped } from './useSummaryTruncation'
 
 const render = (bodyAddsContent: boolean | undefined, props: { open?: boolean } = {}): string =>
   renderToStaticMarkup(createElement(CollapsedLine, { icon: null, label: 'Note', summary: 'one line', bodyAddsContent, ...props }, createElement('p', null, 'one line')))
@@ -24,6 +24,22 @@ describe('isRowExpandable (#1875)', () => {
     [false, false, false, false]
   ])('bodyAddsContent=%s clipped=%s open=%s -> %s', (bodyAddsContent, summaryClipped, open, expected) => {
     expect(isRowExpandable({ bodyAddsContent, summaryClipped, open })).toBe(expected)
+  })
+})
+
+describe('latchClipped', () => {
+  it.each([
+    [false, false, false],
+    [false, true, true],
+    [true, true, true],
+    [true, false, true]
+  ])('latched=%s measured=%s -> %s, so a row seen clipped never loses its expand control', (latched, measured, expected) => {
+    expect(latchClipped(latched, measured)).toBe(expected)
+  })
+
+  it('keeps a row that was clipped expandable after the summary later fits', () => {
+    const clipped = latchClipped(false, true)
+    expect(isRowExpandable({ bodyAddsContent: false, summaryClipped: latchClipped(clipped, false), open: false })).toBe(true)
   })
 })
 

@@ -120,7 +120,7 @@ interface ToolCallRowProps {
   defaultOpen?: boolean
 }
 
-function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
+export function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
   const showToolNames = useShowToolNames()
   const toolTargets = useToolTargets()
   const [open, setOpen] = React.useState(defaultOpen ?? false)
@@ -128,7 +128,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   const rawId = showToolNames ? display.rawId : undefined
   const label = toolRowLabel(item.tool, item.target, item.intent, item.status)
   const target = rowTarget(item)
-  const targetDisplay = toolTargetDisplay(toolTargets, display.rawId, target)
+  const targetDisplay = toolTargetDisplay(toolTargets, display.rawId, target, rawId !== undefined)
   const failed = item.status === 'error'
   const memberDuration = callDuration(item)
   const memberAriaLabel = joinAriaParts([
@@ -141,6 +141,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
     <CollapsedLine
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
       iconTooltip={targetDisplay.tooltip}
+      iconTooltipInName={targetDisplay.tooltipInName}
       label={label}
       labelClassName={failed ? 'text-tool-row-error-fg' : undefined}
       summary={toolRowSummary(rawId, targetDisplay.chip)}
@@ -203,13 +204,14 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
   const display = resolveToolDisplay(first.tool, first.target)
   const rawId = useShowToolNames() ? display.rawId : undefined
   const toolTargets = useToolTargets()
+  const targetDisplay = toolTargetDisplay(toolTargets, display.rawId, solo ? rowTarget(last) : undefined, rawId !== undefined)
   const toolLabel = toolRowLabel(first.tool, first.target, solo ? last.intent : undefined, verbPhase)
   const visibleLabel = solo ? toolLabel : `${toolLabel} \u00d7${group.items.length}`
   const failed = status === 'error'
   const summary =
     skillName !== undefined
       ? toolRowSummary(rawId, <bdi>{skillName}</bdi>)
-      : toolRowSummary(rawId, solo ? toolTargetDisplay(toolTargets, display.rawId, rowTarget(last)).chip : undefined)
+      : toolRowSummary(rawId, solo ? targetDisplay.chip : undefined)
   const totalDurationMs = group.items.reduce((sum, item) => sum + (item.durationMs ?? 0), 0)
   const allHaveDuration = group.items.every((item) => item.durationMs != null)
   const totalDuration = !isRunning && allHaveDuration ? formatDuration(totalDurationMs) : undefined
@@ -246,7 +248,8 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
     <ToolRowMenu item={solo ? last : undefined} open={open} onOpenChange={setOpen}>
     <CollapsedLine
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
-      iconTooltip={toolTargetDisplay(toolTargets, display.rawId, solo ? rowTarget(last) : undefined).tooltip}
+      iconTooltip={targetDisplay.tooltip}
+      iconTooltipInName={targetDisplay.tooltipInName && skillName === undefined}
       label={visibleLabel}
       open={open}
       onOpenChange={setOpen}
