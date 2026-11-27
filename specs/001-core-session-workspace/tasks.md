@@ -5926,3 +5926,7 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 - [x] T716 [US1] #1749: `features/chat/bashOutputMeta.ts` reads the elided, column-cut and minimized facts from `details.meta` and the flat RPC spelling; `BashOutputBadges.tsx` and `NoteBadge.tsx` render the badges on `ToolRow` and the notes in `ToolCallDialog`; `bashOutputMeta.test.ts` covers truncated-only, minimized-only, singular `1 line`, bytes-only and the column range, per FR-162 (a)
 - [x] T717 [US1] #1750: `features/chat/pseudoShell.ts` reads a command as steps and refuses what it does not model; `pseudoShell.test.ts` covers `((`, `>&file`, `fdN <`, `${` and the 20,000 character and 400 step boundaries, per FR-162 (b)
 - [x] T718 [US1] #1750: `BashCommandSection.tsx` toggles Raw and Pseudo, parses only for Pseudo, shows the refusal as a `role="status"` note, the expansion caption and sr-only "Level N" prefixes; `commandViewFrom` guards the toggle's empty value; `BashCommandSection.test.ts` covers each, per FR-162 (b)
+
+## Phase 123: Convergence (2026-11-27, #1852 M3 slider, FR-163, #1882 chart tooltips, FR-164, #1850 in-memory filter state, FR-165, epic #2222)
+
+- [x] T719 [US1] #1852 (FR-163): `components/ui/slider.tsx` becomes a split M3 track (16 px, 6 px gap, `--primary` active part) with a 4 x 44 px bar handle on a 24 x 44 px thumb; `slider.test.ts` covers the fraction and stop helpers, the 44 x 24 target, the 16 px track, the gap geometry, stop dots, the gradient case and the forced-colours fallbacks; `docs/design/components.md` Slider entry updated.
