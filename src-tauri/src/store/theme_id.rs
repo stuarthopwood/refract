@@ -32,10 +32,17 @@ mod tests {
     /// Ids of the `ThemeId` union in `src/shared/themes.ts`, read from the source so the test cannot drift from it.
     fn ts_theme_ids() -> Vec<String> {
         let src = THEMES_TS.replace("\r\n", "\n");
-        let union = &src[src.find("export type ThemeId").expect("ThemeId union in themes.ts")..];
+        let union = &src[src
+            .find("export type ThemeId")
+            .expect("ThemeId union in themes.ts")..];
         let union = &union[..union.find("\n\n").expect("blank line ending the union")];
         // Quoted ids sit at the odd positions when splitting on `'`.
-        union.split('\'').skip(1).step_by(2).map(str::to_string).collect()
+        union
+            .split('\'')
+            .skip(1)
+            .step_by(2)
+            .map(str::to_string)
+            .collect()
     }
 
     #[test]
@@ -44,7 +51,10 @@ mod tests {
         assert!(!ids.is_empty(), "parsed no ids from themes.ts");
         for id in ids {
             let parsed: Result<ThemeId, _> = serde_json::from_value(Value::String(id.clone()));
-            assert!(parsed.is_ok(), "themes.ts id {id:?} is missing from the Rust ThemeId enum");
+            assert!(
+                parsed.is_ok(),
+                "themes.ts id {id:?} is missing from the Rust ThemeId enum"
+            );
         }
     }
 
@@ -52,6 +62,9 @@ mod tests {
     fn amber_obsidian_round_trips_as_its_kebab_case_id() {
         let value = serde_json::to_value(ThemeId::AmberObsidian).unwrap();
         assert_eq!(value, Value::String("amber-obsidian".to_string()));
-        assert_eq!(serde_json::from_value::<ThemeId>(value).unwrap(), ThemeId::AmberObsidian);
+        assert_eq!(
+            serde_json::from_value::<ThemeId>(value).unwrap(),
+            ThemeId::AmberObsidian
+        );
     }
 }
