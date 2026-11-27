@@ -95,9 +95,10 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
           {outcomePlain && <span>{outcomePlain}</span>}
         </TooltipContent>
       </Tooltip>
-      {/* The shared duration column (#2189), kept when the Stage has no duration so the one chevron stays in one x. */}
+      {/* The shared duration column (#2189), kept when the Stage has no duration so the one chevron stays in one x. Its right edge, not a reserved 6ch, holds
+          the chevron in place, so it shrinks to its text and the title column keeps that width instead of truncating beside spare space (#2318). */}
       <div className="flex items-center gap-1">
-        <DurationColumn aria-hidden="true" className={cn('font-code text-xs tabular-nums', running ? 'text-accent-text' : 'text-muted-foreground')}>
+        <DurationColumn aria-hidden="true" className={cn('min-w-0 font-code text-xs tabular-nums', running ? 'text-accent-text' : 'text-muted-foreground')}>
           {durationMs != null ? formatElapsed(durationMs) : null}
         </DurationColumn>
         <span className="shrink-0">{trailing}</span>

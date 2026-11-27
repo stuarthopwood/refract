@@ -42,6 +42,13 @@ describe('StageHeader', () => {
     it('shows a single agent of the same name once: no chip repeats the Stage title', () => {
       expect(render({})).not.toContain('data-agent-chip')
     })
+
+    it('lets the duration column shrink to its text, so the title keeps the free width instead of truncating beside spare space (#2318)', () => {
+      // Mutation: put the reserved `min-w-[6ch]` back on the duration column; the title then truncates ("Me...") with room to spare.
+      const html = render({})
+      expect(html).toMatch(/<span data-slot="row-duration"[^>]*class="[^"]*\bmin-w-0\b/)
+      expect(html).not.toContain('min-w-[6ch]')
+    })
   })
 
   describe('outcomeIsClamped', () => {

@@ -141,4 +141,16 @@ describe('StageGroupRow, a single-Stage turn (FR-175, FR-176)', () => {
     // Mutation: drop aria-expanded from the chevron or open a settled Stage on its own.
     expect(stageChevrons(renderRow(stagesFor(['finished'])[0]!))).toEqual(['false'])
   })
+
+  it('prints a failed solo Stage reason once, in the header outcome line, never again in the body (#2318)', () => {
+    // Mutation: bring back the red failure paragraph under the expanded solo Stage.
+    const reason = 'Boom: the fixture sweep failed hard.'
+    const items = [subagentItem({ name: 'Solo', id: 'c1:Solo', toolCallId: 'c1', status: 'error', result: reason })]
+    const summaries = [subagentSummary({ nameOrTask: 'Solo', id: 'c1:Solo', toolCallId: 'c1', status: 'failed' })]
+    const group = groupSubagentStages(items, summaries).find(isStageGroup)!
+    toggles.bySession = { s1: { [group.id]: true } }
+    const html = renderRow(group, 's1')
+    toggles.bySession = {}
+    expect(visibleText(html).split('failed hard').length - 1).toBe(1)
+  })
 })

@@ -16,7 +16,7 @@ import { StageUsesLine } from './StageDependencies'
 import { stageRowDomId } from './stageJump'
 import { SubagentCardButton } from './SubagentRow'
 import { SubagentGoalPreview } from './SubagentGoalPreview'
-import { stageHeading, extractResultSummary } from './stageMeta'
+import { stageHeading } from './stageMeta'
 import type { StageGroup } from './groupSubagentStages'
 import { deriveHeader } from '../subagents/viewModel/derive'
 import { StageHeader } from '../subagents/card/StageHeader'
@@ -24,7 +24,7 @@ import { SubagentsCardHeader } from '../subagents/card/SubagentsCardHeader'
 import { stageAccessibleName, stageAgentsGridClass, stageRowModel } from '../subagents/card/stageRowModel'
 import { stageSegmentStates } from '../subagents/card/headerStats'
 import { useStickyDisclosure } from './useStickyDisclosure'
-import { chatRowStatus, SUBAGENT_ERROR_TEXT_CLASS, summarizeSubagentStatuses } from '../subagents/subagentStatus'
+import { summarizeSubagentStatuses } from '../subagents/subagentStatus'
 import { overallStatus } from './subagentChainStatus'
 
 /** One Stage rendered in place, drawn with the shared `StageHeader` so a Stage looks the same on every surface (FR-175). */
@@ -106,11 +106,8 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
 
   // The Stage header and its outcome line carry the roll-up, status and duration (FR-175); no per-row "3 done" text is drawn here.
   const stageLabel = stageHeading(group.stageIndex, group.view.cleanTitle, true)
-  // A failed/cancelled/exited solo Stage shows its reason next to its goal, not only behind the toggle. (#1077)
+  // A failed solo Stage's reason is the header's outcome line (FR-175); the body never repeats it (#2318).
   const soloItem = total === 1 ? group.items[0]! : undefined
-  const soloStatus = soloItem ? chatRowStatus(soloItem.status) : undefined
-  const soloIsUnsettledBad = soloStatus === 'failed' || soloStatus === 'cancelled' || soloStatus === 'exited'
-  const soloFailureReason = soloItem && soloIsUnsettledBad && soloItem.result != null ? extractResultSummary(soloItem.result) : undefined
   // The content sits at the header's 40px mark (16px padding, 16px status column, 8px gap), so the brief and the cards start under the title.
   const columnClassName = 'pl-10 pr-4'
   const { parallelCount } = stageRowModel(group.view)
@@ -151,11 +148,6 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
             <div className={columnClassName}>
               <SubagentGoalPreview task={soloItem.task} />
             </div>
-          )}
-          {soloFailureReason != null && (
-            <p className={cn(columnClassName, 'text-xs', soloStatus === 'failed' ? SUBAGENT_ERROR_TEXT_CLASS : 'text-muted-foreground')}>
-              {soloFailureReason}
-            </p>
           )}
           <StageUsesLine dependencies={group.view.dependencies} sessionId={sessionId} className={columnClassName} />
           {/* Scoped to the member content that swaps element type on a 1-to-2 transition, so focus tracking ignores the brief/Uses line. (#1001) */}

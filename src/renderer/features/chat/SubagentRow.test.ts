@@ -42,7 +42,7 @@ import type { ReactElement } from 'react'
 import type { ListCardButtonProps } from '@/components/ListCardButton'
 import type { TranscriptItem } from '../../../shared/model'
 import type { SubAgentItem } from '../subagents/viewModel'
-import { SubagentCardBody, SubagentCardButton, subagentCardButtonName } from './SubagentRow'
+import { SubagentCardBody, SubagentCardButton, flatBodyHasContent, subagentCardButtonName } from './SubagentRow'
 
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
@@ -152,6 +152,25 @@ describe('SubagentCardBody flat (#2318, FR-176)', () => {
     expect(html).not.toContain('On scenario (f)')
     expect(html).toContain('running now')
     expect(html).not.toContain('border-t')
+  })
+
+  describe('with nothing to draw under the Stage header (#2318)', () => {
+    // Mutation: draw the guide line whenever the body is flat, even with no role, provenance or sub-steps.
+    it('draws no guide line, and no button, when the agent has no role, provenance or live sub-steps', () => {
+      const bare = agent({ whatItDid: 'Swept clean' })
+      expect(render(bare, true)).toBe('')
+      readout.subagents = [{ id: 'sa1', toolCallId: 't1', specIndex: 0 }]
+      expect(renderToStaticMarkup(createElement(SubagentCardButton, { item: ITEM, agent: bare, sessionId: 's1', flat: true, stageTitle: 'GateA11y' }))).toBe('')
+    })
+
+    it('still draws it for a role, a provenance row, live sub-steps, or a fallback label', () => {
+      expect(flatBodyHasContent(agent({ role: 'Gate' }))).toBe(true)
+      expect(flatBodyHasContent(agent({ filesTouched: ['a.ts'] }))).toBe(true)
+      expect(flatBodyHasContent(agent({ status: 'running', subSteps: [{ label: 'step', status: 'running' }] }))).toBe(true)
+      expect(flatBodyHasContent(agent(), 'GateA11y')).toBe(true)
+      expect(flatBodyHasContent(agent({ status: 'finished', subSteps: [{ label: 'step', status: 'done' }] }))).toBe(false)
+      expect(render(agent({ role: 'Gate' }), true)).toContain('border-l-2 border-divider')
+    })
   })
 })
 

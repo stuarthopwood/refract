@@ -16,7 +16,7 @@ function summaryIndex(summaries: readonly SubagentSummary[]): Map<string, Subage
 }
 
 // The summary wins wherever both sources carry a field: it is the live one (ADR 0013).
-function overlay(item: TranscriptSubagentItem, resultSummary: string | undefined, summary: SubagentSummary | undefined): AgentInput {
+export function overlay(item: TranscriptSubagentItem, resultSummary: string | undefined, summary: SubagentSummary | undefined): AgentInput {
   return {
     id: item.id,
     toolCallId: item.toolCallId,

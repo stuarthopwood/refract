@@ -29,6 +29,16 @@ interface SubagentCardBodyProps {
   outcomeId?: string
 }
 
+/**
+ * True when a single-agent Stage's flat body has anything to draw: a first line (the role, or the fallback label), a provenance row or
+ * live sub-steps. With none, the body and its guide line are omitted so no empty stub hangs under the Stage header (#2318, FR-176).
+ */
+export function flatBodyHasContent(agent: Pick<SubAgentItem, 'status' | 'role' | 'triggeredBy' | 'filesTouched' | 'subSteps'>, fallbackLabel?: string): boolean {
+  const hasLead = (agent.role != null && agent.role !== '') || (fallbackLabel != null && fallbackLabel !== '')
+  const hasProvenance = causalBadgeText(agent.triggeredBy) != null || (agent.filesTouched?.length ?? 0) > 0
+  return hasLead || hasProvenance || (agent.status === 'running' && (agent.subSteps?.length ?? 0) > 0)
+}
+
 // The card body (#1928): name, role, what it did, provenance and files, then a live heartbeat and
 // sub-steps while it runs. Every optional part renders nothing when absent, so no empty row or gap is
 // left behind. The chat sub-card button and the panel's tree row both draw it, so it needs no transcript item (#1930).
@@ -40,6 +50,7 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
   const hasLive = running && ((!flat && heartbeatText(liveDetail) != null) || (subSteps?.length ?? 0) > 0)
   const hasRole = role != null && role !== ''
   const flatLead = hasRole ? role : fallbackLabel
+  if (flat && !flatBodyHasContent(agent, fallbackLabel)) return null
   // The sub-card button (`interactive` false) holds this body, and a button may hold only phrasing content: spans (`block`/`flex`), never `p`/`ul`/`li`,
   // so its outcome is plain text there; the panel's tree row is a `div` and keeps the shared Markdown.
   return (
@@ -115,6 +126,8 @@ export function SubagentCardButton({ item, agent, sessionId, flat = false, stage
   const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
   const hasOutcome = !flat && agent.whatItDid != null && agent.whatItDid !== ''
   const fallbackLabel = repeatsStageTitle(agent.name, stageTitle) ? undefined : agent.name
+  // Nothing to draw under the Stage header: no button either, so no empty guide line or invisible tab stop remains (#2318).
+  if (flat && !flatBodyHasContent(agent, fallbackLabel)) return null
   const body = <SubagentCardBody agent={agent} flat={flat} interactive={false} fallbackLabel={fallbackLabel} outcomeId={outcomeId} />
   if (!match || !sessionId) return <div className={cn('min-w-0', !flat && SUBAGENT_CARD_SURFACE_CLASS)}>{body}</div>
   return (

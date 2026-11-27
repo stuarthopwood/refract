@@ -9,7 +9,7 @@ import { IconButton } from '@/components/IconButton'
 import { cn } from '@/lib/utils'
 import { ICON_SLOT_CLASS } from '../chat/CollapsedLine'
 import { StageUsesLine } from '../chat/StageDependencies'
-import { SUBAGENT_CARD_SURFACE_CLASS, SubagentCardBody } from '../chat/SubagentRow'
+import { SUBAGENT_CARD_SURFACE_CLASS, SubagentCardBody, flatBodyHasContent } from '../chat/SubagentRow'
 import { stageHeading } from '../chat/stageMeta'
 import { StageHeader } from './card/StageHeader'
 import { repeatsStageTitle } from './card/stageRowModel'
@@ -128,7 +128,8 @@ const AgentTreeRow = memo(function AgentTreeRow({ row, index, tabbable, selected
   const descriptionId = useId()
   // A Stage with one agent expands flat, as on the chat card: a guide line at the 40px mark, no second card repeating the Stage's name or outcome (FR-176).
   const flat = row.setsize === 1
-  const fallbackLabel = repeatsStageTitle(row.agent.name, row.stageTitle) ? undefined : row.agent.name
+  // A row that would otherwise draw nothing names its agent, so the keyboard target is never an empty, invisible row.
+  const fallbackLabel = repeatsStageTitle(row.agent.name, row.stageTitle) && flatBodyHasContent(row.agent) ? undefined : row.agent.name
   return (
     <div
       ref={(element) => rowRef(row.key, element)}
