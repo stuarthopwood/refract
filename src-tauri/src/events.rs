@@ -260,7 +260,7 @@ impl EventSink {
         self.send(READINESS_CHANGED, readiness.clone());
     }
 
-    /// `updates:state-changed`: drives the status-bar update badge. The caller strips `installerPath`.
+    /// `updates:state-changed`: drives the profile avatar's update dot and the profile menu's update item. The caller strips `installerPath`.
     pub fn emit_updates_state_changed(&self, state: &serde_json::Value) {
         self.send(UPDATES_STATE_CHANGED, state.clone());
     }

@@ -41,6 +41,18 @@ describe('SortableTable loading', () => {
     expect(html.match(/Loading…/g)).toHaveLength(1)
   })
 
+  it('marks_the_table_wrapper_busy_only_while_loading', () => {
+    expect(render({ rows: [], loading: true })).toContain('aria-busy="true"')
+    expect(render({ rows: [{ name: 'alpha' }] })).not.toContain('aria-busy')
+  })
+
+  it('renders_loaded_rows_with_no_skeleton_row_once_the_load_is_done', () => {
+    const html = render({ rows: [{ name: 'alpha' }, { name: 'beta' }] })
+    expect(html).toContain('alpha')
+    expect(html).toContain('beta')
+    expect(html).not.toContain('table-skeleton-row')
+  })
+
   it('shows_the_empty_text_once_loaded_with_no_rows', () => {
     const html = render({ rows: [] })
     expect(html).toContain('No things')

@@ -57,11 +57,30 @@ export function updateAccessibleSuffix(state: UpdateState | null): string | null
   }
 }
 
+/** The avatar badge and the profile button's accessible name, composed from one update state so the two never disagree. */
+export interface ProfileUpdateSummary {
+  badge: 'accent' | 'danger' | undefined
+  label: string
+}
+
+export function profileUpdateSummary(baseLabel: string, state: UpdateState | null): ProfileUpdateSummary {
+  const indicator = updateIndicator(state)
+  const suffix = updateAccessibleSuffix(state)
+  return {
+    badge: indicator === 'failed' ? 'danger' : indicator === 'pending' ? 'accent' : undefined,
+    label: suffix ? `${baseLabel}, ${suffix}` : baseLabel
+  }
+}
+
 /** What the one update item in the profile menu does when chosen. `busy` items ignore the choice. */
 export type UpdateMenuAction = 'download' | 'update-now' | 'check' | 'busy'
 
+/** The single source for the menu item's glyph; `busy` spins. */
+export type UpdateMenuIcon = 'download' | 'warning' | 'refresh' | 'busy'
+
 export interface UpdateMenuEntry {
   action: UpdateMenuAction
+  icon: UpdateMenuIcon
   label: string
   /** Muted second line; absent when the label says enough. */
   detail?: string
@@ -73,20 +92,25 @@ export function updateMenuEntry(state: UpdateState | null): UpdateMenuEntry {
   const version = state?.availableVersion ? `v${state.availableVersion}` : undefined
   switch (state?.phase) {
     case 'available':
-      return { action: 'download', label: 'Download update', detail: 'Verified before it installs', version }
+      return { action: 'download', icon: 'download', label: 'Download update', detail: 'Verified before it installs', version }
     case 'downloading':
-      return { action: 'busy', label: 'Downloading update…', version }
+      return { action: 'busy', icon: 'busy', label: 'Downloading update…', version }
     case 'downloaded':
-      return { action: 'update-now', label: 'Restart to update', detail: 'Installs now, or when you quit', version }
+      return { action: 'update-now', icon: 'refresh', label: 'Restart to update', detail: 'Installs now, or when you quit', version }
     case 'installing':
-      return { action: 'busy', label: 'Installing update…', version }
+      return { action: 'busy', icon: 'busy', label: 'Installing update…', version }
     case 'checking':
-      return { action: 'busy', label: 'Checking for updates…' }
+      return { action: 'busy', icon: 'busy', label: 'Checking for updates…' }
     case 'failed':
-      return { action: 'check', label: 'Update failed. Check again', detail: state.lastError ?? 'Update failed for an unknown reason.' }
+      return { action: 'check', icon: 'warning', label: 'Update failed. Check again', detail: state.lastError ?? 'Update failed for an unknown reason.' }
     default:
       return state?.phase === 'idle' && state.unavailableReason !== undefined
-        ? { action: 'check', label: 'Check for updates', detail: updateUnavailableReasonText(state.unavailableReason) }
-        : { action: 'check', label: 'Check for updates' }
+        ? { action: 'check', icon: 'refresh', label: 'Check for updates', detail: updateUnavailableReasonText(state.unavailableReason) }
+        : { action: 'check', icon: 'refresh', label: 'Check for updates' }
   }
+}
+
+/** Spoken when the menu label moves to a new in-flight or settled state; null while idle, since "Check for updates" is not news. */
+export function updateAnnouncement(state: UpdateState | null): string | null {
+  return state === null || state.phase === 'idle' ? null : updateMenuEntry(state).label
 }

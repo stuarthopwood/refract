@@ -1,8 +1,6 @@
 import { useRef, useState } from 'react'
-import { toast } from 'sonner'
 import {
   ActivityIcon,
-  DownloadIcon,
   ExternalLinkIcon,
   KeyboardIcon,
   LayersIcon,
@@ -10,7 +8,6 @@ import {
   LogInIcon,
   LogOutIcon,
   PaletteIcon,
-  RefreshCwIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
   TriangleAlertIcon,
@@ -30,12 +27,12 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
-import { updateMenuEntry, updateUnavailableReasonText } from '@/lib/updateStatus'
 import { useThemeEntries } from '@/lib/useThemeEntries'
 import type { ThemeEntry } from '@/lib/useThemeEntries'
-import { notify, useAccountsStore, useThemeStore, useUpdateStore, useViewStore } from '@/state'
+import { useAccountsStore, useThemeStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import type { GitHubAccount } from '../../../shared/accounts'
+import { UpdateMenuItem } from './UpdateMenuItem'
 
 export interface ProfileMenuContentProps {
   account: GitHubAccount | undefined
@@ -106,89 +103,6 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
     </DropdownMenuSub>
   )
 }
-
-function UpdateMenuItem({ onUpdateNow }: { onUpdateNow(): void }) {
-  const updateState = useUpdateStore((state) => state.state)
-  const entry = updateMenuEntry(updateState)
-  const busy = entry.action === 'busy'
-  const phase = updateState?.phase
-  const Icon = busy ? LoaderCircleIcon : phase === 'available' ? DownloadIcon : phase === 'failed' ? TriangleAlertIcon : RefreshCwIcon
-
-  function handleDownload(): void {
-    const id = toast.loading('Downloading update…')
-    void window.refract.updates
-      .install()
-      .then((result) => {
-        if (result.ok) toast.dismiss(id)
-        else {
-          toast.dismiss(id)
-          notify(result.error)
-        }
-      })
-      .catch(() => toast.error('Could not download the update.', { id }))
-  }
-  function handleCheckAgain(): void {
-    const id = toast.loading('Checking for updates…')
-    void window.refract.updates
-      .check()
-      .then((result) => {
-        if (!result.ok) {
-          toast.error(result.error.message, { id })
-          return
-        }
-        const next = result.value
-        if (next.phase === 'failed') {
-          toast.error(next.lastError ?? 'Update failed for an unknown reason.', { id })
-        } else if (next.phase === 'idle' && next.unavailableReason !== undefined) {
-          toast.warning(updateUnavailableReasonText(next.unavailableReason), { id })
-        } else if (next.phase === 'idle') {
-          toast.info('Refract is up to date.', { id })
-        } else if (next.phase === 'available') {
-          toast.info(`Refract v${next.availableVersion} is available. Choose Download update in this menu.`, { id })
-        } else if (next.phase === 'downloading') {
-          toast.info('An update is already downloading.', { id })
-        } else if (next.phase === 'downloaded') {
-          toast.info(`Refract v${next.availableVersion} is downloaded; it installs the next time you quit.`, { id })
-        } else if (next.phase === 'installing') {
-          toast.info('Refract is installing the update.', { id })
-        }
-      })
-      .catch(() => toast.error('Could not check for updates.', { id }))
-  }
-
-  return (
-    <DropdownMenuItem
-      aria-disabled={busy || undefined}
-      onSelect={(event) => {
-        if (entry.action === 'busy') {
-          event.preventDefault()
-          return
-        }
-        if (entry.action === 'download') handleDownload()
-        else if (entry.action === 'update-now') onUpdateNow()
-        else handleCheckAgain()
-      }}
-    >
-      <Icon aria-hidden className={busy ? 'animate-spin motion-reduce:animate-none' : undefined} />
-      {entry.detail ? (
-        <span className="flex min-w-0 flex-1 flex-col leading-tight">
-          <span>{entry.label}</span>
-          <span className="text-xs text-muted-foreground">{entry.detail}</span>
-        </span>
-      ) : (
-        <span className="min-w-0 flex-1">{entry.label}</span>
-      )}
-      {entry.version && (
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-          <span aria-hidden> </span>
-          <span className="sr-only"> version </span>
-          {entry.version}
-        </span>
-      )}
-    </DropdownMenuItem>
-  )
-}
-
 
 function CommonMenuItems({
   onKeyboardShortcuts,

@@ -10,7 +10,7 @@ import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { HolidayAccessory } from '@/features/holidays/HolidayAccessory'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
-import { updateAccessibleSuffix, updateIndicator } from '@/lib/updateStatus'
+import { profileUpdateSummary } from '@/lib/updateStatus'
 import { useUpdateNow } from '@/features/updates/useUpdateNow'
 import { notify, useAccountsStore, useUpdateStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
@@ -20,6 +20,7 @@ import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog'
 import { ManageAccountsDialog } from './ManageAccountsDialog'
 import type { ManageAccountsDialogHandle } from './ManageAccountsDialog'
 import { ProfileMenuContent } from './ProfileMenu'
+import { useUpdateAnnouncement } from './useUpdateAnnouncement'
 import { SignOutDialog } from './SignOutDialog'
 
 function accessibleName(account: GitHubAccount | undefined, githubStatus: GithubStatus): string {
@@ -50,11 +51,8 @@ export function ProfileItem() {
         ? 'GitHub unavailable'
         : (account?.displayName ?? account?.login ?? null)
   const updateState = useUpdateStore((state) => state.state)
-  const indicator = updateIndicator(updateState)
-  const updateSuffix = updateAccessibleSuffix(updateState)
-  const baseLabel = accessibleName(account, githubStatus)
-  // The dot is decorative, so the update state goes into the button's accessible name instead.
-  const label = updateSuffix ? `${baseLabel}, ${updateSuffix}` : baseLabel
+  // The badge is decorative, so the update state goes into the button's accessible name instead.
+  const { badge, label } = profileUpdateSummary(accessibleName(account, githubStatus), updateState)
   const [menuOpen, setMenuOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
   const [signOutTarget, setSignOutTarget] = useState<GitHubAccount | null>(null)
@@ -63,6 +61,7 @@ export function ProfileItem() {
   const [healthOpen, setHealthOpen] = useState(false)
   // Shared by every announcement this component itself makes (sign-out, Theme submenu) -- one polite live region is enough, since they never fire at the same moment.
   const [announcement, announce] = useClearedAnnouncement()
+  useUpdateAnnouncement(updateState, announce)
   const nameButtonRef = useRef<HTMLButtonElement>(null)
   // Lives here, not in the menu: the menu unmounts on select, which would take the confirm dialog with it.
   const { requestUpdateNow, confirmDialog: updateNowDialog } = useUpdateNow(() => {
@@ -198,7 +197,7 @@ export function ProfileItem() {
                   src={!missingCli && !githubError ? (account?.avatarDataUrl ?? undefined) : undefined}
                   fallbackClassName={githubError ? 'text-state-needs-you' : undefined}
                   fallback={missingCli ? '?' : githubError ? <TriangleAlertIcon aria-hidden className="size-4" /> : undefined}
-                  badge={indicator === 'failed' ? 'danger' : indicator === 'pending' ? 'accent' : undefined}
+                  badge={badge}
                 />
                 <span ref={nameTextRef} className="min-w-0 flex-1 truncate text-sm">{name ?? 'Sign in'}</span>
                 {authProblem && <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />}

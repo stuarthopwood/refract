@@ -1,7 +1,7 @@
 // Issue #137: the avatar dot, its accessible name and the profile menu's update item all derive from these helpers.
 import { describe, expect, it } from 'vitest'
 import type { UpdateState } from '../../shared/updates'
-import { updateAccessibleSuffix, updateIndicator, updateMenuEntry } from './updateStatus'
+import { profileUpdateSummary, updateAccessibleSuffix, updateAnnouncement, updateIndicator, updateMenuEntry } from './updateStatus'
 
 const state = (patch: Partial<UpdateState>): UpdateState => ({ version: 1, phase: 'idle', ...patch })
 
@@ -72,12 +72,57 @@ describe('updateMenuEntry', () => {
   it('explains_an_unavailable_check_in_plain_words_without_calling_it_a_failure', () => {
     expect(updateMenuEntry(state({ phase: 'idle', unavailableReason: 'offline' }))).toEqual({
       action: 'check',
+      icon: 'refresh',
       label: 'Check for updates',
       detail: 'Could not reach GitHub.'
     })
   })
 
   it('offers_a_plain_check_for_updates_when_nothing_is_known', () => {
-    expect(updateMenuEntry(null)).toEqual({ action: 'check', label: 'Check for updates' })
+    expect(updateMenuEntry(null)).toEqual({ action: 'check', icon: 'refresh', label: 'Check for updates' })
+  })
+
+  it('picks_the_glyph_from_the_phase_in_one_place', () => {
+    expect(updateMenuEntry(state({ phase: 'available' })).icon).toBe('download')
+    expect(updateMenuEntry(state({ phase: 'failed' })).icon).toBe('warning')
+    expect(updateMenuEntry(state({ phase: 'downloaded' })).icon).toBe('refresh')
+    for (const phase of ['downloading', 'installing', 'checking'] as const) {
+      expect(updateMenuEntry(state({ phase })).icon).toBe('busy')
+    }
+  })
+})
+
+describe('profileUpdateSummary', () => {
+  it('gives_an_accent_badge_and_the_matching_suffix_for_each_pending_phase', () => {
+    const expected = { available: 'update available', downloading: 'downloading update', downloaded: 'update ready to install' } as const
+    for (const phase of ['available', 'downloading', 'downloaded'] as const) {
+      expect(profileUpdateSummary('Ada, signed in to GitHub', state({ phase }))).toEqual({
+        badge: 'accent',
+        label: `Ada, signed in to GitHub, ${expected[phase]}`
+      })
+    }
+  })
+
+  it('gives_a_danger_badge_and_joins_the_name_with_update_failed_after_a_failure', () => {
+    expect(profileUpdateSummary('Ada', state({ phase: 'failed', lastError: 'boom' }))).toEqual({ badge: 'danger', label: 'Ada, update failed' })
+  })
+
+  it('leaves_the_name_and_badge_alone_when_idle_checking_unavailable_or_unknown', () => {
+    for (const s of [null, state({ phase: 'idle' }), state({ phase: 'checking' }), state({ phase: 'idle', unavailableReason: 'offline' })]) {
+      expect(profileUpdateSummary('Ada', s)).toEqual({ badge: undefined, label: 'Ada' })
+    }
+  })
+})
+
+describe('updateAnnouncement', () => {
+  it('speaks_the_new_menu_label_for_every_non_idle_phase', () => {
+    expect(updateAnnouncement(state({ phase: 'downloading' }))).toBe('Downloading update…')
+    expect(updateAnnouncement(state({ phase: 'downloaded' }))).toBe('Restart to update')
+    expect(updateAnnouncement(state({ phase: 'failed' }))).toBe('Update failed. Check again')
+  })
+
+  it('stays_silent_when_idle_or_unknown', () => {
+    expect(updateAnnouncement(null)).toBeNull()
+    expect(updateAnnouncement(state({ phase: 'idle' }))).toBeNull()
   })
 })

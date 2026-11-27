@@ -54,7 +54,7 @@ export function sortRowsBy<T>(rows: T[], columns: SortableColumn<T>[], sort: { k
 export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortChange, emptyText, loading = false, paging }: SortableTableProps<T>) {
   const pageCount = paging ? Math.max(1, Math.ceil(paging.total / paging.size)) : 1
   return (
-    <div className="flex min-w-0 flex-col gap-2">
+    <div aria-busy={loading || undefined} className="flex min-w-0 flex-col gap-2">
       <div className="overflow-x-auto">
         <table className="w-full text-xs tabular-nums">
           <caption className="sr-only">{caption}</caption>

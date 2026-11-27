@@ -195,7 +195,6 @@ async function main() {
         const assertions = [
           ['header (ChatHeader session name, inherits text-foreground)', real.header, await requireResolvedCssVarColor(cdp, '--foreground', 'color')],
           ['chat prose (echoed user message)', real.chat, await requireResolvedCssVarColor(cdp, '--chat-foreground', 'color')],
-          ['muted text (StatusBar footer)', real.muted, await requireResolvedCssVarColor(cdp, '--muted-foreground', 'color')],
           ['Send button fill (a coloured, non-neutral fill)', real.sendBackground, await requireResolvedCssVarColor(cdp, '--send', 'background-color')],
           ['Send button label (a primary button on a coloured fill)', real.sendForeground, await requireResolvedCssVarColor(cdp, '--send-foreground', 'color')]
         ];
@@ -238,7 +237,6 @@ async function main() {
         const alphaChecks = [
           ['header', real.header, solid ? 1 : EXPECTED_ALPHA.header],
           ['chat prose', real.chat, solid ? 1 : EXPECTED_ALPHA.chat],
-          ['muted text', real.muted, solid ? 1 : EXPECTED_ALPHA.muted],
           ['badge label', badgeColour, solid ? 1 : EXPECTED_ALPHA.badge],
           ['Send button label', real.sendForeground, 1]
         ];
