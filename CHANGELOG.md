@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.47.0 (2026-11-27)
+
+### Features
+
+- feat(controls): M3 slider, chart tooltips and in-memory filters (https://github.com/stuarthopwood/refract/pull/2282)
+- feat(shell): remove the status bar and add skeleton loading on Usage (https://github.com/stuarthopwood/refract/pull/2283)
+- feat(motion): honour reduce motion across animations (https://github.com/stuarthopwood/refract/pull/2285)
+- feat(themes): theme-id parity and Dark (high contrast) focus and contrast (https://github.com/stuarthopwood/refract/pull/2286)
+- feat(themes): add 13 light and dark themes (https://github.com/stuarthopwood/refract/pull/2287)
+- feat(design-system): skeleton loading, one shared spinner and blurred reload overlay (https://github.com/stuarthopwood/refract/pull/2290)
+- feat(settings): theme file JSON Schema and format help (https://github.com/stuarthopwood/refract/pull/2291)
+- feat(design-system): lighter menu surfaces and divider separators (https://github.com/stuarthopwood/refract/pull/2292)
+
+### Other
+
+- docs(plan): add #2272 to #2280 under epic #2229 (https://github.com/stuarthopwood/refract/pull/2281)
+- refactor(design-system): model picker filter and inline status use shared components (https://github.com/stuarthopwood/refract/pull/2289)
+- docs(plan): epic #2229 v1 scope done (https://github.com/stuarthopwood/refract/pull/2294)
+
 ## v0.46.0 (2026-11-27)
 
 ### Features
