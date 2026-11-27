@@ -83,7 +83,7 @@ from the former Electron CDP skill (`scripts/verify-tauri-cdp.mjs`).
 
 - Tests run the real git, so every test-spawned git gets `GIT_CONFIG_GLOBAL=/dev/null` and
   `GIT_CONFIG_NOSYSTEM=1` (`test_scratch::GIT_ISOLATION_ENV`): production `build_git_command` adds them under
-  `cfg(test)`, and the three test `run_git` helpers (`git/test_support.rs`, `git/remote.rs`,
+  `cfg(test)`, and the four test `run_git` helpers (`git/test_support.rs`, `git/remote.rs`, `tests/contract_replay.rs`,
   `ipc/repositories_tests.rs`) use the same constant. A new test helper that spawns git must do the same.
 - A test whose outcome must not depend on load passes its own bound instead of the production
   constant: `delete_check_for_session_within` takes the timeout, and `delete_check_for_session` passes

@@ -55,7 +55,7 @@ function warnIfCacheLarge() {
 function warnIfTestExeRunning() {
   const running = runningCargoExecutables(path.resolve(process.env.CARGO_TARGET_DIR));
   if (running.length > 0) {
-    console.warn(`ci-local: warning: ${running.length} executable(s) in the shared cargo target are still running, and a link that replaces one fails with LNK1105 / error 1224. Wait for that run to finish or end it (by PID, never by image name):\n  ${running.join('\n  ')}`);
+    console.warn(`ci-local: warning: ${running.length} executable(s) in the shared cargo target are locked or running, and a link that replaces one fails with LNK1105 / error 1224. Wait for that run to finish or end it (by PID, never by image name):\n  ${running.join('\n  ')}`);
   }
 }
 

@@ -15,6 +15,7 @@ export default defineConfig({
     // The `scripts/` entries are the script helpers' vitest suites; other scripts/*.test.mjs use node:test.
     include: [
       'src/**/*.test.ts',
+      'scripts/cargo-cache-helpers.test.mjs',
       'scripts/check-parity.test.mjs',
       'scripts/check-drag-regions.test.mjs',
       'scripts/release-changelog.test.mjs',
