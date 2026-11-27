@@ -226,11 +226,13 @@ pub(super) struct ProcessOutput {
 pub(super) async fn run_process_capture(
     exe_path: &Path,
     args: &[&str],
+    envs: &[(&str, &str)],
     timeout: Duration,
 ) -> Result<ProcessOutput, String> {
     let mut command = Command::new(exe_path);
     command
         .args(args)
+        .envs(envs.iter().copied())
         .creation_flags(CREATE_NO_WINDOW)
         .kill_on_drop(true);
     let output = match tokio::time::timeout(timeout, command.output()).await {
@@ -251,7 +253,7 @@ pub(super) async fn run_process(
     args: &[&str],
     timeout: Duration,
 ) -> Result<(i32, String), String> {
-    let output = run_process_capture(exe_path, args, timeout).await?;
+    let output = run_process_capture(exe_path, args, &[], timeout).await?;
     let message = if output.stderr.is_empty() {
         output.stdout
     } else {

@@ -329,21 +329,18 @@ pub async fn install_github_cli(
     on_progress: impl Fn(DependencyInstallProgress),
 ) -> Result<(), String> {
     let result = install_github_cli_inner(&on_progress).await;
-    match &result {
-        Err(detail) => on_progress(progress(
+    if let Err(detail) = &result {
+        on_progress(progress(
             Dependency::GithubCli,
             InstallPhase::Failed,
             Some(detail.clone()),
             None,
-        )),
-        // gh itself is installed, so a gh-stack failure (already reported as its own step) must not fail this one.
-        Ok(()) => {
-            if let Err(detail) = super::gh_stack_install::install_gh_stack(&on_progress).await {
-                log::warn!("gh-stack install failed after the GitHub CLI install: {detail}");
-            }
-        }
+        ));
     }
-    result
+    super::gh_stack_install::finish_github_cli_install(result, || {
+        super::gh_stack_install::install_gh_stack(&on_progress)
+    })
+    .await
 }
 
 async fn install_github_cli_inner(

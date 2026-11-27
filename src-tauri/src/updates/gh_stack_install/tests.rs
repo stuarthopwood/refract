@@ -42,6 +42,12 @@ impl GhRunner for FakeGh {
     }
 }
 
+impl GhRunner for &FakeGh {
+    fn run(&self, args: &[&str]) -> impl Future<Output = Result<ProcessOutput, String>> + Send {
+        (**self).run(args)
+    }
+}
+
 fn ok(stdout: &str) -> Result<ProcessOutput, String> {
     Ok(ProcessOutput {
         code: 0,
@@ -204,4 +210,93 @@ fn report_step_emits_failed_with_detail_and_returns_the_error() {
     assert_eq!(steps[1].0, Dependency::GhStack);
     assert_eq!(steps[1].1, InstallPhase::Failed);
     assert_eq!(steps[1].2.as_deref(), Some(detail.as_str()));
+}
+
+#[test]
+fn listing_with_a_newer_tag_plans_to_keep_it() {
+    assert_eq!(plan_from_listing(&listing("v0.4.0"), TAG), Plan::KeepNewer);
+    assert_eq!(plan_from_listing(&listing("v0.10.0"), TAG), Plan::KeepNewer);
+}
+
+#[test]
+fn listing_with_a_commit_ref_plans_a_replace() {
+    assert_eq!(plan_from_listing(&listing("a1b2c3d"), TAG), Plan::Replace);
+}
+
+#[tokio::test]
+async fn ensure_pinned_never_downgrades_a_newer_version() {
+    let gh = FakeGh::new(|_| ok(&listing("v0.4.0")));
+    ensure_pinned(&gh, TAG).await.unwrap();
+    assert_eq!(gh.calls(), ["extension list"]);
+}
+
+#[tokio::test]
+async fn a_failed_remove_stops_before_the_install() {
+    let gh = FakeGh::new(|args| match args[1] {
+        "list" => ok(&listing("v0.1.0")),
+        _ => exit(1, "cannot remove"),
+    });
+    let detail = ensure_pinned(&gh, TAG).await.unwrap_err();
+    assert!(detail.contains("cannot remove"), "{detail}");
+    assert_eq!(gh.calls(), ["extension list", "extension remove stack"]);
+}
+
+#[tokio::test]
+async fn a_failed_install_after_a_replace_says_gh_stack_is_now_missing() {
+    let gh = FakeGh::new(|args| match args[1] {
+        "list" => ok(&listing("v0.1.0")),
+        "remove" => ok(""),
+        _ => exit(1, "rate limit"),
+    });
+    let detail = ensure_pinned(&gh, TAG).await.unwrap_err();
+    assert!(detail.contains("now missing"), "{detail}");
+    assert!(detail.contains("rate limit"), "{detail}");
+}
+
+#[tokio::test]
+async fn without_gh_the_step_fails_with_the_manual_hint() {
+    let steps = Mutex::new(Vec::new());
+    let result = install_with(
+        || Err::<FakeGh, ()>(()),
+        TAG,
+        &|p: DependencyInstallProgress| steps.lock().unwrap().push((p.dependency, p.phase)),
+    )
+    .await;
+    let detail = result.unwrap_err();
+    assert!(detail.contains("not installed"), "{detail}");
+    assert!(detail.contains("--pin v0.3.0"), "{detail}");
+    assert_eq!(
+        steps.into_inner().unwrap(),
+        [(Dependency::GhStack, InstallPhase::Failed)]
+    );
+}
+
+#[tokio::test]
+async fn the_pinned_constant_is_what_the_install_path_requests() {
+    let gh = FakeGh::new(|args| ok(if args[1] == "list" { "" } else { "installed" }));
+    install_with(|| Ok::<_, ()>(&gh), GH_STACK_PINNED_TAG, &|_| {})
+        .await
+        .unwrap();
+    assert_eq!(
+        gh.calls().last().unwrap(),
+        &format!("extension install github/gh-stack --pin {GH_STACK_PINNED_TAG}")
+    );
+}
+
+#[tokio::test]
+async fn a_gh_stack_failure_does_not_fail_the_gh_install() {
+    let result = finish_github_cli_install(Ok(()), || ready(Err("no network".to_string()))).await;
+    assert_eq!(result, Ok(()));
+}
+
+#[tokio::test]
+async fn a_failed_gh_install_skips_the_gh_stack_step() {
+    let ran = Mutex::new(false);
+    let result = finish_github_cli_install(Err("gh failed".to_string()), || {
+        *ran.lock().unwrap() = true;
+        ready(Ok(()))
+    })
+    .await;
+    assert_eq!(result, Err("gh failed".to_string()));
+    assert!(!*ran.lock().unwrap());
 }
