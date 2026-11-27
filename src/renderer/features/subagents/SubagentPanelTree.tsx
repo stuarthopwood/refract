@@ -99,7 +99,7 @@ const StageTreeRow = memo(function StageTreeRow({ row, index, tabbable, sessionI
       onBlur={(event: FocusEvent<HTMLDivElement>) => {
         if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
       }}
-      className={cn(ROW_CLASS, 'py-1')}
+      className={cn(ROW_CLASS, 'rounded-none', row.posinset > 1 && 'border-t border-divider')}
       data-status={stage.status}
     >
       <StageHeader
@@ -113,9 +113,9 @@ const StageTreeRow = memo(function StageTreeRow({ row, index, tabbable, sessionI
           </IconButton>
         }
       />
-      {/* pl-8 = icon slot plus gap, so "Uses:" starts under the title, as on the card. These links stay tab stops: they are the only
+      {/* pl-9 = the row's px-2, the 18px status column and its 10px gap, so "Uses:" starts under the title, as on the card. These links stay tab stops: they are the only
           keyboard route to the agent a Stage depends on, the tree has no jump key, and the Stage's name already lists them. */}
-      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="pl-8 pr-2" />
+      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="pl-9 pr-2" />
       <RowDescription id={descriptionId} text={row.description} />
     </div>
   )
@@ -138,8 +138,8 @@ const AgentTreeRow = memo(function AgentTreeRow({ row, index, tabbable, selected
       tabIndex={tabbable ? 0 : -1}
       onFocus={() => onFocusRow(row)}
       onKeyDown={(event) => onKeyDown(event, index)}
-      // pl-6 puts the card under the Stage title; hover matches the other panel rows.
-      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-6 p-1 hover:bg-row-hover-bg')}
+      // ml-9 puts the card under the Stage title, as on the chat card; hover matches the other panel rows.
+      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-9 mr-2 p-1 hover:bg-row-hover-bg')}
     >
       {selected && <ActiveIndicatorBar />}
       {/* Issue #712: a detached background job keeps its muted "Background" word. */}

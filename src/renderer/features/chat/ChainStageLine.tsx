@@ -80,7 +80,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
   }, [expanded])
   return (
     // aria-live="off": the running Stage's outcome line changes often and must not be announced; the settle announcer speaks for it.
-    <div role="group" aria-label={stageAccessibleName(stage.view)} aria-live="off" className="@container text-sm" data-status={status}>
+    <div role="group" aria-label={stageAccessibleName(stage.view)} aria-live="off" className="@container border-t border-divider text-sm first:border-t-0" data-status={status}>
       <StageHeader
         stage={stage.view}
         expanded={expanded}
@@ -88,17 +88,14 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
         columnFocusable={!canJump}
         renderTitle={
           canJump
-            ? ({ label, colorClass }) => (
+            ? ({ content }) => (
                 <button
                   type="button"
-                  className={cn(
-                    'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 -my-1 hover:bg-muted hover:underline focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring',
-                    colorClass
-                  )}
+                  className="-mx-1 -my-1 flex min-w-0 max-w-full cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-muted hover:underline focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring"
                   aria-label={`Go to ${speechHeading}`}
                   onClick={() => jumpToStageRow(stage.id)}
                 >
-                  {label}
+                  {content}
                 </button>
               )
             : undefined
@@ -116,12 +113,12 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           </IconButton>
         }
       />
-      {/* pl-8 = icon slot plus gap, so "Uses:" starts under the title. */}
-      <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-8 pr-2" />
+      {/* pl-9 = the row's px-2 (8px), the 18px status column and its 10px gap, so "Uses:" starts under the title. */}
+      <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-9 pr-2" />
       <FadeCollapse show={expanded}>
         <div ref={contentRef}>
-          {/* pl-8 = icon slot plus gap, so the agent panels start under the Stage title; no rail or elbows (#2235). */}
-          <SpineList bare className={cn('pl-8', stageAgentsGridClass(parallelCount))}>
+          {/* The same inset puts the agent panels under the Stage title; no rail or elbows (#2235). */}
+          <SpineList bare className={cn('pb-2 pl-9 pr-2', stageAgentsGridClass(parallelCount))}>
             {stage.items.map((item, index) => (
               <SpineItem key={item.id} isNew={false}>
                 <ChainAgentEntry item={item} agent={stage.view.agents[index]!} sessionId={sessionId} />

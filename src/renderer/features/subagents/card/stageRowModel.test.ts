@@ -26,6 +26,12 @@ describe('stageRowModel', () => {
       expect(model.chipAgent?.name).toBe('Solo')
       expect(model.parallelCount).toBe(0)
     })
+
+    it('hides the agent name when it only repeats the Stage title, ignoring case and padding', () => {
+      expect(stageRowModel(view([agent('Gate')], { cleanTitle: 'Gate' })).chipAgent).toBeNull()
+      expect(stageRowModel(view([agent(' gate ')], { cleanTitle: 'Gate' })).chipAgent).toBeNull()
+      expect(stageRowModel(view([agent('Solo')], { cleanTitle: null })).chipAgent?.name).toBe('Solo')
+    })
   })
 
   describe('given several agents', () => {

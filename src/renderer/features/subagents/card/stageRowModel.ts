@@ -15,7 +15,7 @@ export function stageAccessibleName(stage: Pick<StageItem, 'number' | 'cleanTitl
 }
 
 export interface StageRowModel {
-  /** The one agent a single-agent Stage shows as an inline chip; null for several agents. */
+  /** The one agent a single-agent Stage names as quiet text; null for several agents, or when its name just repeats the Stage title (FR-176). */
   chipAgent: SubAgentItem | null
   /** Agents in a parallel Stage; 0 when the Stage is not parallel, so no badge is drawn. */
   parallelCount: number
@@ -31,8 +31,10 @@ export function stageRowModel(view: StageRowView): StageRowModel {
   const { agents } = view
   const outcome = view.outcomeSummary?.trim() || (view.status === 'running' ? agents.find((agent) => agent.status === 'running')?.liveDetail?.trim() : undefined)
   const rawLabel = view.rawLabel?.trim()
+  const solo = agents.length === 1 ? (agents[0] ?? null) : null
+  const repeatsTitle = solo != null && view.cleanTitle != null && solo.name.trim().toLowerCase() === view.cleanTitle.trim().toLowerCase()
   return {
-    chipAgent: agents.length === 1 ? (agents[0] ?? null) : null,
+    chipAgent: repeatsTitle ? null : solo,
     parallelCount: agents.length > 1 ? agents.length : 0,
     outcome: outcome || undefined,
     outcomePlain: outcome ? plainSummary(outcome) : undefined,

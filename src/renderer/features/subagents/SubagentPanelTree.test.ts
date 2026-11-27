@@ -65,8 +65,8 @@ describe('PanelTree', () => {
   })
 
   describe('given a one-agent Stage', () => {
-    it('shows the agent as an inline chip', () => {
-      expect(render([PAIR[0]!])).toContain('data-agent-chip')
+    it('draws no chip when the agent name only repeats the Stage title', () => {
+      expect(render([PAIR[0]!])).not.toContain('data-agent-chip')
     })
   })
 

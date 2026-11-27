@@ -59,12 +59,12 @@ describe('ChainStageLine', () => {
     const html = render(SOLO())
 
     it('shows the clean title and the persistent one-line outcome', () => {
-      expect(html).toContain('Stage 1 \u00b7 Solo')
+      expect(html).toContain('Stage 1')
       expect(html).toMatch(/data-stage-outcome[^>]*>[\s\S]*?<p[^>]*>Fixed the flaky test<\/p>/)
     })
 
-    it('shows the agent as an inline chip and no parallel badge', () => {
-      expect(html).toContain('data-agent-chip')
+    it('shows no agent chip when the name only repeats the Stage title, and no parallel badge', () => {
+      expect(html).not.toContain('data-agent-chip')
       expect(html).not.toContain('data-parallel-badge')
     })
   })
@@ -72,8 +72,8 @@ describe('ChainStageLine', () => {
   describe('given a parallel Stage', () => {
     const html = render(RUNNING_GATE())
 
-    it('shows the "N parallel" badge and no inline chip', () => {
-      expect(html).toContain('2 parallel')
+    it('shows the bare-count parallel badge with a screen-reader name and no inline chip', () => {
+      expect(html).toContain('data-parallel-badge')
       expect(html).toContain('2 agents in parallel')
       expect(html).not.toContain('data-agent-chip')
     })
@@ -99,7 +99,7 @@ describe('ChainStageLine open state (FR-149)', () => {
   describe('given a settled Stage', () => {
     it('collapses it, hiding the agents but keeping the header, chip, badge and outcome', () => {
       const collapsed = render(GATE())
-      expect(collapsed).toContain('2 parallel')
+      expect(collapsed).toContain('data-parallel-badge')
       expect(collapsed).toContain('data-stage-outcome')
       expect(collapsed).not.toContain('<ol')
       expect(render(SOLO())).not.toContain('<ol')

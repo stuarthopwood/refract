@@ -1,10 +1,9 @@
 import * as React from 'react'
 import type { TranscriptItem } from '../../../shared/model'
-import { cn } from '@/lib/utils'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
 import { ToolIcon } from '@/components/ToolIcon'
 import { resolveToolDisplay } from './toolDisplay'
-import { isSubagentSuccessStatus, SUBAGENT_STATUS_LABEL, SUBAGENT_SUCCESS_TEXT_CLASS, SubagentStatusGlyph } from '../subagents/subagentStatus'
+import { SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
 import { CodeBlock, inferOutputBlock } from './Markdown'
 import { plainSummary, stripTaskResultWrapper } from './stageMeta'
 import { ResultMarkdown } from '../subagents/card/ResultMarkdown'
@@ -151,7 +150,6 @@ export function SubagentRow({ item, agent, showGoal, variant = 'default' }: Suba
     <CollapsedLine
       icon={<ToolIcon icon={resolveToolDisplay('task').icon} />}
       label={item.name}
-      labelClassName={cn(isSubagentSuccessStatus(status) && SUBAGENT_SUCCESS_TEXT_CLASS)}
       summary={resultSummary}
       meta={meta}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
