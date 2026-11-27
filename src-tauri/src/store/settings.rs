@@ -146,14 +146,14 @@ pub use chat_row_density::ChatRowDensity;
 mod animated_status_text;
 #[path = "code_ligatures.rs"]
 mod code_ligatures;
-#[path = "reduce_motion.rs"]
-mod reduce_motion;
 #[path = "default_clone_folder.rs"]
 mod default_clone_folder;
 #[path = "finished_turn_times.rs"]
 mod finished_turn_times;
 #[path = "notification_sounds.rs"]
 mod notification_sounds;
+#[path = "reduce_motion.rs"]
+mod reduce_motion;
 #[path = "scrollbar_map.rs"]
 mod scrollbar_map;
 #[path = "stacked_pull_requests.rs"]
