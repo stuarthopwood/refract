@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.45.0 (2026-11-27)
+
+### Features
+
+- feat(usage): add 14 day, month-to-date and year-to-date ranges (https://github.com/stuarthopwood/refract/pull/2256)
+- feat(token-guard): default cache retention to long (https://github.com/stuarthopwood/refract/pull/2258)
+- feat(usage): categorise tool-call errors (https://github.com/stuarthopwood/refract/pull/2260)
+
+### Fixes
+
+- fix(usage): use the gauge icon for Usage (https://github.com/stuarthopwood/refract/pull/2254)
+- fix(usage): keep the view interactive under the refresh overlay (https://github.com/stuarthopwood/refract/pull/2255)
+- fix(usage): attribute spend by stable project id (https://github.com/stuarthopwood/refract/pull/2259)
+
 ## v0.44.0 (2026-11-26)
 
 ### Features
