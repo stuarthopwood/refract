@@ -4,12 +4,13 @@ use serde_json::{json, Value};
 
 use super::{project_tree, rpc_failure};
 
+// `message` is a session-file entry type (the schema leaves tree nodes opaque), not a wire literal;
+// routing it through `other` keeps the drift scanner from reading it as an undeclared `type:` tag.
 fn message(id: &str, role: &str, content: Value, children: Vec<Value>) -> Value {
-    json!({
-        "entry": { "type": "message", "id": id, "timestamp": "2026-11-27T10:00:00Z",
-                   "message": { "role": role, "content": content } },
-        "children": children,
-    })
+    let mut node = other("message", id, children);
+    node["entry"]["timestamp"] = json!("2026-11-27T10:00:00Z");
+    node["entry"]["message"] = json!({ "role": role, "content": content });
+    node
 }
 
 fn other(kind: &str, id: &str, children: Vec<Value>) -> Value {

@@ -3,13 +3,14 @@
 `rpc-wire.schema.json` is vendored verbatim (no edits) from the published npm package, pinned to
 the exact version cross-checked against the installed `omp` CLI at the time of pinning:
 
-- **Package**: `@oh-my-pi/pi-coding-agent@18.10.1`
-- **Fetched with**: `npm pack @oh-my-pi/pi-coding-agent@18.10.1 --silent`, extracted to a scratch
+- **Package**: `@oh-my-pi/pi-coding-agent@18.22.2`
+- **Fetched with**: `npm pack @oh-my-pi/pi-coding-agent@18.22.2 --silent`, extracted to a scratch
   temp directory, and copied out verbatim:
   - `package/src/modes/rpc/wire/rpc-wire.schema.json` -> `rpc-wire.schema.json`
   - `package/LICENSE` -> `LICENSE-oh-my-pi.txt` (MIT; see "Licensing" below)
-- **Date pinned**: 2026-10-14
-- **Cross-checked against installed `omp` CLI version**: `omp/18.10.1` (`omp --version`), i.e. the
+- **Date pinned**: 2026-11-27 (re-vendored from 18.10.1, pinned 2026-10-14, for the #696 tree RPCs
+  `get_tree`, `fork`, `set_label`, `navigate_tree`, `abort_branch_summary`)
+- **Cross-checked against installed `omp` CLI version**: `omp/18.22.2` (`omp --version`), i.e. the
   pinned schema package version matches the installed CLI version exactly at pin time.
 
 Note: `package/src/modes/rpc/wire/rpc-wire.generated.ts` was vendored alongside the schema in an
