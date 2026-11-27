@@ -295,3 +295,7 @@ pub async fn commit(worktree_path: &Path, message: &str) -> Result<(), GitError>
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "changes_status_tests.rs"]
+mod tests;

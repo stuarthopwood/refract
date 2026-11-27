@@ -50,3 +50,7 @@ pub async fn add_worktree_for_issue(
         .chain((2..=MAX_ATTEMPTS).map(move |suffix| format!("{base}-{suffix}")));
     add_worktree_with_candidates(repo, &base_branch, candidates).await
 }
+
+#[cfg(test)]
+#[path = "issue_branch_tests.rs"]
+mod tests;

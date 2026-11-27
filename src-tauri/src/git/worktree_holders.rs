@@ -527,3 +527,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "worktree_holders_probe_tests.rs"]
+mod probe_tests;

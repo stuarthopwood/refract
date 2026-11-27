@@ -180,3 +180,7 @@ pub async fn diff_text(
         None => Ok((String::new(), None)),
     }
 }
+
+#[cfg(test)]
+#[path = "changes_diff_tests.rs"]
+mod tests;
