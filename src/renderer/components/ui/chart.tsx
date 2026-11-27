@@ -285,7 +285,7 @@ export function StackedBarChart({ title, summary, view, series, buckets, formatV
             <ChartTooltip
               key={cursor.active}
               entry={entry}
-              anchorClassName="inset-y-0 bg-foreground/10"
+              anchorClassName="inset-y-0 bg-chart-cursor-bg"
               anchorStyle={{ left: `${(cursor.active / buckets.length) * 100}%`, width: `${100 / buckets.length}%` }}
             />
           )}
@@ -358,7 +358,7 @@ export function BarChart({ title, summary, view, rows, formatValue, labelHeader,
                   vectorEffect="non-scaling-stroke"
                 />
               </svg>
-              {cursor.active === i && entry && <ChartTooltip entry={entry} anchorClassName="inset-0 rounded-sm bg-foreground/10" />}
+              {cursor.active === i && entry && <ChartTooltip entry={entry} anchorClassName="inset-0 rounded-sm bg-chart-cursor-bg" />}
             </li>
           ))}
         </ul>
