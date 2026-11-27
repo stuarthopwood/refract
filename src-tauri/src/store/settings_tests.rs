@@ -104,7 +104,10 @@ async fn set_transcript_display_persists_across_a_reopen() {
 #[tokio::test]
 async fn tool_targets_defaults_to_hover_and_corrects_unknown_values() {
     let fresh = open_scratch_store(None).await;
-    assert_eq!(fresh.get().transcript_display.tool_targets, ToolTargets::Hover);
+    assert_eq!(
+        fresh.get().transcript_display.tool_targets,
+        ToolTargets::Hover
+    );
     for bad in [json!("sideways"), json!(3), Value::Null] {
         let store = open_scratch_store(Some(json!({
             "version": 1, "approvalMode": "ask", "sessionReadout": {}, "split": null,
@@ -112,7 +115,10 @@ async fn tool_targets_defaults_to_hover_and_corrects_unknown_values() {
             "transcriptDisplay": { "thinking": true, "toolCalls": true, "toolTargets": bad }
         })))
         .await;
-        assert_eq!(store.get().transcript_display.tool_targets, ToolTargets::Hover);
+        assert_eq!(
+            store.get().transcript_display.tool_targets,
+            ToolTargets::Hover
+        );
     }
 }
 
@@ -129,7 +135,10 @@ async fn set_tool_targets_persists_across_a_reopen_and_leaves_the_flags_alone() 
     assert_eq!(after.transcript_display.tool_targets, ToolTargets::Hide);
     assert!(!after.transcript_display.thinking);
     let reopened = SettingsStore::open(&dir).await.unwrap();
-    assert_eq!(reopened.get().transcript_display.tool_targets, ToolTargets::Hide);
+    assert_eq!(
+        reopened.get().transcript_display.tool_targets,
+        ToolTargets::Hide
+    );
 }
 
 #[tokio::test]
