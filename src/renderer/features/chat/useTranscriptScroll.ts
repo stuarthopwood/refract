@@ -10,11 +10,10 @@ interface UseTranscriptScrollOptions {
   sessionId: string
   generation: number
   items: readonly TranscriptItem[]
-  isTurnRunning: boolean
 }
 
-/** Wires one `Transcript`'s scroll behaviour: the follow-the-end policy (#459), the landing on a Session's saved position and the jump hold (#1021). The logic lives in `createTranscriptScroll`; this binds it to the DOM and React. */
-export function useTranscriptScroll({ sessionId, generation, items, isTurnRunning }: UseTranscriptScrollOptions) {
+/** Wires one `Transcript`'s scroll behaviour: the follow-the-end policy (#459) and the landing on a Session's saved position. The logic lives in `createTranscriptScroll`; this binds it to the DOM and React. */
+export function useTranscriptScroll({ sessionId, generation, items }: UseTranscriptScrollOptions) {
   const viewportRef = React.useRef<HTMLDivElement>(null)
   const scrollerRootRef = React.useRef<HTMLDivElement>(null)
   const buttonRef = React.useRef<HTMLButtonElement>(null)
@@ -22,13 +21,11 @@ export function useTranscriptScroll({ sessionId, generation, items, isTurnRunnin
   const { isRecentGesture, resetGesture, gestureProps } = useScrollGestureTracking()
   const [followState, setFollowState] = React.useState<FollowState>({ suppressed: false, isAtEnd: true, newContent: false })
 
-  // The callbacks below outlive a render (jump loops, the resize observer), so they read these through refs.
+  // The callbacks below outlive a render (jump loops, the resize observer), so they read the id through a ref.
   const sessionIdRef = React.useRef(sessionId)
-  const turnRunningRef = React.useRef(isTurnRunning)
   React.useLayoutEffect(() => {
     sessionIdRef.current = sessionId
-    turnRunningRef.current = isTurnRunning
-  }, [sessionId, isTurnRunning])
+  }, [sessionId])
 
   const [scroll] = React.useState(() =>
     createTranscriptScroll({
@@ -37,8 +34,7 @@ export function useTranscriptScroll({ sessionId, generation, items, isTurnRunnin
       resetGesture,
       record: (state) => useChatScrollStore.getState().record(sessionIdRef.current, state),
       prefersReducedMotion,
-      onChange: setFollowState,
-      isTurnRunning: () => turnRunningRef.current
+      onChange: setFollowState
     })
   )
   const { follow, jumpControl, landingRef } = scroll

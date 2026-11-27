@@ -4,7 +4,7 @@ import { createTranscriptScroll, type TranscriptScroll } from './transcriptScrol
 
 // Vitest runs this folder in a node environment (no jsdom), so the scroller is a plain object that
 // keeps the browser rules the policy depends on: `scrollTop` clamps to the scrollable range and a
-// write queues one `scroll` event for the next frame. (#459, #1021)
+// write queues one `scroll` event for the next frame. (#459)
 
 export class FakeNode {}
 // `scrollLanding` narrows event targets with `instanceof Node`, which the node environment lacks.
@@ -112,10 +112,9 @@ export class FakeRoot {
 export interface FollowHarnessOptions {
   contentHeight?: number
   clientHeight?: number
-  /** How the vendored scroller reacts to growth. `follows`: pins to the end while `autoScroll` is on.
-   * `misses-late`: pins on streamed text but not on a late height change (Shiki, Mermaid, tool-group merge).
-   * `drags-always`: pins even with `autoScroll` off, the ungated follow behind #1021. */
-  library?: 'follows' | 'misses-late' | 'drags-always'
+  /** How the vendored scroller reacts to growth. `follows`: pins to the end while `autoScroll` is on, and only then.
+   * `misses-late`: pins on streamed text but not on a late height change (Shiki, Mermaid, tool-group merge). */
+  library?: 'follows' | 'misses-late'
 }
 
 /** Everything a test needs to run a `Transcript`'s scroll behaviour frame by frame. */
@@ -126,8 +125,6 @@ export class FollowHarness {
   readonly scroll: TranscriptScroll
   readonly recorded: SessionScrollState[] = []
   states: FollowState[] = []
-  /** True while the Session's turn streams; a jump away from the end holds only then. */
-  turnRunning = true
   recentGesture = false
   reducedMotion = true
   private queue: FrameRequestCallback[] = []
@@ -146,8 +143,7 @@ export class FollowHarness {
       resetGesture: () => {},
       record: (state) => this.recorded.push(state),
       prefersReducedMotion: () => this.reducedMotion,
-      onChange: (state) => this.states.push(state),
-      isTurnRunning: () => this.turnRunning
+      onChange: (state) => this.states.push(state)
     })
     // A ResizeObserver reports once on observe; seeding it gives the policy its first height to compare against.
     this.scroll.follow.handleResize()
@@ -223,7 +219,7 @@ export class FollowHarness {
 
   private libraryPin(active: boolean) {
     if (!active) return
-    if (this.library === 'drags-always' || !this.follow.getState().suppressed) this.viewport.scrollTop = this.viewport.maxScrollTop
+    if (!this.follow.getState().suppressed) this.viewport.scrollTop = this.viewport.maxScrollTop
   }
 
   /** A real wheel scroll: the gesture flag the policy reads, then the position change. */

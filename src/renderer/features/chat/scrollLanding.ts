@@ -37,29 +37,17 @@ export function resolveLandingScrollTop(
   return Math.min(memory.scrollTop, maxScrollTop)
 }
 
-/** Keeps a landed target pinned while something else (a streaming turn) keeps changing the content under it. */
-export interface ScrollHold {
-  /** Checked each frame after the first settle; the hold ends the first time this is false. */
-  active: () => boolean
-  /** Called on each held frame in which the content below the target grew (distance from the target to the end), not on growth above it. */
-  onGrow: () => void
-  /** Called once when `active` turns false; the caller releases what the hold kept claimed. Never after an interrupt. */
-  onEnded: () => void
-}
-
 export interface ScrollSettleLoopCallbacks {
   /** Computes each frame's target `scrollTop` from fresh viewport metrics. */
   computeTarget: (metrics: ViewportMetrics) => number
-  /** Called once when the loop settles (stable height and on-target, or max frames); never after an interrupt. `holding` is true when the loop keeps running as a hold. */
-  onSettled: (landedAtEnd: boolean, holding: boolean) => void
-  /** Called once if real user input on `root` takes over before the loop settles, or during a hold. */
+  /** Called once when the loop settles (stable height and on-target, or max frames); never after an interrupt. */
+  onSettled: (landedAtEnd: boolean) => void
+  /** Called once if real user input on `root` takes over before the loop settles. */
   onInterrupted: (atEnd: boolean) => void
   /** Checked at the start of each frame; true stops the loop without a write and calls `onAborted`. */
   shouldAbort?: () => boolean
   /** Called once if `shouldAbort` fires; a caller supplying `shouldAbort` must release its in-progress state here or follow-bottom stays dead. (#1008) */
   onAborted: () => void
-  /** After a settle away from the end, keep re-asserting the target until user input, a scroll that is not ours, a cancel or `hold.active()` turning false. (#1021) */
-  hold?: ScrollHold
 }
 
 /** Polls via `requestAnimationFrame`, re-applying a computed `scrollTop` until it settles or the user takes over; returns a silent `cancel()`. */
@@ -69,8 +57,6 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
   let stableFrames = 0
   let lastHeight = -1
   let lastAssignedScrollTop = -1
-  let lastBelow = 0
-  let holding = false
 
   function removeInputListeners() {
     root.removeEventListener('wheel', handleViewportPointerOrWheel)
@@ -78,7 +64,6 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
     root.removeEventListener('pointerdown', handleViewportPointerOrWheel)
     root.removeEventListener('touchstart', handleViewportPointerOrWheel)
     root.removeEventListener('focusin', handleFocusInput)
-    viewport.removeEventListener('scroll', handleHeldScroll)
   }
 
   function handleUserInput() {
@@ -102,14 +87,6 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
     handleUserInput()
   }
 
-  // Voice control and switch access move the view without a wheel, key or pointer. A move off the held value that no height growth explains is the reader's.
-  function handleHeldScroll() {
-    if (cancelled || !holding) return
-    const { scrollTop, scrollHeight, clientHeight } = viewport
-    if (scrollHeight > lastHeight) return
-    const expected = Math.min(lastAssignedScrollTop, Math.max(0, scrollHeight - clientHeight))
-    if (Math.abs(scrollTop - expected) > SCROLL_PERTURBATION_TOLERANCE_PX) handleUserInput()
-  }
   function handleViewportPointerOrWheel(event: Event) {
     if (!(event.target instanceof Node) || !viewport.contains(event.target)) return
     handleUserInput()
@@ -130,46 +107,20 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
       return
     }
     const { scrollHeight, clientHeight } = viewport
-    const hold = callbacks.hold
-    if (holding && hold) {
-      if (!hold.active()) {
-        cancelled = true
-        removeInputListeners()
-        hold.onEnded()
-        return
-      }
-      const target = callbacks.computeTarget({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
-      const below = scrollHeight - target - clientHeight
-      if (below > lastBelow) hold.onGrow()
-      lastBelow = below
-      lastHeight = scrollHeight
-      if (viewport.scrollTop !== target) viewport.scrollTop = target
-      lastAssignedScrollTop = target
-      requestAnimationFrame(step)
-      return
-    }
     const heightStable = scrollHeight === lastHeight
     const notPerturbed = lastAssignedScrollTop === -1 || Math.abs(viewport.scrollTop - lastAssignedScrollTop) < SCROLL_PERTURBATION_TOLERANCE_PX
     stableFrames = heightStable && notPerturbed ? stableFrames + 1 : 0
     lastHeight = scrollHeight
     frame += 1
     const target = callbacks.computeTarget({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
-    if (viewport.scrollTop !== target) viewport.scrollTop = target
+    viewport.scrollTop = target
     lastAssignedScrollTop = target
     if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
+      cancelled = true
+      removeInputListeners()
       const landedAtEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
-      // A landing at the end needs no hold: the follow policy already keeps the end in view.
-      holding = !landedAtEnd && Boolean(callbacks.hold?.active())
-      if (holding) {
-        lastBelow = scrollHeight - target - clientHeight
-        viewport.addEventListener('scroll', handleHeldScroll, { passive: true })
-      }
-      if (!holding) {
-        cancelled = true
-        removeInputListeners()
-      }
-      callbacks.onSettled(landedAtEnd, holding)
-      if (!holding) return
+      callbacks.onSettled(landedAtEnd)
+      return
     }
     requestAnimationFrame(step)
   }

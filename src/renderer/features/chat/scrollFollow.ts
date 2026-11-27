@@ -37,7 +37,7 @@ export interface ScrollFollow {
   handleScroll: () => void
   handleResize: () => void
   scrollToEnd: () => void
-  /** Records the current height as seen, so growth that happened while a landing or hold owned the view is not read as new content. */
+  /** Records the current height as seen, so growth that happened while a landing or jump owned the view is not read as new content. */
   syncHeight: () => void
   /** Forgets the last height: the next resize only seeds it. Used when a different Session's content takes the viewport. */
   resetHeight: () => void

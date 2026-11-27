@@ -213,7 +213,7 @@ export function Transcript({
   let isFirstRow = true
 
   const { viewportRef, scrollerRootRef, buttonRef, contentRef, gestureProps, follow, jumpControl, followState, handleScrollToEnd } =
-    useTranscriptScroll({ sessionId, generation: transcript.generation, items, isTurnRunning })
+    useTranscriptScroll({ sessionId, generation: transcript.generation, items })
   const { suppressed: autoScrollSuppressed, isAtEnd, newContent } = followState
 
   const landingKey = `${sessionId}:${transcript.generation}`

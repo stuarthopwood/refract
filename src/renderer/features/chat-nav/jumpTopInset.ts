@@ -2,7 +2,7 @@ import { JUMP_SCROLL_TOP_MARGIN_PX } from '../chat/stageJump'
 
 const FIND_BAR_GAP_PX = 24
 
-// A held jump asks for the inset every frame. While no Find bar is mounted (nearly always) the answer
+// A jump's settle loop asks for the inset every frame. While no Find bar is mounted (nearly always) the answer
 // is the plain margin, so a counter the bar maintains spares each frame a subtree query.
 let openFindBars = 0
 

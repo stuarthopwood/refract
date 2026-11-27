@@ -9,8 +9,6 @@ export interface TranscriptScrollDeps {
   record: FollowDeps['record']
   prefersReducedMotion: FollowDeps['prefersReducedMotion']
   onChange: FollowDeps['onChange']
-  /** Read live: a memoised jump callback must not see a stale running state. (#1021) */
-  isTurnRunning: () => boolean
 }
 
 type Sendable = readonly { kind: string; id: string }[]
@@ -21,11 +19,11 @@ export interface TranscriptScroll {
   jumpControl: JumpControl
   /** True while a landing or jump loop owns `scrollTop`. */
   landingRef: { current: boolean }
-  /** Scroll to end: ends any jump hold, then follows the end again. */
+  /** Scroll to end: cancels any jump, then follows the end again. */
   scrollToEnd: () => void
   /** A different Session's (or generation's) content takes the viewport: claim it until the landing settles. */
   beginLanding: (memory: SessionScrollState | undefined) => void
-  /** Called with the items after every change; a new send ends a hold and follows. Skipped across a landing-key change so the saved position wins. (#459) */
+  /** Called with the items after every change; a new send follows the end. Skipped across a landing-key change so the saved position wins. (#459) */
   noteItems: (landingKey: string, items: Sendable) => void
 }
 
@@ -50,9 +48,7 @@ export function createTranscriptScroll(deps: TranscriptScrollDeps): TranscriptSc
     resetGesture: deps.resetGesture,
     setAutoScrollSuppressed: (suppressed) => follow.setState({ suppressed }),
     setIsAtEnd: (isAtEnd) => follow.setState({ isAtEnd }),
-    markNewContent: () => follow.setState({ newContent: true }),
-    syncHeight: follow.syncHeight,
-    isTurnRunning: deps.isTurnRunning
+    syncHeight: follow.syncHeight
   }
 
   function scrollToEnd() {
