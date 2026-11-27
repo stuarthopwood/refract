@@ -43,7 +43,7 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
   // The sub-card button (`interactive` false) holds this body, and a button may hold only phrasing content: spans (`block`/`flex`), never `p`/`ul`/`li`,
   // so its outcome is plain text there; the panel's tree row is a `div` and keeps the shared Markdown.
   return (
-    <span className={cn('block min-w-0 space-y-2', flat && 'min-h-5 border-l-2 border-divider py-1 pl-3')}>
+    <span className={cn('block min-w-0 space-y-2', flat && 'min-h-5 border-l-2 border-divider py-1 pl-2')}>
       {flat ? (
         flatLead && <span className="block min-w-0 truncate text-xs text-muted-foreground">{flatLead}</span>
       ) : (
