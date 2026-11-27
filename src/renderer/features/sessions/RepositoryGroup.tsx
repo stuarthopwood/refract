@@ -21,7 +21,7 @@ import { ReportIssueDialog } from './ReportIssueDialog'
 import { useSidebarRgb } from './useSidebarRgb'
 import { projectColorCss } from '@/lib/projectColor'
 import { useFocusSearchOnStrandedUnmount } from './useFocusSearchOnStrandedUnmount'
-import { groupWaitingState } from './sessionDisplay'
+import { collapsedActiveSessions, groupWaitingState } from './sessionDisplay'
 import { SessionFlatList, SessionTreeList } from './SessionTreeList'
 import { buildSessionTree } from './sessionTree'
 import { ContextActionItems, DropdownActionItems } from './SessionRowParts'
@@ -221,6 +221,7 @@ export function RepositoryGroup({
               onDoubleClick={startRenaming}
               onKeyDown={handleTriggerKeyDown}
               marker={marker}
+              activeSessions={collapsedActiveSessions(active, isOpen)}
               containsOpenSession={containsOpenSession}
               color={projectColor}
             />
