@@ -608,6 +608,7 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   still, which a literal reading of "quiet" above could otherwise be misread as). (Amended
   2026-10-21, issue #700 slice (b): the chip's own hover/focus card, FR-032, shows a one-line
   summary and elapsed time per running agent, built from this same count data.)
+  (Amended 2026-11-27, epic #1272: the wording above is superseded by spec 001 FR-201 (issue #1085): the chip shows only a running count, or the current turn's "N failed"/"N exited" until the next turn, never "N finished".)
 - **FR-008**: Every chip MUST update live as the underlying value changes, MUST retain its last
   known value when a live reading is momentarily unavailable but the readout is otherwise
   meaningful (FR-002, FR-003), and MUST NOT block typing into or sending from the message box.
