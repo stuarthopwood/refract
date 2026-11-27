@@ -76,7 +76,7 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
       {hasLive && (
         <span className={cn('block space-y-2', !flat && 'border-t border-divider pt-2')}>
           {!flat && <Heartbeat liveDetail={liveDetail} />}
-          <SubStepList steps={subSteps} />
+          <SubStepList steps={subSteps} interactive={interactive} />
         </span>
       )}
     </span>

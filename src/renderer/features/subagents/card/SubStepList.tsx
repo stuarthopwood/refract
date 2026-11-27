@@ -40,12 +40,13 @@ function StepGlyph({ step }: { step: SubStep }) {
 
 const STEP_STATE_LABEL: Record<SubStep['status'], string> = { done: 'done', running: 'running', pending: 'queued' }
 
-// Spans, not a list: the sub-card button holds this, and a `ul` inside a button is invalid. The name stays on the group.
-export function SubStepList({ steps }: { steps: readonly SubStep[] | undefined }) {
+// Spans, not a list: the sub-card button holds this, and a `ul` inside a button is invalid. `interactive` false is that button host, where a
+// group role and name are dropped (the button's own name wins); the panel's tree row keeps the named group.
+export function SubStepList({ steps, interactive = true }: { steps: readonly SubStep[] | undefined; interactive?: boolean }) {
   if (steps == null || steps.length === 0) return null
   const { visible, doneFolded, queued } = foldSubSteps(steps)
   return (
-    <span role="group" aria-label="Sub-steps" className="block space-y-1 text-xs">
+    <span {...(interactive && { role: 'group', 'aria-label': 'Sub-steps' })} className="block space-y-1 text-xs">
       {doneFolded > 0 && <span className="block pl-6 text-muted-foreground">{doneFolded} done</span>}
       {visible.map(({ step, index }) => (
         <span key={index} className="flex items-center gap-2">
