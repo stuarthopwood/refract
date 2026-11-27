@@ -6,8 +6,7 @@ import type { SubagentRowStatus } from '../subagentStatus'
 /** One step of an agent's recent activity; `isError` keeps a failed step from reading as success. */
 export interface SubStep {
   label: string
-  /** The step as the agent ran it, only when `label` had shell setup (`cd ... &&`, `export ...;`) stripped; shown as a tooltip. */
-  rawLabel?: string
+  rawLabel?: string // the step before `cd ... &&` / `export ...;` setup was stripped from `label`; tooltip only
   status: 'done' | 'running' | 'pending'
   isError?: boolean
 }
