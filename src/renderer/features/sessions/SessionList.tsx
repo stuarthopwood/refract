@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import { SectionHeading } from '@/components/SectionHeading'
 import { Separator } from '@/components/ui/separator'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, SearchXIcon } from 'lucide-react'
@@ -15,6 +15,7 @@ import { ViewsNavGroup } from './ViewsNavGroup'
 import { TOOLBAR_BUTTON_CLASS } from '@/components/toolbarButtonClass'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
 import { useRepositoriesStore, useSessionListStore, useSessionsStore } from '@/state'
+import { useFilterBarOpen } from '@/state/filter-bar-store'
 import { isProjectSession } from '../../../shared/model'
 import { PersonalAgentRow } from './PersonalAgentRow'
 import { ArchivedGroup } from './ArchivedGroup'
@@ -107,7 +108,7 @@ export function SessionList() {
     setQuery('')
     focusSessionSearch()
   }
-  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useFilterBarOpen('session-list')
   const searchPanelId = useId()
   const filterToggleRef = useRef<HTMLButtonElement>(null)
   // Opening the panel puts focus in the field; it is skipped on mount, when the panel starts closed.

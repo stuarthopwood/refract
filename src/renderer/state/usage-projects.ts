@@ -1,5 +1,5 @@
 // Project picker helpers for the Usage view: a Project is chosen by id but only ever shown by name.
-import type { UsageFilters, UsageProjectOption } from '../../shared/ipc-usage'
+import type { UsageProjectOption } from '../../shared/ipc-usage'
 
 /**
  * Display text per Project id. Two Projects that share a name are told apart by "(removed)" for one
@@ -25,8 +25,3 @@ export function projectLabels(projects: UsageProjectOption[]): Map<string, strin
   return labels
 }
 
-/** The saved filters with a Project filter dropped when the id has no recorded name. */
-export function withKnownProject(filters: UsageFilters, projects: UsageProjectOption[]): UsageFilters {
-  if (!filters.project || projects.some((p) => p.id === filters.project)) return filters
-  return { ...filters, project: null }
-}

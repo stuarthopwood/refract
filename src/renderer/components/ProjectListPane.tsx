@@ -16,6 +16,7 @@ import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/comp
 import { FILTER_PICKER_CLASS, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { RefreshButton } from '@/features/pull-requests/RefreshButton'
 import { formatRelativeTime } from '@/features/sessions/sessionDisplay'
+import { useFilterBarOpen } from '@/state/filter-bar-store'
 import { cn } from '@/lib/utils'
 import type { IpcError } from '../../shared/ipc'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
@@ -85,7 +86,7 @@ export interface ProjectListPaneProps<Tab extends string> {
 
 export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<Tab>) {
   const { noun, idPrefix, state, repositoryIds, projects, skipped, error, itemCount, loading, paging } = props
-  const [filtersOpen, setFiltersOpen] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useFilterBarOpen(idPrefix)
   const [skippedOpen, setSkippedOpen] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)

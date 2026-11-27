@@ -21,7 +21,7 @@ interface SessionListState {
   // #1862: parents whose children are hidden; absent means expanded, so a new parent shows its tree.
   collapsedParentIds: Set<string>
   archivedOpen: boolean
-  // Issue #748: the Show hidden toggle; persisted with the rest of the list view state.
+  // Issue #748: the Show hidden toggle. #1850: a filter, so it is held in memory only and starts off on every launch.
   showHidden: boolean
   setShowHidden(show: boolean): void
   // False until `restore` has run once at startup (decision 19): `SessionList` renders only its
@@ -84,11 +84,10 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       persistTimer = undefined
     }
     const run = (): void => {
-      const { collapsedRepositoryIds, collapsedParentIds, archivedOpen, showHidden } = get()
+      const { collapsedRepositoryIds, collapsedParentIds, archivedOpen } = get()
       const value: SessionListCollapse = {
         collapsedRepositoryIds: [...collapsedRepositoryIds],
         archivedOpen,
-        showHidden,
         collapsedParentIds: [...collapsedParentIds]
       }
       window.refract.settings.setSessionListCollapse(value).then(
@@ -120,11 +119,10 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
     collapsedRepositoryIds: new Set(DEFAULT_SESSION_LIST_COLLAPSE.collapsedRepositoryIds),
     collapsedParentIds: new Set(DEFAULT_SESSION_LIST_COLLAPSE.collapsedParentIds),
     archivedOpen: DEFAULT_SESSION_LIST_COLLAPSE.archivedOpen,
-    showHidden: DEFAULT_SESSION_LIST_COLLAPSE.showHidden,
+    showHidden: false,
     setShowHidden: (show) => {
       if (get().showHidden === show) return
       set({ showHidden: show })
-      persist()
     },
     restored: false,
     query: '',
@@ -264,7 +262,6 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
         collapsedRepositoryIds: new Set(value.collapsedRepositoryIds),
         collapsedParentIds: new Set(value.collapsedParentIds ?? []),
         archivedOpen: value.archivedOpen,
-        showHidden: value.showHidden ?? false,
         restored: true
       })
     },
