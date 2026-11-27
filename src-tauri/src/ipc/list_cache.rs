@@ -17,10 +17,12 @@ pub fn register(d: &mut Dispatcher) {
 /// `listCache.read()`: the cached default open lists, `null` for a list with nothing usable cached.
 fn list_cache_read(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let cache = list_cache::read(&state.data_dir).await.unwrap_or_else(|err| {
-            log::debug!("list cache: could not read it: {err}");
-            list_cache::ListCache::default()
-        });
+        let cache = list_cache::read(&state.data_dir)
+            .await
+            .unwrap_or_else(|err| {
+                log::debug!("list cache: could not read it: {err}");
+                list_cache::ListCache::default()
+            });
         Ok(json!({ "pullRequests": cache.pull_requests, "issues": cache.issues }))
     })
 }
@@ -86,13 +88,22 @@ mod tests {
 
     #[test]
     fn all_registered_projects_in_any_order_is_the_default_set() {
-        assert!(covers_all_projects(&strings(&["b", "a"]), &strings(&["a", "b"])));
+        assert!(covers_all_projects(
+            &strings(&["b", "a"]),
+            &strings(&["a", "b"])
+        ));
     }
 
     #[test]
     fn a_subset_or_superset_of_the_registry_is_not_the_default_set() {
-        assert!(!covers_all_projects(&strings(&["a"]), &strings(&["a", "b"])));
-        assert!(!covers_all_projects(&strings(&["a", "b", "c"]), &strings(&["a", "b"])));
+        assert!(!covers_all_projects(
+            &strings(&["a"]),
+            &strings(&["a", "b"])
+        ));
+        assert!(!covers_all_projects(
+            &strings(&["a", "b", "c"]),
+            &strings(&["a", "b"])
+        ));
     }
 
     #[test]
@@ -103,7 +114,9 @@ mod tests {
     #[test]
     fn a_result_with_a_skipped_project_is_not_last_good() {
         assert!(has_no_skipped(&json!({ "skipped": [] })));
-        assert!(!has_no_skipped(&json!({ "skipped": [{ "repositoryId": "a" }] })));
+        assert!(!has_no_skipped(
+            &json!({ "skipped": [{ "repositoryId": "a" }] })
+        ));
         assert!(!has_no_skipped(&json!({})));
     }
 }
