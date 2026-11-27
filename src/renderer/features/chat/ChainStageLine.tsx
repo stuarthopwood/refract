@@ -89,12 +89,12 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           </IconButton>
         }
       />
-      {/* pl-[42px] = the row's px-3.5 (14px), the 18px status column and its 10px gap, so "Uses:" starts under the title. */}
-      <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-[42px] pr-3.5" />
+      {/* pl-10 = the row's px-4 (16px), the 16px status column and its 8px gap, so "Uses:" starts under the title. */}
+      <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-10 pr-4" />
       <FadeCollapse show={expanded}>
         <div ref={contentRef}>
           {/* The same inset puts the agent panels under the Stage title; no rail or elbows (#2235). A single agent's guide line sits at the 40px mark (#2318, rule 6). */}
-          <SpineList bare className={cn('pb-2 pr-3.5', stage.items.length === 1 ? 'pl-10' : 'pl-[42px]', stageAgentsGridClass(parallelCount))}>
+          <SpineList bare className={cn('pb-2 pr-4 pl-10', stageAgentsGridClass(parallelCount))}>
             {stage.items.map((item, index) => (
               <SpineItem key={item.id} isNew={false}>
                 <ChainAgentEntry item={item} agent={stage.view.agents[index]!} sessionId={sessionId} flat={stage.items.length === 1} stageTitle={stage.view.cleanTitle} />

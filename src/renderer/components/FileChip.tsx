@@ -10,7 +10,7 @@ export function fileBasename(path: string): string {
 }
 
 /** A compact borderless monospace chip of a file's basename; the full path stays in `title` so nothing is lost to the truncation. */
-const FILE_CHIP_CLASS = 'h-auto min-w-0 max-w-full rounded-sm bg-command-pill-bg px-1.5 py-0.5 font-code text-micro text-command-pill-fg'
+const FILE_CHIP_CLASS = 'h-auto min-w-0 max-w-full rounded-sm bg-command-pill-bg px-2 py-0 font-code text-micro text-command-pill-fg'
 
 export function FileChip({ path, className }: { path: string; className?: string }) {
   return (

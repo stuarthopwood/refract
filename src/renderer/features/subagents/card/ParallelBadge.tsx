@@ -12,7 +12,7 @@ export function parallelBadgeName(count: number): string {
 export function ParallelBadge({ count }: { count: number }) {
   if (count < 2) return null
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-surface-1 px-1.5 py-0.5 font-code text-micro tabular-nums text-muted-foreground" title={parallelBadgeName(count)} data-parallel-badge>
+    <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-surface-1 px-2 py-0 font-code text-micro tabular-nums text-muted-foreground" title={parallelBadgeName(count)} data-parallel-badge>
       <GitForkIcon aria-hidden className="size-3 rotate-90" />
       {/* The visible text is the bare count; the screen-reader name says what is parallel. */}
       <span aria-hidden="true">{parallelBadgeText(count)}</span>

@@ -113,9 +113,9 @@ const StageTreeRow = memo(function StageTreeRow({ row, index, tabbable, sessionI
           </IconButton>
         }
       />
-      {/* pl-[42px] = the row's px-3.5, the 18px status column and its 10px gap, so "Uses:" starts under the title, as on the card. These links stay tab stops: they are the only
+      {/* pl-10 = the row's px-4, the 16px status column and its 8px gap, so "Uses:" starts under the title, as on the card. These links stay tab stops: they are the only
           keyboard route to the agent a Stage depends on, the tree has no jump key, and the Stage's name already lists them. */}
-      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="pl-[42px] pr-3.5" />
+      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="pl-10 pr-4" />
       <RowDescription id={descriptionId} text={row.description} />
     </div>
   )
@@ -138,8 +138,8 @@ const AgentTreeRow = memo(function AgentTreeRow({ row, index, tabbable, selected
       tabIndex={tabbable ? 0 : -1}
       onFocus={() => onFocusRow(row)}
       onKeyDown={(event) => onKeyDown(event, index)}
-      // ml-[42px] puts the card under the Stage title, as on the chat card; hover matches the other panel rows.
-      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-[42px] mr-3.5 p-1 hover:bg-row-hover-bg')}
+      // ml-10 puts the card under the Stage title, as on the chat card; hover matches the other panel rows.
+      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-10 mr-4 p-1 hover:bg-row-hover-bg')}
     >
       {selected && <ActiveIndicatorBar />}
       {/* Issue #712: a detached background job keeps its muted "Background" word. */}

@@ -12,7 +12,7 @@ export function CausalBadge({ triggeredBy }: { triggeredBy: string | undefined }
   const text = causalBadgeText(triggeredBy)
   if (text == null) return null
   return (
-    <Badge variant="secondary" title={text} className="h-auto min-w-0 max-w-full rounded-sm bg-surface-1 px-1.5 py-0.5 text-micro text-muted-foreground">
+    <Badge variant="secondary" title={text} className="h-auto min-w-0 max-w-full rounded-sm bg-surface-1 px-2 py-0 text-micro text-muted-foreground">
       <CornerDownRightIcon aria-hidden />
       <span className="truncate">{text}</span>
     </Badge>

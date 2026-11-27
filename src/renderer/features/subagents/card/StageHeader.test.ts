@@ -29,8 +29,8 @@ describe('StageHeader', () => {
   })
 
   describe('given the three-column row (#2318, FR-175)', () => {
-    it('lays the glyph, the text and the duration out on grid-cols-[18px_1fr_auto]', () => {
-      expect(render({})).toContain('grid-cols-[18px_1fr_auto]')
+    it('lays the glyph, the text and the duration out on grid-cols-[16px_1fr_auto]', () => {
+      expect(render({})).toContain('grid-cols-[16px_1fr_auto]')
     })
 
     it('keeps a settled Stage title in the foreground colour: green is only on the tick', () => {

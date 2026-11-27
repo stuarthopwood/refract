@@ -59,7 +59,7 @@ export function ProgressStrip({ value, max, label, doneText, state = 'ok', segme
       aria-valuemax={max}
       aria-valuenow={Math.min(value, max)}
       aria-valuetext={valueText ?? `${percent}%`}
-      className={segments ? 'flex h-1 min-w-0 flex-1 gap-0.5' : 'h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted'}
+      className={segments ? 'flex h-1 min-w-0 flex-1 gap-1' : 'h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted'}
     >
       {segments ? (
         segments.map((segment, index) => (

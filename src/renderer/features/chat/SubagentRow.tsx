@@ -35,7 +35,7 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
   const hasRole = role != null && role !== ''
   const flatLead = hasRole ? role : fallbackLabel
   return (
-    <div className={cn('min-w-0 space-y-2', flat ? 'min-h-5 border-l-2 border-divider py-0.5 pl-3' : 'rounded-lg border border-divider bg-surface-1 p-2 group-hover/subcard:bg-surface-hover')}>
+    <div className={cn('min-w-0 space-y-2', flat ? 'min-h-5 border-l-2 border-divider py-1 pl-4' : 'rounded-lg border border-divider bg-surface-1 p-2 group-hover/subcard:bg-surface-hover')}>
       {flat ? (
         flatLead && <div className="min-w-0 truncate text-xs text-muted-foreground">{flatLead}</div>
       ) : (

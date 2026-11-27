@@ -1,4 +1,4 @@
-// The Stage header both the chat card and the panel draw (#1927, #1930, #2318, FR-147, FR-150, FR-175): one `grid-cols-[18px_1fr_auto]` row.
+// The Stage header both the chat card and the panel draw (#1927, #1930, #2318, FR-147, FR-150, FR-175): one `grid-cols-[16px_1fr_auto]` row.
 // Column 1 is the status tick, column 2 the muted Stage number, the foreground title, quiet metadata and the outcome line, column 3 the
 // tabular duration and the trailing control. The caller owns what a click does.
 import type * as React from 'react'
@@ -62,7 +62,7 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
   )
   return (
     // A tint, not a left border, marks the running Stage; the glyph and word still carry the status (#1927).
-    <div className={cn('grid min-w-0 grid-cols-[18px_1fr_auto] items-center gap-x-2.5 rounded px-3.5 py-2', running && 'bg-state-working-tint forced-colors:border')}>
+    <div className={cn('grid min-w-0 grid-cols-[16px_1fr_auto] items-center gap-x-2 rounded px-4 py-2', running && 'bg-state-working-tint forced-colors:border')}>
       {/* Status is in the row's accessible name; the glyph keeps it from being colour-only. */}
       <span aria-hidden="true" className="flex h-5 items-center justify-center">
         <SubagentStatusGlyph status={status} />
