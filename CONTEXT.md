@@ -599,6 +599,10 @@ _Avoid_: plugin host, extension runner
 An item an OMP extension asks Refract to show: a left pane item, a right pane panel, a composer pill, or a Settings page. The extension describes it as data and Refract draws it with its own components; an extension never supplies HTML or script (#2093, ADR 0010).
 _Avoid_: plugin, widget, extension UI
 
+**List cache**:
+The last good Pull requests or Issues list for the default open filter, held in memory for a 60 s freshness window and persisted to the app data directory so a cold start shows rows at once, marked stale until the refresh behind them lands (#1894, #1895, spec 001 FR-175, FR-176).
+_Avoid_: prefetch store, offline mode
+
 ## Flagged ambiguities
 
 - The agent (OMP) uses "session" for what Refract calls a **Conversation**. In Refract, **Session** always means the worktree-bound unit of work; say **Conversation** for the agent's notion.
