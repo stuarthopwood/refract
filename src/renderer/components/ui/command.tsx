@@ -9,6 +9,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
+export const COMMAND_CLASS = "flex size-full flex-col overflow-hidden rounded-xl bg-menu-surface text-popover-foreground"
+export const COMMAND_ITEM_CLASS =
+  "relative flex min-w-0 cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-menu-hover data-[selected=true]:text-foreground data-[selected=true]:ring-2 data-[selected=true]:ring-inset data-[selected=true]:ring-ring forced-colors:data-[selected=true]:bg-[Highlight] forced-colors:data-[selected=true]:text-[HighlightText]"
+
 function Command({
   className,
   ...props
@@ -16,10 +20,7 @@ function Command({
   return (
     <CommandPrimitive
       data-slot="command"
-      className={cn(
-        "flex size-full flex-col overflow-hidden rounded-xl bg-popover text-popover-foreground",
-        className
-      )}
+      className={cn(COMMAND_CLASS, className)}
       {...props}
     />
   )
@@ -156,10 +157,7 @@ function CommandItem({
   return (
     <CommandPrimitive.Item
       data-slot="command-item"
-      className={cn(
-        "relative flex min-w-0 cursor-default items-center gap-2 rounded-md px-2 py-2 text-sm outline-none select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-accent data-[selected=true]:text-accent-foreground data-[selected=true]:ring-2 data-[selected=true]:ring-inset data-[selected=true]:ring-ring forced-colors:data-[selected=true]:bg-[Highlight] forced-colors:data-[selected=true]:text-[HighlightText]",
-        className
-      )}
+      className={cn(COMMAND_ITEM_CLASS, className)}
       {...props}
     >
       {icon !== undefined && (

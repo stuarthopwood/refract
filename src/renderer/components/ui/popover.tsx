@@ -22,6 +22,9 @@ function PopoverAnchor({
   return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />
 }
 
+export const POPOVER_CONTENT_CLASS =
+  "duration-[var(--motion-fast)] ease-[var(--ease-out)] z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-lg bg-menu-surface p-4 text-sm text-popover-foreground shadow-md ring-1 ring-elevated-edge outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95"
+
 function PopoverContent({
   className,
   align = "center",
@@ -34,10 +37,7 @@ function PopoverContent({
         data-slot="popover-content"
         align={align}
         sideOffset={sideOffset}
-        className={cn(
-          "duration-[var(--motion-fast)] ease-[var(--ease-out)] z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-lg bg-popover p-4 text-sm text-popover-foreground shadow-md ring-1 ring-elevated-edge outline-none data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
-          className
-        )}
+        className={cn(POPOVER_CONTENT_CLASS, className)}
         {...props}
       />
     </PopoverPrimitive.Portal>

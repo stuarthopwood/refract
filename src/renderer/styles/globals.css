@@ -162,6 +162,8 @@
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
   --color-surface-hover: var(--surface-hover);
+  --color-menu-surface: var(--menu-surface);
+  --color-menu-hover: var(--menu-hover);
   --color-divider: var(--divider);
   --color-field-border: var(--field-border);
   --color-ghost-edge: var(--ghost-edge);
@@ -407,6 +409,10 @@ samp {
   --chart-cursor-bg: color-mix(in oklab, var(--foreground) 10%, transparent);
   --focus-glow: color-mix(in oklab, var(--ring) 50%, transparent);
   --elevated-edge: color-mix(in oklab, var(--foreground) 10%, transparent);
+  /* #2173: menus and popovers sit one surface step above the page (`--surface-3`); `--surface-hover` equals
+   * `--surface-3` in most presets so it would vanish there, hence a foreground wash for the item fill. */
+  --menu-surface: var(--surface-3);
+  --menu-hover: color-mix(in oklab, var(--foreground) 4%, transparent);
   --scrim-bg: color-mix(in oklab, black 10%, transparent);
   --invalid-ring: color-mix(in oklab, var(--destructive) 40%, transparent);
   --primary-hover-bg: color-mix(in oklab, var(--primary) 80%, transparent);
@@ -640,7 +646,8 @@ samp {
    * Input/Textarea/Select/outline-Toggle/outline-Button in this theme). */
   --border: oklch(0.56 0 0);
   --input: oklch(1 0 0 / 36%);
-  --ring: oklch(0.556 0 0);
+  /* #2229: 0.556 measured 2.87:1 on the command palette's selected row (`ring-2 ring-ring` over `--menu-hover` on `--menu-surface`); 0.58 clears 3:1 there. */
+  --ring: oklch(0.58 0 0);
   --active-indicator: oklch(0.58 0.22 264.376);
   /* Gate round 3 fix (Main, #1074 follow-up, item 4): the "Focused" badge's own
    * `bg-active-indicator/20` tint is a coloured, non-neutral fill -- FR-023's "stays solid"
@@ -672,7 +679,7 @@ samp {
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: var(--foreground);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --sidebar-ring: oklch(0.58 0 0);
 
   --state-working: oklch(0.696 0.17 162.48);
   --state-working-foreground: oklch(0.145 0 0);
@@ -855,8 +862,8 @@ samp {
    * checked two ways by `scripts/check-theme-contrast.mjs`: the severity colour read as text
    * directly on its own tint, and plain `--foreground` read on that same tint -- both >=4.5:1
    * (WCAG AA body text), composited over `--background`, `--card` AND `--popover` (dialog,
-   * alert-dialog, sheet, dropdown-menu, popover and select all render on `bg-popover`, not
-   * `--card`). 12% is the highest alpha that still clears 4.5:1 for every severity against every
+   * alert-dialog and sheet render on `bg-popover`; dropdown-menu, popover and select moved to
+   * `--menu-surface` in #2173, so they are not covered by this popover check). 12% is the highest alpha that still clears 4.5:1 for every severity against every
    * one of those three surfaces, in every theme, with margin; the binding case across all three
    * themes is Obsidian's `--severity-error` on its own `--popover` (4.58:1 for error-on-tint,
    * comfortably more for `--foreground`-on-tint everywhere). This theme's own tightest case is
@@ -1897,7 +1904,7 @@ samp {
    * achromatic focus ring" (the existing 2026-10-09 rule), not merely "a different lightness,
    * same family" as an earlier draft of this comment claimed. `--sidebar-ring` already aliases
    * `--ring` via `var()`, so it follows automatically. */
-  --ring: oklch(0.556 0 0);
+  --ring: oklch(0.58 0 0);
   --active-indicator: var(--accent-text);
   /* Gate round 3 fix (Main, #1074 follow-up, item 4): see `.theme-dark`'s own comment on this
    * key for the full reasoning. */

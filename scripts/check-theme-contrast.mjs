@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { PAIRS, MARKDOWN_PAIRS, mermaidAccentRows, searchFieldContrastRows, userBubbleContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows } from './theme-contrast-pairs.mjs'
+import { PAIRS, MARKDOWN_PAIRS, mermaidAccentRows, searchFieldContrastRows, menuDestructiveFocusContrastRows, userBubbleContrastRows, sidebarBorderContrastRows, shikiTokenContrastRows } from './theme-contrast-pairs.mjs'
 import { swatchMetadataDriftCheck } from './theme-swatch-drift.mjs'
 import { switchTrackContrastRows } from './switch-track-contrast.mjs'
 import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-selection-contrast.mjs'
@@ -448,7 +448,7 @@ for (const [themeId, props] of Object.entries(themes)) {
 
 // These composited checks live in theme-contrast-pairs.mjs to keep this file at its #806 size baseline; merged into one loop.
 // The OKLCH blend, composer-selection, focused-badge and context-usage rows each live in their own module, merged here too.
-for (const row of [...searchFieldContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...focusedBadgeContrastRows(themes), ...contextUsageContrastRows(themes), ...findNavContrastRows(themes), ...recommendedHoverContrastRows(themes), ...optionStateContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
+for (const row of [...searchFieldContrastRows(themes), ...menuDestructiveFocusContrastRows(themes), ...userBubbleContrastRows(themes), ...sidebarBorderContrastRows(themes), ...switchTrackContrastRows(themes), ...composerSelectionContrastRows(themes), ...focusedBadgeContrastRows(themes), ...contextUsageContrastRows(themes), ...findNavContrastRows(themes), ...recommendedHoverContrastRows(themes), ...optionStateContrastRows(themes), ...(await shikiTokenContrastRows(themes, themeMetadata))]) {
   if (!row.informational) checkedCount++
   if (!row.pass && !row.informational) failCount++
   rows.push(row)
