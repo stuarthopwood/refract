@@ -112,6 +112,13 @@ describe('pull requests list freshness', () => {
     expect(usePullRequestsStore.getState().loading).toBe(false)
   })
 
+  it('a_direct_refresh_stops_a_later_mount_joining_the_fetch_it_superseded', async () => {
+    void usePullRequestsStore.getState().refreshIfStale(['r1'])
+    void usePullRequestsStore.getState().refresh(['r1'])
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    expect(listAcross).toHaveBeenCalledTimes(3)
+  })
+
   it('a_failed_quiet_refresh_clears_the_stale_mark', async () => {
     usePullRequestsStore.setState({ stale: true })
     listAcross.mockResolvedValueOnce({ ok: false, error: { code: 'gh-failed', message: 'x' } })
