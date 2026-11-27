@@ -118,8 +118,9 @@ pub async fn ensure_search_budget(cwd: &Path) -> Result<(), GhError> {
         .await
 }
 
-/// Call when a search hit a rate limit, so the next search probes again instead of trusting the cache.
-pub async fn note_search_rate_limited() {
+/// Drops the cached healthy probe so the next search probes again: after a rate-limit error, and
+/// after an account change, since the budget belongs to the account.
+pub async fn invalidate_search_budget() {
     SEARCH_BUDGET.invalidate().await;
 }
 
