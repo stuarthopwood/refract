@@ -19,6 +19,8 @@ export function usageBridge(
       request(IPC_USAGE_REQUESTS.USAGE_TOKEN_MIX, filters, ...tz(tzOffsetMinutes)),
     breakdown: (filters, by, tzOffsetMinutes) =>
       request(IPC_USAGE_REQUESTS.USAGE_BREAKDOWN, filters, by, ...tz(tzOffsetMinutes)),
+    errorCategories: (filters, tzOffsetMinutes) =>
+      request(IPC_USAGE_REQUESTS.USAGE_ERROR_CATEGORIES, filters, ...tz(tzOffsetMinutes)),
     topSessions: (filters, tzOffsetMinutes) =>
       request(IPC_USAGE_REQUESTS.USAGE_TOP_SESSIONS, filters, ...tz(tzOffsetMinutes)),
     calls: (filters, sort, page, tzOffsetMinutes) =>

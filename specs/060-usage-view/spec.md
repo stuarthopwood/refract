@@ -53,6 +53,14 @@ Grill outcomes are Stuart's (2026-11-04, grill-with-docs, recorded on #1655, non
 - **Migration (Decided (Skippy, delegated by Stuart 2026-11-26)):** `user_version` 4 to 5 renames `project_label` to `project_id` in place, including in the rollup primary keys, and turns each stored label into `@legacy:<label>`. It does not rebuild from OMP files, because rows OMP rewrote away would vanish. The next relabel pass moves a legacy row to its real id when its cwd resolves.
 - **Name upsert (Decided (Skippy, delegated by Stuart 2026-11-26)):** each ingest pass upserts the id-to-name mapping of every registered Project before relabelling, and the second writer (`copilot_cli.rs`) stamps the id too.
 
+### Session 2026-11-27 (#2053, phase 1)
+
+- **Scope (Decided (Skippy, delegated by Stuart 2026-11-26)):** phase 1 only: categorise failed tool calls and show the error rate honestly. Auto-repair of refract tool arguments (`agent_tools/router.rs`) is phase 2 and gets its own grill, because the fuzzy-match threshold and what counts as a safe coercion are undefined.
+- **Denominator (Decided (Skippy, delegated by Stuart 2026-11-26)):** the tool error rate is errors over calls whose result arrived (`is_error` not null). A call still running is neither an error nor a success.
+- **Categories (Decided (Skippy, delegated by Stuart 2026-11-27)):** a fixed set, assigned at ingest from the result text by ordered substring rules, first hit wins: policy, edit rejected, invalid input, not found, timeout, aborted, other. Errors recorded before the change are `unknown` (their text was never kept), shown as "Before categories". Only the category is stored (FR-015: no prompt prose, no result text).
+- **Display (Decided (Skippy, delegated by Stuart 2026-11-27)):** a "Tool errors by category" table sits under the by-tool table, honouring every filter, each row with its count and share of failed calls; it is absent when the window has no failed call. The Tool error rate card caption names the denominator.
+- **Migration (Decided (Skippy, delegated by Stuart 2026-11-27)):** `user_version` 5 to 6 adds `error_category` and `resolved` in place and rebuilds `resolved` from `tool_calls`; nothing is re-read from OMP files.
+
 ## Functional requirements
 
 - FR-001: `MainView` gains `'usage'`; a left-nav Usage entry (ChartColumnIcon) sits in the GitHub nav group after Issues, `aria-current` when active.
@@ -73,6 +81,7 @@ Grill outcomes are Stuart's (2026-11-04, grill-with-docs, recorded on #1655, non
 - FR-016: `src/shared/ipc.ts` gains no lines; the contract is `src/shared/ipc-usage.ts`. Every new Rust file is under 600 lines.
 - FR-017: `REFRACT_OMP_SESSIONS_DIR` overrides the sessions folder.
 - FR-018: Slice 2 uses shared components only (ADR 0003); a chart primitive is added to `components/ui/`.
+- FR-020: Failed tool calls carry a category (`data-model.md`), `usage.errorCategories(filters)` returns the failed-call counts per category, and `tool error rate` is errors over calls with a result (`usage.summary.toolResolved`, `usage.breakdown` tool rows' `resolved`). The Usage view shows the category table under the by-tool table. Only the category is stored (FR-015).
 - FR-019: Ingest stores a fingerprint of the up-to-256 bytes ending at the saved offset (`file_offsets.tail_len`, `tail_hash`). A resumed file whose head or that window no longer matches restarts from byte 0 (FR-003, FR-005 keep it duplicate-free). An empty window (a database from before the column) is unknown: no reset, and the next pass records it.
 
 ## Success criteria

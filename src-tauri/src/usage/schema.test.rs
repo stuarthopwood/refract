@@ -20,8 +20,18 @@ fn version(conn: &Connection) -> i64 {
         .unwrap()
 }
 
+/// Turns a fresh file back into the shape version 5 left: no error categories, no `resolved` counts.
+const AS_VERSION_5: &str = "
+DROP INDEX tool_calls_errors_ts;
+ALTER TABLE tool_calls DROP COLUMN error_category;
+ALTER TABLE tool_rollup DROP COLUMN resolved;
+";
+
 /// Turns a fresh file back into the shape version 4 left: Projects keyed by a name in `project_label`.
 const AS_VERSION_4: &str = "
+DROP INDEX tool_calls_errors_ts;
+ALTER TABLE tool_calls DROP COLUMN error_category;
+ALTER TABLE tool_rollup DROP COLUMN resolved;
 DROP TABLE projects;
 ALTER TABLE file_offsets RENAME COLUMN project_id TO project_label;
 ALTER TABLE messages RENAME COLUMN project_id TO project_label;
@@ -248,6 +258,56 @@ fn version_4_database_keeps_every_row_and_name_under_a_legacy_project_id() {
     assert!(conn
         .prepare("SELECT project_label FROM tool_rollup")
         .is_err());
+    assert!(std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .all(|e| !e.unwrap().file_name().to_string_lossy().contains(".bak-")));
+}
+
+#[test]
+fn version_5_database_keeps_its_rows_marks_old_errors_unknown_and_rebuilds_resolved() {
+    let path = scratch_db("migrate-5");
+    let conn = open_db(&path).unwrap();
+    conn.execute_batch(AS_VERSION_5).unwrap();
+    conn.execute_batch(
+        "INSERT INTO tool_calls (session_file, tool_call_id, ts, entry_id, tool, is_error, project_id)
+           VALUES ('f', 'ok', 1000, 'e', 'bash', 0, 'p'),
+                  ('f', 'bad', 2000, 'e', 'bash', 1, 'p'),
+                  ('f', 'running', 3000, 'e', 'bash', NULL, 'p'),
+                  ('f', 'later', 4000000, 'e', 'bash', 0, 'p');
+         INSERT INTO tool_rollup (hour, project_id, tool, agent_type, calls, errors)
+           VALUES (0, 'p', 'bash', 'main', 3, 1), (3600000, 'p', 'bash', 'main', 1, 0);
+         PRAGMA user_version = 5;",
+    )
+    .unwrap();
+    drop(conn);
+
+    let conn = open_db(&path).unwrap();
+
+    assert_eq!(version(&conn), USER_VERSION);
+    let categories: Vec<(String, Option<String>)> = conn
+        .prepare("SELECT tool_call_id, error_category FROM tool_calls ORDER BY tool_call_id")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(
+        categories,
+        vec![
+            ("bad".to_string(), Some("unknown".to_string())),
+            ("later".to_string(), None),
+            ("ok".to_string(), None),
+            ("running".to_string(), None),
+        ]
+    );
+    let rollup: Vec<(i64, i64, i64, i64)> = conn
+        .prepare("SELECT hour, calls, errors, resolved FROM tool_rollup ORDER BY hour")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))
+        .unwrap()
+        .map(Result::unwrap)
+        .collect();
+    assert_eq!(rollup, vec![(0, 3, 1, 2), (3_600_000, 1, 0, 1)]);
     assert!(std::fs::read_dir(path.parent().unwrap())
         .unwrap()
         .all(|e| !e.unwrap().file_name().to_string_lossy().contains(".bak-")));

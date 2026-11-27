@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use super::{invalid_argument, AppState, Dispatcher, HandlerFuture, HandlerResult, IpcError};
 use crate::usage::project_label::{normalise_path, ProjectIndex};
 use crate::usage::queries::{self, Filters, QueryCtx, QueryError, MAX_TZ_MINUTES};
+use crate::usage::queries_errors;
 use crate::usage::queries_summary;
 use crate::usage::queries_tables::{self, BreakdownBy, Page, Sort, MAX_PAGE_SIZE};
 use crate::usage::{budget, UsageService, UsageStatus};
@@ -25,6 +26,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("usage.timeseries", usage_timeseries);
     d.register("usage.tokenMix", usage_token_mix);
     d.register("usage.breakdown", usage_breakdown);
+    d.register("usage.errorCategories", usage_error_categories);
     d.register("usage.topSessions", usage_top_sessions);
     d.register("usage.calls", usage_calls);
     d.register("usage.frustration", usage_frustration);
@@ -192,6 +194,14 @@ fn usage_breakdown(_state: AppState, args: Vec<Value>) -> HandlerFuture {
             .map_err(query_error)?;
         let ctx = query_ctx(args.get(2))?;
         to_json(&read(move |c| queries_tables::breakdown(c, &filters, by, &ctx)).await?)
+    })
+}
+
+fn usage_error_categories(_state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let filters = parse_filters(args.first())?;
+        let ctx = query_ctx(args.get(1))?;
+        to_json(&read(move |c| queries_errors::error_categories(c, &filters, &ctx)).await?)
     })
 }
 

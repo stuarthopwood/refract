@@ -126,7 +126,13 @@ impl Fixture {
     /// reopens it, so the real v4 to v5 migration produces the `@legacy:` rows.
     fn migrate_from_v4(&mut self, label: &str) {
         let c = &self.conn;
-        c.execute_batch("DROP TABLE projects").unwrap();
+        c.execute_batch(
+            "DROP INDEX tool_calls_errors_ts; \
+             ALTER TABLE tool_calls DROP COLUMN error_category; \
+             ALTER TABLE tool_rollup DROP COLUMN resolved; \
+             DROP TABLE projects",
+        )
+        .unwrap();
         for table in TABLES {
             c.execute_batch(&format!(
                 "ALTER TABLE {table} RENAME COLUMN project_id TO project_label; \

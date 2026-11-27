@@ -55,6 +55,9 @@ pub struct BreakdownRow {
     pub credits: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub errors: Option<i64>,
+    /// Tool rows only: calls whose result arrived, the denominator of the error rate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub result_chars: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -101,6 +104,7 @@ pub fn breakdown(
                     usd: r.get(5)?,
                     credits: r.get(6)?,
                     errors: None,
+                    resolved: None,
                     result_chars: None,
                     cost_share: None,
                 })
@@ -154,7 +158,7 @@ fn tool_breakdown(
         ToolSource {
             filters: f.build(&TOOL_CALLS, ctx)?,
             cols: "tool, count(*), coalesce(sum(coalesce(is_error,0)),0), \
-                   coalesce(sum(result_chars),0), sum(cost_usd)",
+                   coalesce(sum(result_chars),0), sum(cost_usd), count(is_error)",
             from: Cow::Borrowed("tool_calls"),
         }
     } else {
@@ -162,7 +166,7 @@ fn tool_breakdown(
         let src = f.rollup_source(&mut w, Rollup::Tools, ctx, false)?;
         ToolSource {
             filters: w,
-            cols: "tool, sum(calls), sum(errors), sum(result_chars), sum(cost_usd)",
+            cols: "tool, sum(calls), sum(errors), sum(result_chars), sum(cost_usd), sum(resolved)",
             from: Cow::Owned(src),
         }
     };
@@ -184,10 +188,11 @@ fn tool_breakdown(
                 usd: r.get(4)?,
                 credits: 0.0,
                 errors: Some(r.get(2)?),
+                resolved: Some(r.get(5)?),
                 result_chars: Some(r.get(3)?),
                 cost_share: None,
             };
-            let window_total: f64 = r.get(5)?;
+            let window_total: f64 = r.get(6)?;
             Ok((row, window_total))
         })?
         .collect::<Result<Vec<_>, _>>()?;

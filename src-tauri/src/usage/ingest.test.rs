@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use serde_json::json;
 
 use super::*;
+use crate::usage::rollup::{clean_rollups, relabel_file};
 use crate::usage::schema;
 
 fn scratch(label: &str) -> PathBuf {
@@ -214,6 +215,11 @@ fn tool_result_joins_a_call_from_an_earlier_pass_and_user_text_is_not_stored() {
         )
         .unwrap();
     assert_eq!((calls, errors, chars), (1, 1, 4));
+    let category: Option<String> = fx
+        .conn
+        .query_row("SELECT error_category FROM tool_calls", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(category.as_deref(), Some("other"));
     let (len, yelling, blame): (i64, i64, i64) = fx
         .conn
         .query_row("SELECT chars, yelling, blame FROM user_messages", [], |r| {
@@ -222,6 +228,178 @@ fn tool_result_joins_a_call_from_an_earlier_pass_and_user_text_is_not_stored() {
         .unwrap();
     assert_eq!(len, 22);
     assert!(yelling >= 1 && blame >= 1);
+}
+
+fn tool_result(id: &str, call: &str, is_error: bool, text: &str) -> String {
+    line(
+        json!({"type":"message","id":id,"timestamp":"2026-10-01T10:00:04.000Z","message":{
+        "role":"toolResult","toolCallId":call,"toolName":"bash","isError":is_error,
+        "content":[{"type":"text","text":text}]}}),
+    )
+}
+
+fn bash_call(id: &str) -> serde_json::Value {
+    json!({"type":"toolCall","id":id,"name":"bash","arguments":{}})
+}
+
+fn error_category_of(fx: &Fixture, call: &str) -> (Option<i64>, Option<String>) {
+    fx.conn
+        .query_row(
+            "SELECT is_error, error_category FROM tool_calls WHERE tool_call_id = ?1",
+            [call],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+}
+
+/// Every text value in every table, so a leak of result text into any column is caught.
+fn every_text_value(conn: &rusqlite::Connection) -> Vec<String> {
+    let tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    let mut out = Vec::new();
+    for table in tables {
+        let mut stmt = conn.prepare(&format!("SELECT * FROM \"{table}\"")).unwrap();
+        let columns = stmt.column_count();
+        let mut rows = stmt.query([]).unwrap();
+        while let Some(row) = rows.next().unwrap() {
+            for i in 0..columns {
+                if let rusqlite::types::ValueRef::Text(bytes) = row.get_ref(i).unwrap() {
+                    out.push(String::from_utf8_lossy(bytes).into_owned());
+                }
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn a_failed_result_stores_its_category_and_no_column_holds_the_message() {
+    let mut fx = Fixture::new("category");
+    append(&fx.file, &header());
+    append(
+        &fx.file,
+        &assistant(
+            "a1",
+            1_790_000_000_000,
+            0.5,
+            vec![bash_call("c1"), bash_call("c2")],
+        ),
+    );
+    append(
+        &fx.file,
+        &tool_result(
+            "r1",
+            "c1",
+            true,
+            "Tool \"bash\" is blocked by tool policy. Reason: swordfish-credentials",
+        ),
+    );
+    append(&fx.file, &tool_result("r2", "c2", false, "swordfish-ok"));
+
+    fx.ingest();
+
+    assert_eq!(
+        error_category_of(&fx, "c1"),
+        (Some(1), Some("policy".to_string()))
+    );
+    assert_eq!(error_category_of(&fx, "c2"), (Some(0), None));
+    let leaked: Vec<String> = every_text_value(&fx.conn)
+        .into_iter()
+        .filter(|v| v.contains("swordfish") || v.contains("blocked by tool policy"))
+        .collect();
+    assert!(leaked.is_empty(), "result text reached the db: {leaked:?}");
+}
+
+#[test]
+fn a_multi_part_failed_result_is_categorised_across_its_parts() {
+    let mut fx = Fixture::new("category-parts");
+    append(&fx.file, &header());
+    append(
+        &fx.file,
+        &assistant("a1", 1_790_000_000_000, 0.5, vec![bash_call("c1")]),
+    );
+    append(
+        &fx.file,
+        &line(
+            json!({"type":"message","id":"r1","timestamp":"2026-10-01T10:00:04.000Z","message":{
+            "role":"toolResult","toolCallId":"c1","toolName":"bash","isError":true,
+            "content":[{"type":"text","text":"command failed"},{"type":"text","text":"eval cell timed out"}]}}),
+        ),
+    );
+
+    fx.ingest();
+
+    assert_eq!(
+        error_category_of(&fx, "c1"),
+        (Some(1), Some("timeout".to_string()))
+    );
+}
+
+fn tool_rollup_sums(fx: &Fixture) -> (i64, i64, i64) {
+    fx.conn
+        .query_row(
+            "SELECT sum(calls), sum(errors), sum(resolved) FROM tool_rollup",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap()
+}
+
+#[test]
+fn resolved_counts_only_calls_whose_result_arrived_and_survives_a_reread_and_a_relabel() {
+    let mut fx = Fixture::new("resolved");
+    append(&fx.file, &header());
+    append(
+        &fx.file,
+        &assistant(
+            "a1",
+            1_790_000_000_000,
+            0.5,
+            vec![bash_call("c1"), bash_call("c2"), bash_call("c3")],
+        ),
+    );
+    append(&fx.file, &tool_result("r1", "c1", true, "boom"));
+    append(&fx.file, &tool_result("r2", "c2", false, "fine"));
+    fx.ingest();
+    // c3 is still running: it is a call but has no verdict yet.
+    assert_eq!(tool_rollup_sums(&fx), (3, 1, 2));
+
+    // A full re-read finds the same results again and adds nothing.
+    fx.conn
+        .execute("UPDATE file_offsets SET offset = 0", [])
+        .unwrap();
+    fx.ingest();
+    assert_eq!(tool_rollup_sums(&fx), (3, 1, 2));
+
+    // The late result of the running call resolves it once.
+    append(&fx.file, &tool_result("r3", "c3", false, "late"));
+    fx.ingest();
+    assert_eq!(tool_rollup_sums(&fx), (3, 1, 3));
+
+    // Moving the file to another project moves its rollup rows without changing the sums.
+    let session_file: String = fx
+        .conn
+        .query_row("SELECT DISTINCT session_file FROM tool_calls", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    relabel_file(&fx.conn, &session_file, "repo-moved").unwrap();
+    clean_rollups(&fx.conn).unwrap();
+    assert_eq!(tool_rollup_sums(&fx), (3, 1, 3));
+    let ids: Vec<String> = fx
+        .conn
+        .prepare("SELECT DISTINCT project_id FROM tool_rollup")
+        .unwrap()
+        .query_map([], |r| r.get(0))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    assert_eq!(ids, vec!["repo-moved".to_string()]);
 }
 
 #[test]

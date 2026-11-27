@@ -22,7 +22,7 @@ import { TokenMixChart } from './TokenMixChart'
 import { UsageEmptyState } from './UsageEmptyState'
 import { UsageFilters, clearUsageFilters, countActiveFilters } from './UsageFilters'
 import { refreshAnnouncement } from './refreshAnnouncement'
-import { ModelTable, ProjectTable, ToolTable, TopSessionsTable } from './UsageTables'
+import { ErrorCategoryTable, ModelTable, ProjectTable, ToolTable, TopSessionsTable } from './UsageTables'
 
 export function UsageView({ reservesWindowControls = true }: { reservesWindowControls?: boolean }) {
   const openChat = useViewStore((s) => s.openChat)
@@ -123,6 +123,7 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
               <ProjectTable rows={s.byProject} loading={pending(s.byProject.length === 0)} />
               <ModelTable rows={s.byModel} loading={pending(s.byModel.length === 0)} />
               <ToolTable rows={s.byTool} loading={pending(s.byTool.length === 0)} />
+              <ErrorCategoryTable rows={s.errorCategories} loading={pending(false)} />
               <TopSessionsTable rows={s.topSessions} loading={pending(s.topSessions.length === 0)} />
               <CallLogTable loading={pending(s.calls.rows.length === 0)} />
             </>

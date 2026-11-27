@@ -9,6 +9,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use super::credits::credits_for;
+use super::error_category::classify;
 use super::fingerprint::Window;
 use super::frustration;
 use super::project_label::ProjectIndex;
@@ -333,7 +334,9 @@ impl Pass<'_> {
                         .and_then(Value::as_bool)
                         .unwrap_or(false);
                     let chars: usize = text_parts(message).map(|t| t.chars().count()).sum();
-                    record_tool_result(self.conn, self.key, call_id, is_error, chars as i64)?;
+                    // Only the category is kept; the result text is dropped here.
+                    let error = is_error.then(|| classify(text_parts(message)));
+                    record_tool_result(self.conn, self.key, call_id, error, chars as i64)?;
                 }
             }
             Some("user") => self.user_message(id, ts, message)?,

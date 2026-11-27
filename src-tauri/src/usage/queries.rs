@@ -142,9 +142,10 @@ impl Rollup {
             ),
             Self::Tools => (
                 "tool_rollup",
-                "hour, project_id, tool, agent_type, calls, errors, result_chars, cost_usd",
-                "tool_calls",
-                "project_id, tool, agent_type, 1 AS calls, coalesce(is_error, 0) AS errors, result_chars, cost_usd",
+        "hour, project_id, tool, agent_type, calls, errors, resolved, result_chars, cost_usd",
+        "tool_calls",
+        "project_id, tool, agent_type, 1 AS calls, coalesce(is_error, 0) AS errors, \
+         (is_error IS NOT NULL) AS resolved, result_chars, cost_usd",
             ),
         }
     }
@@ -167,6 +168,11 @@ impl Where {
     fn push(&mut self, column: &str, op: &str, value: Value) {
         let placeholder = self.bind(value);
         self.clauses.push(format!("{column} {op} {placeholder}"));
+    }
+
+    /// Adds a fixed clause that takes no value.
+    pub(super) fn require(&mut self, clause: &str) {
+        self.clauses.push(clause.to_string());
     }
 
     pub(super) fn sql(&self) -> String {

@@ -22,10 +22,11 @@ export interface UsageStatus { running: boolean; sessionsSeen: number; sessionsD
 | --- | --- | --- |
 | `usage.start` | none | `UsageStatus`; ingest already runs from app launch (#1655), so this queues an incremental scan, which also retries a failed launch start; idempotent |
 | `usage.status` | none | `UsageStatus` |
-| `usage.summary` | `filters` | spend USD, credits, calls, total tokens, cache hit rate, avg context per call, tool calls, tool error rate, active days, sessions (distinct session files), month-to-date USD and month active days (month fields ignore the date range) |
+| `usage.summary` | `filters` | spend USD, credits, calls, total tokens, cache hit rate, avg context per call, tool calls, tool calls with a result (`toolResolved`), tool error rate (errors over `toolResolved`; a call still running is in neither), active days, sessions (distinct session files), month-to-date USD and month active days (month fields ignore the date range) |
 | `usage.timeseries` | `filters, bucket: 'day'\|'hour', tzOffsetMinutes` | `{ bucketStart, byModel: {model, usd, credits}[] }[]` |
 | `usage.tokenMix` | `filters` | `{ type: 'input'\|'cacheWrite'\|'cacheRead'\|'output', tokens, usd, costShare }[]` |
-| `usage.breakdown` | `filters, by: 'project'\|'model'\|'tool'` | rows: `id` (Project rows only: the stable Project id the `project` filter takes) and label (a Project's current name; reasoning too for model), calls, tokens, usd, credits; tools add errors, result chars, cost share (0 to 1, a fraction of the window's tool spend; absent when no tool call was priced) |
+| `usage.breakdown` | `filters, by: 'project'\|'model'\|'tool'` | rows: `id` (Project rows only: the stable Project id the `project` filter takes) and label (a Project's current name; reasoning too for model), calls, tokens, usd, credits; tools add errors, resolved (calls with a result, the error-rate denominator), result chars, cost share (0 to 1, a fraction of the window's tool spend; absent when no tool call was priced) |
+| `usage.errorCategories` | `filters` | rows `{category, count}` for failed tool calls in the window, most frequent first; `category` is `policy`, `edit_rejected`, `invalid_input`, `not_found`, `timeout`, `aborted`, `other` or `unknown` (an error recorded before categories existed). Reads `tool_calls` (the rollups carry no category), so the model, reasoning, Session and agent filters all apply. |
 | `usage.topSessions` | `filters` | ten rows: sessionId, label, project, usd, credits, calls, `conversationKnown` |
 | `usage.calls` | `filters, sort: {key, dir}, page: {index, size<=100}` | `{ rows, total }`; `key` from an allowlist |
 | `usage.frustration` | `filters` | `{ yelling, profanity, blame, messages, daily: {day, mood}[] }` |
