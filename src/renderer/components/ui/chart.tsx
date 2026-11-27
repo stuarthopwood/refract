@@ -9,6 +9,13 @@ import { Button } from '@/components/ui/button'
 import { SortableTable, sortRowsBy } from '@/components/SortableTable'
 import type { SortableColumn } from '@/components/SortableTable'
 import { cn } from '@/lib/utils'
+import {
+  CHART_PLOT_CLASS,
+  ChartAnnouncement,
+  ChartTooltip,
+  useChartCursor,
+  type ChartTooltipEntry
+} from '@/components/ui/chart-tooltip'
 
 export interface ChartSeries {
   name: string
@@ -203,6 +210,18 @@ export function StackedBarChart({ title, summary, view, series, buckets, formatV
   const slot = buckets.length > 0 ? CHART_WIDTH / buckets.length : CHART_WIDTH
   const barWidth = Math.max(2, slot * 0.7)
   const seriesTotals = series.map((_, i) => buckets.reduce((sum, bucket) => sum + (bucket.values[i] ?? 0), 0))
+  const cursor = useChartCursor(buckets.length, 'column')
+  const activeBucket = cursor.active !== null ? buckets[cursor.active] : undefined
+  const entry: ChartTooltipEntry | null =
+    cursor.active !== null && activeBucket
+      ? {
+          heading: activeBucket.label,
+          lines: [
+            ...series.map((s, si) => ({ label: s.name, value: formatValue(activeBucket.values[si] ?? 0) })),
+            { label: 'Total', value: formatValue(totals[cursor.active] ?? 0), strong: true }
+          ]
+        }
+      : null
   return (
     <ChartFrame
       view={view}
@@ -232,38 +251,53 @@ export function StackedBarChart({ title, summary, view, series, buckets, formatV
           <span>{formatValue(max)}</span>
           <span>{formatValue(0)}</span>
         </div>
-        <svg
-          aria-hidden
-          viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-          preserveAspectRatio="none"
-          className="h-36 min-w-0 flex-1 border-b border-l border-divider"
+        <div
+          role="group"
+          aria-label={`${title}. Arrow keys step through the columns.`}
+          className={cn('relative min-w-0 flex-1', CHART_PLOT_CLASS)}
+          {...(buckets.length > 0 ? cursor.plotProps : {})}
         >
-          {buckets.map((bucket, bi) => {
-            let y = CHART_HEIGHT
-            return (
-              <g key={bi}>
-                {bucket.values.map((value, si) => {
-                  const height = max > 0 ? (value / max) * (CHART_HEIGHT - 2) : 0
-                  if (height <= 0) return null
-                  y -= height
-                  return (
-                    <rect
-                      key={series[si]?.name ?? si}
-                      x={bi * slot + (slot - barWidth) / 2}
-                      y={y}
-                      width={barWidth}
-                      height={height}
-                      fill={`url(#${prefix}-${si})`}
-                      stroke="var(--foreground)"
-                      strokeWidth="1"
-                      vectorEffect="non-scaling-stroke"
-                    />
-                  )
-                })}
-              </g>
-            )
-          })}
-        </svg>
+          <svg
+            aria-hidden
+            viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
+            preserveAspectRatio="none"
+            className="h-36 w-full border-b border-l border-divider"
+          >
+            {buckets.map((bucket, bi) => {
+              let y = CHART_HEIGHT
+              return (
+                <g key={bi}>
+                  {bucket.values.map((value, si) => {
+                    const height = max > 0 ? (value / max) * (CHART_HEIGHT - 2) : 0
+                    if (height <= 0) return null
+                    y -= height
+                    return (
+                      <rect
+                        key={series[si]?.name ?? si}
+                        x={bi * slot + (slot - barWidth) / 2}
+                        y={y}
+                        width={barWidth}
+                        height={height}
+                        fill={`url(#${prefix}-${si})`}
+                        stroke="var(--foreground)"
+                        strokeWidth="1"
+                        vectorEffect="non-scaling-stroke"
+                      />
+                    )
+                  })}
+                </g>
+              )
+            })}
+          </svg>
+          {cursor.active !== null && entry && (
+            <ChartTooltip
+              key={cursor.active}
+              entry={entry}
+              anchorClassName="inset-y-0 bg-foreground/10"
+              anchorStyle={{ left: `${(cursor.active / buckets.length) * 100}%`, width: `${100 / buckets.length}%` }}
+            />
+          )}
+        </div>
       </div>
       {buckets.length > 0 && (
         <div aria-hidden className="flex justify-between text-xs text-muted-foreground">
@@ -271,6 +305,7 @@ export function StackedBarChart({ title, summary, view, series, buckets, formatV
           <span>{buckets[buckets.length - 1]?.label}</span>
         </div>
       )}
+      <ChartAnnouncement entry={entry} enabled={cursor.announcement} />
     </ChartFrame>
   )
 }
@@ -292,6 +327,14 @@ export function BarChart({ title, summary, view, rows, formatValue, labelHeader,
   const prefix = useId().replace(/:/g, '')
   const max = Math.max(0, ...rows.map((row) => row.value))
   const hasDetail = rows.some((row) => row.detail !== undefined)
+  const cursor = useChartCursor(rows.length, 'row')
+  const activeRow = cursor.active !== null ? rows[cursor.active] : undefined
+  const entry: ChartTooltipEntry | null = activeRow
+    ? {
+        heading: activeRow.label,
+        lines: [{ label: '', value: formatValue(activeRow.value) }, ...(activeRow.detail !== undefined ? [{ label: '', value: activeRow.detail }] : [])]
+      }
+    : null
   return (
     <ChartFrame
       view={view}
@@ -309,27 +352,31 @@ export function BarChart({ title, summary, view, rows, formatValue, labelHeader,
         />
       }
     >
-      <ul className="flex flex-col gap-2">
-        {rows.map((row, i) => (
-          <li key={row.label} className="flex flex-col gap-1 text-xs">
-            <div className="flex items-baseline gap-2">
-              <span className="font-medium">{row.label}</span>
-              <span className="ml-auto tabular-nums">{formatValue(row.value)}</span>
-              {row.detail !== undefined && <span className="tabular-nums text-muted-foreground">{row.detail}</span>}
-            </div>
-            <svg aria-hidden className="h-3 w-full" preserveAspectRatio="none" viewBox="0 0 100 12">
-              <rect
-                width={max > 0 ? Math.max(0.5, (row.value / max) * 100) : 0}
-                height="12"
-                fill={`url(#${prefix}-${i})`}
-                stroke="var(--foreground)"
-                strokeWidth="1"
-                vectorEffect="non-scaling-stroke"
-              />
-            </svg>
-          </li>
-        ))}
-      </ul>
+      <div role="group" aria-label={`${title}. Arrow keys step through the rows.`} className={CHART_PLOT_CLASS} {...cursor.plotProps}>
+        <ul className="flex flex-col gap-2">
+          {rows.map((row, i) => (
+            <li key={row.label} className="relative flex flex-col gap-1 text-xs" {...cursor.rowProps(i)}>
+              <div className="flex items-baseline gap-2">
+                <span className="font-medium">{row.label}</span>
+                <span className="ml-auto tabular-nums">{formatValue(row.value)}</span>
+                {row.detail !== undefined && <span className="tabular-nums text-muted-foreground">{row.detail}</span>}
+              </div>
+              <svg aria-hidden className="h-3 w-full" preserveAspectRatio="none" viewBox="0 0 100 12">
+                <rect
+                  width={max > 0 ? Math.max(0.5, (row.value / max) * 100) : 0}
+                  height="12"
+                  fill={`url(#${prefix}-${i})`}
+                  stroke="var(--foreground)"
+                  strokeWidth="1"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </svg>
+              {cursor.active === i && entry && <ChartTooltip entry={entry} anchorClassName="inset-0 rounded-sm bg-foreground/10" />}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <ChartAnnouncement entry={entry} enabled={cursor.announcement} />
     </ChartFrame>
   )
 }
@@ -338,26 +385,51 @@ export interface SparklineProps {
   /** Reads as the chart's accessible name, for example "Mood over the last 30 days". */
   label: string
   values: number[]
+  /** One label per value (the day or bucket), shown as the tooltip heading; a missing label reads "Point N". */
+  labels?: string[]
   className?: string
-  /** Formats the latest, low and high figures in the accessible name. */
+  /** Formats the latest, low and high figures in the accessible name, and the tooltip value. */
   formatValue?: (n: number) => string
 }
 
 const roundTo2 = (n: number): string => String(Number(n.toFixed(2)))
 
-export function Sparkline({ label, values, className, formatValue = roundTo2 }: SparklineProps) {
+export function Sparkline({ label, values, labels, className, formatValue = roundTo2 }: SparklineProps) {
+  const cursor = useChartCursor(values.length, 'point')
   const max = Math.max(1e-9, ...values)
   const summary =
     values.length > 0
       ? `${label}, latest ${formatValue(values[values.length - 1] ?? 0)}, low ${formatValue(Math.min(...values))}, high ${formatValue(Math.max(...values))}`
       : label
   const step = values.length > 1 ? 100 / (values.length - 1) : 0
-  const points = values.map((v, i) => `${(i * step).toFixed(2)},${(28 - (v / max) * 26).toFixed(2)}`).join(' ')
+  const yAt = (v: number): number => 28 - (v / max) * 26
+  const points = values.map((v, i) => `${(i * step).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ')
   const last = values.length > 0 ? points.split(' ')[values.length - 1]?.split(',') : null
+  const activeValue = cursor.active !== null ? values[cursor.active] : undefined
+  const entry: ChartTooltipEntry | null =
+    cursor.active !== null && activeValue !== undefined
+      ? { heading: labels?.[cursor.active] ?? `Point ${cursor.active + 1}`, lines: [{ label: '', value: formatValue(activeValue) }] }
+      : null
   return (
-    <svg role="img" aria-label={summary} viewBox="0 0 100 30" preserveAspectRatio="none" className={cn('h-8 w-full', className)}>
-      <polyline points={points} fill="none" stroke="var(--foreground)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-      {last && <circle cx={last[0]} cy={last[1]} r="2" fill="var(--foreground)" />}
-    </svg>
+    <div
+      role="group"
+      aria-label={`${label}. Arrow keys step through the points.`}
+      className={cn('relative', CHART_PLOT_CLASS)}
+      {...(values.length > 0 ? cursor.plotProps : {})}
+    >
+      <svg role="img" aria-label={summary} viewBox="0 0 100 30" preserveAspectRatio="none" className={cn('h-8 w-full', className)}>
+        <polyline points={points} fill="none" stroke="var(--foreground)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
+        {last && <circle cx={last[0]} cy={last[1]} r="2" fill="var(--foreground)" />}
+      </svg>
+      {entry && cursor.active !== null && activeValue !== undefined && (
+        <ChartTooltip
+          key={cursor.active}
+          entry={entry}
+          anchorClassName="size-2 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-foreground bg-background"
+          anchorStyle={{ left: `${cursor.active * step}%`, top: `${(yAt(activeValue) / 30) * 100}%` }}
+        />
+      )}
+      <ChartAnnouncement entry={entry} enabled={cursor.announcement} />
+    </div>
   )
 }
