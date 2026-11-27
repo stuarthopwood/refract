@@ -83,4 +83,12 @@ describe('SubStepList (#1928)', () => {
     expect(html).toContain('>1 done<')
     expect(html).toContain('>+3 queued<')
   })
+
+  it('is a named group in a tree row and a role-less span inside the sub-card button (#2318)', () => {
+    const one: SubStep[] = [{ label: 'Read', status: 'running' }]
+    expect(render(one)).toContain('role="group" aria-label="Sub-steps"')
+    const inline = renderToStaticMarkup(createElement(SubStepList, { steps: one, interactive: false }))
+    expect(inline).not.toContain('role=')
+    expect(inline).not.toContain('aria-label=')
+  })
 })

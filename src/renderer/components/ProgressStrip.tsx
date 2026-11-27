@@ -1,7 +1,7 @@
 // The shared progress strip (spec 060 S2-04, ADR 0003): a labelled `role="progressbar"` with a
 // numeric value, plus a polite live region that announces `doneText` once when it completes.
 // The label is the visible text; the bar itself is a shape cue (fill over a bordered track), or,
-// with `segments`, one aria-hidden block per step whose state reads by fill, edge and pulse (FR-146).
+// with `segments`, a slim h-1 row of aria-hidden blocks beside the label whose state reads by fill, edge and pulse (FR-146, FR-175).
 import { useEffect, useId, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -29,9 +29,9 @@ const FILL_CLASS = { ok: 'bg-foreground', warning: 'bg-severity-warning', error:
 // The queued edge is `muted-foreground` (3:1 against the card, unlike the `divider` hairline). Forced colours drop the fills, so there
 // the same three states read by border: a thick solid block, a thin dashed outline and a medium outline in the highlight colour.
 export const SEGMENT_CLASS: Record<ProgressSegmentState, string> = {
-  done: 'border border-severity-success bg-severity-success forced-colors:border-4 forced-colors:border-solid forced-colors:border-[CanvasText]',
+  done: 'border border-severity-success bg-severity-success-fill forced-colors:border-4 forced-colors:border-solid forced-colors:border-[CanvasText]',
   queued: 'border border-muted-foreground bg-muted forced-colors:border-dashed forced-colors:border-[CanvasText]',
-  running: 'animate-pulse border-2 border-state-working bg-transparent motion-reduce:animate-none forced-colors:border-solid forced-colors:border-[Highlight]'
+  running: 'animate-pulse border-2 border-accent-text bg-transparent motion-reduce:animate-none forced-colors:border-solid forced-colors:border-[Highlight]'
 }
 
 /** The live region's text after a render: `doneText` on a below-max to max change, empty while unfinished, otherwise unchanged. */
@@ -51,28 +51,32 @@ export function ProgressStrip({ value, max, label, doneText, state = 'ok', segme
     wasDone.current = done
   }, [done, doneText])
   const percent = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
+  const bar = (
+    <div
+      role="progressbar"
+      aria-labelledby={labelId}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-valuenow={Math.min(value, max)}
+      aria-valuetext={valueText ?? `${percent}%`}
+      className={segments ? 'flex h-1 min-w-0 flex-1 gap-1' : 'h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted'}
+    >
+      {segments ? (
+        segments.map((segment, index) => (
+          <span key={index} aria-hidden="true" data-segment={segment} className={cn('h-full min-w-1 flex-1 rounded-full', SEGMENT_CLASS[segment])} />
+        ))
+      ) : (
+        <div className={`h-full ${FILL_CLASS[state]} transition-[width] motion-reduce:transition-none`} style={{ width: `${percent}%` }} />
+      )}
+    </div>
+  )
   return (
-    <div className={cn('flex flex-col gap-1', className)}>
-      <p id={labelId} className="text-xs text-muted-foreground">
+    // Segmented: the label and the slim bar share one row so the header stays one calm line; the continuous bar keeps the stacked layout.
+    <div className={cn(segments ? 'flex items-center gap-2' : 'flex flex-col gap-1', className)}>
+      <p id={labelId} className={cn('text-xs text-muted-foreground', segments && 'shrink-0 tabular-nums')}>
         {label}
       </p>
-      <div
-        role="progressbar"
-        aria-labelledby={labelId}
-        aria-valuemin={0}
-        aria-valuemax={max}
-        aria-valuenow={Math.min(value, max)}
-        aria-valuetext={valueText ?? `${percent}%`}
-        className={segments ? 'flex h-2 w-full gap-1' : 'h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted'}
-      >
-        {segments ? (
-          segments.map((segment, index) => (
-            <span key={index} aria-hidden="true" data-segment={segment} className={cn('h-full min-w-2 flex-1 rounded-sm', SEGMENT_CLASS[segment])} />
-          ))
-        ) : (
-          <div className={`h-full ${FILL_CLASS[state]} transition-[width] motion-reduce:transition-none`} style={{ width: `${percent}%` }} />
-        )}
-      </div>
+      {bar}
       <div role="status" aria-live="polite" className="sr-only">
         {announce}
       </div>

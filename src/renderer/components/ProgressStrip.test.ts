@@ -20,11 +20,11 @@ describe('ProgressStrip segments', () => {
 
   it('maps done to a solid success fill, queued to a muted-foreground edge on the muted surface, running to a pulsing outline', () => {
     const html = render({ segments })
-    expect(html).toMatch(/data-segment="done"[^>]*class="[^"]*bg-severity-success/)
+    expect(html).toMatch(/data-segment="done"[^>]*class="[^"]*bg-severity-success-fill/)
     expect(html).toMatch(/data-segment="queued"[^>]*class="[^"]*border-muted-foreground[^"]*bg-muted/)
     const running = html.match(/data-segment="running"[^>]*class="([^"]*)"/)![1]
     expect(running).toContain('border-2')
-    expect(running).toContain('border-state-working')
+    expect(running).toContain('border-accent-text')
     expect(running).toContain('animate-pulse')
   })
 
@@ -43,13 +43,22 @@ describe('ProgressStrip segments', () => {
   it('stops the running pulse under reduced motion and keeps the outline', () => {
     const running = render({ segments }).match(/data-segment="running"[^>]*class="([^"]*)"/)![1]
     expect(running).toContain('motion-reduce:animate-none')
-    expect(running).toContain('border-state-working')
+    expect(running).toContain('border-accent-text')
   })
 
   it('does not pulse the done or queued segments', () => {
     const html = render({ segments })
     expect(html.match(/data-segment="done"[^>]*class="([^"]*)"/)![1]).not.toContain('animate-pulse')
     expect(html.match(/data-segment="queued"[^>]*class="([^"]*)"/)![1]).not.toContain('animate-pulse')
+  })
+
+  it('draws a slim h-1 bar on one row beside the label, never the h-2 stacked bar (#2318)', () => {
+    // Mutation: restore the h-2 chunky bar or stack the label above it.
+    const html = render({ segments, value: 1, max: 3 })
+    expect(html).toMatch(/role="progressbar"[^>]*class="[^"]*\bh-1\b/)
+    expect(html).not.toMatch(/role="progressbar"[^>]*class="[^"]*\bh-2\b/)
+    expect(html).toMatch(/^<div class="flex items-center gap-2/)
+    expect(html.indexOf('1/4 done')).toBeLessThan(html.indexOf('role="progressbar"'))
   })
 
   it('keeps the progressbar role, label and values and takes a custom aria-valuetext', () => {

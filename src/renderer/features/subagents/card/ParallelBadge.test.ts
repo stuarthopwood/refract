@@ -7,16 +7,18 @@ const render = (count: number) => renderToStaticMarkup(createElement(ParallelBad
 
 describe('ParallelBadge', () => {
   it('words the visible text and the accessible name', () => {
-    expect(parallelBadgeText(3)).toBe('3 parallel')
+    expect(parallelBadgeText(3)).toBe('3')
     expect(parallelBadgeName(3)).toBe('3 agents in parallel')
   })
 
-  it('renders the fork glyph, the short text and a screen-reader name for several agents', () => {
+  it('renders a borderless fork glyph, the bare count and a screen-reader name for several agents', () => {
     const html = render(3)
     expect(html).toContain('data-parallel-badge')
     expect(html).toMatch(/<svg[^>]*aria-hidden="true"/)
-    expect(html).toContain('<span aria-hidden="true">3 parallel</span>')
+    expect(html).toContain('<span aria-hidden="true">3</span>')
     expect(html).toContain('<span class="sr-only">3 agents in parallel</span>')
+    expect(html).not.toMatch(/\bborder\b/)
+    expect(html).toContain('bg-surface-1')
   })
 
   it.each([0, 1])('renders nothing for %i agent(s)', (count) => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SubAgentItem } from '../viewModel/types'
-import { stageAccessibleName, stageAgentsGridClass, stageRowModel, type StageRowView } from './stageRowModel'
+import { repeatsStageTitle, stageAccessibleName, stageAgentsGridClass, stageRowModel, type StageRowView } from './stageRowModel'
 
 const agent = (name: string, overrides: Partial<SubAgentItem> = {}): SubAgentItem => ({
   id: name,
@@ -19,12 +19,38 @@ const view = (agents: SubAgentItem[], overrides: Partial<StageRowView> = {}): St
   ...overrides
 })
 
+describe('repeatsStageTitle (#2318, rule 3)', () => {
+  it('matches ignoring case and surrounding whitespace', () => {
+    // Mutation: go back to a strict `===` / `!==` comparison.
+    expect(repeatsStageTitle('Gate', 'Gate')).toBe(true)
+    expect(repeatsStageTitle('  gate ', 'GATE')).toBe(true)
+  })
+
+  it('does not match a different or merely prefixed name', () => {
+    // Mutation: compare with `startsWith` or `includes`.
+    expect(repeatsStageTitle('Gate', 'Gate review')).toBe(false)
+    expect(repeatsStageTitle('Solo', 'Gate')).toBe(false)
+  })
+
+  it('is false for a missing title, so the name is kept', () => {
+    // Mutation: drop the null check (throws) or treat null as a match.
+    expect(repeatsStageTitle('Solo', null)).toBe(false)
+    expect(repeatsStageTitle('Solo', undefined)).toBe(false)
+  })
+})
+
 describe('stageRowModel', () => {
   describe('given one agent', () => {
     it('shows it as the header chip and draws no parallel badge', () => {
       const model = stageRowModel(view([agent('Solo')]))
       expect(model.chipAgent?.name).toBe('Solo')
       expect(model.parallelCount).toBe(0)
+    })
+
+    it('hides the agent name when it only repeats the Stage title, ignoring case and padding', () => {
+      expect(stageRowModel(view([agent('Gate')], { cleanTitle: 'Gate' })).chipAgent).toBeNull()
+      expect(stageRowModel(view([agent(' gate ')], { cleanTitle: 'Gate' })).chipAgent).toBeNull()
+      expect(stageRowModel(view([agent('Solo')], { cleanTitle: null })).chipAgent?.name).toBe('Solo')
     })
   })
 

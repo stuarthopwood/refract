@@ -99,7 +99,7 @@
   --pane-focused-edge: transparent;
   --focused-badge-bg: color-mix(in oklab, var(--active-indicator) 20%, transparent);
   --border-strong: var(--border);
-  --accent-text: #9bb7d5;
+  --accent-text: #a3bdda;
   --md-heading: var(--accent-text);
   --md-marker: var(--accent-text);
   --md-quote-bar: var(--accent-text);
@@ -142,7 +142,7 @@
   --alert-important: var(--accent-text);
   --alert-warning: var(--severity-warning);
   --alert-caution: var(--severity-error);
-  --agent-spinner-core: #9bb7d5;
+  --agent-spinner-core: #a3bdda;
   --mermaid-bg: #2e3440;
   --mermaid-node-fill: #343a46;
   --mermaid-node-fg: #f9fafc;
@@ -158,7 +158,7 @@
   --mermaid-crit: #db0000;
   --mermaid-cscale-11: #a85400;
   --mermaid-cscale-label-11: #fafafa;
-  --mermaid-accent: #9bb7d5;
+  --mermaid-accent: #a3bdda;
   --mermaid-accent-fill: #495565;
   --mermaid-palette-1: #76a9ff;
   --mermaid-palette-2: #21df9b;

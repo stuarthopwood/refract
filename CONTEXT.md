@@ -600,7 +600,7 @@ An item an OMP extension asks Refract to show: a left pane item, a right pane pa
 _Avoid_: plugin, widget, extension UI
 
 **List cache**:
-The last good Pull requests or Issues list for the default open filter, held in memory for a 60 s freshness window and persisted to the app data directory so a cold start shows rows at once, marked stale until the refresh behind them lands (#1894, #1895, spec 001 FR-175, FR-176).
+The last good Pull requests or Issues list for the default open filter, held in memory for a 60 s freshness window and persisted to the app data directory so a cold start shows rows at once, marked stale until the refresh behind them lands (#1894, #1895, spec 001 FR-180, FR-181).
 _Avoid_: prefetch store, offline mode
 
 ## Flagged ambiguities

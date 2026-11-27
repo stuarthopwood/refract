@@ -6,7 +6,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SubagentSummary } from '../../../shared/model'
 import { assistantText, subagentItem, subagentSummary } from '../subagents/viewModel/testFixtures'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
-import { SubagentChainRow } from './SubagentChainRow'
+import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
 
 // A server render reads zustand's INITIAL state, never a later `setState`, so the toggle store is a plain selector over mutable state.
 const toggles = vi.hoisted(() => ({ bySession: {} as Record<string, Record<string, boolean>> }))
@@ -110,5 +110,47 @@ describe('SubagentChainRow Stage open state (FR-149)', () => {
   it('gives the card its own disclosure button with aria-expanded, apart from the Stage chevrons', () => {
     // Mutation: drop aria-expanded from the card trigger or fold it into a Stage chevron.
     expect(cardTrigger(render(stagesFor(['running', 'running'])))).toContain('aria-expanded="true"')
+  })
+})
+
+describe('StageGroupRow, a single-Stage turn (FR-175, FR-176)', () => {
+  const renderRow = (group: StageGroup, sessionId: string | null = null) =>
+    renderToStaticMarkup(createElement(TooltipProvider, null, createElement(StageGroupRow, { group, sessionId })))
+  const visibleText = (html: string): string => html.replace(/<[^>]*>/g, ' ')
+
+  it('draws the shared Stage header grid, not a separate collapsed line', () => {
+    // Mutation: bring back the old CollapsedLine for a one-Stage turn.
+    const html = renderRow(stagesFor(['finished'])[0]!)
+    expect(html).toContain('grid-cols-[16px_1fr_auto]')
+    expect(html).toContain('Stage 1')
+  })
+
+  it('shows no "N done" rollup text, in a solo or a parallel Stage', () => {
+    // Mutation: render the rollup beside the title again.
+    expect(visibleText(renderRow(stagesFor(['finished'])[0]!))).not.toMatch(/\d+ done/)
+    const parallel = groupSubagentStages(
+      [subagentItem({ name: 'GateA', specIndex: 0, result: 'Passed' }), subagentItem({ name: 'GateB', specIndex: 1, result: 'Passed' })],
+      []
+    ).find(isStageGroup)!
+    const html = renderRow(parallel)
+    expect(html).toContain('data-parallel-badge')
+    expect(visibleText(html)).not.toMatch(/\d+ done/)
+  })
+
+  it('keeps one chevron button that reflects the collapsed state of a settled Stage', () => {
+    // Mutation: drop aria-expanded from the chevron or open a settled Stage on its own.
+    expect(stageChevrons(renderRow(stagesFor(['finished'])[0]!))).toEqual(['false'])
+  })
+
+  it('prints a failed solo Stage reason once, in the header outcome line, never again in the body (#2318)', () => {
+    // Mutation: bring back the red failure paragraph under the expanded solo Stage.
+    const reason = 'Boom: the fixture sweep failed hard.'
+    const items = [subagentItem({ name: 'Solo', id: 'c1:Solo', toolCallId: 'c1', status: 'error', result: reason })]
+    const summaries = [subagentSummary({ nameOrTask: 'Solo', id: 'c1:Solo', toolCallId: 'c1', status: 'failed' })]
+    const group = groupSubagentStages(items, summaries).find(isStageGroup)!
+    toggles.bySession = { s1: { [group.id]: true } }
+    const html = renderRow(group, 's1')
+    toggles.bySession = {}
+    expect(visibleText(html).split('failed hard').length - 1).toBe(1)
   })
 })

@@ -10,6 +10,9 @@ export interface StageDependency {
 
 const LABEL_MAX_CHARS = 60
 
+// Only the head of a line is scanned for setup; the cap keeps the shell-setup regex off a pasted multi-kilobyte line.
+const SHELL_SCAN_MAX_CHARS = 1000
+
 const HEADING_ONLY_GOAL_RE = /^#{1,6}\s*goal\b:?\s*$/i
 
 const HEADING_OR_GOAL_PREFIX_RE = /^(?:#{1,6}\s*)?(?:goal\b:?\s*)?/i
@@ -33,6 +36,27 @@ export function stripWorktreePaths(text: string): string {
   return text.replace(WORKTREE_PATH_RE, ' ').replace(/\s{2,}/g, ' ').trim()
 }
 
+// A shell argument: a quoted string or a run with no separator in it.
+const SHELL_ARG = `(?:"[^"]*"|'[^']*'|[^\\s;&|]+)`
+// Setup that precedes the real command (`cd <dir> &&`, `export X=1;`, `set -e;`, `$env:X='1';`); none of it says what the step does.
+const SHELL_SETUP_RE = new RegExp(
+  `^(?:cd\\s+${SHELL_ARG}|export\\s+[A-Za-z_]\\w*(?:=${SHELL_ARG})?|set\\s+-\\S+|\\$env:[A-Za-z_]\\w*\\s*=\\s*${SHELL_ARG})\\s*(?:&&|;)\\s*`,
+  'i'
+)
+// `FOO=bar BAZ=1 cmd`: environment assignments written straight before the command.
+const ENV_ASSIGN_RE = new RegExp(`^[A-Za-z_]\\w*=${SHELL_ARG}?\\s+`)
+
+/** `text` without leading `cd ... &&`, `export X=...;` and `VAR=value` setup, so a step reads as its command. Raw text is returned when nothing but setup is there. */
+export function stripShellSetup(text: string): string {
+  let rest = text.trim()
+  for (;;) {
+    const next = rest.replace(SHELL_SETUP_RE, '').replace(ENV_ASSIGN_RE, '')
+    if (next === rest) break
+    rest = next
+  }
+  return rest.length > 0 ? rest : text.trim()
+}
+
 function findFirstContentLine(lines: string[], clean = false): { index: number; stripped: string } | null {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim()
@@ -40,7 +64,7 @@ function findFirstContentLine(lines: string[], clean = false): { index: number; 
     if (HEADING_ONLY_GOAL_RE.test(line)) continue
     if (clean && RULES_HARD_RE.test(line)) return null
     let stripped = line.replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
-    if (clean) stripped = stripWorktreePaths(stripped)
+    if (clean) stripped = stripWorktreePaths(stripShellSetup(stripped.slice(0, SHELL_SCAN_MAX_CHARS)))
     if (stripped.length === 0) continue
     if (clean && BARE_PATH_LABEL_RE.test(stripped)) continue
     return { index: i, stripped }
@@ -189,22 +213,27 @@ export function resolveStageDependencies<
   }
 }
 
-export function stageRollupText(counts: Record<SubagentRowStatus, number>, total: number, isRunning: boolean): string {
-  const parts = [isRunning ? `${counts.finished} of ${total} done` : `${counts.finished} done`]
+/** The failed, cancelled, exited and parked counts, in that order; zero parts are dropped. */
+function shortfallParts(counts: Record<SubagentRowStatus, number>): string[] {
+  const parts: string[] = []
   if (counts.failed > 0) parts.push(`${counts.failed} failed`)
   if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
   if (counts.exited > 0) parts.push(`${counts.exited} exited`)
   if (counts.parked > 0) parts.push(`${counts.parked} parked`)
-  return parts.join(', ')
+  return parts
+}
+
+/** The Stage's spoken roll-up ("3 of 5 done" while it runs, "5 done" once settled); never drawn as a line (see `stageOutcomeText`). */
+export function stageRollupText(counts: Record<SubagentRowStatus, number>, total: number, isRunning: boolean): string {
+  return [isRunning ? `${counts.finished} of ${total} done` : `${counts.finished} done`, ...shortfallParts(counts)].join(', ')
+}
+
+/** The line a parallel Stage draws under its title: "1/3 done" while it runs, nothing once everyone finished, only the shortfall ("1 failed") otherwise (#2318, FR-176). */
+export function stageOutcomeText(counts: Record<SubagentRowStatus, number>, total: number, isRunning: boolean): string {
+  return [...(isRunning ? [`${counts.finished}/${total} done`] : []), ...shortfallParts(counts)].join(', ')
 }
 
 /** The unsettled counts only ("1 running, 2 failed"); cancelled is always its own word, never folded into "failed". Zero parts are dropped. */
 export function unsettledRollupText(counts: Record<SubagentRowStatus, number>): string {
-  const parts: string[] = []
-  if (counts.running > 0) parts.push(`${counts.running} running`)
-  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
-  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
-  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
-  if (counts.parked > 0) parts.push(`${counts.parked} parked`)
-  return parts.join(', ')
+  return [...(counts.running > 0 ? [`${counts.running} running`] : []), ...shortfallParts(counts)].join(', ')
 }

@@ -21,25 +21,21 @@ const GLYPH_KEY_BY_STATUS: Record<SubagentRowStatus, StatusGlyphKey> = {
   parked: 'parked'
 }
 
-export function isSubagentSuccessStatus(status: SubagentRowStatus): boolean {
-  return GLYPH_KEY_BY_STATUS[status] === 'success-done'
-}
-
-export const SUBAGENT_SUCCESS_TEXT_CLASS = 'text-severity-success'
-
 /** Shares the `--severity-error` token with the failed tool-call label. */
 export const SUBAGENT_ERROR_TEXT_CLASS = 'text-severity-error'
 
-// Takes `counts`, not a derived status, so both call sites share one "any member failed" rule.
+// Takes `counts`, not a derived status, so both call sites share one "any member failed" rule. Success has no text colour:
+// titles stay foreground and the tick alone carries green (FR-175, #2318).
 export function subagentStatusTextClass(counts: Record<SubagentRowStatus, number>): string | undefined {
-  if (counts.failed > 0) return SUBAGENT_ERROR_TEXT_CLASS
-  if (counts.running === 0 && counts.cancelled === 0 && counts.exited === 0 && counts.parked === 0) return SUBAGENT_SUCCESS_TEXT_CLASS
-  return undefined
+  return counts.failed > 0 ? SUBAGENT_ERROR_TEXT_CLASS : undefined
 }
+
+// A running agent's spinner takes the accent text colour, not the Session working-state token, which equals the success colour in some themes (#2318 rule 2).
+const RUNNING_GLYPH_CLASS = 'text-accent-text'
 
 function SubagentStatusGlyphIcons({ status }: { status: SubagentRowStatus }) {
   const { Icon, className } = STATUS_GLYPH[GLYPH_KEY_BY_STATUS[status]]
-  return <Icon aria-hidden className={cn('size-4 shrink-0', className)} />
+  return <Icon aria-hidden className={cn('size-4 shrink-0', status === 'running' ? RUNNING_GLYPH_CLASS : className)} />
 }
 
 /** A distinct icon per state, never colour alone. */

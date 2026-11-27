@@ -1,54 +1,22 @@
 import { cn } from '@/lib/utils'
 import * as React from 'react'
-import { ChevronRightIcon, PanelRightOpenIcon } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
-import { openHostedPanel } from '../right-pane/hosted-panel-actions'
+import { ChevronRightIcon } from 'lucide-react'
+import { useSettingsStore } from '@/state'
 import { IconButton } from '@/components/IconButton'
 import { FadeCollapse } from '@/components/FadeCollapse'
 import { StageHeader } from '../subagents/card/StageHeader'
 import { stageAccessibleName, stageAgentsGridClass, stageRowModel } from '../subagents/card/stageRowModel'
-import type { SubAgentItem } from '../subagents/viewModel'
 import { StageUsesLine } from './StageDependencies'
 import { SpineItem, SpineList } from './SpineList'
-import { SubagentRow } from './SubagentRow'
+import { SubagentCardButton } from './SubagentRow'
 import { rowVisibility } from './transcriptRowVisibility'
 import { JumpToStageContext } from './stageJump'
 import { stageHeading } from './stageMeta'
 import { useStickyDisclosure } from './useStickyDisclosure'
 import type { StageGroup } from './groupSubagentStages'
-import type { SubagentItem } from './subagentChainStatus'
 
 /** The Stage's own toggle key; `card:` keeps it apart from `StageGroupRow`'s bare id and the panel's `panel:` keys (FR-150 d). */
 export const stageToggleRowId = (stageId: string): string => `card:${stageId}`
-
-function ChainAgentEntry({ item, agent, sessionId }: { item: SubagentItem; agent: SubAgentItem; sessionId: string | null }) {
-  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
-  const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
-  return (
-    <div className="flex min-w-0 items-start gap-1">
-      <div className="min-w-0 flex-1">
-        <SubagentRow item={item} agent={agent} showGoal={false} variant="card" />
-      </div>
-      {match && sessionId && (
-        <IconButton
-          variant="ghost"
-          size="icon-xs"
-          className="shrink-0"
-          label={`Open ${item.name} in the subagents panel`}
-          onClick={(event) =>
-            openHostedPanel('subagents', sessionId, {
-              selectSubagentId: match.id,
-              selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
-              opener: event.currentTarget
-            })
-          }
-        >
-          <PanelRightOpenIcon aria-hidden className="size-4" />
-        </IconButton>
-      )}
-    </div>
-  )
-}
 
 // A labelled `role="group"` per stage: `SpineList`'s `<ol>` only gives an unlabelled "1 of 2".
 // A running Stage opens and a settled one collapses on its own; the developer's own toggle wins for the Session (FR-149).
@@ -80,7 +48,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
   }, [expanded])
   return (
     // aria-live="off": the running Stage's outcome line changes often and must not be announced; the settle announcer speaks for it.
-    <div role="group" aria-label={stageAccessibleName(stage.view)} aria-live="off" className="@container text-sm" data-status={status}>
+    <div role="group" aria-label={stageAccessibleName(stage.view)} aria-live="off" className="@container border-t border-divider text-sm first:border-t-0" data-status={status}>
       <StageHeader
         stage={stage.view}
         expanded={expanded}
@@ -88,17 +56,14 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
         columnFocusable={!canJump}
         renderTitle={
           canJump
-            ? ({ label, colorClass }) => (
+            ? ({ content }) => (
                 <button
                   type="button"
-                  className={cn(
-                    'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 -my-1 hover:bg-muted hover:underline focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring',
-                    colorClass
-                  )}
+                  className="-mx-1 -my-1 flex min-w-0 max-w-full cursor-pointer items-center gap-2 rounded px-1 py-1 hover:bg-muted hover:underline focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring"
                   aria-label={`Go to ${speechHeading}`}
                   onClick={() => jumpToStageRow(stage.id)}
                 >
-                  {label}
+                  {content}
                 </button>
               )
             : undefined
@@ -116,15 +81,21 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           </IconButton>
         }
       />
-      {/* pl-8 = icon slot plus gap, so "Uses:" starts under the title. */}
-      <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-8 pr-2" />
+      {/* pl-10 = the row's px-4 (16px), the 16px status column and its 8px gap, so "Uses:" starts under the title. */}
+      <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-10 pr-4" />
       <FadeCollapse show={expanded}>
         <div ref={contentRef}>
-          {/* pl-8 = icon slot plus gap, so the agent panels start under the Stage title; no rail or elbows (#2235). */}
-          <SpineList bare className={cn('pl-8', stageAgentsGridClass(parallelCount))}>
+          {/* The same inset puts the agent panels under the Stage title; no rail or elbows (#2235). A single agent's guide line sits at the 40px mark (#2318, rule 6). */}
+          <SpineList bare className={cn('pb-2 pr-4 pl-10', stageAgentsGridClass(parallelCount))}>
             {stage.items.map((item, index) => (
               <SpineItem key={item.id} isNew={false}>
-                <ChainAgentEntry item={item} agent={stage.view.agents[index]!} sessionId={sessionId} />
+                <SubagentCardButton
+                  item={item}
+                  agent={stage.view.agents[index]!}
+                  sessionId={sessionId}
+                  flat={stage.items.length === 1}
+                  stageTitle={stage.view.cleanTitle}
+                />
               </SpineItem>
             ))}
           </SpineList>

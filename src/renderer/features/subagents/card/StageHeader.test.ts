@@ -28,6 +28,29 @@ describe('StageHeader', () => {
     })
   })
 
+  describe('given the three-column row (#2318, FR-175)', () => {
+    it('lays the glyph, the text and the duration out on grid-cols-[16px_1fr_auto]', () => {
+      expect(render({})).toContain('grid-cols-[16px_1fr_auto]')
+    })
+
+    it('keeps a settled Stage title in the foreground colour: green is only on the tick', () => {
+      const html = render({})
+      expect(html).toMatch(/<span class="min-w-0 truncate text-readout text-chat-foreground">/)
+      expect(html.match(/text-severity-success/g)).toHaveLength(1)
+    })
+
+    it('shows a single agent of the same name once: no chip repeats the Stage title', () => {
+      expect(render({})).not.toContain('data-agent-chip')
+    })
+
+    it('lets the duration column shrink to its text, so the title keeps the free width instead of truncating beside spare space (#2318)', () => {
+      // Mutation: put the reserved `min-w-[6ch]` back on the duration column; the title then truncates ("Me...") with room to spare.
+      const html = render({})
+      expect(html).toMatch(/<span data-slot="row-duration"[^>]*class="[^"]*\bmin-w-0\b/)
+      expect(html).not.toContain('min-w-[6ch]')
+    })
+  })
+
   describe('outcomeIsClamped', () => {
     it('clamps only a collapsed Stage nobody asked to read in full', () => {
       expect(outcomeIsClamped(false, false)).toBe(true)

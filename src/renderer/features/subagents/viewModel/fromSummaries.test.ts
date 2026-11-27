@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { fromSummaries } from './fromSummaries'
 import { fromTranscript } from './fromTranscript'
-import { subagentItem, subagentSummary } from './testFixtures'
+import { assistantText, subagentItem, subagentSummary } from './testFixtures'
+import type { ChatScenario } from './types'
 
 describe('fromSummaries', () => {
   it('groups contiguous summaries by toolCallId into numbered stages', () => {
@@ -77,5 +78,29 @@ describe('the two entry points agree on one stage', () => {
       stages: s.stages.map((st) => ({ title: st.cleanTitle, counts: st.counts, rollup: st.rollupText, status: st.status, agents: st.agents.map((a) => [a.name, a.role, a.status, a.duration]) }))
     })
     expect(pick(fromChat)).toEqual(pick(fromPanel))
+  })
+})
+
+// #2318 defect 2: the drawer read the readout summaries alone, so its Stage title and outcome line fell back to the agent name and the task
+// while the chat card, which reads the transcript's task and result text too, showed the goal and the outcome.
+describe('the drawer reads the same title and outcome as the chat card (#2318, FR-175..179)', () => {
+  const items = [
+    subagentItem({ name: 'MemberOne', id: 'c1:MemberOne', toolCallId: 'c1', specIndex: 0, task: 'Confirm Stage members never duplicate the shared goal' }),
+    subagentItem({ name: 'MemberTwo', id: 'c1:MemberTwo', toolCallId: 'c1', specIndex: 1, task: 'Confirm Stage members never duplicate the shared goal' }),
+    subagentItem({ name: 'SoloSweep', id: 'c2:SoloSweep', toolCallId: 'c2', specIndex: 0, messageId: 'm2', task: 'Sweep the fixture', result: 'Swept clean; every label matched.' })
+  ]
+  const summaries = items.map((item) => subagentSummary({ nameOrTask: item.name, id: item.id, toolCallId: item.toolCallId, specIndex: item.specIndex }))
+  const pick = (scenario: ChatScenario) => scenario.stages.map((stage) => ({ title: stage.cleanTitle, outcome: stage.outcomeSummary, agents: stage.agents.map((agent) => agent.whatItDid) }))
+
+  it('gives every Stage the title and outcome the transcript derives, not the agent names', () => {
+    // Mutation: ignore `items` in fromSummaries, so the title and outcome fall back to the names the summaries carry.
+    const panel = fromSummaries(summaries, items)
+    expect(pick(panel)).toEqual(pick(fromTranscript([items[0]!, items[1]!, assistantText('t'), items[2]!], summaries)))
+    expect(panel.stages[1]!.outcomeSummary).toMatch(/^Swept clean/)
+  })
+
+  it('still reads from the summaries alone when the transcript has no matching item', () => {
+    // Mutation: drop an agent that has no item, or throw on the missing one.
+    expect(fromSummaries(summaries, []).stages.map((stage) => stage.agents.length)).toEqual([2, 1])
   })
 })

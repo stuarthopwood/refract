@@ -26,7 +26,24 @@ describe('fromTranscript', () => {
       expect(scenario.headerStats).toBe('1 stage, 2 agents, 1 failed')
       expect(scenario.totalDurationMs).toBe(6000)
       expect(scenario.totalDuration).toBe(formatElapsed(6000))
-      expect(stage.outcomeSummary).toBe('1 done, 1 failed')
+      // Mutation: draw "1 done, 1 failed" again -- a settled Stage adds no "N done" line, only its shortfall (#2318).
+      expect(stage.outcomeSummary).toBe('1 failed')
+    })
+  })
+
+  describe('given a parallel Stage with no failures (#2318, FR-176)', () => {
+    it('draws no "N done" line once every agent has finished', () => {
+      // Mutation: put the roll-up back as the outcome.
+      const settled = fromTranscript([0, 1, 2].map((index) => subagentItem({ name: `Gate${index}`, specIndex: index, status: 'done' })), []).stages[0]!
+      expect(settled).not.toHaveProperty('outcomeSummary')
+      expect(settled.rollupText).toBe('3 done')
+    })
+
+    it('draws "1/3 done" while it runs, and keeps the spoken roll-up', () => {
+      const statuses = ['done', 'running', 'running'] as const
+      const running = fromTranscript(statuses.map((status, index) => subagentItem({ name: `Gate${index}`, specIndex: index, status })), []).stages[0]!
+      expect(running.outcomeSummary).toBe('1/3 done')
+      expect(running.rollupText).toBe('1 of 3 done')
     })
   })
 
