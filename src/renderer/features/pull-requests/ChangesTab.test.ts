@@ -13,7 +13,7 @@ const render = (changedFilesCount: number): string =>
 describe('ChangesTab', () => {
   test('Given fewer files listed than the pull request changed, Then a polite inline-status note offers Open in browser', () => {
     const html = render(5)
-    const note = html.match(/<p[^>]*data-slot="inline-status"[^>]*role="status"[^>]*>(?:(?!<\/p>).)*changed files are shown\.(?:(?!<\/p>).)*<\/p>/)?.[0] ?? ''
+    const note = html.match(/<p(?=[^>]*data-slot="inline-status")(?=[^>]*role="status")[^>]*>(?:(?!<\/p>).)*changed files are shown\.(?:(?!<\/p>).)*<\/p>/)?.[0] ?? ''
     expect(note).toContain('Only 1 of 5 changed files are shown.')
     expect(note).toContain('href="https://github.com/o/r/pull/1/files"')
     expect(note).toContain('Open in browser')

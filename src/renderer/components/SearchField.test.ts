@@ -3,9 +3,11 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, test } from 'vitest'
 import { SearchField, type SearchFieldProps } from './SearchField'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 const base: SearchFieldProps = { value: '', onValueChange: () => undefined, label: 'Filter models', placeholder: 'Filter models…' }
-const render = (props: Partial<SearchFieldProps> = {}): string => renderToStaticMarkup(createElement(SearchField, { ...base, ...props }))
+const render = (props: Partial<SearchFieldProps> = {}): string =>
+  renderToStaticMarkup(createElement(TooltipProvider, null, createElement(SearchField, { ...base, ...props })))
 const inputTag = (html: string): string => html.match(/<input[^>]*>/)?.[0] ?? ''
 
 describe('SearchField', () => {
@@ -33,5 +35,27 @@ describe('SearchField', () => {
     const tag = inputTag(render())
     expect(tag).toContain('placeholder="Filter models… (3+ characters)"')
     expect(tag).not.toMatch(/rounded-\[/)
+  })
+
+  test('Given a resultCount, Then the polite result status is mounted; without one, or when instant, it is not', () => {
+    expect(render({ resultCount: 4 })).toContain('data-slot="filter-result-status"')
+    expect(render()).not.toContain('data-slot="filter-result-status"')
+    expect(render({ resultCount: 4, instant: true })).not.toContain('data-slot="filter-result-status"')
+  })
+
+  test.each([
+    { escapeClears: undefined, shown: true },
+    { escapeClears: true, shown: true },
+    { escapeClears: false, shown: false }
+  ])('Given a value and escapeClears=$escapeClears, Then the Escape-to-clear description shown is $shown', ({ escapeClears, shown }) => {
+    const html = render({ value: 'abc', escapeClears })
+    expect(html.includes('Press Escape to clear')).toBe(shown)
+    expect(inputTag(html).includes('aria-describedby')).toBe(true)
+  })
+
+  test('Given escapeClears=false and the rule hint, Then the input describes only the rule, not a clear hint', () => {
+    const html = render({ value: 'abc', escapeClears: false })
+    const ids = inputTag(html).match(/aria-describedby="([^"]*)"/)?.[1]?.split(' ') ?? []
+    expect(ids).toHaveLength(1)
   })
 })

@@ -21,6 +21,8 @@ export interface SearchFieldProps {
   resultCount?: number
   /** Replaces Esc-clears: when given, Esc anywhere in the field calls this instead (a find bar that closes on Esc, say), and the Esc hints are not shown. */
   onEscape?(): void
+  /** False when the host handles Esc itself (a popover that closes on it): the field neither clears on Esc nor shows the Esc hints. */
+  escapeClears?: boolean
   /** Called on Enter in the input (not while composing text), with whether Shift was held. */
   onSubmit?(shift: boolean): void
   /** Applied to the field's own wrapper, never the `<input>` directly. */
@@ -49,6 +51,7 @@ export function SearchField({
   instant = false,
   resultCount,
   onEscape,
+  escapeClears = true,
   onSubmit,
   className,
   inputRef,
@@ -62,7 +65,8 @@ export function SearchField({
   const hasValue = value !== ''
   const clearHintId = useId()
   const ruleHintId = useId()
-  const describedBy = [!instant ? ruleHintId : undefined, hasValue && !onEscape ? clearHintId : undefined].filter(Boolean).join(' ') || undefined
+  const showEscHint = escapeClears && !onEscape
+  const describedBy = [!instant ? ruleHintId : undefined, hasValue && showEscHint ? clearHintId : undefined].filter(Boolean).join(' ') || undefined
 
   function clear(): void {
     onValueChange('')
@@ -87,7 +91,7 @@ export function SearchField({
       onEscape()
       return
     }
-    if (!hasValue) return
+    if (!escapeClears || !hasValue) return
     event.preventDefault()
     event.stopPropagation()
     clear()
@@ -125,7 +129,7 @@ export function SearchField({
             {FILTER_MIN_CHARS_HINT}
           </span>
         )}
-        {hasValue && !onEscape && (
+        {hasValue && showEscHint && (
           <span id={clearHintId} className="sr-only">
             Press Escape to clear
           </span>
@@ -140,7 +144,7 @@ export function SearchField({
             <TooltipContent side={tooltipSide}>
               <span className="inline-flex items-center gap-2">
                 {clearLabel}
-                {!onEscape && (
+                {showEscHint && (
                   <KbdGroup>
                     <Kbd>Esc</Kbd>
                   </KbdGroup>

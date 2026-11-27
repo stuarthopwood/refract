@@ -289,6 +289,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
             placeholder="Filter models…"
             label="Filter models"
             resultCount={catalog && !catalogError ? filteredCatalog.length : undefined}
+            escapeClears={false}
           />
         </div>
         <div ref={listRef} id={listboxId} role="listbox" aria-label="Models" className="min-h-0 flex-1 overflow-y-auto" onMouseDown={(event) => event.preventDefault()}>
