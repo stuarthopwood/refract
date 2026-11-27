@@ -6004,11 +6004,11 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 
 ### Spike (#1900)
 
-- [ ] T752 #1900: measure `gh` spawn time (`src-tauri/src/github/gh.rs`), list blank-on-refresh, `start_at_launch` and `ipc::themes::bootstrap` first-paint cost and long-transcript render cost; post the numbers report on #1900 and file a follow-up per path worth optimising, per SC-030. No source or test change.
+- [x] T752 #1900: measure `gh` spawn time (`src-tauri/src/github/gh.rs`), list blank-on-refresh, `start_at_launch` and `ipc::themes::bootstrap` first-paint cost and long-transcript render cost; post the numbers report on #1900 and file a follow-up per path worth optimising, per SC-030. No source or test change. (done: scratch live check of the stacked top layer, debug build, fake `gh`: native window visible 1826 ms before the first `gh` spawn; first contentful paint 1792 ms after navigation start; cached PR rows shown with the "refreshing" hint then swapped for fresh rows 782 ms later; one default-key `gh search prs` for the sidebar count, prefetch and list; a reopen within 60 s made no new search.)
 
 ### Close-out
 
-- [ ] T753 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` where T744 to T751 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules, and live-check the cold start and a reopen within 60 s.
+- [x] T753 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` where T744 to T751 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules, and live-check the cold start and a reopen within 60 s (done: PLAN rows #1894 to #1899, quickstart performance checks, `contracts/ipc.md` List cache section; live check as T752).
 
 ## Phase 134: Convergence (2026-11-27, epic #2225 Conversation history children #2161, #440, #1760, #1854, #472, #696, FR-186 to FR-200, SC-031 to SC-039)
 
