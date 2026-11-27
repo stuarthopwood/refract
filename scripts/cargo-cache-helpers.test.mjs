@@ -12,7 +12,7 @@ describe('runningCargoExecutables', () => {
   });
   afterEach(() => {
     // Only ever remove the mkdtemp dir created above; an empty path must never reach rmSync.
-    if (dir) rmSync(dir, { recursive: true, force: true });
+    if (dir) rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 });
     dir = '';
   });
 
@@ -41,7 +41,10 @@ describe('runningCargoExecutables', () => {
     } finally {
       if (fd !== undefined) closeSync(fd);
       if (child.exitCode === null) {
-        const exited = new Promise((resolve) => child.once('exit', resolve));
+        const exited = new Promise((resolve) => {
+          child.once('exit', resolve);
+          child.once('error', resolve);
+        });
         child.kill();
         await exited;
       }
