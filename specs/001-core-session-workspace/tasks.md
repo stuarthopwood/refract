@@ -6009,3 +6009,39 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 ### Close-out
 
 - [ ] T753 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` where T744 to T751 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules, and live-check the cold start and a reopen within 60 s.
+
+## Phase 134: Convergence (2026-11-27, epic #2225 Conversation history children #2161, #440, #1760, #1854, #472, #696, FR-186 to FR-200, SC-031 to SC-039)
+
+### Lane #2161 (Rust + UI)
+
+- [ ] T754 [US1] #2161: add `conversations.delete` in a new `src-tauri/src/ipc/conversations_delete.rs` (registered in `conversations.rs` `register`): canonical path inside the session dir, refuse the current Conversation and any Conversation of a non-idle/stopped Session, remove the `.jsonl` and artifact folder through `src-tauri/src/fs/remove_tree.rs` in the background (pattern: `sessions_lifecycle/delete_in_flight.rs`), return bytes freed; add `CONVERSATIONS_DELETE` to `src/shared/ipc.ts` and `src/tauri-bridge/index.ts`, per FR-186, FR-187 (missing). Tests: `conversations_delete.test.rs`.
+- [ ] T755 [US1] #2161: add `size_bytes` (jsonl plus artifact folder) to `ConversationInfo` in `src-tauri/src/ipc/conversations.rs` and `src/shared/model.ts`, and a Session total to the list result, per FR-188 (missing). Tests: `conversations.test.rs`.
+- [ ] T756 [US1] #2161: add the retention setting (off by default; N days) following `src-tauri/src/ipc/settings_collapse.rs` and `src/shared/model.ts` `DEFAULT_SETTINGS`, with a preview and a run command that skip the current and being-written Conversations and report bytes freed, per FR-189 (missing). Tests: new `conversations_retention.test.rs`.
+- [ ] T757 [US1] #2161: make Session delete remove the OMP session log folder in `src-tauri/src/ipc/sessions_lifecycle/sessions_delete_support.rs`, and add the one-off orphan sweep (tie rule from `encode_cwd` in `src-tauri/src/usage/project_label.rs`, registered Projects' worktrees roots only), per FR-190 (missing). Tests: `sessions_lifecycle_tests.rs` and a new `session_logs_sweep.test.rs` including the plain-`omp`-folder-untouched case.
+- [ ] T758 [US1] #2161: in `src/renderer/features/chat/ConversationSwitcher.tsx` show size and total, a delete action with confirmation and refusal reason, a retention preview dialog and the Settings control; report freed space, per FR-186 to FR-189, SC-031 to SC-033 (missing). Tests: `ConversationSwitcher.test.tsx`.
+
+### Lane #440 (Rust titles)
+
+- [ ] T759 [US1] #440: derive `title` once from the first user message (single line, truncated) where rows are built in `src-tauri/src/ipc/conversations.rs` (`list_conversations`); keep `preview`; leave the "Untitled conversation" fallback at `ConversationSwitcher.tsx` for files with no user message, per FR-191, SC-035 (missing). Tests: `conversations.test.rs` (empty OMP title line, long and multi-line first messages). The issue's `src/main/conversations.ts` no longer exists.
+
+### Lane #1760 (UI)
+
+- [ ] T760 [US1] #1760: add an opt-in click-suppression prop to `src/renderer/components/ui/hover-card.tsx` (pointerdown ignores the following focus; reopen needs pointer leave and return) and set `openDelay={1200}` in `src/renderer/features/sessions/SessionDetailsCard.tsx`, keeping side and align, per FR-192, SC-036 (missing). Tests: new `hover-card.test.tsx` and `SessionDetailsCard.test.tsx`; confirm reopen-after-click live.
+
+### Lane #1854 (UI)
+
+- [ ] T761 [US1] #1854: pass the active-Session count and list from `RepositoryGroup.tsx` (using `displayStatus` in `sessionDisplay.tsx`) to `GroupHeader.tsx`: badge on a collapsed header, tooltip list, accessible name, no shift of the waiting marker column, per FR-193, SC-037 (missing). Tests: `GroupHeader.test.tsx` and `sessionDisplay.test.ts`.
+
+### Lane #472 (UI, after T754 to T759)
+
+- [ ] T762 [US1] #472: nested Conversation list under `SessionRow.tsx` in `SessionList.tsx`, with chevron, count badge, remembered per-Session expand state (`src/renderer/state/session-list-store.ts`), lazy load and cap, current marker, switch, New conversation, size and delete, Archived Sessions excluded, per FR-194, FR-195 (missing). Tests: `SessionRowTree.test.ts` and `session-list-store.test.ts`.
+- [ ] T763 [US1] #472: ARIA, tab order, Ctrl+1 to Ctrl+9 and focus fallback unchanged, reduced motion, per FR-196, SC-038 (missing). Tests: `treeKeyDecision.test.ts`, `SessionRowTree.test.ts`.
+
+### Lane #696 (after T762; probe first)
+
+- [ ] T764 [US1] #696: probe OMP 18.13.3 in a scratch profile: `get_tree`, `navigate_tree`, `fork` with `entryId`, `set_label`, behaviour while not idle, `get_state` after each; record in FINDINGS; no source change, per FR-197.
+- [ ] T765 [US1] #696: add tree view, Rewind, Fork and labels (Rust IPC next to `conversations_core.rs`, renderer opened from `ConversationSwitcher.tsx`), registry update and reattach tolerance for fork, no #449 notice, idle-only, inline errors, update `src/shared/slash-commands.ts` and constitution II, per FR-197 to FR-200, SC-039 (missing). Tests: `conversations_core.test.rs` and a tree view test. Branch stays out of v1.
+
+### Close-out
+
+- [ ] T766 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` (`conversations.delete`, retention, tree commands) where T754 to T765 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check delete, the nested list and a Fork.
