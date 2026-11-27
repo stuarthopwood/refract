@@ -90,7 +90,7 @@ function areRowPropsEqual(prev: TranscriptRowProps, next: TranscriptRowProps): b
 // tool item once it resolves (T072/T073); a decided approval keeps its one-line summary.
 function TranscriptRowImpl({ item, sessionId, pending, userName, userAvatarUrl, resolvedAsk, askRequestId, hideTime, shimmer, onAdvisoryReveal, onQueuedAnnounce }: TranscriptRowProps) {
   if (isAdvisoryRun(item)) return <AdvisoryRunRow group={item} sessionId={sessionId ?? undefined} onReveal={onAdvisoryReveal} onQueuedAnnounce={onQueuedAnnounce} />
-  if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} shimmer={shimmer} />
+  if (isStageGroup(item)) return <StageGroupRow group={item} sessionId={sessionId} />
   if (isToolGroup(item)) return isAgentSteerGroup(item) ? <AgentSteerRow item={item.items[0]!} /> : <ToolGroupRow group={item} shimmer={shimmer} />
   if (isThoughtRun(item)) return <ThoughtRunRow group={item} shimmer={shimmer} />
   if (isMidTurnProse(item)) return <MidTurnProseRow group={item} />

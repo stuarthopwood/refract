@@ -69,7 +69,7 @@ describe('SubagentsCardHeader', () => {
     const html = render()
     expect(html).toContain('role="progressbar"')
     expect(html).toContain('aria-valuetext="1 of 3 stages done"')
-    expect(html).toContain('1/3 done')
+    expect(html).toContain('1/3 stages done')
     expect(html.match(/data-segment=/g)).toHaveLength(3)
   })
 

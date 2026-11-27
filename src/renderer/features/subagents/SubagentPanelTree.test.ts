@@ -65,8 +65,33 @@ describe('PanelTree', () => {
   })
 
   describe('given a one-agent Stage', () => {
-    it('shows the agent as an inline chip', () => {
-      expect(render([PAIR[0]!])).toContain('data-agent-chip')
+    it('draws no chip when the agent name only repeats the Stage title', () => {
+      expect(render([PAIR[0]!])).not.toContain('data-agent-chip')
+    })
+
+    describe('drawn flat (#2318, FR-176)', () => {
+      const html = render([subagentSummary({ nameOrTask: 'Alpha', role: 'Reviewer' })])
+      const agentRow = html.slice(html.indexOf('aria-level="2"'))
+
+      it('is a left guide line under the Stage title, with no nested bordered card or card fill', () => {
+        expect(agentRow).toContain('border-l-2 border-divider')
+        expect(agentRow).toContain('pl-2')
+        expect(agentRow).not.toContain('bg-surface-1')
+        expect(agentRow).not.toContain('rounded-lg')
+        expect(agentRow).not.toMatch(/\bgap-1\b|\bp-1\b|\bmy-1\b/)
+      })
+
+      it('does not repeat the agent name the Stage title already shows, and the row keeps its hover tint and selectability', () => {
+        expect(html.match(/>Alpha</g)).toHaveLength(1)
+        expect(agentRow).toContain('hover:bg-surface-hover')
+        expect(agentRow).toContain('aria-selected="false"')
+        expect(agentRow).toContain('>Reviewer<')
+      })
+    })
+
+    it('keeps the bordered card for each agent of a parallel Stage', () => {
+      const html = render(PAIR)
+      expect(html.match(/rounded-lg border border-divider bg-surface-1 p-2/g)).toHaveLength(2)
     })
   })
 

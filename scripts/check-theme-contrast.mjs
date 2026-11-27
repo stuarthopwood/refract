@@ -128,16 +128,23 @@ for (const [themeId, props] of Object.entries(themes)) {
       rows.push({ themeId, fg, bg, min, ratio: null, pass: false, note: 'token missing' })
       continue
     }
-    // `on` names the opaque surface a translucent `bg` actually paints over.
-    const onEntry = on ? props[on] : bgEntry
-    if (!onEntry) {
+    // `on` names the opaque surface a translucent `bg` actually paints over; an array lists stacked translucent surfaces bottom-first
+    // (e.g. ['background', 'chat-card-bg'] for a tint over the card fill over the page), each composited onto the one below.
+    const onNames = on === undefined ? [] : Array.isArray(on) ? on : [on]
+    const missingOn = onNames.find((name) => !props[name])
+    if (missingOn !== undefined) {
       checkedCount++
       failCount++
-      rows.push({ themeId, fg, bg: `${bg} on ${on}`, min, ratio: null, pass: false, note: 'token missing' })
+      rows.push({ themeId, fg, bg: `${bg} on ${onNames.join(' on ')}`, min, ratio: null, pass: false, note: 'token missing' })
       continue
     }
+    let onEntry = bgEntry
+    if (onNames.length > 0) {
+      onEntry = props[onNames[0]]
+      for (const name of onNames.slice(1)) onEntry = { raw: 'composite', alpha: 1, linear: resolvedLinear(props[name], onEntry) }
+    }
     const bgLinear = resolvedLinear(bgEntry, onEntry)
-    const fgLinear = resolvedLinear(fgEntry, on ? { raw: 'composite', alpha: 1, linear: bgLinear } : bgEntry)
+    const fgLinear = resolvedLinear(fgEntry, onNames.length > 0 ? { raw: 'composite', alpha: 1, linear: bgLinear } : bgEntry)
     const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(bgLinear))
     const pass = ratio >= min
     if (informational) {

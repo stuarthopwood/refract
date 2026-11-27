@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useShallow } from 'zustand/react/shallow'
 import type { KeyboardEvent } from 'react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { EMPTY_READOUT_ENTRY, useReadoutStore, useStageToggleStore, useSubagentPanelStore } from '@/state'
+import { EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useReadoutStore, useStageToggleStore, useSubagentPanelStore, useTranscriptStore } from '@/state'
 import { groupToolItems, isToolGroup } from '../chat/groupToolItems'
 import { ToolGroupRow } from '../chat/ToolRow'
 import { LinkContext, Markdown } from '../chat/Markdown'
@@ -20,7 +21,7 @@ import {
   type PanelAgentRow
 } from './subagentPanelRows'
 import { summarizeSubagentStatuses } from './subagentStatus'
-import { selectScenarioFromSummaries } from './viewModel'
+import { selectScenarioFromSummaries, selectSubagentItems } from './viewModel'
 
 // Stable singletons: a fresh `?? {}` or `?? []` each render would look like a changed snapshot to zustand.
 const NO_TOGGLES: Record<string, boolean> = {}
@@ -28,6 +29,8 @@ const NO_STREAM: readonly never[] = []
 
 export function SubagentPanel({ sessionId }: { sessionId: string }) {
   const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
+  // The chat card's text (context, task, result) lives on the transcript's subagent items, not on the readout summaries.
+  const subagentItems = useTranscriptStore(useShallow((s) => selectSubagentItems((s.bySession[sessionId] ?? EMPTY_TRANSCRIPT).items)))
   const selectedId = useSubagentPanelStore((s) => s.selectedId)
   const storeSelectedKey = useSubagentPanelStore((s) => s.selectedKey)
   const selectSubagent = useSubagentPanelStore((s) => s.selectSubagent)
@@ -41,7 +44,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   const grouped = useMemo(() => groupToolItems([...selectedStream]), [selectedStream])
 
   // The same view-model the chat card reads, so both surfaces show one goal, title, outcome and count (FR-150).
-  const scenario = useMemo(() => selectScenarioFromSummaries(subagents), [subagents])
+  const scenario = useMemo(() => selectScenarioFromSummaries(subagents, subagentItems), [subagents, subagentItems])
   const allAgents = useMemo(() => scenario.stages.flatMap((stage) => stage.agents), [scenario])
   const selectedKey = useMemo(() => resolveSelectedKey(allAgents, { selectedKey: storeSelectedKey, selectedId }), [allAgents, storeSelectedKey, selectedId])
   const rows = useMemo(() => {

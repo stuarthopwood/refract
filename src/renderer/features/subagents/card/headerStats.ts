@@ -20,9 +20,9 @@ export function formatHeaderStats({ stageCount, agentCount, statusCounts }: Head
   return [plural(stageCount, 'stage', 'stages'), plural(agentCount, 'agent', 'agents'), unsettledRollupText(statusCounts)].filter((part) => part.length > 0).join(', ')
 }
 
-/** The visible text beside the bar: "2/4 done". */
+/** The visible text beside the bar: "2/4 stages done". */
 export function formatProgressText(done: number, total: number): string {
-  return `${done}/${total} done`
+  return `${done}/${total} stages done`
 }
 
 /** The progressbar's accessible value text: "2 of 4 stages done". */

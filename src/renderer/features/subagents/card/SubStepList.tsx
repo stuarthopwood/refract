@@ -34,27 +34,30 @@ const ICON_CLASS = 'size-3.5 shrink-0'
 function StepGlyph({ step }: { step: SubStep }) {
   if (step.status === 'pending') return <CircleIcon aria-hidden className={cn(ICON_CLASS, 'text-muted-foreground')} />
   const { Icon, className } = STATUS_GLYPH[step.status === 'running' ? 'running' : step.isError ? 'error' : 'success-done']
-  return <Icon aria-hidden className={cn(ICON_CLASS, className, 'motion-reduce:animate-none')} />
+  // The running spinner is `accent-text`, the contrast-checked running tone on the card fill (#2318 FR-179), not `state-working`.
+  return <Icon aria-hidden className={cn(ICON_CLASS, step.status === 'running' ? 'text-accent-text' : className, 'motion-reduce:animate-none')} />
 }
 
 const STEP_STATE_LABEL: Record<SubStep['status'], string> = { done: 'done', running: 'running', pending: 'queued' }
 
-export function SubStepList({ steps }: { steps: readonly SubStep[] | undefined }) {
+// Spans, not a list: the sub-card button holds this, and a `ul` inside a button is invalid. `interactive` false is that button host, where a
+// group role and name are dropped (the button's own name wins); the panel's tree row keeps the named group.
+export function SubStepList({ steps, interactive = true }: { steps: readonly SubStep[] | undefined; interactive?: boolean }) {
   if (steps == null || steps.length === 0) return null
   const { visible, doneFolded, queued } = foldSubSteps(steps)
   return (
-    <ul aria-label="Sub-steps" className="space-y-1 text-xs">
-      {doneFolded > 0 && <li className="pl-6 text-muted-foreground">{doneFolded} done</li>}
+    <span {...(interactive && { role: 'group', 'aria-label': 'Sub-steps' })} className="block space-y-1 text-xs">
+      {doneFolded > 0 && <span className="block pl-6 text-muted-foreground">{doneFolded} done</span>}
       {visible.map(({ step, index }) => (
-        <li key={index} className="flex items-center gap-2">
+        <span key={index} className="flex items-center gap-2">
           <StepGlyph step={step} />
-          <span className={cn('min-w-0 truncate', step.status === 'running' ? 'font-medium text-card-foreground' : 'text-muted-foreground')}>
+          <span title={step.rawLabel} className={cn('min-w-0 truncate', step.status === 'running' ? 'font-medium text-card-foreground' : 'text-muted-foreground')}>
             {step.label}
             <span className="sr-only"> ({step.isError && step.status === 'done' ? 'failed' : STEP_STATE_LABEL[step.status]})</span>
           </span>
-        </li>
+        </span>
       ))}
-      {queued > 0 && <li className="pl-6 text-muted-foreground">+{queued} queued</li>}
-    </ul>
+      {queued > 0 && <span className="block pl-6 text-muted-foreground">+{queued} queued</span>}
+    </span>
   )
 }

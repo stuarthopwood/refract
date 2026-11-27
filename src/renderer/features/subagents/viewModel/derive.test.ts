@@ -66,3 +66,22 @@ describe('deriveAgent', () => {
     expect(deriveAgent(input({ taskSummary: 'Was asked' }), undefined).whatItDid).toBe('Was asked')
   })
 })
+
+describe('deriveAgent shell step labels (FR-177)', () => {
+  const raw = 'cd C:/Repos/x/worktrees/lane-1 && export GIT_TERMINAL_PROMPT=0 && pnpm ci:local'
+  const agent = deriveAgent(input({ recentSteps: [{ tool: 'bash', target: raw, endMs: 2 }, { tool: 'bash', target: raw }] }), undefined)
+
+  it('labels a shell step by its command, without the cd and export setup', () => {
+    expect(agent.subSteps?.map((s) => s.label)).toEqual(['bash pnpm ci:local', 'bash pnpm ci:local'])
+    expect(agent.liveDetail).toBe('bash pnpm ci:local')
+  })
+
+  it('keeps the raw command for the tooltip', () => {
+    expect(agent.subSteps?.[0]?.rawLabel).toBe(`bash ${raw}`)
+  })
+
+  it('sets no raw label when nothing was stripped', () => {
+    const plain = deriveAgent(input({ recentSteps: [{ tool: 'read', target: 'a.ts', endMs: 2 }] }), undefined)
+    expect(plain.subSteps?.[0]).not.toHaveProperty('rawLabel')
+  })
+})

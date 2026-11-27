@@ -21,12 +21,16 @@ describe('fileBasename (#1928)', () => {
 })
 
 describe('FileChip (#1928)', () => {
-  it('shows the basename in monospace with the full path in the title, composing the outline Badge', () => {
+  it('shows the basename in monospace with the full path in the title, as a borderless Badge', () => {
     const html = renderToStaticMarkup(createElement(FileChip, { path: 'C:\\repo\\src\\a.ts' }))
     expect(html).toContain('title="C:\\repo\\src\\a.ts"')
     expect(html).toContain('>a.ts<')
-    expect(html).toContain('font-mono')
-    expect(html).toContain('data-variant="outline"')
+    expect(html).toContain('font-code')
+    expect(html).toContain('bg-command-pill-bg')
+    expect(html).toContain('text-command-pill-fg')
+    expect(html).toContain('data-variant="secondary"')
+    expect(html).not.toContain('data-variant="outline"')
+    expect(html).not.toContain('<svg')
   })
 
   it('truncates a long basename instead of overflowing the row', () => {
@@ -55,6 +59,14 @@ describe('splitFileChips (#1928)', () => {
   it('handles no files', () => {
     expect(splitFileChips([])).toEqual({ shown: [], hidden: [] })
   })
+
+  it('collapses paths sharing a basename to the first one (FR-177)', () => {
+    expect(splitFileChips(['src/a/index.ts', 'src/b/index.ts', 'src/c.ts'])).toEqual({ shown: ['src/a/index.ts', 'src/c.ts'], hidden: [] })
+  })
+
+  it('drops a bare numeric fragment but keeps a numbered file name (FR-177)', () => {
+    expect(splitFileChips(['1', 'src/2', 'src/1.ts', '404.html'])).toEqual({ shown: ['src/1.ts', '404.html'], hidden: [] })
+  })
 })
 
 describe('FileChipList (#1928)', () => {
@@ -77,6 +89,19 @@ describe('FileChipList (#1928)', () => {
     expect(html.match(/data-slot="badge"/g)).toHaveLength(4)
     expect(html).not.toContain('>e.ts<')
     expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*>\+2<span class="sr-only"> more files<\/span><\/button>/)
+    // Mutation: put the "+N" button back on the bordered `outline` variant (#2318, rule 1).
+    expect(html).toMatch(/<button[^>]*data-variant="ghost"/)
+    expect(html).not.toContain('data-variant="outline"')
+  })
+
+  it('renders a role-less inline span, never a div group, when not interactive, so a button may hold it (#2318)', () => {
+    const html = renderToStaticMarkup(createElement(FileChipList, { files: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'], label: 'Files touched', interactive: false }))
+    expect(html.startsWith('<span')).toBe(true)
+    expect(html).not.toContain('<div')
+    expect(html).not.toContain('role=')
+    expect(html).not.toContain('aria-label=')
+    expect(html).not.toContain('<button')
+    expect(html).toContain('+1')
   })
 })
 
