@@ -11,12 +11,12 @@ import {
 import { Button } from '@/components/ui/button'
 import { BLUR_TRANSITION_CLASS, BLURRED_CONTENT_CLASS } from '@/components/ui/blur-content'
 import { cn } from '@/lib/utils'
-import { EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useActiveChatWidth, useChatScrollStore, usePendingRequestsStore, useReadoutStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
-import { type TranscriptDisplaySettings, type TranscriptItem } from '../../../shared/model'
+import { EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useActiveChatWidth, usePendingRequestsStore, useReadoutStore, useSessionsStore, useSettingsStore, useStageToggleStore, useTranscriptStore } from '@/state'
+import { type TranscriptDisplaySettings } from '../../../shared/model'
 import { FadeCollapse } from '@/components/FadeCollapse'
 import { computeTurnEnd, hasNewerRealActivity } from './turnTiming'
 import { isConversationStarted } from './isConversationStarted'
-import { isAtScrollEnd, resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
+import { useTranscriptScroll } from './useTranscriptScroll'
 import { LinkContext } from './Markdown'
 import type { AdvisoryGroupedTranscriptItem } from './groupAdvisoryItems'
 import { isToolGroup } from './groupToolItems'
@@ -42,7 +42,7 @@ import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from
 import { JumpToStageContext, stageRowDomId } from './stageJump'
 import { ChatNavBridge } from '../chat-nav/ChatNavBridge'
 import { ChatNavOverlays } from '../chat-nav/ChatNavOverlays'
-import { startRowJumpLoop, type JumpControl } from '../chat-nav/rowJumpLoop'
+import { startRowJumpLoop } from '../chat-nav/rowJumpLoop'
 import { IconButton } from '@/components/IconButton'
 
 const ANNOUNCEMENT_MAX_CHARS = 80
@@ -212,60 +212,17 @@ export function Transcript({
   const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)
   let isFirstRow = true
 
-  const viewportRef = React.useRef<HTMLDivElement>(null)
-  const scrollerRootRef = React.useRef<HTMLDivElement>(null)
-  const buttonRef = React.useRef<HTMLButtonElement>(null)
-  const contentRef = React.useRef<HTMLDivElement>(null)
-  const { isRecentGesture, resetGesture, gestureProps } = useScrollGestureTracking()
-  const lastScrollTopRef = React.useRef(0)
-  const landingInProgressRef = React.useRef(false)
-
-  const jumpCancelRef = React.useRef<(() => void) | null>(null)
-  const jumpTokenRef = React.useRef(0)
-
-  const [autoScrollSuppressed, setAutoScrollSuppressed] = React.useState(false)
-  const [isAtEnd, setIsAtEnd] = React.useState(true)
+  const { viewportRef, scrollerRootRef, buttonRef, contentRef, gestureProps, follow, jumpControl, followState, handleScrollToEnd } =
+    useTranscriptScroll({ sessionId, generation: transcript.generation, items })
+  const { suppressed: autoScrollSuppressed, isAtEnd, newContent } = followState
 
   const landingKey = `${sessionId}:${transcript.generation}`
   const [prevLandingKey, setPrevLandingKey] = React.useState(landingKey)
   if (prevLandingKey !== landingKey) {
     setPrevLandingKey(landingKey)
-    landingInProgressRef.current = true; resetGesture()
-    if (!autoScrollSuppressed) setAutoScrollSuppressed(true)
-    const targetMemory = useChatScrollStore.getState().bySession[sessionId]
-    setIsAtEnd(targetMemory === undefined || targetMemory.atEnd)
     if (revealedEarlier) setRevealedEarlier(false)
     if (revealedAnnouncement) setRevealedAnnouncement('')
     if (suppressLogAnnouncements) setSuppressLogAnnouncements(false)
-  }
-
-  // Also the only place that lifts a persisted detached-restore suppression (see
-  // `autoScrollSuppressed` above): once the developer scrolls back to the end themselves, the
-  // vendored scroller's own follow-the-bottom behaviour is safe to re-enable.
-  function handleViewportScroll(event: React.UIEvent<HTMLDivElement>) {
-    if (landingInProgressRef.current) return
-    const viewport = event.currentTarget
-    const atEnd = isAtScrollEnd({
-      scrollTop: viewport.scrollTop,
-      scrollHeight: viewport.scrollHeight,
-      clientHeight: viewport.clientHeight
-    })
-    useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-    const movedUp = viewport.scrollTop < lastScrollTopRef.current; lastScrollTopRef.current = viewport.scrollTop
-    if (atEnd !== !autoScrollSuppressed && (atEnd || (movedUp && isRecentGesture()))) setAutoScrollSuppressed(!atEnd)
-    setIsAtEnd(atEnd)
-  }
-
-  function handleScrollToEnd() {
-    const viewport = viewportRef.current
-    if (!viewport) return
-    jumpCancelRef.current?.()
-    landingInProgressRef.current = false
-    const target = Math.max(0, viewport.scrollHeight - viewport.clientHeight)
-    viewport.scrollTop = target
-    useChatScrollStore.getState().record(sessionId, { atEnd: true, scrollTop: target })
-    setAutoScrollSuppressed(false)
-    setIsAtEnd(true)
   }
 
   function handleLoadEarlier() {
@@ -293,51 +250,6 @@ export function Transcript({
     return () => cancelAnimationFrame(frame)
   }, [suppressLogAnnouncements])
 
-  React.useLayoutEffect(() => {
-    if (!isAtEnd) return
-    if (document.activeElement !== buttonRef.current) return
-    viewportRef.current?.focus({ preventScroll: true })
-  }, [isAtEnd])
-
-  React.useLayoutEffect(() => {
-    const viewport = viewportRef.current
-    if (!viewport) {
-      landingInProgressRef.current = false
-      setAutoScrollSuppressed(false)
-      return
-    }
-    // Falls back to the viewport itself only if the root ref somehow is not attached yet (it is
-    // always rendered as the viewport's own parent below, so this is defensive, not expected).
-    const root = scrollerRootRef.current ?? viewport
-    jumpCancelRef.current?.()
-    jumpTokenRef.current += 1
-    landingInProgressRef.current = true; resetGesture()
-    const cancel = runScrollSettleLoop(root, viewport, {
-      computeTarget: ({ scrollHeight, clientHeight }) => {
-        const memory = useChatScrollStore.getState().bySession[sessionId]
-        return resolveLandingScrollTop(memory, scrollHeight, clientHeight)
-      },
-      onSettled: (landedAtEnd) => {
-        landingInProgressRef.current = false
-        setAutoScrollSuppressed(!landedAtEnd)
-        setIsAtEnd(landedAtEnd)
-      },
-      // Resumes `autoScroll` only when that position is at the end; clearing it unconditionally re-engaged it mid-collapse.
-      onInterrupted: (atEnd) => {
-        useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
-        landingInProgressRef.current = false
-        setAutoScrollSuppressed(!atEnd)
-        setIsAtEnd(atEnd)
-      },
-      onAborted: () => {}
-    })
-    return () => {
-      cancel()
-      landingInProgressRef.current = false
-    }
-  }, [sessionId, transcript.generation])
-
-  const jumpControl: JumpControl = { jumpCancelRef, jumpTokenRef, landingInProgressRef, resetGesture, setAutoScrollSuppressed, setIsAtEnd }
   // `jumpToMessage` reveals windowed-out turns without "Load earlier"'s anchor restore (it would
   // fight the jump).
   const revealEarlierForJump = () => {
@@ -358,27 +270,6 @@ export function Transcript({
     [sessionId]
   )
 
-  React.useEffect(() => {
-    const viewport = viewportRef.current
-    if (!viewport) return
-    const observer = new ResizeObserver(() => {
-      if (landingInProgressRef.current) return
-      setIsAtEnd(
-        isAtScrollEnd({
-          scrollTop: viewport.scrollTop,
-          scrollHeight: viewport.scrollHeight,
-          clientHeight: viewport.clientHeight
-        })
-      )
-    })
-    observer.observe(viewport)
-    if (contentRef.current) observer.observe(contentRef.current)
-    return () => {
-      observer.disconnect()
-      jumpCancelRef.current?.()
-    }
-  }, [])
-
   return (
     <JumpToStageContext.Provider value={jumpToStageRow}>
     <LinkContext.Provider value={sessionId}>
@@ -395,7 +286,7 @@ export function Transcript({
       <MessageScroller ref={scrollerRootRef} className="h-full flex-1">
         <MessageScrollerViewport
           ref={viewportRef}
-          onScroll={handleViewportScroll}
+          onScroll={follow.handleScroll}
           {...gestureProps}
           role="region"
           tabIndex={0}
@@ -541,22 +432,26 @@ export function Transcript({
         <span role="status" aria-live="polite" className="sr-only">
           {stageAnnouncement}
         </span>
+        <span role="status" aria-live="polite" className="sr-only">
+          {!isAtEnd && newContent ? 'New messages' : ''}
+        </span>
         <ChatNavOverlays sessionId={sessionId} />
         <IconButton
           ref={buttonRef}
           variant="ghost"
-          label="Scroll to end"
+          label={newContent ? 'Scroll to end, new messages' : 'Scroll to end'}
           inert={isAtEnd}
           onClick={handleScrollToEnd}
           className={cn(
             FLOATING_ICON_BUTTON_CLASS,
-            "absolute inset-e-6 bottom-4 transition-[translate,scale,opacity] duration-200",
+            "absolute inset-e-6 bottom-4 transition-[translate,scale,opacity] duration-200 motion-reduce:transition-none",
             isAtEnd
               ? "pointer-events-none translate-y-full scale-95 opacity-0 duration-400 ease-[cubic-bezier(0.7,0,0.84,0)]"
               : "translate-y-0 scale-100 opacity-100 ease-[cubic-bezier(0.23,1,0.32,1)]"
           )}
         >
           <ArrowDownToLineIcon />
+          {!isAtEnd && newContent && <span data-new-content aria-hidden className="absolute end-1 top-1 size-2 rounded-full bg-primary ring-2 ring-surface-1" />}
         </IconButton>
       </MessageScroller>
     </MessageScrollerProvider>
