@@ -1,26 +1,50 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { spawn } from 'node:child_process';
+import { closeSync, copyFileSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runningCargoExecutables } from './cargo-cache-helpers.mjs';
 
 describe('runningCargoExecutables', () => {
   let dir = '';
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'cargo-cache-'));
+  });
   afterEach(() => {
-    rmSync(dir, { recursive: true, force: true });
+    // Only ever remove the mkdtemp dir created above; an empty path must never reach rmSync.
+    if (dir) rmSync(dir, { recursive: true, force: true });
+    dir = '';
   });
 
   it('returns [] when debug/deps is missing', () => {
-    dir = mkdtempSync(path.join(os.tmpdir(), 'cargo-cache-'));
     expect(runningCargoExecutables(dir)).toEqual([]);
   });
 
   it('returns [] for an unlocked .exe and a non-.exe', () => {
-    dir = mkdtempSync(path.join(os.tmpdir(), 'cargo-cache-'));
     const deps = path.join(dir, 'debug', 'deps');
     mkdirSync(deps, { recursive: true });
     writeFileSync(path.join(deps, 'idle.exe'), 'x');
     writeFileSync(path.join(deps, 'lib.rlib'), 'x');
     expect(runningCargoExecutables(dir)).toEqual([]);
+  });
+
+  it.runIf(process.platform === 'win32')('lists a running .exe but not a write-held non-.exe', async () => {
+    const deps = path.join(dir, 'debug', 'deps');
+    mkdirSync(deps, { recursive: true });
+    const held = path.join(deps, 'held.exe');
+    copyFileSync(process.execPath, held);
+    const child = spawn(held, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+    let fd;
+    try {
+      fd = openSync(path.join(deps, 'lib.rlib'), 'w');
+      expect(runningCargoExecutables(dir)).toEqual([held]);
+    } finally {
+      if (fd !== undefined) closeSync(fd);
+      if (child.exitCode === null) {
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill();
+        await exited;
+      }
+    }
   });
 });
