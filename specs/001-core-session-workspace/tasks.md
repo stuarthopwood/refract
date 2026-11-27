@@ -5994,7 +5994,7 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 
 ### Lane B (#1896)
 
-- [ ] T748 [US1] #1896: cache a healthy `ensure_search_budget` result for 60 s in `src-tauri/src/github/gh_pr_search_across.rs`, clearing it on a rate-limit search error and never caching a failed probe, per FR-182 (missing). Tests: new Rust tests in the same file (two calls inside the TTL probe once; a probe after the TTL and after a rate-limit error), with an injectable clock.
+- [x] T748 [US1] #1896: cache a healthy `ensure_search_budget` result for 60 s in `src-tauri/src/github/gh_pr_search_across.rs`, clearing it on a rate-limit search error and never caching a failed probe, per FR-182 (missing). Tests: new Rust tests in the same file (two calls inside the TTL probe once; a probe after the TTL and after a rate-limit error), with an injectable clock.
 
 ### Lane C (#1897, then #1898)
 

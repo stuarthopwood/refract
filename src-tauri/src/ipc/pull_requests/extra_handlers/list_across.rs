@@ -6,9 +6,11 @@ use std::path::PathBuf;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::github::gh::{owner_repo_for, GhError};
+use crate::github::gh::{owner_repo_for, GhError, GhErrorCode};
 use crate::github::gh_issues::clean_search_query;
-use crate::github::gh_pr_search_across::{ensure_search_budget, search_across};
+use crate::github::gh_pr_search_across::{
+    ensure_search_budget, note_search_rate_limited, search_across,
+};
 use crate::github::gh_pull_requests::SearchQualifierFlag;
 use crate::ipc::{invalid_argument, now_iso8601, AppState, HandlerFuture};
 
@@ -164,9 +166,17 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
             };
             // One extra row tells a list cut off at `limit` from one that ends exactly there.
             let mut entries =
-                search_across(&cwd, &distinct, flag, gh_state, query.as_deref(), limit + 1)
+                match search_across(&cwd, &distinct, flag, gh_state, query.as_deref(), limit + 1)
                     .await
-                    .map_err(map_gh_error)?;
+                {
+                    Ok(entries) => entries,
+                    Err(err) => {
+                        if err.code == GhErrorCode::RateLimited {
+                            note_search_rate_limited().await;
+                        }
+                        return Err(map_gh_error(err));
+                    }
+                };
             has_more = entries.len() > limit;
             entries.truncate(limit);
 
