@@ -89,6 +89,9 @@ describe('FileChipList (#1928)', () => {
     expect(html.match(/data-slot="badge"/g)).toHaveLength(4)
     expect(html).not.toContain('>e.ts<')
     expect(html).toMatch(/<button[^>]*aria-expanded="false"[^>]*>\+2<span class="sr-only"> more files<\/span><\/button>/)
+    // Mutation: put the "+N" button back on the bordered `outline` variant (#2318, rule 1).
+    expect(html).toMatch(/<button[^>]*data-variant="ghost"/)
+    expect(html).not.toContain('data-variant="outline"')
   })
 })
 

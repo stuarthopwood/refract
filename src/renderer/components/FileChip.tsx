@@ -75,7 +75,7 @@ export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, 
       {hidden.length > 0 &&
         (interactive ? (
           <Button
-            variant="outline"
+            variant="ghost"
             size="xs"
             tabIndex={(tabbable ?? inheritedTabbable) ? undefined : -1}
             aria-expanded={expanded}

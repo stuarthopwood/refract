@@ -10,6 +10,9 @@ export interface StageDependency {
 
 const LABEL_MAX_CHARS = 60
 
+// Only the head of a line is scanned for setup; the cap keeps the shell-setup regex off a pasted multi-kilobyte line.
+const SHELL_SCAN_MAX_CHARS = 1000
+
 const HEADING_ONLY_GOAL_RE = /^#{1,6}\s*goal\b:?\s*$/i
 
 const HEADING_OR_GOAL_PREFIX_RE = /^(?:#{1,6}\s*)?(?:goal\b:?\s*)?/i
@@ -61,7 +64,7 @@ function findFirstContentLine(lines: string[], clean = false): { index: number; 
     if (HEADING_ONLY_GOAL_RE.test(line)) continue
     if (clean && RULES_HARD_RE.test(line)) return null
     let stripped = line.replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
-    if (clean) stripped = stripWorktreePaths(stripShellSetup(stripped))
+    if (clean) stripped = stripWorktreePaths(stripShellSetup(stripped.slice(0, SHELL_SCAN_MAX_CHARS)))
     if (stripped.length === 0) continue
     if (clean && BARE_PATH_LABEL_RE.test(stripped)) continue
     return { index: i, stripped }

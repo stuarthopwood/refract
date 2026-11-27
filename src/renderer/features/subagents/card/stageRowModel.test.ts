@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SubAgentItem } from '../viewModel/types'
-import { stageAccessibleName, stageAgentsGridClass, stageRowModel, type StageRowView } from './stageRowModel'
+import { repeatsStageTitle, stageAccessibleName, stageAgentsGridClass, stageRowModel, type StageRowView } from './stageRowModel'
 
 const agent = (name: string, overrides: Partial<SubAgentItem> = {}): SubAgentItem => ({
   id: name,
@@ -17,6 +17,26 @@ const view = (agents: SubAgentItem[], overrides: Partial<StageRowView> = {}): St
   cleanTitle: 'Gate' as string | null,
   status: 'finished' as const,
   ...overrides
+})
+
+describe('repeatsStageTitle (#2318, rule 3)', () => {
+  it('matches ignoring case and surrounding whitespace', () => {
+    // Mutation: go back to a strict `===` / `!==` comparison.
+    expect(repeatsStageTitle('Gate', 'Gate')).toBe(true)
+    expect(repeatsStageTitle('  gate ', 'GATE')).toBe(true)
+  })
+
+  it('does not match a different or merely prefixed name', () => {
+    // Mutation: compare with `startsWith` or `includes`.
+    expect(repeatsStageTitle('Gate', 'Gate review')).toBe(false)
+    expect(repeatsStageTitle('Solo', 'Gate')).toBe(false)
+  })
+
+  it('is false for a missing title, so the name is kept', () => {
+    // Mutation: drop the null check (throws) or treat null as a match.
+    expect(repeatsStageTitle('Solo', null)).toBe(false)
+    expect(repeatsStageTitle('Solo', undefined)).toBe(false)
+  })
 })
 
 describe('stageRowModel', () => {

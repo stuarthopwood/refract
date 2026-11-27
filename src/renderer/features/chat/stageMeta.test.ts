@@ -157,6 +157,25 @@ describe('stripShellSetup (FR-177)', () => {
   ])('strips the setup from %s', (input, expected) => {
     expect(stripShellSetup(input)).toBe(expected)
   })
+  // Pinned behaviour: only `&&` and `;` chain setup, matching is case-insensitive, and a quoted `&&` is never a separator.
+  it.each([
+    ['cdk deploy', 'cdk deploy'],
+    ['cd-hit -i x', 'cd-hit -i x'],
+    ['cd a; cd b && cmd', 'cmd'],
+    ['cd x || cmd', 'cd x || cmd'],
+    ['git commit -m "a && b"', 'git commit -m "a && b"'],
+    ['FOO="a b" cmd', 'cmd'],
+    ['CD x && cmd', 'cmd'],
+    ['Export X=1; cmd', 'cmd']
+  ])('keeps %s as %s', (input, expected) => {
+    expect(stripShellSetup(input)).toBe(expected)
+  })
+
+  it('scans only the first 1000 characters of a context line', () => {
+    // Mutation: drop the cap before `stripShellSetup` in the context-label path.
+    expect(extractContextLabel(`cd x &&${' '.repeat(2000)}cmd`)).toBe('cd x &&')
+    expect(extractContextLabel(`cd x &&${' '.repeat(10)}cmd`)).toBe('cmd')
+  })
 
   it('leaves a plain command and a lone cd alone', () => {
     expect(stripShellSetup('pnpm test')).toBe('pnpm test')
