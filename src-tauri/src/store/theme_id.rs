@@ -20,6 +20,20 @@ pub enum ThemeId {
     Hearth,
     // Additive (#2171): shipped in the renderer by #2086 without this variant, so `theme.set` rejected it.
     AmberObsidian,
+    // Additive (#2172).
+    SolarizedLight,
+    GithubLight,
+    CatppuccinLatte,
+    OneLight,
+    GruvboxLight,
+    RosePineDawn,
+    Dracula,
+    Nord,
+    TokyoNight,
+    CatppuccinMocha,
+    GruvboxDark,
+    SolarizedDark,
+    OneDark,
 }
 
 #[cfg(test)]

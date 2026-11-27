@@ -1,6 +1,7 @@
 // Focused-badge text sits on a translucent coloured fill, so it needs a two-step alpha composite
 // that a plain PAIRS row cannot express. Split out to stay under the #806 file-size baseline.
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
+import { isLightThemeId } from './theme-groups.mjs'
 
 const lum = (entry, backdrop) => relativeLuminance(resolvedLinear(entry, backdrop))
 
@@ -48,7 +49,7 @@ export function focusedBadgeContrastRows(themes) {
     }
     // High contrast has tint == background (no tint); its edge carries 3:1 instead.
     const bgLum = lum(background, background), s1Lum = relativeLuminance(surfaceBackdrop.linear)
-    const ladderOk = /^light/.test(themeId) ? bgLum >= tintLum - 1e-9 && tintLum > s1Lum : bgLum <= tintLum + 1e-9 && tintLum < s1Lum
+    const ladderOk = isLightThemeId(themeId) ? bgLum >= tintLum - 1e-9 && tintLum > s1Lum : bgLum <= tintLum + 1e-9 && tintLum < s1Lum
     rows.push({ themeId, fg: 'ladder', bg: 'background <= pane-focused < surface-1', min: 0, ratio: tintLum, pass: ladderOk, note: ladderOk ? undefined : 'tint out of ladder order' })
     if (edge && edge.alpha > 0) {
       const edgeLinear = resolvedLinear(edge, background)

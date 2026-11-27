@@ -2,22 +2,13 @@ import { useMemo } from 'react'
 import { toast } from 'sonner'
 import { useThemeStore, useActiveThemeId } from '@/state'
 import { THEMES } from '../../shared/themes'
-import type { ThemeId } from '../../shared/themes'
 import type { CustomTheme } from '../../shared/ipc-themes'
-
-export interface ThemeEntry {
-  key: string
-  name: string
-  swatch: string
-  swatchPrimary: string
-  builtin: ThemeId | null
-  customId: string | null
-}
-
-const BUILTINS: ThemeEntry[] = Object.values(THEMES).map((t) => ({ key: t.id, name: t.name, swatch: t.swatch, swatchPrimary: t.swatchPrimary, builtin: t.id, customId: null }))
+import { BUILTINS, BUILTIN_GROUPS } from './themeGroups'
+import type { BuiltinGroup, ThemeEntry } from './themeGroups'
 
 export interface ThemeEntries {
   builtins: ThemeEntry[]
+  builtinGroups: BuiltinGroup[]
   customs: ThemeEntry[]
   /** Built-ins then customs, in display order. */
   all: ThemeEntry[]
@@ -58,5 +49,5 @@ export function useThemeEntries(): ThemeEntries {
     }
   }
 
-  return { builtins: BUILTINS, customs, all, customThemes, customId, isActive, choose }
+  return { builtins: BUILTINS, builtinGroups: BUILTIN_GROUPS, customs, all, customThemes, customId, isActive, choose }
 }

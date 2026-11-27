@@ -49,4 +49,15 @@ describe('focus ring width token', () => {
     }
     expect(offenders).toEqual([])
   })
+
+  it('no_focus_visible_rule_in_globals_css_hard_codes_an_outline_width', () => {
+    const offenders: string[] = []
+    // Comments precede selectors, so strip them first; `[data-nav-highlight]` is a landing highlight, not a focus ring.
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(/([^{}]+)\{([^{}]*)\}/g)
+    for (const [, selector = '', body = ''] of rules) {
+      if (!/:focus(?:-visible)?\b/.test(selector) || selector.includes('[data-nav-highlight]')) continue
+      if (/outline(?:-width)?:\s*\d+px/.test(body)) offenders.push(selector.trim())
+    }
+    expect(offenders).toEqual([])
+  })
 })
