@@ -18,6 +18,9 @@ import { SubagentGoalPreview } from './SubagentGoalPreview'
 import { formatElapsed } from './formatElapsed'
 import { stageHeading, extractContextLabel, extractResultSummary } from './stageMeta'
 import { joinMetaParts } from './toolRowLabels'
+import { RowTrailing } from './toolRowParts'
+import { resolveToolDisplay } from './toolDisplay'
+import { ToolIcon } from '@/components/ToolIcon'
 import type { StageGroup } from './groupSubagentStages'
 import { deriveHeader } from '../subagents/viewModel/derive'
 import { SubagentsCardHeader } from '../subagents/card/SubagentsCardHeader'
@@ -127,26 +130,20 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
   // so the label gives up space last; the settled wording already states failures, so the status word shows only while running.
   const meta = (
     <span aria-hidden="true" className="flex min-w-0 shrink items-center gap-1 whitespace-nowrap text-xs leading-5 text-muted-foreground">
-      {joinMetaParts([<span key="summary" className="min-w-0 truncate" title={summaryText}>{summaryText}</span>])}
-      {durationMs != null && (
-        // Hides at @max-[20rem], after the status/start-time spans, so the duration is the last optional part to go.
-        <span className="@max-[20rem]:hidden">
-          <span> · </span>
-          <span className="tabular-nums">{formatElapsed(durationMs)}</span>
-        </span>
-      )}
-      {isRunning && (
-        <span className="@max-[32rem]:hidden">
-          <span> · </span>
-          {SUBAGENT_STATUS_LABEL[status]}
-        </span>
-      )}
-      {startTimeText != null && (
-        <span className="@max-[32rem]:hidden">
-          <span> · </span>
-          <span className="tabular-nums">{`started ${startTimeText}`}</span>
-        </span>
-      )}
+      {joinMetaParts([
+        <span key="summary" className="min-w-0 truncate" title={summaryText}>{summaryText}</span>,
+        isRunning ? (
+          <span key="status" className="@max-[32rem]:hidden">{SUBAGENT_STATUS_LABEL[status]}</span>
+        ) : undefined,
+        startTimeText != null ? (
+          <span key="started" className="tabular-nums @max-[32rem]:hidden">{`started ${startTimeText}`}</span>
+        ) : undefined
+      ])}
+      <RowTrailing
+        icon={<SubagentStatusGlyph status={status} />}
+        // Hides at @max-[20rem], after the status/start-time spans, so the duration is the last optional part to go; the icon stays.
+        duration={durationMs != null ? <span className="@max-[20rem]:hidden">{formatElapsed(durationMs)}</span> : undefined}
+      />
     </span>
   )
   const stageLabel = stageHeading(group.stageIndex, group.view.cleanTitle)
@@ -159,7 +156,7 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
     <CollapsedLine
       ref={triggerRef}
       id={stageRowDomId(sessionId, group.id)}
-      icon={<SubagentStatusGlyph status={status} />}
+      icon={<ToolIcon icon={resolveToolDisplay('task').icon} />}
       label={stageLabel}
       labelShimmer={shimmer && isRunning}
       labelClassName={cn('min-w-16', labelColorClass)}

@@ -7,6 +7,7 @@ import { resolveToolDisplay } from './toolDisplay'
 import { isSubagentSuccessStatus, SUBAGENT_STATUS_LABEL, SUBAGENT_SUCCESS_TEXT_CLASS, SubagentStatusGlyph } from '../subagents/subagentStatus'
 import { CodeBlock, inferOutputBlock } from './Markdown'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
+import { RowTrailing } from './toolRowParts'
 import { FILES_TOUCHED_LABEL, type SubAgentItem } from '../subagents/viewModel'
 import { FileChipList } from '@/components/FileChip'
 import { CausalBadge, causalBadgeText } from '../subagents/card/CausalBadge'
@@ -117,11 +118,11 @@ export function SubagentRow({ item, agent, showGoal, variant = 'default' }: Suba
   }
   const { status, duration, whatItDid: resultSummary } = agent
   const meta = (
-    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
-      <SubagentStatusGlyph status={status} />
-      {status !== 'finished' && <span aria-hidden="true">{SUBAGENT_STATUS_LABEL[status]}</span>}
-      {status !== 'running' && duration != null && <span className="tabular-nums">{duration}</span>}
-    </span>
+    <RowTrailing
+      icon={<SubagentStatusGlyph status={status} />}
+      lead={status !== 'finished' ? <span aria-hidden="true">{SUBAGENT_STATUS_LABEL[status]}</span> : undefined}
+      duration={status !== 'running' && duration != null ? duration : undefined}
+    />
   )
   return (
     // #565 decision 10: this row is always a `SpineList` member (its only caller,

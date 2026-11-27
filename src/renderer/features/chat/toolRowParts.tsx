@@ -79,14 +79,40 @@ export function toolRowSummary(rawId: string | undefined, target: React.ReactNod
   return <RawIdSummary rawId={rawId}>{hasTarget ? target : undefined}</RawIdSummary>
 }
 
-// FR-001: the status icon trails the row, ahead of the duration or counts (`rest`).
-export function toolRowMeta(status: RowStatus, rest: React.ReactNode | undefined): React.ReactNode {
+// One duration column for every row that ends in a status icon (#2189). Wide enough for "39.8s" and "1m 32s"; a longer
+// value widens it rather than overlapping the icon. Right-aligned, so the icon to its left sits in one x on every row.
+const DURATION_COLUMN_CLASS = 'inline-block min-w-[6ch] shrink-0 whitespace-nowrap text-right tabular-nums'
+
+export function DurationColumn({ className, children, ...rest }: React.ComponentProps<'span'>) {
   return (
-    <span className="inline-flex h-5 items-center gap-1 align-top">
-      <StatusIcon status={status} />
-      {rest}
+    <span data-slot="row-duration" className={cn(DURATION_COLUMN_CLASS, className)} {...rest}>
+      {children}
     </span>
   )
+}
+
+// FR-001, FR-010, #2189: the trailing slot every status-bearing row shares: optional text (a group's "2 steps", a subagent's
+// status word) left of the icon, then the status icon, then the fixed duration column. A row with no duration keeps the empty
+// column, so only the duration sits between the icon and the chevron and every icon lines up.
+export function RowTrailing({ icon, lead, duration }: { icon: React.ReactNode; lead?: React.ReactNode; duration?: React.ReactNode }) {
+  return (
+    <span className="inline-flex h-5 items-center gap-1 align-top">
+      {lead}
+      {icon}
+      <DurationColumn>
+        {duration !== undefined && (
+          <>
+            <span className="sr-only">, </span>
+            {duration}
+          </>
+        )}
+      </DurationColumn>
+    </span>
+  )
+}
+
+export function toolRowMeta(status: RowStatus, lead: React.ReactNode | undefined, duration: string | undefined): React.ReactNode {
+  return <RowTrailing icon={<StatusIcon status={status} />} lead={lead} duration={duration} />
 }
 
 // FR-015: spec 022's status prefix (only where the label cannot carry the status), the label, the

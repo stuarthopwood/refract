@@ -9,7 +9,7 @@ import { formatDuration, type RowStatus } from './toolStatus'
 import { resolveToolDisplay, toolRowLabel } from './toolDisplay'
 import { fullIntentLine, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, ToolTarget, toolTargetChip, useShowToolNames } from './toolRowParts'
 import { commandRowText, sanitizeLines } from './formatToolCommand'
-import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
+import { callDuration, callLead, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { ToolRowKebab, ToolRowMenu } from './ToolRowMenu'
@@ -128,7 +128,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
   const label = toolRowLabel(item.tool, item.target, item.intent, item.status)
   const target = rowTarget(item)
   const failed = item.status === 'error'
-  const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
+  const memberDuration = callDuration(item)
   const memberAriaLabel = joinAriaParts([
     toolAriaHead(item.status, display.entryTool, item.intent, label, rawId, target),
     diffStatAriaText(editStatForItem(item)),
@@ -144,7 +144,7 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
       summary={toolRowSummary(rawId, toolTargetChip(target))}
       summaryWrap={summaryWrap}
       wrapWhenOpen
-      meta={toolRowMeta(item.status, callMeta(item))}
+      meta={toolRowMeta(item.status, callLead(item), memberDuration)}
       triggerAriaLabel={memberAriaLabel}
       detail={item.status === 'error' ? errorLine(item) : undefined}
       open={open}
@@ -213,17 +213,17 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
   const meta = toolRowMeta(
     status,
     solo
-      ? callMeta(last)
+      ? callLead(last)
       : joinMetaParts([
           failedCount > 0 ? <span className="text-tool-row-error-fg">{failedCount} failed</span> : undefined,
           interruptedCount > 0 ? <span>{interruptedCount} interrupted</span> : undefined,
-          cancelledCount > 0 ? <span>{cancelledCount} stopped</span> : undefined,
-          totalDuration
-        ])
+          cancelledCount > 0 ? <span>{cancelledCount} stopped</span> : undefined
+        ]),
+    solo ? callDuration(last) : totalDuration
   )
 
   const soloSummaryText = skillName !== undefined ? skillName : rowTarget(last)
-  const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
+  const soloDurationText = callDuration(last)
   const triggerAriaLabel = solo
     ? joinAriaParts([
         toolAriaHead(status, display.entryTool, last.intent, toolLabel, rawId, soloSummaryText),
