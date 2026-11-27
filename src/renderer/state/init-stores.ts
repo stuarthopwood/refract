@@ -12,9 +12,13 @@ import { usePendingRequestsStore } from './pending-requests-store'
 import { useQueueStore } from './queue-store'
 import { useAskPicksStore } from './ask-picks-store'
 import { usePullRequestsStore } from './pull-requests-store'
+import { useIssuesStore } from './issues-store'
+import { startListPrefetch } from './list-prefetch'
+import { hydrateListsFromCache } from './list-cache-hydration'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { initHolidayOverrides } from './holiday-store'
+import { afterFirstFrame } from './first-frame'
 import { notifyAlarm } from './notify'
 import { useAlarmFiredStore } from './alarm-fired-store'
 import { liveParentIds, useSessionsStore } from './sessions-store'
@@ -211,15 +215,18 @@ export function initStores(): void {
     useAccountsStore.getState().setAddFlow(progress)
   })
 
-  void loadInitialGithubAccounts().then((githubAccountsLoad) => {
-    if (githubBroadcastReceived) return
-    if (githubAccountsLoad.kind === 'missing-cli') {
-      useAccountsStore.getState().setGithubMissingCli()
-    } else if (githubAccountsLoad.kind === 'error') {
-      useAccountsStore.getState().setGithubError()
-    } else {
-      useAccountsStore.getState().setGithub(githubAccountsLoad.accounts)
-    }
+  // Deferred past the first frame: it spawns `gh`, and its result is what lets the sidebar PR count start. (FR-184)
+  afterFirstFrame(() => {
+    void loadInitialGithubAccounts().then((githubAccountsLoad) => {
+      if (githubBroadcastReceived) return
+      if (githubAccountsLoad.kind === 'missing-cli') {
+        useAccountsStore.getState().setGithubMissingCli()
+      } else if (githubAccountsLoad.kind === 'error') {
+        useAccountsStore.getState().setGithubError()
+      } else {
+        useAccountsStore.getState().setGithub(githubAccountsLoad.accounts)
+      }
+    })
   })
 
   // `gh auth` run in an external terminal never broadcasts, so refresh on focus (throttled 5 s); skip while an add flow waits, since it would race the completion.
@@ -264,6 +271,9 @@ export function initStores(): void {
     if (identity === lastActiveAccountIdentity) return
     lastActiveAccountIdentity = identity
     usePullRequestsStore.getState().clearActiveCounts()
+    // The held list rows belong to the old account (`@me`), so the next mount must fetch. (FR-180)
+    usePullRequestsStore.getState().invalidateFreshness()
+    useIssuesStore.getState().invalidateFreshness()
     // Refetch immediately for the new account so the sidebar isn't blank until the next focus.
     if (identity !== null && state.githubStatus === 'ready') {
       const repositoryIds = useRepositoriesStore.getState().repositories.map((repo) => repo.id)
@@ -337,15 +347,18 @@ export function initStores(): void {
       await restoredPromise
       useSessionListStore.getState().pruneRepositories(new Set(repositoriesLoad.value.map((repository) => repository.id)))
     }
-    if (repositoriesLoad.value.length > 0) refreshRepositoriesRemotes(true)
+    if (repositoriesLoad.value.length > 0) afterFirstFrame(() => refreshRepositoriesRemotes(true))
   })()
 
-  void (async () => {
-    const result = await window.refract.updates.getState()
-    if (result.ok) useUpdateStore.getState().setState(result.value)
-  })()
+  afterFirstFrame(() => {
+    void (async () => {
+      const result = await window.refract.updates.getState()
+      if (result.ok) useUpdateStore.getState().setState(result.value)
+    })()
+    void initHolidayOverrides()
+  })
 
-  void (async () => {
-    await initHolidayOverrides()
-  })()
+  // Show the on-disk default lists marked stale at once, then warm them fresh on idle. (#1895)
+  void hydrateListsFromCache()
+  afterFirstFrame(startListPrefetch)
 }

@@ -91,6 +91,13 @@ pnpm build        # must pass before a change lands on main
 8. Open a Session that has never been started (status not-started) and type a qualifying partial word in its message box. Expect: no agent starts just from typing -- the Session's status stays not-started/stopped throughout (confirm nothing new appears in `Get-Process omp`); a suggestion may or may not appear depending on whether the shared prediction daemon elsewhere on the machine is already warm, but typing alone must never launch this Session's own agent.
 9. Stop a live Session's agent mid-turn and keep typing a qualifying word in its composer. Expect: no error toast and no visible crash; the composer stays fully usable, simply without a suggestion.
 
+**Performance: first frame and fast lists (FR-180 to FR-185, issues #1894 to #1898)**
+
+1. Cold start. Expect: the window shows before remote detection, the sidebar PR count and the idle list prefetch begin (they start after the first frame, FR-184); no blank window while `gh` spawns.
+2. Open **Pull requests**, then switch to **Issues** and back within 60 s. Expect: the rows show at once and no `gh` call runs while the list is fresh; **Refresh**, **Show more** and any filter change still fetch (FR-180).
+3. Quit and reopen Refract. Expect: both default open lists show their cached rows at once with the quiet "refreshing" hint instead of the Loading card, then swap to the fresh rows (FR-181).
+4. Watch the sidebar PR count. Expect: it comes from the loaded default list, or shares the list's one in-flight request, never a second `gh search prs` (FR-183); `gh api rate_limit` is probed at most once per 60 s (FR-182).
+
 **Memory (FR-037, FR-038, SC-010)**
 
 1. Open Sessions until free memory drops below the threshold in `src/main/memory.ts`. Expect: a warning within 10 s naming the number of live agents; **Stop agent** on an idle Session frees its memory and the Session stays listed and reopens with its conversation.

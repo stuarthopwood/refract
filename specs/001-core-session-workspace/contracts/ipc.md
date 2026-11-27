@@ -124,6 +124,12 @@ process. Non-optional on `RefractApi` (gate round 1, 2026-10-15): Electron never
 family, and Electron itself is gone (R13, #873) -- the Rust build (`src-tauri/`) is now the only
 implementation.
 
+### List cache (issue #1895, FR-181)
+
+| Method | Returns | Notes |
+|---|---|---|
+| `listCache.read()` | `{ pullRequests: PullRequestAcrossResult \| null; issues: IssueListResult \| null }` | The last good default open Pull requests and Issues lists, read once at startup (`src/renderer/state/list-cache-hydration.ts`) so the lists show rows before `gh` answers. A list is `null` when nothing usable is cached; a missing, corrupt or unreadable `listCache.json` in the data dir yields both `null`, never an error. Read-only for the renderer: Rust writes the file itself, behind the `pullRequests.listAcross` and `issues.list` replies, and only for the default open key (tab all, state open, no query or label, first page, every registered Project, none skipped). A section over 4 MiB is dropped. Hydrated rows are marked `stale` and show a quiet "refreshing" hint until the fresh result lands. Every text field came from GitHub and is untrusted. |
+
 ### Window (spec 001 T100, FR-057)
 
 | Method | Returns | Notes |

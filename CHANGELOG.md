@@ -1,5 +1,53 @@
 # Changelog
 
+## v0.48.1 (2026-11-27)
+
+### Fixes
+
+- fix(scripts): token-guard-probe CLI tests pass on Linux (#2330) (https://github.com/stuarthopwood/refract/pull/2331)
+- perf(lists): cached and fresher PR and issue lists (#1894, #1895) (https://github.com/stuarthopwood/refract/pull/2337)
+- perf(github): cache the gh rate-limit probe (#1896) (https://github.com/stuarthopwood/refract/pull/2338)
+- perf(startup): show the window before deferred startup work (#1897, #1898) (https://github.com/stuarthopwood/refract/pull/2339)
+
+### Other
+
+- docs(spec): epic #1272 agents panel and subagent retention FRs and convergence tasks (https://github.com/stuarthopwood/refract/pull/2332)
+- docs(spec): epic #1136 /new prompt and pasted-image path FRs and convergence tasks (https://github.com/stuarthopwood/refract/pull/2334)
+- docs(spec): goal and prewalk composer modes (#1865) (https://github.com/stuarthopwood/refract/pull/2335)
+- docs(spec): typed code snippet preview in the composer (#525) (https://github.com/stuarthopwood/refract/pull/2336)
+- docs/1901 plan done (https://github.com/stuarthopwood/refract/pull/2342)
+
+## v0.48.0 (2026-11-27)
+
+### Features
+
+- feat(installer): install gh-stack at a pinned tag (https://github.com/stuarthopwood/refract/pull/2306)
+- feat(plan): v1 build order, later releases and no weekly schedule (https://github.com/stuarthopwood/refract/pull/2314)
+- feat(subagents): Stage rows, flat single-agent Stage and one-button sub-cards in the chat card and drawer (https://github.com/stuarthopwood/refract/pull/2326)
+
+### Fixes
+
+- fix(tests): bound the delete-check test and isolate test git (https://github.com/stuarthopwood/refract/pull/2310)
+
+### Other
+
+- docs(plan): add #2296 and regenerate plan.html (https://github.com/stuarthopwood/refract/pull/2297)
+- feat/2128 release pr route (https://github.com/stuarthopwood/refract/pull/2298)
+- docs/plan 2026 11 27 stages (https://github.com/stuarthopwood/refract/pull/2301)
+- ci(tests): fast tier on pull requests and test strategy (https://github.com/stuarthopwood/refract/pull/2302)
+- docs/plan 2026 11 27 ask digest (https://github.com/stuarthopwood/refract/pull/2304)
+- docs/plan 2026 11 27 agent summary (https://github.com/stuarthopwood/refract/pull/2309)
+- docs(plan): add #2311 theme picker columns (https://github.com/stuarthopwood/refract/pull/2312)
+- test(away): backfill Away Mode and approval policy tests (https://github.com/stuarthopwood/refract/pull/2313)
+- test(updates): backfill updater and install tests (https://github.com/stuarthopwood/refract/pull/2315)
+- test(git): backfill worktree and Session lifecycle tests (https://github.com/stuarthopwood/refract/pull/2316)
+- docs/plan 2026 11 27 1810 closeout (https://github.com/stuarthopwood/refract/pull/2317)
+- docs/plan 2026 11 27 card redesign (https://github.com/stuarthopwood/refract/pull/2319)
+- docs(plan): add #2320 Away Mode and Refract context line styling (https://github.com/stuarthopwood/refract/pull/2321)
+- docs(plan): pull #360 into v1 and add #2322 theme dialog overflow (https://github.com/stuarthopwood/refract/pull/2323)
+- docs(plan): record #2318 token refinement (https://github.com/stuarthopwood/refract/pull/2324)
+- docs(spec): epic #1901 performance FRs and convergence tasks (https://github.com/stuarthopwood/refract/pull/2327)
+
 ## v0.47.0 (2026-11-27)
 
 ### Features

@@ -5,12 +5,16 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::conversations_core::{start_new_core, switch_core};
+use super::conversations_delete::conversations_delete;
+use super::conversations_size::conversation_size_bytes;
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture};
 
 pub fn register(d: &mut Dispatcher) {
     d.register("conversations.list", conversations_list);
     d.register("conversations.startNew", conversations_start_new);
     d.register("conversations.open", conversations_open);
+    d.register("conversations.delete", conversations_delete);
+    super::conversations_retention::register(d);
 }
 
 /// Conversation metadata returned by `conversations.list`.
@@ -23,6 +27,8 @@ pub(crate) struct ConversationInfo {
     pub(crate) title: String,
     pub(crate) preview: String,
     pub(crate) is_current: bool,
+    /// The `.jsonl` plus its artifact folder on disk.
+    pub(crate) size_bytes: u64,
 }
 
 /// Builds the `SessionSnapshot` shared by `sessions.open`, `.recover`, `.resume`, and conversation switches.
@@ -57,6 +63,7 @@ pub(crate) async fn build_snapshot(
         session.session_dir.as_deref(),
         session.current_conversation.as_deref(),
         None,
+        false,
     )
     .await;
     serde_json::json!({
@@ -147,6 +154,7 @@ pub fn conversations_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
             session_dir.as_deref(),
             current_conversation.as_deref(),
             None,
+            true,
         )
         .await;
         Ok(serde_json::to_value(conversations)
@@ -156,7 +164,7 @@ pub fn conversations_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
 
 // File names are `<timestamp>_<uuid>.jsonl`, with the timestamp's `:` and `.` replaced by `-`.
 // The timestamp prefix is a fixed 25 characters, so it is parsed by position, not by regex.
-fn parse_file_name(file_name: &str) -> Option<(String, String)> {
+pub(crate) fn parse_file_name(file_name: &str) -> Option<(String, String)> {
     const SUFFIX: &str = ".jsonl";
     const PREFIX_LEN: usize = 25;
     if !file_name.ends_with(SUFFIX) || file_name.len() <= PREFIX_LEN + SUFFIX.len() {
@@ -203,6 +211,18 @@ fn parse_file_name(file_name: &str) -> Option<(String, String)> {
 
 const PREVIEW_SCAN_HARD_CAP_BYTES: usize = 64 * 1024;
 const PREVIEW_MAX_LENGTH: usize = 120;
+const TITLE_MAX_LENGTH: usize = 60;
+
+/// A one-line title cut from the first user message (#440, FR-191): whitespace runs, line breaks
+/// included, collapse to one space, and a cut text ends in an ellipsis. Empty when the message has no text.
+fn title_from_message(text: &str) -> String {
+    let single_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single_line.chars().count() <= TITLE_MAX_LENGTH {
+        return single_line;
+    }
+    let cut: String = single_line.chars().take(TITLE_MAX_LENGTH).collect();
+    format!("{}…", cut.trim_end())
+}
 
 /// Plain text of a stored user message, from a string or from `text` parts.
 fn extract_user_text(content: &Value) -> String {
@@ -274,6 +294,9 @@ async fn read_conversation_file(
                                     .get("content")
                                     .map(extract_user_text)
                                     .unwrap_or_default();
+                                if title.is_empty() {
+                                    title = title_from_message(&text);
+                                }
                                 preview = Some(text.chars().take(PREVIEW_MAX_LENGTH).collect());
                             }
                         }
@@ -302,11 +325,13 @@ pub(crate) fn same_file(a: &str, b: &str) -> bool {
 
 /// Lists the Conversations in `session_dir`, newest first; `limit` stops the scan once that many are
 /// listed. `session_dir == None` (no Conversation has ever been started) and an unreadable directory
-/// both yield an empty list, never a failure.
+/// both yield an empty list, never a failure. `size_bytes` is measured only when `with_sizes`, since
+/// it walks each artifact folder and only the Conversations list shows it.
 pub(crate) async fn list_conversations(
     session_dir: Option<&str>,
     current_conversation: Option<&str>,
     limit: Option<usize>,
+    with_sizes: bool,
 ) -> Vec<ConversationInfo> {
     let Some(session_dir) = session_dir else {
         return Vec::new();
@@ -351,6 +376,14 @@ pub(crate) async fn list_conversations(
         };
         let file = file_path.to_string_lossy().into_owned();
         let is_current = current_conversation.is_some_and(|current| same_file(&file, current));
+        let size_bytes = if with_sizes {
+            let sized = file_path.clone();
+            tokio::task::spawn_blocking(move || conversation_size_bytes(&sized))
+                .await
+                .unwrap_or(0)
+        } else {
+            0
+        };
         results.push(ConversationInfo {
             file,
             id,
@@ -358,6 +391,7 @@ pub(crate) async fn list_conversations(
             title,
             preview: preview.unwrap_or_default(),
             is_current,
+            size_bytes,
         });
     }
     results

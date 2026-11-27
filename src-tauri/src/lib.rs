@@ -16,6 +16,7 @@ mod test_scratch;
 pub mod updates;
 pub mod usage;
 
+use std::future::Future;
 use std::path::PathBuf;
 
 use serde_json::Value;
@@ -257,11 +258,6 @@ pub fn run() {
                 .app_handle
                 .lock()
                 .expect("app_handle mutex poisoned") = Some(app.handle().clone());
-            // The logger plugin is up only now; `RegistryStore::open` runs before it.
-            tauri::async_runtime::block_on(managed.app_state.registry.lock())
-                .warn_duplicate_personal();
-            ipc::usage::start_at_launch(&managed.app_state);
-
             // Set before any renderer script runs, so the synchronous theme bootstrap can read it.
             let (bootstrap_custom, reset_notice) =
                 tauri::async_runtime::block_on(ipc::themes::bootstrap(&managed.app_state));
@@ -315,7 +311,8 @@ pub fn run() {
             shell::notifications::init(app.handle());
             shell::alarms::spawn(app.handle().clone(), managed.app_state.settings.clone());
 
-            window.show()?;
+            // Non-visual setup runs after the window shows so it never delays the first frame (FR-184 (a)).
+            show_then_spawn(|| window.show(), post_show_setup(managed.app_state.clone()))?;
 
             {
                 let update_state = update_state_for_setup.clone();
@@ -367,6 +364,70 @@ pub fn run() {
             });
         }
     });
+}
+
+/// Work the first frame does not need: runs after the window shows (FR-184 (a)).
+async fn post_show_setup(state: AppState) {
+    // The logger plugin is up only now; `RegistryStore::open` runs before it.
+    state.registry.lock().await.warn_duplicate_personal();
+    ipc::usage::start_at_launch(&state);
+}
+
+/// Shows the window, then spawns `deferred` without awaiting it, so it can never delay the first frame.
+fn show_then_spawn<E>(
+    show: impl FnOnce() -> Result<(), E>,
+    deferred: impl Future<Output = ()> + Send + 'static,
+) -> Result<tauri::async_runtime::JoinHandle<()>, E> {
+    show()?;
+    Ok(tauri::async_runtime::spawn(deferred))
+}
+
+#[cfg(test)]
+mod show_then_spawn_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn deferred_work_is_not_awaited_before_the_window_shows() {
+        let log = Arc::new(Mutex::new(Vec::<&'static str>::new()));
+        let (release, gate) = tokio::sync::oneshot::channel::<()>();
+        let deferred_log = log.clone();
+        let show_log = log.clone();
+
+        let handle = show_then_spawn::<()>(
+            || {
+                show_log.lock().unwrap().push("show");
+                Ok(())
+            },
+            async move {
+                // Never resolves until released, so an awaiting caller would hang.
+                gate.await.unwrap();
+                deferred_log.lock().unwrap().push("deferred");
+            },
+        )
+        .unwrap();
+
+        // Returned while the deferred work is still blocked on `gate`.
+        assert_eq!(*log.lock().unwrap(), ["show"]);
+
+        release.send(()).unwrap();
+        tauri::async_runtime::block_on(handle).unwrap();
+        assert_eq!(*log.lock().unwrap(), ["show", "deferred"]);
+    }
+
+    #[test]
+    fn a_failed_show_never_spawns_the_deferred_work() {
+        let ran = Arc::new(Mutex::new(false));
+        let deferred_ran = ran.clone();
+
+        let result = show_then_spawn(|| Err("show failed"), async move {
+            *deferred_ran.lock().unwrap() = true;
+        });
+
+        assert!(result.is_err());
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        assert!(!*ran.lock().unwrap());
+    }
 }
 
 #[cfg(test)]

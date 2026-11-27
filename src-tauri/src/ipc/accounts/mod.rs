@@ -298,6 +298,12 @@ async fn run_github_account_mutation(
             }
         }
     }
+    // The cached rows belong to the account that was active: a switch or sign-out drops them.
+    if let Err(err) = crate::store::list_cache::clear(&state.data_dir).await {
+        log::debug!("accounts: failed to clear the list cache after an account change: {err}");
+    }
+    // The rate-limit probe's cached result was for the previous account.
+    crate::github::gh_pr_search_across::invalidate_search_budget().await;
 
     let ticket = acquire_broadcast_ticket();
     let projected_hosts = match kind {

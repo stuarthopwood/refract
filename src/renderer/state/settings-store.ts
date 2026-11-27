@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
-import type { Alarm, ApprovalMode, ReadoutKind, Settings, ToolTargets, TranscriptDisplayFlag } from '../../shared/model'
+import { DEFAULT_CONVERSATION_RETENTION, DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
+import type { Alarm, ApprovalMode, ConversationRetention, ReadoutKind, Settings, ToolTargets, TranscriptDisplayFlag } from '../../shared/model'
 import type { ActivityText } from '../../shared/activity'
 import type { StatusStyle } from '../../shared/statusStyle'
 import type { ChatRowDensity } from '../../shared/chatRowDensity'
@@ -33,6 +33,8 @@ interface SettingsState {
   setReduceMotion(enabled: boolean): Promise<void>
   setShowScrollbarMap(enabled: boolean): Promise<void>
   setStackedPullRequests(enabled: boolean): Promise<void>
+  /** #2161: resolves `true` on success; Rust clamps `days`. */
+  setConversationRetention(value: ConversationRetention): Promise<boolean>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
   setSessionNotificationSounds(enabled: boolean): Promise<void>
   setAlarmSounds(enabled: boolean): Promise<void>
@@ -57,6 +59,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showSampleData: false,
   detectImagePathsOnPaste: true,
   sessionListCollapse: DEFAULT_SESSION_LIST_COLLAPSE,
+  conversationRetention: DEFAULT_CONVERSATION_RETENTION,
   rightPane: DEFAULT_RIGHT_PANE,
   pullRequestsListWidthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, // #930: default and remembered-width floor; see `pull-requests-layout-store.ts`
   // Placeholder until the real row arrives (Rust default is `false`); `true` keeps ghost text from flickering off meanwhile.
@@ -212,6 +215,12 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     const result = await window.refract.settings.setStackedPullRequests(enabled)
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
+  },
+  setConversationRetention: async (value) => {
+    const result = await window.refract.settings.setConversationRetention(value)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+    return result.ok
   },
   setShowFinishedTurnTimes: async (enabled) => {
     const result = await window.refract.settings.setShowFinishedTurnTimes(enabled)

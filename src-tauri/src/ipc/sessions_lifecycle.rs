@@ -407,13 +407,10 @@ use diag::{sessions_diff_stat, sessions_reveal_worktree};
 pub(crate) mod archive_core;
 pub(crate) mod delete_core;
 
-// Delete helpers (reclaim hook, Conversation cleanup, path check) live in `sessions_delete_support.rs`.
+// Delete helpers (reclaim hook, Session log cleanup) live in `sessions_delete_support.rs`.
 mod sessions_delete_support;
 #[cfg(test)]
-use sessions_delete_support::{
-    delete_session_conversations, is_strict_descendant_of_omp_sessions,
-    WORKTREE_RELEASED_HOOK_CALLS,
-};
+use sessions_delete_support::WORKTREE_RELEASED_HOOK_CALLS;
 
 // The background half of `sessions.delete`: in-flight set and the spawned removal.
 pub(crate) mod delete_in_flight;

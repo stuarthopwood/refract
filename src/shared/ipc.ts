@@ -12,6 +12,11 @@ import type {
   ApprovalMode,
   CatalogKind,
   ConversationInfo,
+  ConversationRetention,
+  RetentionPreview,
+  RetentionRun,
+  SessionLogsSweepPreview,
+  SessionLogsSweepRun,
   DiffStat,
   FilePreview,
   FileTreeNode,
@@ -41,6 +46,7 @@ import type { AdvisorRosterApi, AdvisorRosterDetected } from './ipc-advisor-rost
 import type { AttachmentsApi } from './ipc-attachments'; import type { ClipboardApi } from './ipc-clipboard'; import type { SpellcheckApi } from './ipc-spellcheck'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
 import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi, SessionWithKickoff } from './ipc-issues'; import type { ItemRefsApi } from './ipc-item-refs'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
 import type { GithubStackApi } from './ipc-github-stack';
+import type { ListCacheApi } from './ipc-list-cache';
 import type { ChangedFile, FilterTab, MergeMethod, PullRequestDetail, PullRequestStateFilter, PullRequestSummary, ReviewVerdict } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
 import type { ActivityText, SessionActivity } from './activity'; import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images'; import type { CustomTheme, ThemesApi } from './ipc-themes'; import type { RepositoriesCloneApi, SettingsCloneApi } from './ipc-repositories-clone';
@@ -100,7 +106,8 @@ export type IpcErrorCode =
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed' // lane R11b (#794); #1265 settings.json write failed
   | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape' | 'working-folder-unavailable'
   | 'no-repository'
-  | 'request-gone';
+  | 'request-gone'
+  | 'current-conversation' | 'delete-failed'; // #2161 conversations.delete
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -289,6 +296,11 @@ export const IPC_REQUESTS = {
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
   CONVERSATIONS_OPEN: 'conversations.open',
+  CONVERSATIONS_DELETE: 'conversations.delete',
+  CONVERSATIONS_RETENTION_PREVIEW: 'conversations.retentionPreview',
+  CONVERSATIONS_RETENTION_RUN: 'conversations.retentionRun',
+  SESSION_LOGS_SWEEP_PREVIEW: 'sessionLogs.sweepPreview',
+  SESSION_LOGS_SWEEP_RUN: 'sessionLogs.sweepRun',
   CHAT_SEND: 'chat.send',
   CHAT_STOP: 'chat.stop',
   CHAT_REMOVE_QUEUED: 'chat.removeQueued',
@@ -339,6 +351,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_CODE_LIGATURES: 'settings.setCodeLigatures',
   SETTINGS_SET_REDUCE_MOTION: 'settings.setReduceMotion',
   SETTINGS_SET_SHOW_SCROLLBAR_MAP: 'settings.setShowScrollbarMap',
+  SETTINGS_SET_CONVERSATION_RETENTION: 'settings.setConversationRetention',
   SETTINGS_SET_TYPOGRAPHY: 'settings.setTypography',
   SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
   SETTINGS_SET_STACKED_PULL_REQUESTS: 'settings.setStackedPullRequests',
@@ -388,6 +401,7 @@ export const IPC_REQUESTS = {
   ISSUES_CREATE: 'issues.create',
   ISSUES_LIST: 'issues.list',
   ISSUES_VIEW: 'issues.view',
+  LIST_CACHE_READ: 'listCache.read',
   ISSUES_NEW_SESSION: 'issues.newSession',
   ITEM_REFS_LOOKUP: 'itemRefs.lookup',
   ITEM_REFS_SEARCH: 'itemRefs.search',
@@ -528,6 +542,13 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     list(sessionId: string): Promise<Result<ConversationInfo[]>>;
     startNew(sessionId: string): Promise<Result<SessionSnapshot>>;
     open(sessionId: string, file: string): Promise<Result<SessionSnapshot>>;
+    delete(sessionId: string, file: string): Promise<Result<{ bytesFreed: number }>>;
+    retentionPreview(): Promise<Result<RetentionPreview>>; // #2161: what the stored retention setting would delete; nothing while it is off.
+    retentionRun(): Promise<Result<RetentionRun>>; // #2161: user-triggered; deletes the previewed Conversations through `conversations.delete`'s refusals.
+  };
+  sessionLogs: {
+    sweepPreview(): Promise<Result<SessionLogsSweepPreview>>; // #2161: OMP session log folders of deleted Sessions whose worktree is gone; deletes nothing.
+    sweepRun(): Promise<Result<SessionLogsSweepRun>>; // #2161: user-triggered; removes the previewed folders.
   };
 
   chat: {
@@ -563,7 +584,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     /** Tells Rust a mutating action is about to change files; only `accepted: true` allows it to proceed. */
     started(sessionId: string, callId: string): Promise<Result<{ accepted: boolean }>>;
   };
-  issues: IssuesApi; itemRefs: ItemRefsApi; home: HomeApi;
+  issues: IssuesApi; itemRefs: ItemRefsApi; home: HomeApi; listCache: ListCacheApi;
 
   settings: SettingsCloneApi & {
     get(): Promise<Result<Settings>>;
@@ -586,6 +607,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setReduceMotion(enabled: boolean): Promise<Result<Settings>>; // Issue #566: the app-wide Reduce motion switch (WCAG 2.2.2 pause path); default off follows the OS setting; applies live.
     setStackedPullRequests(enabled: boolean): Promise<Result<Settings>>; // Issue #1867: default on; the Pull requests Merge button and Session notes read it.
     setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
+    setConversationRetention(value: ConversationRetention): Promise<Result<Settings>>; // Issue #2161: Rust clamps `days` to 1..3650; off by default.
     upsertAlarm(alarm: Alarm): Promise<Result<Settings>>; // Issue #1426: create or edit one composer-clock Alarm; `alarm-limit` when the list is full.
     deleteAlarm(id: string): Promise<Result<Settings>>;
     setShowFinishedTurnTimes(enabled: boolean): Promise<Result<Settings>>; // Issue #1250 (FR-119): the settled turn total switch; applies live.
