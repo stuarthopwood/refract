@@ -1,4 +1,4 @@
-// Renders the v1 plan model (built in plan-html.mjs) into one self-contained HTML page.
+// Renders the release plan model (built in plan-html.mjs) into one self-contained HTML page.
 // Every GitHub-sourced string goes through esc(); issue titles are attacker-reachable text.
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
@@ -39,7 +39,7 @@ function renderHeader(m) {
   const v1Note = m.v1Exists
     ? (m.v1.total === 0 ? '<p>The v1 milestone exists but has no issues yet; v1 is treated as empty.</p>' : '')
     : '<p><strong>The v1 milestone does not exist yet</strong>, so v1 is treated as empty.</p>';
-  return `<header><h1>Refract v1 plan</h1>
+  return `<header><h1>Refract plan</h1>
 <p class="muted">Generated ${esc(m.generated)} from live GitHub data for ${esc(m.repo)}. v1 ships by ${esc(m.deadline)}: <strong>${m.daysLeft} days left</strong>.</p>
 <h2>v1 progress</h2>${bar(m.v1.closed, m.v1.total)}${v1Note}</header>`;
 }
@@ -60,45 +60,26 @@ ${table('Completed issues per week', ['Week starting', 'Completed'], rows)}
 <p class="verdict ${verdict[0]}"><span class="tag">Projection.</span> ${esc(verdict[1])}</p></section>`;
 }
 
-function renderSchedule(m) {
-  const s = m.schedule;
-  if (s.buckets.length === 0) return '<section><h2>Projected schedule</h2><p>Nothing to schedule: no open v1 issues.</p></section>';
-  const parts = s.buckets.map((b) => {
-    const late = b.late ? ' <strong>(after the deadline)</strong>' : '';
-    const rows = b.issues.map((i) => [link(m.repo, i.number), esc(i.title), esc(i.priority ?? 'none'), esc(i.type ?? '')]);
-    return `<h3>Week ${esc(b.start)} to ${esc(b.end)}${late}</h3>
-${table(`Issues scheduled for the week starting ${b.start}`, ['Issue', 'Title', 'Priority', 'Type'], rows)}`;
-  }).join('\n');
-  return `<section><h2>Projected schedule</h2>
-<p class="muted">Projection at ${m.forecast.rate} issues per week (rate rounded to whole issues) from Monday ${esc(s.startDate)}. Order: p0, p1, p2 bugs, then other p2, p3 and unlabelled; within a priority, docs/PLAN.md Queue order, then issue number.</p>
-${parts}</section>`;
+function renderGroup(m, section, g) {
+  const title = g.epic ? `${link(m.repo, g.epic.number)} ${esc(g.epic.title)}` : 'No epic';
+  const intro = g.epic ? '' : '<p class="muted">Not a sub-issue of any epic yet.</p>';
+  const rows = g.issues.map((i) => [link(m.repo, i.number), esc(i.title), esc(i.priority ?? 'none'), esc(i.type ?? ''), esc(i.state.toLowerCase())]);
+  return `<h3>${title}</h3>${intro}
+${table(`${section.title} issues in ${g.epic ? g.epic.title : 'no epic'}`, ['Issue', 'Title', 'Priority', 'Type', 'State'], rows)}`;
 }
 
-function renderGroup(m, g) {
-  const title = g.epic ? `${link(m.repo, g.epic.number)} ${esc(g.epic.title)}` : 'Unassigned';
-  const intro = g.epic ? '' : '<p class="muted">Open issues and v1 issues that are not a sub-issue of any epic yet.</p>';
-  const rows = g.issues.map((i) => [link(m.repo, i.number), esc(i.title), esc(i.priority ?? 'none'), esc(i.type ?? ''), i.v1 ? 'yes' : 'no', esc(i.state.toLowerCase())]);
-  const stats = `${g.open} open, ${g.closed} closed, ${g.v1} in v1 (${g.v1Open} open)`;
-  return `<section><h3>${title}</h3>${intro}<p>${stats}</p>${bar(g.closed, g.open + g.closed)}
-${table(`Issues in ${g.epic ? g.epic.title : 'Unassigned'}`, ['Issue', 'Title', 'Priority', 'Type', 'v1', 'State'], rows)}</section>`;
-}
-
-function renderPostV1(m) {
-  const items = m.groups.filter((g) => g.postV1Open > 0)
-    .map((g) => `<li>${g.epic ? esc(g.epic.title) : 'Unassigned'}: ${g.postV1Open} open non-v1</li>`).join('\n');
-  return `<section><h2>Post-v1</h2><p>Open issues outside the v1 milestone, per epic (also listed in the epic tables below):</p><ul>${items || '<li>None.</li>'}</ul></section>`;
+function renderSection(m, s) {
+  const groups = s.groups.map((g) => renderGroup(m, s, g)).join('\n');
+  return `<section><h2>${esc(s.title)}</h2><p>${esc(s.summary)}</p>${groups || '<p class="muted">No issues.</p>'}</section>`;
 }
 
 export function renderPage(m) {
-  const epics = m.groups.map((g) => renderGroup(m, g)).join('\n');
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
-<title>Refract v1 plan</title><style>${CSS}</style></head>
+<title>Refract plan</title><style>${CSS}</style></head>
 <body>${renderHeader(m)}
 <main>${renderForecast(m)}
-${renderSchedule(m)}
-${renderPostV1(m)}
-<section><h2>Epics</h2>${epics}</section></main></body></html>
+${m.sections.map((s) => renderSection(m, s)).join('\n')}</main></body></html>
 `;
 }
