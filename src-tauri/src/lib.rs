@@ -420,12 +420,9 @@ mod show_then_spawn_tests {
         let ran = Arc::new(Mutex::new(false));
         let deferred_ran = ran.clone();
 
-        let result = show_then_spawn(
-            || Err("show failed"),
-            async move {
-                *deferred_ran.lock().unwrap() = true;
-            },
-        );
+        let result = show_then_spawn(|| Err("show failed"), async move {
+            *deferred_ran.lock().unwrap() = true;
+        });
 
         assert!(result.is_err());
         std::thread::sleep(std::time::Duration::from_millis(50));
