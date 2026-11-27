@@ -82,6 +82,7 @@ async function main() {
         pathPrepend: dirs.shim,
         logFile: path.join(dirs.exe, 'app.log'),
         extraEnv: {
+          REFRACT_OMP_SESSIONS_DIR: dirs.serve,
           REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
           REFRACT_FAKE_OMP_NODE: process.execPath,
           REFRACT_FAKE_OMP_SCENARIO: 'conversations-1861',
