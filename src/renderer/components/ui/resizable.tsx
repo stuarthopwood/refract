@@ -46,7 +46,7 @@ function ResizableHandle({
         <div
           aria-hidden="true"
           data-slot="resizable-grip"
-          className="pointer-events-none z-10 h-8 min-h-8 w-1 min-w-1 shrink-0 rounded-full bg-border transition-colors group-hover/handle:bg-muted-foreground group-focus-visible/handle:bg-accent-text group-focus-visible/handle:outline-2 group-focus-visible/handle:outline-offset-2 group-focus-visible/handle:outline-accent-text group-data-[separator=active]/handle:bg-accent-text group-data-[separator=disabled]/handle:opacity-0 forced-colors:bg-[CanvasText] forced-colors:group-hover/handle:bg-[Highlight] forced-colors:group-focus-visible/handle:bg-[Highlight] forced-colors:group-focus-visible/handle:outline-[Highlight] forced-colors:group-data-[separator=active]/handle:bg-[Highlight] motion-reduce:transition-none"
+          className="pointer-events-none z-10 h-8 min-h-8 w-1 min-w-1 shrink-0 rounded-full bg-border transition-colors group-hover/handle:bg-muted-foreground group-focus-visible/handle:bg-accent-text group-focus-visible/handle:outline-(length:--focus-ring-width) group-focus-visible/handle:outline-offset-2 group-focus-visible/handle:outline-accent-text group-data-[separator=active]/handle:bg-accent-text group-data-[separator=disabled]/handle:opacity-0 forced-colors:bg-[CanvasText] forced-colors:group-hover/handle:bg-[Highlight] forced-colors:group-focus-visible/handle:bg-[Highlight] forced-colors:group-focus-visible/handle:outline-[Highlight] forced-colors:group-data-[separator=active]/handle:bg-[Highlight] motion-reduce:transition-none"
         />
       )}
       {noDragHit && (

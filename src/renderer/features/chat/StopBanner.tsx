@@ -75,7 +75,7 @@ export function StopBanner(p: StopBannerProps) {
       tabIndex={-1}
       aria-labelledby={titleId}
       className={cn(
-        'shrink-0 px-4 pt-4 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:-outline-offset-2',
+        'shrink-0 px-4 pt-4 outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset forced-colors:focus-visible:outline-(length:--focus-ring-width) forced-colors:focus-visible:outline-solid forced-colors:focus-visible:-outline-offset-2',
         // Without the details block the banner has no bottom content to supply spacing.
         !p.startFailureDetails && 'pb-2'
       )}
@@ -144,7 +144,7 @@ export function StopBanner(p: StopBannerProps) {
             role="region"
             tabIndex={0}
             aria-label="Start failure details"
-            className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words p-1 text-xs text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words p-1 text-xs text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset"
           >
             {p.startFailureDetails}
           </pre>

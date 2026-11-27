@@ -24,7 +24,7 @@ export const HEADER_ACTION_BUTTON_CLASS = cn(
 
 const GROUP_HEADER_ROW_BASE_CLASS = 'group/header flex items-center gap-1 px-1'
 const GROUP_HEADER_ROW_FILL_CLASS =
-  'rounded-md hover:bg-sidebar-accent has-[:focus-visible]:bg-sidebar-accent forced-colors:hover:outline forced-colors:hover:outline-1 forced-colors:hover:outline-[Highlight] forced-colors:has-[:focus-visible]:outline forced-colors:has-[:focus-visible]:outline-1 forced-colors:has-[:focus-visible]:outline-[Highlight]'
+  'rounded-md hover:bg-sidebar-accent has-[:focus-visible]:bg-sidebar-accent forced-colors:hover:outline forced-colors:hover:outline-1 forced-colors:hover:outline-[Highlight] forced-colors:has-[:focus-visible]:outline forced-colors:has-[:focus-visible]:outline-(length:--focus-ring-width) forced-colors:has-[:focus-visible]:outline-[Highlight]'
 
 /** One rounded hover/keyboard-focus fill across a whole header row, buttons included (#1422). `plain` drops it while renaming. */
 export function GroupHeaderRow({ plain, className, ...props }: ComponentProps<'div'> & { plain?: boolean }) {
@@ -79,7 +79,7 @@ export function GroupHeaderTrigger({
       data-choice-item
       data-project-colored={color ? '' : undefined}
       style={color ? { color } : undefined}
-      className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="group/trigger relative flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-1 text-left text-sm font-medium text-muted-foreground focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {/* #735 decision 22: the visible Session's group, while closed -- the existing
           selected cue (`SessionRow.tsx`'s own left-edge bar), no fill, reserved for hover.

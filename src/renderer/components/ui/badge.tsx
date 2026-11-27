@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 
 const badgeVariants = cva(
-  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-transparent px-2 py-0 text-xs font-normal whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-focus-glow aria-invalid:border-destructive aria-invalid:ring-invalid-ring [&>svg]:pointer-events-none [&>svg]:size-4!",
+  "group/badge inline-flex h-5 w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-md border border-transparent px-2 py-0 text-xs font-normal whitespace-nowrap transition-all focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-glow aria-invalid:border-destructive aria-invalid:ring-invalid-ring [&>svg]:pointer-events-none [&>svg]:size-4!",
   {
     variants: {
       variant: {
@@ -23,7 +23,7 @@ const badgeVariants = cva(
         link: "text-primary underline-offset-4 hover:underline",
         // Borderless text-only chip for a non-button-looking control (#1873); focus shows an inset outline, never a border.
         plain:
-          "border-transparent text-accent-text focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
+          "border-transparent text-accent-text focus-visible:border-transparent focus-visible:ring-0 focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
         focused:
           "h-auto border-active-indicator bg-focused-badge-bg py-1 font-medium text-active-indicator-foreground",
         warning: "h-auto border-severity-warning bg-severity-warning-bg py-1 text-severity-warning",

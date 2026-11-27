@@ -5,7 +5,7 @@ import { LoaderCircleIcon } from "lucide-react"
 import { Slot } from "radix-ui"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-2 active:not-aria-[haspopup]:not-aria-disabled:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed forced-colors:aria-disabled:text-[GrayText] aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-invalid-ring dark:aria-invalid:border-invalid-edge [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-(length:--focus-ring-width) forced-colors:focus-visible:outline-offset-2 active:not-aria-[haspopup]:not-aria-disabled:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-disabled:cursor-not-allowed forced-colors:aria-disabled:text-[GrayText] aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-invalid-ring dark:aria-invalid:border-invalid-edge [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       // Each variant ends with an `aria-disabled:hover:` neutraliser: it outranks a caller's plain `hover:` override, so a busy button never looks clickable.
@@ -27,10 +27,10 @@ const buttonVariants = cva(
           "text-destructive hover:bg-muted hover:text-destructive aria-expanded:bg-muted dark:hover:bg-(--ghost-hover-bg,var(--row-hover-bg)) aria-disabled:hover:bg-transparent dark:aria-disabled:hover:bg-transparent font-normal",
         link: "text-primary underline underline-offset-4 font-normal",
         // Non-primary action beside a `ghost` primary (#746); underlines on hover and focus, with a ring since it has no border.
-        text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2 aria-disabled:hover:no-underline",
+        text: "min-h-6 rounded-md text-foreground hover:underline focus-visible:underline focus-visible:ring-(length:--focus-ring-width) underline-offset-2 aria-disabled:hover:no-underline",
         // Same shape as `text`, red label, for actions that open a confirm dialog.
         "text-destructive":
-          "min-h-6 rounded-md text-destructive hover:underline focus-visible:underline focus-visible:ring-2 underline-offset-2 aria-disabled:hover:no-underline",
+          "min-h-6 rounded-md text-destructive hover:underline focus-visible:underline focus-visible:ring-(length:--focus-ring-width) underline-offset-2 aria-disabled:hover:no-underline",
       },
       size: {
         default:

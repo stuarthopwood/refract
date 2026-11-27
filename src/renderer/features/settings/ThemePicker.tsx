@@ -19,7 +19,7 @@ import { useThemeFileActions } from './useThemeFileActions'
 
 // Hand-rolled radiogroup (roving tabindex): arrows and Home/End both move focus and save the choice.
 // Not migrated to ui/radio-group.tsx, whose Home/End only move focus (#498).
-const ROW_CLASS = 'group/radio-item flex w-full min-w-0 items-center gap-2 rounded-md border border-transparent py-2 pl-2 text-left text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow'
+const ROW_CLASS = 'group/radio-item flex w-full min-w-0 items-center gap-2 rounded-md border border-transparent py-2 pl-2 text-left text-sm outline-none focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-glow'
 
 interface ThemePickerProps {
   /** Ids of the heading and hint rendered in AppearanceSection. */

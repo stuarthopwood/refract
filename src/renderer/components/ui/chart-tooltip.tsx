@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils'
 
 /** The one tab stop of a chart: the focus ring shows on the plot that the arrow keys drive. */
-export const CHART_PLOT_CLASS = 'rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-focus-glow'
+export const CHART_PLOT_CLASS = 'rounded-sm outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-glow'
 
 export interface ChartTooltipLine {
   /** Empty for a single-value entry, which reads as just the value. */

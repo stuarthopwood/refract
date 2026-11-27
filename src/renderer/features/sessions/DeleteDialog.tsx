@@ -267,7 +267,7 @@ export function DeleteDialog({
             ref={leftoverListRef}
             aria-labelledby="leftover-files-label"
             tabIndex={0}
-            className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+            className="max-h-40 space-y-1 overflow-y-auto text-sm text-muted-foreground outline-none focus-visible:outline-hidden focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset"
           >
             {leftoverSummary.generatedFolders.map((folder) => (
               <li key={folder.name} className="flex min-w-0 items-start gap-2">

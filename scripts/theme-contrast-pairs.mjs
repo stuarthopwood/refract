@@ -8,6 +8,7 @@
 import { clamp01, compositeOverLinear, contrastRatio, linearToHex, relativeLuminance, resolvedLinear, srgbGammaDecode, srgbGammaEncode } from './contrast-math.mjs'
 import { createHighlighter } from 'shiki'
 import { createJavaScriptRegexEngine } from 'shiki/engine/javascript'
+import { DARK_HC_PAIRS } from './dark-hc-contrast-pairs.mjs'
 import { HIGH_CONTRAST_THEMES, STANDARD_THEMES } from './theme-groups.mjs'
 
 export const PAIRS = [
@@ -271,6 +272,7 @@ export const PAIRS = [
   { fg: 'session-row-fg', bg: 'session-row-hover-bg', min: 4.5 },
   { fg: 'session-row-meta-fg', bg: 'session-row-hover-bg', min: 4.5 },
   { fg: 'session-row-selected-fg', bg: 'session-row-selected-bg', min: 4.5 },
+  ...DARK_HC_PAIRS,
 ]
 
 // The search field's `bg-input/30` fill always renders (`.dark` is always on `<html>`), and `--input` is itself
@@ -332,8 +334,8 @@ export function userBubbleContrastRows(themes) {
 }
 
 // `--sidebar-border` is a real hover/expanded fill (`hover:bg-sidebar-border`) in every theme, but the alias check in
-// check-theme-contrast.mjs only covers presets where it aliases `--divider`. Informational only: Dark high contrast
-// measures ~2.50:1, a known gap tracked on #552 (others clear 4.5:1 with real alpha composited).
+// check-theme-contrast.mjs only covers presets where it aliases `--divider`. Informational only; Dark high contrast
+// enforces 7:1 text on this fill in dark-hc-contrast-pairs.mjs (#552).
 export function sidebarBorderContrastRows(themes) {
   const rows = []
   for (const [themeId, props] of Object.entries(themes)) {

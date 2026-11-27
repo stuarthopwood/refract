@@ -99,7 +99,7 @@ export function ChecksSection({ checks, checkState }: { checks: PullRequestDetai
         if (rows.length === 0) return null
         return (
           <Collapsible key={outcome} defaultOpen={defaultOpen}>
-            <CollapsibleTrigger className="group flex w-full items-center gap-1 rounded-sm py-1 text-left text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring">
+            <CollapsibleTrigger className="group flex w-full items-center gap-1 rounded-sm py-1 text-left text-sm font-medium focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-ring">
               <ChevronRightIcon aria-hidden className="size-4 transition-transform group-data-[state=open]:rotate-90" />
               {CHECK_OUTCOME_DISPLAY[outcome].label} ({rows.length})
             </CollapsibleTrigger>

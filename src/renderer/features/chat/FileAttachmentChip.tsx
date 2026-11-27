@@ -48,7 +48,7 @@ export function FileAttachmentChip({ name, byteLength, isDirectory, sentAs, onRe
               aria-label={`Remove ${removeLabel ?? name}`}
               aria-describedby={undefined}
               onClick={onRemove}
-              className="relative -my-1 flex size-6 shrink-0 items-center justify-center rounded-full text-secondary-foreground/70 hover:bg-secondary-foreground/15 hover:text-secondary-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+              className="relative -my-1 flex size-6 shrink-0 items-center justify-center rounded-full text-secondary-foreground/70 hover:bg-secondary-foreground/15 hover:text-secondary-foreground focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
             >
               <XIcon className="size-4" />
             </button>

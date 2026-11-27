@@ -294,7 +294,7 @@ export function Transcript({
           // `ring-inset` so the focus ring is not clipped by `overflow-y-auto` and the root's `overflow-hidden`.
           // Blur, not opacity, so the history behind the Starting agent notice stays out of the way in every theme (#1892).
           className={cn(
-            'peer outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            'peer outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset',
             BLUR_TRANSITION_CLASS,
             dimTranscript && cn(BLURRED_CONTENT_CLASS, 'focus-within:blur-none')
           )}

@@ -16,7 +16,7 @@ export function usePickerOpenState(disabled: boolean) {
 }
 
 /** Focus is never invisible, only muted. */
-export const GHOST_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-composer-focus focus-visible:border-transparent'
+export const GHOST_FOCUS_CLASS = 'focus-visible:ring-0 focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-composer-focus focus-visible:border-transparent'
 export const GHOST_BUTTON_FOCUS_CLASS = cn(GHOST_FOCUS_CLASS, 'focus-visible:outline-solid')
 
 /** One shared opacity value, applied unconditionally wherever `aria-disabled` is the only disabled signal (no separate native `disabled` attribute). */
@@ -37,4 +37,4 @@ export const PICKER_OPTION_ACTIVE_CLASS = 'border-l-active-indicator bg-composer
 
 /** The composer's own surface/border/focus treatment. */
 export const COMPOSER_INPUT_SURFACE_CLASS =
-  'border-composer-border bg-composer-background dark:bg-composer-background focus-visible:border-composer-focus focus-visible:ring-3 focus-visible:ring-composer-ring'
+  'border-composer-border bg-composer-background dark:bg-composer-background focus-visible:border-composer-focus focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-composer-ring'

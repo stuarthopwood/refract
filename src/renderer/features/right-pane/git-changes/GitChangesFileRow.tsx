@@ -106,7 +106,7 @@ export function GitChangesFileRow({
           event.preventDefault()
           onOpenDiff(activation)
         }}
-        className="flex min-w-0 flex-1 items-center gap-2 rounded text-left outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+        className="flex min-w-0 flex-1 items-center gap-2 rounded text-left outline-none focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
         {/* The kebab menu closes on select, so the row's status icon is the only place to show pending. */}
         {actionPending ? (

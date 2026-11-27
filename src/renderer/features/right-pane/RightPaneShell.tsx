@@ -115,7 +115,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         ref={contentRef}
         data-right-pane-content
         tabIndex={-1}
-        className="flex min-h-0 flex-1 flex-col focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+        className="flex min-h-0 flex-1 flex-col focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
         role={isTabBar ? 'tabpanel' : 'region'}
         id={isTabBar ? ids?.panelId : undefined}
         aria-labelledby={isTabBar && ids ? ids.tabId : 'right-pane-panel-title'}

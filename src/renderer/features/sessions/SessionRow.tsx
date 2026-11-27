@@ -251,7 +251,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                   data-choice-item
                   // Query target for `focusSessionRow` so closing the only open pane returns focus here (#621).
                   data-session-open={session.id}
-                  className="session-open-button flex min-w-0 flex-1 flex-col gap-0 text-left focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+                  className="session-open-button flex min-w-0 flex-1 flex-col gap-0 text-left focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                 >
                   <span
                     className={cn(

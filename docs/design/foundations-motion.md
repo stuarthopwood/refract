@@ -59,7 +59,7 @@ Pausing on a hidden window (Caps and pause rules above), the 3-row shimmer cap, 
 - Return focus to the trigger after a menu or dialog closes.
 - Give every hover-only action a keyboard path too.
 
-Today's code uses a 3px ring (`focus-visible:ring-3`, `button.tsx`), not the 2px above. The 2px figure is Stuart's literal Q11 wording; the separate high-contrast decision (#552) calls its own ring "a thicker 2px focus ring", which is inconsistent with a 2px base — flagged here, not resolved, since picking new numbers is Stuart's call; `foundations-tokens-theming.md` and `accessibility.md` need the same note.
+Focus rings are 2px in every preset and 3px in Dark (high contrast), through the `--focus-ring-width` token (#552, Stuart's decision); `button.tsx` and every other `focus-visible` ring read it.
 
 Today's focus ring token (`--ring`, an achromatic grey) is the **decided, permanent** token for this rule: Stuart ruled 2026-10-09 that the focus ring stays achromatic rather than moving to the accent token, closing the gap PR #596 had declared open (see "Accent and primary fill" in foundations-tokens-theming.md).
 

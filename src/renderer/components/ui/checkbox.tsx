@@ -11,7 +11,7 @@ function CheckboxItem({
     <CheckboxPrimitive.Root
       data-slot="checkbox-item"
       className={cn(
-        "group/checkbox-item flex w-full min-w-0 flex-col items-start gap-1 rounded-lg border border-border bg-background px-4 py-2 text-left text-sm outline-none focus-visible:outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]",
+        "group/checkbox-item flex w-full min-w-0 flex-col items-start gap-1 rounded-lg border border-border bg-background px-4 py-2 text-left text-sm outline-none focus-visible:outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]",
         className
       )}
       {...props}
@@ -65,7 +65,7 @@ export const CHECKBOX_BOX_CLASS = "grid size-4 shrink-0 place-items-center round
 export const CHECKBOX_BOX_ONLY_CLASS = [
   CHECKBOX_BOX_CLASS,
   "gap-0 bg-transparent p-0 hover:bg-transparent hover:border-foreground data-[state=checked]:border-muted-foreground data-[state=checked]:bg-transparent",
-  "focus-visible:border-muted-foreground focus-visible:ring-2",
+  "focus-visible:border-muted-foreground focus-visible:ring-(length:--focus-ring-width)",
   "aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:border-muted-foreground"
 ].join(" ")
 

@@ -1,6 +1,11 @@
 {
   "include": ["src/renderer/**/*", "src/renderer/**/*.tsx", "src/shared/**/*", "src/tauri-bridge/**/*"],
-  "exclude": ["src/shared/checklist.test.ts", "src/shared/ipc-checklist.test.ts", "src/renderer/features/chat-nav/highlightRow.test.ts"],
+  "exclude": [
+    "src/shared/checklist.test.ts",
+    "src/shared/ipc-checklist.test.ts",
+    "src/renderer/features/chat-nav/highlightRow.test.ts",
+    "src/renderer/styles/focus-ring-width.test.ts"
+  ],
   "compilerOptions": {
     "composite": true,
     "target": "ES2023",

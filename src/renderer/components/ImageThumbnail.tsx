@@ -104,7 +104,7 @@ export function ImageThumbnail({ state, src, label, onClick, single, maxHeight, 
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={cn(frame, layout, 'cursor-zoom-in focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring', state === 'loading' && 'animate-pulse motion-reduce:animate-none')}
+      className={cn(frame, layout, 'cursor-zoom-in focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring', state === 'loading' && 'animate-pulse motion-reduce:animate-none')}
       style={reserve}
     >
       {unavailable && <ImageUnavailable className="size-full" />}

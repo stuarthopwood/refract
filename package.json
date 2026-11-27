@@ -14,6 +14,7 @@
     "check:ui-text": "node scripts/check-ui-text.mjs",
     "check:drag-regions": "node scripts/check-drag-regions.mjs",
     "check:theme-contrast": "node scripts/check-theme-contrast.mjs",
+    "check:theme-ids": "node scripts/check-theme-id-parity.mjs",
     "check:display-profiles": "node scripts/check-display-profiles.mjs",
     "check:mermaid-contrast": "node scripts/check-mermaid-contrast.mjs",
     "verify:tauri": "node scripts/verify-tauri.mjs",

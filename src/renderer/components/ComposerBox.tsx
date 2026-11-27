@@ -50,7 +50,7 @@ export function ComposerBox({ children, className, onKeyDown }: { children: Reac
     <div
       onKeyDown={onKeyDown}
       className={cn(
-        'flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-composer-ring',
+        'flex flex-col gap-1 rounded-lg border border-composer-border bg-composer-background pt-1 has-[textarea:focus-visible]:border-composer-focus has-[textarea:focus-visible]:ring-(length:--focus-ring-width) has-[textarea:focus-visible]:ring-composer-ring',
         className
       )}
     >

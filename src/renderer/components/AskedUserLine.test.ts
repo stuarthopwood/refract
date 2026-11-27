@@ -102,7 +102,7 @@ describe('AskedUserLine collapsed (FR-139)', () => {
   it('keeps a keyboard focus ring and a forced-colors outline on the programmatically focused card root', () => {
     const root = render(ANSWERED).match(/<div[^>]*role="group"[^>]*>/)?.[0] ?? ''
     expect(root).toContain('tabindex="-1"')
-    expect(root).toContain('focus-visible:ring-2')
+    expect(root).toContain('focus-visible:ring-(length:--focus-ring-width)')
     expect(root).toContain('focus-visible:ring-ring')
     expect(root).toContain('focus-visible:outline-hidden')
   })

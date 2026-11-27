@@ -48,7 +48,7 @@ export function RelativeTime({
         <time
           dateTime={value}
           tabIndex={0}
-          className={cn('rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring', className)}
+          className={cn('rounded-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring', className)}
         >
           {formatRelativeTime(value)}
         </time>

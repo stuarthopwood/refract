@@ -90,7 +90,7 @@ function TimeColumn({ label, options, selected, listRef, onPick, onSide }: TimeC
         aria-labelledby={`${prefix}-label`}
         aria-activedescendant={`${prefix}-${active}`}
         onKeyDown={onKeyDown}
-        className="group/column relative h-40 w-16 overflow-y-auto rounded-md outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+        className="group/column relative h-40 w-16 overflow-y-auto rounded-md outline-none focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
       >
         {options.map((option, index) => (
           <div

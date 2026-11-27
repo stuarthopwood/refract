@@ -115,7 +115,7 @@ export function ChecklistPanel({ sessionId }: { sessionId: string | null }) {
         focusInside.current = true
       }}
       onBlur={onBlur}
-      className="flex min-h-0 flex-1 flex-col focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="flex min-h-0 flex-1 flex-col focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         <span key={line.serial}>{line.message}</span>

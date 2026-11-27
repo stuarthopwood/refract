@@ -63,7 +63,7 @@ export function ChatWidthPicker({ labelledBy, describedBy }: ChatWidthPickerProp
               onKeyDown={(event) => handleKeyDown(event, index)}
               className={cn(
                 'group/radio-item flex w-full flex-col items-start gap-1 rounded-md border border-transparent py-2 pr-8 pl-2 text-left text-sm outline-none',
-                'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow',
+                'focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-glow',
                 isActive ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-row-hover-bg hover:text-foreground'
               )}
             >

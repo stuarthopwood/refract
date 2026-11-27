@@ -5944,3 +5944,12 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 - [x] T725 [US1] #566: `state/settings-store.ts` `setReduceMotion` and `applyReduceMotion` (root `data-reduce-motion`), Settings > Appearance "Motion" group with the "Reduce motion" switch, per FR-168 (a), (b)
 - [x] T726 [US1] #566: `styles/globals.css` `:root[data-reduce-motion='on']` collapse, still shimmer and hidden Holiday layer; `lib/reducedMotion.ts` and `reducedMotion.test.ts` (`isMotionReduced` is OS or app), used by `FadeCollapse`, `useScrollbarMap`, `SideChatPanel`, `HolidayAmbientLoop` and `ShimmerText`, per FR-168 (c), (d)
 - [ ] T727 Live check with `verify-refract-tauri-build-live`, isolated data: switch Reduce motion on and confirm a running tool row, the waiting dots, the Session spinner and the shimmer rest still with their words visible, in the dark, light and high-contrast themes, and that off returns the motion; not run in this lane (no cargo or tauri commands), per FR-168 (b), (c)
+
+## Phase 126: Convergence (2026-11-27, #2171 theme-id parity, FR-169, epic #2229)
+
+- [x] T728 [US1] #2171 (FR-169): `AmberObsidian` added to `store/theme_id.rs`; `scripts/theme-id-parity.mjs` and `check-theme-id-parity.mjs` (`pnpm check:theme-ids`, a CI step so `ci:local` runs it); tests `scripts/theme-id-parity.test.mjs` (`flags an id that only the TS union has (the #2171 bug)`, `flags an id that only the Rust enum has`, `src/shared/themes.ts and the Rust ThemeId enum agree`) and Rust `every_theme_id_in_themes_ts_parses_as_a_theme_id`, `amber_obsidian_round_trips_as_its_kebab_case_id`, `parse_theme_id_accepts_known_ids_and_rejects_unknown`.
+
+## Phase 127: Convergence (2026-11-27, #552 Dark (high contrast) floors and focus ring width, FR-170, epic #2229)
+
+- [x] T729 [US1] #552 (FR-170): `globals.css` adds `--focus-ring-width` (2px in `:root`, 3px in `.theme-dark-high-contrast`), raises that preset's `--border` and `--input` and sets `--sidebar-border` to the `--muted` fill; `button.tsx` and every other `focus-visible` ring read the token; `AskedUserLine.test.ts` follows
+- [x] T730 [US1] #552 (FR-170): `scripts/dark-hc-contrast-pairs.mjs` (7:1 text, 4.5:1 edges and dividers, Dark (high contrast) only) spread into `PAIRS`; `check-theme-contrast.mjs` skips the soft-divider rows for that preset; test `dark_high_contrast_pairs_hold_text_to_7_and_edges_to_4_5_for_that_theme_only`; design docs updated

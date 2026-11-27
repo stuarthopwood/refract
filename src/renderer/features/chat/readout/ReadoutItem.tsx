@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 // One source of truth for the classes either way -- this component below still uses the SAME two constants, never a second copy of the literal strings.
 export const READOUT_ITEM_BASE_CLASS = 'inline-flex h-6 shrink-0 items-center gap-2 text-readout text-muted-foreground'
 export const READOUT_ITEM_INTERACTIVE_ADDITIONS =
-  'min-h-6 min-w-6 justify-center rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  'min-h-6 min-w-6 justify-center rounded-md px-1 -mx-1 hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 export interface ReadoutItemProps extends Omit<HTMLAttributes<HTMLButtonElement>, 'children' | 'onClick' | 'onFocus' | 'onBlur' | 'onPointerEnter' | 'onPointerLeave' | 'className'> {
   icon?: ComponentType<{ className?: string; 'aria-hidden'?: boolean }>

@@ -45,11 +45,11 @@ function RadioGroup({
 const CARD_ITEM_CLASS =
   // forced-colors resets `border-primary`/`bg-primary/5`, so the checked border uses `Highlight`.
   // `outline-none focus-visible:outline-hidden` keeps the forced-colors outline off unfocused items.
-  "group/radio-item flex w-full min-w-0 flex-col items-start gap-1 rounded-lg border border-border bg-background px-4 py-2 text-left text-sm outline-none focus-visible:outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]"
+  "group/radio-item flex w-full min-w-0 flex-col items-start gap-1 rounded-lg border border-border bg-background px-4 py-2 text-left text-sm outline-none focus-visible:outline-hidden transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring data-[state=checked]:border-primary data-[state=checked]:bg-primary/5 forced-colors:data-[state=checked]:border-[Highlight]"
 
 // `bare` is a ring-and-label row with no card chrome, for a small inline choice.
 const BARE_ITEM_CLASS =
-  "group/radio-item flex min-h-6 w-auto min-w-0 items-center gap-2 rounded-md text-left text-sm outline-none focus-visible:outline-hidden focus-visible:ring-3 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+  "group/radio-item flex min-h-6 w-auto min-w-0 items-center gap-2 rounded-md text-left text-sm outline-none focus-visible:outline-hidden focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
 
 function RadioGroupItem({
   className,
