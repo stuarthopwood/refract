@@ -139,6 +139,9 @@ fn build_git_command(cwd: &Path, args: &[&str]) -> Result<Command, GitRawResult>
         }
         command.env(key, value);
     }
+    // Tests run the real git, so a developer's global config (signing, hooks, autocrlf) must not leak in (#1733).
+    #[cfg(test)]
+    command.envs(crate::test_scratch::GIT_ISOLATION_ENV);
     Ok(command)
 }
 

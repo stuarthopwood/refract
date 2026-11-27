@@ -220,6 +220,7 @@ mod tests {
     fn run_git(dir: &Path, args: &[&str]) {
         let status = std::process::Command::new("git")
             .args(args)
+            .envs(crate::test_scratch::GIT_ISOLATION_ENV)
             .current_dir(dir)
             .status()
             .expect("git must be on PATH for this test");
