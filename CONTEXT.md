@@ -150,6 +150,12 @@ The first message of a **Conversation** an agent started on its own **Session**.
 **Queued handoff**:
 A start or switch of a **Conversation** an agent asked for while a turn was running. Waits for that turn to settle; dropped if the turn or the **Session** stops first.
 
+**Conversation retention**:
+A Settings option, off by default, that deletes **Conversations** untouched for N days after a preview. Never deletes a **Session**'s current **Conversation** (issue #2161).
+
+**Orphan sweep**:
+A one-off removal of OMP session log folders whose **Session** no longer exists, limited to folders Refract can tie to a deleted Refract **Session** (issue #2161).
+
 **Status line**:
 The row between the transcript and the message box (spec 004), spanning the chat column's full width: one **Readout** per glanceable fact about a **Chat pane**'s **Session**'s current state -- Changes, Context window usage, Turn time, Current time, Pull request, Subagents, or Todo progress -- live, each hidden entirely or reading "Not available" per its own rule, never conveyed by colour alone. Plain text, no boxes (2026-10-15 grill, issue #564): a read-only Readout is an icon plus text with no border or fill; one that opens something (Pull request, Subagents) is a quiet text button with a hover background and no border. Which kinds show is chosen per-kind in Settings; each pane of a **Split** reads its own Session's data independently. Two health readouts, "RPC slow" and "Agent memory high" (#561, spec 044), are degraded-only: they render nothing, and reserve no space, until the Session's agent is degraded, and have no Settings row.
 _Avoid_: Readout chip, chip row, Status chip, badge (for this row specifically)
