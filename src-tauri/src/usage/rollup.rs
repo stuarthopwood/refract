@@ -216,8 +216,8 @@ pub fn record_tool_result(
     result_chars: i64,
 ) -> rusqlite::Result<bool> {
     let is_error = error.is_some();
-    let updated = conn
-        .prepare(
+    let updated =
+        conn.prepare(
             "UPDATE tool_calls SET is_error = ?3, result_chars = ?4, error_category = ?5 \
              WHERE session_file = ?1 AND tool_call_id = ?2 AND is_error IS NULL",
         )?
@@ -227,8 +227,7 @@ pub fn record_tool_result(
             i64::from(is_error),
             result_chars,
             error.map(ErrorCategory::as_str),
-        ])?
-        == 1;
+        ])? == 1;
     if !updated {
         return Ok(false);
     }
