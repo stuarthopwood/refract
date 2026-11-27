@@ -10,6 +10,7 @@ import { FilterTabs } from '@/components/FilterTabs'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
 import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { SearchField } from '@/components/SearchField'
+import { InlineStatus } from '@/components/InlineStatus'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -232,9 +233,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
       )}
       <div className="min-h-0 flex-1 overflow-auto">
         {friendlyError ? (
-          <div role="alert" className="p-4 text-sm text-destructive">
-            {friendlyError}
-          </div>
+          <InlineStatus tone="error">{friendlyError}</InlineStatus>
         ) : itemCount === 0 && !loading ? (
           activeFilterCount > 0 ? (
             <Empty>
@@ -272,9 +271,9 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
             </div>
             </LoadingOverlay>
             {failedLoadMore && error && (
-              <div role="alert" className="p-2 text-center text-xs text-destructive">
+              <InlineStatus tone="error" density="compact" className="p-2 text-center">
                 {withFullStop(ERROR_MESSAGES[error.code] ?? error.message)} Try Show more again.
-              </div>
+              </InlineStatus>
             )}
             {paging?.hasMore && (
               <div className="flex justify-center p-2">

@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { InlineStatus } from '@/components/InlineStatus'
 import { InlineDisclosure } from '@/components/InlineDisclosure'
 import { actionMenuItem, menuSeparator } from '@/features/palette/menuItems'
 import { notify, useThemeKey } from '@/state'
@@ -152,9 +153,9 @@ export function MermaidBlock({ code, streaming, embedded = false }: { code: stri
   if (error) {
     return (
       <div className="space-y-1">
-        <p role="status" className="text-xs text-muted-foreground">
+        <InlineStatus tone="notice" density="compact" className="p-0">
           Diagram failed to render: {error}
-        </p>
+        </InlineStatus>
         <CodeBlock code={code} lang="mermaid" embedded={embedded} />
       </div>
     )

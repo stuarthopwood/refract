@@ -34,7 +34,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
         {files.length} file{files.length === 1 ? '' : 's'} changed, <DiffStatCounts added={additions} removed={deletions} accessibleLabel />
       </p>
       {files.length < changedFilesCount && (
-        <div role="status" className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-4 py-1 text-xs text-muted-foreground">
+        <InlineStatus tone="notice" density="compact" className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted px-4 py-1">
           <span>
             Only {files.length} of {changedFilesCount} changed files are shown.
           </span>
@@ -42,7 +42,7 @@ export function ChangesTab({ additions, deletions, changedFilesCount, files, url
             Open in browser
             <ExternalLinkIcon aria-hidden className="size-4" />
           </a>
-        </div>
+        </InlineStatus>
       )}
       {files.map((file) => (
         <div key={file.path} className="flex flex-col gap-1">

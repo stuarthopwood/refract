@@ -5953,3 +5953,7 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 
 - [x] T729 [US1] #552 (FR-170): `globals.css` adds `--focus-ring-width` (2px in `:root`, 3px in `.theme-dark-high-contrast`), raises that preset's `--border` and `--input` and sets `--sidebar-border` to the `--muted` fill; `button.tsx` and every other `focus-visible` ring read the token; `AskedUserLine.test.ts` follows
 - [x] T730 [US1] #552 (FR-170): `scripts/dark-hc-contrast-pairs.mjs` (7:1 text, 4.5:1 edges and dividers, Dark (high contrast) only) spread into `PAIRS`; `check-theme-contrast.mjs` skips the soft-divider rows for that preset; test `dark_high_contrast_pairs_hold_text_to_7_and_edges_to_4_5_for_that_theme_only`; design docs updated
+
+## Phase 128: Convergence (2026-11-27, #2272 model picker filter on SearchField and #2273 inline status through InlineStatus, FR-171, epic #2229)
+
+- [x] T731 [US1] #2272 and #2273 (FR-171): `ModelPicker.tsx` renders its filter through `SearchField` (combobox slot, shared radius); `AskCard`, `IssueDetail`, `PullRequestDetail`, `ChangesTab`, `UsageFilters`, `ProjectListPane` and `MermaidBlock` render their inline status through `InlineStatus` with the matching tone; `SearchField.test.ts` and `ChangesTab.test.ts` pin the combobox wiring and the polite truncation note.

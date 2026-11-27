@@ -249,15 +249,15 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
           </p>
         )}
         {newSessionError && (
-          <p role="alert" className="mt-1 text-xs text-destructive">
+          <InlineStatus tone="error" density="compact" className="mt-1 p-0">
             {newSessionError}
-          </p>
+          </InlineStatus>
         )}
         {error && detail && (
           // The refresh button covers recovery, but the failure itself still needs showing.
-          <p role="alert" className="mt-1 text-xs text-destructive">
+          <InlineStatus tone="error" density="compact" className="mt-1 p-0">
             {error}
-          </p>
+          </InlineStatus>
         )}
         {detail.labels.length > 0 && (
           <div className="mt-2 flex flex-wrap gap-1">

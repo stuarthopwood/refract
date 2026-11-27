@@ -21,11 +21,14 @@ export interface SearchFieldProps {
   resultCount?: number
   /** Replaces Esc-clears: when given, Esc anywhere in the field calls this instead (a find bar that closes on Esc, say), and the Esc hints are not shown. */
   onEscape?(): void
+  /** False when the host handles Esc itself (a popover that closes on it): the field neither clears on Esc nor shows the Esc hints. */
+  escapeClears?: boolean
   /** Called on Enter in the input (not while composing text), with whether Shift was held. */
   onSubmit?(shift: boolean): void
   /** Applied to the field's own wrapper, never the `<input>` directly. */
   className?: string
   inputRef?: RefObject<HTMLInputElement | null>
+  /** Makes the field a combobox over the listbox `listboxId` names; `activeDescendantId` is the option the arrow keys are on. The listbox is always open while the field is shown, so `aria-expanded` is fixed true. */
   combobox?: { listboxId: string; activeDescendantId?: string }
   onInputKeyDown?(event: KeyboardEvent<HTMLInputElement>): void
   /** Replaces the `<input>`, which still gets the field's styling, `value` and label but keeps its own role and aria wiring. Give it its own change callback (a cmdk input's `onValueChange`), since it may ignore `onChange`. */
@@ -48,6 +51,7 @@ export function SearchField({
   instant = false,
   resultCount,
   onEscape,
+  escapeClears = true,
   onSubmit,
   className,
   inputRef,
@@ -61,7 +65,8 @@ export function SearchField({
   const hasValue = value !== ''
   const clearHintId = useId()
   const ruleHintId = useId()
-  const describedBy = [!instant ? ruleHintId : undefined, hasValue && !onEscape ? clearHintId : undefined].filter(Boolean).join(' ') || undefined
+  const showEscHint = escapeClears && !onEscape
+  const describedBy = [!instant ? ruleHintId : undefined, hasValue && showEscHint ? clearHintId : undefined].filter(Boolean).join(' ') || undefined
 
   function clear(): void {
     onValueChange('')
@@ -86,7 +91,7 @@ export function SearchField({
       onEscape()
       return
     }
-    if (!hasValue) return
+    if (!escapeClears || !hasValue) return
     event.preventDefault()
     event.stopPropagation()
     clear()
@@ -124,7 +129,7 @@ export function SearchField({
             {FILTER_MIN_CHARS_HINT}
           </span>
         )}
-        {hasValue && !onEscape && (
+        {hasValue && showEscHint && (
           <span id={clearHintId} className="sr-only">
             Press Escape to clear
           </span>
@@ -139,7 +144,7 @@ export function SearchField({
             <TooltipContent side={tooltipSide}>
               <span className="inline-flex items-center gap-2">
                 {clearLabel}
-                {!onEscape && (
+                {showEscHint && (
                   <KbdGroup>
                     <Kbd>Esc</Kbd>
                   </KbdGroup>
