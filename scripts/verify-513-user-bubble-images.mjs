@@ -231,7 +231,7 @@ async function main() {
     // The "+2" tile (4th) opens the viewer at the first hidden image (5th), not at the 4th.
     const tileLabel = await cdp2.evaluate(`document.querySelectorAll('${GROUP_SEL}')[1].querySelectorAll('button')[3].getAttribute('aria-label')`);
     await cdp2.click(`document.querySelectorAll('${GROUP_SEL}')[1].querySelectorAll('button')[3]`);
-    await cdp2.waitFor(`!!document.querySelector('[role="dialog"] img[alt="Attached image, full size"]')`, { label: 'Viewer opened with image' });
+    await cdp2.waitFor(`!!document.querySelector('[role="dialog"] img[alt="Enlarged attachment"]')`, { label: 'Viewer opened with image' });
     const seen = [];
     let v = await cdp2.evaluate(viewerProbe());
     check(v.title === 'Image 5 of 6', `viewer: the +2 tile opened the first hidden image -- title "${v.title}".`, `viewer: title "${v.title}", expected "Image 5 of 6".`);
@@ -241,10 +241,10 @@ async function main() {
     // Next button: 5 -> 6, then 6 -> 1 (wrap); the dialog must not change height between images.
     const dialogBtn = (label) => `document.querySelector('[role="dialog"] button[aria-label="${label}"]')`;
     await cdp2.click(dialogBtn('Next image'));
-    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 6 of 6') && !!document.querySelector('[role="dialog"] img[alt="Attached image, full size"]')`, { timeoutMs: 8000, label: 'Next button -> 6 of 6' });
+    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 6 of 6') && !!document.querySelector('[role="dialog"] img[alt="Enlarged attachment"]')`, { timeoutMs: 8000, label: 'Next button -> 6 of 6' });
     pass('viewer: the Next button moves 5 -> 6.');
     await cdp2.click(dialogBtn('Next image'));
-    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 1 of 6') && !!document.querySelector('[role="dialog"] img[alt="Attached image, full size"]')`, { timeoutMs: 8000, label: 'Next button wraps -> 1 of 6' });
+    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 1 of 6') && !!document.querySelector('[role="dialog"] img[alt="Enlarged attachment"]')`, { timeoutMs: 8000, label: 'Next button wraps -> 1 of 6' });
     v = await cdp2.evaluate(viewerProbe());
     check(v.dialogHeight === height5, `viewer: dialog height unchanged between images (${height5}px vs ${v.dialogHeight}px).`, `viewer: dialog height changed from ${height5}px (image 5) to ${v.dialogHeight}px (image 1).`);
     await cdp2.click(dialogBtn('Previous image'));
@@ -252,12 +252,12 @@ async function main() {
     pass('viewer: the Previous button wraps 1 -> 6.');
     // Keys: Right wraps to 1, then Right through 2..6.
     await key(cdp2, 'ArrowRight', 'ArrowRight');
-    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 1 of 6') && !!document.querySelector('[role="dialog"] img[alt="Attached image, full size"]')`, { timeoutMs: 8000, label: 'ArrowRight wraps -> 1 of 6' });
+    await cdp2.waitFor(`document.querySelector('[role="dialog"]')?.textContent.includes('Image 1 of 6') && !!document.querySelector('[role="dialog"] img[alt="Enlarged attachment"]')`, { timeoutMs: 8000, label: 'ArrowRight wraps -> 1 of 6' });
     v = await cdp2.evaluate(viewerProbe());
     seen.push(v.src);
     for (let n = 2; n <= 6; n += 1) {
       await key(cdp2, 'ArrowRight', 'ArrowRight');
-      await cdp2.waitFor(`document.querySelector('[role="dialog"] img[alt="Attached image, full size"]') && document.querySelector('[role="dialog"]').textContent.includes('Image ${n} of 6')`, { timeoutMs: 8000, label: `ArrowRight -> ${n} of 6` });
+      await cdp2.waitFor(`document.querySelector('[role="dialog"] img[alt="Enlarged attachment"]') && document.querySelector('[role="dialog"]').textContent.includes('Image ${n} of 6')`, { timeoutMs: 8000, label: `ArrowRight -> ${n} of 6` });
       v = await cdp2.evaluate(viewerProbe());
       seen.push(v.src);
       check(v.title === `Image ${n} of 6` && v.srcData, `viewer: ArrowRight reaches "Image ${n} of 6" with a loaded data: image (${v.natW}x${v.natH}).`, `viewer: step ${n} bad ${JSON.stringify({ ...v, src: undefined })}.`);
