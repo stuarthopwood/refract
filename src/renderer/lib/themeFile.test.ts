@@ -1,7 +1,9 @@
+import fixture from '../../../src-tauri/test-data/theme-file.json?raw'
 import { describe, expect, it } from 'vitest'
 import schema from '../../shared/theme.schema.json'
+import tokenList from '../../shared/theme-tokens.json'
 import { THEME_SCHEMA_URL } from '../../shared/themeSchema'
-import { THEME_FORMAT_EXAMPLE, themeFileJson } from './themeFile'
+import { THEME_FORMAT_EXAMPLE, customThemeJson, themeFileJson } from './themeFile'
 
 describe('themeFileJson', () => {
   it('puts $schema first and keeps the format fields after it', () => {
@@ -12,6 +14,23 @@ describe('themeFileJson', () => {
 
   it('points at the shipped schema, whose $id is the same URL', () => {
     expect(schema.$id).toBe(THEME_SCHEMA_URL)
+  })
+})
+
+describe('export paths', () => {
+  it('custom export writes $schema first', () => {
+    const parsed = JSON.parse(customThemeJson({ name: 'Mine', base: 'dark', tokens: { primary: '#fff' } }))
+    expect(Object.keys(parsed)[0]).toBe('$schema')
+  })
+
+  it('built-in export (full token set) writes $schema first', () => {
+    const tokens = Object.fromEntries(tokenList.tokens.map((t) => [t, '#000000ff']))
+    const parsed = JSON.parse(themeFileJson('Dark copy', 'dark', tokens))
+    expect(Object.keys(parsed)[0]).toBe('$schema')
+  })
+
+  it('matches the fixture the Rust parser test reads', () => {
+    expect(fixture.replace(/\r\n/g, '\n')).toBe(themeFileJson('Mine', 'dark', { primary: '#ff2d95' }))
   })
 })
 

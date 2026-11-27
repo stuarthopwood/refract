@@ -3,8 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { THEME_FORMAT_EXAMPLE } from '@/lib/themeFile'
-import schema from '../../../shared/theme.schema.json'
 import { THEME_SCHEMA_URL } from '../../../shared/themeSchema'
+import { THEMES } from '../../../shared/themes'
 
 export interface ThemeFormatDialogProps {
   open: boolean
@@ -13,7 +13,7 @@ export interface ThemeFormatDialogProps {
   onCloseFocus?(): void
 }
 
-const BASE_IDS = schema.properties.base.enum.join(', ')
+const BASE_IDS = Object.keys(THEMES).join(', ')
 
 /** Help page for theme files: an annotated example, the fallback rule, the schema address and where to get a starter file (#1885). */
 export function ThemeFormatDialog({ open, onOpenChange, onCloseFocus }: ThemeFormatDialogProps) {
@@ -35,11 +35,16 @@ export function ThemeFormatDialog({ open, onOpenChange, onCloseFocus }: ThemeFor
           <DialogTitle>Theme file format</DialogTitle>
           <DialogDescription>A theme is a JSON file. Import it from Settings, Appearance.</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0" viewportProps={{ tabIndex: 0, role: 'region', 'aria-label': 'Theme file format' }}>
+        <ScrollArea className="min-h-0" viewportProps={{ tabIndex: 0, role: 'region', 'aria-label': 'Theme file format details' }}>
           <div className="flex min-w-0 flex-col gap-4 p-1 pr-2 text-sm">
             <section className="flex flex-col gap-2">
               <h3 className="text-xs text-muted-foreground">Example</h3>
-              <pre className="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs" tabIndex={0} aria-label="Example theme file">
+              <pre
+                className="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                tabIndex={0}
+                role="region"
+                aria-label="Example theme file"
+              >
                 {THEME_FORMAT_EXAMPLE}
               </pre>
               <ul className="flex list-disc flex-col gap-1 pl-4">

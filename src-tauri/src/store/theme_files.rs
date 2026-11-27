@@ -304,6 +304,12 @@ mod tests {
     }
 
     #[test]
+    fn parses_a_file_written_by_the_renderer_exporter() {
+        let text = include_str!("../../test-data/theme-file.json");
+        assert_eq!(parse_theme("mine", text).unwrap().name, "Mine");
+    }
+
+    #[test]
     fn accepts_a_schema_pointer() {
         let text = file(r#""$schema": "https://example.test/theme.schema.json", "#);
         assert_eq!(parse_theme("mine", &text).unwrap().name, "Mine");
