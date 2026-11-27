@@ -272,7 +272,7 @@ impl SettingsStore {
             .filter(|id| !id.is_empty() && id.len() <= 48)
             .map(str::to_string);
 
-        const KNOWN_FIELDS: [&str; 32] = [
+        const KNOWN_FIELDS: [&str; 33] = [
             "customTheme",
             "version",
             "approvalMode",
