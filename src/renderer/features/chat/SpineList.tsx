@@ -1,5 +1,6 @@
 // Vertical guide rail down the left edge of a related-rows list; the group header draws the first node.
-// State is carried by each row's icon plus word, never the spine (#565). `bare` drops the rail and ticks: nesting is shown by fill (#2235).
+// State is carried by each row's icon plus word, never the spine (#565). `bare` drops the rail and ticks: nesting is shown by fill (#2235),
+// except in forced colours, where fills are dropped and the rail is the only nesting cue left.
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
@@ -25,7 +26,7 @@ export function SpineList({ children, gap = 'member', elbows = false, bare = fal
     // aria-live off: a member arriving in an expanded running group must not be announced individually.
     <ol
       aria-live="off"
-      className={cn(!bare && 'ml-4 border-l border-divider', 'pt-1', gap === 'stage' ? 'space-y-2' : 'space-y-1', className)}
+      className={cn(bare ? 'forced-colors:border-l forced-colors:border-divider' : 'ml-4 border-l border-divider', 'pt-1', gap === 'stage' ? 'space-y-2' : 'space-y-1', className)}
     >
       <SpineElbowsContext.Provider value={elbows && !bare}>{children}</SpineElbowsContext.Provider>
     </ol>

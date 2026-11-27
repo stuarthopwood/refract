@@ -354,7 +354,7 @@ const components: Components & Record<typeof ITEM_REF_TAG, (props: { children?: 
     }
     // The advisor's quoted note wraps instead of scrolling (#558).
     if (lang === 'advisor-note') return <CodeBlock code={text} lang={null} wrap streaming={streaming} embedded={embedded} />
-    if (lang === 'mermaid') return <MermaidBlock code={text} streaming={streaming} />
+    if (lang === 'mermaid') return <MermaidBlock code={text} streaming={streaming} embedded={embedded} />
     return <CodeBlock code={text} lang={lang} streaming={streaming} embedded={embedded} />
   }
 }

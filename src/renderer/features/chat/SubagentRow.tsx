@@ -26,15 +26,26 @@ interface SubagentRowProps {
   showGoal: boolean
 }
 
+interface SubagentBodyProps extends SubagentRowProps {
+  /** Starts with the input and output open; a closed body mounts neither until its first open. */
+  defaultOpen?: boolean
+}
+
 // The goal (when `showGoal`), then a "See input & output" toggle (`InlineDisclosure`, ADR 0003,
 // `MermaidBlock`'s "Show source" shape) -- split out so `StageGroupRow` reuses it for its own
 // solo-of-the-turn case without `SubagentRow`'s own `CollapsedLine` wrapper (#563, H2/H3: never
 // switch element type between solo and multi members).
-export function SubagentBody({ item, showGoal }: SubagentRowProps) {
+export function SubagentBody({ item, showGoal, defaultOpen = false }: SubagentBodyProps) {
   const taskBlock = React.useMemo(() => inferOutputBlock(item.task), [item.task])
   const resultText = React.useMemo(() => (item.result != null ? stripTaskResultWrapper(item.result) : null), [item.result])
   const resultBlock = React.useMemo(() => (resultText != null ? inferOutputBlock(resultText) : null), [resultText])
-  const [open, setOpen] = React.useState(false)
+  const [open, setOpen] = React.useState(defaultOpen)
+  // Latched: parsing and highlighting wait for the first open, and a later close keeps the content (and its scroll and selection) mounted.
+  const [everOpened, setEverOpened] = React.useState(defaultOpen)
+  const onOpenChange = (next: boolean) => {
+    setOpen(next)
+    if (next) setEverOpened(true)
+  }
   const contentId = React.useId()
   const hasResult = resultText != null
   const label = (
@@ -46,21 +57,25 @@ export function SubagentBody({ item, showGoal }: SubagentRowProps) {
   return (
     <div className="space-y-1">
       {showGoal && <SubagentGoalPreview task={item.task} />}
-      <InlineDisclosure open={open} onOpenChange={setOpen} contentId={contentId} label={label}>
-        <div>
-          <div className="mb-1 text-xs text-muted-foreground">Prompt</div>
-          <div className="max-h-64 overflow-auto rounded-lg">
-            <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap embedded />
-          </div>
-        </div>
-        {resultText != null && resultBlock != null && (
-          <div>
-            <div className="mb-1 text-xs text-muted-foreground">Result</div>
-            <div className="max-h-64 overflow-auto rounded-lg">
-              {/* A diff or JSON result keeps its code block; prose is shared Markdown (#2242). */}
-              {resultBlock.lang != null ? <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap embedded /> : <ResultMarkdown text={resultText} interactive />}
+      <InlineDisclosure open={open} onOpenChange={onOpenChange} contentId={contentId} label={label}>
+        {everOpened && (
+          <>
+            <div>
+              <div className="mb-1 text-xs text-muted-foreground">Prompt</div>
+              <div className="max-h-64 overflow-auto rounded-lg">
+                <CodeBlock code={taskBlock.code} lang={taskBlock.lang} wrap embedded />
+              </div>
             </div>
-          </div>
+            {resultText != null && resultBlock != null && (
+              <div>
+                <div className="mb-1 text-xs text-muted-foreground">Result</div>
+                <div className="max-h-64 overflow-auto rounded-lg">
+                  {/* A diff or JSON result keeps its code block; prose is shared Markdown (#2242). */}
+                  {resultBlock.lang != null ? <CodeBlock code={resultBlock.code} lang={resultBlock.lang} wrap embedded /> : <ResultMarkdown text={resultText} interactive />}
+                </div>
+              </div>
+            )}
+          </>
         )}
       </InlineDisclosure>
     </div>
@@ -77,7 +92,7 @@ export function SubagentCardBody({ agent, children }: { agent: SubAgentItem; chi
   const hasProvenanceRow = causalBadgeText(triggeredBy) != null || (filesTouched?.length ?? 0) > 0
   const hasLive = running && (heartbeatText(liveDetail) != null || (subSteps?.length ?? 0) > 0)
   return (
-    <div className="min-w-0 space-y-2 rounded-lg bg-surface-subtle p-2">
+    <div className="min-w-0 space-y-2 rounded-lg bg-surface-subtle p-2 forced-colors:border">
       <div className="flex min-w-0 items-center gap-2 text-xs">
         <span className="flex shrink-0 items-center gap-1">
           <SubagentStatusGlyph status={status} />

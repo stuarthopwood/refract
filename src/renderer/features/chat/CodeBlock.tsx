@@ -199,7 +199,7 @@ export function CodeBlock({
   }
 
   return (
-    <TranscriptMenu disabled={menuDisabled} className={cn('not-prose max-w-none overflow-hidden rounded-lg text-xs', !embedded && 'border border-border')} items={items}>
+    <TranscriptMenu disabled={menuDisabled} className={cn('not-prose max-w-none overflow-hidden rounded-lg text-xs', embedded ? 'forced-colors:border' : 'border border-border')} items={items}>
       <CodeBlockHeader
         label={label}
         copyText={fullText}

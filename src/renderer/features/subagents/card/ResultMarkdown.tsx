@@ -13,6 +13,10 @@ const CLAMP_CLASS: Record<ResultLines, string | undefined> = {
   all: undefined
 }
 
+// A clamped summary has no live link, so its link text reads as plain text: no accent colour or underline promising a click.
+// The inert span is the only underlined span Markdown emits, so it is selected by its own classes.
+const INERT_LINK_CLASS = '[&_span.underline]:text-inherit [&_span.underline]:no-underline'
+
 interface ResultMarkdownProps {
   text: string
   lines?: ResultLines
@@ -23,5 +27,13 @@ interface ResultMarkdownProps {
 
 export function ResultMarkdown({ text, lines = 'all', interactive = false, className }: ResultMarkdownProps) {
   const id = React.useId()
-  return <Markdown id={id} text={text} inert={!interactive} embedded className={cn('space-y-1 text-inherit', CLAMP_CLASS[lines], className)} />
+  return (
+    <Markdown
+      id={id}
+      text={text}
+      inert={!interactive}
+      embedded
+      className={cn('space-y-1 text-inherit', !interactive && INERT_LINK_CLASS, CLAMP_CLASS[lines], className)}
+    />
+  )
 }

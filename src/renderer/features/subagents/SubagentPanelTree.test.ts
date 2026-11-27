@@ -177,6 +177,24 @@ describe('PanelTree accessibility', () => {
     expect(html).not.toContain('<button')
   })
 
+  describe('given an outcome with a link', () => {
+    const linked = { ...detailed, whatItDid: 'Fixed in [the PR](https://x.test/pr)' }
+
+    it('makes the link followable in the detail pane', () => {
+      const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AgentDetailSummary, { agent: linked })))
+      expect(html).toMatch(/<a[^>]*href="https:\/\/x\.test\/pr"/)
+    })
+
+    it('keeps the link as plain text in the clamped tree row, so no control nests inside the row', () => {
+      const rows = buildPanelRows([{ ...stage!, agents: [linked, stage!.agents[1]!] }], () => true)
+      const html = renderToStaticMarkup(
+        createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
+      )
+      expect(html).toContain('the PR')
+      expect(html).not.toContain('href="https://x.test/pr"')
+    })
+  })
+
   it('renders nothing for an agent with neither outcome nor files', () => {
     expect(renderToStaticMarkup(createElement(AgentDetailSummary, { agent: { ...detailed, whatItDid: undefined, filesTouched: undefined } }))).toBe('')
   })

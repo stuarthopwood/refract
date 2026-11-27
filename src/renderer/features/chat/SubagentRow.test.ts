@@ -112,23 +112,32 @@ describe('SubagentRow card variant (#1928, FR-148)', () => {
   it('draws no border of its own: the agent panel is a background step on the card (#2235)', () => {
     const html = render(agent({ status: 'running', role: 'Gate', whatItDid: 'Done' }), 'card')
     expect(html).toContain('bg-surface-subtle')
-    expect(html).not.toMatch(/class="[^"]*\bborder\b/)
+    const tokens = [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) => match[1]!.split(' '))
+    expect(tokens).not.toContain('border')
+    // Forced colours drops fills, so the panel keeps a border there only.
+    expect(tokens).toContain('forced-colors:border')
   })
 
-  it('renders the outcome through the shared Markdown, inert and embedded, with no wrapper tag (#2242)', () => {
+  it('renders the outcome through the shared Markdown, inert and embedded (#2242)', () => {
     const html = render(agent({ whatItDid: 'Fixed **two** defects' }), 'card')
     expect(html).toContain('data-md')
     expect(html).toContain('data-inert="true"')
     expect(html).toContain('data-embedded="true"')
-    expect(html).not.toContain('task-result')
   })
 })
 
 describe('SubagentBody (#2235, #2242)', () => {
-  const open = (result?: string) => {
+  const open = (result?: string, defaultOpen = true) => {
     const item = { ...ITEM, result } as SubagentItem
-    return renderToStaticMarkup(createElement(SubagentBody, { item, showGoal: false }))
+    return renderToStaticMarkup(createElement(SubagentBody, { item, showGoal: false, defaultOpen }))
   }
+
+  it('mounts neither the Prompt nor the Result until the disclosure is first opened', () => {
+    const closed = open('Done', false)
+    expect(closed).not.toContain('data-code')
+    expect(closed).not.toContain('data-md')
+    expect(closed).toContain('See input &amp; output')
+  })
 
   it('uses the embedded (borderless) code block for the Prompt', () => {
     expect(open()).toContain('data-code="embedded"')

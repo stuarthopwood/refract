@@ -9,6 +9,7 @@ import { Markdown } from './Markdown'
 vi.mock('@/state', () => ({
   notifyPersistentError: vi.fn(),
   useSyntaxTheme: () => 'github-dark',
+  useThemeKey: () => 'light',
   useSessionsStore: (select: (state: { sessions: [] }) => unknown) => select({ sessions: [] })
 }))
 
@@ -33,5 +34,29 @@ describe('Markdown footnotes', () => {
     expect(html).not.toContain('<a')
     expect(html).not.toMatch(/\sdata-footnote-(ref|backref)=/)
     expect(html).toContain('The note.')
+  })
+})
+
+describe('Markdown embedded', () => {
+  const FENCES = ['```ts', 'const a = 1', '```'].join('\n')
+  const MERMAID = ['```mermaid', 'graph TD', '  A-->B', '```'].join('\n')
+  const html = (text: string, props: { embedded?: boolean; streaming?: boolean }) =>
+    renderToStaticMarkup(createElement(TooltipProvider, null, createElement(Markdown, { id: 'm1', text, ...props })))
+  const blockTokens = (markup: string) => markup.match(/<div[^>]*class="([^"]*not-prose[^"]*)"/)![1]!.split(' ')
+
+  it('keeps the border on a fenced code block by default', () => {
+    expect(blockTokens(html(FENCES, {}))).toEqual(expect.arrayContaining(['border', 'border-border']))
+  })
+
+  it('gives a fenced code block no border of its own when embedded', () => {
+    const tokens = blockTokens(html(FENCES, { embedded: true }))
+    expect(tokens).not.toContain('border')
+    expect(tokens).not.toContain('border-border')
+  })
+
+  it('gives a mermaid fence the embedded code block too', () => {
+    const tokens = blockTokens(html(MERMAID, { embedded: true, streaming: true }))
+    expect(tokens).not.toContain('border-border')
+    expect(tokens).toContain('forced-colors:border')
   })
 })
