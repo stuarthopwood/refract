@@ -9,9 +9,10 @@ import { IconButton } from '@/components/IconButton'
 import { cn } from '@/lib/utils'
 import { ICON_SLOT_CLASS } from '../chat/CollapsedLine'
 import { StageUsesLine } from '../chat/StageDependencies'
-import { SubagentCardBody } from '../chat/SubagentRow'
+import { SUBAGENT_CARD_SURFACE_CLASS, SubagentCardBody } from '../chat/SubagentRow'
 import { stageHeading } from '../chat/stageMeta'
 import { StageHeader } from './card/StageHeader'
+import { repeatsStageTitle } from './card/stageRowModel'
 import { ResultMarkdown } from './card/ResultMarkdown'
 import { SubagentsHeaderBelow, SubagentsHeaderMeta } from './card/SubagentsCardHeader'
 import { formatHeaderTriggerLabel, stageSegmentStates } from './card/headerStats'
@@ -125,6 +126,9 @@ type AgentTreeRowProps = { row: PanelAgentRow; index: number; tabbable: boolean;
 
 const AgentTreeRow = memo(function AgentTreeRow({ row, index, tabbable, selected, rowRef, onKeyDown, onFocusRow }: AgentTreeRowProps) {
   const descriptionId = useId()
+  // A Stage with one agent expands flat, as on the chat card: a guide line at the 40px mark, no second card repeating the Stage's name or outcome (FR-176).
+  const flat = row.setsize === 1
+  const fallbackLabel = repeatsStageTitle(row.agent.name, row.stageTitle) ? undefined : row.agent.name
   return (
     <div
       ref={(element) => rowRef(row.key, element)}
@@ -138,15 +142,16 @@ const AgentTreeRow = memo(function AgentTreeRow({ row, index, tabbable, selected
       tabIndex={tabbable ? 0 : -1}
       onFocus={() => onFocusRow(row)}
       onKeyDown={(event) => onKeyDown(event, index)}
-      // ml-10 puts the card under the Stage title, as on the chat card; hover matches the other panel rows.
-      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-10 mr-4 p-1 hover:bg-row-hover-bg')}
+      // ml-10 puts the agent under the Stage title, as on the chat card. A parallel agent is a bordered card; a lone one is flat and its row
+      // has no padding of its own. The hover fill is the surface step, which stays visible on the card fill where `row-hover-bg` does not.
+      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-10 mr-4 hover:bg-surface-hover', flat ? 'rounded-none' : cn(SUBAGENT_CARD_SURFACE_CLASS, 'my-1'))}
     >
       {selected && <ActiveIndicatorBar />}
       {/* Issue #712: a detached background job keeps its muted "Background" word. */}
       {row.agent.background && <span className="mb-1 block text-xs text-muted-foreground">Background</span>}
       {/* The row is the one tab stop, so the card's "+N" files button is not: the detail pane lists every file. */}
       <FileChipTabbableContext.Provider value={false}>
-        <SubagentCardBody agent={row.agent} />
+        <SubagentCardBody agent={row.agent} flat={flat} fallbackLabel={fallbackLabel} />
       </FileChipTabbableContext.Provider>
       <RowDescription id={descriptionId} text={row.description} />
     </div>
@@ -168,7 +173,7 @@ export function AgentDetailSummary({ agent }: { agent: SubAgentItem }) {
 
 export function PanelTree({ rows, selectedKey, tabbableIndex, sessionId, rowRef, onKeyDown, onFocusRow, onToggleStage }: { rows: readonly PanelRow[]; selectedKey: string | null; tabbableIndex: number } & RowHandlers) {
   return (
-    <div role="tree" aria-label="Subagents" className="flex flex-col gap-1 py-2">
+    <div role="tree" aria-label="Subagents" className="flex flex-col py-2">
       {rows.map((row, index) =>
         row.kind === 'stage' ? (
           <StageTreeRow key={row.key} row={row} index={index} tabbable={index === tabbableIndex} sessionId={sessionId} rowRef={rowRef} onKeyDown={onKeyDown} onToggleStage={onToggleStage} />

@@ -149,6 +149,14 @@ export const PAIRS = [
   { fg: 'severity-error', bg: 'surface-1', min: 4.5 },
   { fg: 'accent-text', bg: 'chat-card-bg', on: 'background', min: 4.5 },
   { fg: 'accent-text', bg: 'surface-1', min: 4.5 },
+  // The running Stage header paints `--state-working-tint` over the card fill over the page; its muted metadata, title and running duration read on that stack.
+  { fg: 'muted-foreground', bg: 'state-working-tint', on: ['background', 'chat-card-bg'], min: 4.5 },
+  { fg: 'foreground', bg: 'state-working-tint', on: ['background', 'chat-card-bg'], min: 4.5 },
+  { fg: 'chat-foreground', bg: 'state-working-tint', on: ['background', 'chat-card-bg'], min: 4.5 },
+  { fg: 'accent-text', bg: 'state-working-tint', on: ['background', 'chat-card-bg'], min: 4.5 },
+  // The sub-card text token (`text-card-foreground`) on its `--surface-1` step and hover tint.
+  { fg: 'card-foreground', bg: 'surface-1', min: 4.5 },
+  { fg: 'card-foreground', bg: 'surface-hover', min: 4.5 },
   // Progress strip edges (non-text, 3:1) are the success, accent-text and muted-foreground rows above on the card fill, so their 4.5:1 floors subsume the 3:1 one.
   // The sub-card button's focus ring (offset 2px, so it paints on the card fill, never on the sub-card step).
   { fg: 'ring', bg: 'chat-card-bg', on: 'background', min: 3 },

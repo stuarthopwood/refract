@@ -14,6 +14,11 @@ export function stageAccessibleName(stage: Pick<StageItem, 'number' | 'cleanTitl
   return parts.join(', ')
 }
 
+/** True when an agent's name only repeats the Stage title (trim and case-insensitive), so a surface shows it once (#2318, rule 3). */
+export function repeatsStageTitle(name: string, title: string | null | undefined): boolean {
+  return title != null && name.trim().toLowerCase() === title.trim().toLowerCase()
+}
+
 export interface StageRowModel {
   /** The one agent a single-agent Stage names as quiet text; null for several agents, or when its name just repeats the Stage title (FR-176). */
   chipAgent: SubAgentItem | null
@@ -32,7 +37,7 @@ export function stageRowModel(view: StageRowView): StageRowModel {
   const outcome = view.outcomeSummary?.trim() || (view.status === 'running' ? agents.find((agent) => agent.status === 'running')?.liveDetail?.trim() : undefined)
   const rawLabel = view.rawLabel?.trim()
   const solo = agents.length === 1 ? (agents[0] ?? null) : null
-  const repeatsTitle = solo != null && view.cleanTitle != null && solo.name.trim().toLowerCase() === view.cleanTitle.trim().toLowerCase()
+  const repeatsTitle = solo != null && repeatsStageTitle(solo.name, view.cleanTitle)
   return {
     chipAgent: repeatsTitle ? null : solo,
     parallelCount: agents.length > 1 ? agents.length : 0,

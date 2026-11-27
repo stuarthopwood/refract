@@ -2,12 +2,13 @@
 // failure notice (grouping in groupSubagentStages.ts). StageGroupRow renders one in place;
 // SubagentChainRow renders once per turn, at the end, when there are two or more Stages.
 import * as React from 'react'
-import { BotIcon } from 'lucide-react'
+import { BotIcon, ChevronRightIcon } from 'lucide-react'
+import { FadeCollapse } from '@/components/FadeCollapse'
+import { IconButton } from '@/components/IconButton'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
-import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { ChainStageLine } from './ChainStageLine'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { StageContextBrief } from './StageContextBrief'
@@ -15,33 +16,23 @@ import { StageUsesLine } from './StageDependencies'
 import { stageRowDomId } from './stageJump'
 import { SubagentCardButton } from './SubagentRow'
 import { SubagentGoalPreview } from './SubagentGoalPreview'
-import { formatElapsed } from './formatElapsed'
-import { stageHeading, extractContextLabel, extractResultSummary } from './stageMeta'
-import { joinMetaParts } from './toolRowLabels'
-import { RowTrailing } from './toolRowParts'
-import { resolveToolDisplay } from './toolDisplay'
-import { ToolIcon } from '@/components/ToolIcon'
+import { stageHeading, extractResultSummary } from './stageMeta'
 import type { StageGroup } from './groupSubagentStages'
 import { deriveHeader } from '../subagents/viewModel/derive'
+import { StageHeader } from '../subagents/card/StageHeader'
 import { SubagentsCardHeader } from '../subagents/card/SubagentsCardHeader'
+import { stageAccessibleName, stageAgentsGridClass, stageRowModel } from '../subagents/card/stageRowModel'
 import { stageSegmentStates } from '../subagents/card/headerStats'
 import { useStickyDisclosure } from './useStickyDisclosure'
-import {
-  chatRowStatus,
-  SUBAGENT_ERROR_TEXT_CLASS,
-  SUBAGENT_STATUS_LABEL,
-  SubagentStatusGlyph,
-  subagentStatusTextClass,
-  summarizeSubagentStatuses
-} from '../subagents/subagentStatus'
+import { chatRowStatus, SUBAGENT_ERROR_TEXT_CLASS, summarizeSubagentStatuses } from '../subagents/subagentStatus'
 import { overallStatus } from './subagentChainStatus'
 
-/** One Stage rendered in place; always a `CollapsedLine` so the row never switches element type as agents stream in. */
-export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup; sessionId: string | null; shimmer?: boolean }) {
-  const { status, counts, startedAt, durationMs } = group.view
+/** One Stage rendered in place, drawn with the shared `StageHeader` so a Stage looks the same on every surface (FR-175). */
+export function StageGroupRow({ group, sessionId }: { group: StageGroup; sessionId: string | null }) {
+  const { status } = group.view
   const isRunning = status === 'running'
   const total = group.items.length
-  const labelColorClass = subagentStatusTextClass(counts)
+  const { counts } = group.view
 
   // Only members mounting while the Stage is live fade in; seeded during render so a settled reopen never flashes an invisible frame.
   const seenIdsRef = React.useRef<Set<string> | null>(null)
@@ -68,7 +59,7 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
   // SpineList was rejected: it adds a permanent rail to every solo Stage. (#1001)
   // A callback ref is needed because the content is not mounted while collapsed, so a one-time effect would never attach the listeners.
   const memberContentNodeRef = React.useRef<HTMLDivElement | null>(null)
-  const triggerRef = React.useRef<HTMLElement>(null)
+  const triggerRef = React.useRef<HTMLButtonElement>(null)
   const focusWasInsideRef = React.useRef(false)
   const prevTotalRef = React.useRef(total)
 
@@ -113,94 +104,77 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
     }
   }, [total])
 
-  const summaryText = group.view.rollupText
-  const startTimeText =
-    startedAt != null ? new Date(startedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : undefined
-  // A solo Stage with a captured context shows the context as its label, so its one agent's name goes in the summary slot.
-  const soloContextLabel = total === 1 && group.context ? extractContextLabel(group.context) : null
-  const soloAgentName = soloContextLabel ? group.items[0]!.name : undefined
+  // The Stage header and its outcome line carry the roll-up, status and duration (FR-175); no per-row "3 done" text is drawn here.
+  const stageLabel = stageHeading(group.stageIndex, group.view.cleanTitle, true)
   // A failed/cancelled/exited solo Stage shows its reason next to its goal, not only behind the toggle. (#1077)
   const soloItem = total === 1 ? group.items[0]! : undefined
   const soloStatus = soloItem ? chatRowStatus(soloItem.status) : undefined
   const soloIsUnsettledBad = soloStatus === 'failed' || soloStatus === 'cancelled' || soloStatus === 'exited'
   const soloFailureReason = soloItem && soloIsUnsettledBad && soloItem.result != null ? extractResultSummary(soloItem.result) : undefined
-  // `context` is stamped only on a call's spec-index-0 item, so correlate by toolCallId: a member's goal is suppressed when any item of its call has a context. (#1077)
-  const toolCallIdsWithContext = new Set(group.items.filter((item) => item.context).map((item) => item.toolCallId))
-  // Status word and start time are each a narrow-hideable unit with their separator inside the hideable span (below @max-[32rem]),
-  // so the label gives up space last; the settled wording already states failures, so the status word shows only while running.
-  const meta = (
-    <span aria-hidden="true" className="flex min-w-0 shrink items-center gap-1 whitespace-nowrap text-xs leading-5 text-muted-foreground">
-      {joinMetaParts([
-        <span key="summary" className="min-w-0 truncate" title={summaryText}>{summaryText}</span>,
-        isRunning ? (
-          <span key="status" className="@max-[32rem]:hidden">{SUBAGENT_STATUS_LABEL[status]}</span>
-        ) : undefined,
-        startTimeText != null ? (
-          <span key="started" className="tabular-nums @max-[32rem]:hidden">{`started ${startTimeText}`}</span>
-        ) : undefined
-      ])}
-      <RowTrailing
-        icon={<SubagentStatusGlyph status={status} />}
-        // Hides at @max-[20rem], after the status/start-time spans, so the duration is the last optional part to go; the icon stays.
-        duration={durationMs != null ? <span className="@max-[20rem]:hidden">{formatElapsed(durationMs)}</span> : undefined}
-      />
-    </span>
-  )
-  const stageLabel = stageHeading(group.stageIndex, group.view.cleanTitle)
-  // The heading's speech form already says "Stage N", so the count clause is just "of M".
-  const triggerAriaLabel = `${stageHeading(group.stageIndex, group.view.cleanTitle, true)}, of ${group.totalStages}${soloAgentName ? `, ${soloAgentName}` : ''}, ${summaryText}${isRunning ? `, ${SUBAGENT_STATUS_LABEL[status]}` : ''}${durationMs != null ? `, ${formatElapsed(durationMs)}` : ''}${startTimeText != null ? `, started ${startTimeText}` : ''}`
-  // A one-agent Stage's content already carries `pl-8`, so the brief/Uses lines take only `pr-2` there.
-  const columnClassName = total > 1 ? cn(LABEL_COLUMN_CONTENT_CLASS, 'pr-2') : 'pr-2'
+  // The content sits at the header's 40px mark (16px padding, 16px status column, 8px gap), so the brief and the cards start under the title.
+  const columnClassName = 'pl-10 pr-4'
+  const { parallelCount } = stageRowModel(group.view)
 
   return (
-    <CollapsedLine
-      ref={triggerRef}
+    <div
       id={stageRowDomId(sessionId, group.id)}
-      icon={<ToolIcon icon={resolveToolDisplay('task').icon} />}
-      label={stageLabel}
-      labelShimmer={shimmer && isRunning}
-      labelClassName={cn('min-w-16', labelColorClass)}
-      summary={soloAgentName}
-      summaryFixedWidth={soloAgentName !== undefined}
-      meta={meta}
-      metaClassName="min-w-0 shrink"
-      open={open}
-      onOpenChange={onOpenChange}
-      triggerAriaLabel={triggerAriaLabel}
-      contentClassName={total > 1 ? SPINE_HOST_CONTENT_CLASS : LABEL_COLUMN_CONTENT_CLASS}
+      tabIndex={-1}
+      role="group"
+      aria-label={stageAccessibleName(group.view)}
+      aria-live="off"
+      className="@container text-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      data-status={status}
     >
-      {/* aria-live="off": the brief/Uses lines are static context, so an automatic expand must not announce them. */}
-      <div aria-live="off" className="space-y-1">
-        {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
-        {/* A context-less solo Stage's goal renders here, before "Uses:", matching the context-bearing order. */}
-        {!group.context && soloItem && (
-          <div className={columnClassName}>
-            <SubagentGoalPreview task={soloItem.task} />
-          </div>
-        )}
-        {soloFailureReason != null && (
-          <p className={cn(columnClassName, 'text-xs', soloStatus === 'failed' ? SUBAGENT_ERROR_TEXT_CLASS : 'text-muted-foreground')}>
-            {soloFailureReason}
-          </p>
-        )}
-        <StageUsesLine dependencies={group.view.dependencies} sessionId={sessionId} className={columnClassName} />
-        {/* Scoped to the member content that swaps element type on a 1-to-2 transition, so focus tracking ignores the brief/Uses line. (#1001) */}
-        {/* A member's goal is suppressed only when its own call had a context; a solo body never shows it (rendered above). (#1077) */}
-        <div ref={memberContentRef}>
-          {total > 1 ? (
-            <SpineList gap="member">
-              {group.items.map((item, index) => (
-                <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                  <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
-                </SpineItem>
-              ))}
-            </SpineList>
-          ) : (
-            <SubagentCardButton item={group.items[0]!} agent={group.view.agents[0]!} sessionId={sessionId} flat fallbackLabel={group.items[0]!.name !== group.view.cleanTitle ? group.items[0]!.name : undefined} />
+      <StageHeader
+        stage={group.view}
+        expanded={open}
+        columnFocusable
+        trailing={
+          <IconButton
+            ref={triggerRef}
+            variant="ghost"
+            size="icon-xs"
+            aria-expanded={open}
+            label={`${stageLabel} agents`}
+            onClick={() => onOpenChange(!open)}
+          >
+            <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', open && 'rotate-90')} />
+          </IconButton>
+        }
+      />
+      <FadeCollapse show={open}>
+        {/* aria-live="off": the brief/Uses lines are static context, so an automatic expand must not announce them. */}
+        <div aria-live="off" className="space-y-1 pb-2">
+          {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
+          {/* A context-less solo Stage's goal renders here, before "Uses:", matching the context-bearing order. */}
+          {!group.context && soloItem && (
+            <div className={columnClassName}>
+              <SubagentGoalPreview task={soloItem.task} />
+            </div>
           )}
+          {soloFailureReason != null && (
+            <p className={cn(columnClassName, 'text-xs', soloStatus === 'failed' ? SUBAGENT_ERROR_TEXT_CLASS : 'text-muted-foreground')}>
+              {soloFailureReason}
+            </p>
+          )}
+          <StageUsesLine dependencies={group.view.dependencies} sessionId={sessionId} className={columnClassName} />
+          {/* Scoped to the member content that swaps element type on a 1-to-2 transition, so focus tracking ignores the brief/Uses line. (#1001) */}
+          <div ref={memberContentRef} className={columnClassName}>
+            {total > 1 ? (
+              <SpineList gap="member" bare className={stageAgentsGridClass(parallelCount)}>
+                {group.items.map((item, index) => (
+                  <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
+                    <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
+                  </SpineItem>
+                ))}
+              </SpineList>
+            ) : (
+              <SubagentCardButton item={group.items[0]!} agent={group.view.agents[0]!} sessionId={sessionId} flat stageTitle={group.view.cleanTitle} />
+            )}
+          </div>
         </div>
-      </div>
-    </CollapsedLine>
+      </FadeCollapse>
+    </div>
   )
 }
 

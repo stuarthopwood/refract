@@ -6,7 +6,6 @@ import { IconButton } from '@/components/IconButton'
 import { FadeCollapse } from '@/components/FadeCollapse'
 import { StageHeader } from '../subagents/card/StageHeader'
 import { stageAccessibleName, stageAgentsGridClass, stageRowModel } from '../subagents/card/stageRowModel'
-import type { SubAgentItem } from '../subagents/viewModel'
 import { StageUsesLine } from './StageDependencies'
 import { SpineItem, SpineList } from './SpineList'
 import { SubagentCardButton } from './SubagentRow'
@@ -15,16 +14,9 @@ import { JumpToStageContext } from './stageJump'
 import { stageHeading } from './stageMeta'
 import { useStickyDisclosure } from './useStickyDisclosure'
 import type { StageGroup } from './groupSubagentStages'
-import type { SubagentItem } from './subagentChainStatus'
 
 /** The Stage's own toggle key; `card:` keeps it apart from `StageGroupRow`'s bare id and the panel's `panel:` keys (FR-150 d). */
 export const stageToggleRowId = (stageId: string): string => `card:${stageId}`
-
-function ChainAgentEntry({ item, agent, sessionId, flat, stageTitle }: { item: SubagentItem; agent: SubAgentItem; sessionId: string | null; flat: boolean; stageTitle: string | null }) {
-  // Rule 3 (#2318): an agent name equal to the Stage title is not repeated.
-  const fallbackLabel = agent.name !== stageTitle ? agent.name : undefined
-  return <SubagentCardButton item={item} agent={agent} sessionId={sessionId} flat={flat} fallbackLabel={fallbackLabel} />
-}
 
 // A labelled `role="group"` per stage: `SpineList`'s `<ol>` only gives an unlabelled "1 of 2".
 // A running Stage opens and a settled one collapses on its own; the developer's own toggle wins for the Session (FR-149).
@@ -97,7 +89,13 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           <SpineList bare className={cn('pb-2 pr-4 pl-10', stageAgentsGridClass(parallelCount))}>
             {stage.items.map((item, index) => (
               <SpineItem key={item.id} isNew={false}>
-                <ChainAgentEntry item={item} agent={stage.view.agents[index]!} sessionId={sessionId} flat={stage.items.length === 1} stageTitle={stage.view.cleanTitle} />
+                <SubagentCardButton
+                  item={item}
+                  agent={stage.view.agents[index]!}
+                  sessionId={sessionId}
+                  flat={stage.items.length === 1}
+                  stageTitle={stage.view.cleanTitle}
+                />
               </SpineItem>
             ))}
           </SpineList>

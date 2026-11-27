@@ -1,8 +1,8 @@
 import * as React from 'react'
-import type { TranscriptItem } from '../../../shared/model'
 import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
 import { cn } from '@/lib/utils'
 import { FileChipList } from '@/components/FileChip'
+import { ListCardButton } from '@/components/ListCardButton'
 import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import { SUBAGENT_STATUS_LABEL, SubagentStatusGlyph } from '../subagents/subagentStatus'
 import { plainSummary } from './stageMeta'
@@ -11,8 +11,11 @@ import { FILES_TOUCHED_LABEL, type SubAgentItem } from '../subagents/viewModel'
 import { CausalBadge, causalBadgeText } from '../subagents/card/CausalBadge'
 import { Heartbeat, heartbeatText } from '../subagents/card/Heartbeat'
 import { SubStepList } from '../subagents/card/SubStepList'
+import { repeatsStageTitle } from '../subagents/card/stageRowModel'
+import type { SubagentItem } from './subagentChainStatus'
 
-type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
+/** The bordered card shape; the sub-card button (`ListCardButton` surface variant) and the panel's multi-agent rows draw this. */
+export const SUBAGENT_CARD_SURFACE_CLASS = 'rounded-lg border border-divider bg-surface-1 p-2'
 
 interface SubagentCardBodyProps {
   agent: SubAgentItem
@@ -22,20 +25,23 @@ interface SubagentCardBodyProps {
   interactive?: boolean
   /** The flat body's first line when the agent has no role, so a clickable body never collapses to nothing. */
   fallbackLabel?: string
+  /** Id for the outcome text, so the card button can point `aria-describedby` at it. */
+  outcomeId?: string
 }
 
 // The card body (#1928): name, role, what it did, provenance and files, then a live heartbeat and
 // sub-steps while it runs. Every optional part renders nothing when absent, so no empty row or gap is
 // left behind. The chat sub-card button and the panel's tree row both draw it, so it needs no transcript item (#1930).
-export function SubagentCardBody({ agent, flat = false, interactive = true, fallbackLabel }: SubagentCardBodyProps) {
+export function SubagentCardBody({ agent, flat = false, interactive = true, fallbackLabel, outcomeId }: SubagentCardBodyProps) {
   const { status, duration, name, role, whatItDid, triggeredBy, filesTouched, liveDetail, subSteps } = agent
   const running = status === 'running'
   const hasProvenanceRow = causalBadgeText(triggeredBy) != null || (filesTouched?.length ?? 0) > 0
-  const hasLive = running && (heartbeatText(liveDetail) != null || (subSteps?.length ?? 0) > 0)
+  // A flat body sits under its Stage header, which already shows the running agent's live focus, so the heartbeat is not drawn twice (#2318).
+  const hasLive = running && ((!flat && heartbeatText(liveDetail) != null) || (subSteps?.length ?? 0) > 0)
   const hasRole = role != null && role !== ''
   const flatLead = hasRole ? role : fallbackLabel
   return (
-    <div className={cn('min-w-0 space-y-2', flat ? 'min-h-5 border-l-2 border-divider py-1 pl-4' : 'rounded-lg border border-divider bg-surface-1 p-2 group-hover/subcard:bg-surface-hover')}>
+    <div className={cn('min-w-0 space-y-2', flat && 'min-h-5 border-l-2 border-divider py-1 pl-3')}>
       {flat ? (
         flatLead && <div className="min-w-0 truncate text-xs text-muted-foreground">{flatLead}</div>
       ) : (
@@ -50,7 +56,7 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
         </div>
       )}
       {!flat && whatItDid != null && whatItDid !== '' && (
-        <div title={plainSummary(whatItDid)} className="text-sm text-card-foreground">
+        <div id={outcomeId} title={plainSummary(whatItDid)} className="text-sm text-card-foreground">
           <ResultMarkdown text={whatItDid} lines={2} />
         </div>
       )}
@@ -61,8 +67,8 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
         </div>
       )}
       {hasLive && (
-        <div className="space-y-2 border-t border-divider pt-2">
-          <Heartbeat liveDetail={liveDetail} />
+        <div className={cn('space-y-2', !flat && 'border-t border-divider pt-2')}>
+          {!flat && <Heartbeat liveDetail={liveDetail} />}
           <SubStepList steps={subSteps} />
         </div>
       )}
@@ -90,25 +96,29 @@ interface SubagentCardButtonProps {
   sessionId: string | null
   /** A single-agent Stage expands flat with a left guide line (FR-176). */
   flat?: boolean
-  /** The flat body's first line when the agent has no role and its name differs from the Stage title. */
-  fallbackLabel?: string
+  /** The Stage title; the flat body names the agent only when its name does not just repeat it (FR-176). */
+  stageTitle?: string | null
 }
 
 // One sub-card is one native button element covering the whole card (FR-178): Tab, Enter, Space and click open the agent in the
 // Subagents panel. The body inside is non-interactive so no control nests in the button. With no live match to open, it is a plain block.
-export function SubagentCardButton({ item, agent, sessionId, flat = false, fallbackLabel }: SubagentCardButtonProps) {
+export function SubagentCardButton({ item, agent, sessionId, flat = false, stageTitle }: SubagentCardButtonProps) {
+  const outcomeId = React.useId()
   const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
   const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
-  const body = <SubagentCardBody agent={agent} flat={flat} interactive={false} fallbackLabel={fallbackLabel} />
-  if (!match || !sessionId) return <div className="min-w-0">{body}</div>
+  const hasOutcome = !flat && agent.whatItDid != null && agent.whatItDid !== ''
+  const fallbackLabel = repeatsStageTitle(agent.name, stageTitle) ? undefined : agent.name
+  const body = <SubagentCardBody agent={agent} flat={flat} interactive={false} fallbackLabel={fallbackLabel} outcomeId={outcomeId} />
+  if (!match || !sessionId) return <div className={cn('min-w-0', !flat && SUBAGENT_CARD_SURFACE_CLASS)}>{body}</div>
   return (
-    <button
-      type="button"
-      aria-label={subagentCardButtonName(agent)}
-      className="group/subcard block w-full min-w-0 cursor-pointer rounded-lg text-left focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring"
+    <ListCardButton
+      variant={flat ? 'flush' : 'surface'}
+      ariaLabel={subagentCardButtonName(agent)}
+      // The name is the agent and its status; the outcome is reachable as the description, not repeated in the name.
+      ariaDescribedBy={hasOutcome ? outcomeId : undefined}
       onClick={(event) => openSubagentInPanel(sessionId, match, event.currentTarget)}
     >
       {body}
-    </button>
+    </ListCardButton>
   )
 }

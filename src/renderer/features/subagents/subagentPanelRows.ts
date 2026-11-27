@@ -40,6 +40,8 @@ export interface PanelAgentRow extends PanelRowBase {
   kind: 'agent'
   agent: SubAgentItem
   stageId: string
+  /** The Stage's clean title, so a flat row names its agent only when the name differs from it (FR-176). */
+  stageTitle: string | null
   ariaLabel: string
 }
 
@@ -107,6 +109,7 @@ export function buildPanelRows(stages: readonly StageItem[], isOpen: (stage: Sta
         setsize: stage.agents.length,
         agent,
         stageId: stage.id,
+        stageTitle: stage.cleanTitle,
         ariaLabel: agentPanelAriaLabel(agent)
       })
     )
