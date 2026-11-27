@@ -1,5 +1,6 @@
 // Conversation tree commands (#696): view, label, Rewind and Fork. Rewind and Fork run only while `idle`.
 
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
@@ -194,6 +195,13 @@ impl SessionAgent {
             );
             return Err(self.fail_attached(&proc, err).await);
         };
+        if !self.fork_file_is_contained(&file).await {
+            let err = AgentError::new(
+                "reattach-failed",
+                format!("fork reported a Conversation outside the Sessions folder: {file}"),
+            );
+            return Err(self.fail_attached(&proc, err).await);
+        }
         let patch = SessionPatch {
             current_conversation: Some(Some(file.clone())),
             last_message_count: Some(Some(count)),
@@ -218,6 +226,41 @@ impl SessionAgent {
         self.reload_after_tree_change(&proc, &state, !same_file)
             .await;
         Ok(file)
+    }
+
+    /// The registry will follow the new file, so it must be a `.jsonl` in the Session's folder or OMP's Sessions
+    /// root. The parent folder is canonicalised rather than the file, which OMP may not have written yet.
+    async fn fork_file_is_contained(&self, file: &str) -> bool {
+        let path = Path::new(file);
+        let is_jsonl = path
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("jsonl"));
+        let (Some(parent), Some(_), true) = (path.parent(), path.file_name(), is_jsonl) else {
+            return false;
+        };
+        let Ok(parent) = tokio::fs::canonicalize(parent).await else {
+            return false;
+        };
+        let session_dir = self
+            .registry
+            .lock()
+            .await
+            .get_session(&self.session_id)
+            .and_then(|s| s.session_dir.clone())
+            .filter(|d| !d.is_empty());
+        let roots = session_dir
+            .map(PathBuf::from)
+            .into_iter()
+            .chain(crate::ipc::conversations_delete::omp_sessions_root());
+        for root in roots {
+            if tokio::fs::canonicalize(&root)
+                .await
+                .is_ok_and(|root| parent.starts_with(root))
+            {
+                return true;
+            }
+        }
+        false
     }
 
     async fn read_state_after_tree_change(&self, proc: &OmpProcess) -> Result<Value, AgentError> {

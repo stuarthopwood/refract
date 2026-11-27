@@ -3,10 +3,13 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 
-use serde_json::Value;
+use serde_json::{json, Value};
 use tokio::sync::Mutex as AsyncMutex;
 
-use super::{abort_summary_core, fork_core, label_core, rewind_core, tree_core};
+use super::{
+    abort_summary_core, conversations_fork, conversations_label, conversations_rewind, fork_core,
+    label_core, rewind_core, tree_core,
+};
 use crate::events::EventSink;
 use crate::ipc::AppState;
 use crate::omp::process::OmpProcess;
@@ -16,9 +19,11 @@ use crate::store::settings::SettingsStore;
 
 /// `entryId` picks the reply: `busy` and `missing` mimic `navigate_tree`'s coded refusals, `cancel` a stopped
 /// summary, `bad` and `weird` are `fork`'s message-only errors; a fork switches `get_state` to a second file.
+/// `cancelfork`, `zero`, `nofile` and `outside` are forks that cancel, report no messages, report no file, or
+/// report a file outside the Sessions folder. Rewinding to `a1` (an assistant entry) returns no `editorText`.
 const STUB: &str = r##"
 const fs = require('fs');
-const [log, initial, forked] = process.argv.slice(2);
+const [log, initial, forked, outside] = process.argv.slice(2);
 let current = initial;
 let count = 4;
 const msg = (id, role, text, children, label) => ({
@@ -52,12 +57,17 @@ process.stdin.on('data', (chunk) => {
       if (cmd.entryId === 'busy') fail('Cannot navigate the session tree while work is running', 'session_busy');
       else if (cmd.entryId === 'missing') fail('Entry missing not found', 'entry_not_found');
       else if (cmd.entryId === 'cancel') res.data = { cancelled: true, aborted: true };
+      else if (cmd.entryId === 'a1') { count = 2; res.data = { cancelled: false }; }
       else { count = 2; res.data = { cancelled: false, editorText: 'hello world' }; }
     }
     if (cmd.type === 'set_label' && cmd.entryId === 'nope') fail('Entry nope not found');
     if (cmd.type === 'fork') {
       if (cmd.entryId === 'bad') fail('Invalid entry ID for forking: bad');
       else if (cmd.entryId === 'weird') fail('boom');
+      else if (cmd.entryId === 'cancelfork') res.data = { cancelled: true };
+      else if (cmd.entryId === 'zero') { current = forked; count = 0; res.data = { cancelled: false }; }
+      else if (cmd.entryId === 'nofile') { current = ''; count = 3; res.data = { cancelled: false }; }
+      else if (cmd.entryId === 'outside') { current = outside; count = 3; res.data = { cancelled: false }; }
       else { current = forked; count = 3; res.data = { cancelled: false }; }
     }
     if (cmd.type === 'get_state') res.data = { sessionFile: current, messageCount: count };
@@ -116,8 +126,10 @@ async fn rig(status: SessionStatus) -> Rig {
     let body = "{\"type\":\"title\",\"title\":\"t\"}\n{\"type\":\"message\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}\n";
     let current = sessions.join(CURRENT_FILE);
     let fork_file = sessions.join(FORK_FILE);
+    let outside_file = dir.join("outside.jsonl");
     tokio::fs::write(&current, body).await.unwrap();
     tokio::fs::write(&fork_file, body).await.unwrap();
+    tokio::fs::write(&outside_file, body).await.unwrap();
     let (current, fork_file) = (
         current.to_string_lossy().into_owned(),
         fork_file.to_string_lossy().into_owned(),
@@ -161,6 +173,7 @@ async fn rig(status: SessionStatus) -> Rig {
         .arg(&log)
         .arg(&current)
         .arg(&fork_file)
+        .arg(&outside_file)
         .current_dir(&dir);
     let process = OmpProcess::from_command(command).unwrap();
     state
@@ -348,5 +361,129 @@ async fn tree_core_refuses_an_unknown_session() {
     let r = rig(SessionStatus::Idle).await;
     let err = tree_core(&r.state, "nope").await.unwrap_err();
     assert_eq!(err.code, "not-found");
+    r.finish().await;
+}
+
+impl Rig {
+    /// The registry still points at the original Conversation with its original count.
+    async fn assert_registry_unchanged(&self) {
+        let session = self.session().await;
+        assert!(session
+            .current_conversation
+            .unwrap()
+            .ends_with(CURRENT_FILE));
+        assert_eq!(session.last_message_count, Some(4));
+    }
+
+    async fn status(&self) -> SessionStatus {
+        self.state
+            .session_manager
+            .get_or_create_agent(&self.id)
+            .status()
+            .await
+    }
+
+    fn args(&self, rest: &[Value]) -> Vec<Value> {
+        std::iter::once(json!(self.id))
+            .chain(rest.iter().cloned())
+            .collect()
+    }
+}
+
+#[tokio::test]
+async fn a_cancelled_fork_fails_without_touching_the_registry_or_the_process() {
+    let r = rig(SessionStatus::Idle).await;
+    let err = fork_core(&r.state, &r.id, "cancelfork").await.unwrap_err();
+    assert_eq!(err.code, "tree-failed");
+    assert_eq!(r.command_types().await, ["fork"]);
+    r.assert_registry_unchanged().await;
+    assert_eq!(r.status().await, SessionStatus::Idle);
+    r.finish().await;
+}
+
+#[tokio::test]
+async fn a_fork_that_leaves_no_messages_or_no_file_is_a_reattach_failure_that_stops_the_process() {
+    for entry in ["zero", "nofile"] {
+        let r = rig(SessionStatus::Idle).await;
+        let err = fork_core(&r.state, &r.id, entry).await.unwrap_err();
+        assert_eq!(err.code, "reattach-failed", "{entry}");
+        r.assert_registry_unchanged().await;
+        assert_eq!(r.status().await, SessionStatus::Stopped, "{entry}");
+        // The stopped agent has no process left to read a tree from.
+        let after = tree_core(&r.state, &r.id).await.unwrap_err();
+        assert_eq!(after.code, "agent-not-running", "{entry}");
+        r.finish().await;
+    }
+}
+
+#[tokio::test]
+async fn a_fork_file_outside_the_sessions_folder_is_refused_before_the_registry_follows_it() {
+    let r = rig(SessionStatus::Idle).await;
+    let err = fork_core(&r.state, &r.id, "outside").await.unwrap_err();
+    assert_eq!(err.code, "reattach-failed");
+    assert!(err.message.contains("outside"), "{}", err.message);
+    r.assert_registry_unchanged().await;
+    assert_eq!(r.status().await, SessionStatus::Stopped);
+    r.finish().await;
+}
+
+#[tokio::test]
+async fn rewind_without_summarize_omits_the_field() {
+    let r = rig(SessionStatus::Idle).await;
+    rewind_core(&r.state, &r.id, "u1", false).await.unwrap();
+    let cmds = r.commands().await;
+    assert_eq!(cmds[0]["type"], "navigate_tree");
+    assert!(cmds[0].get("summarize").is_none());
+    r.finish().await;
+}
+
+#[tokio::test]
+async fn rewinding_to_an_assistant_entry_returns_no_editor_text() {
+    let r = rig(SessionStatus::Idle).await;
+    let out = rewind_core(&r.state, &r.id, "a1", false).await.unwrap();
+    assert_eq!(out["cancelled"], false);
+    assert!(out["editorText"].is_null());
+    r.finish().await;
+}
+
+#[tokio::test]
+async fn oversized_ids_and_labels_and_a_non_boolean_summarize_are_invalid_arguments() {
+    let r = rig(SessionStatus::Idle).await;
+    let long_id = json!("i".repeat(257));
+    let long_label = json!("l".repeat(201));
+    let invalid = |err: crate::ipc::IpcError| assert_eq!(err.code, "invalid-argument");
+    invalid(
+        conversations_rewind(r.state.clone(), r.args(std::slice::from_ref(&long_id)))
+            .await
+            .unwrap_err(),
+    );
+    invalid(
+        conversations_fork(r.state.clone(), r.args(std::slice::from_ref(&long_id)))
+            .await
+            .unwrap_err(),
+    );
+    invalid(
+        conversations_label(r.state.clone(), r.args(&[long_id, json!("x")]))
+            .await
+            .unwrap_err(),
+    );
+    invalid(
+        conversations_label(r.state.clone(), r.args(&[json!("u1"), long_label]))
+            .await
+            .unwrap_err(),
+    );
+    for bad in [json!("yes"), json!(1)] {
+        invalid(
+            conversations_rewind(r.state.clone(), r.args(&[json!("u1"), bad]))
+                .await
+                .unwrap_err(),
+        );
+    }
+    assert!(r.commands().await.is_empty());
+    // The limits themselves are accepted.
+    let at_limit = r.args(&[json!("i".repeat(256)), json!("l".repeat(200))]);
+    conversations_label(r.state.clone(), at_limit)
+        .await
+        .unwrap();
     r.finish().await;
 }

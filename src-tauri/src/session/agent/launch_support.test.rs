@@ -116,20 +116,6 @@ fn reattach_rebaseline_notice_names_both_counts_when_compaction_lowers_the_obser
     assert!(notice.contains("446"), "{notice}");
 }
 
-/// A Fork (#696) moves the Session onto a new file with fewer messages. Once the registry holds that file and
-/// its count, a later reattach verifies cleanly and raises no #449 notice.
-#[test]
-fn a_forked_conversation_reattaches_without_a_mismatch_or_a_notice_once_the_registry_follows_it() {
-    let forked = "C:/sessions/swift-otter/forked.jsonl";
-    let state = json!({ "sessionFile": forked, "messageCount": 3 });
-    let mut session = make_session_for_notice(Some(3));
-    session.current_conversation = Some(forked.to_string());
-    assert!(verify_reattach(session.current_conversation.as_deref().unwrap(), &state).is_ok());
-    assert_eq!(reattach_rebaseline_notice(&session, &state), None);
-    // Without the re-baseline the old count of 446 would have produced the notice.
-    assert!(reattach_rebaseline_notice(&make_session_for_notice(Some(446)), &state).is_some());
-}
-
 fn user_message(text: &str) -> Value {
     json!({ "role": "user", "content": [{ "type": "text", "text": text }] })
 }

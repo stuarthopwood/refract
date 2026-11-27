@@ -68,34 +68,49 @@ fn role_of(entry: &Value) -> &str {
         .unwrap_or("unknown")
 }
 
-/// The first `PREVIEW_CHARS` characters of the message's text, whitespace collapsed.
+/// The first `PREVIEW_CHARS` characters of the message's text, whitespace collapsed. Words are pulled lazily, so a
+/// huge message costs only what the preview keeps.
 fn preview_of(entry: &Value) -> String {
     let content = entry.get("message").and_then(|m| m.get("content"));
-    let mut text = String::new();
-    match content {
-        Some(Value::String(s)) => text.push_str(s),
-        Some(Value::Array(blocks)) => {
-            for block in blocks {
-                if block.get("type").and_then(Value::as_str) == Some("text") {
-                    if let Some(t) = block.get("text").and_then(Value::as_str) {
-                        text.push_str(t);
-                        text.push(' ');
-                    }
-                }
+    let texts: Box<dyn Iterator<Item = &str> + '_> = match content {
+        Some(Value::String(s)) => Box::new(std::iter::once(s.as_str())),
+        Some(Value::Array(blocks)) => Box::new(
+            blocks
+                .iter()
+                .filter(|b| b.get("type").and_then(Value::as_str) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(Value::as_str)),
+        ),
+        _ => Box::new(std::iter::empty()),
+    };
+    let mut preview = String::new();
+    let mut count = 0;
+    for word in texts.flat_map(str::split_whitespace) {
+        if count > 0 {
+            if count + 1 >= PREVIEW_CHARS {
+                break;
             }
+            preview.push(' ');
+            count += 1;
         }
-        _ => {}
+        for ch in word.chars() {
+            if count == PREVIEW_CHARS {
+                return preview;
+            }
+            preview.push(ch);
+            count += 1;
+        }
     }
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(PREVIEW_CHARS)
-        .collect()
+    preview
 }
 
-/// Maps an OMP `success: false` frame. `navigate_tree` carries a `code`; `fork` and `set_label` report an
-/// unknown id as a message only, so those are recognised by their text.
+/// `fork` and `set_label` report an unknown id as a message only (`Entry <id> not found`, `Invalid entry ID …`).
+fn is_unknown_entry(message: &str) -> bool {
+    (message.starts_with("Entry ") && message.ends_with(" not found"))
+        || message.starts_with("Invalid entry ID")
+}
+
+/// Maps an OMP `success: false` frame. `navigate_tree` carries a `code`; `fork` and `set_label` do not, so
+/// those are recognised by their exact message shapes.
 pub(super) fn rpc_failure(res: &Value) -> AgentError {
     let message = res
         .get("error")
@@ -106,9 +121,7 @@ pub(super) fn rpc_failure(res: &Value) -> AgentError {
         Some("entry_not_found") => "entry-not-found",
         Some("ask_reanswer_unsupported") => "ask-reanswer-unsupported",
         Some(_) => "tree-failed",
-        None if message.contains("not found") || message.contains("Invalid entry ID") => {
-            "entry-not-found"
-        }
+        None if is_unknown_entry(message) => "entry-not-found",
         None => "tree-failed",
     };
     AgentError::new(code, message)

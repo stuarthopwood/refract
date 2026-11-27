@@ -12,6 +12,9 @@ use super::{
 use crate::session::SessionAgent;
 use std::sync::Arc;
 
+const MAX_ENTRY_ID_CHARS: usize = 256;
+const MAX_LABEL_CHARS: usize = 200;
+
 pub fn register(d: &mut Dispatcher) {
     d.register("conversations.tree", conversations_tree);
     d.register("conversations.rewind", conversations_rewind);
@@ -87,10 +90,12 @@ pub(crate) async fn abort_summary_core(state: &AppState, id: &str) -> Result<(),
     agent.abort_branch_summary().await.map_err(map_agent_error)
 }
 
-/// An id argument OMP would pass on verbatim must at least be a non-empty string.
+/// An id argument OMP would pass on verbatim must at least be a non-empty string of a sane length.
 fn entry_id_arg(args: &[Value], index: usize, usage: &str) -> Result<String, IpcError> {
     match arg_str(args, index) {
-        Some(id) if !id.trim().is_empty() => Ok(id.to_string()),
+        Some(id) if !id.trim().is_empty() && id.chars().count() <= MAX_ENTRY_ID_CHARS => {
+            Ok(id.to_string())
+        }
         _ => Err(invalid_argument(usage.to_string())),
     }
 }
@@ -113,7 +118,11 @@ pub fn conversations_rewind(state: AppState, args: Vec<Value>) -> HandlerFuture 
         let usage = "conversations.rewind expects (sessionId, entryId, summarize?)";
         let id = session_id_arg(&args, usage)?;
         let entry_id = entry_id_arg(&args, 1, usage)?;
-        let summarize = args.get(2).and_then(Value::as_bool).unwrap_or(false);
+        let summarize = match args.get(2) {
+            None | Some(Value::Null) => false,
+            Some(Value::Bool(flag)) => *flag,
+            Some(_) => return Err(invalid_argument(usage.to_string())),
+        };
         rewind_core(&state, &id, &entry_id, summarize).await
     })
 }
@@ -132,7 +141,13 @@ pub fn conversations_label(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let usage = "conversations.label expects (sessionId, entryId, label)";
         let id = session_id_arg(&args, usage)?;
         let entry_id = entry_id_arg(&args, 1, usage)?;
-        let label = arg_str(&args, 2).ok_or_else(|| invalid_argument(usage.to_string()))?;
+        let label = arg_str(&args, 2)
+            .filter(|l| l.chars().count() <= MAX_LABEL_CHARS)
+            .ok_or_else(|| {
+                invalid_argument(format!(
+                    "{usage}; label is at most {MAX_LABEL_CHARS} characters"
+                ))
+            })?;
         label_core(&state, &id, &entry_id, label).await?;
         Ok(Value::Null)
     })
