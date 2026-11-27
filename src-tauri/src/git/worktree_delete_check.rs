@@ -1,6 +1,7 @@
 // Decides by asking git, never `fs.stat`, so the delete dialog never under-reports losses.
 
 use std::path::Path;
+use std::time::Duration;
 
 use serde::Serialize;
 
@@ -103,8 +104,24 @@ pub async fn delete_check_for_session(
     worktree_path: &Path,
     branch: &str,
 ) -> Result<DeleteCheck, GitError> {
-    tokio::time::timeout(
+    delete_check_for_session_within(
         crate::fs::worktree_access::READER_TIMEOUT,
+        repo,
+        worktree_path,
+        branch,
+    )
+    .await
+}
+
+// The bound is a parameter so tests under load can pass one a stalled git start cannot exceed (#1980).
+async fn delete_check_for_session_within(
+    bound: Duration,
+    repo: &Path,
+    worktree_path: &Path,
+    branch: &str,
+) -> Result<DeleteCheck, GitError> {
+    tokio::time::timeout(
+        bound,
         delete_check_for_session_unbounded(repo, worktree_path, branch),
     )
     .await
@@ -175,6 +192,9 @@ mod tests {
     use crate::git::test_support::init_repo;
     use crate::git::worktrees::add_worktree_with_generated_name;
 
+    /// Far above `READER_TIMEOUT`: these tests check the git outcome, and a git start can stall under the full suite.
+    const TEST_BOUND: Duration = Duration::from_secs(600);
+
     #[tokio::test]
     async fn delete_check_reports_uncommitted_files_and_no_upstream() {
         let repo = init_repo().await;
@@ -243,7 +263,7 @@ mod tests {
         let worktree_path = added.worktree_path.clone();
         let branch = added.branch.clone();
         tokio::fs::remove_dir_all(&worktree_path).await.unwrap();
-        let check = delete_check_for_session(&repo, &worktree_path, &branch)
+        let check = delete_check_for_session_within(TEST_BOUND, &repo, &worktree_path, &branch)
             .await
             .unwrap();
         assert_eq!(check.uncommitted_files, 0);
