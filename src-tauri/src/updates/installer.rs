@@ -251,3 +251,7 @@ mod tests {
         assert_eq!(err.to_string(), "no update");
     }
 }
+
+#[cfg(test)]
+#[path = "installer_download.test.rs"]
+mod download_tests;

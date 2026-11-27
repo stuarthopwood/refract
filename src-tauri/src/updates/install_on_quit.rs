@@ -1,5 +1,6 @@
 // WMI puts the installer helper outside Refract's kill-on-close job; leave the job flags alone so `omp` stays killable.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -127,6 +128,28 @@ pub async fn schedule_install_on_quit(
     refract_pid: u32,
     relaunch_path: Option<&Path>,
 ) -> Result<(), String> {
+    schedule_install_with(
+        |mut command| async move { command.output().await },
+        installer_path,
+        verified_sha256,
+        refract_pid,
+        relaunch_path,
+    )
+    .await
+}
+
+// `launch` is the process seam: tests inspect the command instead of spawning PowerShell.
+async fn schedule_install_with<F, Fut>(
+    launch: F,
+    installer_path: &Path,
+    verified_sha256: &str,
+    refract_pid: u32,
+    relaunch_path: Option<&Path>,
+) -> Result<(), String>
+where
+    F: FnOnce(Command) -> Fut,
+    Fut: Future<Output = std::io::Result<std::process::Output>>,
+{
     let pwsh = resolve_powershell();
     let pwsh_str = pwsh.to_string_lossy();
     let log_path = install_log_path(installer_path);
@@ -175,7 +198,7 @@ pub async fn schedule_install_on_quit(
         command.env("REFRACT_RELAUNCH_PATH", relaunch_path);
     }
 
-    let output = command.output().await.map_err(|err| err.to_string())?;
+    let output = launch(command).await.map_err(|err| err.to_string())?;
     if output.status.success() {
         return Ok(());
     }
@@ -551,3 +574,7 @@ mod tests {
         ));
     }
 }
+
+#[cfg(test)]
+#[path = "install_on_quit_schedule.test.rs"]
+mod schedule_tests;

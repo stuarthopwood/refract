@@ -289,3 +289,7 @@ mod tests {
         assert!(!is_release_tag("v1.2."), "empty trailing segment");
     }
 }
+
+#[cfg(test)]
+#[path = "checker_scan.test.rs"]
+mod scan_tests;
