@@ -48,6 +48,34 @@ pub async fn remove_tree(path: &Path, boundary_root: &Path) -> Result<(), Remove
         .unwrap_or(Err(RemoveTreeError::OutsideBoundary))
 }
 
+/// Removes one regular file under `boundary_root` through the same containment gate as
+/// `remove_tree`: a link, the root, or anything outside it is refused. A file already gone is `Ok`.
+pub async fn remove_file(path: &Path, boundary_root: &Path) -> Result<(), RemoveTreeError> {
+    let path = path.to_path_buf();
+    let boundary_root = boundary_root.to_path_buf();
+    tokio::task::spawn_blocking(
+        move || match checked_canonical_path(&path, &boundary_root) {
+            ContainmentCheck::Ok(canonical) => match std::fs::remove_file(&canonical) {
+                Ok(()) => Ok(()),
+                Err(source) if source.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(source) => Err(RemoveTreeError::Io {
+                    path: canonical,
+                    source,
+                }),
+            },
+            ContainmentCheck::Missing => Ok(()),
+            ContainmentCheck::OutsideBoundary => Err(RemoveTreeError::OutsideBoundary),
+            ContainmentCheck::Unreadable(source) => Err(RemoveTreeError::Unreadable {
+                path,
+                source,
+                after_partial: false,
+            }),
+        },
+    )
+    .await
+    .unwrap_or(Err(RemoveTreeError::OutsideBoundary))
+}
+
 /// Outcome of the containment gate shared by removal and holder checks.
 pub enum ContainmentCheck {
     Missing,
@@ -163,3 +191,7 @@ fn log_retry(attempt: u32, path: &Path, source: &std::io::Error) {
         source.raw_os_error()
     );
 }
+
+#[cfg(test)]
+#[path = "remove_tree_tests.rs"]
+mod tests;
