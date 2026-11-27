@@ -29,10 +29,22 @@ const mondayOf = (ms) => {
 };
 
 function outFile() {
-  const at = process.argv.indexOf('--out');
-  if (at === -1) return path.join(repoRoot, 'docs', 'plan.html');
-  if (!process.argv[at + 1]) throw new Error('--out needs a file path');
-  return path.resolve(process.argv[at + 1]);
+  const usage = (why) => {
+    console.error(`${why}. Usage: plan-html.mjs [--out <file>]`);
+    process.exit(2);
+  };
+  const args = process.argv.slice(2);
+  let out = null;
+  for (let i = 0; i < args.length; i += 1) {
+    const a = args[i];
+    let value;
+    if (a === '--out') value = args[++i];
+    else if (a.startsWith('--out=')) value = a.slice(6);
+    else usage(`Unknown argument ${a}`);
+    if (!value || value.startsWith('-')) usage('--out needs a file path');
+    out = value;
+  }
+  return out ? path.resolve(out) : path.join(repoRoot, 'docs', 'plan.html');
 }
 
 function normalise(raw) {
@@ -101,14 +113,18 @@ function fetchReleases() {
 function epicOrder() {
   const lines = readFileSync(path.join(repoRoot, 'docs', 'PLAN.md'), 'utf8').split('\n');
   const at = lines.findIndex((line) => line.startsWith('**v1 scope'));
-  const order = [];
-  for (const line of at === -1 ? [] : lines.slice(at + 1)) {
-    const m = /^\|\s*#(\d+)\s*\|/.exec(line);
-    if (m) order.push(Number(m[1]));
-    else if (order.length > 0) break;
+  const warn = () => console.warn('docs/PLAN.md has no v1 epic table after "**v1 scope"; epics fall back to issue number.');
+  if (at === -1) { warn(); return new Map(); }
+  let i = at + 1;
+  while (i < lines.length && lines[i].trim() === '') i += 1;
+  if (!/^\|\s*Epic\s*\|/.test(lines[i] ?? '')) { warn(); return new Map(); }
+  const rank = new Map();
+  for (i += 1; i < lines.length && lines[i].startsWith('|'); i += 1) {
+    const m = /^\|\s*#(\d+)\s*\|/.exec(lines[i]);
+    if (m && !rank.has(Number(m[1]))) rank.set(Number(m[1]), rank.size);
   }
-  if (order.length === 0) console.warn('docs/PLAN.md has no v1 epic table after "**v1 scope"; epics fall back to issue number.');
-  return new Map(order.map((n, i) => [n, i]));
+  if (rank.size === 0) warn();
+  return rank;
 }
 
 function weeklyThroughput(now) {
