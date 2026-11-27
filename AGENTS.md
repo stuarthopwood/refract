@@ -33,7 +33,7 @@ On 2026-09-30 a bare `C:` target made `rm -rf` delete this repository (a bare dr
 
 ## Testing (HARD RULE, V1, Stuart 2026-11-11)
 
-The prototyping no-new-tests phase is over (epic #1918). New PRs carry unit tests co-located with the system under test, using the shared test utilities. Reviewers (including `test-reviewer`) block a PR that leaves new or changed logic untested. Keep existing tests passing. Full conventions land with #1908 in `docs/development/code-organisation.md`.
+The prototyping no-new-tests phase is over (epic #1918). New PRs carry unit tests co-located with the system under test, using the shared test utilities. Reviewers (including `test-reviewer`) block a PR that leaves new or changed logic untested. Keep existing tests passing. Full conventions land with #1908 in `docs/development/code-organisation.md`. Test tiers and the top-3 risk areas for the backfill: `docs/development/test-strategy.md`.
 
 ## Docs-only PRs are always merged (HARD RULE)
 
@@ -51,7 +51,8 @@ The prototyping no-new-tests phase is over (epic #1918). New PRs carry unit test
 
 The Tauri v2 Rust build (`src-tauri/`) is Refract's only build; the Electron build was deleted (#796). `src/renderer` and `src/shared` continue normally.
 
-- GitHub Actions CI is disabled (2026-10-14). `pnpm ci:local` runs every `run:` step of `.github/workflows/ci.yml` locally and is the gate: typecheck, tests, the `check:*` scripts, `check:parity`, and `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`.
+- GitHub Actions runs only a fast tier, on pull requests to `main` (`.github/workflows/pr-fast.yml`, #1807): `pnpm typecheck`, `pnpm test`, and the `check:*` scripts that need no cargo or Windows, on `ubuntu-latest`. No cargo, no Windows runner, no push or nightly trigger (the full Windows suite used up the Actions minutes on 2026-10-14). `pnpm test:fast` runs the local fast tier (`vitest --changed` plus the `check:*` scripts, 3-minute budget).
+- `pnpm ci:local` is the merge gate. It runs every `run:` step of `.github/ci-local.yml` (outside `.github/workflows/` so Actions never runs it): typecheck, tests, the `check:*` scripts, `check:parity`, `check:ui-text`, `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`, and the debug Tauri build. Strategy: `docs/development/test-strategy.md`.
 - Constitution Principle V ("Tauri Security Baseline") is binding.
 - Per-lane Rust file ownership lives in `docs/PLAN.md`'s Phase R table.
 - Details, including why `check:mermaid-contrast` is not in the gate (#388): `docs/rust-build.md`.
