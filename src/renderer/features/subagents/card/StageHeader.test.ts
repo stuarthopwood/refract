@@ -36,8 +36,8 @@ describe('StageHeader', () => {
     })
 
     it('draws the outcome without truncate once the full text is asked for', () => {
-      expect(render({})).toMatch(/class="[^"]*\btruncate\b[^"]*"[^>]*data-stage-outcome/)
-      expect(render({ fullOutcome: true })).not.toMatch(/class="[^"]*\btruncate\b[^"]*"[^>]*data-stage-outcome/)
+      expect(render({})).toMatch(/data-stage-outcome[^>]*>\s*<div[^>]*\[&amp;_p\]:truncate/)
+      expect(render({ fullOutcome: true })).not.toMatch(/data-stage-outcome[^>]*>\s*<div[^>]*\[&amp;_p\]:truncate/)
     })
   })
 })

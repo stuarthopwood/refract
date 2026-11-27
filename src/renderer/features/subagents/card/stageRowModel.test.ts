@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SubAgentItem } from '../viewModel/types'
-import { stageAccessibleName, stageAgentItemClass, stageAgentsGridClass, stageRowModel, type StageRowView } from './stageRowModel'
+import { stageAccessibleName, stageAgentsGridClass, stageRowModel, type StageRowView } from './stageRowModel'
 
 const agent = (name: string, overrides: Partial<SubAgentItem> = {}): SubAgentItem => ({
   id: name,
@@ -85,11 +85,11 @@ describe('stage agent layout classes', () => {
     const grid = stageAgentsGridClass(2)
     expect(grid).toContain('@md:grid-cols-2')
     expect(grid).not.toMatch(/(^|\s)md:/)
-    expect(stageAgentItemClass(2)).toContain('@md:even:')
+    expect(grid).toContain('@md:grid')
   })
 
   it('leaves a one-agent or empty Stage as a single column', () => {
     expect(stageAgentsGridClass(0)).toBeUndefined()
-    expect(stageAgentItemClass(0)).toBeUndefined()
+    expect(stageAgentsGridClass(1)).toBeUndefined()
   })
 })

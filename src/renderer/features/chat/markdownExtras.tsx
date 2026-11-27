@@ -14,6 +14,8 @@ export interface MarkdownOptions {
   resolveImage?: (url: string) => Promise<string | null>
   // See `inert` on Markdown's props.
   inert?: boolean
+  // See `embedded` on Markdown's props.
+  embedded?: boolean
 }
 
 export const MarkdownOptionsContext = React.createContext<MarkdownOptions>({ githubStyle: false })

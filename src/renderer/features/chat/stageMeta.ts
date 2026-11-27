@@ -121,18 +121,40 @@ export function extractAgentRefs(text: string): string[] {
 }
 
 const RESULT_SUMMARY_MAX_CHARS = 120
-const LEADING_MARKDOWN_MARKER_RE = /^[#*_`]+\s*/
+// Block markers only: inline emphasis and code survive so the card can render the line as Markdown.
+const LEADING_BLOCK_MARKER_RE = /^(?:#{1,6}(?:\s+|$)|>\s*|[-*+](?:\s+|$))+/
+// Only a wrapper at the very start or end is transport: a `<task-result>` quoted inside the body (a fenced example, say) is content.
+// The opening tag may be cut off mid-attribute (no `>`), but stays on its line so a stray `>` further down cannot widen the match.
+const LEADING_WRAPPER_RE = /^\s*<task-result(?![\w-])[^>\n]*>?/i
+const TRAILING_WRAPPER_RE = /<\/task-result\s*>\s*$/i
 
-/** An agent's one-line result preview, shown when its owning Stage is expanded. */
+/** An agent's result text with OMP's `<task-result>` wrapper removed from its ends. */
+export function stripTaskResultWrapper(result: string): string {
+  return result.replace(LEADING_WRAPPER_RE, '').replace(TRAILING_WRAPPER_RE, '').trim()
+}
+
+/** An agent's one-line result preview as Markdown (wrapper and block markers removed), shown when its owning Stage is expanded. */
 export function extractResultSummary(result: string): string | undefined {
-  for (const rawLine of result.split('\n')) {
+  for (const rawLine of stripTaskResultWrapper(result).split('\n')) {
     const line = rawLine.trim()
     if (line.length === 0) continue
-    const stripped = line.replace(LEADING_MARKDOWN_MARKER_RE, '').trim()
+    const stripped = line.replace(LEADING_BLOCK_MARKER_RE, '').trim()
     if (stripped.length === 0) continue
     return stripped.length <= RESULT_SUMMARY_MAX_CHARS ? stripped : `${stripped.slice(0, RESULT_SUMMARY_MAX_CHARS).trimEnd()}\u2026`
   }
   return undefined
+}
+
+// One level of balanced parentheses is allowed in the URL (`https://x.test/a_(b)`), and an optional title after it.
+const INLINE_LINK_RE = /!?\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)/g
+// A marker is only dropped when it pairs with a closing one, so a lone `*` (`2 * 3`) or `__` survives. Code comes first so its
+// contents are never read as emphasis; `_` and `__` also need a word boundary so `snake_case_name` is left alone.
+const PAIRED_MARKER_RE =
+  /`([^`]+)`|\*\*(?=\S)(.+?)(?<=\S)\*\*|~~(?=\S)(.+?)(?<=\S)~~|(?<!\w)__(?=\S)(.+?)(?<=\S)__(?!\w)|\*(?=[^\s*])([^*]+?)(?<=\S)\*|(?<!\w)_(?=[^\s_])([^_]+?)(?<=\S)_(?!\w)/g
+
+/** `extractResultSummary` text as plain words, for tooltips, accessible names and rows that do not render Markdown. */
+export function plainSummary(markdown: string): string {
+  return markdown.replace(INLINE_LINK_RE, '$1').replace(PAIRED_MARKER_RE, (_match, ...groups: Array<string | undefined>) => groups.slice(0, 6).find((g) => g != null) ?? '')
 }
 
 export function resolveStageDependencies<

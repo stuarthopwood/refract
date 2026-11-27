@@ -159,14 +159,15 @@ describe('PanelTree accessibility', () => {
       createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
     )
     const rowTokens = html.match(/<div[^>]*aria-level="2"[^>]*>/)![0].match(/class="([^"]*)"/)![1]!.split(' ')
-    const outcomeTokens = html.match(/<p[^>]*class="([^"]*)"[^>]*>Found 3 issues<\/p>/)![1]!.split(' ')
+    // The outcome is shared Markdown now: the clamp class sits on its wrapper and targets the paragraph inside.
+    const outcomeTokens = html.match(/<div[^>]*class="([^"]*)"[^>]*><p[^>]*>Found 3 issues<\/p>/)![1]!.split(' ')
     // The markup escapes `&` in the attribute, so the arbitrary variant reads `[&amp;_p]`.
     expect(rowTokens).toContain('aria-selected:[&amp;_p]:line-clamp-none')
     expect(rowTokens).toContain('focus:[&amp;_p]:line-clamp-none')
     const unscoped = rowTokens.filter((token) => token.endsWith('line-clamp-none') && !token.startsWith('aria-selected:') && !token.startsWith('focus:'))
     expect(unscoped).toEqual([])
-    expect(outcomeTokens).toContain('line-clamp-2')
-    expect(outcomeTokens).not.toContain('line-clamp-none')
+    expect(outcomeTokens).toContain('[&amp;_p]:line-clamp-2')
+    expect(outcomeTokens).not.toContain('[&amp;_p]:line-clamp-none')
   })
 
   it('lists every file and the whole outcome in the detail pane, with no "+N" fold', () => {
@@ -174,6 +175,24 @@ describe('PanelTree accessibility', () => {
     expect(html).toContain('Found 3 issues')
     expect(html).toContain('f.ts')
     expect(html).not.toContain('<button')
+  })
+
+  describe('given an outcome with a link', () => {
+    const linked = { ...detailed, whatItDid: 'Fixed in [the PR](https://x.test/pr)' }
+
+    it('makes the link followable in the detail pane', () => {
+      const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AgentDetailSummary, { agent: linked })))
+      expect(html).toMatch(/<a[^>]*href="https:\/\/x\.test\/pr"/)
+    })
+
+    it('keeps the link as plain text in the clamped tree row, so no control nests inside the row', () => {
+      const rows = buildPanelRows([{ ...stage!, agents: [linked, stage!.agents[1]!] }], () => true)
+      const html = renderToStaticMarkup(
+        createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
+      )
+      expect(html).toContain('the PR')
+      expect(html).not.toContain('href="https://x.test/pr"')
+    })
   })
 
   it('renders nothing for an agent with neither outcome nor files', () => {

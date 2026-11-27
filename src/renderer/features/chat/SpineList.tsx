@@ -1,5 +1,6 @@
 // Vertical guide rail down the left edge of a related-rows list; the group header draws the first node.
-// State is carried by each row's icon plus word, never the spine (#565).
+// State is carried by each row's icon plus word, never the spine (#565). `bare` drops the rail and ticks: nesting is shown by fill (#2235),
+// except in forced colours, where fills are dropped and the rail is the only nesting cue left.
 import * as React from 'react'
 import { cn } from '@/lib/utils'
 
@@ -14,19 +15,20 @@ export interface SpineListProps {
   children: React.ReactNode
   /** Row gap: 4px `member` (default) or 8px `stage` (between stages). */
   gap?: 'member' | 'stage'
-  /** Opt-in: each row gets a short horizontal tick from the rail into its `h-5` icon line (the `px-2` gap). */
+  /** Opt-in: each row gets a short horizontal tick from the rail into its `h-5` icon line (the `px-2` gap). Ignored when `bare`. */
   elbows?: boolean
+  bare?: boolean
   className?: string
 }
 
-export function SpineList({ children, gap = 'member', elbows = false, className }: SpineListProps) {
+export function SpineList({ children, gap = 'member', elbows = false, bare = false, className }: SpineListProps) {
   return (
     // aria-live off: a member arriving in an expanded running group must not be announced individually.
     <ol
       aria-live="off"
-      className={cn('ml-4 border-l border-divider pt-1', gap === 'stage' ? 'space-y-2' : 'space-y-1', className)}
+      className={cn(bare ? 'forced-colors:border-l forced-colors:border-divider' : 'ml-4 border-l border-divider', 'pt-1', gap === 'stage' ? 'space-y-2' : 'space-y-1', className)}
     >
-      <SpineElbowsContext.Provider value={elbows}>{children}</SpineElbowsContext.Provider>
+      <SpineElbowsContext.Provider value={elbows && !bare}>{children}</SpineElbowsContext.Provider>
     </ol>
   )
 }

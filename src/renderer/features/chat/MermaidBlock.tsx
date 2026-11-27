@@ -9,6 +9,7 @@ import { InlineDisclosure } from '@/components/InlineDisclosure'
 import { actionMenuItem, menuSeparator } from '@/features/palette/menuItems'
 import { notify, useThemeKey } from '@/state'
 import { withResolvedTokens } from '@/lib/resolveCssColour'
+import { cn } from '@/lib/utils'
 import { buildMermaidThemeVariables, getMermaidThemeCSS } from '../../../shared/mermaidTheme'
 import { CodeBlock } from './CodeBlock'
 import { copyLinkText } from './linkClipboard'
@@ -71,7 +72,7 @@ async function diagramPng(svg: string, image: HTMLImageElement | null): Promise<
   return svgToPngBase64(svg, background)
 }
 
-export function MermaidBlock({ code, streaming }: { code: string; streaming: boolean }) {
+export function MermaidBlock({ code, streaming, embedded = false }: { code: string; streaming: boolean; embedded?: boolean }) {
   const themeKey = useThemeKey()
   const [showSource, setShowSource] = React.useState(false)
   const [result, setResult] = React.useState<{
@@ -146,7 +147,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
   }, [code, themeKey, streaming, reactId])
 
   if (streaming) {
-    return <CodeBlock code={code} lang="mermaid" streaming />
+    return <CodeBlock code={code} lang="mermaid" streaming embedded={embedded} />
   }
   if (error) {
     return (
@@ -154,12 +155,12 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
         <p role="status" className="text-xs text-muted-foreground">
           Diagram failed to render: {error}
         </p>
-        <CodeBlock code={code} lang="mermaid" />
+        <CodeBlock code={code} lang="mermaid" embedded={embedded} />
       </div>
     )
   }
   if (!result) {
-    return <CodeBlock code={code} lang="mermaid" />
+    return <CodeBlock code={code} lang="mermaid" embedded={embedded} />
   }
 
   const { svg } = result
@@ -208,7 +209,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
         role="img"
         aria-label={accessibleName}
         aria-describedby={describedBy}
-        className="max-w-full rounded-lg border border-border bg-card p-2"
+        className={cn('max-w-full rounded-lg bg-card p-2', embedded ? 'forced-colors:border' : 'border border-border')}
       />
       {result.desc && (
         <span id={descId} className="sr-only">
@@ -233,7 +234,7 @@ export function MermaidBlock({ code, streaming }: { code: string; streaming: boo
         contentId={sourceId}
         label={showSource ? `Hide source for ${accessibleName}` : `Show source for ${accessibleName}`}
       >
-        <CodeBlock code={code} lang="mermaid" />
+        <CodeBlock code={code} lang="mermaid" embedded={embedded} />
       </InlineDisclosure>
     </TranscriptMenu>
   )

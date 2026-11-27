@@ -10,6 +10,7 @@ import { DurationColumn } from '../../chat/toolRowParts'
 import { SubagentStatusGlyph, subagentStatusTextClass } from '../subagentStatus'
 import type { StageItem } from '../viewModel/types'
 import { AgentChip } from './AgentChip'
+import { ResultMarkdown } from './ResultMarkdown'
 import { ParallelBadge } from './ParallelBadge'
 import { stageAccessibleName, stageRowModel } from './stageRowModel'
 
@@ -35,11 +36,11 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
   const { status, counts, durationMs, cleanTitle } = stage
   const label = stageHeading(stage.number, cleanTitle)
   const speechLabel = stageHeading(stage.number, cleanTitle, true)
-  const { chipAgent, parallelCount, outcome, rawLabel } = stageRowModel(stage)
+  const { chipAgent, parallelCount, outcome, outcomePlain, rawLabel } = stageRowModel(stage)
   const colorClass = subagentStatusTextClass(counts)
   return (
     // A tint, not a left border, marks the running Stage; the glyph and word still carry the status (#1927).
-    <div className={cn('flex min-w-0 items-start gap-2 rounded px-2', status === 'running' && 'bg-state-working-tint')}>
+    <div className={cn('flex min-w-0 items-start gap-2 rounded px-2', status === 'running' && 'bg-state-working-tint forced-colors:border')}>
       {/* Status is in the row's accessible name; the glyph keeps it from being colour-only. */}
       <span aria-hidden="true" className={ICON_SLOT_CLASS}>
         <SubagentStatusGlyph status={status} />
@@ -60,16 +61,16 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
               <ParallelBadge count={parallelCount} />
             </div>
             {outcome && (
-              <span className={cn('text-xs text-muted-foreground', outcomeIsClamped(expanded, fullOutcome) ? 'truncate' : 'break-words')} data-stage-outcome>
-                {outcome}
-              </span>
+              <div className="text-xs text-muted-foreground" data-stage-outcome>
+                <ResultMarkdown text={outcome} lines={outcomeIsClamped(expanded, fullOutcome) ? 1 : 'all'} />
+              </div>
             )}
           </div>
         </TooltipTrigger>
         <TooltipContent className="flex-col items-start gap-1 break-words">
           <span>{label}</span>
           {rawLabel && <span className="text-muted-foreground">{rawLabel}</span>}
-          {outcome && <span>{outcome}</span>}
+          {outcomePlain && <span>{outcomePlain}</span>}
         </TooltipContent>
       </Tooltip>
       {/* The shared duration column (#2189), kept when the Stage has no duration so the trailing control stays in one x. */}

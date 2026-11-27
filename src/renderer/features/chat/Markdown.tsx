@@ -318,7 +318,7 @@ const components: Components & Record<typeof ITEM_REF_TAG, (props: { children?: 
   // Unwrapped: `code` owns block rendering, avoiding nested <pre>.
   pre: ({ children }) => <>{children}</>,
   code({ className, children, node: _node, ...props }) {
-    const { variant } = React.useContext(MarkdownOptionsContext)
+    const { variant, embedded } = React.useContext(MarkdownOptionsContext)
     const chipClass = variant === 'chat' ? 'bg-chat-code-bg text-chat-code-fg' : undefined
     const streaming = React.useContext(StreamingContext)
     const insideLink = React.useContext(InsideLinkContext)
@@ -353,9 +353,9 @@ const components: Components & Record<typeof ITEM_REF_TAG, (props: { children?: 
       return <InlineCode {...props} className={chipClass}>{children}</InlineCode>
     }
     // The advisor's quoted note wraps instead of scrolling (#558).
-    if (lang === 'advisor-note') return <CodeBlock code={text} lang={null} wrap streaming={streaming} />
-    if (lang === 'mermaid') return <MermaidBlock code={text} streaming={streaming} />
-    return <CodeBlock code={text} lang={lang} streaming={streaming} />
+    if (lang === 'advisor-note') return <CodeBlock code={text} lang={null} wrap streaming={streaming} embedded={embedded} />
+    if (lang === 'mermaid') return <MermaidBlock code={text} streaming={streaming} embedded={embedded} />
+    return <CodeBlock code={text} lang={lang} streaming={streaming} embedded={embedded} />
   }
 }
 
@@ -374,6 +374,8 @@ interface MarkdownProps {
   githubStyle?: boolean
   // Chat transcript messages pass `chat` to mute inline-code chips; omitted keeps the shared chip.
   variant?: 'default' | 'chat'
+  // Text inside a card that already draws its own outline: fenced code blocks drop their border and keep only the fill step.
+  embedded?: boolean
   // Pull requests view only: resolves an image URL to a `data:` URL; omitted means images stay alt-text links.
   resolveImage?: (url: string) => Promise<string | null>
 }
@@ -381,11 +383,11 @@ interface MarkdownProps {
 // Agent/tool text is untrusted: react-markdown yields a hast tree (never raw HTML) and
 // rehype-sanitize strips anything outside its default schema. `streaming` goes via context so
 // `components` stays static.
-function MarkdownImpl({ text, id, streaming = false, inert = false, className, githubStyle = false, variant = 'default', resolveImage }: MarkdownProps) {
+function MarkdownImpl({ text, id, streaming = false, inert = false, className, githubStyle = false, variant = 'default', embedded = false, resolveImage }: MarkdownProps) {
   // Replaces (not extends) mdast's default `clobberPrefix`: rehype-sanitize already adds `user-content-`.
   const footnotePrefix = React.useMemo(() => `${id.replace(/[^a-zA-Z0-9_-]/g, '-')}-`, [id])
   const remarkRehypeOptions = React.useMemo(() => ({ clobberPrefix: footnotePrefix }), [footnotePrefix])
-  const options = React.useMemo(() => ({ githubStyle, variant, resolveImage, inert }), [githubStyle, variant, resolveImage, inert])
+  const options = React.useMemo(() => ({ githubStyle, variant, resolveImage, inert, embedded }), [githubStyle, variant, resolveImage, inert, embedded])
   return (
     <StreamingContext.Provider value={streaming || inert}>
       <MarkdownOptionsContext.Provider value={options}>

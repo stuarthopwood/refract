@@ -6,7 +6,7 @@ import { openHostedPanel } from '../right-pane/hosted-panel-actions'
 import { IconButton } from '@/components/IconButton'
 import { FadeCollapse } from '@/components/FadeCollapse'
 import { StageHeader } from '../subagents/card/StageHeader'
-import { stageAccessibleName, stageAgentItemClass, stageAgentsGridClass, stageRowModel } from '../subagents/card/stageRowModel'
+import { stageAccessibleName, stageAgentsGridClass, stageRowModel } from '../subagents/card/stageRowModel'
 import type { SubAgentItem } from '../subagents/viewModel'
 import { StageUsesLine } from './StageDependencies'
 import { SpineItem, SpineList } from './SpineList'
@@ -120,9 +120,10 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
       <StageUsesLine dependencies={stage.view.dependencies} sessionId={sessionId} className="pl-8 pr-2" />
       <FadeCollapse show={expanded}>
         <div ref={contentRef}>
-          <SpineList elbows className={stageAgentsGridClass(parallelCount)}>
+          {/* pl-8 = icon slot plus gap, so the agent panels start under the Stage title; no rail or elbows (#2235). */}
+          <SpineList bare className={cn('pl-8', stageAgentsGridClass(parallelCount))}>
             {stage.items.map((item, index) => (
-              <SpineItem key={item.id} isNew={false} className={stageAgentItemClass(parallelCount)}>
+              <SpineItem key={item.id} isNew={false}>
                 <ChainAgentEntry item={item} agent={stage.view.agents[index]!} sessionId={sessionId} />
               </SpineItem>
             ))}

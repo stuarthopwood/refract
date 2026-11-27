@@ -5,11 +5,21 @@ import { describe, expect, it, vi } from 'vitest'
 
 // The real store needs `window`: mock it for ShimmerText (via CollapsedLine) and Markdown's code blocks.
 vi.mock('@/state', () => ({ useSettingsStore: (select: (s: { settings: object }) => unknown) => select({ settings: {} }) }))
-vi.mock('./Markdown', () => ({ CodeBlock: () => null, inferOutputBlock: (text: string) => ({ code: text, lang: 'text' }) }))
+// `Markdown` echoes its props so the card tests can assert it is the renderer used, with the options the card needs.
+vi.mock('./Markdown', async () => {
+  // vi.mock is hoisted above the file's imports, so the factory cannot see `createElement`; a dynamic import is the vitest-sanctioned way.
+  const { createElement: h } = await import('react')
+  return {
+    CodeBlock: ({ embedded }: { embedded?: boolean }) => h('i', { 'data-code': embedded ? 'embedded' : 'bordered' }),
+    inferOutputBlock: (text: string) => ({ code: text, lang: text.startsWith('{') ? 'json' : null }),
+    Markdown: ({ text, inert, embedded, className }: { text: string; inert?: boolean; embedded?: boolean; className?: string }) =>
+      h('span', { 'data-md': '', 'data-inert': String(inert), 'data-embedded': String(embedded), className }, text)
+  }
+})
 
 import type { TranscriptItem } from '../../../shared/model'
 import type { SubAgentItem } from '../subagents/viewModel'
-import { SubagentRow } from './SubagentRow'
+import { SubagentBody, SubagentRow } from './SubagentRow'
 
 type SubagentItem = Extract<TranscriptItem, { kind: 'subagent' }>
 
@@ -49,7 +59,8 @@ describe('SubagentRow card variant (#1928, FR-148)', () => {
     const html = render(agent({ role: 'Accessibility Gate', whatItDid: 'Flagged 1 minor badge contrast issue', duration: '3m 12s' }), 'card')
     expect(html).toContain('GateA11y')
     expect(html).toContain('Accessibility Gate')
-    expect(html).toMatch(/<p title="Flagged 1 minor badge contrast issue" class="[^"]*line-clamp-2/)
+    expect(html).toMatch(/<div title="Flagged 1 minor badge contrast issue" class="text-sm[^"]*">/)
+    expect(html).toContain('[&amp;_p]:line-clamp-2')
     expect(html).toContain('3m 12s')
   })
 
@@ -74,7 +85,7 @@ describe('SubagentRow card variant (#1928, FR-148)', () => {
     expect(html).toContain('running now')
     expect(html).toContain('>1 done<')
     expect(html).toContain('>+3 queued<')
-    expect(html).toContain('border-state-working-border')
+    expect(html).not.toContain('border-state-working-border')
     expect(html).not.toContain('aria-live')
   })
 
@@ -96,5 +107,50 @@ describe('SubagentRow card variant (#1928, FR-148)', () => {
     const html = render(agent({ filesTouched: [], triggeredBy: ' ' }), 'card')
     expect(html).not.toContain('Files touched')
     expect(html).not.toContain('fixes issue from')
+  })
+
+  it('draws no border of its own: the agent panel is a background step on the card (#2235)', () => {
+    const html = render(agent({ status: 'running', role: 'Gate', whatItDid: 'Done' }), 'card')
+    expect(html).toContain('bg-surface-subtle')
+    const tokens = [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) => match[1]!.split(' '))
+    expect(tokens).not.toContain('border')
+    // Forced colours drops fills, so the panel keeps a border there only.
+    expect(tokens).toContain('forced-colors:border')
+  })
+
+  it('renders the outcome through the shared Markdown, inert and embedded (#2242)', () => {
+    const html = render(agent({ whatItDid: 'Fixed **two** defects' }), 'card')
+    expect(html).toContain('data-md')
+    expect(html).toContain('data-inert="true"')
+    expect(html).toContain('data-embedded="true"')
+  })
+})
+
+describe('SubagentBody (#2235, #2242)', () => {
+  const open = (result?: string, defaultOpen = true) => {
+    const item = { ...ITEM, result } as SubagentItem
+    return renderToStaticMarkup(createElement(SubagentBody, { item, showGoal: false, defaultOpen }))
+  }
+
+  it('mounts neither the Prompt nor the Result until the disclosure is first opened', () => {
+    const closed = open('Done', false)
+    expect(closed).not.toContain('data-code')
+    expect(closed).not.toContain('data-md')
+    expect(closed).toContain('See input &amp; output')
+  })
+
+  it('uses the embedded (borderless) code block for the Prompt', () => {
+    expect(open()).toContain('data-code="embedded"')
+    expect(open()).not.toContain('data-code="bordered"')
+  })
+
+  it('renders a prose result as Markdown with the OMP wrapper removed, and keeps a structured result in a code block', () => {
+    const prose = open('<task-result id="A" agent="task" status="completed" duration="3m31s">\n## Done\nAll **good**\n</task-result>')
+    expect(prose).toContain('data-md')
+    expect(prose).not.toContain('task-result')
+    expect(prose).toContain('All **good**')
+    const json = open('{"ok":true}')
+    expect(json).not.toContain('data-md')
+    expect(json.match(/data-code="embedded"/g)).toHaveLength(2)
   })
 })
