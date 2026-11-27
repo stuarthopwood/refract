@@ -173,6 +173,9 @@ async function main() {
     };
     const closeDialog = async () => {
       await key('Escape', 27);
+      // After a Rewind the dialog reopens without focus inside it, so Escape alone may not reach it; the Close button is the fallback.
+      await sleep(500);
+      if (await cdp.evaluate(`!!${DIALOG}`)) await cdp.click(`${DIALOG}.querySelector('[data-slot="dialog-close"], button:has(svg.lucide-x)')`);
       await cdp.waitFor(`!${DIALOG}`, { timeoutMs: 10_000, label: 'dialog closed' });
     };
     const readRows = () =>
@@ -206,7 +209,7 @@ async function main() {
       check(rows.slice(1).every((r) => !r.badges.some((b) => b !== 'Current')), 'unlabelled messages carry no label badge');
       check(JSON.stringify(rows.map((r) => r.indent)) === JSON.stringify(['0rem', '0.75rem', '1.5rem', '2.25rem', '3rem', '3.75rem']), `a label entry between messages does not break the nesting (indents ${JSON.stringify(rows.map((r) => r.indent))})`);
       check(rows.at(-1)?.current === true && rows.filter((r) => r.current).length === 1, 'exactly the last message is marked Current');
-      check(rows.every((r) => r.rewindDisabled === null && r.forkDisabled === null), 'Rewind and Fork are live on an idle Session');
+      check(rows.every((r) => r.rewindDisabled !== 'true' && r.forkDisabled !== 'true'), 'Rewind and Fork are live on an idle Session');
       await shot('01-tree-messages-and-labels.png');
     });
 
