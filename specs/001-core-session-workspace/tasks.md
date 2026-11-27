@@ -5937,6 +5937,7 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 
 - [x] T722 [US1] #137 (FR-166): delete `features/status-bar/StatusBar.tsx` and its `App.tsx` mount; `lib/updateStatus.ts` gains `updateIndicator`, `updateAccessibleSuffix` and `updateMenuEntry`; `UserAvatar` gains `badge`; `ProfileItem.tsx` shows the dot, extends the accessible name and hosts `useUpdateNow`; `ProfileMenu.tsx` renders the update item from `updateMenuEntry`; `updateStatus.test.ts` covers each phase, the dot colours, the accessible suffix and the menu entry.
 - [x] T723 [US1] #1848 (FR-167): `ui/loading-overlay.tsx` centres its card both ways, `ui/skeleton.tsx` stops pulsing under reduced motion, `ScreenSection.tsx` and `SortableTable.tsx` show skeletons while loading; `loading-overlay.test.ts`, `ScreenSection.test.ts` and `SortableTable.test.ts` pin the markup; the Usage screen inherits it through those shared components. Refs #1848 (Sessions, Pull requests, Issues, Git, Settings and the chat pickers remain).
+
 ## Phase 125: Convergence (2026-11-27, #566 Reduce motion, FR-168)
 
 - [x] T724 [US1] #566: Rust `store/reduce_motion.rs` (`KEY`, `parse`, `set_reduce_motion`), `store/settings.rs` field `reduce_motion` read and written as `reduceMotion`, `ipc/settings_reduce_motion.rs` (`settings.setReduceMotion`), `shared/ipc.ts`, `shared/model.ts`, `tauri-bridge/index.ts`; Rust tests `absent_reads_as_follow_the_os` and `true_persists_and_non_booleans_are_rejected`, per FR-168 (a)
