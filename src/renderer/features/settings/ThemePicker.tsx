@@ -13,7 +13,7 @@ import { ThemeSwatchChip } from '@/components/ui/theme-swatch-chip'
 import { checkThemeContrast, describeWarning } from '@/lib/themeContrast'
 import { cn } from '@/lib/utils'
 import { useThemeEntries } from '@/lib/useThemeEntries'
-import { groupStartOffsets } from '@/lib/themeGroups'
+import { groupStartOffsets, rowIndex } from '@/lib/themeGroups'
 import type { ThemeEntry } from '@/lib/themeGroups'
 import { useThemeStore } from '@/state'
 import { useThemeFileActions } from './useThemeFileActions'
@@ -128,14 +128,14 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
           return (
             <div key={group.label} role="radiogroup" aria-labelledby={headingId} className="flex flex-col gap-1">
               <p id={headingId} className="px-2 pt-1 text-xs text-muted-foreground">{group.label} themes</p>
-              {group.entries.map((e, i) => renderRow(e, (groupStarts[g] ?? 0) + i))}
+              {group.entries.map((e, i) => renderRow(e, rowIndex(g, i, groupStarts, builtins.length)))}
             </div>
           )
         })}
         {customs.length > 0 && (
           <div role="radiogroup" aria-labelledby="theme-group-custom" className="flex flex-col gap-1">
             <p id="theme-group-custom" className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>
-            {customs.map((e, i) => renderRow(e, builtins.length + i))}
+            {customs.map((e, i) => renderRow(e, rowIndex(null, i, groupStarts, builtins.length)))}
           </div>
         )}
       </div>

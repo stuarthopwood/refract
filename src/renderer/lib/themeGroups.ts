@@ -37,3 +37,8 @@ export function groupStartOffsets(groups: ReadonlyArray<{ entries: readonly unkn
   }
   return starts
 }
+
+/** Focus index of a row: built-in groups offset by `starts`, customs follow every built-in (`groupIndex` null). */
+export function rowIndex(groupIndex: number | null, i: number, starts: readonly number[], builtinsLength: number): number {
+  return (groupIndex === null ? builtinsLength : (starts[groupIndex] ?? 0)) + i
+}
