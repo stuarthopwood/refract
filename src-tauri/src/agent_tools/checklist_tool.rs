@@ -243,6 +243,10 @@ fn do_get(
     acknowledge(list, base_rev);
     let changes = user_changes(list);
     issue_seen_rev(list, changes.seen_rev);
+    // A plain get has no quote to confirm receipt, so it counts as seen what its own result lists.
+    if base_rev.is_none() {
+        acknowledge(list, Some(changes.seen_rev));
+    }
     let items = list.items[start..]
         .iter()
         .filter(|i| item_id.is_none_or(|id| i.id == id))
