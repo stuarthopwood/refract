@@ -31,7 +31,8 @@ import type {
   Settings,
   SplitLayout,
   SubagentSummary,
-  TranscriptDisplaySettings,
+  TranscriptDisplayFlag,
+  ToolTargets,
   TranscriptItem,
 } from './model';
 import type { ImageContent, QueueKind, SideChatRecord, SlashCommandDescriptor } from './frames'; import type { ModelApi, RoleChangeSummary } from './ipc-model';
@@ -328,6 +329,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SPLIT: 'settings.setSplit',
   SETTINGS_SET_WATERMARK_ENABLED: 'settings.setWatermarkEnabled',
   SETTINGS_SET_TRANSCRIPT_DISPLAY: 'settings.setTranscriptDisplay',
+  SETTINGS_SET_TOOL_TARGETS: 'settings.setToolTargets',
   SETTINGS_SET_SHOW_SAMPLE_DATA: 'settings.setShowSampleData',
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'settings.setDetectImagePathsOnPaste',
   SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR: 'settings.setShowContextUsageBar',
@@ -568,7 +570,8 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setReadoutVisibility(kind: ReadoutKind, visible: boolean): Promise<Result<Settings>>;
     setSplit(layout: SplitLayout | null): Promise<Result<Settings>>;
     setWatermarkEnabled(enabled: boolean): Promise<Result<Settings>>;
-    setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<Result<Settings>>;
+    setTranscriptDisplay(field: TranscriptDisplayFlag, visible: boolean): Promise<Result<Settings>>;
+    setToolTargets(value: ToolTargets): Promise<Result<Settings>>;
     setShowSampleData(enabled: boolean): Promise<Result<Settings>>;
     setDetectImagePathsOnPaste(enabled: boolean): Promise<Result<Settings>>;
     setShowContextUsageBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1082 (spec 004 FR-034).

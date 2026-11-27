@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { useSettingsStore } from '@/state'
+import { DEFAULT_TRANSCRIPT_DISPLAY, isToolTargets, type ToolTargets } from '../../../shared/transcriptDisplay'
 import { cn } from '@/lib/utils'
 import { InlineCode } from '@/components/ui/inline-code'
 import { SummaryWrapContext } from './CollapsedLine'
@@ -12,6 +13,31 @@ import { toolAriaPrefix } from './toolVerbs'
 // FR-012: "Show tool names on rows" (`transcriptDisplay.toolNames`), off by default.
 export function useShowToolNames(): boolean {
   return useSettingsStore((state) => state.settings.transcriptDisplay?.toolNames === true)
+}
+
+// #1758: "Tool targets" (`transcriptDisplay.toolTargets`): hide the target, show it in the row's tooltip, or show it in the row.
+export function useToolTargets(): ToolTargets {
+  return useSettingsStore((state) => {
+    const value = state.settings.transcriptDisplay?.toolTargets
+    return isToolTargets(value) ? value : DEFAULT_TRANSCRIPT_DISPLAY.toolTargets
+  })
+}
+
+// The row summary's target chip (Show only) and the row tooltip text (the raw tool id, plus the full target on Hover). Hide and
+// Hover keep the target out of the row, but the accessible name still carries it (`toolAriaHead`). `tooltipInName` is true when
+// that name already says the whole Hover tooltip (the target, and the raw id while it is shown), so the tooltip is not read twice.
+export function toolTargetDisplay(
+  mode: ToolTargets,
+  rawId: string,
+  target: string | undefined,
+  rawIdInName: boolean
+): { chip: React.ReactNode | undefined; tooltip: string; tooltipInName: boolean } {
+  const hoverTarget = mode === 'hover' && !!target
+  return {
+    chip: mode === 'show' ? toolTargetChip(target) : undefined,
+    tooltip: hoverTarget ? `${rawId}: ${target}` : rawId,
+    tooltipInName: hoverTarget && rawIdInName
+  }
 }
 
 // FR-007: a non-empty intent is the label; whitespace-only counts as absent.
@@ -79,14 +105,40 @@ export function toolRowSummary(rawId: string | undefined, target: React.ReactNod
   return <RawIdSummary rawId={rawId}>{hasTarget ? target : undefined}</RawIdSummary>
 }
 
-// FR-001: the status icon trails the row, ahead of the duration or counts (`rest`).
-export function toolRowMeta(status: RowStatus, rest: React.ReactNode | undefined): React.ReactNode {
+// One duration column for every row that ends in a status icon (#2189). Wide enough for "39.8s" and "1m 32s"; a longer
+// value widens it rather than overlapping the icon. Right-aligned, so the icon to its left sits in one x on every row.
+const DURATION_COLUMN_CLASS = 'inline-block min-w-[6ch] shrink-0 whitespace-nowrap text-right tabular-nums'
+
+export function DurationColumn({ className, children, ...rest }: React.ComponentProps<'span'>) {
   return (
-    <span className="inline-flex h-5 items-center gap-1 align-top">
-      <StatusIcon status={status} />
-      {rest}
+    <span data-slot="row-duration" className={cn(DURATION_COLUMN_CLASS, className)} {...rest}>
+      {children}
     </span>
   )
+}
+
+// FR-001, FR-010, #2189: the trailing slot every status-bearing row shares: optional text (a group's "2 steps", a subagent's
+// status word) left of the icon, then the status icon, then the fixed duration column. A row with no duration keeps the empty
+// column, so only the duration sits between the icon and the chevron and every icon lines up.
+export function RowTrailing({ icon, lead, duration }: { icon: React.ReactNode; lead?: React.ReactNode; duration?: React.ReactNode }) {
+  return (
+    <span className="inline-flex h-5 items-center gap-1 align-top">
+      {lead}
+      {icon}
+      <DurationColumn>
+        {duration !== undefined && (
+          <>
+            <span className="sr-only">, </span>
+            {duration}
+          </>
+        )}
+      </DurationColumn>
+    </span>
+  )
+}
+
+export function toolRowMeta(status: RowStatus, lead: React.ReactNode | undefined, duration: string | undefined): React.ReactNode {
+  return <RowTrailing icon={<StatusIcon status={status} />} lead={lead} duration={duration} />
 }
 
 // FR-015: spec 022's status prefix (only where the label cannot carry the status), the label, the

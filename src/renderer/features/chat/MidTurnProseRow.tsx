@@ -2,26 +2,10 @@ import { StickyNoteIcon } from 'lucide-react'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { Markdown } from './Markdown'
 import type { MidTurnProse } from './groupMidTurnProse'
+import { bodyAddsContent, firstLineSummary } from './midTurnProseText'
 
 // Lines an expanded mid-turn body shows before Show more (#1236 decision 4).
 const MID_TURN_CLAMP_LINES = 8
-
-// First meaningful line as plain text: skips blank, code-fence and rule lines, drops leading
-// heading/quote/list markers, turns `[text](url)` into `text`, and strips only paired emphasis
-// markers (so `update_session_state`, `__init__` and `~/repo` survive; `__` pairs only strip
-// around spaced text) and skips spaced rules such as `* * *`.
-function firstLineSummary(text: string): string {
-  const line = text.split(/\r?\n/).find((candidate) => {
-    const trimmed = candidate.trim()
-    return trimmed !== '' && !/^(```|~~~|([-*_])(\s*\2){2,}$)/.test(trimmed)
-  })
-  return (line ?? '')
-    .replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+)+/, '')
-    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/(\*\*|\*|`|~~)(.+?)\1/g, '$2')
-    .replace(/__(.+?)__/g, (whole, inner: string) => (/\s/.test(inner) ? inner : whole))
-    .trim()
-}
 
 // An assistant text followed by more of the turn (#1236, FR-117): a closed "Note" row so narration
 // between tool calls stops reading like the final reply or like thinking. Always one `CollapsedLine`
@@ -36,6 +20,7 @@ export function MidTurnProseRow({ group }: { group: MidTurnProse }) {
         icon={<StickyNoteIcon className="size-4 shrink-0 text-muted-foreground" />}
         label="Note"
         summary={firstLineSummary(item.text) || undefined}
+        bodyAddsContent={bodyAddsContent(item.text)}
         contentClassName={LABEL_COLUMN_CONTENT_CLASS}
         clampLines={MID_TURN_CLAMP_LINES}
       >

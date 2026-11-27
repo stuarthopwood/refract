@@ -159,7 +159,7 @@ mod typography;
 pub use typography::Typography;
 #[path = "transcript_display.rs"]
 mod transcript_display;
-pub use transcript_display::TranscriptDisplaySettings;
+pub use transcript_display::{ToolTargets, TranscriptDisplaySettings};
 #[path = "right_pane.rs"]
 pub(crate) mod right_pane;
 #[path = "settings_setters.rs"]
@@ -535,6 +535,18 @@ impl SettingsStore {
             "expandAnsweredAsks" => transcript_display.expand_answered_asks = visible,
             _ => return Ok(self.data.clone()),
         }
+        let next = Settings {
+            transcript_display,
+            ..self.data.clone()
+        };
+        self.persist_whole(next).await
+    }
+
+    /// Sets only `transcript_display.tool_targets`; a separate setter because the value is a
+    /// three-way enum, not a flag (#1758).
+    pub async fn set_tool_targets(&mut self, value: ToolTargets) -> std::io::Result<Settings> {
+        let mut transcript_display = self.data.transcript_display.clone();
+        transcript_display.tool_targets = value;
         let next = Settings {
             transcript_display,
             ..self.data.clone()

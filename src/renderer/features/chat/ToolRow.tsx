@@ -7,9 +7,9 @@ import { ToolCallDialog } from './ToolCallDialog'
 import { ToolIcon } from '@/components/ToolIcon'
 import { formatDuration, type RowStatus } from './toolStatus'
 import { resolveToolDisplay, toolRowLabel } from './toolDisplay'
-import { fullIntentLine, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, ToolTarget, toolTargetChip, useShowToolNames } from './toolRowParts'
+import { fullIntentLine, joinAriaParts, toolAriaHead, toolRowMeta, toolRowSummary, ToolTarget, toolTargetDisplay, useShowToolNames, useToolTargets } from './toolRowParts'
 import { commandRowText, sanitizeLines } from './formatToolCommand'
-import { callMeta, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
+import { callDuration, callLead, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { ToolRowKebab, ToolRowMenu } from './ToolRowMenu'
@@ -120,15 +120,17 @@ interface ToolCallRowProps {
   defaultOpen?: boolean
 }
 
-function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
+export function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaultOpen }: ToolCallRowProps) {
   const showToolNames = useShowToolNames()
+  const toolTargets = useToolTargets()
   const [open, setOpen] = React.useState(defaultOpen ?? false)
   const display = resolveToolDisplay(item.tool, item.target)
   const rawId = showToolNames ? display.rawId : undefined
   const label = toolRowLabel(item.tool, item.target, item.intent, item.status)
   const target = rowTarget(item)
+  const targetDisplay = toolTargetDisplay(toolTargets, display.rawId, target, rawId !== undefined)
   const failed = item.status === 'error'
-  const memberDuration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
+  const memberDuration = callDuration(item)
   const memberAriaLabel = joinAriaParts([
     toolAriaHead(item.status, display.entryTool, item.intent, label, rawId, target),
     diffStatAriaText(editStatForItem(item)),
@@ -138,13 +140,14 @@ function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange, defaul
     <ToolRowMenu item={item} open={open} onOpenChange={setOpen}>
     <CollapsedLine
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
-      iconTooltip={display.rawId}
+      iconTooltip={targetDisplay.tooltip}
+      iconTooltipInName={targetDisplay.tooltipInName}
       label={label}
       labelClassName={failed ? 'text-tool-row-error-fg' : undefined}
-      summary={toolRowSummary(rawId, toolTargetChip(target))}
+      summary={toolRowSummary(rawId, targetDisplay.chip)}
       summaryWrap={summaryWrap}
       wrapWhenOpen
-      meta={toolRowMeta(item.status, callMeta(item))}
+      meta={toolRowMeta(item.status, callLead(item), memberDuration)}
       triggerAriaLabel={memberAriaLabel}
       detail={item.status === 'error' ? errorLine(item) : undefined}
       open={open}
@@ -200,30 +203,32 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
   const first = group.items[0]!
   const display = resolveToolDisplay(first.tool, first.target)
   const rawId = useShowToolNames() ? display.rawId : undefined
+  const toolTargets = useToolTargets()
+  const targetDisplay = toolTargetDisplay(toolTargets, display.rawId, solo ? rowTarget(last) : undefined, rawId !== undefined)
   const toolLabel = toolRowLabel(first.tool, first.target, solo ? last.intent : undefined, verbPhase)
   const visibleLabel = solo ? toolLabel : `${toolLabel} \u00d7${group.items.length}`
   const failed = status === 'error'
   const summary =
     skillName !== undefined
       ? toolRowSummary(rawId, <bdi>{skillName}</bdi>)
-      : toolRowSummary(rawId, solo ? toolTargetChip(rowTarget(last)) : undefined)
+      : toolRowSummary(rawId, solo ? targetDisplay.chip : undefined)
   const totalDurationMs = group.items.reduce((sum, item) => sum + (item.durationMs ?? 0), 0)
   const allHaveDuration = group.items.every((item) => item.durationMs != null)
   const totalDuration = !isRunning && allHaveDuration ? formatDuration(totalDurationMs) : undefined
   const meta = toolRowMeta(
     status,
     solo
-      ? callMeta(last)
+      ? callLead(last)
       : joinMetaParts([
           failedCount > 0 ? <span className="text-tool-row-error-fg">{failedCount} failed</span> : undefined,
           interruptedCount > 0 ? <span>{interruptedCount} interrupted</span> : undefined,
-          cancelledCount > 0 ? <span>{cancelledCount} stopped</span> : undefined,
-          totalDuration
-        ])
+          cancelledCount > 0 ? <span>{cancelledCount} stopped</span> : undefined
+        ]),
+    solo ? callDuration(last) : totalDuration
   )
 
   const soloSummaryText = skillName !== undefined ? skillName : rowTarget(last)
-  const soloDurationText = last.status !== 'running' && last.durationMs != null ? formatDuration(last.durationMs) : undefined
+  const soloDurationText = callDuration(last)
   const triggerAriaLabel = solo
     ? joinAriaParts([
         toolAriaHead(status, display.entryTool, last.intent, toolLabel, rawId, soloSummaryText),
@@ -243,7 +248,8 @@ export function ToolGroupRow({ group, summaryWrap, shimmer }: ToolGroupRowProps)
     <ToolRowMenu item={solo ? last : undefined} open={open} onOpenChange={setOpen}>
     <CollapsedLine
       icon={<ToolIcon icon={display.icon} tone={failed ? 'error' : 'muted'} />}
-      iconTooltip={display.rawId}
+      iconTooltip={targetDisplay.tooltip}
+      iconTooltipInName={targetDisplay.tooltipInName && skillName === undefined}
       label={visibleLabel}
       open={open}
       onOpenChange={setOpen}

@@ -3,6 +3,7 @@ import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import { useSettingsStore } from '@/state'
 import { useUsageStore } from '@/state/usage-store'
+import { ToolTargetsRow } from './ToolTargetsRow'
 import { useEffect } from 'react'
 
 export function ChatDisplaySection() {
@@ -60,6 +61,7 @@ export function ChatDisplaySection() {
           checked={transcriptDisplay.toolNames}
           onCheckedChange={(checked) => void setTranscriptDisplay('toolNames', checked)}
         />
+        <ToolTargetsRow />
         <SettingSwitchRow
           id="transcript-display-expand-answered-asks"
           label="Expand answered questions"

@@ -41,15 +41,15 @@ export function diffStatAriaText(stat: { added: number; removed: number } | unde
   if (!stat) return undefined
   return `${stat.added} ${stat.added === 1 ? 'line' : 'lines'} added, ${stat.removed} ${stat.removed === 1 ? 'line' : 'lines'} removed`
 }
-export function callMeta(item: ToolItem): React.ReactNode | undefined {
+// The text left of the status icon (an edit's "+N -M"); the duration has its own fixed column (#2189).
+export function callLead(item: ToolItem): React.ReactNode | undefined {
   const stat = editStatForItem(item)
-  const duration = item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
-  return joinMetaParts([
-    stat ? (
-      <span aria-hidden="true" className="tabular-nums">
-        +{stat.added} -{stat.removed}
-      </span>
-    ) : undefined,
-    duration
-  ])
+  return stat ? (
+    <span aria-hidden="true" className="tabular-nums">
+      +{stat.added} -{stat.removed}
+    </span>
+  ) : undefined
+}
+export function callDuration(item: ToolItem): string | undefined {
+  return item.status !== 'running' && item.durationMs != null ? formatDuration(item.durationMs) : undefined
 }

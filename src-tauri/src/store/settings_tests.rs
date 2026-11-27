@@ -102,6 +102,46 @@ async fn set_transcript_display_persists_across_a_reopen() {
 }
 
 #[tokio::test]
+async fn tool_targets_defaults_to_hover_and_corrects_unknown_values() {
+    let fresh = open_scratch_store(None).await;
+    assert_eq!(
+        fresh.get().transcript_display.tool_targets,
+        ToolTargets::Hover
+    );
+    for bad in [json!("sideways"), json!(3), Value::Null] {
+        let store = open_scratch_store(Some(json!({
+            "version": 1, "approvalMode": "ask", "sessionReadout": {}, "split": null,
+            "theme": "dark", "watermarkEnabled": true,
+            "transcriptDisplay": { "thinking": true, "toolCalls": true, "toolTargets": bad }
+        })))
+        .await;
+        assert_eq!(
+            store.get().transcript_display.tool_targets,
+            ToolTargets::Hover
+        );
+    }
+}
+
+#[tokio::test]
+async fn set_tool_targets_persists_across_a_reopen_and_leaves_the_flags_alone() {
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let mut first = SettingsStore::open(&dir).await.unwrap();
+    first
+        .set_transcript_display("thinking", false)
+        .await
+        .unwrap();
+    let after = first.set_tool_targets(ToolTargets::Hide).await.unwrap();
+    assert_eq!(after.transcript_display.tool_targets, ToolTargets::Hide);
+    assert!(!after.transcript_display.thinking);
+    let reopened = SettingsStore::open(&dir).await.unwrap();
+    assert_eq!(
+        reopened.get().transcript_display.tool_targets,
+        ToolTargets::Hide
+    );
+}
+
+#[tokio::test]
 async fn expand_answered_asks_defaults_on_and_survives_a_partial_transcript_display() {
     let store = open_scratch_store(None).await;
     assert!(store.get().transcript_display.expand_answered_asks);

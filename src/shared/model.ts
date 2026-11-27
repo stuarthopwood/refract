@@ -107,7 +107,7 @@ export interface Settings {
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; showHidden: boolean; collapsedParentIds: string[]; }
 export const DEFAULT_SESSION_LIST_COLLAPSE: Readonly<SessionListCollapse> = Object.freeze({ collapsedRepositoryIds: [], archivedOpen: false, showHidden: false, collapsedParentIds: [] });
-export { type TranscriptDisplaySettings, DEFAULT_TRANSCRIPT_DISPLAY } from './transcriptDisplay';
+export { type TranscriptDisplaySettings, type TranscriptDisplayFlag, type ToolTargets, DEFAULT_TRANSCRIPT_DISPLAY } from './transcriptDisplay';
 
 /** OMP model-role ids: built-in chat roles plus model-kind roles. */
 export type ModelRoleId =

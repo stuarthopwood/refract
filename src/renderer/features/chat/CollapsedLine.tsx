@@ -5,6 +5,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/component
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ClampedContent } from '@/components/ClampedContent'
 import { ShimmerText } from '@/components/ShimmerText'
+import { isRowExpandable, useSummaryTruncation } from './useSummaryTruncation'
 
 /** Left padding that aligns row content under the label column. */
 export const LABEL_COLUMN_CONTENT_CLASS = 'pl-8'
@@ -22,6 +23,8 @@ export interface CollapsedLineProps {
   leading?: React.ReactNode
   icon: React.ReactNode
   iconTooltip?: string
+  /** True when the accessible name already says the tooltip text; the trigger then skips the description so it is not announced twice. */
+  iconTooltipInName?: boolean
   label?: React.ReactNode
   /** One-line summary that truncates with an ellipsis; omit for a line with nothing to summarise. */
   summary?: React.ReactNode
@@ -44,6 +47,8 @@ export interface CollapsedLineProps {
   detail?: React.ReactNode
   hideDetailWhenOpen?: boolean
   children?: React.ReactNode
+  /** False when the body only repeats the summary (a one-line Note): the row then expands only while the summary is clipped. Default true. */
+  bodyAddsContent?: boolean
   id?: string
   className?: string
   contentClassName?: string
@@ -59,6 +64,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     labelShimmer,
     icon,
     iconTooltip,
+    iconTooltipInName,
     label,
     summary,
     meta,
@@ -77,6 +83,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     detail,
     hideDetailWhenOpen,
     children,
+    bodyAddsContent = true,
     className,
     contentClassName,
     triggerClassName,
@@ -95,6 +102,9 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
   const detailVisuallyHidden = hideDetailWhenOpen && actualOpen
   const showDetail = detailMounted && !detailVisuallyHidden
   const inlineWrap = summary !== undefined && !summaryFixedWidth && !!(summaryWrap || (wrapWhenOpen && actualOpen))
+  // Only a row that says its body repeats the summary needs the overflow check (#1875).
+  const { summaryRef, clipped: summaryClipped } = useSummaryTruncation(children !== undefined && !bodyAddsContent && !inlineWrap)
+  const expandable = children !== undefined && isRowExpandable({ bodyAddsContent, summaryClipped, open: actualOpen })
   const [tooltipHovered, setTooltipHovered] = React.useState(false)
   const [rowFocusVisible, setRowFocusVisible] = React.useState(false)
   const [tooltipDismissed, setTooltipDismissed] = React.useState(false)
@@ -115,7 +125,8 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           }
         }
 
-  const describedBy = [showDetail ? detailId : null, iconTooltip === undefined ? null : tooltipDescId].filter(Boolean).join(' ') || undefined
+  const tooltipDescribes = iconTooltip !== undefined && !iconTooltipInName
+  const describedBy = [showDetail ? detailId : null, tooltipDescribes ? tooltipDescId : null].filter(Boolean).join(' ') || undefined
 
   const row = (
     <>
@@ -177,6 +188,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         {summary !== undefined ? (
           <>
             <span
+              ref={summaryRef}
               className={cn(
                 !inlineWrap && (summaryFixedWidth ? 'min-w-0 shrink max-w-[40%] truncate' : 'min-w-0 flex-1 truncate'),
                 summaryClassName ?? 'text-muted-foreground'
@@ -200,7 +212,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
     </>
   )
 
-  if (children === undefined) {
+  if (!expandable) {
     return (
       <div
         ref={ref as React.Ref<HTMLDivElement>}
@@ -210,6 +222,13 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         className={cn('-mx-2 flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
       >
         {row}
+        {/* A row with a body that cannot expand keeps the chevron and action columns, so its summary width does not jump when it later can. */}
+        {children !== undefined && (
+          <>
+            <span aria-hidden="true" className="h-5 w-4 shrink-0" />
+            <span aria-hidden="true" className="h-5 w-6 shrink-0" />
+          </>
+        )}
       </div>
     )
   }
@@ -236,7 +255,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           {/* Reserves the action's column in every expandable row so all chevrons share one x; the action is laid over it below. */}
           <span aria-hidden="true" className="h-5 w-6 shrink-0" />
         </CollapsibleTrigger>
-        {iconTooltip !== undefined && (
+        {tooltipDescribes && (
           <span id={tooltipDescId} className="sr-only">
             {iconTooltip}
           </span>

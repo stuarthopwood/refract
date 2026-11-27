@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ICON_SLOT_CLASS } from '../../chat/CollapsedLine'
 import { formatElapsed } from '../../chat/formatElapsed'
 import { stageHeading } from '../../chat/stageMeta'
+import { DurationColumn } from '../../chat/toolRowParts'
 import { SubagentStatusGlyph, subagentStatusTextClass } from '../subagentStatus'
 import type { StageItem } from '../viewModel/types'
 import { AgentChip } from './AgentChip'
@@ -71,12 +72,11 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
           {outcome && <span>{outcome}</span>}
         </TooltipContent>
       </Tooltip>
-      {durationMs != null && (
-        <span aria-hidden="true" className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground">
-          {formatElapsed(durationMs)}
-        </span>
-      )}
-      <span className={cn('shrink-0', durationMs == null && 'ml-auto')}>{trailing}</span>
+      {/* The shared duration column (#2189), kept when the Stage has no duration so the trailing control stays in one x. */}
+      <DurationColumn aria-hidden="true" className="ml-auto text-xs text-muted-foreground">
+        {durationMs != null ? formatElapsed(durationMs) : null}
+      </DurationColumn>
+      <span className="shrink-0">{trailing}</span>
     </div>
   )
 }
