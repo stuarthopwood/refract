@@ -4,7 +4,7 @@
 
 import { SEMVER_RE } from './release-versions.mjs';
 
-export const LEVELS = ['patch', 'minor', 'major'];
+const LEVELS = ['patch', 'minor', 'major'];
 
 const RELEASE_BRANCH_RE = /^release\/v(\d+\.\d+\.\d+)$/;
 

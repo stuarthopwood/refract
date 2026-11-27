@@ -31,7 +31,7 @@ export function runCommand(argv) {
 }
 
 // Trimmed stdout of a command that must succeed.
-export function capture(argv) {
+function capture(argv) {
   const { status, stdout } = exec(argv);
   if (status !== 0) fail(`${argv.join(' ')} failed`);
   return stdout.trim();
@@ -74,7 +74,7 @@ export function installInterruptHandlers() {
 }
 
 // Thrown by `checkInterrupted` so catch sites can tell a user stop from an ordinary failure.
-export class InterruptedError extends Error {}
+class InterruptedError extends Error {}
 
 const nextTick = () => new Promise((resolve) => setImmediate(resolve));
 

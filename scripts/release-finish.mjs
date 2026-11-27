@@ -27,7 +27,7 @@ function versionAt(run, sha, file) {
 }
 
 // Finds the squash commit of the merged release PR on origin/main and proves it is this release.
-export function verifyMergedRelease(version, run = exec) {
+function verifyMergedRelease(version, run = exec) {
   if (run(['git', 'fetch', 'origin'], { inherit: true }).status !== 0) fail('git fetch origin failed');
 
   const listed = output(run, [
