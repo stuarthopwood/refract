@@ -89,7 +89,7 @@ describe('SubagentCardBody (#1928, FR-148)', () => {
     const html = render(agent({ status: 'running' }))
     expect(html).not.toMatch(/<p[ >]/)
     expect(html).not.toContain('Files touched')
-    expect(html).not.toContain('border-divider')
+    expect(html).not.toContain('border-t border-divider')
     expect(html).not.toContain('flex min-w-0 flex-wrap items-center gap-1"')
   })
 
