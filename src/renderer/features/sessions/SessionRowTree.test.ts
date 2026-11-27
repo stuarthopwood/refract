@@ -301,6 +301,14 @@ describe('the nested Conversation list', () => {
     expect(html).toContain('Retry')
   })
 
+  it('keeps the error announcement beside the Retry button, so the button is named just "Retry"', () => {
+    const html = view({ open: true, error: 'disk' })
+    expect(html).toMatch(/<span role="alert"[^>]*>Could not load conversations: disk\.<\/span>/)
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*role="alert"/)
+    expect(html).toMatch(/data-conversation-action="retry"/)
+    expect(html).toMatch(/<button[^>]*>Retry<\/button>/)
+  })
+
   it('excludes Archived Sessions and the Personal Agent', () => {
     expect(hasConversationList(session('a'))).toBe(true)
     expect(hasConversationList(session('a', { archivedAt: '2026-01-02T00:00:00Z' }))).toBe(false)

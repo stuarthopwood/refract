@@ -1,6 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ConversationInfo } from '../../../shared/model'
 import { subscribeConversationsChanged } from '../chat/conversationChanges'
+
+/** The list call can reject (a dropped IPC channel), which must surface as the same error state as a refused one. */
+export async function readConversations(sessionId: string): Promise<{ ok: true; value: ConversationInfo[] } | { ok: false; message: string }> {
+  try {
+    const result = await window.refract.conversations.list(sessionId)
+    return result.ok ? { ok: true, value: result.value } : { ok: false, message: result.error.message }
+  } catch (cause) {
+    return { ok: false, message: cause instanceof Error ? cause.message : String(cause) }
+  }
+}
 
 /** Numbers each request so only the newest one may apply its response. */
 export function createStaleGuard() {
@@ -13,6 +23,8 @@ export function createStaleGuard() {
 
 export interface SessionConversations {
   conversations: ConversationInfo[]
+  /** For callers that know a row is gone before the next read lands. */
+  setConversations: Dispatch<SetStateAction<ConversationInfo[]>>
   loading: boolean
   error: string | null
   reload(): Promise<void>
@@ -30,14 +42,14 @@ export function useSessionConversations(sessionId: string, open: boolean): Sessi
   const reload = useCallback(async () => {
     const ticket = guard.next()
     setStatus('loading')
-    const result = await window.refract.conversations.list(sessionId)
+    const result = await readConversations(sessionId)
     if (!guard.isCurrent(ticket)) return
     if (result.ok) {
       setConversations(result.value)
       setError(null)
       setStatus('ready')
     } else {
-      setError(result.error.message)
+      setError(result.message)
       setStatus('error')
     }
   }, [guard, sessionId])
@@ -54,5 +66,5 @@ export function useSessionConversations(sessionId: string, open: boolean): Sessi
   useEffect(() => () => void guard.next(), [guard])
 
   // Before the first effect has run, an open list is already loading rather than empty.
-  return { conversations, loading: status === 'loading' || (open && status === 'idle'), error, reload }
+  return { conversations, setConversations, loading: status === 'loading' || (open && status === 'idle'), error, reload }
 }

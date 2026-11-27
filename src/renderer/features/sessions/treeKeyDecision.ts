@@ -42,7 +42,7 @@ export interface SessionConversationKeyDecision {
 
 const NO_SESSION_KEY: SessionConversationKeyDecision = { prevent: false, setOpen: null, focusFirstEntry: false }
 
-/** Keys on a Session's open button that reach its nested Conversation list (FR-196). */
+/** Keys on a Session's open button that reach its nested Conversation list. */
 export function decideSessionConversationKey(event: TreeKeyEvent, context: ConversationKeyContext): SessionConversationKeyDecision {
   if (event.ctrlKey || event.metaKey || event.shiftKey) return NO_SESSION_KEY
   const { listOpen, entryCount, hasChildSessions } = context

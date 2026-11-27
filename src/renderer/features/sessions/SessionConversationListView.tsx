@@ -12,17 +12,17 @@ import { conversationTitle } from '../chat/conversationDelete'
 import { conversationGroupId } from './conversationTreeFocus'
 
 /** The newest Conversations shown before "Show all (N)". */
-export const CONVERSATION_CAP = 5
+const CONVERSATION_CAP = 5
 
 const ENTRY_CLASS =
   'pl-[calc(var(--tree-indent,0px)+2.5rem)] pr-2 focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
 const ACTION_CLASS = 'h-7 min-w-0 flex-1 justify-start gap-2 rounded-none px-2 text-xs text-muted-foreground aria-disabled:opacity-50'
 
-export function conversationReasonId(sessionId: string): string {
+function conversationReasonId(sessionId: string): string {
   return `${conversationGroupId(sessionId)}-reason`
 }
 
-export function conversationCountLabel(count: number): string {
+function conversationCountLabel(count: number): string {
   return count === 1 ? '1 conversation' : `${count} conversations`
 }
 
@@ -32,9 +32,28 @@ export function capConversations<T>(conversations: readonly T[], showAll: boolea
   return { visible: conversations.slice(0, CONVERSATION_CAP), hidden: conversations.length - CONVERSATION_CAP }
 }
 
-function ActionEntry({ tree, onClick, disabled, children }: { tree: boolean; onClick(): void; disabled?: boolean; children: ReactNode }) {
+// The keyboard handler reads `data-conversation-action` to know which action entry it is activating.
+type ConversationAction = 'new' | 'show-all' | 'retry'
+
+function ActionEntry({
+  tree,
+  action,
+  onClick,
+  disabled,
+  note,
+  children
+}: {
+  tree: boolean
+  action: ConversationAction
+  onClick(): void
+  disabled?: boolean
+  /** Text beside the button, kept outside it so a live region's announcement is not part of the button's name. */
+  note?: ReactNode
+  children: ReactNode
+}) {
   return (
-    <li role={tree ? 'treeitem' : undefined} tabIndex={-1} data-conversation-entry="" className={cn('flex min-w-0 items-center', ENTRY_CLASS)}>
+    <li role={tree ? 'treeitem' : undefined} tabIndex={-1} data-conversation-entry="" data-conversation-action={action} className={cn('flex min-w-0 items-center', ENTRY_CLASS)}>
+      {note}
       <Button
         variant="ghost"
         tabIndex={-1}
@@ -42,7 +61,7 @@ function ActionEntry({ tree, onClick, disabled, children }: { tree: boolean; onC
         onClick={() => {
           if (!disabled) onClick()
         }}
-        className={ACTION_CLASS}
+        className={cn(ACTION_CLASS, note !== undefined && 'flex-none')}
       >
         {children}
       </Button>
@@ -122,7 +141,7 @@ export function SessionConversationListView(props: SessionConversationListViewPr
             onKeyDown={props.onKeyDown}
             className="flex flex-col gap-0"
           >
-            <ActionEntry tree={tree} onClick={props.onNew} disabled={blockedReason !== null}>
+            <ActionEntry tree={tree} action="new" onClick={props.onNew} disabled={blockedReason !== null}>
               <PlusIcon aria-hidden className="size-4" />
               New conversation
             </ActionEntry>
@@ -145,13 +164,22 @@ export function SessionConversationListView(props: SessionConversationListViewPr
               />
             ))}
             {hidden > 0 && (
-              <ActionEntry tree={tree} onClick={props.onShowAll}>
+              <ActionEntry tree={tree} action="show-all" onClick={props.onShowAll}>
                 Show all ({conversations.length})
               </ActionEntry>
             )}
             {error && (
-              <ActionEntry tree={tree} onClick={props.onReload}>
-                <span role="alert">Could not load conversations: {error}. Retry</span>
+              <ActionEntry
+                tree={tree}
+                action="retry"
+                onClick={props.onReload}
+                note={
+                  <span role="alert" className="min-w-0 flex-1 truncate px-2 text-xs text-muted-foreground">
+                    Could not load conversations: {error}.
+                  </span>
+                }
+              >
+                Retry
               </ActionEntry>
             )}
           </ul>

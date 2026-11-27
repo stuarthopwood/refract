@@ -145,7 +145,7 @@ export function useSessionRowActions(
     if (!deleting) startRenaming()
   }
 
-  // Right, Left and Down reach the nested Conversation list before the Session tree takes the key (FR-196).
+  // Right, Left and Down reach the nested Conversation list before the Session tree takes the key.
   function handleConversationKey(event: KeyboardEvent<HTMLElement>): boolean {
     if (!hasConversationList(session)) return false
     const listState = useSessionListStore.getState()

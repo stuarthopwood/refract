@@ -1,4 +1,4 @@
-// Delete flow for the Conversation history (#2161, FR-186/FR-187): ask, confirm, then remove in the
+// Delete flow for the Conversation history (#2161): ask, confirm, then remove in the
 // background (the row shows "Deleting…" and leaves the list when Rust reports the bytes freed).
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ConversationInfo } from '../../../shared/model'

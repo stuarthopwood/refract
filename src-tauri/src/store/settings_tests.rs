@@ -348,3 +348,85 @@ async fn collapsed_parent_ids_round_trip_through_the_setter_and_a_reopen() {
         ["p1".to_string(), "p2".to_string()]
     );
 }
+
+#[tokio::test]
+async fn expanded_conversation_session_ids_default_empty_on_an_older_file_and_keep_the_other_fields(
+) {
+    let store = open_scratch_store(Some(collapse_file(json!({
+        "collapsedRepositoryIds": ["r1"], "archivedOpen": true, "showHidden": true,
+        "collapsedParentIds": ["p1"]
+    }))))
+    .await;
+    let collapse = &store.get().session_list_collapse;
+    assert!(collapse.expanded_conversation_session_ids.is_empty());
+    assert_eq!(collapse.collapsed_repository_ids, ["r1".to_string()]);
+    assert_eq!(collapse.collapsed_parent_ids, ["p1".to_string()]);
+    assert!(collapse.archived_open);
+    assert!(collapse.show_hidden);
+}
+
+#[tokio::test]
+async fn malformed_expanded_conversation_session_ids_reset_to_empty_without_dropping_the_other_fields(
+) {
+    let too_many: Vec<String> = (0..=SESSION_LIST_COLLAPSE_MAX_IDS)
+        .map(|n| format!("s{n}"))
+        .collect();
+    for malformed in [
+        json!("s1"),
+        json!([1, 2]),
+        json!(null),
+        json!(too_many),
+        json!(["x".repeat(SESSION_LIST_COLLAPSE_MAX_ID_BYTES + 1)]),
+    ] {
+        let store = open_scratch_store(Some(collapse_file(json!({
+            "collapsedRepositoryIds": ["r1"], "archivedOpen": true,
+            "collapsedParentIds": ["p1"], "expandedConversationSessionIds": malformed
+        }))))
+        .await;
+        let collapse = &store.get().session_list_collapse;
+        assert!(collapse.expanded_conversation_session_ids.is_empty());
+        assert_eq!(collapse.collapsed_repository_ids, ["r1".to_string()]);
+        assert_eq!(collapse.collapsed_parent_ids, ["p1".to_string()]);
+        assert!(collapse.archived_open);
+    }
+}
+
+#[tokio::test]
+async fn expanded_conversation_session_ids_are_de_duplicated_on_read() {
+    let store = open_scratch_store(Some(collapse_file(json!({
+        "collapsedRepositoryIds": [], "archivedOpen": false,
+        "expandedConversationSessionIds": ["a", "b", "a"]
+    }))))
+    .await;
+    assert_eq!(
+        store
+            .get()
+            .session_list_collapse
+            .expanded_conversation_session_ids,
+        ["a".to_string(), "b".to_string()]
+    );
+}
+
+#[tokio::test]
+async fn expanded_conversation_session_ids_round_trip_through_the_setter_and_a_reopen() {
+    let dir = crate::test_scratch::path(format!("refract-settings-test-{}", uuid::Uuid::new_v4()));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    let mut store = SettingsStore::open(&dir).await.unwrap();
+    let mut value = store.get().session_list_collapse.clone();
+    value.expanded_conversation_session_ids = vec!["s1".to_string(), "s2".to_string()];
+    let next = store.set_session_list_collapse(value).await.unwrap();
+    assert_eq!(
+        next.session_list_collapse
+            .expanded_conversation_session_ids
+            .len(),
+        2
+    );
+    let reopened = SettingsStore::open(&dir).await.unwrap();
+    assert_eq!(
+        reopened
+            .get()
+            .session_list_collapse
+            .expanded_conversation_session_ids,
+        ["s1".to_string(), "s2".to_string()]
+    );
+}
