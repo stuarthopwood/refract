@@ -51,7 +51,7 @@ function isSectionView(value: string): value is SectionView {
 
 // One Copy control per section, in the header, in both views; it always copies the source text,
 // and the code block's own Copy is suppressed so it never duplicates this one.
-function SectionHeader({ section, children }: { section: Section; children?: React.ReactNode }) {
+export function SectionHeader({ section, children }: { section: Section; children?: React.ReactNode }) {
   return (
     <div className="mb-1 flex items-center justify-between gap-2">
       <span className="text-xs text-muted-foreground">{section.label}</span>
