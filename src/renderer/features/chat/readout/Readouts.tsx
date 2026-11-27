@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { MouseEvent, RefObject } from 'react'
-import { EyeIcon, Loader2Icon, PinIcon } from 'lucide-react'
+import { EyeIcon, PinIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { READOUT_KIND_ICONS } from '@/components/icons/readout-icons'
 import { EMPTY_QUEUE, EMPTY_READOUT_ENTRY, notify, useAdvisorStore, useDraftStore, useQueueStore, useReadoutStore, useSessionsStore, useTodoPinStore } from '@/state'
 import { openHostedPanel } from '@/features/right-pane/hosted-panel-actions'
@@ -331,7 +332,7 @@ function AdvisorReadoutButton({ sessionId, textareaRef }: { sessionId: string; t
           )}
         >
           {turningOff ? (
-            <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
+            <Spinner className="size-4" />
           ) : (
             <EyeIcon aria-hidden className="size-4" />
           )}

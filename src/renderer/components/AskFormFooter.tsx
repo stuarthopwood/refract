@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { Loader2Icon, OctagonXIcon } from 'lucide-react'
+import { OctagonXIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { Alert, AlertActions, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { CardContent, CardFooter } from '@/components/ui/card'
@@ -68,12 +69,12 @@ export function AskFormFooter({
       {/* Stays mounted with the card so the focused button is still in the DOM when the card unmounts. */}
       <CardFooter className="flex-wrap">
         <Button ref={cancelRef} size="sm" variant="ghost" aria-disabled={!cancellable} aria-busy={cancelling} className="aria-disabled:opacity-50" onClick={() => cancellable && onCancel()}>
-          {cancelling && <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
+          {cancelling && <Spinner className="size-4" />}
           {cancelling ? 'Cancelling…' : cancelLabel}
         </Button>
         {actions}
         <Button size="sm" aria-disabled={!submittable} aria-busy={sending} className="aria-disabled:opacity-50" onClick={onSubmit}>
-          {sending && <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
+          {sending && <Spinner className="size-4" />}
           {sending ? 'Submitting…' : submitLabel}
         </Button>
       </CardFooter>

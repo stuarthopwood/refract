@@ -185,7 +185,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
               <StatePill state={detail.state} />
               {/* Check status carries its own severity colour (`CHECK_STATE_DISPLAY.colorClass`, shared with `PullRequestRow.tsx`) (#1121). */}
               <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>
-                <CheckIcon aria-hidden className={cn('size-4', detail.checkState === 'pending' && 'animate-spin')} />
+                <CheckIcon aria-hidden className="size-4" />
                 {check.label}
               </span>
             </div>

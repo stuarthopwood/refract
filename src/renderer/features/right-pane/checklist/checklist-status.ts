@@ -1,10 +1,11 @@
-import { CircleAlertIcon, CircleArrowRightIcon, CircleDotIcon, CircleIcon, type LucideIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleArrowRightIcon, CircleDotIcon, CircleIcon, type LucideProps } from 'lucide-react'
+import type { ComponentType } from 'react'
 import type { ItemStatus } from '../../../../shared/checklist'
 import { STATUS_GLYPH } from '../../chat/statusGlyph'
 
 /** What a Checklist item status looks like: an icon, a colour class and a word; `showWord` says whether the word is visible or screen-reader-only. */
 export interface ChecklistStatusGlyph {
-  Icon: LucideIcon
+  Icon: ComponentType<LucideProps>
   className: string
   word: string
   showWord: boolean

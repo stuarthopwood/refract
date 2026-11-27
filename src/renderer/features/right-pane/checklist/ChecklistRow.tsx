@@ -1,4 +1,4 @@
-import { LoaderCircleIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { memo, useId } from 'react'
 import { InlineStatus } from '@/components/InlineStatus'
 import { CHECKBOX_BOX_ONLY_CLASS, CheckboxIndicator, CheckboxItem } from '@/components/ui/checkbox'
@@ -55,7 +55,7 @@ function ChecklistRowView({ item, sessionId, checklistId, agentRunning, pending,
           onCheckedChange={() => onTick(item.id)}
           className={cn(CHECKBOX_BOX_ONLY_CLASS, 'relative after:absolute after:-inset-1 after:content-[""]')}
         >
-          {pending ? <LoaderCircleIcon aria-hidden className="size-3 animate-spin motion-reduce:animate-none" /> : <CheckboxIndicator />}
+          {pending ? <Spinner className="size-3" /> : <CheckboxIndicator />}
         </CheckboxItem>
       </span>
       <div className="flex min-w-0 flex-1 flex-col gap-1">

@@ -3,7 +3,8 @@ import type { ReactNode } from 'react'
 import { useSessionListStore } from '@/state'
 import { useEnterOnAppear } from '@/components/useEnterOnAppear'
 import { HiddenMarker } from './HiddenMarker'
-import { EllipsisVerticalIcon, FolderGit2Icon, LoaderCircleIcon, RotateCwIcon } from 'lucide-react'
+import { EllipsisVerticalIcon, FolderGit2Icon, RotateCwIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import {
   ContextMenu,
@@ -266,7 +267,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                     )}
                   >
                     {deleting || session.startProgress ? (
-                      <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" />
+                      <Spinner className="size-4 shrink-0" />
                     ) : (
                       <StateIcon status={displayStatus(session)} />
                     )}
@@ -292,7 +293,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
                   onClick={() => void handleResume()}
                 >
                   {resuming ? (
-                    <LoaderCircleIcon aria-hidden className="size-4 animate-spin" />
+                    <Spinner className="size-4" />
                   ) : (
                     <RotateCwIcon aria-hidden className="size-4" />
                   )}

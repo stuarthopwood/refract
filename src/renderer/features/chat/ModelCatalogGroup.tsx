@@ -1,4 +1,4 @@
-import { Loader2Icon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { SkeletonLines } from '@/components/LoadingSkeletons'
 import { cn } from '@/lib/utils'
 import { RadioMark } from '@/components/ui/radio-group'
@@ -65,7 +65,7 @@ export function ModelCatalogGroup({
         >
           <span className="min-w-0 flex-1 whitespace-normal break-words text-muted-foreground">{catalogError}</span>
           <span className="flex shrink-0 items-center gap-1 text-xs">
-            {retrying && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
+            {retrying && <Spinner className="size-4" />}
             {retrying ? 'Retrying…' : 'Retry'}
           </span>
         </div>

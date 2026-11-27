@@ -58,7 +58,7 @@ function CheckRow({ check }: { check: PullRequestCheck }) {
   const summary = (
     <div className={cn('flex min-w-0 flex-1 items-center gap-2', ROW_KEBAB_INSET_CLASS)}>
       <span className={cn('flex shrink-0 items-center gap-1 text-xs', display.colorClass)}>
-        <Icon aria-hidden className={cn('size-4', check.outcome === 'pending' && 'animate-spin')} />
+        <Icon aria-hidden className="size-4" />
         {display.label}
       </span>
       <span className="min-w-0 flex-1 truncate">{check.name}</span>
@@ -91,7 +91,7 @@ export function ChecksSection({ checks, checkState }: { checks: PullRequestDetai
   return (
     <section aria-label="Checks" className="px-4 pt-2 pb-4">
       <h3 className={cn('mb-2 flex items-center gap-2 text-base font-semibold', overall.colorClass)}>
-        <OverallIcon aria-hidden className={cn('size-4', checkState === 'pending' && 'animate-spin')} />
+        <OverallIcon aria-hidden className="size-4" />
         {overall.label}
       </h3>
       {GROUPS.map(({ outcome, defaultOpen }) => {

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { EllipsisVerticalIcon, GitBranchPlusIcon, LoaderCircleIcon, PlusIcon } from 'lucide-react'
+import { EllipsisVerticalIcon, GitBranchPlusIcon, PlusIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/context-menu'
@@ -237,7 +238,7 @@ export function RepositoryGroup({
             data-quick-create-session
             onClick={() => void handleQuickCreate()}
           >
-            {creating ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <PlusIcon aria-hidden />}
+            {creating ? <Spinner /> : <PlusIcon aria-hidden />}
           </IconButton>
           <NewSessionDialog
             repository={repository}

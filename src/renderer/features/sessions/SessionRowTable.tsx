@@ -3,7 +3,8 @@
 // Project, flags, last active) and an always-visible Archive/Restore quick action. The primary open
 // button covers only the info area; the quick action and "..." menu are its siblings, never nested
 // inside it (a button must never contain another button).
-import { ArchiveIcon, ArchiveRestoreIcon, EllipsisVerticalIcon, FolderGit2Icon, GitBranchIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
+import { ArchiveIcon, ArchiveRestoreIcon, EllipsisVerticalIcon, FolderGit2Icon, GitBranchIcon, TriangleAlertIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { Badge } from '@/components/ui/badge'
 import { IconButton } from '@/components/IconButton'
@@ -65,7 +66,7 @@ export function SessionRowTable({
                     status, branch, Archived, Worktree missing and last activity from screen readers.
                     The accessible name comes from this content, in reading order. */}
                 <span className="flex min-w-0 items-center gap-2">
-                  {deleting ? <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin" /> : <StateIcon status={displayStatus(session)} />}
+                  {deleting ? <Spinner className="size-4 shrink-0" /> : <StateIcon status={displayStatus(session)} />}
                   <span className="truncate text-xs text-muted-foreground">{deleting ? 'Deleting…' : displayLabel(session)}</span>
                 </span>
                 {row.isVisible && <span className="sr-only">Shown in chat</span>}

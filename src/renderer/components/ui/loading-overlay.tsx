@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { LoaderCircleIcon } from 'lucide-react'
+import { Spinner } from './spinner'
 import type { ReactNode } from 'react'
 import { BLUR_TRANSITION_CLASS, BLURRED_CONTENT_CLASS } from './blur-content'
 import { cn } from '@/lib/utils'
@@ -44,7 +44,7 @@ export function LoadingOverlay({ loading, children, className, contentClassName,
               aria-hidden
               className="absolute left-1/2 flex w-max -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-xl bg-background/90 px-6 py-4 text-base text-muted-foreground backdrop-blur-sm"
             >
-              <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin motion-reduce:animate-none" />
+              <Spinner className="size-4 shrink-0" />
               Loading
             </div>
           </div>

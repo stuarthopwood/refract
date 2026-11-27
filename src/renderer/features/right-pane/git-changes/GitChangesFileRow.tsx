@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { CheckIcon, Code2Icon, EllipsisVerticalIcon, EyeIcon, Loader2Icon, MinusIcon, PlusIcon } from 'lucide-react'
+import { CheckIcon, Code2Icon, EllipsisVerticalIcon, EyeIcon, MinusIcon, PlusIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { useChatAreaAnnouncer } from '@/features/chat/chatAreaAnnouncer'
@@ -110,7 +111,7 @@ export function GitChangesFileRow({
       >
         {/* The kebab menu closes on select, so the row's status icon is the only place to show pending. */}
         {actionPending ? (
-          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin text-muted-foreground" />
+          <Spinner className="size-4 shrink-0 text-muted-foreground" />
         ) : (
           <mark.Icon aria-hidden className={`size-4 shrink-0 ${mark.className}`} />
         )}

@@ -1,4 +1,5 @@
-import { ChevronDownIcon, ChevronRightIcon, LoaderCircleIcon, PencilLineIcon } from 'lucide-react'
+import { ChevronDownIcon, ChevronRightIcon, PencilLineIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { useEffect, useRef, useState, type FocusEvent, type Ref } from 'react'
 import { Button } from '@/components/ui/button'
 import { draftKey, useChecklistDraftsStore, type ItemNote } from '@/state/checklist-drafts'
@@ -116,7 +117,7 @@ export function ChecklistItemControlsView({
               if (!doBlocked) onDoItem()
             }}
           >
-            {working && <LoaderCircleIcon aria-hidden className="animate-spin motion-reduce:animate-none" />}
+            {working && <Spinner />}
             {doItemLabel(item)}
           </Button>
         )}

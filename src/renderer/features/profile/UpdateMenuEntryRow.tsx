@@ -1,19 +1,22 @@
 // The profile menu's update row content (#137): label, detail and glyph all come from `updateMenuEntry`. Kept apart from the menu item so it renders without a Radix menu or the app stores.
-import { DownloadIcon, LoaderCircleIcon, RefreshCwIcon, TriangleAlertIcon } from 'lucide-react'
+import { DownloadIcon, RefreshCwIcon, TriangleAlertIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
+import type { LucideProps } from 'lucide-react'
+import type { ComponentType } from 'react'
 import type { UpdateMenuEntry, UpdateMenuIcon } from '@/lib/updateStatus'
 
-const ICONS: Record<UpdateMenuIcon, typeof DownloadIcon> = {
+const ICONS: Record<UpdateMenuIcon, ComponentType<LucideProps>> = {
   download: DownloadIcon,
   warning: TriangleAlertIcon,
   refresh: RefreshCwIcon,
-  busy: LoaderCircleIcon
+  busy: Spinner
 }
 
 export function UpdateMenuEntryRow({ entry }: { entry: UpdateMenuEntry }) {
   const Icon = ICONS[entry.icon]
   return (
     <>
-      <Icon aria-hidden className={entry.icon === 'busy' ? 'animate-spin motion-reduce:animate-none' : undefined} />
+      <Icon aria-hidden />
       {entry.detail ? (
         <span className="flex min-w-0 flex-1 flex-col leading-tight">
           <span>{entry.label}</span>

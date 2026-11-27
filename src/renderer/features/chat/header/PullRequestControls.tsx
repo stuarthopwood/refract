@@ -30,7 +30,7 @@ export function PullRequestControls({ sessionId, repositoryId, pullRequest, live
         action="open pull request"
         trailing={
           checks && ChecksIcon ? (
-            <ChecksIcon aria-hidden className={cn('size-4', checks.colorClass, 'forced-colors:text-[CanvasText]', pullRequest.checks === 'pending' && 'animate-spin motion-reduce:animate-none')} />
+            <ChecksIcon aria-hidden className={cn('size-4', checks.colorClass, 'forced-colors:text-[CanvasText]')} />
           ) : undefined
         }
         onClick={(event) => usePinnedPanelsStore.getState().pin('pull-request', { repositoryId, number: pullRequest.number, sessionId, opener: event.currentTarget })}

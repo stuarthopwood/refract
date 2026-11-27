@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import { LoaderCircleIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import type { SessionStartProgress } from '../../../shared/model'
@@ -66,7 +66,7 @@ export function SessionStartNotice({
       ) : (
         <p className="flex items-center gap-2 text-base text-muted-foreground">
           <span className="sr-only">{describeStartProgressLabel(startProgress.kind)}</span>
-          <LoaderCircleIcon aria-hidden="true" className="size-4 shrink-0 animate-spin" />
+          <Spinner className="size-4 shrink-0" />
           <span aria-hidden="true" data-start-plain-text>{describeStartProgress(startProgress)}</span>
         </p>
       )}

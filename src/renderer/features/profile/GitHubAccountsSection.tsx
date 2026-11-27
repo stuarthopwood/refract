@@ -1,5 +1,5 @@
 import type { RefObject } from 'react'
-import { LoaderCircleIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { ExternalLink } from '@/components/ExternalLink'
 import { InlineStatus } from '@/components/InlineStatus'
 import { ScreenSection } from '@/components/ScreenSection'
@@ -75,7 +75,7 @@ export function GitHubAccountsSection(props: GitHubAccountsSectionProps) {
           tone="loading"
           density="compact"
           className="p-0"
-          leading={<LoaderCircleIcon aria-hidden className="mr-1 inline size-[1em] align-[-0.125em] animate-spin motion-reduce:animate-none" />}
+          leading={<Spinner className="mr-1 inline size-[1em] align-[-0.125em]" />}
         >
           Checking GitHub sign-in…
         </InlineStatus>

@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { Loader2Icon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 
 /**
@@ -15,7 +15,7 @@ export function RetryButton({ busy, onRetry, handoffTo }: { busy: boolean; onRet
   }, [handoffTo])
   return (
     <Button ref={ref} size="sm" variant="ghost" aria-disabled={busy} aria-busy={busy} className="aria-disabled:opacity-50" onClick={() => !busy && onRetry()}>
-      {busy && <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />}
+      {busy && <Spinner className="size-4" />}
       Retry
     </Button>
   )

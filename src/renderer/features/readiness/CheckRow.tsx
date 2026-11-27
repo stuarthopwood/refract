@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, LoaderCircleIcon, TriangleAlertIcon } from 'lucide-react'
+import { CircleAlertIcon, CircleCheckIcon, CircleXIcon, TriangleAlertIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import type { Check } from '../../../shared/ipc'
 
 export const CHECK_ORDER = ['git', 'omp', 'ompSignedIn'] as const
@@ -30,7 +31,7 @@ export function CheckStatusIcon({
   if (!check) {
     return checking ? (
       <>
-        <LoaderCircleIcon aria-hidden className="mt-1 size-4 shrink-0 animate-spin text-muted-foreground" />
+        <Spinner className="mt-1 size-4 shrink-0 text-muted-foreground" />
         {srWord && <span className="sr-only">{word}</span>}
       </>
     ) : (

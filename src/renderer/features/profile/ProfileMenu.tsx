@@ -1,10 +1,10 @@
 import { Fragment, useRef, useState } from 'react'
+import { Spinner } from '@/components/ui/spinner'
 import {
   ActivityIcon,
   ExternalLinkIcon,
   KeyboardIcon,
   LayersIcon,
-  LoaderCircleIcon,
   LogInIcon,
   LogOutIcon,
   PaletteIcon,
@@ -210,7 +210,7 @@ export function ProfileMenuContent({
           }}
         >
           {githubRefreshing ? (
-            <LoaderCircleIcon aria-hidden className="animate-spin" />
+            <Spinner />
           ) : (
             <TriangleAlertIcon aria-hidden />
           )}
@@ -224,7 +224,7 @@ export function ProfileMenuContent({
         </DropdownMenuItem>
       ) : (
         <DropdownMenuItem key="first-row" disabled>
-          <LoaderCircleIcon aria-hidden className="animate-spin" />
+          <Spinner />
           Checking GitHub sign-in…
         </DropdownMenuItem>
       )}

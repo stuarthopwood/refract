@@ -3,7 +3,8 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { CheckIcon, ClockIcon, Link2Icon, Loader2Icon, PaperclipIcon, SignalHighIcon, SignalIcon, SignalLowIcon, SignalMediumIcon, SignalZeroIcon, type LucideIcon } from 'lucide-react'
+import { CheckIcon, ClockIcon, Link2Icon, PaperclipIcon, SignalHighIcon, SignalIcon, SignalLowIcon, SignalMediumIcon, SignalZeroIcon, type LucideIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import { ReasoningGaugeIcon } from '@/components/ReasoningGaugeIcon'
 import { ValueCrossfade } from '@/components/ValueCrossfade'
@@ -77,7 +78,7 @@ export function ReasoningPicker({ sessionId }: { sessionId: string }) {
               className={PICKER_TRIGGER_CLASS}
             >
               {pendingLabel !== null ? (
-                <Loader2Icon aria-hidden className="size-4 animate-spin" />
+                <Spinner className="size-4" />
               ) : (
                 <ReasoningGaugeIcon level={nextLevel ?? session?.lastThinkingLevel} className="size-4" />
               )}
