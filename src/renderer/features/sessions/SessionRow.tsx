@@ -357,6 +357,7 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
     hasConversationList(session) && !deleting ? (
       <SessionConversationTree
         session={session}
+        tree={Boolean(tree)}
         onSelect={() => {
           replaceFocused(session.id)
           if (isFocusedPane) void open(session.id)

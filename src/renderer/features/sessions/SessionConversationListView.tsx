@@ -32,9 +32,9 @@ export function capConversations<T>(conversations: readonly T[], showAll: boolea
   return { visible: conversations.slice(0, CONVERSATION_CAP), hidden: conversations.length - CONVERSATION_CAP }
 }
 
-function ActionEntry({ onClick, disabled, children }: { onClick(): void; disabled?: boolean; children: ReactNode }) {
+function ActionEntry({ tree, onClick, disabled, children }: { tree: boolean; onClick(): void; disabled?: boolean; children: ReactNode }) {
   return (
-    <li role="treeitem" tabIndex={-1} data-conversation-entry="" className={cn('flex min-w-0 items-center', ENTRY_CLASS)}>
+    <li role={tree ? 'treeitem' : undefined} tabIndex={-1} data-conversation-entry="" className={cn('flex min-w-0 items-center', ENTRY_CLASS)}>
       <Button
         variant="ghost"
         tabIndex={-1}
@@ -53,6 +53,8 @@ function ActionEntry({ onClick, disabled, children }: { onClick(): void; disable
 export interface SessionConversationListViewProps {
   sessionId: string
   sessionName: string
+  /** True under a `role="tree"` ancestor; a flat group gets a plain list, since treeitems need a tree. */
+  tree: boolean
   open: boolean
   /** Null until the first read finishes, so the badge appears with the data. */
   total: number | null
@@ -75,7 +77,7 @@ export interface SessionConversationListViewProps {
 
 /** The disclosure under a Session row and, while open, its nested list of Conversations. */
 export function SessionConversationListView(props: SessionConversationListViewProps) {
-  const { sessionId, sessionName, open, total, loading, error, conversations, showAll, blockedReason, deleting } = props
+  const { sessionId, sessionName, tree, open, total, loading, error, conversations, showAll, blockedReason, deleting } = props
   const groupId = conversationGroupId(sessionId)
   const reasonId = conversationReasonId(sessionId)
   const { visible, hidden } = capConversations(conversations, showAll)
@@ -114,13 +116,13 @@ export function SessionConversationListView(props: SessionConversationListViewPr
             </p>
           )}
           <ul
-            role="group"
+            role={tree ? 'group' : undefined}
             id={groupId}
             aria-label={`Conversations of ${sessionName}`}
             onKeyDown={props.onKeyDown}
             className="flex flex-col gap-0"
           >
-            <ActionEntry onClick={props.onNew} disabled={blockedReason !== null}>
+            <ActionEntry tree={tree} onClick={props.onNew} disabled={blockedReason !== null}>
               <PlusIcon aria-hidden className="size-4" />
               New conversation
             </ActionEntry>
@@ -134,16 +136,21 @@ export function SessionConversationListView(props: SessionConversationListViewPr
                 deleting={deleting.has(conversation.file)}
                 onOpen={props.onOpen}
                 onDelete={props.onDelete}
-                role="treeitem"
+                role={tree ? 'treeitem' : undefined}
+                entry
                 tabIndex={-1}
                 buttonTabIndex={-1}
                 describedBy={reasonId}
                 className={ENTRY_CLASS}
               />
             ))}
-            {hidden > 0 && <ActionEntry onClick={props.onShowAll}>Show all ({conversations.length})</ActionEntry>}
+            {hidden > 0 && (
+              <ActionEntry tree={tree} onClick={props.onShowAll}>
+                Show all ({conversations.length})
+              </ActionEntry>
+            )}
             {error && (
-              <ActionEntry onClick={props.onReload}>
+              <ActionEntry tree={tree} onClick={props.onReload}>
                 <span role="alert">Could not load conversations: {error}. Retry</span>
               </ActionEntry>
             )}

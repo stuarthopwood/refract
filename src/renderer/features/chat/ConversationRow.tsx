@@ -80,6 +80,8 @@ interface CompactConversationRowProps {
   /** Lets a tree make the row a `treeitem` and manage its roving focus. */
   role?: AriaRole
   tabIndex?: number
+  /** Marks the row as a keyboard-navigable entry of the nested list, with or without a tree role. */
+  entry?: boolean
   /** A tree reaches the row by arrow keys, so its buttons stay out of the Tab order. */
   buttonTabIndex?: number
   /** The id of the element that says why opening is blocked. */
@@ -98,6 +100,7 @@ export const CompactConversationRow = memo(function CompactConversationRow({
   onDelete,
   role,
   tabIndex,
+  entry,
   buttonTabIndex,
   describedBy,
   className
@@ -107,7 +110,7 @@ export const CompactConversationRow = memo(function CompactConversationRow({
     <li
       data-conversation-file={conversation.file}
       role={role}
-      data-conversation-entry={role === 'treeitem' ? '' : undefined}
+      data-conversation-entry={entry ? '' : undefined}
       tabIndex={tabIndex}
       aria-label={role === 'treeitem' ? `${title}${conversation.isCurrent ? ', current' : ''}, ${size}` : undefined}
       className={cn('flex min-w-0 items-center gap-1', className)}

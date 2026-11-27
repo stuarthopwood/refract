@@ -22,7 +22,7 @@ const ignoreConversations = () => undefined
 const newestFirst = (a: ConversationInfo, b: ConversationInfo) => b.createdAt.localeCompare(a.createdAt)
 
 /** A Session's Conversations as a nested list under its row (#472, FR-194 to FR-196). */
-export function SessionConversationTree({ session, onSelect }: { session: SessionSummary; onSelect(): void }) {
+export function SessionConversationTree({ session, tree, onSelect }: { session: SessionSummary; tree: boolean; onSelect(): void }) {
   const sessionId = session.id
   const open = useSessionListStore((state) => state.isConversationListOpen(sessionId))
   const toggle = useSessionListStore((state) => state.toggleConversationList)
@@ -107,6 +107,7 @@ export function SessionConversationTree({ session, onSelect }: { session: Sessio
       <SessionConversationListView
         sessionId={sessionId}
         sessionName={session.name}
+        tree={tree}
         open={open}
         total={total}
         loading={loading}

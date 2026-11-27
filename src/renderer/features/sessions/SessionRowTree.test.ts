@@ -223,6 +223,7 @@ describe('the nested Conversation list', () => {
       createElement(SessionConversationListView, {
         sessionId: 's1',
         sessionName: 'Session s1',
+        tree: true,
         open: false,
         total: null,
         loading: false,
@@ -265,6 +266,16 @@ describe('the nested Conversation list', () => {
     expect(html).not.toMatch(/tabindex="0"/)
     expect(html).toContain('New conversation')
     expect(html).toContain('aria-current="true"')
+  })
+
+  it('in a flat group renders a plain list: no tree roles, buttons keep their own semantics, entries stay reachable by arrows', () => {
+    const html = view({ tree: false, open: true, total: 7, conversations: many })
+    expect(html).not.toContain('role="treeitem"')
+    expect(html).not.toContain('role="group"')
+    expect(html).toContain('<ul id="s1-conversations"')
+    expect(html.match(/data-conversation-entry=""/g)).toHaveLength(7)
+    expect(html).toContain('Show all (7)')
+    expect(html).toContain('New conversation')
   })
 
   it('caps a long history at 5 and offers Show all with the total', () => {
