@@ -216,7 +216,7 @@ async function main() {
     await scenario('s2-label-set-and-clear', 'set a label inline, then clear it', async () => {
       const labelOf = async () => (await ipcTree(a.id)).entries.find((e) => e.id === ID.a2)?.label ?? null;
       check((await labelOf()) === null, 'the target message has no label before');
-      await cdp.click(`(${rowOf('Tests added.')}).querySelector('[aria-label="Add label"]')`);
+      await cdp.click(`(${rowOf('Tests added.')}).querySelector('[aria-label^="Add label"]')`);
       await cdp.click(`(${rowOf('Tests added.')}).querySelector('[aria-label^="Label for"]')`);
       await cdp.send('Input.insertText', { text: 'Checkpoint' });
       await shot('02-label-editing.png');
@@ -229,9 +229,16 @@ async function main() {
       await openTree(a.id);
       check((await rowIn('Tests added.')).badges.includes('Checkpoint'), 'the label is still there after closing and reopening the dialog');
 
-      await cdp.click(`(${rowOf('Tests added.')}).querySelector('[aria-label="Edit label"]')`);
+      await cdp.click(`(${rowOf('Tests added.')}).querySelector('[aria-label^="Edit label"]')`);
       const input = `(${rowOf('Tests added.')}).querySelector('[aria-label^="Label for"]')`;
       await cdp.waitFor(`${input}?.value === 'Checkpoint'`, { timeoutMs: 10_000, label: 'edit starts from the current label' });
+      await cdp.evaluate(`${input}.focus()`);
+      await key('Escape', 27);
+      await cdp.waitFor(`!(${rowOf('Tests added.')}).querySelector('[aria-label^="Label for"]')`, { timeoutMs: 10_000, label: 'Escape cancels the label edit' });
+      check(await cdp.evaluate(`!!${DIALOG}`), 'Escape while editing a label keeps the dialog open');
+      check((await labelOf()) === 'Checkpoint', 'Escape while editing a label leaves the label unchanged');
+      await cdp.click(`(${rowOf('Tests added.')}).querySelector('[aria-label^="Edit label"]')`);
+      await cdp.waitFor(`${input}?.value === 'Checkpoint'`, { timeoutMs: 10_000, label: 'edit restarts after Escape' });
       await cdp.evaluate(`${input}.select()`);
       await key('Backspace', 8);
       check((await cdp.evaluate(`${input}.value`)) === '', 'the label input was emptied');
