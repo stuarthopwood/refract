@@ -144,7 +144,7 @@ const AgentTreeRow = memo(function AgentTreeRow({ row, index, tabbable, selected
       onKeyDown={(event) => onKeyDown(event, index)}
       // ml-10 puts the agent under the Stage title, as on the chat card. A parallel agent is a bordered card; a lone one is flat and its row
       // has no padding of its own. The hover fill is the surface step, which stays visible on the card fill where `row-hover-bg` does not.
-      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-10 mr-4 hover:bg-surface-hover', flat ? 'rounded-none' : cn(SUBAGENT_CARD_SURFACE_CLASS, 'my-1'))}
+      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-10 mr-4 hover:bg-surface-hover', flat ? 'rounded-none' : cn(SUBAGENT_CARD_SURFACE_CLASS, 'my-2'))}
     >
       {selected && <ActiveIndicatorBar />}
       {/* Issue #712: a detached background job keeps its muted "Background" word. */}

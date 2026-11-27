@@ -1,10 +1,8 @@
-// Shared list card (#869, docs/design/components.md "Reusable components first"): a borderless,
-// full-width row on a resting `bg-surface-subtle` fill (visible on a popover) whose body is one
-// focusable button that opens its item, with one accessible name so a screen reader hears one stop per item.
-// The optional `actions` slot sits beside the body, not inside it (a button cannot nest in a button),
-// for a secondary control such as Archive. The `surface` variant is the bordered `bg-surface-1` card the Subagents
-// sub-card uses (#2318): a hairline edge, the hover tint and a padded block body. `flush` keeps the hover tint and the
-// focus ring but has no fill, edge or padding, for a body that draws its own shape (the single-agent guide line).
+// Shared list card (#869, docs/design/components.md "Reusable components first"): a borderless, full-width row on a
+// resting `bg-surface-subtle` fill whose body is one focusable button that opens its item, with one accessible name
+// so a screen reader hears one stop per item. The optional `actions` slot sits beside the body, not inside it (a
+// button cannot nest in a button). `surface` is the bordered `bg-surface-1` Subagents sub-card (#2318); `flush`
+// keeps the hover tint and focus ring but has no fill, edge or padding, for a body that draws its own shape.
 import type { MouseEvent, ReactNode } from 'react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { cn } from '@/lib/utils'

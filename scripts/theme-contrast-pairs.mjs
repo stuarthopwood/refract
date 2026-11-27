@@ -154,6 +154,11 @@ export const PAIRS = [
   { fg: 'foreground', bg: 'state-working-tint', on: ['background', 'chat-card-bg'], min: 4.5 },
   { fg: 'chat-foreground', bg: 'state-working-tint', on: ['background', 'chat-card-bg'], min: 4.5 },
   { fg: 'accent-text', bg: 'state-working-tint', on: ['background', 'chat-card-bg'], min: 4.5 },
+  // The Subagents drawer paints the same working tint straight onto `--sidebar-right` (no card fill beneath).
+  { fg: 'muted-foreground', bg: 'state-working-tint', on: ['sidebar-right'], min: 4.5 },
+  { fg: 'foreground', bg: 'state-working-tint', on: ['sidebar-right'], min: 4.5 },
+  { fg: 'chat-foreground', bg: 'state-working-tint', on: ['sidebar-right'], min: 4.5 },
+  { fg: 'accent-text', bg: 'state-working-tint', on: ['sidebar-right'], min: 4.5 },
   // The sub-card text token (`text-card-foreground`) on its `--surface-1` step and hover tint.
   { fg: 'card-foreground', bg: 'surface-1', min: 4.5 },
   { fg: 'card-foreground', bg: 'surface-hover', min: 4.5 },
