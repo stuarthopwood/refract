@@ -1548,6 +1548,14 @@
 - Q: Issue #490: where does the rail entry sit, and what does the Subagents pill do? -> A: The rail order follows the #393 shell order, which is the `HOSTED_PANELS` order in `src/renderer/features/right-pane/panel-registry.ts` merged with the saved order (FR-112 to FR-116). The pill remains a shortcut that opens the Agents panel at that Session's group (FR-207).
 - Q: Issue #490 (INFERENCE, not decided): the Cancel, Steer and Copy result actions, the "N finished" fold inside a group (Stuart 2026-10-12 decision 2) and a persisted last-known list are not in the 2026-11-27 Decided comments. -> A: Not specified or tasked here; they stay open on #490 and no behaviour is invented. Epic #1272's rule is that the Decided comments win over earlier open points.
 
+### Session 2026-11-27 (epic #1136: `/new <prompt>`, #1827)
+
+- Q: Issue #1827 (Decided Skippy 2026-11-27, delegated by Stuart; #1861 grill 2026-11-17): how does `/new <prompt>` start the new Conversation? -> A: It reuses `start_conversation_then_send` in `src-tauri/src/session/agent/start_with_message.rs` (#1861) rather than calling `start_new_conversation()` and `send()` inline, so a retry never starts a second Conversation. Bare `/new` is unchanged (FR-208, FR-209).
+- Q: Issue #1827 (Decided Skippy 2026-11-27): do attachments travel with `/new <prompt>`? -> A: No. The composer refuses them with the existing slash-command attachment message ("Slash commands can't carry attached files. Remove them and try again."); Rust refuses too, so an image is never silently dropped (FR-210).
+- Q: Issue #1827 (Decided Skippy 2026-11-27): new spec or amend? -> A: Spec 001 is amended through the converge route; no new spec. Numbers FR-208 to FR-211 and SC-042.
+- Q: Issue #1827 (INFERENCE, not decided; open to Stuart's override): what does the developer see if the send fails after the new Conversation exists? -> A: A distinct error says the new Conversation was started but the message was not sent, and the composer restores the prompt as plain text (without `/new `), so pressing Send again sends only the message. This is the only reading of "a retry never starts a second Conversation" that works for a typed command (FR-209).
+- Q: Issue #1827 (INFERENCE, not decided): what if the prompt itself begins with `/`? -> A: Not specified here and not tasked; no behaviour is invented.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Start a session and chat with the agent (Priority: P1)
@@ -1770,6 +1778,9 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - A Session with a pending `refract_ask` card has Away Mode turned on or off: Away Mode answers it as it answers a pending native ask, except that a multiple-choice question with several recommended options gets every recommended option (FR-133, FR-137).
 - The developer submits an answer whose note is over 1000 characters, names an option that was not picked, or names an option that does not exist: `validate_ask_answers` rejects it, the card stays open with the error, and the call keeps waiting (FR-133).
 - OMP refuses `set_host_tools` for a launch (already a logged, non-fatal case for every Refract tool): that Session runs with neither `refract_ask` nor native `ask`, since the overlay is written before the launch and cannot know; the developer still chats and the agent simply has no question tool for that process's life, and the next launch registers again (FR-131).
+- `/new <prompt>` is sent with a pending image or file: the composer refuses it with the existing slash-command attachment message and keeps the draft and attachments; no Conversation is started (FR-210).
+- `/new <prompt>` is sent on a Stopped Session: the Session launches on the new Conversation and the prompt is its first message, with no running agent needed (FR-208).
+- `/new <prompt>` starts the Conversation but the send fails: the old Conversation is already replaced, so the composer keeps the prompt without `/new ` and shows that the new Conversation exists (FR-209).
 
 ## Requirements *(mandatory)*
 
@@ -2567,6 +2578,10 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **FR-205** (new, 2026-11-27, issue #490, epic #1272): The Agents panel MUST list every live Session, visible or not, as one group per Session headed by its name, repository and status, with that Session's subagents as the rows and its main agent as the header only. A row shows name or task, status (icon plus word), elapsed time and, where known, model or cost. Groups with running agents sort first, groups with nothing to show are hidden, a Session that is archived, deleted or stopped drops out, and an idle app shows "No agents running". A start, finish or failure is announced once in a polite live region, not on every progress tick.
 - **FR-206** (new, 2026-11-27, issue #490, epic #1272): Each group MUST list only its running agents plus its current turn's finished ones, by FR-202. v1 has no clear action and no notification for a background Session's subagent failure.
 - **FR-207** (new, 2026-11-27, issue #490, epic #1272): Selecting a row MUST open that agent's stream, reusing the Subagent panel's stream view, and jump to its Session. The Subagents pill MUST remain as a shortcut that opens the Agents panel at that Session's group. The rail entry takes its place in the `HOSTED_PANELS` order of the #393 shell, merged with a saved order by FR-112 to FR-116. A hidden Session's agents MUST reach the panel through one aggregated, coalesced `agents:update` that does not depend on which Session is on screen.
+- **FR-208** (new, 2026-11-27, issue #1827, epic #1136): `/new <prompt>` (a non-empty `<prompt>` after `/new`) MUST start a new Conversation in the Session and send `<prompt>` as that Conversation's first message, as given and never wrapped, through `start_conversation_then_send` (#1861). It MUST work on a Stopped Session without a running agent, as bare `/new` does. Bare `/new` MUST behave exactly as before.
+- **FR-209** (new, 2026-11-27, issue #1827, epic #1136): A failure before the new Conversation exists (`BeforeNew`) MUST leave the Session as it was and keep the draft. A failure after it exists (`AfterNew`) MUST return a distinct error naming that stage, and the composer MUST restore the prompt as plain text without `/new `, so a retry sends only the message and never starts a second Conversation.
+- **FR-210** (new, 2026-11-27, issue #1827, epic #1136): `/new <prompt>` MUST NOT carry attachments. With any pending image or file the composer MUST refuse with the existing message "Slash commands can't carry attached files. Remove them and try again.", keeping the draft, and `chat.send` MUST refuse a `/new <prompt>` that arrives with images, starting no Conversation.
+- **FR-211** (new, 2026-11-27, issue #1827, epic #1136): `new` MUST stay in `NATIVE_RESERVED_COMMANDS` in both `src-tauri/src/session/agent/commands.rs` and `src/shared/slash-commands.ts`, so `/new` is never forwarded to OMP; the menu entry stays and its description says a first message may follow.
 
 ### Key Entities
 
@@ -2621,6 +2636,7 @@ The developer types a slash command and finds the ones the agent offers. If a se
 - **SC-039**: On OMP 18.13.3, Fork from a mid-Conversation message yields a new Conversation with the earlier history, the original unchanged and a clean reattach after restart; Rewind restores the message to the composer; neither is offered while the Session is not idle (issue #696, FR-197 to FR-200).
 - **SC-040**: In a turn with a Stage of one finished and four running agents, the finished one stays until all five are done and a new turn has started; the pill reads "4 running", then disappears, or shows "1 failed" only until the next turn starts; it never reads "N finished"; the transcript still lists all five (issue #1085, FR-201 to FR-203).
 - **SC-041**: With two live Sessions of which one is hidden, the closed-by-default Agents panel is reachable from its rail entry, shows a group per Session with each Session's running agents, shows "No agents running" when idle, and opens or closes only by user action (issue #490, FR-204 to FR-207).
+- **SC-042**: Typing `/new summarise the open PRs` in an idle Session ends the old Conversation, shows an empty Conversation that receives that prompt as its first message, and leaves the old one in history; the same text with a pasted image is refused with the attachment message and starts nothing; a send that fails after the new Conversation exists leaves "summarise the open PRs" in the composer and one retry sends it without a second Conversation (issue #1827, FR-208 to FR-211).
 
 ## Assumptions
 
