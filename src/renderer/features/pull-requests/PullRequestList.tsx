@@ -74,6 +74,7 @@ export function PullRequestList() {
         }
       }}
       onClearFilters={clearFilters}
+      blurWhileLoading
       loading={loading}
       fetchedAt={fetchedAt}
       error={error}

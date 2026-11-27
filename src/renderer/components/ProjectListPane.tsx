@@ -90,6 +90,8 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   const { noun, idPrefix, state, repositoryIds, projects, skipped, error, itemCount, loading, paging } = props
   const [filtersOpen, setFiltersOpen] = useFilterBarOpen(idPrefix)
   const [skippedOpen, setSkippedOpen] = useState(false)
+  // Show more keeps the rows live and focusable (the button hands focus to the first new row), so only a refetch that replaces them blurs.
+  const [loadingMore, setLoadingMore] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
   const moreRef = useRef<HTMLButtonElement>(null)
@@ -112,6 +114,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   // After "Show more", focus the first newly loaded row; if none arrived, fall back to the cap
   // note or the list so focus is not lost with the button.
   useEffect(() => {
+    if (!loading) setLoadingMore(false)
     if (loading) return
     const previousCount = askedForMore.current
     askedForMore.current = null
@@ -264,7 +267,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           )
         ) : (
           <>
-            <LoadingOverlay loading={Boolean(props.blurWhileLoading) && loading && itemCount > 0}>
+            <LoadingOverlay loading={Boolean(props.blurWhileLoading) && loading && !loadingMore && itemCount > 0}>
             <div
               ref={listRef}
               tabIndex={-1}
@@ -290,6 +293,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
                   onClick={() => {
                     if (loading) return
                     askedForMore.current = itemCount
+                    setLoadingMore(true)
                     paging.onLoadMore()
                   }}
                 >
