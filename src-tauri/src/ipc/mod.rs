@@ -30,6 +30,7 @@ pub mod conversations_core;
 pub mod conversations_delete;
 pub mod conversations_retention;
 pub mod conversations_size;
+pub mod conversations_tree;
 pub mod copilot_plan;
 pub mod debug;
 pub mod file_attachments;
@@ -198,6 +199,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     list_cache::register(dispatcher);
     sessions_agent::register(dispatcher);
     conversations::register(dispatcher);
+    conversations_tree::register(dispatcher);
     chat::register(dispatcher);
     chat_pause::register(dispatcher);
     subagents::register(dispatcher);
@@ -300,6 +302,9 @@ pub fn map_agent_error(err: crate::session::AgentError) -> IpcError {
         "personal-agent-protected",
         "working-folder-unavailable",
         "no-repository",
+        "entry-not-found",
+        "tree-failed",
+        "ask-reanswer-unsupported",
     ];
     let code = if IPC_ERROR_CODES.contains(&err.code) {
         err.code

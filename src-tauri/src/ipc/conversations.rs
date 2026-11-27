@@ -427,7 +427,7 @@ pub fn conversations_open(state: AppState, args: Vec<Value>) -> HandlerFuture {
 }
 
 /// The snapshot the renderer reloads from after a start or switch.
-async fn snapshot_of(state: &AppState, session_id: &str) -> super::HandlerResult {
+pub(super) async fn snapshot_of(state: &AppState, session_id: &str) -> super::HandlerResult {
     let session = state
         .registry
         .lock()

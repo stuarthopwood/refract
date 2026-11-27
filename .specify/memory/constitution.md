@@ -18,11 +18,14 @@
   because background jobs can wake the agent after it yields), by restarting the process and
   reattaching the same saved session per Principle III (FINDINGS item 9).
 - Refract MUST NOT reimplement behaviour OMP exposes over RPC. It supplies natively only the
-  commands absent over RPC: `/plan`, `/fork`, `/resume`, `/new`, `/settings`, `/pause`, and
+  commands absent over RPC: `/plan`, `/resume`, `/new`, `/settings`, `/pause`, and
   `/plan-review`. `/new` maps to `new_session`; `/resume` maps to the reattach rule in
   Principle III. `/btw` is NOT in this list (amended 2026-10-11, spec 014): OMP exposes it
   natively over RPC (`btw`), so Refract supplies a client UI for the real command, not a
-  reimplementation of it -- see Principle II.
+  reimplementation of it -- see Principle II. `/fork` is NOT in this list either (amended
+  2026-11-27, issue #696): OMP exposes `get_tree`, `navigate_tree`, `fork` and `set_label` over
+  RPC (probed on OMP 18.22.2), so Fork and Rewind are Conversation-tree actions on the real
+  commands. A typed `/fork` stays refused because Fork needs an entry id.
 
 Rationale: the transport spike (`docs/spike/FINDINGS.md`) selected rpc-ui because it keeps
 skills, extensions, MCP, approvals, and `ask` working. The SDK cannot surface approvals, and ACP
