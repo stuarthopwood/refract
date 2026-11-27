@@ -20,3 +20,10 @@ pub(crate) fn path(name: impl AsRef<Path>) -> PathBuf {
     HELD.with(|held| held.borrow_mut().push(dir));
     joined
 }
+
+/// Env that keeps every test-spawned git off the developer's global and system config (#1733).
+/// `/dev/null` is read as an empty file by Git for Windows too, so no scratch file is needed.
+pub(crate) const GIT_ISOLATION_ENV: [(&str, &str); 2] = [
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_NOSYSTEM", "1"),
+];

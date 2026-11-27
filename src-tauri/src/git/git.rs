@@ -139,6 +139,9 @@ fn build_git_command(cwd: &Path, args: &[&str]) -> Result<Command, GitRawResult>
         }
         command.env(key, value);
     }
+    // Tests run the real git, so a developer's global config (signing, hooks, autocrlf) must not leak in (#1733).
+    #[cfg(test)]
+    command.envs(crate::test_scratch::GIT_ISOLATION_ENV);
     Ok(command)
 }
 
@@ -324,4 +327,24 @@ pub fn shown_path(path: &Path) -> String {
         }
     }
     normalize_git_path(&out.to_string_lossy())
+}
+
+#[cfg(test)]
+mod isolation_tests {
+    use super::*;
+
+    #[test]
+    fn build_git_command_carries_the_test_isolation_env() {
+        let command = build_git_command(Path::new("."), &["status"])
+            .unwrap_or_else(|_| panic!("git must be on PATH for this test"));
+        let envs: Vec<_> = command.as_std().get_envs().collect();
+        for (key, value) in crate::test_scratch::GIT_ISOLATION_ENV {
+            let found = envs.iter().find(|(k, _)| *k == std::ffi::OsStr::new(key));
+            assert_eq!(
+                found.and_then(|(_, v)| *v),
+                Some(std::ffi::OsStr::new(value)),
+                "{key}"
+            );
+        }
+    }
 }

@@ -55,6 +55,9 @@ fn repo_root() -> PathBuf {
 fn run_git(dir: &Path, args: &[&str]) {
     let status = Command::new("git")
         .args(args)
+        // Same isolation as `test_scratch::GIT_ISOLATION_ENV`; an integration test cannot reach that pub(crate) const.
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
         .current_dir(dir)
         .status()
         .expect("git must be on PATH for this test");

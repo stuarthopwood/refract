@@ -87,3 +87,30 @@ function safeSubdirs(dir) {
     return [];
   }
 }
+
+/** Test and bin executables under `<targetDir>/debug/deps` that a running process still maps. Windows
+ *  refuses a write-open of a running exe (EBUSY/EPERM/EACCES), the same refusal the linker hits as
+ *  LNK1105 / error 1224 when it tries to replace one (#1733). Read-only: opens, never writes. */
+export function runningCargoExecutables(targetDir) {
+  if (process.platform !== 'win32') return [];
+  const depsDir = path.join(targetDir, 'debug', 'deps');
+  let names;
+  try {
+    names = readdirSync(depsDir).filter((name) => name.toLowerCase().endsWith('.exe'));
+  } catch {
+    return [];
+  }
+  const running = [];
+  for (const name of names) {
+    const file = path.join(depsDir, name);
+    let fd;
+    try {
+      fd = openSync(file, 'r+');
+    } catch (err) {
+      if (err.code === 'EBUSY' || err.code === 'EPERM' || err.code === 'EACCES') running.push(file);
+      continue;
+    }
+    closeSync(fd);
+  }
+  return running;
+}

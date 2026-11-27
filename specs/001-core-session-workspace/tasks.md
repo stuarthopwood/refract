@@ -5965,3 +5965,8 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 ## Phase 130: Convergence (2026-11-27, #1885 theme file JSON Schema and format help page, FR-173, epic #2229)
 
 - [x] T733 [US1] #1885 (FR-173): `scripts/theme-schema.mjs` and `src/shared/theme-token-docs.json` generate `src/shared/theme.schema.json` (`pnpm theme-schema`); `src/shared/themeSchema.ts` holds the URL; `lib/themeFile.ts` serialises every export with `$schema`; Rust `RawTheme` accepts `$schema`; `settings/ThemeFormatDialog.tsx` opened from `ThemePicker`; `theme-schema.test.mjs`, `themeFile.test.ts` and the Rust `theme_files` tests pin the sync, the export and the import. Rust untested here (no cargo build); format help page not live-checked.
+
+## Phase 131: Convergence (2026-11-27, #1980 delete-check test bound and #1733 git test isolation and link locks, FR-174, epic #2229)
+
+- [x] T734 [US1] #1980 (FR-174): `worktree_delete_check.rs` gains `delete_check_for_session_within(bound, ..)`; `delete_check_for_session` passes `READER_TIMEOUT`; the branch-graph fallback test passes a 600 s bound. Closes #1980.
+- [x] T735 [US1] #1733 (FR-174): `test_scratch::GIT_ISOLATION_ENV` applied in `build_git_command` (`cfg(test)`) and the four test `run_git` helpers (now including `tests/contract_replay.rs`); `scripts/cargo-cache-helpers.mjs` `runningCargoExecutables` and a `ci-local.mjs` warning for the LNK1105 / error 1224 cause; `docs/rust-build.md` section. Closes #1733.

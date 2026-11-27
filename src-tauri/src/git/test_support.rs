@@ -25,6 +25,7 @@ pub(crate) async fn init_repo() -> PathBuf {
 pub(crate) async fn run_git(cwd: &Path, args: &[&str]) {
     let status = Command::new("git")
         .args(args)
+        .envs(crate::test_scratch::GIT_ISOLATION_ENV)
         .current_dir(cwd)
         .status()
         .await

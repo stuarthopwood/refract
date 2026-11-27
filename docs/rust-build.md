@@ -78,3 +78,20 @@ from the former Electron CDP skill (`scripts/verify-tauri-cdp.mjs`).
   it a synthetic fixture. A relative or empty value is ignored. `scripts/verify-tauri-1331.mjs`
   (`node scripts/verify-tauri-1331.mjs`, with `CARGO_TARGET_DIR` and `SHOTS_DIR` set) uses it with
   a fake `omp` and a fake `gh` on PATH and proves both through their call logs.
+
+## Rust test isolation and link locks (#1733, #1980)
+
+- Tests run the real git, so every test-spawned git gets `GIT_CONFIG_GLOBAL=/dev/null` and
+  `GIT_CONFIG_NOSYSTEM=1` (`test_scratch::GIT_ISOLATION_ENV`): production `build_git_command` adds them under
+  `cfg(test)`, and the four test `run_git` helpers (`git/test_support.rs`, `git/remote.rs`, `tests/contract_replay.rs`,
+  `ipc/repositories_tests.rs`) use the same constant. A new test helper that spawns git must do the same.
+- A test whose outcome must not depend on load passes its own bound instead of the production
+  constant: `delete_check_for_session_within` takes the timeout, and `delete_check_for_session` passes
+  `READER_TIMEOUT` (15 s, unchanged). Never lengthen a test by sleeping.
+- `LNK1105` / OS error 1224 on `refract_tauri-*.exe` means the linker cannot replace an exe that a
+  process still maps. Cargo's target lock covers only a build, not the test run that follows, so a
+  `cargo test` still running (or hung) in the same target can hold the exe while the next build links
+  it. `pnpm ci:local` now warns, before any step, naming each exe under `<CARGO_TARGET_DIR>/debug/deps`
+  that a process still holds; end that run by PID (never by image name). Antivirus real-time scans
+  of the target folder can hold a freshly linked exe the same way and are outside the repo's control:
+  exclude the shared `CARGO_TARGET_DIR` from real-time scanning if the error persists with no run in flight.

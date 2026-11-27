@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseSteps, printListIfRequested } from './ci-local-steps.mjs';
 import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
-import { CACHE_WARN_BYTES, dirSizeBytes, formatGiB } from './cargo-cache-helpers.mjs';
+import { CACHE_WARN_BYTES, dirSizeBytes, formatGiB, runningCargoExecutables } from './cargo-cache-helpers.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -51,6 +51,14 @@ function warnIfCacheLarge() {
   }
 }
 
+// A still-running exe from an earlier `cargo test` makes the linker fail with LNK1105 / error 1224 (#1733).
+function warnIfTestExeRunning() {
+  const running = runningCargoExecutables(path.resolve(process.env.CARGO_TARGET_DIR));
+  if (running.length > 0) {
+    console.warn(`ci-local: warning: ${running.length} executable(s) in the shared cargo target are locked or running, and a link that replaces one fails with LNK1105 / error 1224. Wait for that run to finish or end it (by PID, never by image name):\n  ${running.join('\n  ')}`);
+  }
+}
+
 function main() {
   const steps = loadSteps();
   if (printListIfRequested(process.argv, steps, console.log)) {
@@ -64,6 +72,7 @@ function main() {
       fail(err.message);
     }
     warnIfCacheLarge();
+    warnIfTestExeRunning();
   }
   const results = [];
   let failedAt = -1;
