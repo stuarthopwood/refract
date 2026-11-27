@@ -1,18 +1,21 @@
 // One item look shared by `dropdown-menu.tsx` and `context-menu.tsx` so they can't drift (#1124).
 // A 2px inset bar marks the focused row; Radix focuses on pointer hover, so it paints on hover too.
-// Forced colours drop the bar and fill, so focus gets a `Highlight` outline (#1065). An icon with its own `text-*` class is left alone.
+// Forced colours drop the bar and fill, so focus gets a `Highlight` outline (#1065); Select rows share it. An icon with its own `text-*` class is left alone.
+export const MENU_FORCED_FOCUS_CLASS =
+  "forced-colors:focus:outline-(length:--focus-ring-width) forced-colors:focus:outline-solid forced-colors:focus:outline-offset-[-2px] forced-colors:focus:outline-[color:Highlight]"
+
 const MENU_ICON_CLASS =
   "[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground hover:[&_svg:not([class*='text-'])]:text-current focus:[&_svg:not([class*='text-'])]:text-current data-[variant=destructive]:[&_svg:not([class*='text-'])]:text-destructive"
 
-export const MENU_ITEM_CLASS = `relative flex w-full cursor-default items-center gap-2 px-2 py-1 text-sm outline-hidden select-none focus:bg-menu-hover focus:text-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] forced-colors:focus:outline-(length:--focus-ring-width) forced-colors:focus:outline-solid forced-colors:focus:outline-offset-[-2px] forced-colors:focus:outline-[color:Highlight] data-disabled:pointer-events-none data-disabled:opacity-50 aria-disabled:forced-colors:text-[GrayText] data-[inset=true]:pl-8 ${MENU_ICON_CLASS}`
+export const MENU_ITEM_CLASS = `relative flex w-full cursor-default items-center gap-2 px-2 py-1 text-sm outline-hidden select-none focus:bg-menu-hover focus:text-foreground focus:shadow-[inset_2px_0_0_0_var(--color-active-indicator)] ${MENU_FORCED_FOCUS_CLASS} data-disabled:pointer-events-none data-disabled:opacity-50 aria-disabled:forced-colors:text-[GrayText] data-[inset=true]:pl-8 ${MENU_ICON_CLASS}`
 
-// Checked items: accent label and mark, no fill. On the focus fill the label reverts to accent-foreground,
+// Checked items: accent label and mark, no fill. On the focus fill the label reverts to foreground,
 // because accent text there is under 4.5:1 in Dark and Obsidian; the accent mark (3:1 non-text) keeps the cue.
 export const CHECKED_ITEM_CLASS =
-  "data-[state=checked]:text-accent-text data-[state=checked]:focus:text-accent-foreground data-[state=checked]:[&_svg:not([class*='text-'])]:text-accent-text data-[state=checked]:focus:[&_svg:not([class*='text-'])]:text-accent-text"
+  "data-[state=checked]:text-accent-text data-[state=checked]:focus:text-foreground data-[state=checked]:[&_svg:not([class*='text-'])]:text-accent-text data-[state=checked]:focus:[&_svg:not([class*='text-'])]:text-accent-text"
 
 export const MENU_ITEM_DESTRUCTIVE_CLASS =
-  "data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:focus:shadow-[inset_2px_0_0_0_var(--color-destructive)]"
+  "data-[variant=destructive]:text-destructive data-[variant=destructive]:focus:bg-destructive/3 data-[variant=destructive]:focus:text-destructive data-[variant=destructive]:focus:shadow-[inset_2px_0_0_0_var(--color-destructive)]"
 
 export const MENU_SUB_TRIGGER_CLASS = `${MENU_ITEM_CLASS} data-[state=open]:bg-menu-hover data-[state=open]:text-foreground`
 
@@ -26,4 +29,5 @@ export const MENU_SUB_CONTENT_CLASS = `${MENU_BOX_CLASS} shadow-lg`
 
 export const MENU_LABEL_CLASS = "px-2 py-1 text-xs text-muted-foreground data-[inset=true]:pl-8"
 
-export const MENU_SEPARATOR_CLASS = "pointer-events-none -mx-1 my-1 h-px bg-divider"
+// Forced colours would otherwise paint the divider in a background-matching colour and hide it.
+export const MENU_SEPARATOR_CLASS = "pointer-events-none -mx-1 my-1 h-px bg-divider forced-colors:bg-[CanvasText]"

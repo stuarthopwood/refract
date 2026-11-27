@@ -50,15 +50,18 @@ export const PAIRS = [
   { fg: 'pr-open', bg: 'popover', min: 3 },
   { fg: 'pr-merged', bg: 'popover', min: 3 },
   // #2173: menus, popovers, select panels and the command palette paint `--menu-surface`; items fill with `--menu-hover` (a translucent wash, hence `on`).
+  // #2229: the checked-item label reverts to `foreground` on that wash (accent text there is under 4.5:1 in Dark and Obsidian), so only the checked mark (`accent-text`, non-text) is gated at 3:1.
   { fg: 'popover-foreground', bg: 'menu-surface', min: 4.5 },
   { fg: 'muted-foreground', bg: 'menu-surface', min: 4.5 },
   { fg: 'accent-text', bg: 'menu-surface', min: 4.5 },
   { fg: 'destructive', bg: 'menu-surface', min: 4.5 },
   { fg: 'active-indicator', bg: 'menu-surface', min: 3 },
+  { fg: 'ring', bg: 'menu-surface', min: 3 }, // Select's focus bar and the palette row ring sit on the panel
   { fg: 'foreground', bg: 'menu-hover', on: 'menu-surface', min: 4.5 },
-  { fg: 'accent-foreground', bg: 'menu-hover', on: 'menu-surface', min: 4.5 },
   { fg: 'muted-foreground', bg: 'menu-hover', on: 'menu-surface', min: 4.5 },
+  { fg: 'accent-text', bg: 'menu-hover', on: 'menu-surface', min: 3 },
   { fg: 'active-indicator', bg: 'menu-hover', on: 'menu-surface', min: 3 },
+  { fg: 'ring', bg: 'menu-hover', on: 'menu-surface', min: 3 }, // the command palette's selected row paints `ring-2 ring-ring` over the wash
   { fg: 'active-indicator', bg: 'accent', min: 3 }, // #1122: ActiveIndicatorBar now also sits on bg-accent
   { fg: 'active-indicator', bg: 'muted', min: 3 }, // #1122: SubagentPanel.tsx's `hover:bg-muted/50` row hover can paint under a selected row's bar
   { fg: 'ring', bg: 'accent', min: 3 }, // #1122: focus-visible:ring-ring now paints while focused on an accent-filled selected row
@@ -284,6 +287,27 @@ export const PAIRS = [
   { fg: 'session-row-selected-fg', bg: 'session-row-selected-bg', min: 4.5 },
   ...DARK_HC_PAIRS,
 ]
+
+// A focused destructive menu item reads `text-destructive` on `bg-destructive/3` over `--menu-surface`; the tint is a class modifier, so it needs alpha math, not a PAIRS entry.
+// 10% measured 4.09-4.45:1 in eight themes once menus moved off `--popover` (#2229); 3% clears 4.5:1 everywhere. Keep in sync with `MENU_ITEM_DESTRUCTIVE_CLASS`.
+const DESTRUCTIVE_FOCUS_ALPHA = 0.03
+export function menuDestructiveFocusContrastRows(themes) {
+  const rows = []
+  const bgName = 'destructive/3 on menu-surface'
+  for (const [themeId, props] of Object.entries(themes)) {
+    const destructive = props['destructive']
+    const surface = props['menu-surface']
+    if (!destructive || !surface) {
+      rows.push({ themeId, fg: 'destructive', bg: bgName, min: 4.5, ratio: null, pass: false, note: 'token missing' })
+      continue
+    }
+    const fillLinear = resolvedLinear({ raw: 'destructive/3', alpha: destructive.alpha * DESTRUCTIVE_FOCUS_ALPHA, linear: destructive.linear }, surface)
+    const fgLinear = resolvedLinear(destructive, { raw: 'fill', alpha: 1, linear: fillLinear })
+    const ratio = contrastRatio(relativeLuminance(fgLinear), relativeLuminance(fillLinear))
+    rows.push({ themeId, fg: 'destructive', bg: bgName, min: 4.5, ratio, pass: ratio >= 4.5, fgHex: linearToHex(fgLinear), bgHex: linearToHex(fillLinear) })
+  }
+  return rows
+}
 
 // The search field's `bg-input/30` fill always renders (`.dark` is always on `<html>`), and `--input` is itself
 // translucent, so it composites at `input.alpha * 0.3` over `--sidebar`. That needs alpha math, not a PAIRS entry.

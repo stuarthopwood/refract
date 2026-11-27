@@ -34,6 +34,14 @@ describe('theme contrast pairs', () => {
     expect(onRightPane('ring').map((p) => p.min)).toEqual([3]);
   });
 
+  it('pairs_include_menu_ring_checked_mark_and_no_stale_accent_foreground', () => {
+    const find = (fg, bg) => PAIRS.find((p) => p.fg === fg && p.bg === bg);
+    expect(find('ring', 'menu-surface')).toMatchObject({ min: 3 });
+    expect(find('ring', 'menu-hover')).toMatchObject({ min: 3, on: 'menu-surface' });
+    expect(find('accent-text', 'menu-hover')).toMatchObject({ min: 3, on: 'menu-surface' });
+    expect(find('accent-foreground', 'menu-hover')).toBeUndefined();
+  });
+
   it('dark_high_contrast_pairs_hold_text_to_7_and_edges_to_4_5_for_that_theme_only', () => {
     const hc = PAIRS.filter((p) => p.onlyThemes && p.onlyThemes.length === 1 && p.onlyThemes[0] === 'dark-high-contrast');
     const min = (fg, bg) => hc.find((p) => p.fg === fg && p.bg === bg)?.min;

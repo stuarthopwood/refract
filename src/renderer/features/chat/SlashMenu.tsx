@@ -53,13 +53,13 @@ export function rankSlashMenuCommands(state: SlashMenuState, commands: readonly 
 }
 
 export const COMPOSER_MENU_NOTICE_CLASS =
-  'absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg bg-popover p-2 text-sm text-muted-foreground shadow-md ring-1 ring-elevated-edge'
+  'absolute bottom-full left-0 z-10 mb-1 w-72 rounded-lg bg-menu-surface p-2 text-sm text-muted-foreground shadow-md ring-1 ring-elevated-edge'
 export const COMPOSER_MENU_LIST_CLASS =
-  'absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto overflow-x-hidden rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-elevated-edge'
+  'absolute bottom-full left-0 z-10 mb-1 max-h-56 w-72 overflow-y-auto overflow-x-hidden rounded-lg bg-menu-surface p-1 text-sm text-popover-foreground shadow-md ring-1 ring-elevated-edge'
 export function composerMenuRowClass(active: boolean): string {
   return cn(
     'flex cursor-default items-center justify-between gap-2 border-l-2 border-transparent px-2 py-1',
-    active && 'border-l-active-indicator bg-accent text-accent-foreground'
+    active && 'border-l-active-indicator bg-menu-hover text-foreground'
   )
 }
 
