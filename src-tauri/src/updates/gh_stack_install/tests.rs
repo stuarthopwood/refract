@@ -285,8 +285,49 @@ async fn the_pinned_constant_is_what_the_install_path_requests() {
 
 #[tokio::test]
 async fn a_gh_stack_failure_does_not_fail_the_gh_install() {
-    let result = finish_github_cli_install(Ok(()), || ready(Err("no network".to_string()))).await;
+    let ran = Mutex::new(false);
+    let result = finish_github_cli_install(Ok(()), || {
+        *ran.lock().unwrap() = true;
+        ready(Err("no network".to_string()))
+    })
+    .await;
+    assert!(*ran.lock().unwrap());
     assert_eq!(result, Ok(()));
+}
+
+#[test]
+fn a_listing_without_the_v_prefix_is_still_the_pinned_tag() {
+    assert_eq!(
+        plan_from_listing(&listing("0.3.0"), TAG),
+        Plan::AlreadyPinned
+    );
+}
+
+#[tokio::test]
+async fn the_state_install_path_pins_the_tag_and_never_upgrades() {
+    use crate::github::gh_stack_state::{
+        install_with as state_install, GhStackRuntime, GhStackState,
+    };
+    let gh = FakeGh::new(|args| ok(if args[1] == "list" { "" } else { "installed" }));
+    // Popped from the back: the first probe says Missing, the re-probe says Ready.
+    let probes = Mutex::new(vec![GhStackState::Ready, GhStackState::Missing]);
+    // `install_pinned` is what `install_gh_stack` (and so `gh_stack_state::install`) calls; the
+    // test supplies no tag, so the pin must come from the install module itself.
+    let state = state_install(
+        &GhStackRuntime::new(),
+        || ready(Ok(probes.lock().unwrap().pop().unwrap())),
+        || install_pinned(|| Ok::<_, ()>(&gh), &|_| {}),
+    )
+    .await
+    .unwrap();
+    assert_eq!(state, GhStackState::Ready);
+    let calls = gh.calls();
+    assert_eq!(
+        calls.last().unwrap(),
+        &format!("extension install github/gh-stack --pin {GH_STACK_PINNED_TAG}")
+    );
+    assert!(calls.last().unwrap().ends_with("--pin v0.3.0"), "{calls:?}");
+    assert!(!calls.iter().any(|c| c.contains("upgrade")), "{calls:?}");
 }
 
 #[tokio::test]

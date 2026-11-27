@@ -2,6 +2,7 @@
 // per-repository "stacks unavailable" set (#1867, spec 132). Nothing here touches disk.
 
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
@@ -152,9 +153,21 @@ pub async fn state(runtime: &GhStackRuntime) -> Result<GhStackState, GhError> {
 /// Installs (`Missing`) or replaces (`Outdated`) gh-stack at the pinned tag through the same
 /// path as the installer, then re-probes. A failure leaves the state as it was.
 pub async fn install(runtime: &GhStackRuntime) -> Result<GhStackState, GhError> {
+    install_with(runtime, probe, || install_gh_stack(|_| {})).await
+}
+
+/// `install` with the probe and the installer injected, so tests never launch gh.
+pub(crate) async fn install_with<
+    PF: Future<Output = Result<GhStackState, GhError>>,
+    IF: Future<Output = Result<(), String>>,
+>(
+    runtime: &GhStackRuntime,
+    probe: impl Fn() -> PF,
+    install_stack: impl FnOnce() -> IF,
+) -> Result<GhStackState, GhError> {
     runtime.invalidate();
     if probe().await? != GhStackState::Ready {
-        install_gh_stack(|_| {})
+        install_stack()
             .await
             .map_err(|detail| GhError::new(GhErrorCode::GhFailed, detail))?;
     }

@@ -58,11 +58,13 @@ fn plan_from_listing(listing: &str, tag: &str) -> Plan {
             .is_some_and(|repo| repo.eq_ignore_ascii_case(GH_STACK_REPO))
         {
             let listed = fields.next().unwrap_or_default();
-            if listed == tag {
+            let (listed_version, pinned_version) = (parse_version(listed), parse_version(tag));
+            // Versions compare as parsed tuples, so `0.3.0` and `v0.3.0` are the same release.
+            if listed == tag || (listed_version.is_some() && listed_version == pinned_version) {
                 return Plan::AlreadyPinned;
             }
             // An unreadable version (a commit ref) is not provably newer, so it is replaced.
-            return match (parse_version(listed), parse_version(tag)) {
+            return match (listed_version, pinned_version) {
                 (Some(listed), Some(pinned)) if listed > pinned => Plan::KeepNewer,
                 _ => Plan::Replace,
             };
@@ -177,12 +179,20 @@ async fn report_step(
 pub async fn install_gh_stack(
     on_progress: impl Fn(DependencyInstallProgress),
 ) -> Result<(), String> {
-    install_with(
+    install_pinned(
         || crate::github::gh::resolve_gh().map(ResolvedGh),
-        GH_STACK_PINNED_TAG,
         &on_progress,
     )
     .await
+}
+
+/// `install_gh_stack` with the gh resolver injected: the tag is always the pin, so a test going
+/// through here proves what the real entry points request.
+async fn install_pinned<G: GhRunner>(
+    resolve: impl FnOnce() -> Result<G, ()>,
+    on_progress: &impl Fn(DependencyInstallProgress),
+) -> Result<(), String> {
+    install_with(resolve, GH_STACK_PINNED_TAG, on_progress).await
 }
 
 async fn install_with<G: GhRunner>(
