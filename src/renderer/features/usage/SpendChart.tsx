@@ -4,6 +4,7 @@ import { FilterTabs } from '@/components/FilterTabs'
 import { ScreenSection } from '@/components/ScreenSection'
 import { Sparkline, StackedBarChart, useChartView } from '@/components/ui/chart'
 import type { UsageTimeBucket } from '../../../shared/ipc-usage'
+import { spendSparkline } from './chartSeries'
 import { formatBucketLabel, formatUsd } from './format'
 
 const TOP_MODELS = 4
@@ -25,7 +26,7 @@ export function SpendChart({
 }) {
   const view = useChartView(loading === true || buckets.length === 0)
   if (compact) {
-    const values = buckets.map((b) => b.byModel.reduce((sum, m) => sum + m.usd, 0))
+    const { values, labels } = spendSparkline(buckets, bucket)
     const total = values.reduce((sum, v) => sum + v, 0)
     const unit = bucket === 'day' ? 'day' : 'hour'
     return (
@@ -36,6 +37,7 @@ export function SpendChart({
           <Sparkline
             label={`Spend per ${unit}, ${values.length} ${unit}s: ${formatUsd(total)} total, peak ${formatUsd(Math.max(...values))}`}
             values={values}
+            labels={labels}
             formatValue={formatUsd}
           />
         )}

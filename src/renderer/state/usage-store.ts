@@ -1,5 +1,6 @@
-// Usage view state (spec 060 S2-05): filters and prefs persisted through `usage.setPrefs`, the
-// results of every query for the current filters, and the ingest progress. Ingest itself runs from
+// Usage view state (spec 060 S2-05): the filters (in memory only, #1850: they last until the app
+// closes and are never written to disk), the saved Jokes preference, the results of every query for
+// the current filters, and the ingest progress. Ingest itself runs from
 // app launch; `open()` re-asks for a start (idempotent) and subscribes to progress, `close()`
 // unsubscribes. One fetch per filter change, and one per progress event while an ingest runs (the
 // host emits at most one a second).
@@ -19,7 +20,6 @@ import type {
   UsageTokenMixRow,
   UsageTopSession
 } from '../../shared/ipc-usage'
-import { withKnownProject } from './usage-projects'
 
 export const DEFAULT_USAGE_FILTERS: UsageFilters = { range: '7d' }
 export const CALLS_PAGE_SIZE = 25
@@ -104,15 +104,12 @@ export const useUsageStore = create<UsageState>((set, get) => ({
     if (get().prefsLoaded) return
     const [prefs, projects] = await Promise.all([window.refract.usage.getPrefs(), window.refract.usage.projects()])
     if (!prefs.ok) return
-    // A saved Project that has no recorded name is dropped, so the picker never shows an id.
-    const filters = projects.ok ? withKnownProject(prefs.value.filters, projects.value) : prefs.value.filters
+    // Only the Jokes preference is read back; a filter saved by an earlier version is ignored.
     set({
       jokes: prefs.value.jokes,
-      filters,
       prefsLoaded: true,
       options: { ...get().options, projects: projects.ok ? projects.value : get().options.projects }
     })
-    if (filters !== prefs.value.filters) void window.refract.usage.setPrefs({ filters })
   },
   async open() {
     await get().loadPrefs()
@@ -142,7 +139,6 @@ export const useUsageStore = create<UsageState>((set, get) => ({
   setFilters(patch) {
     const filters = { ...get().filters, ...patch }
     set({ filters, refreshing: true, calls: { ...get().calls, pageIndex: 0 } })
-    void window.refract.usage.setPrefs({ filters })
     void get().refresh()
   },
   async setJokes(jokes) {

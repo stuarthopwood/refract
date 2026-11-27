@@ -40,7 +40,6 @@ describe('parent collapse', () => {
     expect(setSessionListCollapse).toHaveBeenCalledWith({
       collapsedRepositoryIds: [],
       archivedOpen: false,
-      showHidden: false,
       collapsedParentIds: ['p'],
     });
   });
@@ -129,5 +128,34 @@ describe('parent collapse during a search', () => {
     expect(useSessionListStore.getState().isParentOpen('q')).toBe(false);
     useSessionListStore.getState().expandAll(['r'], false);
     expect(useSessionListStore.getState().isParentOpen('q')).toBe(false);
+  });
+});
+
+describe('Show hidden is a filter held in memory (#1850)', () => {
+  it('starts off in a fresh store, before any restore or toggle', () => {
+    expect(useSessionListStore.getInitialState().showHidden).toBe(false);
+  });
+
+  it('keeps the toggle without writing it to disk', () => {
+    useSessionListStore.getState().setShowHidden(true);
+    expect(useSessionListStore.getState().showHidden).toBe(true);
+
+    vi.advanceTimersByTime(300);
+    expect(setSessionListCollapse).not.toHaveBeenCalled();
+  });
+
+  it('leaves it off after a restore, even from a file saved with it on', () => {
+    const legacy = { ...DEFAULT_SESSION_LIST_COLLAPSE, showHidden: true };
+    useSessionListStore.getState().restore(legacy);
+    expect(useSessionListStore.getState().showHidden).toBe(false);
+  });
+
+  it('does not send it when a collapse change is saved', () => {
+    useSessionListStore.getState().setShowHidden(true);
+    useSessionListStore.getState().toggleParent('p');
+    vi.advanceTimersByTime(300);
+    expect(setSessionListCollapse).toHaveBeenCalledWith(
+      expect.not.objectContaining({ showHidden: expect.anything() }),
+    );
   });
 });

@@ -4,6 +4,7 @@ import { StatCard } from '@/components/StatCard'
 import { Sparkline } from '@/components/ui/chart'
 import { ScreenSection } from '@/components/ScreenSection'
 import type { UsageFrustration } from '../../../shared/ipc-usage'
+import { moodSparkline } from './chartSeries'
 import { frustrationCaption } from './captions'
 import { formatInt } from './format'
 
@@ -23,7 +24,7 @@ export function FrustrationCard({ frustration }: { frustration: UsageFrustration
         <StatCard label="Mood" value={`${perMessage.toFixed(2)} per message`} caption={frustrationCaption(perMessage)} />
       </div>
       {frustration.daily.length > 1 && (
-        <Sparkline label="Mood by day, higher is angrier" values={frustration.daily.map((d) => d.mood)} formatValue={(n) => n.toFixed(2)} />
+        <Sparkline label="Mood by day, higher is angrier" {...moodSparkline(frustration.daily)} formatValue={(n) => n.toFixed(2)} />
       )}
     </ScreenSection>
   )

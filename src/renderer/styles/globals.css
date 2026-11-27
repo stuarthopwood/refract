@@ -50,6 +50,7 @@
   --color-switch-off-dark-bg: var(--switch-off-dark-bg);
   --color-preview-bar-bg: var(--preview-bar-bg);
   --color-tab-close-hover-bg: var(--tab-close-hover-bg);
+  --color-chart-cursor-bg: var(--chart-cursor-bg);
   --color-chat-user-bubble-bg: var(--chat-user-bubble-bg);
   --color-chat-user-bubble-fg: var(--chat-user-bubble-fg);
   --color-chat-user-bubble-border: var(--chat-user-bubble-border);
@@ -389,6 +390,7 @@ samp {
   --switch-off-dark-bg: color-mix(in oklab, var(--foreground) 40%, transparent);
   --preview-bar-bg: color-mix(in oklab, var(--muted-foreground) 40%, transparent);
   --tab-close-hover-bg: color-mix(in oklab, var(--foreground) 10%, transparent);
+  --chart-cursor-bg: color-mix(in oklab, var(--foreground) 10%, transparent);
   --focus-glow: color-mix(in oklab, var(--ring) 50%, transparent);
   --elevated-edge: color-mix(in oklab, var(--foreground) 10%, transparent);
   --scrim-bg: color-mix(in oklab, black 10%, transparent);
