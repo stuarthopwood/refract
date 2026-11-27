@@ -10,12 +10,10 @@ export const BADGE_FINDER = `document.querySelector('[data-slot="badge"][data-va
 export async function readRealColours(cdp) {
   return cdp.evaluate(`(() => {
     const header = ${HEADER_FINDER};
-    const footer = document.querySelector('footer');
     const chatProse = ${CHAT_PROSE_FINDER};
     const send = ${SEND_BUTTON_FINDER};
     return {
       header: header ? getComputedStyle(header).color : null,
-      muted: footer ? getComputedStyle(footer).color : null,
       chat: chatProse ? getComputedStyle(chatProse).color : null,
       sendBackground: send ? getComputedStyle(send).backgroundColor : null,
       sendForeground: send ? getComputedStyle(send).color : null

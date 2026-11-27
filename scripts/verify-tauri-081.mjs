@@ -116,8 +116,6 @@ async function runChecks(cdp, repoDir) {
 
   await cdp.click(`document.querySelector('[aria-label="Back to chat"]')`);
   await sleep(300);
-  const bar = await cdp.evaluate(`(() => { const f = document.querySelector('footer'); const s = getComputedStyle(f); return { bg: s.backgroundColor, fg: s.color }; })()`);
-  assert(bar.bg === toRgb(CUSTOM_TOKENS['status-bar-bg']) && bar.fg === toRgb(CUSTOM_TOKENS['status-bar-fg']), 'the real status bar paints --status-bar-bg and --status-bar-fg');
   await shot(cdp, 'chat-custom-per-element.png');
 }
 

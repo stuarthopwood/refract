@@ -22,6 +22,14 @@ describe('LoadingOverlay default card', () => {
     expect(render({ loading: true, delayMs: 0 })).toContain('motion-reduce:animate-none')
   })
 
+  it('centres_the_card_both_ways_in_the_visible_scroll_area', () => {
+    const html = render({ loading: true, delayMs: 0 })
+    expect(html).toContain('sticky top-1/2')
+    expect(html).toContain('left-1/2')
+    expect(html).toContain('-translate-x-1/2 -translate-y-1/2')
+    expect(html).not.toContain('top-16')
+  })
+
   it('keeps_the_card_decorative_so_the_callers_polite_status_announces_it', () => {
     expect(render({ loading: true, delayMs: 0 })).toContain('aria-hidden="true" class="absolute')
   })

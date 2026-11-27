@@ -1,10 +1,11 @@
 // Shared screen section (#869, docs/design/components.md "Reusable components first"): a heading
 // with a muted count, trailing actions, an optional muted note (for example "Updated 2 minutes
 // ago") and a one-line error, above its content. Home's five sections use it; any later
-// dashboard-style screen should too. Content priority: loading, then error, then empty, then the list.
+// dashboard-style screen should too. Content priority: loading (skeleton blocks, never a dashed box), then error, then empty, then the list.
 import { useId, type ReactNode, type Ref } from 'react'
 import { TriangleAlertIcon } from 'lucide-react'
 import { Empty, EmptyDescription } from '@/components/ui/empty'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
 export interface ScreenSectionProps {
@@ -17,7 +18,7 @@ export interface ScreenSectionProps {
   note?: ReactNode
   /** One line, shown with a warning icon. Replaces the empty line, never the list itself. */
   error?: string | null
-  /** First fetch in flight: a loading line replaces the content, and no count is shown. */
+  /** First fetch in flight: skeleton blocks replace the content, and no count is shown. */
   loading?: boolean
   /** Text for an empty list; pass it only when there is nothing to list. Never shown with `loading` or `error`. */
   empty?: string | null
@@ -61,7 +62,18 @@ export function ScreenSection({ title, count, actions, note, error, loading = fa
           <span>{error}</span>
         </p>
       )}
-      {loading ? emptyLine('Loading…') : empty && !error ? emptyLine(empty) : children}
+      {loading ? <SectionSkeleton /> : empty && !error ? emptyLine(empty) : children}
     </section>
+  )
+}
+
+// Decorative: the section's `aria-busy` and the caller's status line carry the loading state; the sr-only text keeps a plain read of the section meaningful.
+function SectionSkeleton() {
+  return (
+    <div data-slot="section-skeleton" className="flex flex-col gap-2">
+      <span className="sr-only">Loading…</span>
+      <Skeleton aria-hidden className="h-8 w-full" />
+      <Skeleton aria-hidden className="h-8 w-2/3" />
+    </div>
   )
 }

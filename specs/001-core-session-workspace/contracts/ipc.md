@@ -144,7 +144,7 @@ There is no `window.toggleMaximize`: verified live (tasks.md T100) that double-c
 | `queue:update` | `{ sessionId, followUp: string[]; steering: string[] }` | Queue chips. |
 | `request:pending` / `request:resolved` | `{ sessionId, request }` / `{ sessionId, requestId }` | Approval and question cards. |
 | `commands:update` | `{ sessionId, commands: SlashCommand[] }` | Slash-command menu; already filtered to the T093 supported set. |
-| `settings:changed` | `Settings` | Status bar switch. |
+| `settings:changed` | `Settings` | Settings changed in another window or the main process. |
 | `ui:open-session` | `{ sessionId }` | Emitted when the user clicks a Windows notification. |
 | `memory:warning` | `{ low: boolean; freeBytes: number; liveAgents: number }` | The low-memory alert row's notice, under the profile item (issue #560); never stops an agent automatically (FR-037). |
 

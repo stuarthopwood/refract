@@ -94,7 +94,6 @@ async function readRealColours(cdp) {
   return cdp.evaluate(`(() => {
     const body = document.body;
     const sidebarRoot = document.querySelector('.bg-sidebar.text-sidebar-foreground');
-    const footer = document.querySelector('footer');
     const chatProse = document.querySelector('.text-chat-foreground');
     const warningRows = (${noticeFinder('Warning:')});
     const warningRow = warningRows[warningRows.length - 1];
@@ -105,8 +104,6 @@ async function readRealColours(cdp) {
       bodyForeground: body ? getComputedStyle(body).color : null,
       sidebarBackground: sidebarRoot ? getComputedStyle(sidebarRoot).backgroundColor : null,
       sidebarForeground: sidebarRoot ? getComputedStyle(sidebarRoot).color : null,
-      cardBackground: footer ? getComputedStyle(footer).backgroundColor : null,
-      mutedForeground: footer ? getComputedStyle(footer).color : null,
       chatForeground: chatProse ? getComputedStyle(chatProse).color : null,
       warningColour: warningSpan ? getComputedStyle(warningSpan).color : null,
       sendBackground: send ? getComputedStyle(send).backgroundColor : null,
@@ -251,8 +248,6 @@ async function main() {
           ['document.body foreground', real.bodyForeground, await requireResolvedCssVarColor(cdp, '--foreground', 'color')],
           ['SessionList root background (the sidebar)', real.sidebarBackground, await requireResolvedCssVarColor(cdp, '--sidebar', 'background-color')],
           ['SessionList root foreground', real.sidebarForeground, await requireResolvedCssVarColor(cdp, '--sidebar-foreground', 'color')],
-          ['StatusBar footer background (a card)', real.cardBackground, await requireResolvedCssVarColor(cdp, '--card', 'background-color')],
-          ['StatusBar footer foreground (muted text)', real.mutedForeground, await requireResolvedCssVarColor(cdp, '--muted-foreground', 'color')],
           ['user message prose (chat text)', real.chatForeground, await requireResolvedCssVarColor(cdp, '--chat-foreground', 'color')],
           ['warning NoticeRow', real.warningColour, await requireResolvedCssVarColor(cdp, '--severity-warning', 'color')],
           ['Send button fill', real.sendBackground, await requireResolvedCssVarColor(cdp, '--send', 'background-color')],

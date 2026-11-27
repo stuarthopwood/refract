@@ -10,7 +10,9 @@ import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { HolidayAccessory } from '@/features/holidays/HolidayAccessory'
 import { useClearedAnnouncement } from '@/lib/use-cleared-announcement'
-import { notify, useAccountsStore, useViewStore } from '@/state'
+import { profileUpdateSummary } from '@/lib/updateStatus'
+import { useUpdateNow } from '@/features/updates/useUpdateNow'
+import { notify, useAccountsStore, useUpdateStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import type { GitHubAccount } from '../../../shared/accounts'
 import { HealthCheckDialog } from './HealthCheckDialog'
@@ -18,6 +20,7 @@ import { KeyboardShortcutsDialog } from './KeyboardShortcutsDialog'
 import { ManageAccountsDialog } from './ManageAccountsDialog'
 import type { ManageAccountsDialogHandle } from './ManageAccountsDialog'
 import { ProfileMenuContent } from './ProfileMenu'
+import { useUpdateAnnouncement } from './useUpdateAnnouncement'
 import { SignOutDialog } from './SignOutDialog'
 
 function accessibleName(account: GitHubAccount | undefined, githubStatus: GithubStatus): string {
@@ -47,7 +50,9 @@ export function ProfileItem() {
       : githubError
         ? 'GitHub unavailable'
         : (account?.displayName ?? account?.login ?? null)
-  const label = accessibleName(account, githubStatus)
+  const updateState = useUpdateStore((state) => state.state)
+  // The badge is decorative, so the update state goes into the button's accessible name instead.
+  const { badge, label } = profileUpdateSummary(accessibleName(account, githubStatus), updateState)
   const [menuOpen, setMenuOpen] = useState(false)
   const [manageOpen, setManageOpen] = useState(false)
   const [signOutTarget, setSignOutTarget] = useState<GitHubAccount | null>(null)
@@ -56,7 +61,12 @@ export function ProfileItem() {
   const [healthOpen, setHealthOpen] = useState(false)
   // Shared by every announcement this component itself makes (sign-out, Theme submenu) -- one polite live region is enough, since they never fire at the same moment.
   const [announcement, announce] = useClearedAnnouncement()
+  useUpdateAnnouncement(updateState, announce)
   const nameButtonRef = useRef<HTMLButtonElement>(null)
+  // Lives here, not in the menu: the menu unmounts on select, which would take the confirm dialog with it.
+  const { requestUpdateNow, confirmDialog: updateNowDialog } = useUpdateNow(() => {
+    focusNameButton()
+  })
   const nameTextRef = useRef<HTMLSpanElement>(null)
   const [tooltipOpen, setTooltipOpen] = useState(false)
   const manageAccountsRef = useRef<ManageAccountsDialogHandle>(null)
@@ -187,6 +197,7 @@ export function ProfileItem() {
                   src={!missingCli && !githubError ? (account?.avatarDataUrl ?? undefined) : undefined}
                   fallbackClassName={githubError ? 'text-state-needs-you' : undefined}
                   fallback={missingCli ? '?' : githubError ? <TriangleAlertIcon aria-hidden className="size-4" /> : undefined}
+                  badge={badge}
                 />
                 <span ref={nameTextRef} className="min-w-0 flex-1 truncate text-sm">{name ?? 'Sign in'}</span>
                 {authProblem && <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-state-needs-you" />}
@@ -208,6 +219,7 @@ export function ProfileItem() {
           onKeyboardShortcuts={() => setKeyboardOpen(true)}
           onHealthCheck={() => setHealthOpen(true)}
           onWhatsNew={handleWhatsNew}
+          onUpdateNow={requestUpdateNow}
           onThemeApplied={handleThemeApplied}
         />
       </DropdownMenu>
@@ -238,6 +250,7 @@ export function ProfileItem() {
       />
       <KeyboardShortcutsDialog open={keyboardOpen} onOpenChange={setKeyboardOpen} onCloseFocus={focusNameButton} />
       <HealthCheckDialog open={healthOpen} onOpenChange={setHealthOpen} onCloseFocus={focusNameButton} />
+      {updateNowDialog}
       <div aria-live="polite" aria-atomic="true" className="sr-only">
         {announcement}
       </div>

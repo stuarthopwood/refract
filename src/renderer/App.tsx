@@ -18,7 +18,6 @@ import { SettingsScreen } from '@/features/settings/SettingsScreen'
 import { PullRequestsView } from '@/features/pull-requests/PullRequestsView'
 import { IssuesView } from '@/features/issues/IssuesView'
 import { UsageView } from '@/features/usage/UsageView'
-import { StatusBar } from '@/features/status-bar/StatusBar'
 import {
   RIGHT_PANE_DEFAULT_WIDTH_PX,
   RIGHT_PANE_MIN_WIDTH_PX,
@@ -321,7 +320,6 @@ export function App() {
           </div>
         )}
       </div>
-      <StatusBar />
       {/* Rendered last (Electron computes `-webkit-app-region` override by DOM document order,
           not paint/z-index order, confirmed live: a `no-drag-region` element earlier in the tree
           than an overlapping `drag-region` one is silently outvoted and the OS still swallows the

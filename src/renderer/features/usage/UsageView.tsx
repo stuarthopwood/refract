@@ -111,10 +111,10 @@ export function UsageView({ reservesWindowControls = true }: { reservesWindowCon
           ) : (
             <>
               <BudgetCard budget={s.budget} jokes={s.jokes} />
-              <ScreenSection title="Overview" loading={!s.loaded || s.summary === null}>
+              <ScreenSection title="Overview" loading={!s.loaded}>
                 {s.summary && <HeadlineCards summary={s.summary} jokes={s.jokes} />}
               </ScreenSection>
-              <AverageCards summary={s.summary} loading={!s.loaded || s.summary === null} />
+              <AverageCards summary={s.summary} loading={!s.loaded} />
               <div className="grid gap-8 lg:grid-cols-[3fr_2fr]">
                 <SpendChart buckets={s.timeseries} bucket={s.bucket} onBucketChange={s.setBucket} loading={pending(s.timeseries.length === 0)} />
                 <TokenMixChart rows={s.tokenMix} loading={pending(s.tokenMix.length === 0)} />

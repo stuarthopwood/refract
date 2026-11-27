@@ -36,11 +36,13 @@ vi.mock('@/components/ui/loading-overlay', () => ({
     )
 }))
 vi.mock('@/components/ScreenHeader', () => ({ ScreenHeader: () => null }))
-vi.mock('@/components/ScreenSection', () => ({ ScreenSection: () => createElement('div', { 'data-section': true }) }))
+vi.mock('@/components/ScreenSection', () => ({
+  ScreenSection: ({ title, loading }: { title: string; loading?: boolean }) => createElement('div', { 'data-section': title, 'data-loading': String(loading === true) })
+}))
 vi.mock('@/components/ProgressStrip', () => ({ ProgressStrip: () => null }))
 vi.mock('./UsageFilters', () => ({ UsageFilters: () => null, clearUsageFilters: () => undefined, countActiveFilters: () => 0 }))
 vi.mock('./UsageEmptyState', () => ({ UsageEmptyState: () => null }))
-vi.mock('./AverageCards', () => ({ AverageCards: () => null }))
+vi.mock('./AverageCards', () => ({ AverageCards: ({ loading }: { loading: boolean }) => createElement('div', { 'data-averages-loading': String(loading) }) }))
 vi.mock('./BudgetCard', () => ({ BudgetCard: () => null }))
 vi.mock('./CallLogTable', () => ({ CallLogTable: () => null }))
 vi.mock('./FrustrationCard', () => ({ FrustrationCard: () => null }))
@@ -136,5 +138,19 @@ describe('UsageView refresh overlay', () => {
   it('anchors_the_overlay_inside_the_scroll_container_so_the_card_follows_scrolling', () => {
     const html = renderWith({ refreshing: true, loaded: true })
     expect(html).toMatch(/overflow-y-auto[^>]*><div data-overlay="true"/)
+  })
+})
+
+describe('UsageView first-load skeletons', () => {
+  it('shows_the_overview_skeleton_until_the_first_load_finishes', () => {
+    const html = renderWith({ loaded: false, summary: null })
+    expect(html).toContain('data-section="Overview" data-loading="true"')
+    expect(html).toContain('data-averages-loading="true"')
+  })
+
+  it('stops_skeletoning_the_overview_when_the_load_finished_but_the_summary_failed', () => {
+    const html = renderWith({ loaded: true, summary: null, error: 'boom' })
+    expect(html).toContain('data-section="Overview" data-loading="false"')
+    expect(html).toContain('data-averages-loading="false"')
   })
 })

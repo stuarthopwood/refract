@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { initials } from '@/lib/initials'
 
 interface UserAvatarProps {
@@ -10,16 +10,19 @@ interface UserAvatarProps {
   /** Replaces the initials, for a missing-CLI "?" or an error icon. */
   fallback?: ReactNode
   fallbackClassName?: string
+  /** A small status dot on the avatar's corner: `accent` for something pending, `danger` for something failed. Decorative; the caller puts the meaning in the control's accessible name. */
+  badge?: 'accent' | 'danger'
   className?: string
 }
 
 // Decorative (#505): the name always sits beside it, so the image has no alt text and the whole
 // avatar is hidden from assistive technology.
-export function UserAvatar({ name, src, size = 'default', fallback, fallbackClassName, className }: UserAvatarProps) {
+export function UserAvatar({ name, src, size = 'default', fallback, fallbackClassName, badge, className }: UserAvatarProps) {
   return (
     <Avatar aria-hidden size={size} className={className}>
       {src && <AvatarImage src={src} alt="" />}
       <AvatarFallback className={fallbackClassName}>{fallback ?? initials(name)}</AvatarFallback>
+      {badge && <AvatarBadge data-badge={badge} className={badge === 'danger' ? 'bg-destructive' : undefined} />}
     </Avatar>
   )
 }

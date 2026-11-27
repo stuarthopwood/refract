@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useId, useRef } from 'react'
 
-// Clearance = `innerHeight - composer top`, so it includes whatever sits below the composer (the StatusBar). (#980)
+// Clearance = `innerHeight - composer top`, so it includes whatever sits below the composer (the window's bottom padding). (#980)
 // Publishes the max across mounted composers (split view mounts two) as `--refract-composer-clearance`, read by `sonner.tsx`.
 const clearancesByInstance = new Map<string, number>()
 

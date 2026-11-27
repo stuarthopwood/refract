@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react'
-import { toast } from 'sonner'
 import {
   ActivityIcon,
   ExternalLinkIcon,
@@ -9,7 +8,6 @@ import {
   LogInIcon,
   LogOutIcon,
   PaletteIcon,
-  RefreshCwIcon,
   SlidersHorizontalIcon,
   SparklesIcon,
   TriangleAlertIcon,
@@ -29,12 +27,12 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
-import { updateUnavailableReasonText } from '@/lib/updateStatus'
 import { useThemeEntries } from '@/lib/useThemeEntries'
 import type { ThemeEntry } from '@/lib/useThemeEntries'
-import { useAccountsStore, useThemeStore, useUpdateStore, useViewStore } from '@/state'
+import { useAccountsStore, useThemeStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import type { GitHubAccount } from '../../../shared/accounts'
+import { UpdateMenuItem } from './UpdateMenuItem'
 
 export interface ProfileMenuContentProps {
   account: GitHubAccount | undefined
@@ -48,6 +46,7 @@ export interface ProfileMenuContentProps {
   onKeyboardShortcuts(): void
   onHealthCheck(): void
   onWhatsNew(): void
+  onUpdateNow(): void
   onThemeApplied(label: string): void
 }
 
@@ -105,85 +104,16 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
   )
 }
 
-function UpdateMenuItem() {
-  const updateState = useUpdateStore((state) => state.state)
-  const phase = updateState?.phase
-  const busy = phase === 'checking' || phase === 'downloading' || phase === 'installing'
-  const busyLabel = phase === 'checking' ? 'Checking for updates…' : phase === 'downloading' ? 'Downloading update…' : phase === 'installing' ? 'Installing update…' : 'Check for updates'
-
-  function handleCheckAgain(): void {
-    const id = toast.loading('Checking for updates…')
-    void window.refract.updates
-      .check()
-      .then((result) => {
-        if (!result.ok) {
-          toast.error(result.error.message, { id })
-          return
-        }
-        const next = result.value
-        if (next.phase === 'failed') {
-          toast.error(next.lastError ?? 'Update failed for an unknown reason.', { id })
-        } else if (next.phase === 'idle' && next.unavailableReason !== undefined) {
-          toast.warning(updateUnavailableReasonText(next.unavailableReason), { id })
-        } else if (next.phase === 'idle') {
-          toast.info('Refract is up to date.', { id })
-        } else if (next.phase === 'available') {
-          toast.info(`Refract v${next.availableVersion} is available. Download it from the status bar.`, { id })
-        } else if (next.phase === 'downloading') {
-          toast.info('An update is already downloading.', { id })
-        } else if (next.phase === 'downloaded') {
-          toast.info(`Refract v${next.availableVersion} is downloaded; it installs the next time you quit.`, { id })
-        } else if (next.phase === 'installing') {
-          toast.info('Refract is installing the update.', { id })
-        }
-      })
-      .catch(() => toast.error('Could not check for updates.', { id }))
-  }
-
-  if (phase === 'downloaded') {
-    return (
-      <DropdownMenuItem onSelect={() => toast.info('Refract updates automatically the next time you quit.')}>
-        <RefreshCwIcon aria-hidden />
-        <span className="flex min-w-0 flex-1 flex-col leading-tight">
-          <span>Restart to update</span>
-          <span className="text-xs text-muted-foreground">Installs when you quit</span>
-        </span>
-        {updateState?.availableVersion && (
-          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-            <span aria-hidden> </span>
-            <span className="sr-only"> version </span>v{updateState.availableVersion}
-          </span>
-        )}
-      </DropdownMenuItem>
-    )
-  }
-
-  return (
-    <DropdownMenuItem
-      aria-disabled={busy || undefined}
-      onSelect={(event) => {
-        if (busy) {
-          event.preventDefault()
-          return
-        }
-        handleCheckAgain()
-      }}
-    >
-      {busy ? <LoaderCircleIcon aria-hidden className="animate-spin" /> : <RefreshCwIcon aria-hidden />}
-      {busyLabel}
-    </DropdownMenuItem>
-  )
-}
-
-
 function CommonMenuItems({
   onKeyboardShortcuts,
   onHealthCheck,
-  onWhatsNew
+  onWhatsNew,
+  onUpdateNow
 }: {
   onKeyboardShortcuts(): void
   onHealthCheck(): void
   onWhatsNew(): void
+  onUpdateNow(): void
 }) {
   return (
     <>
@@ -193,7 +123,7 @@ function CommonMenuItems({
       </DropdownMenuItem>
       {/* Update entry (issue #569, spec 008 FR-021, T024b): always present, fixed between
           Keyboard shortcuts and Health check per FR-018. */}
-      <UpdateMenuItem />
+      <UpdateMenuItem onUpdateNow={onUpdateNow} />
       <DropdownMenuItem onSelect={onHealthCheck}>
         <ActivityIcon aria-hidden />
         Health check
@@ -220,6 +150,7 @@ export function ProfileMenuContent({
   onKeyboardShortcuts,
   onHealthCheck,
   onWhatsNew,
+  onUpdateNow,
   onThemeApplied
 }: ProfileMenuContentProps) {
   const signedIn = githubStatus === 'ready' && account !== undefined
@@ -320,6 +251,7 @@ export function ProfileMenuContent({
         onKeyboardShortcuts={onKeyboardShortcuts}
         onHealthCheck={onHealthCheck}
         onWhatsNew={onWhatsNew}
+        onUpdateNow={onUpdateNow}
       />
       {signedIn && (
         <>
