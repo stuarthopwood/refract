@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Result } from '../../../shared/ipc'
 import type { ConversationTreeEntry } from '../../../shared/model'
 import { ConversationTreeRow, type ConversationTreeRowProps } from './ConversationTreeRow'
-import { NOT_IDLE_TREE_REASON, composerTextAfterRewind, labelToSave, saveEntryLabel, treeActionMessage, treeDepths } from './conversationTree'
+import { NOT_IDLE_TREE_REASON, NO_AGENT_TREE_MESSAGE, composerTextAfterRewind, labelToSave, saveEntryLabel, treeActionMessage, treeDepths } from './conversationTree'
 
 function entry(over: Partial<ConversationTreeEntry> = {}): ConversationTreeEntry {
   return { id: 'e1', parentId: null, role: 'user', text: 'Fix the build', timestamp: null, label: null, ...over }
@@ -75,6 +75,12 @@ describe('Rewind and Fork while the agent works (FR-198)', () => {
     expect(html).not.toContain('aria-describedby="reason"')
   })
 
+  it('Given a row busy with its own action and no reason shown, When it renders, Then nothing points at a missing reason', () => {
+    const html = row({ actionsDisabled: true, reasonId: undefined })
+    expect(html.match(/aria-disabled="true"/g)).toHaveLength(2)
+    expect(html).not.toContain('aria-describedby')
+  })
+
   it('Given a refused action, When the row renders, Then the failure shows on the row', () => {
     expect(row({ actionError: 'Something broke' })).toContain('Something broke')
   })
@@ -82,6 +88,7 @@ describe('Rewind and Fork while the agent works (FR-198)', () => {
   it('Given a not-idle refusal, When mapped, Then it reads the same reason the buttons show', () => {
     expect(treeActionMessage({ code: 'not-idle', message: 'raw' })).toBe(NOT_IDLE_TREE_REASON)
     expect(treeActionMessage({ code: 'tree-failed', message: 'raw' })).toBe('raw')
+    expect(treeActionMessage({ code: 'agent-not-running', message: 'raw' })).toBe(NO_AGENT_TREE_MESSAGE)
   })
 })
 

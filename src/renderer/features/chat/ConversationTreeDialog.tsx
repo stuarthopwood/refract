@@ -11,6 +11,7 @@ import { notifyInfo, useChatScrollStore, useDraftStore, useSessionsStore } from 
 import type { ConversationTree, ConversationTreeEntry } from '../../../shared/model'
 import { applySnapshot } from './applySnapshot'
 import { ConversationTreeRow } from './ConversationTreeRow'
+import { emitConversationsChanged } from './conversationChanges'
 import { FILES_NOT_CHANGED, NOT_IDLE_TREE_REASON, composerTextAfterRewind, saveEntryLabel, treeActionMessage, treeDepths } from './conversationTree'
 
 const REASON_ID = 'conversation-tree-reason'
@@ -18,6 +19,9 @@ const REASON_ID = 'conversation-tree-reason'
 /** Opens the current Conversation's tree: label an entry, Rewind to it, or Fork a new Conversation from it (#696). */
 export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
   const idle = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status === 'idle')
+  // Rewind and Fork race a reattach still in flight, so they wait for it like the switcher does.
+  const opening = useSessionsStore((s) => s.openingIds.has(sessionId))
+  const canAct = idle && !opening
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [tree, setTree] = useState<ConversationTree | null>(null)
@@ -66,6 +70,7 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
       }
       useChatScrollStore.getState().clear(sessionId)
       applySnapshot(sessionId, result.value.snapshot)
+      emitConversationsChanged(sessionId)
       notifyInfo('Forked into a new Conversation. The original stays in the history.')
       setOpen(false)
     } finally {
@@ -134,7 +139,7 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
             <DialogTitle>Conversation tree</DialogTitle>
             <DialogDescription>Rewind continues this Conversation from a message. Fork copies the Conversation up to a message into a new one. {FILES_NOT_CHANGED}</DialogDescription>
           </DialogHeader>
-          {!idle && (
+          {!canAct && (
             <InlineStatus tone="notice" density="compact" id={REASON_ID} className="p-0">
               {NOT_IDLE_TREE_REASON}
             </InlineStatus>
@@ -153,8 +158,8 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
                   entry={entry}
                   depth={depths.get(entry.id) ?? 0}
                   isLeaf={entry.id === tree.leafId}
-                  actionsDisabled={!idle || busy}
-                  reasonId={REASON_ID}
+                  actionsDisabled={!canAct || busy}
+                  reasonId={canAct ? undefined : REASON_ID}
                   actionError={actionError?.entryId === entry.id ? actionError.message : null}
                   onRewind={(target) => {
                     setSummarize(false)

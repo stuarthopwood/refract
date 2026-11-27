@@ -16,7 +16,7 @@ export interface ConversationTreeRowProps {
   isLeaf: boolean
   /** Rewind and Fork are refused while the agent works; `reasonId` names the text that says why. */
   actionsDisabled: boolean
-  reasonId: string
+  reasonId: string | undefined
   /** The failure of this row's Rewind or Fork, shown on the action itself. */
   actionError: string | null
   onRewind(entry: ConversationTreeEntry): void
@@ -109,7 +109,7 @@ export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, rea
             variant="outline"
             size="xs"
             aria-disabled={actionsDisabled}
-            aria-describedby={actionsDisabled ? reasonId : actionError ? errorId : undefined}
+            aria-describedby={(actionsDisabled ? reasonId : undefined) ?? (actionError ? errorId : undefined)}
             aria-label={`Rewind to here: ${preview.slice(0, 40)}`}
             className={cn(actionsDisabled && 'opacity-50')}
             onClick={guarded(onRewind)}
@@ -120,7 +120,7 @@ export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, rea
             variant="outline"
             size="xs"
             aria-disabled={actionsDisabled}
-            aria-describedby={actionsDisabled ? reasonId : actionError ? errorId : undefined}
+            aria-describedby={(actionsDisabled ? reasonId : undefined) ?? (actionError ? errorId : undefined)}
             aria-label={`Fork from here: ${preview.slice(0, 40)}`}
             className={cn(actionsDisabled && 'opacity-50')}
             onClick={guarded(onFork)}

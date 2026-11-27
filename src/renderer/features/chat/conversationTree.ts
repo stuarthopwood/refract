@@ -4,6 +4,7 @@ import type { IpcError, Result } from '../../../shared/ipc'
 import type { ConversationTreeEntry } from '../../../shared/model'
 
 export const NOT_IDLE_TREE_REASON = 'Rewind and Fork are available only while the agent is idle.'
+export const NO_AGENT_TREE_MESSAGE = 'The agent is not running, so there is no Conversation tree to show. Open the Session to start it.'
 export const FILES_NOT_CHANGED = 'Files in the worktree are not changed.'
 /** Deepest indent step shown; a long chain of replies would otherwise push the text off the row. */
 export const MAX_TREE_INDENT = 6
@@ -24,9 +25,10 @@ export function treeDepths(entries: ConversationTreeEntry[]): Map<string, number
   return depths
 }
 
-/** `not-idle` carries the same reason the buttons show; every other refusal keeps the message the backend wrote. */
+/** `not-idle` carries the same reason the buttons show and `agent-not-running` (a stopped Session) says what to do; every other refusal keeps the message the backend wrote. */
 export function treeActionMessage(error: IpcError): string {
-  return error.code === 'not-idle' ? NOT_IDLE_TREE_REASON : error.message
+  if (error.code === 'not-idle') return NOT_IDLE_TREE_REASON
+  return error.code === 'agent-not-running' ? NO_AGENT_TREE_MESSAGE : error.message
 }
 
 export type LabelApi = (sessionId: string, entryId: string, label: string) => Promise<Result<null>>
