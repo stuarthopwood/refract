@@ -4,6 +4,7 @@
 
 use std::io;
 use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -13,11 +14,19 @@ use super::atomic_json::{is_enoent, read_json_file, write_json_file};
 
 const FILE_NAME: &str = "listCache.json";
 const VERSION: u32 = 1;
-/// A list is at most 200 Projects of 50 rows; a result past this is dropped, not persisted.
-const MAX_SECTION_BYTES: usize = 4 * 1024 * 1024;
+/// A section past this is dropped, not persisted; the file is read synchronously on cold start.
+const MAX_SECTION_BYTES: usize = 1024 * 1024;
 
 /// Serialises the read-modify-write of the one file, since both list handlers write it.
 static WRITE_LOCK: Mutex<()> = Mutex::const_new(());
+
+/// Bumped by `clear`; a write-behind that captured an older value fetched for a previous account.
+static EPOCH: AtomicU64 = AtomicU64::new(0);
+
+/// The cache generation to capture before a list fetch and hand to `write`.
+pub fn epoch() -> u64 {
+    EPOCH.load(Ordering::SeqCst)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ListKind {
@@ -35,6 +44,13 @@ impl ListKind {
     }
 }
 
+/// The GitHub account the cached rows were fetched with; rows are never shown to another one.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CacheAccount {
+    pub host: String,
+    pub login: String,
+}
+
 fn current_version() -> u32 {
     VERSION
 }
@@ -45,6 +61,8 @@ pub struct ListCache {
     #[serde(default = "current_version")]
     pub version: u32,
     #[serde(default)]
+    pub account: Option<CacheAccount>,
+    #[serde(default)]
     pub pull_requests: Option<Value>,
     #[serde(default)]
     pub issues: Option<Value>,
@@ -54,6 +72,7 @@ impl Default for ListCache {
     fn default() -> Self {
         Self {
             version: VERSION,
+            account: None,
             pull_requests: None,
             issues: None,
         }
@@ -89,9 +108,9 @@ fn sanitize(cache: &mut ListCache) {
     }
 }
 
-/// Reads the cache. A missing or corrupt file (quarantined by `read_json_file`), another version
-/// or a malformed section yields no rows, never an error the renderer must handle.
-pub async fn read(dir: &Path) -> io::Result<ListCache> {
+/// Loads the file whoever owns it. A missing or corrupt file (quarantined by `read_json_file`) or
+/// another version yields the empty cache.
+async fn load(dir: &Path) -> io::Result<ListCache> {
     let mut cache: ListCache = read_json_file(&dir.join(FILE_NAME), ListCache::default).await?;
     if cache.version != VERSION {
         return Ok(ListCache::default());
@@ -100,26 +119,111 @@ pub async fn read(dir: &Path) -> io::Result<ListCache> {
     Ok(cache)
 }
 
-/// Replaces one list's cached result, keeping the other. A result that lacks the list shape or is
-/// past `MAX_SECTION_BYTES` is dropped without touching the file.
-pub async fn write(dir: &Path, kind: ListKind, value: Value) -> io::Result<()> {
-    if !has_list_shape(kind, &value) || value.to_string().len() > MAX_SECTION_BYTES {
+/// Reads the cache for `current`, the active account. Rows stored for another account, a missing
+/// or corrupt file, another version or a malformed section yield no rows, never an error the
+/// renderer must handle.
+pub async fn read(dir: &Path, current: &CacheAccount) -> io::Result<ListCache> {
+    let cache = load(dir).await?;
+    if cache.account.as_ref() != Some(current) {
+        return Ok(ListCache::default());
+    }
+    Ok(cache)
+}
+
+/// Size of `value` once serialised, counted without allocating the bytes.
+fn serialised_len(value: &Value) -> usize {
+    struct Counter(usize);
+    impl io::Write for Counter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0 += buf.len();
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut counter = Counter(0);
+    if serde_json::to_writer(&mut counter, value).is_err() {
+        return usize::MAX;
+    }
+    counter.0
+}
+
+/// `fetchedAt` is a fixed-width UTC timestamp, so a string comparison orders it.
+fn fetched_at(value: &Value) -> &str {
+    value
+        .get("fetchedAt")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+}
+
+/// Replaces one list's cached result for `account`, keeping the other list when it belongs to the
+/// same account. Skipped without touching the file when the result lacks the list shape, is past
+/// `MAX_SECTION_BYTES`, was fetched before a `clear` (`epoch` is stale), or is older than the
+/// stored result.
+pub async fn write(
+    dir: &Path,
+    kind: ListKind,
+    value: Value,
+    account: &CacheAccount,
+    epoch: u64,
+) -> io::Result<()> {
+    if !has_list_shape(kind, &value) || serialised_len(&value) > MAX_SECTION_BYTES {
         return Ok(());
     }
     let _guard = WRITE_LOCK.lock().await;
-    let mut cache = read(dir).await?;
-    *cache.section_mut(kind) = Some(value);
+    if EPOCH.load(Ordering::SeqCst) != epoch {
+        return Ok(());
+    }
+    let mut cache = load(dir).await?;
+    if cache.account.as_ref() != Some(account) {
+        cache = ListCache {
+            account: Some(account.clone()),
+            ..ListCache::default()
+        };
+    }
+    let section = cache.section_mut(kind);
+    if section
+        .as_ref()
+        .is_some_and(|stored| fetched_at(stored) > fetched_at(&value))
+    {
+        return Ok(());
+    }
+    *section = Some(value);
     write_json_file(&dir.join(FILE_NAME), &cache).await
 }
 
-/// Deletes the cache file, so a signed-out account leaves no list rows behind. A missing file is
-/// fine.
+/// True for the cache file's leftovers: a quarantined corrupt copy or a crashed write's tmp file.
+fn is_side_file(name: &str) -> bool {
+    name.starts_with("listCache.json.corrupt-")
+        || (name.starts_with("listCache.json.") && name.ends_with(".tmp"))
+}
+
+/// Deletes the cache file and its leftovers, so a switched or signed-out account leaves no list
+/// rows behind, and invalidates every write already in flight. A missing file is fine.
 pub async fn clear(dir: &Path) -> io::Result<()> {
     let _guard = WRITE_LOCK.lock().await;
+    EPOCH.fetch_add(1, Ordering::SeqCst);
     match tokio::fs::remove_file(dir.join(FILE_NAME)).await {
-        Err(err) if !is_enoent(&err) => Err(err),
-        _ => Ok(()),
+        Err(err) if !is_enoent(&err) => return Err(err),
+        _ => {}
     }
+    let mut entries = match tokio::fs::read_dir(dir).await {
+        Ok(entries) => entries,
+        Err(err) if is_enoent(&err) => return Ok(()),
+        Err(err) => return Err(err),
+    };
+    while let Some(entry) = entries.next_entry().await? {
+        let is_file = entry.file_type().await.is_ok_and(|kind| kind.is_file());
+        let named = entry.file_name();
+        if is_file && named.to_str().is_some_and(is_side_file) {
+            match tokio::fs::remove_file(entry.path()).await {
+                Err(err) if !is_enoent(&err) => return Err(err),
+                _ => {}
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

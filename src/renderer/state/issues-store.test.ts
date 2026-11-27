@@ -93,4 +93,38 @@ describe('issues list freshness', () => {
     await useIssuesStore.getState().refreshIfStale(['r1'])
     expect(list).toHaveBeenCalledTimes(2)
   })
+
+  it('a_second_mount_while_the_same_list_is_in_flight_shares_the_fetch', async () => {
+    const first = useIssuesStore.getState().refreshIfStale(['r1'])
+    const second = useIssuesStore.getState().refreshIfStale(['r1'])
+    await Promise.all([first, second])
+    expect(list).toHaveBeenCalledTimes(1)
+  })
+
+  it('a_refresh_from_before_an_account_change_never_stamps_freshness_or_rows', async () => {
+    let release: (value: unknown) => void = () => {}
+    list.mockReturnValueOnce(new Promise((resolve) => (release = resolve)))
+    const pending = useIssuesStore.getState().refreshIfStale(['r1'])
+    useIssuesStore.getState().invalidateFreshness()
+    release({ ok: true, value: { issues: [{ repositoryId: 'r1', number: 1 }], skipped: [], fetchedAt: '2026-11-27T00:00:00Z' } })
+    await pending
+    expect(useIssuesStore.getState().freshness).toBeNull()
+    expect(useIssuesStore.getState().items).toEqual([])
+    expect(useIssuesStore.getState().loading).toBe(false)
+  })
+
+  it('a_failed_quiet_refresh_clears_the_stale_mark', async () => {
+    useIssuesStore.setState({ stale: true })
+    list.mockResolvedValueOnce({ ok: false, error: { code: 'gh-failed', message: 'x' } })
+    await useIssuesStore.getState().refreshQuiet(['r1'])
+    expect(useIssuesStore.getState().stale).toBe(false)
+  })
+
+  it('the_cache_does_not_hydrate_over_an_error', () => {
+    useIssuesStore.setState({ error: { code: 'gh-failed', message: 'x' } })
+    useIssuesStore
+      .getState()
+      .hydrateFromCache({ issues: [{ repositoryId: 'r1', number: 1 }], skipped: [], fetchedAt: '2026-11-27T00:00:00Z' } as never)
+    expect(useIssuesStore.getState().items).toEqual([])
+  })
 })
