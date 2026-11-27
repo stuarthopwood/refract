@@ -30,6 +30,7 @@ interface SettingsState {
   setShowAiCredits(enabled: boolean): Promise<void>
   setAnimatedStatusText(enabled: boolean): Promise<boolean>
   setCodeLigatures(enabled: boolean): Promise<void>
+  setReduceMotion(enabled: boolean): Promise<void>
   setShowScrollbarMap(enabled: boolean): Promise<void>
   setStackedPullRequests(enabled: boolean): Promise<void>
   setShowFinishedTurnTimes(enabled: boolean): Promise<void>
@@ -197,6 +198,11 @@ export const useSettingsStore = create<SettingsState>((set) => ({
     if (result.ok) set({ settings: result.value })
     else notify(result.error)
   },
+  setReduceMotion: async (enabled) => {
+    const result = await window.refract.settings.setReduceMotion(enabled)
+    if (result.ok) set({ settings: result.value })
+    else notify(result.error)
+  },
   setShowScrollbarMap: async (enabled) => {
     const result = await window.refract.settings.setShowScrollbarMap(enabled)
     if (result.ok) set({ settings: result.value })
@@ -242,4 +248,12 @@ function applyCodeLigatures(settings: Settings): void {
   else delete document.documentElement.dataset.codeLigatures
 }
 
+function applyReduceMotion(settings: Settings): void {
+  if (settings.reduceMotion === true) document.documentElement.dataset.reduceMotion = 'on'
+  else delete document.documentElement.dataset.reduceMotion
+}
+
 useSettingsStore.subscribe((state) => applyCodeLigatures(state.settings))
+
+// Issue #566: globals.css and `isMotionReduced` (lib/reducedMotion.ts) read this root attribute; the OS preference is handled by the media query.
+useSettingsStore.subscribe((state) => applyReduceMotion(state.settings))

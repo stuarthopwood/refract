@@ -33,6 +33,8 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
   const flightIntervalMsOverride = useHolidayStore((s) => s.flightIntervalMs)
   const [paused, setPaused] = useState(() => document.hidden || !document.hasFocus())
   const [motionSuppressed, setMotionSuppressed] = useState(() => window.matchMedia(NO_MOTION_QUERY).matches)
+  // Settings > Appearance > Reduce motion (#566): the CSS hides the layer too; the scheduler must not fly pieces either.
+  const reduceMotionSetting = useSettingsStore((s) => s.settings.reduceMotion === true)
   const [flightCount, setFlightCount] = useState(0)
   const idleTimerRef = useRef<number | undefined>(undefined)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -136,7 +138,7 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
       remainingFlightDelayMsRef.current = null
       return
     }
-    if (paused || motionSuppressed) return
+    if (paused || motionSuppressed || reduceMotionSetting) return
     let cancelled = false
     let flightTimer: number | undefined
     let currentAnimation: Animation | undefined
@@ -211,12 +213,12 @@ export function HolidayAmbientLoop({ avoidTextColumn = false }: { avoidTextColum
         remainingFlightDelayMsRef.current = Math.max(0, timerDelayMs - (Date.now() - timerStartedAt))
       }
       if (currentAnimation && currentBat) {
-        const reducedNow = window.matchMedia(NO_MOTION_QUERY).matches
+        const reducedNow = window.matchMedia(NO_MOTION_QUERY).matches || reduceMotionSetting
         if (reducedNow || !currentBat.isConnected) currentAnimation.cancel()
         else fadeOutFlight(currentBat, currentAnimation)
       }
     }
-  }, [active, holiday, paused, motionSuppressed, flightIntervalMsOverride])
+  }, [active, holiday, paused, motionSuppressed, reduceMotionSetting, flightIntervalMsOverride])
 
   if (!active || !holiday) return null
 

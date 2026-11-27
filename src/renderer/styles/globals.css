@@ -2112,6 +2112,9 @@ samp {
     display: none;
   }
 }
+:root[data-reduce-motion='on'] .holiday-ambient-loop {
+  display: none;
+}
 
 /* The agent-working spinner's holiday glyph (`AgentSpinner.tsx`): a themed icon in place of the
  * default split/rotate/merge core, same `--agent-spinner-core` colour token, same
@@ -2225,6 +2228,19 @@ samp {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Settings > Appearance > Reduce motion (#566, WCAG 2.2.2 pause path): the same collapse as the OS
+ * setting above, switched by the root attribute settings-store sets. Every looping animation rests
+ * on its final frame (the static glyph) while the word stays; one iteration also ends enter-only
+ * utilities in their final state. */
+:root[data-reduce-motion='on'] *,
+:root[data-reduce-motion='on'] *::before,
+:root[data-reduce-motion='on'] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
 }
 
 /* Switching motion (#678, spec 058): enter-only utilities built on tw-animate-css, animating
@@ -2571,6 +2587,12 @@ samp {
     background-image: none;
     animation: none;
   }
+}
+/* Settings > Appearance > Reduce motion (#566): the same still shimmer as the OS setting. */
+:root[data-reduce-motion='on'] .text-shimmer {
+  -webkit-text-fill-color: currentColor;
+  background-image: none;
+  animation: none;
 }
 
 /* Issue #887: forced-colors drops the Project colour; the header uses the system text colour. */

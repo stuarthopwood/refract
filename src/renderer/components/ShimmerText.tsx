@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils'
 
 /** `tone` is any CSS colour for the base text (default: the surrounding text colour). */
 export function ShimmerText({ active, tone, className, children }: { active: boolean; tone?: string; className?: string; children: ReactNode }) {
-  const enabled = useSettingsStore((s) => s.settings.animatedStatusText !== false)
+  const enabled = useSettingsStore((s) => s.settings.animatedStatusText !== false && s.settings.reduceMotion !== true)
   const visible = useWindowVisible()
   const shimmer = active && enabled && visible
   return (

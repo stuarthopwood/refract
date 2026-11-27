@@ -57,6 +57,7 @@ pub mod settings_alarms;
 pub mod settings_animated_status_text;
 pub mod settings_chat_row_density;
 pub mod settings_code_ligatures;
+pub mod settings_reduce_motion;
 pub mod settings_collapse;
 pub mod settings_default_clone_folder;
 pub mod settings_finished_turn_times;
@@ -165,6 +166,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings_animated_status_text::register(dispatcher);
     settings_collapse::register(dispatcher);
     settings_code_ligatures::register(dispatcher);
+    settings_reduce_motion::register(dispatcher);
     settings_notification_sounds::register(dispatcher);
     settings_scrollbar_map::register(dispatcher);
     settings_stacked_pull_requests::register(dispatcher);

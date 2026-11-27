@@ -1,10 +1,11 @@
 // Fades a block out and collapses its height when `show` turns false, then unmounts it, so a row
 // that vanishes (the settled turn line, the current-work banner; issue #1265) does not make the
 // content below jump. Enter is immediate: callers that want an entrance animate their own
-// content. Under `prefers-reduced-motion` the block unmounts at once. While leaving it keeps
+// content. Under reduced motion (OS setting or Settings > Appearance > Reduce motion) the block unmounts at once. While leaving it keeps
 // rendering the last children it was given and is hidden from assistive technology.
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
+import { isMotionReduced } from '@/lib/reducedMotion'
 
 const EXIT_MS = 200
 
@@ -21,7 +22,7 @@ export function FadeCollapse({ show, children, className }: { show: boolean; chi
       return
     }
     setOpen(false)
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    if (isMotionReduced()) {
       setMounted(false)
       return
     }

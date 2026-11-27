@@ -87,6 +87,8 @@ pub struct Settings {
     pub animated_status_text: bool,
     /// Code ligatures on the Code font; default on (#1246).
     pub code_ligatures: bool,
+    /// App-wide Reduce motion switch; default off, meaning follow the OS setting (#566).
+    pub reduce_motion: bool,
     /// Chat scrollbar map; default on (#754).
     pub show_scrollbar_map: bool,
     /// Settled turn total under each turn; default off (#1250).
@@ -144,6 +146,8 @@ pub use chat_row_density::ChatRowDensity;
 mod animated_status_text;
 #[path = "code_ligatures.rs"]
 mod code_ligatures;
+#[path = "reduce_motion.rs"]
+mod reduce_motion;
 #[path = "default_clone_folder.rs"]
 mod default_clone_folder;
 #[path = "finished_turn_times.rs"]
@@ -231,6 +235,7 @@ impl SettingsStore {
         let show_ai_credits = ai_credits::parse(&object);
         let animated_status_text = animated_status_text::parse(&object);
         let code_ligatures = code_ligatures::parse(&object);
+        let reduce_motion = reduce_motion::parse(&object);
         let default_clone_folder = default_clone_folder::parse(&object);
         let alarms = alarms::parse(&object);
         let show_scrollbar_map = scrollbar_map::parse(&object);
@@ -288,6 +293,7 @@ impl SettingsStore {
             ai_credits::KEY,
             animated_status_text::KEY,
             code_ligatures::KEY,
+            reduce_motion::KEY,
             scrollbar_map::KEY,
             finished_turn_times::KEY,
             stacked_pull_requests::KEY,
@@ -328,6 +334,7 @@ impl SettingsStore {
             show_ai_credits,
             animated_status_text,
             code_ligatures,
+            reduce_motion,
             show_scrollbar_map,
             show_finished_turn_times,
             stacked_pull_requests,
@@ -411,6 +418,8 @@ impl SettingsStore {
         ai_credits::write(&mut map, self.data.show_ai_credits);
         let animated = self.data.animated_status_text;
         map.insert(animated_status_text::KEY.to_string(), json!(animated));
+        let reduce_motion = self.data.reduce_motion;
+        map.insert(reduce_motion::KEY.to_string(), json!(reduce_motion));
         let ligatures = self.data.code_ligatures;
         map.insert(code_ligatures::KEY.to_string(), json!(ligatures));
         let scrollbar_map = self.data.show_scrollbar_map;

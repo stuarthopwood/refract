@@ -23,6 +23,8 @@ export function AppearanceSection() {
   const setActivityText = useSettingsStore((state) => state.setActivityText)
   const animatedStatusText = useSettingsStore((state) => state.settings.animatedStatusText !== false)
   const setAnimatedStatusText = useSettingsStore((state) => state.setAnimatedStatusText)
+  const reduceMotion = useSettingsStore((state) => state.settings.reduceMotion === true)
+  const setReduceMotion = useSettingsStore((state) => state.setReduceMotion)
   const headingRef = useRef<HTMLHeadingElement>(null)
 
   // SettingsPage focuses this heading (shared via headingRef) on mount, which covers every
@@ -130,6 +132,16 @@ export function AppearanceSection() {
             description="A moving highlight on the banner above the composer while the agent is working. Always still when you have reduced motion on."
             checked={animatedStatusText}
             onCheckedChange={(checked) => void setAnimatedStatusText(checked)}
+          />
+        </SettingsGroup>
+        {/* Issue #566: the user-reachable pause path (WCAG 2.2.2). Off follows the OS setting. */}
+        <SettingsGroup title="Motion">
+          <SettingSwitchRow
+            id="reduce-motion"
+            label="Reduce motion"
+            description="Stops every looping animation and shows a still icon with its words instead. When off, the app follows your system's reduced-motion setting."
+            checked={reduceMotion}
+            onCheckedChange={(checked) => void setReduceMotion(checked)}
           />
         </SettingsGroup>
       </SettingsPage>

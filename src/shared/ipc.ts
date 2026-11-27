@@ -337,6 +337,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_SHOW_AI_CREDITS: 'settings.setShowAiCredits',
   SETTINGS_SET_ANIMATED_STATUS_TEXT: 'settings.setAnimatedStatusText',
   SETTINGS_SET_CODE_LIGATURES: 'settings.setCodeLigatures',
+  SETTINGS_SET_REDUCE_MOTION: 'settings.setReduceMotion',
   SETTINGS_SET_SHOW_SCROLLBAR_MAP: 'settings.setShowScrollbarMap',
   SETTINGS_SET_TYPOGRAPHY: 'settings.setTypography',
   SETTINGS_SET_SHOW_FINISHED_TURN_TIMES: 'settings.setShowFinishedTurnTimes',
@@ -582,6 +583,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.
     setAnimatedStatusText(enabled: boolean): Promise<Result<Settings>>; // Issue #1242 (FR-042): the shared status-text shimmer switch; applies live.
     setCodeLigatures(enabled: boolean): Promise<Result<Settings>>; setShowScrollbarMap(enabled: boolean): Promise<Result<Settings>>; // Issue #1246; #754 (spec 041) scrollbar map switch
+    setReduceMotion(enabled: boolean): Promise<Result<Settings>>; // Issue #566: the app-wide Reduce motion switch (WCAG 2.2.2 pause path); default off follows the OS setting; applies live.
     setStackedPullRequests(enabled: boolean): Promise<Result<Settings>>; // Issue #1867: default on; the Pull requests Merge button and Session notes read it.
     setTypography(value: NonNullable<Settings['typography']>): Promise<Result<Settings>>; // Spec 036: Rust clamps each scale to 0.8..1.5; pushes settings:changed.
     upsertAlarm(alarm: Alarm): Promise<Result<Settings>>; // Issue #1426: create or edit one composer-clock Alarm; `alarm-limit` when the list is full.

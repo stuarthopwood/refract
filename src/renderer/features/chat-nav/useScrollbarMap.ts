@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { useChatNavStore, EMPTY_CHAT_NAV } from '@/state/chat-nav-store'
+import { isMotionReduced } from '@/lib/reducedMotion'
 import type { NavMessage } from './messageIndex'
 import { resolveMapColors, paintMap, type MapColors } from './scrollbarMapPaint'
 import {
@@ -46,7 +47,7 @@ function measureSources(viewport: HTMLElement, kindById: ReadonlyMap<string, Nav
 }
 
 export function prefersReducedMotion(): boolean {
-  return typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches
+  return isMotionReduced()
 }
 
 export interface ScrollbarMapHandles {
