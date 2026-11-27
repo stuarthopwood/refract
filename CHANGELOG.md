@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.46.0 (2026-11-27)
+
+### Features
+
+- feat(chat): tool targets setting, fixed status column and no-op chevrons (https://github.com/stuarthopwood/refract/pull/2263)
+- feat(chat): size message images to their pixels and polish the viewer (https://github.com/stuarthopwood/refract/pull/2265)
+- feat(chat): follow the end of the transcript consistently (https://github.com/stuarthopwood/refract/pull/2267)
+- feat(subagents): tint the card instead of nesting borders, render results as Markdown (https://github.com/stuarthopwood/refract/pull/2268)
+- feat(chat): show bash Truncated/Minimized badges and a static Pseudo view (https://github.com/stuarthopwood/refract/pull/2269)
+
+### Fixes
+
+- fix(chat): clickable header badges and Geist Mono ligature advances (https://github.com/stuarthopwood/refract/pull/2264)
+
 ## v0.45.0 (2026-11-27)
 
 ### Features
