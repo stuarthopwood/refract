@@ -44,4 +44,11 @@ describe('SkeletonLines', () => {
     expect(html).toContain('class="sr-only"')
     expect(html).not.toContain('border-dashed')
   })
+
+  it('is_a_status_region_only_when_announce_is_set', () => {
+    const quiet = renderToStaticMarkup(createElement(SkeletonLines, { label: 'Loading', widths: ['w-1/2'] }))
+    const loud = renderToStaticMarkup(createElement(SkeletonLines, { label: 'Loading', widths: ['w-1/2'], announce: true }))
+    expect(quiet).not.toContain('role=')
+    expect(loud).toContain('role="status"')
+  })
 })

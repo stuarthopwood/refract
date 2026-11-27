@@ -278,9 +278,7 @@ export function ModelRolesSection() {
         {assertive}
       </div>
       {!loaded ? (
-        <div role="status">
-          <SkeletonLines label="Loading model roles…" widths={['w-full', 'w-full', 'w-3/4', 'w-full', 'w-2/3']} />
-        </div>
+        <SkeletonLines announce label="Loading model roles…" widths={['w-full', 'w-full', 'w-3/4', 'w-full', 'w-2/3']} />
       ) : loadError ? (
         <Alert variant="destructive">
           <OctagonXIcon aria-hidden />

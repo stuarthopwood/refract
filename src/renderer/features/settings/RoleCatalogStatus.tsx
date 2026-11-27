@@ -27,7 +27,7 @@ interface RoleCatalogStatusProps {
 
 export function RoleCatalogStatus({ kind, catalog, error, isRetrying, onRetry }: RoleCatalogStatusProps) {
   if (catalog === undefined && !error && !isRetrying) {
-    return <SkeletonLines label="Loading models…" widths={['w-40']} className="mt-2" />
+    return <SkeletonLines announce label="Loading models…" widths={['w-40']} className="mt-2" />
   }
   if (!error) return null
   const kindLabel = CATALOG_KIND_LABEL[kind]

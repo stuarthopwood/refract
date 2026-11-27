@@ -39,10 +39,10 @@ export function DetailPaneSkeleton({ className, label = 'Loading…' }: { classN
   )
 }
 
-/** Bars of the given width classes inside a picker or settings row; the sr-only `label` is the only text, and the caller owns the role (a `status` region, or the option it sits in). */
-export function SkeletonLines({ label, widths, className }: { label: string; widths: string[]; className?: string }) {
+/** Bars of the given width classes inside a picker or settings row; the sr-only `label` is the only text. `announce` makes the block its own polite `status` region; leave it off when the caller already owns the role (an option it sits in, or an existing `status` wrapper). */
+export function SkeletonLines({ label, widths, className, announce = false }: { label: string; widths: string[]; className?: string; announce?: boolean }) {
   return (
-    <div data-slot="skeleton-lines" className={cn('flex flex-col gap-2', className)}>
+    <div data-slot="skeleton-lines" role={announce ? 'status' : undefined} className={cn('flex flex-col gap-2', className)}>
       <span className="sr-only">{label}</span>
       {widths.map((width, index) => (
         <Skeleton key={index} aria-hidden className={cn('h-4', width)} />

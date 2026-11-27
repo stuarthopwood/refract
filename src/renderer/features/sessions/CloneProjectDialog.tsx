@@ -312,7 +312,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
               )}
               empty={
                 loading ? (
-                  <SkeletonLines label="Loading repositories…" widths={['w-2/3', 'w-1/2', 'w-3/4']} />
+                  <SkeletonLines announce label="Loading repositories…" widths={['w-2/3', 'w-1/2', 'w-3/4']} />
                 ) : loadError ? (
                   <div role="alert" className="flex items-center justify-between gap-2">
                     <span className="min-w-0">{loadError.message}</span>

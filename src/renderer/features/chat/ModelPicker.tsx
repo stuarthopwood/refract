@@ -257,7 +257,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
           onKeyDown={handleRoleKeyDown}
           className="flex shrink-0 flex-wrap gap-1 p-1 focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-composer-focus"
         >
-          {roleItems.length === 0 && <SkeletonLines label="Loading roles…" widths={['w-32']} className="px-2 py-1" />}
+          {roleItems.length === 0 && <SkeletonLines announce label="Loading roles…" widths={['w-32']} className="px-2 py-1" />}
           {roleItems.map((item, index) => (
             <RoleOption
               key={item.role}

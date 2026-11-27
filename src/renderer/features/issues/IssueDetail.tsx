@@ -13,6 +13,7 @@ import { requestSessionFromItem } from '@/features/sessions/startSessionRequest'
 import { Markdown } from '@/features/chat/Markdown'
 import { RefreshButton } from '@/features/pull-requests/RefreshButton'
 import { resolvePullRequestImage } from '@/features/pull-requests/prImages'
+import { issueDetailGate } from './issueDetailGate'
 import type { IssueDetail as IssueDetailData } from '../../../shared/ipc-issues'
 
 interface IssueDetailProps {
@@ -52,7 +53,7 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
   }, [repositoryId, number])
 
   if (!detail) {
-    if (!failed) return <DetailPaneSkeleton />
+    if (issueDetailGate(false, failed) === 'skeleton') return <DetailPaneSkeleton />
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-sm">
         {error && (
