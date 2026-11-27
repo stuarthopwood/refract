@@ -6009,3 +6009,65 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 ### Close-out
 
 - [ ] T753 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` where T744 to T751 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules, and live-check the cold start and a reopen within 60 s.
+
+## Phase 134: Convergence (2026-11-27, epic #2225 Conversation history children #2161, #440, #1760, #1854, #472, #696, FR-186 to FR-200, SC-031 to SC-039)
+
+### Lane #2161 (Rust + UI)
+
+- [ ] T754 [US1] #2161: add `conversations.delete` in a new `src-tauri/src/ipc/conversations_delete.rs` (registered in `conversations.rs` `register`): canonical path inside the session dir, refuse the current Conversation and any Conversation of a non-idle/stopped Session, remove the `.jsonl` and artifact folder through `src-tauri/src/fs/remove_tree.rs` in the background (pattern: `sessions_lifecycle/delete_in_flight.rs`), return bytes freed; add `CONVERSATIONS_DELETE` to `src/shared/ipc.ts` and `src/tauri-bridge/index.ts`, per FR-186, FR-187 (missing). Tests: `conversations_delete.test.rs`.
+- [ ] T755 [US1] #2161: add `size_bytes` (jsonl plus artifact folder) to `ConversationInfo` in `src-tauri/src/ipc/conversations.rs` and `src/shared/model.ts`, and a Session total to the list result, per FR-188 (missing). Tests: `conversations.test.rs`.
+- [ ] T756 [US1] #2161: add the retention setting (off by default; N days) following `src-tauri/src/ipc/settings_collapse.rs` and `src/shared/model.ts` `DEFAULT_SETTINGS`, with a preview and a run command that skip the current and being-written Conversations and report bytes freed, per FR-189 (missing). Tests: new `conversations_retention.test.rs`.
+- [ ] T757 [US1] #2161: make Session delete remove the OMP session log folder in `src-tauri/src/ipc/sessions_lifecycle/sessions_delete_support.rs`, and add the one-off orphan sweep (tie rule from `encode_cwd` in `src-tauri/src/usage/project_label.rs`, registered Projects' worktrees roots only), per FR-190 (missing). Tests: `sessions_lifecycle_tests.rs` and a new `session_logs_sweep.test.rs` including the plain-`omp`-folder-untouched case.
+- [ ] T758 [US1] #2161: in `src/renderer/features/chat/ConversationSwitcher.tsx` show size and total, a delete action with confirmation and refusal reason, a retention preview dialog and the Settings control; report freed space, per FR-186 to FR-189, SC-031 to SC-033 (missing). Tests: `ConversationSwitcher.test.tsx`.
+
+### Lane #440 (Rust titles)
+
+- [ ] T759 [US1] #440: derive `title` once from the first user message (single line, truncated) where rows are built in `src-tauri/src/ipc/conversations.rs` (`list_conversations`); keep `preview`; leave the "Untitled conversation" fallback at `ConversationSwitcher.tsx` for files with no user message, per FR-191, SC-035 (missing). Tests: `conversations.test.rs` (empty OMP title line, long and multi-line first messages). The issue's `src/main/conversations.ts` no longer exists.
+
+### Lane #1760 (UI)
+
+- [ ] T760 [US1] #1760: add an opt-in click-suppression prop to `src/renderer/components/ui/hover-card.tsx` (pointerdown ignores the following focus; reopen needs pointer leave and return) and set `openDelay={1200}` in `src/renderer/features/sessions/SessionDetailsCard.tsx`, keeping side and align, per FR-192, SC-036 (missing). Tests: new `hover-card.test.tsx` and `SessionDetailsCard.test.tsx`; confirm reopen-after-click live.
+
+### Lane #1854 (UI)
+
+- [ ] T761 [US1] #1854: pass the active-Session count and list from `RepositoryGroup.tsx` (using `displayStatus` in `sessionDisplay.tsx`) to `GroupHeader.tsx`: badge on a collapsed header, tooltip list, accessible name, no shift of the waiting marker column, per FR-193, SC-037 (missing). Tests: `GroupHeader.test.tsx` and `sessionDisplay.test.ts`.
+
+### Lane #472 (UI, after T754 to T759)
+
+- [ ] T762 [US1] #472: nested Conversation list under `SessionRow.tsx` in `SessionList.tsx`, with chevron, count badge, remembered per-Session expand state (`src/renderer/state/session-list-store.ts`), lazy load and cap, current marker, switch, New conversation, size and delete, Archived Sessions excluded, per FR-194, FR-195 (missing). Tests: `SessionRowTree.test.ts` and `session-list-store.test.ts`.
+- [ ] T763 [US1] #472: ARIA, tab order, Ctrl+1 to Ctrl+9 and focus fallback unchanged, reduced motion, per FR-196, SC-038 (missing). Tests: `treeKeyDecision.test.ts`, `SessionRowTree.test.ts`.
+
+### Lane #696 (after T762; probe first)
+
+- [ ] T764 [US1] #696: probe OMP 18.13.3 in a scratch profile: `get_tree`, `navigate_tree`, `fork` with `entryId`, `set_label`, behaviour while not idle, `get_state` after each; record in FINDINGS; no source change, per FR-197.
+- [ ] T765 [US1] #696: add tree view, Rewind, Fork and labels (Rust IPC next to `conversations_core.rs`, renderer opened from `ConversationSwitcher.tsx`), registry update and reattach tolerance for fork, no #449 notice, idle-only, inline errors, update `src/shared/slash-commands.ts` and constitution II, per FR-197 to FR-200, SC-039 (missing). Tests: `conversations_core.test.rs` and a tree view test. Branch stays out of v1.
+
+### Close-out
+
+- [ ] T766 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` (`conversations.delete`, retention, tree commands) where T754 to T765 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check delete, the nested list and a Fork.
+
+## Phase 135: Convergence (2026-11-27, epic #1272 children #1085, #490, FR-201 to FR-207, SC-040 to SC-041)
+
+File map: `src/main/` no longer exists, so the issues' `SessionAgent.ts` reset-at-turn-start maps to `on_frame`/`prune_finished_streams` in `src-tauri/src/session/subagents.rs`, and `SessionManager.ts`'s visible set to `src-tauri/src/session/manager.rs` plus the `is_visible` gate in `src-tauri/src/session/subagents_progress.rs` (`emit_subagents_update`). `ReadoutChips.tsx` no longer exists; the pill is `SubagentsReadout` in `src/renderer/features/chat/readout/Readouts.tsx` with wording in `subagentDerive.ts`.
+
+### Lane #1085 (Rust first, then pill; build before #490)
+
+- [ ] T767 [US1] #1085: add a Stage key (owning message id, the key `src/renderer/features/chat/groupSubagentStages.ts` groups by) to `SummaryEntry` in `src-tauri/src/session/subagents.rs`, set in `handle_task_start` from the current assistant message id (`message_start` in `src-tauri/src/omp/transcript.rs` and `src-tauri/src/session/agent/frame.rs`), and add `stageKey` to `SubagentSummary` in `src/shared/model.ts` and `summaries_to_value` in `subagents_progress.rs`, per FR-203 (missing). Tests: `subagents_progress.test.rs`.
+- [ ] T768 [US1] #1085: replace `prune_finished_streams` at `agent_start` with a Stage prune: drop summaries, streams and stream ids of every Stage that is all settled (parked counts as settled) and from an earlier turn, keep any Stage with a running agent whole, remove "No live output" agents (from `on_attach_reconcile`) at once, clear `visible_id` if its agent goes, then emit `subagents:update` and schedule a readout update; `on_conversation_reset` stays, per FR-202 (missing). Tests: new `src-tauri/src/session/subagents_retention.test.rs` (wired by `#[path]` in `subagents.rs`) using `subagents_test_support.rs`: whole-Stage keep, background Stage across a turn, settled Stage dropped, "No live output" dropped, parked settled.
+- [ ] T769 [US1] #1085: make `subagent_count` count only the retained list and return `None` when `running == 0` and the last Stage of the current turn has no failed or exited agent; update the `subagentCount` doc in `src/shared/model.ts`, per FR-201, FR-203 (missing). Tests: `readout.test.rs` and `subagents_retention.test.rs`.
+- [ ] T770 [US1] #1085: in `Readouts.tsx` `SubagentsReadout` and `subagentDerive.ts` `deriveSubagentPhrase`, show only "N running", or "N failed"/"N exited", never "N finished" or a parked count; no live announcement of the pill; text plus icon for the failure; keep the hover card tied to `running`, per FR-201, SC-040 (missing). Tests: new `src/renderer/features/chat/readout/subagentDerive.test.ts` and `Readouts.test.tsx`. Amends `specs/004-session-readout/spec.md` FR-007.
+- [ ] T771 [US1] #1085: in `src/renderer/state/subagent-store.ts` (`applySubagents` in `readout-store.ts` feeds it) clear the selection when its agent is pruned and move focus to the panel heading in `src/renderer/features/subagents/SubagentPanel.tsx` only if focus was in the removed row, per FR-203 (missing). Tests: new `src/renderer/state/subagent-store.test.ts` and `src/renderer/features/subagents/subagentPanelRows.test.ts`.
+
+### Lane #490 (after T767 to T771; same files)
+
+- [ ] T772 [US1] #490: add the aggregator in `src-tauri/src/session/subagents_progress.rs` and `src-tauri/src/events.rs`: one coalesced `agents:update` (`AGENTS_UPDATE`) carrying `{ sessionId, subagents }` for every live Session whether or not `agent.is_visible()` (the gate in `emit_subagents_update` stays for the per-Session `subagents:update` and `subagent:patch`), with the Session's name, repository and status resolved in `src-tauri/src/session/manager.rs`; reuse the `SUMMARIES_COALESCE_MS` window; add the event to `src/shared/ipc.ts` and `src/tauri-bridge/index.ts`, per FR-205, FR-207 (missing). Tests: `subagents_progress.test.rs` (hidden Session emits and coalesces).
+- [ ] T773 [US1] #490: seed the aggregate on startup and reattach from `current_summaries_value`, and drop a Session's group when it is archived, deleted or stopped (hooks in `src-tauri/src/ipc/sessions_lifecycle/archive_core.rs` and the stop path), per FR-205 (missing). Tests: `sessions_lifecycle_tests.rs` and `subagents_progress.test.rs`.
+- [ ] T774 [US1] #490: renderer store for the aggregate: extend `src/renderer/state/readout-store.ts` (or a new `agents-store.ts` exported from `src/renderer/state/index.ts` and fed in `init-stores.ts`) keyed by Session, with a selector for the groups (running first, empty hidden, "No agents running"), per FR-205, FR-206 (missing). Tests: new `readout-store.test.ts` or `agents-store.test.ts`.
+- [ ] T775 [US1] #490: make the `subagents` entry in `src/renderer/features/right-pane/panel-registry.ts` always available (no hide when idle), closed by default, with the running count summed over all Sessions as text on the rail in `IconRail.tsx`, and never opened or closed by agent events; keep its position in `HOSTED_PANELS` (the #393 order) and the merge in `panel-order.ts`, per FR-204, FR-207, SC-041 (missing). Tests: `panel-registry.test.ts` and `src/renderer/state/right-pane-store.test.ts`.
+- [ ] T776 [US1] #490: rebuild `src/renderer/features/subagents/SubagentPanel.tsx` and `SubagentPanelTree.tsx` as Session groups (`aria-expanded` group, Session as header with name, repository and status, agent rows as buttons named "<agent>, <status>, <elapsed>"), reusing the existing stream view and `subagentPanelRows`; selecting a row selects the Session and the agent; polite live region for start, finish and failure, reduced motion, per FR-205, FR-207 (missing). Tests: `SubagentPanelTree.test.ts`, `subagentPanelRows.test.ts` and a new `SubagentPanel.test.tsx`.
+- [ ] T777 [US1] #490: point the pill (`SubagentsReadout` `onActivate` and `onOpenPanelFromCard`) and `hosted-panel-actions.ts` `openHostedPanel('subagents', sessionId)` at the Agents panel scrolled to that Session's group; update `agent-tool-dispatch.ts`, `agent-panel-actions.ts`, `closeChatPane.ts`, `applySnapshot.ts` and `ChatPane.tsx`, which bind `useSubagentPanelStore` to one Session, so closing a pane no longer closes the global panel, per FR-207 (missing). Tests: new `Readouts.test.tsx` and new `hosted-panel-actions.test.ts`.
+- [ ] T778 [US1] #490: amend `specs/013-right-pane-shell/spec.md` (the per-Session answer at lines 47-52) and `specs/004-session-readout/spec.md` FR-017 to FR-020 with an "Amended 2026-11-27 by spec 001 FR-204 to FR-207" note. Cancel, Steer, Copy result, the finished fold and persistence stay open on #490 (not decided).
+
+### Close-out
+
+- [ ] T779 [US1] Update `docs/PLAN.md` rows (epic #1272 children #1085, #490), `quickstart.md` and `contracts/ipc.md` (`agents:update`, `subagents:update`, `stageKey`) where T767 to T778 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check a Stage of five agents across a turn boundary and two Sessions in the panel.
