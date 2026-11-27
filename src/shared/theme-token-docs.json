@@ -1,0 +1,886 @@
+{
+  "accent": {
+    "layer": "semantic",
+    "description": "Highlight fill for hovered or selected neutral surfaces such as menu items."
+  },
+  "accent-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the accent fill."
+  },
+  "accent-text": {
+    "layer": "semantic",
+    "description": "Accent colour used for text and links on the page background."
+  },
+  "active-indicator": {
+    "layer": "component",
+    "description": "Fill of the marker that shows the active item, for example the selected tab bar."
+  },
+  "active-indicator-foreground": {
+    "layer": "component",
+    "description": "Text and icons drawn on the active-item indicator."
+  },
+  "agent-message": {
+    "layer": "component",
+    "description": "Text colour of agent replies in the chat transcript."
+  },
+  "agent-spinner-core": {
+    "layer": "component",
+    "description": "Centre colour of the agent activity spinner."
+  },
+  "alert-caution": {
+    "layer": "component",
+    "description": "Accent colour of Caution callouts in rendered markdown."
+  },
+  "alert-important": {
+    "layer": "component",
+    "description": "Accent colour of Important callouts in rendered markdown."
+  },
+  "alert-note": {
+    "layer": "component",
+    "description": "Accent colour of Note callouts in rendered markdown."
+  },
+  "alert-tip": {
+    "layer": "component",
+    "description": "Accent colour of Tip callouts in rendered markdown."
+  },
+  "alert-warning": {
+    "layer": "component",
+    "description": "Accent colour of Warning callouts in rendered markdown."
+  },
+  "approval-card-bg": {
+    "layer": "component",
+    "description": "Background of the approval card shown when an agent asks permission."
+  },
+  "approval-card-border": {
+    "layer": "component",
+    "description": "Border of the approval card."
+  },
+  "approval-card-fg": {
+    "layer": "component",
+    "description": "Text colour of the approval card."
+  },
+  "background": {
+    "layer": "semantic",
+    "description": "Main app background behind every pane."
+  },
+  "border": {
+    "layer": "semantic",
+    "description": "Default border and outline colour."
+  },
+  "border-strong": {
+    "layer": "semantic",
+    "description": "Stronger border for edges that must stay clearly visible."
+  },
+  "button-destructive-bg": {
+    "layer": "component",
+    "description": "Fill of destructive buttons."
+  },
+  "button-destructive-fg": {
+    "layer": "component",
+    "description": "Text and icons on destructive buttons."
+  },
+  "button-destructive-hover-bg": {
+    "layer": "component",
+    "description": "Fill of destructive buttons while hovered."
+  },
+  "button-outline-bg": {
+    "layer": "component",
+    "description": "Fill of outline buttons."
+  },
+  "button-outline-border": {
+    "layer": "component",
+    "description": "Border of outline buttons."
+  },
+  "button-outline-fg": {
+    "layer": "component",
+    "description": "Text and icons on outline buttons."
+  },
+  "button-outline-hover-bg": {
+    "layer": "component",
+    "description": "Fill of outline buttons while hovered."
+  },
+  "button-secondary-bg": {
+    "layer": "component",
+    "description": "Fill of secondary buttons."
+  },
+  "button-secondary-fg": {
+    "layer": "component",
+    "description": "Text and icons on secondary buttons."
+  },
+  "button-secondary-hover-bg": {
+    "layer": "component",
+    "description": "Fill of secondary buttons while hovered."
+  },
+  "card": {
+    "layer": "semantic",
+    "description": "Background of cards and raised panels."
+  },
+  "card-foreground": {
+    "layer": "semantic",
+    "description": "Text colour on cards and raised panels."
+  },
+  "chart-1": {
+    "layer": "semantic",
+    "description": "Chart series colour 1 of 5."
+  },
+  "chart-2": {
+    "layer": "semantic",
+    "description": "Chart series colour 2 of 5."
+  },
+  "chart-3": {
+    "layer": "semantic",
+    "description": "Chart series colour 3 of 5."
+  },
+  "chart-4": {
+    "layer": "semantic",
+    "description": "Chart series colour 4 of 5."
+  },
+  "chart-5": {
+    "layer": "semantic",
+    "description": "Chart series colour 5 of 5."
+  },
+  "chat-card-bg": {
+    "layer": "component",
+    "description": "Background of cards inside the chat transcript."
+  },
+  "chat-code-bg": {
+    "layer": "component",
+    "description": "Background of inline code in chat messages."
+  },
+  "chat-code-fg": {
+    "layer": "component",
+    "description": "Text colour of inline code in chat messages."
+  },
+  "chat-foreground": {
+    "layer": "component",
+    "description": "Default text colour of the chat transcript."
+  },
+  "chat-user-bubble-bg": {
+    "layer": "component",
+    "description": "Background of your own message bubbles."
+  },
+  "chat-user-bubble-border": {
+    "layer": "component",
+    "description": "Border of your own message bubbles."
+  },
+  "chat-user-bubble-fg": {
+    "layer": "component",
+    "description": "Text colour of your own message bubbles."
+  },
+  "code-block-bg": {
+    "layer": "component",
+    "description": "Background of fenced code blocks."
+  },
+  "code-block-fg": {
+    "layer": "component",
+    "description": "Default text colour in fenced code blocks; overriding it or any syntax-* token switches code highlighting to the css-variables theme, so set them together."
+  },
+  "command-pill-bg": {
+    "layer": "component",
+    "description": "Background of command pills in the message box."
+  },
+  "command-pill-fg": {
+    "layer": "component",
+    "description": "Text colour of command pills."
+  },
+  "composer-background": {
+    "layer": "component",
+    "description": "Background of the message box."
+  },
+  "composer-border": {
+    "layer": "component",
+    "description": "Border of the message box."
+  },
+  "composer-control-border": {
+    "layer": "component",
+    "description": "Border of the small controls in the message box toolbar."
+  },
+  "composer-control-fg": {
+    "layer": "component",
+    "description": "Text and icons of the message box toolbar controls."
+  },
+  "composer-control-hover-bg": {
+    "layer": "component",
+    "description": "Fill of a message box toolbar control while hovered."
+  },
+  "composer-control-hover-fg": {
+    "layer": "component",
+    "description": "Text and icons of a message box toolbar control while hovered."
+  },
+  "composer-control-open-bg": {
+    "layer": "component",
+    "description": "Fill of a message box toolbar control while its menu is open."
+  },
+  "composer-control-open-fg": {
+    "layer": "component",
+    "description": "Text and icons of a message box toolbar control while its menu is open."
+  },
+  "composer-focus": {
+    "layer": "component",
+    "description": "Border of the message box while it has focus."
+  },
+  "composer-placeholder": {
+    "layer": "component",
+    "description": "Placeholder text in the empty message box."
+  },
+  "composer-ring": {
+    "layer": "component",
+    "description": "Focus ring around the message box."
+  },
+  "composer-selection-bg": {
+    "layer": "component",
+    "description": "Background of selected text in the message box."
+  },
+  "composer-selection-fg": {
+    "layer": "component",
+    "description": "Colour of selected text in the message box."
+  },
+  "context-usage-0": {
+    "layer": "component",
+    "description": "Context usage meter colour at 0 percent full; colours between steps blend."
+  },
+  "context-usage-100": {
+    "layer": "component",
+    "description": "Context usage meter colour at 100 percent full; colours between steps blend."
+  },
+  "context-usage-30": {
+    "layer": "component",
+    "description": "Context usage meter colour at 30 percent full; colours between steps blend."
+  },
+  "context-usage-70": {
+    "layer": "component",
+    "description": "Context usage meter colour at 70 percent full; colours between steps blend."
+  },
+  "destructive": {
+    "layer": "semantic",
+    "description": "Colour for destructive actions and errors."
+  },
+  "destructive-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the destructive colour."
+  },
+  "diff-added": {
+    "layer": "component",
+    "description": "Marker and tint for added lines in diffs."
+  },
+  "diff-removed": {
+    "layer": "component",
+    "description": "Marker and tint for removed lines in diffs."
+  },
+  "divider": {
+    "layer": "semantic",
+    "description": "Thin lines that separate regions, lists and sections."
+  },
+  "field-border": {
+    "layer": "component",
+    "description": "Border of text fields and other form controls."
+  },
+  "focused-badge-bg": {
+    "layer": "component",
+    "description": "Background of the badge that marks the focused pane or session."
+  },
+  "foreground": {
+    "layer": "semantic",
+    "description": "Default text colour."
+  },
+  "git-added": {
+    "layer": "semantic",
+    "description": "Git status colour for added files."
+  },
+  "git-conflicted": {
+    "layer": "semantic",
+    "description": "Git status colour for conflicted files."
+  },
+  "git-deleted": {
+    "layer": "semantic",
+    "description": "Git status colour for deleted files."
+  },
+  "git-ignored": {
+    "layer": "semantic",
+    "description": "Git status colour for ignored files."
+  },
+  "git-modified": {
+    "layer": "semantic",
+    "description": "Git status colour for modified files."
+  },
+  "git-renamed": {
+    "layer": "semantic",
+    "description": "Git status colour for renamed files."
+  },
+  "git-staged": {
+    "layer": "semantic",
+    "description": "Git status colour for staged files."
+  },
+  "git-untracked": {
+    "layer": "semantic",
+    "description": "Git status colour for untracked files."
+  },
+  "input": {
+    "layer": "semantic",
+    "description": "Border and fill base for form inputs."
+  },
+  "md-code-bg": {
+    "layer": "component",
+    "description": "Background of inline code in rendered markdown."
+  },
+  "md-code-fg": {
+    "layer": "component",
+    "description": "Text colour of inline code in rendered markdown."
+  },
+  "md-code-label": {
+    "layer": "component",
+    "description": "Language label above fenced code blocks in rendered markdown."
+  },
+  "md-heading": {
+    "layer": "component",
+    "description": "Headings in rendered markdown."
+  },
+  "md-marker": {
+    "layer": "component",
+    "description": "List bullets and numbers in rendered markdown."
+  },
+  "md-quote-bar": {
+    "layer": "component",
+    "description": "Left bar of block quotes in rendered markdown."
+  },
+  "md-table-header-fg": {
+    "layer": "component",
+    "description": "Header-row text in rendered markdown tables."
+  },
+  "mermaid-accent": {
+    "layer": "component",
+    "description": "Accent colour for emphasised Mermaid diagram elements."
+  },
+  "mermaid-accent-fill": {
+    "layer": "component",
+    "description": "Fill of flowchart nodes in Mermaid diagrams; set this, not mermaid-node-fill, to recolour flowchart nodes."
+  },
+  "mermaid-bg": {
+    "layer": "component",
+    "description": "Background of Mermaid diagrams."
+  },
+  "mermaid-border": {
+    "layer": "component",
+    "description": "Borders of Mermaid diagram nodes and clusters."
+  },
+  "mermaid-crit": {
+    "layer": "component",
+    "description": "Colour of critical tasks in Mermaid Gantt diagrams."
+  },
+  "mermaid-cscale-11": {
+    "layer": "component",
+    "description": "Eleventh colour of the Mermaid colour scale (renamed from mermaid-cscale-12)."
+  },
+  "mermaid-cscale-label-11": {
+    "layer": "component",
+    "description": "Label colour on the eleventh colour of the Mermaid colour scale (renamed from mermaid-cscale-label-12)."
+  },
+  "mermaid-fill-1": {
+    "layer": "component",
+    "description": "Mermaid diagram fill 1 of 8."
+  },
+  "mermaid-fill-2": {
+    "layer": "component",
+    "description": "Mermaid diagram fill 2 of 8."
+  },
+  "mermaid-fill-3": {
+    "layer": "component",
+    "description": "Mermaid diagram fill 3 of 8."
+  },
+  "mermaid-fill-4": {
+    "layer": "component",
+    "description": "Mermaid diagram fill 4 of 8."
+  },
+  "mermaid-fill-5": {
+    "layer": "component",
+    "description": "Mermaid diagram fill 5 of 8."
+  },
+  "mermaid-fill-6": {
+    "layer": "component",
+    "description": "Mermaid diagram fill 6 of 8."
+  },
+  "mermaid-fill-7": {
+    "layer": "component",
+    "description": "Mermaid diagram fill 7 of 8."
+  },
+  "mermaid-fill-8": {
+    "layer": "component",
+    "description": "Mermaid diagram fill 8 of 8."
+  },
+  "mermaid-ink": {
+    "layer": "component",
+    "description": "Ink colour for strokes and fine detail in Mermaid diagrams."
+  },
+  "mermaid-line": {
+    "layer": "component",
+    "description": "Lines and arrows in Mermaid diagrams."
+  },
+  "mermaid-node-fg": {
+    "layer": "component",
+    "description": "Text colour on Mermaid diagram nodes."
+  },
+  "mermaid-node-fill": {
+    "layer": "component",
+    "description": "Node fill in Mermaid diagrams other than flowcharts; flowchart nodes take mermaid-accent-fill."
+  },
+  "mermaid-note-bg": {
+    "layer": "component",
+    "description": "Background of notes in Mermaid diagrams."
+  },
+  "mermaid-note-fg": {
+    "layer": "component",
+    "description": "Text colour of notes in Mermaid diagrams."
+  },
+  "mermaid-palette-1": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 1 of 12 (1-based)."
+  },
+  "mermaid-palette-10": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 10 of 12 (1-based)."
+  },
+  "mermaid-palette-11": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 11 of 12 (1-based)."
+  },
+  "mermaid-palette-12": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 12 of 12 (1-based)."
+  },
+  "mermaid-palette-2": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 2 of 12 (1-based)."
+  },
+  "mermaid-palette-3": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 3 of 12 (1-based)."
+  },
+  "mermaid-palette-4": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 4 of 12 (1-based)."
+  },
+  "mermaid-palette-5": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 5 of 12 (1-based)."
+  },
+  "mermaid-palette-6": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 6 of 12 (1-based)."
+  },
+  "mermaid-palette-7": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 7 of 12 (1-based)."
+  },
+  "mermaid-palette-8": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 8 of 12 (1-based)."
+  },
+  "mermaid-palette-9": {
+    "layer": "component",
+    "description": "Mermaid diagram palette colour 9 of 12 (1-based)."
+  },
+  "mermaid-secondary": {
+    "layer": "component",
+    "description": "Secondary fill in Mermaid diagrams."
+  },
+  "mermaid-task-text": {
+    "layer": "component",
+    "description": "Task text in Mermaid Gantt diagrams."
+  },
+  "mermaid-tertiary": {
+    "layer": "component",
+    "description": "Tertiary fill in Mermaid diagrams."
+  },
+  "mermaid-text": {
+    "layer": "component",
+    "description": "Default text colour in Mermaid diagrams."
+  },
+  "muted": {
+    "layer": "semantic",
+    "description": "Subtle fill for quiet surfaces such as the selected list row."
+  },
+  "muted-foreground": {
+    "layer": "semantic",
+    "description": "Secondary text and icons."
+  },
+  "notice-error-fg": {
+    "layer": "component",
+    "description": "Text colour of error notices."
+  },
+  "notice-info-fg": {
+    "layer": "component",
+    "description": "Text colour of informational notices."
+  },
+  "notice-warning-fg": {
+    "layer": "component",
+    "description": "Text colour of warning notices."
+  },
+  "pane-focused": {
+    "layer": "component",
+    "description": "Tint of the focused pane in split view."
+  },
+  "pane-focused-edge": {
+    "layer": "component",
+    "description": "Edge line of the focused pane in split view."
+  },
+  "popover": {
+    "layer": "semantic",
+    "description": "Background of menus, popovers and dialogs."
+  },
+  "popover-foreground": {
+    "layer": "semantic",
+    "description": "Text colour inside menus, popovers and dialogs."
+  },
+  "pr-closed": {
+    "layer": "semantic",
+    "description": "Pull request closed state."
+  },
+  "pr-closed-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the closed pull request colour."
+  },
+  "pr-draft": {
+    "layer": "semantic",
+    "description": "Pull request draft state."
+  },
+  "pr-draft-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the draft pull request colour."
+  },
+  "pr-merged": {
+    "layer": "semantic",
+    "description": "Pull request merged state."
+  },
+  "pr-merged-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the merged pull request colour."
+  },
+  "pr-open": {
+    "layer": "semantic",
+    "description": "Pull request open state."
+  },
+  "pr-open-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the open pull request colour."
+  },
+  "primary": {
+    "layer": "semantic",
+    "description": "Main brand and call-to-action fill, for example the default button."
+  },
+  "primary-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the primary fill."
+  },
+  "project-1": {
+    "layer": "semantic",
+    "description": "Project colour 1 of 10, offered when you colour a project."
+  },
+  "project-10": {
+    "layer": "semantic",
+    "description": "Project colour 10 of 10, offered when you colour a project."
+  },
+  "project-2": {
+    "layer": "semantic",
+    "description": "Project colour 2 of 10, offered when you colour a project."
+  },
+  "project-3": {
+    "layer": "semantic",
+    "description": "Project colour 3 of 10, offered when you colour a project."
+  },
+  "project-4": {
+    "layer": "semantic",
+    "description": "Project colour 4 of 10, offered when you colour a project."
+  },
+  "project-5": {
+    "layer": "semantic",
+    "description": "Project colour 5 of 10, offered when you colour a project."
+  },
+  "project-6": {
+    "layer": "semantic",
+    "description": "Project colour 6 of 10, offered when you colour a project."
+  },
+  "project-7": {
+    "layer": "semantic",
+    "description": "Project colour 7 of 10, offered when you colour a project."
+  },
+  "project-8": {
+    "layer": "semantic",
+    "description": "Project colour 8 of 10, offered when you colour a project."
+  },
+  "project-9": {
+    "layer": "semantic",
+    "description": "Project colour 9 of 10, offered when you colour a project."
+  },
+  "ring": {
+    "layer": "semantic",
+    "description": "Focus ring colour."
+  },
+  "role-default": {
+    "layer": "semantic",
+    "description": "Model role badge for the default role."
+  },
+  "role-plan": {
+    "layer": "semantic",
+    "description": "Model role badge for the plan role."
+  },
+  "role-slow": {
+    "layer": "semantic",
+    "description": "Model role badge for the slow role."
+  },
+  "role-smol": {
+    "layer": "semantic",
+    "description": "Model role badge for the smol role."
+  },
+  "scrollbar-thumb": {
+    "layer": "component",
+    "description": "Scrollbar thumb at rest."
+  },
+  "scrollbar-thumb-hover": {
+    "layer": "component",
+    "description": "Scrollbar thumb while hovered or dragged."
+  },
+  "scrollbar-track": {
+    "layer": "component",
+    "description": "Scrollbar track."
+  },
+  "secondary": {
+    "layer": "semantic",
+    "description": "Fill for secondary surfaces and buttons."
+  },
+  "secondary-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the secondary fill."
+  },
+  "send": {
+    "layer": "component",
+    "description": "Fill of the send button in the message box."
+  },
+  "send-foreground": {
+    "layer": "component",
+    "description": "Icon colour on the send button."
+  },
+  "session-row-fg": {
+    "layer": "component",
+    "description": "Session name text in the session list."
+  },
+  "session-row-hover-bg": {
+    "layer": "component",
+    "description": "Session row fill while hovered."
+  },
+  "session-row-meta-fg": {
+    "layer": "component",
+    "description": "Secondary text on a session row, such as the project and age."
+  },
+  "session-row-selected-bg": {
+    "layer": "component",
+    "description": "Fill of the selected session row."
+  },
+  "session-row-selected-fg": {
+    "layer": "component",
+    "description": "Text colour of the selected session row."
+  },
+  "severity-error": {
+    "layer": "semantic",
+    "description": "Error severity colour."
+  },
+  "severity-error-bg": {
+    "layer": "semantic",
+    "description": "Error severity background tint."
+  },
+  "severity-info": {
+    "layer": "semantic",
+    "description": "Info severity colour."
+  },
+  "severity-info-bg": {
+    "layer": "semantic",
+    "description": "Info severity background tint."
+  },
+  "severity-success": {
+    "layer": "semantic",
+    "description": "Success severity colour."
+  },
+  "severity-success-bg": {
+    "layer": "semantic",
+    "description": "Success severity background tint."
+  },
+  "severity-warning": {
+    "layer": "semantic",
+    "description": "Warning severity colour."
+  },
+  "severity-warning-bg": {
+    "layer": "semantic",
+    "description": "Warning severity background tint."
+  },
+  "sidebar": {
+    "layer": "semantic",
+    "description": "Background of the session sidebar."
+  },
+  "sidebar-accent": {
+    "layer": "semantic",
+    "description": "Hover and selected fill inside the sidebar."
+  },
+  "sidebar-accent-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons on the sidebar accent fill."
+  },
+  "sidebar-border": {
+    "layer": "semantic",
+    "description": "Borders inside and around the sidebar."
+  },
+  "sidebar-foreground": {
+    "layer": "semantic",
+    "description": "Text colour in the sidebar."
+  },
+  "sidebar-primary": {
+    "layer": "semantic",
+    "description": "Primary fill inside the sidebar."
+  },
+  "sidebar-primary-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons on the sidebar primary fill."
+  },
+  "sidebar-right": {
+    "layer": "semantic",
+    "description": "Background of the right pane."
+  },
+  "sidebar-ring": {
+    "layer": "semantic",
+    "description": "Focus ring colour inside the sidebar."
+  },
+  "state-idle": {
+    "layer": "semantic",
+    "description": "Session state colour: idle."
+  },
+  "state-needs-you": {
+    "layer": "semantic",
+    "description": "Session state colour: waiting for you."
+  },
+  "state-needs-you-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the needs-you state colour."
+  },
+  "state-stopped": {
+    "layer": "semantic",
+    "description": "Session state colour: stopped."
+  },
+  "state-stopped-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the stopped state colour."
+  },
+  "state-unread-response": {
+    "layer": "semantic",
+    "description": "Session state colour: an unread response."
+  },
+  "state-working": {
+    "layer": "semantic",
+    "description": "Session state colour: the agent is working."
+  },
+  "state-working-foreground": {
+    "layer": "semantic",
+    "description": "Text and icons drawn on the working state colour."
+  },
+  "status-bar-bg": {
+    "layer": "component",
+    "description": "Background of the status line."
+  },
+  "status-bar-fg": {
+    "layer": "component",
+    "description": "Text colour of the status line."
+  },
+  "status-pill-attention-bg": {
+    "layer": "component",
+    "description": "Fill of status pills that need attention."
+  },
+  "status-pill-attention-border": {
+    "layer": "component",
+    "description": "Border of status pills that need attention."
+  },
+  "status-pill-attention-fg": {
+    "layer": "component",
+    "description": "Text colour of status pills that need attention."
+  },
+  "status-pill-attention-hover-bg": {
+    "layer": "component",
+    "description": "Fill of status pills that need attention while hovered."
+  },
+  "surface-1": {
+    "layer": "semantic",
+    "description": "Lowest raised surface above the background."
+  },
+  "surface-2": {
+    "layer": "semantic",
+    "description": "Surface raised above surface-1."
+  },
+  "surface-3": {
+    "layer": "semantic",
+    "description": "Highest raised surface, above surface-2."
+  },
+  "surface-hover": {
+    "layer": "semantic",
+    "description": "Fill of a surface while hovered."
+  },
+  "syntax-comment": {
+    "layer": "component",
+    "description": "Code highlighting colour for comments; set all syntax-* tokens and code-block-fg together."
+  },
+  "syntax-constant": {
+    "layer": "component",
+    "description": "Code highlighting colour for constants; set all syntax-* tokens and code-block-fg together."
+  },
+  "syntax-function": {
+    "layer": "component",
+    "description": "Code highlighting colour for function names; set all syntax-* tokens and code-block-fg together."
+  },
+  "syntax-keyword": {
+    "layer": "component",
+    "description": "Code highlighting colour for keywords; set all syntax-* tokens and code-block-fg together."
+  },
+  "syntax-parameter": {
+    "layer": "component",
+    "description": "Code highlighting colour for parameters; set all syntax-* tokens and code-block-fg together."
+  },
+  "syntax-punctuation": {
+    "layer": "component",
+    "description": "Code highlighting colour for punctuation; set all syntax-* tokens and code-block-fg together."
+  },
+  "syntax-string": {
+    "layer": "component",
+    "description": "Code highlighting colour for strings; set all syntax-* tokens and code-block-fg together."
+  },
+  "thinking-row-active-fg": {
+    "layer": "component",
+    "description": "Text colour of the agent thinking row while the agent is still thinking."
+  },
+  "thinking-row-fg": {
+    "layer": "component",
+    "description": "Text colour of a finished agent thinking row."
+  },
+  "titlebar": {
+    "layer": "semantic",
+    "description": "Background of the window title bar."
+  },
+  "tool-row-error-fg": {
+    "layer": "component",
+    "description": "Text colour of a failed tool call row."
+  },
+  "tool-row-fg": {
+    "layer": "component",
+    "description": "Text colour of a tool call row."
+  },
+  "tooltip-bg": {
+    "layer": "component",
+    "description": "Background of tooltips."
+  },
+  "tooltip-border": {
+    "layer": "component",
+    "description": "Border of tooltips."
+  },
+  "tooltip-fg": {
+    "layer": "component",
+    "description": "Text colour of tooltips."
+  },
+  "viewer-tint": {
+    "layer": "component",
+    "description": "Tint behind the image and file viewers."
+  }
+}

@@ -1,5 +1,6 @@
 // Applies a custom theme's tokens as inline custom properties; never builds CSS text (#458).
 import tokenList from '../../shared/theme-tokens.json';
+import { themeFileJson } from './themeFile';
 
 export const THEME_TOKENS: readonly string[] = tokenList.tokens;
 const ALLOWED = new Set<string>(THEME_TOKENS);
@@ -46,5 +47,5 @@ export function buildStarterJson(name: string, base: string): string {
   } finally {
     probe.remove();
   }
-  return JSON.stringify({ version: 1, name, base, tokens }, null, 2) + '\n';
+  return themeFileJson(name, base, tokens);
 }

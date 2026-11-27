@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { buildStarterJson } from '@/lib/themeTokens'
+import { customThemeJson } from '@/lib/themeFile'
 import { notify } from '@/state/notify'
 import { useThemeStore } from '@/state'
 import type { CustomTheme } from '../../../shared/ipc-themes'
@@ -52,8 +53,7 @@ export function useThemeFileActions() {
     }
   }
 
-  const exportCustom = (t: CustomTheme) =>
-    exportJson(t.name, JSON.stringify({ version: 1, name: t.name, base: t.base, tokens: t.tokens }, null, 2))
+  const exportCustom = (t: CustomTheme) => exportJson(t.name, customThemeJson(t))
   const exportBuiltin = (id: ThemeId, name: string) => exportJson(`${name} copy`, buildStarterJson(`${name} copy`, id))
 
   async function showInFolder(id?: string) {

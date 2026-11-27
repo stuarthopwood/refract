@@ -19,6 +19,7 @@ export default defineConfig({
       'scripts/check-drag-regions.test.mjs',
       'scripts/release-changelog.test.mjs',
       'scripts/theme-tokens.test.mjs',
+      'scripts/theme-schema.test.mjs',
       'scripts/theme-contrast-pairs.test.mjs',
       'scripts/theme-id-parity.test.mjs',
       'scripts/theme-groups.test.mjs',

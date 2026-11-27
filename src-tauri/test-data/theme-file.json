@@ -1,0 +1,9 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stuarthopwood/refract/main/src/shared/theme.schema.json",
+  "version": 1,
+  "name": "Mine",
+  "base": "dark",
+  "tokens": {
+    "primary": "#ff2d95"
+  }
+}

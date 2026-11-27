@@ -30,6 +30,9 @@ fn allowed_tokens() -> &'static HashSet<String> {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawTheme {
+    /// Editors read the schema pointer; Rust only has to accept it.
+    #[serde(rename = "$schema", default)]
+    _schema: Option<String>,
     version: u32,
     name: String,
     base: ThemeId,
@@ -286,4 +289,53 @@ pub async fn remove(dir: &Path, id: &str) -> Result<(), String> {
     tokio::fs::remove_file(&path)
         .await
         .map_err(|_| "the theme file cannot be removed".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SCHEMA_JSON: &str = include_str!("../../../src/shared/theme.schema.json");
+
+    fn file(schema: &str) -> String {
+        format!(
+            r##"{{{schema}"version": 1, "name": "Mine", "base": "dark", "tokens": {{"primary": "#ff2d95"}}}}"##
+        )
+    }
+
+    #[test]
+    fn parses_a_file_written_by_the_renderer_exporter() {
+        let text = include_str!("../../test-data/theme-file.json");
+        assert_eq!(parse_theme("mine", text).unwrap().name, "Mine");
+    }
+
+    #[test]
+    fn accepts_a_schema_pointer() {
+        let text = file(r#""$schema": "https://example.test/theme.schema.json", "#);
+        assert_eq!(parse_theme("mine", &text).unwrap().name, "Mine");
+    }
+
+    #[test]
+    fn still_accepts_a_file_without_a_schema_pointer() {
+        assert!(parse_theme("mine", &file("")).is_ok());
+    }
+
+    #[test]
+    fn still_rejects_other_unknown_keys() {
+        let text = file(r#""extra": 1, "#);
+        assert!(parse_theme("mine", &text).is_err());
+    }
+
+    #[test]
+    fn schema_lists_exactly_the_allowlisted_tokens() {
+        let schema: serde_json::Value =
+            serde_json::from_str(SCHEMA_JSON).expect("theme.schema.json is valid");
+        let listed: HashSet<String> = schema["properties"]["tokens"]["properties"]
+            .as_object()
+            .expect("tokens.properties is an object")
+            .keys()
+            .cloned()
+            .collect();
+        assert_eq!(&listed, allowed_tokens());
+    }
 }

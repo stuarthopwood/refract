@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { AlertTriangleIcon, ChevronDownIcon, DownloadIcon, Trash2Icon, UploadIcon } from 'lucide-react'
+import { AlertTriangleIcon, ChevronDownIcon, DownloadIcon, FileJsonIcon, Trash2Icon, UploadIcon } from 'lucide-react'
 import { REVEAL_ACTION_LABEL, RevealActionIcon } from '@/components/revealAction'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
@@ -17,6 +17,7 @@ import { groupStartOffsets, rowIndex } from '@/lib/themeGroups'
 import type { ThemeEntry } from '@/lib/themeGroups'
 import { useThemeStore } from '@/state'
 import { useThemeFileActions } from './useThemeFileActions'
+import { ThemeFormatDialog } from './ThemeFormatDialog'
 
 // Hand-rolled radiogroup (roving tabindex): arrows and Home/End both move focus and save the choice.
 // Not migrated to ui/radio-group.tsx, whose Home/End only move focus (#498).
@@ -35,6 +36,8 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
   const pendingIndex = useRef(0)
   const [open, setOpen] = useState<string | null>(null)
+  const [helpOpen, setHelpOpen] = useState(false)
+  const helpRef = useRef<HTMLButtonElement>(null)
   const refresh = useThemeStore((s) => s.refreshCustomThemes)
   const contrast = useMemo(() => new Map(customThemes.map((t) => [t.id, checkThemeContrast(t)])), [customThemes])
   const groupStarts = useMemo(() => groupStartOffsets(builtinGroups), [builtinGroups])
@@ -143,14 +146,18 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
         <InlineStatus key={r.file} tone="error" density="compact" className="mt-2">Couldn&apos;t load {r.file}: {r.error}</InlineStatus>
       ))}
       {actions.importError && <InlineStatus tone="error" density="compact" className="mt-2">{actions.importError}</InlineStatus>}
-      <div className="mt-4 flex gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         <Button type="button" variant="ghost" size="sm" className="aria-disabled:opacity-50" aria-disabled={actions.importing} onClick={() => { if (!actions.importing) void actions.importTheme() }}>
           <UploadIcon aria-hidden /> {actions.importing ? 'Importing…' : 'Import theme…'}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={() => void actions.showInFolder()}>
           <RevealActionIcon aria-hidden /> Show themes folder
         </Button>
+        <Button ref={helpRef} type="button" variant="ghost" size="sm" onClick={() => setHelpOpen(true)}>
+          <FileJsonIcon aria-hidden /> Theme file format
+        </Button>
       </div>
+      <ThemeFormatDialog open={helpOpen} onOpenChange={setHelpOpen} onCloseFocus={() => helpRef.current?.focus()} />
       <ConfirmAlertDialog
         open={actions.pendingRemove !== null}
         busy={actions.busy}

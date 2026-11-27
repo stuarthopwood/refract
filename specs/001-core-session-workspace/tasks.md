@@ -5961,3 +5961,7 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 ## Phase 129: Convergence (2026-11-27, #1848 remaining slices and #2274 skeletons and shared Empty, FR-172, epic #2229)
 
 - [x] T732 [US1] #1848 and #2274 (FR-172): `components/LoadingSkeletons.tsx` gains `SkeletonLines` and a `DetailPaneSkeleton` label; Pull requests, Issues, Sessions, Clone dialog, Git changes and diff, Settings Models and the chat model picker swap bare loading text and spinner rows for skeletons; `LoadingSkeletons.test.ts` and `RoleCatalogStatus.test.ts` pin the markup. Closes #1848.
+
+## Phase 130: Convergence (2026-11-27, #1885 theme file JSON Schema and format help page, FR-173, epic #2229)
+
+- [x] T733 [US1] #1885 (FR-173): `scripts/theme-schema.mjs` and `src/shared/theme-token-docs.json` generate `src/shared/theme.schema.json` (`pnpm theme-schema`); `src/shared/themeSchema.ts` holds the URL; `lib/themeFile.ts` serialises every export with `$schema`; Rust `RawTheme` accepts `$schema`; `settings/ThemeFormatDialog.tsx` opened from `ThemePicker`; `theme-schema.test.mjs`, `themeFile.test.ts` and the Rust `theme_files` tests pin the sync, the export and the import. Rust untested here (no cargo build); format help page not live-checked.
