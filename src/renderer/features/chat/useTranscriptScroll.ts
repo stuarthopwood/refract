@@ -1,7 +1,7 @@
 import * as React from 'react'
 import { useChatScrollStore } from '@/state'
 import type { TranscriptItem } from '../../../shared/model'
-import { prefersReducedMotion } from '../chat-nav/useScrollbarMap'
+import { isMotionReduced } from '@/lib/reducedMotion'
 import { resolveLandingScrollTop, runScrollSettleLoop, useScrollGestureTracking } from './scrollLanding'
 import type { FollowState } from './scrollFollow'
 import { createTranscriptScroll } from './transcriptScroll'
@@ -33,7 +33,7 @@ export function useTranscriptScroll({ sessionId, generation, items }: UseTranscr
       isRecentGesture,
       resetGesture,
       record: (state) => useChatScrollStore.getState().record(sessionIdRef.current, state),
-      prefersReducedMotion,
+      prefersReducedMotion: isMotionReduced,
       onChange: setFollowState
     })
   )

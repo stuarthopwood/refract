@@ -39,7 +39,7 @@ describe('flashRowHighlight', () => {
 describe('nav-highlight css', () => {
   it('highlight_rule_is_not_tied_to_message_rows', () => {
     expect(css).toMatch(/^\[data-nav-highlight\] \{\s*outline: 2px solid var\(--ring\);/m)
-    expect(css).toMatch(/^ {2}\[data-nav-highlight\] \{\s*animation: nav-highlight-fade/m)
+    expect(css).toMatch(/^ {2}:root:not\(\[data-reduce-motion='on'\]\) \[data-nav-highlight\] \{\s*animation: nav-highlight-fade/m)
     expect(css).not.toContain("[data-slot='message-scroller-item'][data-nav-highlight]")
   })
 

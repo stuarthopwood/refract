@@ -304,6 +304,7 @@ const refract: RefractApi = {
     setShowAgentStoppedBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_AGENT_STOPPED_BAR, enabled),
     setAnimatedStatusText: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ANIMATED_STATUS_TEXT, enabled),
     setCodeLigatures: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CODE_LIGATURES, enabled),
+    setReduceMotion: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_REDUCE_MOTION, enabled),
     setShowScrollbarMap: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SCROLLBAR_MAP, enabled),
     setStackedPullRequests: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_STACKED_PULL_REQUESTS, enabled),
     setTypography: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TYPOGRAPHY, value),

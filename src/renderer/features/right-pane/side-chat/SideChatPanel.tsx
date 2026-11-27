@@ -13,6 +13,7 @@ import {
   ComposerTextarea
 } from '@/components/ComposerBox'
 import { CopyButton } from '@/components/ui/copy-button'
+import { isMotionReduced } from '@/lib/reducedMotion'
 import { Kbd } from '@/components/ui/kbd'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -159,7 +160,7 @@ export function SideChatPanel({ sessionId, onSend }: SideChatPanelProps) {
       const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight
       if (distanceFromBottom > 48) return
     }
-    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const reducedMotion = isMotionReduced()
     container.scrollTo({ top: container.scrollHeight, behavior: reducedMotion ? 'auto' : 'smooth' })
   }, [records.length, lastRecord?.status, lastRecord?.answer?.length])
 
