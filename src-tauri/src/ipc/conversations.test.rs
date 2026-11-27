@@ -65,6 +65,26 @@ async fn the_current_conversation_is_flagged() {
     assert!(list[0].is_current);
 }
 
+#[tokio::test]
+async fn size_bytes_is_the_jsonl_plus_its_artifact_folder() {
+    let (dir, text) = scratch_dir("list-size").await;
+    let body = format!("{TITLE}\n{USER}\n");
+    write_conversation(&dir, 1, &body).await;
+    write_conversation(&dir, 2, &body).await;
+    let artifact = dir.join("2026-11-19T10-01-00-000Z_id1").join("nested");
+    tokio::fs::create_dir_all(&artifact).await.unwrap();
+    tokio::fs::write(artifact.join("out.bin"), [0u8; 40])
+        .await
+        .unwrap();
+
+    let list = list_conversations(Some(&text), None, None).await;
+
+    let with_artifact = list.iter().find(|c| c.id == "id1").unwrap();
+    let without = list.iter().find(|c| c.id == "id2").unwrap();
+    assert_eq!(without.size_bytes, body.len() as u64);
+    assert_eq!(with_artifact.size_bytes, body.len() as u64 + 40);
+}
+
 // ---- saved-history labelling (the stopped-agent path of `inject_saved_history`) ----
 
 struct StubLookup;

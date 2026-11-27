@@ -471,6 +471,8 @@ export interface ConversationInfo {
   title: string;
   preview: string;
   isCurrent: boolean;
+  /** The `.jsonl` plus its artifact folder on disk. */
+  sizeBytes: number;
 }
 
 /** Refract never stores a GitHub access token. */
