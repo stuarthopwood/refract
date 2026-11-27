@@ -192,7 +192,7 @@ export function initStores(): void {
   window.refract.onMemoryWarning((warning) => {
     useMemoryStore.getState().setWarning(warning)
   })
-  // Drives the status bar's update badge; the initial `updates.getState()` load below covers the gap before the first event. (#794)
+  // Drives the profile avatar's update dot and the menu's update item; the initial `updates.getState()` load below covers the gap before the first event. (#794)
   window.refract.onUpdatesStateChanged((state) => {
     useUpdateStore.getState().setState(state)
   })

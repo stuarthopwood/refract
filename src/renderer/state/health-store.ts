@@ -10,7 +10,7 @@ interface HealthState {
   setOmpCheck(check: Check): void
 }
 
-// StatusBar.tsx's persistent notice for an omp version outside the specifically verified
+// The profile menu's persistent notice (ProfileAlertRows.tsx) for an omp version outside the specifically verified
 // 18.4.x/18.5.x range (readiness.ts): Readiness.tsx's own screen disappears for good once a
 // repository exists, so without this store a later omp update updating 18.x.y mid-session would
 // never be visible anywhere again until the user manually re-opens Settings' Health check.
