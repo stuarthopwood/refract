@@ -1,18 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { HistoryIcon, PlusIcon } from 'lucide-react'
-import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { HeaderActionButton } from '@/components/HeaderActionButton'
 import { IconButton } from '@/components/IconButton'
 import { DialogError } from '@/components/DialogError'
 import { InlineStatus } from '@/components/InlineStatus'
 import { cn } from '@/lib/utils'
-import { formatByteSize } from '@/lib/formatBytes'
 import { notify, useSessionsStore } from '@/state'
 import type { ConversationInfo } from '../../../shared/model'
 import { startNewConversation, switchToConversation } from './conversationActions'
 import { ConversationRow } from './ConversationRow'
-import { conversationTitle, historySummary } from './conversationDelete'
+import { historySummary } from './conversationDelete'
+import { ConversationDeleteDialog } from './ConversationDeleteDialog'
 import { useConversationDelete } from './useConversationDelete'
 
 export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
@@ -136,20 +135,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
           <DialogError message={remove.failure} />
         </DialogContent>
       </Dialog>
-      <ConfirmAlertDialog
-        open={remove.target !== null}
-        busy={false}
-        title={remove.refusal ? 'This Conversation cannot be deleted' : `Delete “${remove.target ? conversationTitle(remove.target) : ''}”?`}
-        description={
-          remove.refusal ??
-          `This removes the Conversation's history file and its attachments (${formatByteSize(remove.target?.sizeBytes ?? 0)}). It cannot be undone.`
-        }
-        confirmLabel={remove.refusal ? undefined : 'Delete'}
-        tone="destructive"
-        onCancel={remove.cancel}
-        onConfirm={() => void remove.confirm()}
-        onCloseAutoFocus={() => false}
-      />
+      <ConversationDeleteDialog remove={remove} />
     </div>
   )
 }

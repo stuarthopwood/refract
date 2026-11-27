@@ -5,6 +5,19 @@ import type { ConversationInfo } from '../../../shared/model'
 import { conversationTitle, deleteRefusal, freedMessage } from './conversationDelete'
 import { emitConversationsChanged } from './conversationChanges'
 
+export interface ConversationDelete {
+  /** The Conversation awaiting confirmation (or refusal), if any. */
+  target: ConversationInfo | null
+  deleting: ReadonlySet<string>
+  status: string
+  failure: string
+  refusal: string | null
+  ask(conversation: ConversationInfo): void
+  cancel(): void
+  clearNotice(): void
+  confirm(): Promise<void>
+}
+
 interface DeleteNotice {
   tone: 'error' | 'notice'
   text: string
@@ -16,7 +29,7 @@ export function useConversationDelete(
   sessionIdle: boolean,
   setConversations: Dispatch<SetStateAction<ConversationInfo[]>>,
   onRemoved: (file: string) => void
-) {
+): ConversationDelete {
   const [target, setTarget] = useState<ConversationInfo | null>(null)
   const [deleting, setDeleting] = useState<ReadonlySet<string>>(new Set())
   const [notice, setNotice] = useState<DeleteNotice | null>(null)
