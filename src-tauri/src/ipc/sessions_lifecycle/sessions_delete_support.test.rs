@@ -57,14 +57,88 @@ async fn a_sole_owner_removes_the_whole_session_folder() {
 }
 
 #[tokio::test]
-async fn a_shared_folder_loses_only_its_conversation_files() {
+async fn a_shared_folder_is_left_untouched() {
     let (root, folder) = folder_with_logs();
 
     delete_session_logs(&folder.to_string_lossy(), true, &root).await;
 
     assert!(folder.join("notes.txt").exists());
-    assert!(!folder.join("2026-01-01T00-00-00-000Z_a.jsonl").exists());
-    assert!(!folder.join("2026-01-01T00-00-00-000Z_a").exists());
+    assert!(folder.join("2026-01-01T00-00-00-000Z_a.jsonl").exists());
+    assert!(folder.join("2026-01-01T00-00-00-000Z_a/out.txt").exists());
+}
+
+#[tokio::test]
+async fn deleting_one_of_two_sessions_on_a_folder_keeps_the_siblings_files() {
+    let (root, folder) = folder_with_logs();
+    let leaving = session_in("leaving", Some(&folder));
+    let staying = session_in("staying", Some(&folder));
+    let shared = shares_session_dir(&[leaving.clone(), staying], &leaving);
+
+    delete_session_logs(&folder.to_string_lossy(), shared, &root).await;
+
+    assert!(shared);
+    assert!(folder.join("2026-01-01T00-00-00-000Z_a.jsonl").exists());
+    assert!(folder.join("2026-01-01T00-00-00-000Z_a/out.txt").exists());
+    assert!(folder.join("notes.txt").exists());
+}
+
+#[tokio::test]
+async fn a_sole_owner_whose_folder_is_the_sessions_root_removes_nothing() {
+    let (root, folder) = folder_with_logs();
+
+    delete_session_logs(&root.to_string_lossy(), false, &root).await;
+
+    assert!(folder.join("2026-01-01T00-00-00-000Z_a.jsonl").exists());
+    assert!(folder.join("notes.txt").exists());
+}
+
+#[tokio::test]
+async fn a_sole_owner_whose_folder_is_outside_the_sessions_root_removes_nothing() {
+    let (root, _folder) = folder_with_logs();
+    let outside = root.parent().unwrap().join("outside-folder");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("sentinel.txt"), "keep").unwrap();
+
+    delete_session_logs(&outside.to_string_lossy(), false, &root).await;
+
+    assert!(outside.join("sentinel.txt").exists());
+}
+
+/// Creates a directory junction (no privilege needed on Windows). Skips outside CI when the OS
+/// refuses; fails in CI so the refusal is never silently unproven there.
+#[cfg(windows)]
+fn junction_or_skip(link: &Path, target: &Path) -> bool {
+    let made = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if !made {
+        assert!(
+            std::env::var("CI").is_err(),
+            "junction creation failed in CI: {link:?} -> {target:?}"
+        );
+        eprintln!("skipping: mklink refused (sandbox restriction, not CI)");
+    }
+    made
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn a_sole_owner_whose_folder_is_a_junction_leaves_the_target_alone() {
+    let (root, _folder) = folder_with_logs();
+    let outside = root.parent().unwrap().join("junction-target");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("sentinel.txt"), "keep").unwrap();
+    let link = root.join("--linked--");
+    if !junction_or_skip(&link, &outside) {
+        return;
+    }
+
+    delete_session_logs(&link.to_string_lossy(), false, &root).await;
+
+    assert!(outside.join("sentinel.txt").exists());
 }
 
 #[tokio::test]

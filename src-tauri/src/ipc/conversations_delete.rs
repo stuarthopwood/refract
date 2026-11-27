@@ -50,14 +50,17 @@ fn claim_file(file: &str) -> Result<FileClaim, IpcError> {
     Ok(FileClaim { key })
 }
 
-/// OMP's Sessions folder, the only boundary a Conversation delete may act inside. Follows the same
-/// `REFRACT_OMP_SESSIONS_DIR` override the usage reader honours, so a scratch run never touches the
-/// real folder (on Windows the home folder cannot be redirected through the environment).
+/// OMP's Sessions folder, the only boundary a Conversation delete may act inside. Debug builds
+/// follow the `REFRACT_OMP_SESSIONS_DIR` override the usage reader honours, so a scratch run never
+/// touches the real folder (on Windows the home folder cannot be redirected through the
+/// environment). Release builds ignore it: a stray variable must not move the delete boundary.
 pub(crate) fn omp_sessions_root() -> Option<PathBuf> {
-    resolve_omp_sessions_root(
-        std::env::var("REFRACT_OMP_SESSIONS_DIR").ok(),
-        dirs::home_dir(),
-    )
+    let raw = if cfg!(debug_assertions) {
+        std::env::var("REFRACT_OMP_SESSIONS_DIR").ok()
+    } else {
+        None
+    };
+    resolve_omp_sessions_root(raw, dirs::home_dir())
 }
 
 /// `None` when neither an absolute override nor a home folder exists, never a relative path.

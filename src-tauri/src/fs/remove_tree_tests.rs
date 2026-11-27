@@ -84,3 +84,75 @@ async fn remove_file_refuses_a_symlink_and_leaves_its_target() {
     assert!(matches!(err, RemoveTreeError::OutsideBoundary));
     assert!(tokio::fs::metadata(&target).await.is_ok());
 }
+
+#[tokio::test]
+async fn remove_tree_refuses_the_root_itself() {
+    let root = scratch_root("tree-root").await;
+    tokio::fs::create_dir_all(root.join("child")).await.unwrap();
+    tokio::fs::write(root.join("child").join("keep.txt"), b"x")
+        .await
+        .unwrap();
+
+    let err = remove_tree(&root, &root).await.unwrap_err();
+
+    assert!(matches!(err, RemoveTreeError::OutsideBoundary));
+    assert!(tokio::fs::metadata(root.join("child").join("keep.txt"))
+        .await
+        .is_ok());
+}
+
+#[tokio::test]
+async fn remove_tree_refuses_a_folder_outside_the_root() {
+    let root = scratch_root("tree-boundary").await;
+    let elsewhere = scratch_root("tree-elsewhere").await;
+    tokio::fs::write(elsewhere.join("keep.txt"), b"x")
+        .await
+        .unwrap();
+
+    let err = remove_tree(&elsewhere, &root).await.unwrap_err();
+
+    assert!(matches!(err, RemoveTreeError::OutsideBoundary));
+    assert!(tokio::fs::metadata(elsewhere.join("keep.txt"))
+        .await
+        .is_ok());
+}
+
+#[cfg(windows)]
+fn junction_or_skip(link: &Path, target: &Path) -> bool {
+    let made = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(link)
+        .arg(target)
+        .output()
+        .is_ok_and(|out| out.status.success());
+    if !made {
+        assert!(
+            std::env::var("CI").is_err(),
+            "junction creation failed in CI: {link:?} -> {target:?}"
+        );
+        eprintln!("skipping: mklink refused (sandbox restriction, not CI)");
+    }
+    made
+}
+
+/// Skips outside CI when the OS refuses junction creation, fails in CI.
+#[cfg(windows)]
+#[tokio::test]
+async fn remove_tree_refuses_a_junction_and_leaves_its_target() {
+    let root = scratch_root("tree-junction").await;
+    let outside = scratch_root("tree-junction-target").await;
+    tokio::fs::write(outside.join("sentinel.txt"), b"x")
+        .await
+        .unwrap();
+    let link = root.join("linked");
+    if !junction_or_skip(&link, &outside) {
+        return;
+    }
+
+    let err = remove_tree(&link, &root).await.unwrap_err();
+
+    assert!(matches!(err, RemoveTreeError::OutsideBoundary));
+    assert!(tokio::fs::metadata(outside.join("sentinel.txt"))
+        .await
+        .is_ok());
+}

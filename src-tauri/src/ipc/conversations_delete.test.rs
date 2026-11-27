@@ -145,6 +145,7 @@ impl Rig {
 
 /// Creates a directory junction (no privilege needed on Windows). Skips outside CI when the OS
 /// refuses; fails in CI so the refusal is never silently unproven there.
+#[cfg(windows)]
 fn junction_or_skip(link: &Path, target: &Path) -> bool {
     let made = std::process::Command::new("cmd")
         .args(["/C", "mklink", "/J"])
@@ -346,6 +347,7 @@ async fn refuses_a_session_folder_that_is_the_sessions_root_itself() {
     r.finish().await;
 }
 
+#[cfg(windows)]
 #[tokio::test]
 async fn refuses_a_conversation_file_that_is_a_link() {
     let r = rig(None, false).await;
@@ -371,6 +373,7 @@ async fn refuses_a_conversation_file_that_is_a_link() {
     r.finish().await;
 }
 
+#[cfg(windows)]
 #[tokio::test]
 async fn refuses_an_artifact_folder_that_is_a_link_and_leaves_its_target_alone() {
     let r = rig(None, false).await;

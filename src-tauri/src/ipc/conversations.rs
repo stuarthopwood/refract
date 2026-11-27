@@ -63,6 +63,7 @@ pub(crate) async fn build_snapshot(
         session.session_dir.as_deref(),
         session.current_conversation.as_deref(),
         None,
+        false,
     )
     .await;
     serde_json::json!({
@@ -153,6 +154,7 @@ pub fn conversations_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
             session_dir.as_deref(),
             current_conversation.as_deref(),
             None,
+            true,
         )
         .await;
         Ok(serde_json::to_value(conversations)
@@ -323,11 +325,13 @@ pub(crate) fn same_file(a: &str, b: &str) -> bool {
 
 /// Lists the Conversations in `session_dir`, newest first; `limit` stops the scan once that many are
 /// listed. `session_dir == None` (no Conversation has ever been started) and an unreadable directory
-/// both yield an empty list, never a failure.
+/// both yield an empty list, never a failure. `size_bytes` is measured only when `with_sizes`, since
+/// it walks each artifact folder and only the Conversations list shows it.
 pub(crate) async fn list_conversations(
     session_dir: Option<&str>,
     current_conversation: Option<&str>,
     limit: Option<usize>,
+    with_sizes: bool,
 ) -> Vec<ConversationInfo> {
     let Some(session_dir) = session_dir else {
         return Vec::new();
@@ -372,10 +376,14 @@ pub(crate) async fn list_conversations(
         };
         let file = file_path.to_string_lossy().into_owned();
         let is_current = current_conversation.is_some_and(|current| same_file(&file, current));
-        let sized = file_path.clone();
-        let size_bytes = tokio::task::spawn_blocking(move || conversation_size_bytes(&sized))
-            .await
-            .unwrap_or(0);
+        let size_bytes = if with_sizes {
+            let sized = file_path.clone();
+            tokio::task::spawn_blocking(move || conversation_size_bytes(&sized))
+                .await
+                .unwrap_or(0)
+        } else {
+            0
+        };
         results.push(ConversationInfo {
             file,
             id,

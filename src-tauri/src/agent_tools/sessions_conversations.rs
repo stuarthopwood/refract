@@ -415,18 +415,23 @@ impl ConvHost for AppConvHost {
                 None => return Vec::new(),
             }
         };
-        crate::ipc::conversations::list_conversations(dir.as_deref(), current.as_deref(), limit)
-            .await
-            .into_iter()
-            .map(|c| ConvRow {
-                id: c.id,
-                title: c.title,
-                created_at: c.created_at,
-                preview: c.preview,
-                is_current: c.is_current,
-                file: c.file,
-            })
-            .collect()
+        crate::ipc::conversations::list_conversations(
+            dir.as_deref(),
+            current.as_deref(),
+            limit,
+            false,
+        )
+        .await
+        .into_iter()
+        .map(|c| ConvRow {
+            id: c.id,
+            title: c.title,
+            created_at: c.created_at,
+            preview: c.preview,
+            is_current: c.is_current,
+            file: c.file,
+        })
+        .collect()
     }
     async fn queue(
         &self,

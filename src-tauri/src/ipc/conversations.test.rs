@@ -29,7 +29,7 @@ async fn no_limit_lists_every_conversation_newest_first() {
     for n in [1, 3, 2, 5, 4] {
         write_conversation(&dir, n, &format!("{TITLE}\n{USER}\n")).await;
     }
-    let list = list_conversations(Some(&text), None, None).await;
+    let list = list_conversations(Some(&text), None, None, false).await;
     assert_eq!(ids(&list), ["id5", "id4", "id3", "id2", "id1"]);
 }
 
@@ -42,7 +42,7 @@ async fn a_limit_returns_that_many_even_when_newer_files_are_skipped() {
     // The two newest hold no user message, so they are skipped, not counted.
     write_conversation(&dir, 4, "").await;
     write_conversation(&dir, 5, &format!("{TITLE}\n")).await;
-    let list = list_conversations(Some(&text), None, Some(2)).await;
+    let list = list_conversations(Some(&text), None, Some(2), false).await;
     assert_eq!(ids(&list), ["id3", "id2"]);
 }
 
@@ -50,7 +50,7 @@ async fn a_limit_returns_that_many_even_when_newer_files_are_skipped() {
 async fn a_limit_above_the_count_lists_what_there_is() {
     let (dir, text) = scratch_dir("list-over").await;
     write_conversation(&dir, 1, &format!("{TITLE}\n{USER}\n")).await;
-    let list = list_conversations(Some(&text), None, Some(10)).await;
+    let list = list_conversations(Some(&text), None, Some(10), false).await;
     assert_eq!(ids(&list), ["id1"]);
 }
 
@@ -62,7 +62,7 @@ async fn the_current_conversation_is_flagged() {
         .join("2026-11-19T10-01-00-000Z_id1.jsonl")
         .to_string_lossy()
         .into_owned();
-    let list = list_conversations(Some(&text), Some(&current), Some(1)).await;
+    let list = list_conversations(Some(&text), Some(&current), Some(1), false).await;
     assert!(list[0].is_current);
 }
 
@@ -78,12 +78,22 @@ async fn size_bytes_is_the_jsonl_plus_its_artifact_folder() {
         .await
         .unwrap();
 
-    let list = list_conversations(Some(&text), None, None).await;
+    let list = list_conversations(Some(&text), None, None, true).await;
 
     let with_artifact = list.iter().find(|c| c.id == "id1").unwrap();
     let without = list.iter().find(|c| c.id == "id2").unwrap();
     assert_eq!(without.size_bytes, body.len() as u64);
     assert_eq!(with_artifact.size_bytes, body.len() as u64 + 40);
+}
+
+#[tokio::test]
+async fn size_bytes_stays_zero_when_sizes_are_not_requested() {
+    let (dir, text) = scratch_dir("list-no-size").await;
+    write_conversation(&dir, 1, &format!("{TITLE}\n{USER}\n")).await;
+
+    let list = list_conversations(Some(&text), None, None, false).await;
+
+    assert_eq!(list[0].size_bytes, 0);
 }
 
 // ---- titles cut from the first user message (#440, FR-191) ----
@@ -96,7 +106,7 @@ fn user_line(text: &str) -> String {
 async fn title_of(name: &str, body: &str) -> String {
     let (dir, text) = scratch_dir(name).await;
     write_conversation(&dir, 1, body).await;
-    list_conversations(Some(&text), None, None).await[0]
+    list_conversations(Some(&text), None, None, false).await[0]
         .title
         .clone()
 }
@@ -151,7 +161,7 @@ async fn the_preview_stays_the_raw_first_message_under_the_title() {
         &format!("{TITLE_EMPTY}\n{}\n", user_line("Fix the build")),
     )
     .await;
-    let list = list_conversations(Some(&text), None, None).await;
+    let list = list_conversations(Some(&text), None, None, false).await;
     assert_eq!(list[0].title, "Fix the build");
     assert_eq!(list[0].preview, "Fix the build");
 }
