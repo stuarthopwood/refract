@@ -21,10 +21,6 @@ const GLYPH_KEY_BY_STATUS: Record<SubagentRowStatus, StatusGlyphKey> = {
   parked: 'parked'
 }
 
-export function isSubagentSuccessStatus(status: SubagentRowStatus): boolean {
-  return GLYPH_KEY_BY_STATUS[status] === 'success-done'
-}
-
 /** Shares the `--severity-error` token with the failed tool-call label. */
 export const SUBAGENT_ERROR_TEXT_CLASS = 'text-severity-error'
 
