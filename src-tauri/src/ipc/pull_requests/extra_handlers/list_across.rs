@@ -14,7 +14,7 @@ use crate::github::gh_pr_search_across::{
 use crate::github::gh_pull_requests::SearchQualifierFlag;
 use crate::ipc::list_cache::remember_default_list;
 use crate::ipc::{invalid_argument, now_iso8601, AppState, HandlerFuture};
-use crate::store::list_cache::ListKind;
+use crate::store::list_cache::{self, ListKind};
 
 use super::super::mapping::{
     map_actor, map_pull_request_state, PullRequestActor, PullRequestState,
@@ -77,6 +77,7 @@ fn skipped_for(project: &Project, err: GhError) -> SkippedProject {
 /// `pullRequests.listAcross(tab, state, repositoryIds, query, limit)`.
 pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
+        let cache_epoch = list_cache::epoch();
         const USAGE: &str =
             "pullRequests.listAcross expects (tab, state, repositoryIds, query, limit)";
         let tab = args
@@ -214,7 +215,7 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
         let value = serde_json::to_value(result).expect("list result is always JSON-serialisable");
         // Only the default open list is the List cache's (FR-181 (d)).
         if is_default_list {
-            remember_default_list(&state, ListKind::PullRequests, &ids, &value).await;
+            remember_default_list(&state, ListKind::PullRequests, &ids, &value, cache_epoch).await;
         }
         Ok(value)
     })

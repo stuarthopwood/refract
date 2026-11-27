@@ -50,6 +50,8 @@ interface IssuesState {
 }
 
 let refreshSequence = 0
+// A mount and an idle prefetch asking for the same list share one fetch.
+let refreshInFlight: { key: string; promise: Promise<void> } | null = null
 
 export const useIssuesStore = create<IssuesState>((set, get) => ({
   tab: 'all',
@@ -80,7 +82,14 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   select: (selected) => set({ selected }),
   hydrateFromCache(cached) {
     const current = get()
-    if (current.loading || current.fetchedAt !== null || current.items.length > 0 || cached.issues.length === 0) return
+    if (
+      current.loading ||
+      current.error !== null ||
+      current.fetchedAt !== null ||
+      current.items.length > 0 ||
+      cached.issues.length === 0
+    )
+      return
     if (!isDefaultOpenList(current)) return
     set({ items: cached.issues, skipped: cached.skipped, fetchedAt: cached.fetchedAt, stale: true })
   },
@@ -88,10 +97,23 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     const { tab, state, repositoryIds, labels, query, freshness } = get()
     const projectIds = effectiveProjectIds(repositoryIds, allRepositoryIds)
     // `refresh` applies the typed text, so a half-typed search is a changed key, never a stale hit.
-    if (isFresh(freshness, listKey({ tab, state, projectIds, query: effectiveFilterQuery(query), labels }))) return Promise.resolve()
-    return get().refresh(allRepositoryIds)
+    const key = listKey({ tab, state, projectIds, query: effectiveFilterQuery(query), labels })
+    if (isFresh(freshness, key)) return Promise.resolve()
+    if (refreshInFlight?.key === key) return refreshInFlight.promise
+    const promise = get()
+      .refresh(allRepositoryIds)
+      .finally(() => {
+        if (refreshInFlight?.promise === promise) refreshInFlight = null
+      })
+    refreshInFlight = { key, promise }
+    return promise
   },
-  invalidateFreshness: () => set({ freshness: null }),
+  // Bumping the sequence drops an old-account refresh still in flight, so it never stamps freshness or rows.
+  invalidateFreshness: () => {
+    refreshSequence += 1
+    refreshInFlight = null
+    set({ freshness: null, loading: false })
+  },
   async refresh(allRepositoryIds, submittedOnly = false) {
     const { tab, state, repositoryIds, labels } = get()
     const query = submittedOnly ? get().appliedQuery : effectiveFilterQuery(get().query)
@@ -126,11 +148,15 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     try {
       result = await window.refract.issues.list(tab, state, ids, labels, appliedQuery.trim())
     } catch {
+      if (sequence === refreshSequence) set({ stale: false })
       return 'failed'
     }
     // A later fetch (user or quiet) started meanwhile; whichever started last wins.
     if (sequence !== refreshSequence) return 'superseded'
-    if (!result.ok) return 'failed'
+    if (!result.ok) {
+      set({ stale: false })
+      return 'failed'
+    }
     const { items: previous, selected } = get()
     set({
       stale: false,

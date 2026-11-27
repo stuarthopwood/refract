@@ -59,7 +59,7 @@ describe('ProjectListPane stale rows', () => {
   it('shows_the_cached_rows_with_a_quiet_refreshing_hint_while_the_fresh_fetch_runs', () => {
     const html = render({ stale: true, loading: true, itemCount: 1, fetchedAt: '2026-11-26T09:00:00Z', children: rows })
     expect(html).toContain('cached row')
-    expect(html).toContain('Saved issues · refreshing…')
+    expect(html).toContain('Saved 1 issue · refreshing…')
     expect(html).not.toContain('Loading…')
     expect(html).not.toContain('list-rows-skeleton')
   })

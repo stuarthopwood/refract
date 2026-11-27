@@ -166,7 +166,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   const projectSummary =
     repositoryIds.length === 0 ? 'All projects' : `${repositoryIds.length} of ${projects.length} projects`
   const resultsSummary = props.stale && itemCount > 0
-    ? `Saved ${noun.plural} · refreshing…`
+    ? `Saved ${plural(itemCount, noun.singular)} · refreshing…`
     : loading
       ? 'Loading…'
       : props.fetchedAt
