@@ -52,6 +52,7 @@ import type {
   Unsubscribe
 } from '../shared/ipc'
 import type { AttachmentFileRead, AttachmentImageFile } from '../shared/ipc-attachments'
+import type { ListCacheSnapshot } from '../shared/ipc-list-cache'
 import type { SpellSuggestion } from '../shared/ipc-spellcheck'
 import type { StopResult } from '../shared/stop-result'
 import type { Model, RoleChangeSummary, ThinkingLevel } from '../shared/ipc-model'
@@ -375,6 +376,9 @@ const refract: RefractApi = {
     view: (repositoryId, number) => request<IssueDetail>(IPC_REQUESTS.ISSUES_VIEW, repositoryId, number),
     newSession: (repositoryId, number) =>
       request<SessionWithKickoff>(IPC_REQUESTS.ISSUES_NEW_SESSION, repositoryId, number)
+  },
+  listCache: {
+    read: () => request<ListCacheSnapshot>(IPC_REQUESTS.LIST_CACHE_READ)
   },
   itemRefs: {
     lookup: (repositoryId, owner, repo, number) => request<ItemCard>(IPC_REQUESTS.ITEM_REFS_LOOKUP, repositoryId, owner, repo, number),

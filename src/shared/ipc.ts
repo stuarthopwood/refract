@@ -41,6 +41,7 @@ import type { AdvisorRosterApi, AdvisorRosterDetected } from './ipc-advisor-rost
 import type { AttachmentsApi } from './ipc-attachments'; import type { ClipboardApi } from './ipc-clipboard'; import type { SpellcheckApi } from './ipc-spellcheck'; import type { DebugApi } from './ipc-debug'; import type { LeftoverSummary } from './ipc-sessions'; import type { ChatPauseApi } from './ipc-pause';
 import type { GitChangesApi } from './ipc-git-changes'; import type { HomeApi } from './ipc-home'; import type { IssuesApi, SessionWithKickoff } from './ipc-issues'; import type { ItemRefsApi } from './ipc-item-refs'; import type { PullRequestsAcrossApi } from './ipc-pull-requests'; import type { FileExplorerApi } from './ipc-file-explorer'; import type { ThemeId } from './themes';
 import type { GithubStackApi } from './ipc-github-stack';
+import type { ListCacheApi } from './ipc-list-cache';
 import type { ChangedFile, FilterTab, MergeMethod, PullRequestDetail, PullRequestStateFilter, PullRequestSummary, ReviewVerdict } from './github';
 import type { ChatWidth } from './chatWidth'; import type { HolidayTouches } from './holidayTouches'; import type { StatusStyle } from './statusStyle'; import type { ChatRowDensity } from './chatRowDensity';
 import type { ActivityText, SessionActivity } from './activity'; import type { UpdatesApi } from './updates'; import type { ImagesApi } from './ipc-images'; import type { CustomTheme, ThemesApi } from './ipc-themes'; import type { RepositoriesCloneApi, SettingsCloneApi } from './ipc-repositories-clone';
@@ -388,6 +389,7 @@ export const IPC_REQUESTS = {
   ISSUES_CREATE: 'issues.create',
   ISSUES_LIST: 'issues.list',
   ISSUES_VIEW: 'issues.view',
+  LIST_CACHE_READ: 'listCache.read',
   ISSUES_NEW_SESSION: 'issues.newSession',
   ITEM_REFS_LOOKUP: 'itemRefs.lookup',
   ITEM_REFS_SEARCH: 'itemRefs.search',
@@ -563,7 +565,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     /** Tells Rust a mutating action is about to change files; only `accepted: true` allows it to proceed. */
     started(sessionId: string, callId: string): Promise<Result<{ accepted: boolean }>>;
   };
-  issues: IssuesApi; itemRefs: ItemRefsApi; home: HomeApi;
+  issues: IssuesApi; itemRefs: ItemRefsApi; home: HomeApi; listCache: ListCacheApi;
 
   settings: SettingsCloneApi & {
     get(): Promise<Result<Settings>>;

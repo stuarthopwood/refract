@@ -12,7 +12,9 @@ use crate::github::gh_pr_search_across::{
     ensure_search_budget, note_search_rate_limited, search_across,
 };
 use crate::github::gh_pull_requests::SearchQualifierFlag;
+use crate::ipc::list_cache::remember_default_list;
 use crate::ipc::{invalid_argument, now_iso8601, AppState, HandlerFuture};
+use crate::store::list_cache::ListKind;
 
 use super::super::mapping::{
     map_actor, map_pull_request_state, PullRequestActor, PullRequestState,
@@ -111,17 +113,17 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
 
         let mut skipped: Vec<SkippedProject> = Vec::new();
         let mut projects: Vec<Project> = Vec::new();
-        for id in ids {
+        for id in &ids {
             // Removed Projects are skipped, not failed.
-            match repo_path_for(&state, &id).await {
+            match repo_path_for(&state, id).await {
                 Ok((path, name)) => projects.push(Project {
-                    repository_id: id,
+                    repository_id: id.clone(),
                     repository_name: name,
                     path,
                 }),
                 Err(_) => skipped.push(SkippedProject {
                     repository_name: id.clone(),
-                    repository_id: id,
+                    repository_id: id.clone(),
                     code: "gh-failed",
                     message: "This project is no longer available.".to_string(),
                 }),
@@ -199,12 +201,21 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
                 });
             }
         }
+        let is_default_list = matches!(tab, FilterTab::All)
+            && gh_state == Some("open")
+            && query.is_none()
+            && limit == MIN_LIMIT as usize;
         let result = AcrossResult {
             items,
             has_more,
             skipped,
             fetched_at: now_iso8601(),
         };
-        Ok(serde_json::to_value(result).expect("list result is always JSON-serialisable"))
+        let value = serde_json::to_value(result).expect("list result is always JSON-serialisable");
+        // Only the default open list is the List cache's (FR-181 (d)).
+        if is_default_list {
+            remember_default_list(&state, ListKind::PullRequests, &ids, &value).await;
+        }
+        Ok(value)
     })
 }
