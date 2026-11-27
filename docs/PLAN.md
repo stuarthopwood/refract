@@ -58,7 +58,7 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | #2222 | Chat transcript: tool-call rows, scroll, header, Markdown and message rendering | 33 | 1 |
 | #1272 | Agents and subagents (Agents panel, parked agents, personas, child Sessions, cross-Session messaging) | 16 | 10 |
 | #2227 | Right pane panels: terminal, File Explorer, Jira, FDB and rail polish | 13 | 4 |
-| #1901 | Performance: instant PR and Issue views, faster startup, lower process memory | 11 | 7 |
+| #1901 | Performance: instant PR and Issue views, faster startup, lower process memory | 5 | 0 |
 | #2225 | Session list and Conversations: history, tree, search, delete and retention | 25 | 6 |
 | #1136 | Composer input and attachments | 17 | 5 |
 | #2050 | Pre-installed commands, skills and hooks | 6 | 4 |
@@ -198,13 +198,13 @@ Status values: `done`, `next` (start here), `todo`, `blocked` (needs a decision 
 | p1 later | #2172 | **Feat, Themes (p1, `feature`, `design`):** 13 themes from popular MIT palettes: light Solarized, GitHub, Catppuccin Latte, One Light, Gruvbox, Rose Pine Dawn; dark Dracula, Nord, Tokyo Night, Catppuccin Mocha, Gruvbox, Solarized, One Dark | Filed 2026-11-24 (Stuart); `done`, merged via PR #2287 `5517769b`; depended on #2171 (parity check); per theme: `themes.ts`, `themes/<id>.css`, `globals.css`, `theme_id.rs`, `theme-groups.mjs`; licence notices required |
 | p1 later | #2173 | **UI Polish, Menus (p1, `design`):** menu separators use `--divider` (shared `MENU_SEPARATOR_CLASS`, was `bg-border`), and menus and popovers move one surface step lighter (`--surface-2` to `--surface-3`) with a visible hover fill | Filed 2026-11-24 (Stuart); `done`, merged via PR #2292 `a8ffbb16`; `components/ui/menu-item-classes.ts`, `dropdown-menu.tsx`, `context-menu.tsx`, `popover.tsx`, `styles/globals.css` |
 | p1 later | #137 | **UI Polish, App-wide (p1, `design`):** remove the bottom status bar (empty except for "update available"); update status moves to the profile menu with an avatar dot | Raised 2026-11-24 by Stuart's profile menu feedback ("remove the footer"); `done`, merged via PR #2283 `a177f34c` |
-| p1 later | #1894 | **Perf (p1, child of #1901):** PR and Issue lists skip the mount refetch when fresh | First in #1901's order; implemented (FR-180, `state/list-freshness.ts`, 60 s window), PR in review (branch `perf/1901-lists`) |
-| p1 later | #1895 | **Perf (p1, child of #1901):** instant PR and Issue lists via idle prefetch and a disk cache | Needs #1894; implemented (FR-181, `state/list-prefetch.ts`, `state/list-cache-hydration.ts`, `store/list_cache.rs`, `listCache.read`), PR in review (branch `perf/1901-lists`) |
-| p1 later | #1896 | **Perf (p1, child of #1901):** cache the `gh` rate-limit probe for about 60s | Independent within #1901; implemented (FR-182, `ensure_search_budget`), PR in review (branch `perf/1901-gh-probe`) |
-| p1 later | #1897 | **Perf (p1, child of #1901):** derive the sidebar PR count from the list instead of a second search | Independent within #1901; implemented (FR-183, shared in-flight search), PR in review (branch `perf/1901-startup`) |
-| p1 later | #1898 | **Perf (p1, child of #1901):** defer non-visual startup work until after first paint | Independent within #1901; implemented (FR-184, `show_then_spawn` in `lib.rs`, `state/first-frame.ts`), PR in review (branch `perf/1901-startup`) |
+| p1 later | #1894 | **Perf (p1, child of #1901):** PR and Issue lists skip the mount refetch when fresh | First in #1901's order; `done`, merged via PR #2337 `8311409c` (FR-180, `state/list-freshness.ts`, 60 s window) |
+| p1 later | #1895 | **Perf (p1, child of #1901):** instant PR and Issue lists via idle prefetch and a disk cache | Needs #1894; `done`, merged via PR #2337 `8311409c` (FR-181, `state/list-prefetch.ts`, `state/list-cache-hydration.ts`, `store/list_cache.rs`, `listCache.read`) |
+| p1 later | #1896 | **Perf (p1, child of #1901):** cache the `gh` rate-limit probe for about 60s | Independent within #1901; `done`, merged via PR #2338 `cec8dd24` (FR-182, `ensure_search_budget`) |
+| p1 later | #1897 | **Perf (p1, child of #1901):** derive the sidebar PR count from the list instead of a second search | Independent within #1901; `done`, merged via PR #2339 `04ccf10a` (FR-183, shared in-flight search) |
+| p1 later | #1898 | **Perf (p1, child of #1901):** defer non-visual startup work until after first paint | Independent within #1901; `done`, merged via PR #2339 `04ccf10a` (FR-184, `show_then_spawn` in `lib.rs`, `state/first-frame.ts`) |
 | p1 later | #1899 | **Perf (p1, child of #1901, `needs-triage`):** skeleton rows while lists load, not a Loading text | Independent within #1901; `done`, already met by #1848 (`ProjectListPane.tsx` `ListRowsSkeleton`, FR-185, task T745); no code change |
-| p1 later | #1900 | **Spike (p1, child of #1901):** measure the unconfirmed performance hot paths | Can run any time; should feed follow-ups; `todo` |
+| p1 later | #1900 | **Spike (p1, child of #1901):** measure the unconfirmed performance hot paths | `done`; follow-up #2341 (v2) carries the measurements to act on |
 | p2 later | #2002 | **Bug, Settings (`bug`, `settings`):** the Advisor row shows "Saving..." with no change; one shared save-status component (Saving..., Saved, error) for Settings rows; closes #1940 (row above) and #1765 with the same implementation PR | **Implementation complete, PR in review** (spec 021 Phase 7, `specs/021-token-guard/`, branch `fix/settings-save-status-impl`); root cause is task T064, found before any fix |
 | p3 later | #1941 | **Ask form card (p3, feature, chat):** name the live card and tighten its live-check evidence | `done`; PR open |
 
@@ -680,7 +680,7 @@ Open work that is not on the GitHub milestone `v1`, grouped by release (mileston
 | Order | Issue | Work | Why here |
 |---|---|---|---|
 | p0 later | #2050 | **Epic, Pre-installed commands/skills/hooks (p0, `feature`):** ship Refract's own commands, skills and hooks (editable, disable-able); children #2046 to #2049; first command `/readme` | Decided 2026-11-17 (Stuart); `todo`; #2046 first |
-| p1 later | #1901 | **Epic, Performance (p1, `ready-for-human`):** make the PR and Issue views feel instant and cut real work; children #1894 to #1900 and #1947 | Epic body order: #1894 first (the freshness guard the prefetch builds on), then #1895; the rest are independent; #1900 can run any time |
+| p1 later | #1901 | **Epic, Performance (p1, `ready-for-human`):** make the PR and Issue views feel instant and cut real work; children #1894 to #1900 and #1947 | `done` for v1: children #1894 to #1900 closed (PRs #2337, #2338, #2339); #1947 and #2341 remain in v2 |
 | p2 later | #1918 | **Epic, Road to V1 (p2):** full testing, documentation, and a well-organised codebase; children #1904 to #1917 | Decided 2026-11-11 (Stuart); foundations #1904 to #1908 first, then refactors, tests, docs |
 
 ### Closed
