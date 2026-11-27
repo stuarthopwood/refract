@@ -14,6 +14,7 @@ import { applySnapshot } from './applySnapshot'
 import { ConversationRow } from './ConversationRow'
 import { conversationTitle, historySummary } from './conversationDelete'
 import { useConversationDelete } from './useConversationDelete'
+import { ConversationTreeDialog } from './ConversationTreeDialog'
 
 export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   const status = useSessionsStore((s) => s.sessions.find((x) => x.id === sessionId)?.status)
@@ -121,6 +122,7 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
           void handleNewConversation()
         }}
       />
+      <ConversationTreeDialog sessionId={sessionId} />
       <Dialog open={historyOpen} onOpenChange={(open) => void handleOpenChange(open)}>
         <DialogTrigger asChild>
           <IconButton label="Conversation history">
