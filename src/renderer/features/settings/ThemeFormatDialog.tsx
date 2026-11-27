@@ -40,7 +40,7 @@ export function ThemeFormatDialog({ open, onOpenChange, onCloseFocus }: ThemeFor
             <section className="flex flex-col gap-2">
               <h3 className="text-xs text-muted-foreground">Example</h3>
               <pre
-                className="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="overflow-x-auto rounded-md bg-muted p-2 font-mono text-xs focus-visible:outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring"
                 tabIndex={0}
                 role="region"
                 aria-label="Example theme file"
