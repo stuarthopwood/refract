@@ -5,7 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ConversationInfo } from '../../../shared/model'
-import { ConversationRow } from './ConversationRow'
+import { CompactConversationRow, ConversationRow } from './ConversationRow'
 import {
   CURRENT_CONVERSATION_REFUSAL,
   NOT_IDLE_REFUSAL,
@@ -49,6 +49,31 @@ describe('Conversation size and total (SC-032)', () => {
     const html = row(conversation(), { deleting: true })
     expect(html).toContain('Deleting…')
     expect(html).toContain('aria-disabled="true"')
+  })
+})
+
+describe('Compact Conversation row', () => {
+  function compact(info: ConversationInfo, over: { deleting?: boolean; role?: string; tabIndex?: number } = {}): string {
+    const props = { conversation: info, title: 'Fix the build', size: '2.0 KB', openDisabled: false, deleting: false, onOpen: () => undefined, onDelete: () => undefined, ...over }
+    return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(CompactConversationRow, props)))
+  }
+
+  it('Given the current Conversation, When the compact row renders, Then it shows the title, marker and size on one line with a delete button', () => {
+    const html = compact(conversation({ isCurrent: true }))
+    expect(html).toContain('Fix the build')
+    expect(html).toContain('Current')
+    expect(html).toContain('2.0 KB')
+    expect(html).toContain('aria-label="Delete Fix the build"')
+  })
+
+  it('Given a tree, When it overrides role and tabIndex, Then the row carries them', () => {
+    const html = compact(conversation(), { role: 'treeitem', tabIndex: -1 })
+    expect(html).toContain('role="treeitem"')
+    expect(html).toContain('tabindex="-1"')
+  })
+
+  it('Given a delete in flight, When the compact row renders, Then it reads Deleting', () => {
+    expect(compact(conversation(), { deleting: true })).toContain('Deleting…')
   })
 })
 

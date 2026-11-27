@@ -20,6 +20,9 @@ interface SessionListState {
   collapsedRepositoryIds: Set<string>
   // #1862: parents whose children are hidden; absent means expanded, so a new parent shows its tree.
   collapsedParentIds: Set<string>
+  // #472: Sessions whose nested Conversation list is open; absent means collapsed, so a new Session
+  // starts collapsed. Remembered per Session, never overridden by a search.
+  expandedConversationSessionIds: Set<string>
   archivedOpen: boolean
   // Issue #748: the Show hidden toggle. #1850: a filter, so it is held in memory only and starts off on every launch.
   showHidden: boolean
@@ -49,6 +52,10 @@ interface SessionListState {
   setRepositoryOpen(repositoryId: string, open: boolean): void
   isParentOpen(sessionId: string): boolean
   toggleParent(sessionId: string): void
+  isConversationListOpen(sessionId: string): boolean
+  toggleConversationList(sessionId: string): void
+  // Called only after a successful sessions list load, so a failure fallback never wipes the saved state.
+  pruneConversationLists(liveSessionIds: ReadonlySet<string>): void
   // Called only after a successful sessions list load, with the ids that still have a live child
   // -- never against a failure fallback, which would wipe the user's saved collapse.
   pruneParents(liveParentIds: ReadonlySet<string>): void
@@ -84,11 +91,12 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       persistTimer = undefined
     }
     const run = (): void => {
-      const { collapsedRepositoryIds, collapsedParentIds, archivedOpen } = get()
+      const { collapsedRepositoryIds, collapsedParentIds, archivedOpen, expandedConversationSessionIds } = get()
       const value: SessionListCollapse = {
         collapsedRepositoryIds: [...collapsedRepositoryIds],
         archivedOpen,
-        collapsedParentIds: [...collapsedParentIds]
+        collapsedParentIds: [...collapsedParentIds],
+        expandedConversationSessionIds: [...expandedConversationSessionIds]
       }
       window.refract.settings.setSessionListCollapse(value).then(
         (result) => {
@@ -118,6 +126,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
   return {
     collapsedRepositoryIds: new Set(DEFAULT_SESSION_LIST_COLLAPSE.collapsedRepositoryIds),
     collapsedParentIds: new Set(DEFAULT_SESSION_LIST_COLLAPSE.collapsedParentIds),
+    expandedConversationSessionIds: new Set(DEFAULT_SESSION_LIST_COLLAPSE.expandedConversationSessionIds),
     archivedOpen: DEFAULT_SESSION_LIST_COLLAPSE.archivedOpen,
     showHidden: false,
     setShowHidden: (show) => {
@@ -184,6 +193,20 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       const collapsedParentIds = new Set(get().collapsedParentIds)
       if (!collapsedParentIds.delete(sessionId)) collapsedParentIds.add(sessionId)
       set({ collapsedParentIds })
+      persist()
+    },
+    isConversationListOpen: (sessionId) => get().expandedConversationSessionIds.has(sessionId),
+    toggleConversationList: (sessionId) => {
+      const expandedConversationSessionIds = new Set(get().expandedConversationSessionIds)
+      if (!expandedConversationSessionIds.delete(sessionId)) expandedConversationSessionIds.add(sessionId)
+      set({ expandedConversationSessionIds })
+      persist()
+    },
+    pruneConversationLists: (liveSessionIds) => {
+      const current = get().expandedConversationSessionIds
+      const pruned = new Set([...current].filter((id) => liveSessionIds.has(id)))
+      if (pruned.size === current.size) return
+      set({ expandedConversationSessionIds: pruned })
       persist()
     },
     pruneParents: (liveParentIds) => {
@@ -261,6 +284,7 @@ export const useSessionListStore = create<SessionListState>((set, get) => {
       set({
         collapsedRepositoryIds: new Set(value.collapsedRepositoryIds),
         collapsedParentIds: new Set(value.collapsedParentIds ?? []),
+        expandedConversationSessionIds: new Set(value.expandedConversationSessionIds ?? []),
         archivedOpen: value.archivedOpen,
         restored: true
       })

@@ -333,6 +333,8 @@ export function initStores(): void {
     resolveRestored()
     // Only on a real load: the `[]` fallback would wipe the saved parent collapse.
     if (sessionsLoad.ok) useSessionListStore.getState().pruneParents(liveParentIds(sessionsLoad.value))
+    // Same reason for a deleted Session's remembered Conversation list state (#472).
+    if (sessionsLoad.ok) useSessionListStore.getState().pruneConversationLists(new Set(sessionsLoad.value.map((session) => session.id)))
     // Restoring against the `[]` fallback would make panes see a deleted session and erase a valid persisted split.
     if (sessionsLoad.ok) {
       useSplitStore.getState().restoreFromSettings(settingsLoad.value.split)

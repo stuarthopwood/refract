@@ -30,6 +30,14 @@ fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse,
     };
     let collapsed_repository_ids = id_list("collapsedRepositoryIds")?;
     let collapsed_parent_ids = id_list("collapsedParentIds")?;
+    // Optional so an older renderer build keeps working; a present but malformed list is rejected.
+    let expanded_conversation_session_ids = match object.get("expandedConversationSessionIds") {
+        None => Vec::new(),
+        Some(ids) => ids
+            .as_array()
+            .and_then(|ids| crate::store::settings::sanitize_collapsed_ids(ids))
+            .ok_or_else(|| invalid_argument(SESSION_LIST_COLLAPSE_SHAPE_MESSAGE))?,
+    };
     let archived_open = object
         .get("archivedOpen")
         .and_then(Value::as_bool)
@@ -43,6 +51,7 @@ fn parse_session_list_collapse_arg(value: &Value) -> Result<SessionListCollapse,
         archived_open,
         show_hidden,
         collapsed_parent_ids,
+        expanded_conversation_session_ids,
     })
 }
 
@@ -99,5 +108,48 @@ mod tests {
         );
         assert_eq!(parsed.collapsed_repository_ids, ["r".to_string()]);
         assert!(parsed.archived_open && parsed.show_hidden);
+    }
+
+    fn collapse_arg_with_expanded(expanded: Value) -> Value {
+        json!({
+            "collapsedRepositoryIds": [], "archivedOpen": false, "collapsedParentIds": [],
+            "expandedConversationSessionIds": expanded
+        })
+    }
+
+    #[test]
+    fn collapse_arg_expanded_conversation_ids_may_be_absent() {
+        let base = json!({
+            "collapsedRepositoryIds": [], "archivedOpen": false, "collapsedParentIds": []
+        });
+        let absent = parse_session_list_collapse_arg(&base).unwrap();
+        assert!(absent.expanded_conversation_session_ids.is_empty());
+    }
+
+    #[test]
+    fn collapse_arg_expanded_conversation_ids_are_de_duplicated() {
+        let parsed =
+            parse_session_list_collapse_arg(&collapse_arg_with_expanded(json!(["a", "a", "b"])))
+                .unwrap();
+        assert_eq!(
+            parsed.expanded_conversation_session_ids,
+            ["a".to_string(), "b".to_string()]
+        );
+    }
+
+    #[test]
+    fn collapse_arg_rejects_malformed_expanded_conversation_ids() {
+        for bad in [json!("a"), json!([1]), json!(null)] {
+            assert!(parse_session_list_collapse_arg(&collapse_arg_with_expanded(bad)).is_err());
+        }
+    }
+
+    #[test]
+    fn collapse_arg_rejects_over_cap_expanded_conversation_ids() {
+        let too_many: Vec<String> = (0..=1000).map(|n| format!("s{n}")).collect();
+        let too_long = "x".repeat(257);
+        for bad in [json!(too_many), json!([too_long])] {
+            assert!(parse_session_list_collapse_arg(&collapse_arg_with_expanded(bad)).is_err());
+        }
     }
 }
