@@ -1,13 +1,26 @@
-// Project label of a session file, from the `cwd` in its session header.
+// Stable Project id (and its display name) of a session file, from the `cwd` in its session header.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use crate::git::worktrees::worktrees_root;
 use crate::store::registry::Registry;
 
-/// One shared bucket for scratch runs: temp folders and worktrees whose Project is not registered.
+/// Display name of the shared bucket for scratch runs: temp folders and worktrees whose Project is not registered.
 pub const OTHER_LABEL: &str = "Other";
+/// Ids that are not registry Project ids start with `@`, so none can collide with a repository id.
+pub const OTHER_ID: &str = "@other";
+pub const PERSONAL_ID: &str = "@personal";
+pub const PERSONAL_LABEL: &str = "Personal";
+/// Prefix of the ids the v5 migration derives from a stored name; relabel resolves them to real ids.
+pub const LEGACY_PREFIX: &str = "@legacy:";
+const FOLDER_PREFIX: &str = "@folder:";
 const WORKTREES_DIR: &str = "pinion-worktrees";
+
+/// A registry Project id or the Personal bucket: attribution that survives the Project's removal.
+pub fn is_stable_id(id: &str) -> bool {
+    id == PERSONAL_ID || (!id.is_empty() && !id.starts_with('@'))
+}
 
 /// Normalises a path for comparison: strips `\\?\`, folds slashes, lower-cases.
 pub fn normalise_path(raw: &str) -> String {
@@ -20,49 +33,80 @@ pub fn normalise_path(raw: &str) -> String {
     folded.trim_end_matches('\\').to_string()
 }
 
-/// How a cwd or session folder is shown in the Usage view.
+/// A stable Project id and the name it is shown under now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProjectRef {
+    pub id: String,
+    pub name: String,
+}
+
+/// How a cwd or session folder is attributed in the Usage view.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Resolved {
-    Project(String),
+    Project(ProjectRef),
+    /// The Personal Agent's Sessions, which have no Project.
+    Personal,
     Other,
     /// An unmatched folder, shown by its name.
     Folder(String),
 }
 
 impl Resolved {
-    pub fn into_label(self) -> String {
+    pub fn into_ref(self) -> ProjectRef {
         match self {
-            Self::Project(name) | Self::Folder(name) => name,
-            Self::Other => OTHER_LABEL.to_string(),
+            Self::Project(project) => project,
+            Self::Personal => ProjectRef {
+                id: PERSONAL_ID.to_string(),
+                name: PERSONAL_LABEL.to_string(),
+            },
+            Self::Other => ProjectRef {
+                id: OTHER_ID.to_string(),
+                name: OTHER_LABEL.to_string(),
+            },
+            Self::Folder(name) => ProjectRef {
+                id: format!("{FOLDER_PREFIX}{}", name.to_lowercase()),
+                name,
+            },
         }
     }
 }
 
-/// Projects, their worktrees roots and Worktrees as `(normalised path, Project name)` pairs.
+/// Projects, their worktrees roots and Worktrees as `(normalised path, Project id)` pairs, plus each
+/// registered id's current name.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ProjectIndex {
     entries: Vec<(String, String)>,
+    names: HashMap<String, String>,
+    /// Normalised home folder: the Personal Agent's cwd, matched exactly since every other
+    /// folder under it is just a folder.
+    personal_home: Option<String>,
     /// Normalised temp folders; the process temp dir can be an 8.3 short path, so
     /// `AppData\Local\Temp` is matched by segment as well.
     temp_roots: Vec<String>,
 }
 
 impl ProjectIndex {
+    /// Test helper: each name doubles as its id.
+    #[cfg(test)]
     pub fn from_pairs<'a>(pairs: impl IntoIterator<Item = (&'a str, &'a str)>) -> Self {
-        Self::from_owned(
+        Self::from_triples(
             pairs
                 .into_iter()
-                .map(|(path, name)| (path.to_string(), name.to_string()))
-                .collect(),
+                .map(|(path, name)| (path.to_string(), name.to_string(), name.to_string())),
         )
     }
 
-    fn from_owned(pairs: Vec<(String, String)>) -> Self {
-        let mut entries: Vec<(String, String)> = pairs
-            .into_iter()
-            .map(|(path, name)| (normalise_path(&path), name))
-            .filter(|(path, _)| !path.is_empty())
-            .collect();
+    /// `(path, project id, project name)` entries; a name belongs to its id, not to the path.
+    pub fn from_triples(triples: impl IntoIterator<Item = (String, String, String)>) -> Self {
+        let mut names = HashMap::new();
+        let mut entries: Vec<(String, String)> = Vec::new();
+        for (path, id, name) in triples {
+            names.insert(id.clone(), name);
+            let path = normalise_path(&path);
+            if !path.is_empty() {
+                entries.push((path, id));
+            }
+        }
         // Longest first, so a nested Worktree wins over its parent Project.
         entries.sort_by_key(|(path, _)| std::cmp::Reverse(path.len()));
         let temp_roots = [
@@ -75,16 +119,20 @@ impl ProjectIndex {
         .collect();
         Self {
             entries,
+            names,
+            personal_home: None,
             temp_roots,
         }
     }
 
+    /// Attributes a cwd equal to `home` to the Personal bucket.
+    pub fn with_personal_home(mut self, home: &str) -> Self {
+        let home = normalise_path(home);
+        self.personal_home = (!home.is_empty()).then_some(home);
+        self
+    }
+
     pub fn from_registry(registry: &Registry) -> Self {
-        let names: std::collections::HashMap<&str, &str> = registry
-            .repositories
-            .iter()
-            .map(|r| (r.id.as_str(), r.name.as_str()))
-            .collect();
         // A reaped worktree is gone from the registry; its folder still sits under the root.
         let roots = registry
             .repositories
@@ -94,23 +142,52 @@ impl ProjectIndex {
                 let root = worktrees_root(Path::new(&r.path));
                 (
                     resolve_dots(&normalise_path(&root.to_string_lossy())),
+                    r.id.clone(),
                     r.name.clone(),
                 )
             });
         let projects = registry
             .repositories
             .iter()
-            .map(|r| (r.path.clone(), r.name.clone()));
+            .map(|r| (r.path.clone(), r.id.clone(), r.name.clone()));
         let worktrees = registry.sessions.iter().filter_map(|s| {
             let binding = s.project_binding()?;
-            names
-                .get(binding.repository_id)
-                .map(|name| (binding.worktree_path.to_string(), (*name).to_string()))
+            let repo = registry
+                .repositories
+                .iter()
+                .find(|r| r.id == binding.repository_id)?;
+            Some((
+                binding.worktree_path.to_string(),
+                repo.id.clone(),
+                repo.name.clone(),
+            ))
         });
-        Self::from_owned(projects.chain(worktrees).chain(roots).collect())
+        let index = Self::from_triples(projects.chain(worktrees).chain(roots));
+        match (
+            registry.sessions.iter().any(|s| s.is_personal()),
+            dirs::home_dir(),
+        ) {
+            (true, Some(home)) => index.with_personal_home(&home.to_string_lossy()),
+            _ => index,
+        }
     }
 
-    /// The Project name whose path equals `cwd` or contains it.
+    /// Every id this index can name, for the `projects` lookup table.
+    pub fn known(&self) -> Vec<ProjectRef> {
+        let mut refs: Vec<ProjectRef> = self
+            .names
+            .iter()
+            .map(|(id, name)| ProjectRef {
+                id: id.clone(),
+                name: name.clone(),
+            })
+            .collect();
+        refs.push(Resolved::Personal.into_ref());
+        refs.push(Resolved::Other.into_ref());
+        refs
+    }
+
+    /// The Project id whose path equals `cwd` or contains it.
     pub fn match_cwd(&self, cwd: &str) -> Option<&str> {
         let normalised = normalise_path(cwd);
         if normalised.is_empty() {
@@ -119,15 +196,25 @@ impl ProjectIndex {
         self.entries
             .iter()
             .find(|(path, _)| is_within(&normalised, path))
-            .map(|(_, name)| name.as_str())
+            .map(|(_, id)| id.as_str())
     }
 
-    /// Project, else `Other` for scratch cwds, else the cwd's folder name.
+    fn project(&self, id: &str) -> Resolved {
+        Resolved::Project(ProjectRef {
+            id: id.to_string(),
+            name: self.names.get(id).cloned().unwrap_or_default(),
+        })
+    }
+
+    /// Project, else Personal for the home folder, else `Other` for scratch cwds, else the cwd's folder name.
     pub fn resolve(&self, cwd: &str) -> Resolved {
-        if let Some(name) = self.match_cwd(cwd) {
-            return Resolved::Project(name.to_string());
+        if let Some(id) = self.match_cwd(cwd) {
+            return self.project(id);
         }
         let normalised = normalise_path(cwd);
+        if self.personal_home.as_deref() == Some(normalised.as_str()) {
+            return Resolved::Personal;
+        }
         if self.is_scratch(&normalised) {
             return Resolved::Other;
         }
@@ -145,8 +232,8 @@ impl ProjectIndex {
             encoded_remainder(&inner, &encode_cwd(path))
                 .is_some_and(|rest| !rest.starts_with("worktrees"))
         });
-        if let Some((_, name)) = project {
-            return Resolved::Project(name.clone());
+        if let Some((_, id)) = project {
+            return self.project(id);
         }
         if self.is_scratch_encoded(&inner) {
             return Resolved::Other;
@@ -167,10 +254,15 @@ impl ProjectIndex {
         }
     }
 
-    /// Stored label: Project name, `Other`, or the folder name.
-    pub fn label(&self, cwd: Option<&str>, session_file: &Path, sessions_root: &Path) -> String {
+    /// Stored attribution: the Project (or Personal / Other / folder) id and its name.
+    pub fn project_ref(
+        &self,
+        cwd: Option<&str>,
+        session_file: &Path,
+        sessions_root: &Path,
+    ) -> ProjectRef {
         self.resolve_for(cwd, session_file, sessions_root)
-            .into_label()
+            .into_ref()
     }
 
     fn is_scratch(&self, normalised: &str) -> bool {

@@ -13,8 +13,8 @@ use super::fingerprint::Window;
 use super::frustration;
 use super::project_label::ProjectIndex;
 use super::rollup::{
-    record_message, record_tool_call, record_tool_result, record_user_message, MessageRow,
-    ToolCallRow, UserMessageRow,
+    record_message, record_tool_call, record_tool_result, record_user_message, upsert_project,
+    MessageRow, ToolCallRow, UserMessageRow,
 };
 use super::timeutil::parse_iso_ms;
 
@@ -39,7 +39,7 @@ struct FileState {
     offset: i64,
     session_id: String,
     cwd: Option<String>,
-    project_label: String,
+    project_id: String,
     cur_model: String,
     cur_reasoning: String,
     /// Fingerprint of the first bytes of the file (never past the consumed offset).
@@ -86,7 +86,7 @@ pub(super) fn read_line<R: BufRead>(r: &mut R, buf: &mut Vec<u8>) -> std::io::Re
 fn load_state(conn: &Connection, key: &str) -> rusqlite::Result<FileState> {
     Ok(conn
         .prepare(
-            "SELECT offset, session_id, cwd, project_label, cur_model, cur_reasoning, \
+            "SELECT offset, session_id, cwd, project_id, cur_model, cur_reasoning, \
              head_len, head_hash, tail_len, tail_hash FROM file_offsets WHERE session_file = ?1",
         )?
         .query_row([key], |r| {
@@ -94,7 +94,7 @@ fn load_state(conn: &Connection, key: &str) -> rusqlite::Result<FileState> {
                 offset: r.get(0)?,
                 session_id: r.get(1)?,
                 cwd: r.get(2)?,
-                project_label: r.get(3)?,
+                project_id: r.get(3)?,
                 cur_model: r.get(4)?,
                 cur_reasoning: r.get(5)?,
                 head: Window {
@@ -121,12 +121,12 @@ fn save_state(
 ) -> rusqlite::Result<()> {
     conn.prepare(
         "INSERT INTO file_offsets (session_file, offset, last_modified, file_len, session_id, cwd, \
-         agent_type, project_label, cur_model, cur_reasoning, head_len, head_hash, tail_len, \
+         agent_type, project_id, cur_model, cur_reasoning, head_len, head_hash, tail_len, \
          tail_hash) VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14) \
          ON CONFLICT(session_file) DO UPDATE SET offset = excluded.offset, \
          last_modified = excluded.last_modified, file_len = excluded.file_len, \
          session_id = excluded.session_id, cwd = excluded.cwd, agent_type = excluded.agent_type, \
-         project_label = excluded.project_label, cur_model = excluded.cur_model, \
+         project_id = excluded.project_id, cur_model = excluded.cur_model, \
          cur_reasoning = excluded.cur_reasoning, head_len = excluded.head_len, \
          head_hash = excluded.head_hash, tail_len = excluded.tail_len, \
          tail_hash = excluded.tail_hash",
@@ -139,7 +139,7 @@ fn save_state(
         state.session_id,
         state.cwd,
         agent_type,
-        state.project_label,
+        state.project_id,
         state.cur_model,
         state.cur_reasoning,
         state.head.len,
@@ -219,7 +219,7 @@ fn usage_row(
         reasoning: state.cur_reasoning.clone(),
         agent_type: agent_type.to_string(),
         purpose: text_of(holder.get("purpose")).map(str::to_string),
-        project_label: state.project_label.clone(),
+        project_id: state.project_id.clone(),
         input: num_i64(usage.get("input")),
         output: num_i64(usage.get("output")),
         cache_read: num_i64(usage.get("cacheRead")),
@@ -250,10 +250,14 @@ struct Pass<'a> {
 }
 
 impl Pass<'_> {
-    fn set_label(&mut self) {
-        self.state.project_label =
-            self.projects
-                .label(self.state.cwd.as_deref(), self.path, self.root);
+    /// Stamps the file with its stable Project id and records the name it is shown under.
+    fn set_project(&mut self) -> rusqlite::Result<()> {
+        let project = self
+            .projects
+            .project_ref(self.state.cwd.as_deref(), self.path, self.root);
+        upsert_project(self.conn, &project.id, &project.name)?;
+        self.state.project_id = project.id;
+        Ok(())
     }
 
     fn entry(&mut self, entry: &Value) -> rusqlite::Result<()> {
@@ -261,7 +265,7 @@ impl Pass<'_> {
             Some("session") => {
                 self.state.session_id = text_of(entry.get("id")).unwrap_or_default().to_string();
                 self.state.cwd = text_of(entry.get("cwd")).map(str::to_string);
-                self.set_label();
+                self.set_project()?;
             }
             Some("model_change") => {
                 if let Some(m) = text_of(entry.get("model")) {
@@ -299,8 +303,8 @@ impl Pass<'_> {
         holder: &Value,
         usage: &Value,
     ) -> rusqlite::Result<bool> {
-        if self.state.project_label.is_empty() {
-            self.set_label();
+        if self.state.project_id.is_empty() {
+            self.set_project()?;
         }
         let row = usage_row(id, ts, holder, usage, &self.state, self.agent_type);
         let fresh = record_message(self.conn, self.key, &row)?;
@@ -345,8 +349,8 @@ impl Pass<'_> {
         if calls.is_empty() {
             return Ok(());
         }
-        if self.state.project_label.is_empty() {
-            self.set_label();
+        if self.state.project_id.is_empty() {
+            self.set_project()?;
         }
         let total = num_f64(
             message
@@ -371,7 +375,7 @@ impl Pass<'_> {
                     ts,
                     tool,
                     cost_usd: per_call_usd,
-                    project_label: &self.state.project_label,
+                    project_id: &self.state.project_id,
                     model,
                     reasoning: &self.state.cur_reasoning,
                     agent_type: self.agent_type,
@@ -390,8 +394,8 @@ impl Pass<'_> {
         if synthetic || foreign || ts <= 0 {
             return Ok(());
         }
-        if self.state.project_label.is_empty() {
-            self.set_label();
+        if self.state.project_id.is_empty() {
+            self.set_project()?;
         }
         let mut chars = 0usize;
         let mut scored = String::new();
@@ -414,7 +418,7 @@ impl Pass<'_> {
                 yelling: s.yelling,
                 profanity: s.profanity,
                 blame: s.blame,
-                project_label: &self.state.project_label,
+                project_id: &self.state.project_id,
             },
         )?;
         Ok(())

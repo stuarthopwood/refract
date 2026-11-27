@@ -50,7 +50,7 @@ function BreakdownTable({ title, columns, rows, emptyText, loading }: BreakdownP
         caption={title}
         columns={columns}
         rows={table.rows}
-        rowKey={(r) => `${r.label}\u0000${r.reasoning ?? ''}`}
+        rowKey={(r) => `${r.id ?? r.label}\u0000${r.reasoning ?? ''}`}
         sort={table.sort}
         onSortChange={table.onSortChange}
         emptyText={emptyText}

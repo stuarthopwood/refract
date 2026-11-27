@@ -1,12 +1,13 @@
 // Spec 060 S2-08: the Usage view's filter row, built from the shared `ListToolbar`, `FilterTabs`
 // and `OptionSelect`. Every change goes through the store, which persists it and refetches.
-import { useEffect, useId, useState } from 'react'
+import { useEffect, useId, useMemo, useState } from 'react'
 import { FilterTabs } from '@/components/FilterTabs'
 import { ListToolbar } from '@/components/ListToolbar'
 import { OptionSelect } from '@/components/OptionSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { DEFAULT_USAGE_FILTERS, useUsageStore } from '@/state/usage-store'
+import { projectLabels } from '@/state/usage-projects'
 import type { UsageFilters as Filters, UsageRange } from '../../../shared/ipc-usage'
 
 export const USAGE_RANGE_TABS: ReadonlyArray<{ value: UsageRange; label: string; ariaLabel?: string }> = [
@@ -50,6 +51,7 @@ function fromDateInput(value: string, endOfDay: boolean): number | undefined {
   export function UsageFilters() {
     const filters = useUsageStore((s) => s.filters)
     const options = useUsageStore((s) => s.options)
+    const projectNames = useMemo(() => projectLabels(options.projects), [options.projects])
     const setFilters = useUsageStore((s) => s.setFilters)
     const patch = (next: Partial<Filters>) => setFilters(next)
     const errorId = useId()
@@ -98,7 +100,14 @@ function fromDateInput(value: string, endOfDay: boolean): number | undefined {
               </label>
             </>
           )}
-          <OptionSelect label="Project" anyLabel="All projects" value={filters.project} options={options.projects} onChange={(project) => patch({ project })} />
+          <OptionSelect
+            label="Project"
+            anyLabel="All projects"
+            value={filters.project && projectNames.has(filters.project) ? filters.project : null}
+            options={options.projects.map((p) => p.id)}
+            optionLabel={(id) => projectNames.get(id) ?? ''}
+            onChange={(project) => patch({ project })}
+          />
           <OptionSelect label="Model" anyLabel="All models" value={filters.model} options={options.models} onChange={(model) => patch({ model })} />
           <OptionSelect
             label="Reasoning level"

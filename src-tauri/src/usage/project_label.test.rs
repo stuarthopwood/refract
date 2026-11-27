@@ -16,16 +16,17 @@ fn index() -> ProjectIndex {
 }
 
 fn label_of(idx: &ProjectIndex, cwd: &str) -> String {
-    idx.label(
+    idx.project_ref(
         Some(cwd),
         Path::new("C:\\sessions\\f\\a.jsonl"),
         Path::new("C:\\sessions"),
     )
+    .name
 }
 
 fn folder_label(idx: &ProjectIndex, folder: &str) -> String {
     let file = Path::new("C:\\sessions").join(folder).join("a.jsonl");
-    idx.label(None, &file, Path::new("C:\\sessions"))
+    idx.project_ref(None, &file, Path::new("C:\\sessions")).name
 }
 
 #[test]
@@ -124,12 +125,64 @@ fn label_falls_back_to_the_session_folder_when_there_is_no_cwd() {
     let idx = index();
     let root = Path::new("C:\\sessions");
     let file = Path::new("C:\\sessions\\enc-folder\\a.jsonl");
-    assert_eq!(idx.label(None, file, root), "enc-folder");
-    assert_eq!(idx.label(Some("  "), file, root), "enc-folder");
+    assert_eq!(idx.project_ref(None, file, root).name, "enc-folder");
+    assert_eq!(idx.project_ref(Some("  "), file, root).name, "enc-folder");
     assert_eq!(
-        idx.label(None, Path::new("C:\\elsewhere\\a.jsonl"), root),
+        idx.project_ref(None, Path::new("C:\\elsewhere\\a.jsonl"), root)
+            .name,
         "unknown"
     );
+}
+
+#[test]
+fn a_project_resolves_to_its_registry_id_and_current_name() {
+    let idx = ProjectIndex::from_triples([(
+        "C:\\Repos\\personal\\pinion".to_string(),
+        "repo-1".to_string(),
+        "Refract".to_string(),
+    )]);
+    let project = idx.project_ref(
+        Some("C:\\Repos\\personal\\pinion\\src"),
+        Path::new("C:\\sessions\\f\\a.jsonl"),
+        Path::new("C:\\sessions"),
+    );
+    assert_eq!(
+        project,
+        ProjectRef {
+            id: "repo-1".into(),
+            name: "Refract".into()
+        }
+    );
+}
+
+#[test]
+fn the_personal_home_folder_is_the_personal_bucket_not_a_folder() {
+    let idx = index().with_personal_home("C:\\Users\\me");
+    let personal = idx.resolve("c:/users/me/").into_ref();
+    assert_eq!(personal.id, PERSONAL_ID);
+    assert_eq!(personal.name, PERSONAL_LABEL);
+    // Any other folder under the home folder is just a folder.
+    assert_eq!(label_of(&idx, "C:\\Users\\me\\notes"), "notes");
+}
+
+#[test]
+fn bucket_ids_start_with_at_so_they_never_collide_with_a_repository_id() {
+    let idx = index();
+    assert_eq!(idx.resolve("C:\\tmp\\x").into_ref().id, OTHER_ID);
+    let folder = idx.resolve("C:\\Second-Brain").into_ref();
+    assert_eq!(folder.id, "@folder:second-brain");
+    assert!(!is_stable_id(&folder.id));
+    assert!(is_stable_id(PERSONAL_ID));
+    assert!(!is_stable_id(OTHER_ID));
+    assert!(is_stable_id("repo-1"));
+}
+
+#[test]
+fn known_lists_every_registered_project_plus_the_two_buckets() {
+    let ids: Vec<String> = index().known().into_iter().map(|p| p.id).collect();
+    assert!(ids.contains(&"proj".to_string()));
+    assert!(ids.contains(&PERSONAL_ID.to_string()));
+    assert!(ids.contains(&OTHER_ID.to_string()));
 }
 
 #[test]

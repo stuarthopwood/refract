@@ -6,8 +6,12 @@ use std::time::Duration;
 
 use rusqlite::{Connection, ErrorCode, OptionalExtension, TransactionBehavior};
 
-pub const USER_VERSION: i64 = 4;
-/// Older files are rebuilt; versions 2 and 3 are migrated in place.
+use super::project_label::LEGACY_PREFIX;
+
+pub const USER_VERSION: i64 = 5;
+/// The `prefs` key that holds the Usage view's saved filters.
+pub const PREF_FILTERS: &str = "filters";
+/// Older files are rebuilt; versions 2, 3 and 4 are migrated in place.
 const MIN_MIGRATABLE: i64 = 2;
 
 /// `tail_len` 0 reads as an unknown window: the next ingest pass records it without a reset.
@@ -22,6 +26,38 @@ ALTER TABLE tool_calls RENAME COLUMN cost_share TO cost_usd;
 ALTER TABLE tool_rollup RENAME COLUMN cost_share TO cost_usd;
 ";
 
+/// Spend is keyed by a stable Project id, not the Project's name. Each existing label becomes a
+/// `@legacy:` id (its name kept in `projects`) until the next relabel pass maps its files to real
+/// ids from their stored cwd; the column rename rewrites the rollup primary keys in place, so no
+/// OMP file is re-read and no row is dropped. The names come from the per-file and rollup tables
+/// alone: every fact row's label also sits in one of them, and scanning the fact tables would be slow.
+const MIGRATE_4_TO_5: &str = "
+CREATE TABLE IF NOT EXISTS projects (
+  project_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+) WITHOUT ROWID;
+INSERT OR IGNORE INTO projects (project_id, name)
+  SELECT '@legacy:' || project_label, project_label FROM (
+    SELECT project_label FROM file_offsets
+    UNION SELECT project_label FROM message_rollup UNION SELECT project_label FROM tool_rollup
+    UNION SELECT project_label FROM session_rollup
+  ) WHERE project_label <> '';
+ALTER TABLE file_offsets RENAME COLUMN project_label TO project_id;
+ALTER TABLE messages RENAME COLUMN project_label TO project_id;
+ALTER TABLE tool_calls RENAME COLUMN project_label TO project_id;
+ALTER TABLE user_messages RENAME COLUMN project_label TO project_id;
+ALTER TABLE message_rollup RENAME COLUMN project_label TO project_id;
+ALTER TABLE tool_rollup RENAME COLUMN project_label TO project_id;
+ALTER TABLE session_rollup RENAME COLUMN project_label TO project_id;
+UPDATE file_offsets SET project_id = '@legacy:' || project_id WHERE project_id <> '';
+UPDATE messages SET project_id = '@legacy:' || project_id WHERE project_id <> '';
+UPDATE tool_calls SET project_id = '@legacy:' || project_id WHERE project_id <> '';
+UPDATE user_messages SET project_id = '@legacy:' || project_id WHERE project_id <> '';
+UPDATE message_rollup SET project_id = '@legacy:' || project_id WHERE project_id <> '';
+UPDATE tool_rollup SET project_id = '@legacy:' || project_id WHERE project_id <> '';
+UPDATE session_rollup SET project_id = '@legacy:' || project_id WHERE project_id <> '';
+";
+
 /// Unknown key parts are `''` rather than NULL so the primary keys stay unique.
 const DDL: &str = "
 CREATE TABLE IF NOT EXISTS file_offsets (
@@ -32,7 +68,7 @@ CREATE TABLE IF NOT EXISTS file_offsets (
   session_id TEXT NOT NULL DEFAULT '',
   cwd TEXT,
   agent_type TEXT NOT NULL DEFAULT 'main',
-  project_label TEXT NOT NULL DEFAULT '',
+  project_id TEXT NOT NULL DEFAULT '',
   cur_model TEXT NOT NULL DEFAULT '',
   cur_reasoning TEXT NOT NULL DEFAULT '',
   head_len INTEGER NOT NULL DEFAULT 0,
@@ -50,7 +86,7 @@ CREATE TABLE IF NOT EXISTS messages (
   reasoning TEXT NOT NULL DEFAULT '',
   agent_type TEXT NOT NULL DEFAULT 'main',
   purpose TEXT,
-  project_label TEXT NOT NULL DEFAULT '',
+  project_id TEXT NOT NULL DEFAULT '',
   input INTEGER NOT NULL DEFAULT 0,
   output INTEGER NOT NULL DEFAULT 0,
   cache_read INTEGER NOT NULL DEFAULT 0,
@@ -77,7 +113,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   is_error INTEGER,
   result_chars INTEGER NOT NULL DEFAULT 0,
   cost_usd REAL NOT NULL DEFAULT 0,
-  project_label TEXT NOT NULL DEFAULT '',
+  project_id TEXT NOT NULL DEFAULT '',
   model TEXT NOT NULL DEFAULT '',
   reasoning TEXT NOT NULL DEFAULT '',
   agent_type TEXT NOT NULL DEFAULT 'main',
@@ -91,12 +127,12 @@ CREATE TABLE IF NOT EXISTS user_messages (
   yelling INTEGER NOT NULL DEFAULT 0,
   profanity INTEGER NOT NULL DEFAULT 0,
   blame INTEGER NOT NULL DEFAULT 0,
-  project_label TEXT NOT NULL DEFAULT '',
+  project_id TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (session_file, entry_id)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS message_rollup (
   hour INTEGER NOT NULL,
-  project_label TEXT NOT NULL,
+  project_id TEXT NOT NULL,
   model TEXT NOT NULL,
   reasoning TEXT NOT NULL,
   agent_type TEXT NOT NULL,
@@ -112,18 +148,18 @@ CREATE TABLE IF NOT EXISTS message_rollup (
   cost_cache_read REAL NOT NULL DEFAULT 0,
   cost_cache_write REAL NOT NULL DEFAULT 0,
   credits REAL NOT NULL DEFAULT 0,
-  PRIMARY KEY (hour, project_label, model, reasoning, agent_type)
+  PRIMARY KEY (hour, project_id, model, reasoning, agent_type)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS tool_rollup (
   hour INTEGER NOT NULL,
-  project_label TEXT NOT NULL,
+  project_id TEXT NOT NULL,
   tool TEXT NOT NULL,
   agent_type TEXT NOT NULL,
   calls INTEGER NOT NULL DEFAULT 0,
   errors INTEGER NOT NULL DEFAULT 0,
   result_chars INTEGER NOT NULL DEFAULT 0,
   cost_usd REAL NOT NULL DEFAULT 0,
-  PRIMARY KEY (hour, project_label, tool, agent_type)
+  PRIMARY KEY (hour, project_id, tool, agent_type)
 ) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS session_rollup (
   session_file TEXT PRIMARY KEY,
@@ -133,14 +169,19 @@ CREATE TABLE IF NOT EXISTS session_rollup (
   calls INTEGER NOT NULL DEFAULT 0,
   cost_total REAL NOT NULL DEFAULT 0,
   credits REAL NOT NULL DEFAULT 0,
-  project_label TEXT NOT NULL DEFAULT ''
+  project_id TEXT NOT NULL DEFAULT ''
 );
+-- Stable Project id to its current or last-known name, so a renamed or removed Project keeps its rows.
+CREATE TABLE IF NOT EXISTS projects (
+  project_id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS prefs (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_ts ON messages (ts);
-CREATE INDEX IF NOT EXISTS messages_project_ts ON messages (project_label, ts);
+CREATE INDEX IF NOT EXISTS messages_project_ts ON messages (project_id, ts);
 CREATE INDEX IF NOT EXISTS messages_model_ts ON messages (model, reasoning, ts);
 CREATE INDEX IF NOT EXISTS tool_calls_tool_ts ON tool_calls (tool, ts);
 CREATE INDEX IF NOT EXISTS user_messages_ts ON user_messages (ts);
@@ -194,14 +235,49 @@ fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     if version >= USER_VERSION {
         return Ok(());
     }
-    // Older rows may be gone from a rewritten session file, so a version 2 or 3 file is altered, not rebuilt.
+    // Older rows may be gone from a rewritten session file, so an older file is altered, not rebuilt.
     let ddl = match version {
-        2 => format!("{MIGRATE_2_TO_3}{MIGRATE_3_TO_4}"),
-        3 => MIGRATE_3_TO_4.to_string(),
+        2 => format!("{MIGRATE_2_TO_3}{MIGRATE_3_TO_4}{MIGRATE_4_TO_5}"),
+        3 => format!("{MIGRATE_3_TO_4}{MIGRATE_4_TO_5}"),
+        4 => MIGRATE_4_TO_5.to_string(),
         _ => DDL.to_string(),
     };
     tx.execute_batch(&format!("{ddl}PRAGMA user_version = {USER_VERSION};"))?;
+    if (MIN_MIGRATABLE..=4).contains(&version) {
+        migrate_saved_filter(&tx)?;
+    }
     tx.commit()
+}
+
+/// A saved Project filter holds a name before version 5, and the filter now takes an id: the name
+/// becomes its `@legacy:` id (which relabel later maps), or the filter is cleared when it is empty.
+fn migrate_saved_filter(conn: &Connection) -> rusqlite::Result<()> {
+    let has_prefs: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'prefs')",
+        [],
+        |row| row.get(0),
+    )?;
+    if !has_prefs {
+        return Ok(());
+    }
+    let Some(stored) = prefs_get(conn, PREF_FILTERS)? else {
+        return Ok(());
+    };
+    let Ok(mut filters) = serde_json::from_str::<serde_json::Value>(&stored) else {
+        return Ok(());
+    };
+    let Some(object) = filters.as_object_mut() else {
+        return Ok(());
+    };
+    let rewritten = match object.get("project") {
+        None | Some(serde_json::Value::Null) => return Ok(()),
+        Some(serde_json::Value::String(name)) if !name.trim().is_empty() => {
+            serde_json::Value::String(format!("{LEGACY_PREFIX}{name}"))
+        }
+        Some(_) => serde_json::Value::Null,
+    };
+    object.insert("project".into(), rewritten);
+    prefs_set(conn, PREF_FILTERS, &filters.to_string())
 }
 
 fn is_rebuildable(err: &rusqlite::Error) -> bool {

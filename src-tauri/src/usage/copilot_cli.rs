@@ -12,7 +12,7 @@ use serde_json::Value;
 
 use super::ingest::{read_line, text_of, LineRead};
 use super::project_label::ProjectIndex;
-use super::rollup::{forget_file_messages, record_message, MessageRow};
+use super::rollup::{forget_file_messages, record_message, upsert_project, MessageRow};
 use super::scan::{unchanged, ScanReport, SessionFile};
 use super::timeutil::parse_iso_ms;
 
@@ -130,7 +130,7 @@ fn credit_row(
     nano: f64,
     shutdown: &Shutdown,
     session_id: &str,
-    label: &str,
+    project_id: &str,
 ) -> MessageRow {
     let credits = nano / NANO_PER_CREDIT;
     MessageRow {
@@ -140,7 +140,7 @@ fn credit_row(
         provider: PROVIDER.to_string(),
         model: model.to_string(),
         agent_type: "main".to_string(),
-        project_label: label.to_string(),
+        project_id: project_id.to_string(),
         cost_total: credits * USD_PER_CREDIT,
         credits: Some(credits),
         ..MessageRow::default()
@@ -148,11 +148,11 @@ fn credit_row(
 }
 
 /// One row per model plus a remainder row, so the rows always sum to `totalNanoAiu`.
-fn rows(shutdown: &Shutdown, session_id: &str, label: &str) -> Vec<MessageRow> {
+fn rows(shutdown: &Shutdown, session_id: &str, project_id: &str) -> Vec<MessageRow> {
     let mut out: Vec<MessageRow> = shutdown
         .models
         .iter()
-        .map(|(model, nano)| credit_row(model, model, *nano, shutdown, session_id, label))
+        .map(|(model, nano)| credit_row(model, model, *nano, shutdown, session_id, project_id))
         .collect();
     let remainder = shutdown.total_nano - shutdown.models.iter().map(|(_, n)| n).sum::<f64>();
     if remainder >= REMAINDER_EPSILON_NANO {
@@ -162,7 +162,7 @@ fn rows(shutdown: &Shutdown, session_id: &str, label: &str) -> Vec<MessageRow> {
             remainder,
             shutdown,
             session_id,
-            label,
+            project_id,
         ));
     }
     out
@@ -193,13 +193,14 @@ pub fn ingest_events_file(
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
     let summary = read_summary(path, &dir_name)?;
-    let label = projects.label(summary.cwd.as_deref(), path, root);
+    let project = projects.project_ref(summary.cwd.as_deref(), path, root);
 
     let tx = conn.transaction().map_err(|e| e.to_string())?;
+    upsert_project(&tx, &project.id, &project.name).map_err(|e| e.to_string())?;
     let mut written = 0u64;
     if let Some(shutdown) = &summary.shutdown {
         forget_file_messages(&tx, &key).map_err(|e| e.to_string())?;
-        for row in rows(shutdown, &summary.session_id, &label) {
+        for row in rows(shutdown, &summary.session_id, &project.id) {
             if record_message(&tx, &key, &row).map_err(|e| e.to_string())? {
                 written += 1;
             }
@@ -207,11 +208,11 @@ pub fn ingest_events_file(
     }
     tx.execute(
         "INSERT INTO file_offsets (session_file, offset, last_modified, file_len, session_id, cwd, \
-         agent_type, project_label) VALUES (?1,?2,?3,?2,?4,?5,'main',?6) \
+         agent_type, project_id) VALUES (?1,?2,?3,?2,?4,?5,'main',?6) \
          ON CONFLICT(session_file) DO UPDATE SET offset = excluded.offset, \
          last_modified = excluded.last_modified, file_len = excluded.file_len, \
-         session_id = excluded.session_id, cwd = excluded.cwd, project_label = excluded.project_label",
-        params![key, len, mtime_ms, summary.session_id, summary.cwd, label],
+         session_id = excluded.session_id, cwd = excluded.cwd, project_id = excluded.project_id",
+        params![key, len, mtime_ms, summary.session_id, summary.cwd, project.id],
     )
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
@@ -268,3 +269,7 @@ pub fn scan(
     }
     report
 }
+
+#[cfg(test)]
+#[path = "copilot_cli.test.rs"]
+mod tests;

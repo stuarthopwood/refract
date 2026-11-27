@@ -26,6 +26,7 @@ export function usageBridge(
     frustration: (filters, tzOffsetMinutes) =>
       request(IPC_USAGE_REQUESTS.USAGE_FRUSTRATION, filters, ...tz(tzOffsetMinutes)),
     budget: () => request(IPC_USAGE_REQUESTS.USAGE_BUDGET),
+    projects: () => request(IPC_USAGE_REQUESTS.USAGE_PROJECTS),
     getPrefs: () => request(IPC_USAGE_REQUESTS.USAGE_GET_PREFS),
     setPrefs: (patch) => request(IPC_USAGE_REQUESTS.USAGE_SET_PREFS, patch),
     onProgress: (handler) => on<UsageStatus>(IPC_USAGE_EVENTS.USAGE_PROGRESS, handler)

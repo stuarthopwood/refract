@@ -11,6 +11,7 @@ export const IPC_USAGE_REQUESTS = {
   USAGE_CALLS: 'usage.calls',
   USAGE_FRUSTRATION: 'usage.frustration',
   USAGE_BUDGET: 'usage.budget',
+  USAGE_PROJECTS: 'usage.projects',
   USAGE_GET_PREFS: 'usage.getPrefs',
   USAGE_SET_PREFS: 'usage.setPrefs'
 } as const
@@ -31,6 +32,7 @@ export interface UsageFilters {
   /** Milliseconds since the epoch; `custom` only. */
   from?: number
   to?: number
+  /** A stable Project id (`UsageBreakdownRow.id`), not a display name. */
   project?: string | null
   model?: string | null
   reasoning?: string | null
@@ -84,6 +86,9 @@ export interface UsageTokenMixRow {
 export type UsageBreakdownBy = 'project' | 'model' | 'tool'
 
 export interface UsageBreakdownRow {
+  /** Project rows only: the stable Project id, the value of `UsageFilters.project`. */
+  id?: string
+  /** Project rows carry the Project's current name, not its id. */
   label: string
   /** Model rows only. */
   reasoning?: string
@@ -160,6 +165,13 @@ export interface UsagePrefs {
   sessionRange: UsageSessionRange
 }
 
+/** A Project the filter can pick: the id is sent, the name shown; `removed` is a Project no longer registered. */
+export interface UsageProjectOption {
+  id: string
+  name: string
+  removed: boolean
+}
+
 /**
  * Every query channel takes it as an optional last argument (absent or null means UTC); `today` and
  * day buckets are wrong without it.
@@ -190,6 +202,8 @@ export interface UsageApi {
   ): Promise<Result<{ rows: UsageCallRow[]; total: number }>>
   frustration(filters: UsageFilters, tzOffsetMinutes?: number): Promise<Result<UsageFrustration>>
   budget(): Promise<Result<UsageBudget>>
+  /** Every named Project, so a chosen filter resolves to a name outside the current range. */
+  projects(): Promise<Result<UsageProjectOption[]>>
   getPrefs(): Promise<Result<UsagePrefs>>
   setPrefs(patch: {
     jokes?: boolean

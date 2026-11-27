@@ -29,6 +29,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("usage.calls", usage_calls);
     d.register("usage.frustration", usage_frustration);
     d.register("usage.budget", usage_budget);
+    d.register("usage.projects", usage_projects);
     super::usage_prefs::register(d);
 }
 
@@ -244,6 +245,25 @@ fn usage_calls(_state: AppState, args: Vec<Value>) -> HandlerFuture {
         }
         let ctx = query_ctx(args.get(3))?;
         to_json(&read(move |c| queries_tables::calls(c, &filters, &sort, page, &ctx)).await?)
+    })
+}
+
+/// Every named Project; `removed` marks one no longer in the registry, so the picker can tell
+/// two Projects of the same name apart.
+fn usage_projects(state: AppState, _args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let options = read(queries_tables::project_options).await?;
+        let known: std::collections::HashSet<String> =
+            ProjectIndex::from_registry(&state.registry.lock().await.snapshot())
+                .known()
+                .into_iter()
+                .map(|p| p.id)
+                .collect();
+        let rows = options
+            .iter()
+            .map(|o| json!({ "id": o.id, "name": o.name, "removed": !known.contains(&o.id) }))
+            .collect::<Vec<_>>();
+        Ok(Value::Array(rows))
     })
 }
 

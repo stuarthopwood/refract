@@ -12,6 +12,10 @@ use super::queries::{
 };
 
 const BREAKDOWN_LIMIT: i64 = 500;
+/// Shown for a Project id with no recorded name; the id itself is never displayed.
+pub const UNKNOWN_PROJECT_LABEL: &str = "Unknown project";
+/// A message row's current Project name, for sorting before the page is cut.
+const MESSAGE_PROJECT_NAME: &str = "coalesce((SELECT name FROM projects p WHERE p.project_id = messages.project_id), 'Unknown project')";
 const TOP_SESSIONS: i64 = 10;
 pub const MAX_PAGE_SIZE: i64 = 100;
 
@@ -39,6 +43,9 @@ impl BreakdownBy {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BreakdownRow {
+    /// The stable Project id of a project row; the filter value the renderer sends back.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning: Option<String>,
@@ -64,27 +71,35 @@ pub fn breakdown(
         BreakdownBy::Project | BreakdownBy::Model => {
             let mut w = f.build_dims(&MESSAGE_ROLLUP, ctx)?;
             let src = f.rollup_source(&mut w, Rollup::Messages, ctx, false)?;
-            let (select, group) = if by == BreakdownBy::Project {
-                ("project_label, ''", "project_label")
+            let sql = if by == BreakdownBy::Project {
+                // Names are looked up after grouping, so the filters keep their unqualified column names.
+                format!(
+                    "SELECT g.project_id, coalesce(p.name, '{UNKNOWN_PROJECT_LABEL}'), '', g.calls, g.tokens, g.usd, g.credits \
+                     FROM (SELECT project_id, sum(calls) AS calls, sum(total_tokens) AS tokens, \
+                     sum(cost_total) AS usd, sum(credits) AS credits FROM {src}{} GROUP BY project_id) g \
+                     LEFT JOIN projects p ON p.project_id = g.project_id \
+                     ORDER BY g.usd DESC, g.calls DESC, 2 LIMIT {BREAKDOWN_LIMIT}",
+                    w.sql()
+                )
             } else {
-                ("model, reasoning", "model, reasoning")
+                format!(
+                    "SELECT NULL, model, reasoning, sum(calls), sum(total_tokens), sum(cost_total), sum(credits) \
+                     FROM {src}{} GROUP BY model, reasoning \
+                     ORDER BY sum(cost_total) DESC, sum(calls) DESC, 2 LIMIT {BREAKDOWN_LIMIT}",
+                    w.sql()
+                )
             };
-            let sql = format!(
-                "SELECT {select}, sum(calls), sum(total_tokens), sum(cost_total), sum(credits) \
-                 FROM {src}{} GROUP BY {group} \
-                 ORDER BY sum(cost_total) DESC, sum(calls) DESC, 1 LIMIT {BREAKDOWN_LIMIT}",
-                w.sql()
-            );
             let mut stmt = conn.prepare(&sql)?;
             let rows = stmt.query_map(rusqlite::params_from_iter(w.params()), |r| {
-                let reasoning: String = r.get(1)?;
+                let reasoning: String = r.get(2)?;
                 Ok(BreakdownRow {
-                    label: r.get(0)?,
+                    id: r.get(0)?,
+                    label: r.get(1)?,
                     reasoning: (by == BreakdownBy::Model).then_some(reasoning),
-                    calls: r.get(2)?,
-                    tokens: r.get(3)?,
-                    usd: r.get(4)?,
-                    credits: r.get(5)?,
+                    calls: r.get(3)?,
+                    tokens: r.get(4)?,
+                    usd: r.get(5)?,
+                    credits: r.get(6)?,
                     errors: None,
                     result_chars: None,
                     cost_share: None,
@@ -94,6 +109,29 @@ pub fn breakdown(
         }
         BreakdownBy::Tool => tool_breakdown(conn, f, ctx),
     }
+}
+
+/// A Project the filter can pick: the id is what filters take, the name is what the picker shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectOption {
+    pub id: String,
+    pub name: String,
+}
+
+/// Every Project with a recorded name, so a saved filter resolves to a name even when the current
+/// range has no spend for it. A Project with no name is not offered: the picker never shows an id.
+pub fn project_options(conn: &Connection) -> QueryResult<Vec<ProjectOption>> {
+    let mut stmt = conn.prepare(
+        "SELECT project_id, name FROM projects WHERE name <> '' ORDER BY name COLLATE NOCASE, project_id",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(ProjectOption {
+            id: r.get(0)?,
+            name: r.get(1)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
 }
 
 /// The three pieces of a tool listing that depend on which table answers the filters.
@@ -138,6 +176,7 @@ fn tool_breakdown(
     let mapped = stmt
         .query_map(rusqlite::params_from_iter(w.params()), |r| {
             let row = BreakdownRow {
+                id: None,
                 label: r.get(0)?,
                 reasoning: None,
                 calls: r.get(1)?,
@@ -205,12 +244,12 @@ pub fn top_sessions(
     let (w, body) = if from_rollup {
         (
             f.build(&SESSION_ROLLUP, ctx)?,
-            "SELECT session_file, session_id, project_label, cost_total, credits, calls FROM session_rollup",
+            "SELECT session_file, session_id, coalesce((SELECT name FROM projects p WHERE p.project_id = session_rollup.project_id), 'Unknown project'), cost_total, credits, calls FROM session_rollup",
         )
     } else {
         (
             f.build(&MESSAGES, ctx)?,
-            "SELECT session_file, max(session_id), max(project_label), sum(cost_total), \
+            "SELECT session_file, max(session_id), coalesce((SELECT name FROM projects p WHERE p.project_id = max(messages.project_id)), 'Unknown project'), sum(cost_total), \
              coalesce(sum(credits),0), count(*) FROM messages",
         )
     };
@@ -276,20 +315,21 @@ pub struct CallsPage {
     pub total: i64,
 }
 
-/// Maps a renderer sort key to its column; anything else is `invalid-argument`.
-fn sort_column(key: &str) -> QueryResult<&'static str> {
+/// Maps a renderer sort key to the column that orders the page and the one that re-orders it after
+/// the Project name is joined in; anything else is `invalid-argument`.
+fn sort_columns(key: &str) -> QueryResult<(&'static str, &'static str)> {
     Ok(match key {
-        "ts" => "ts",
-        "model" => "model",
-        "project" => "project_label",
-        "tokens" => "total_tokens",
-        "usd" => "cost_total",
-        "credits" => "credits",
-        "input" => "input",
-        "output" => "output",
-        "cacheRead" => "cache_read",
-        "duration" => "duration_ms",
-        "ttft" => "ttft_ms",
+        "ts" => ("ts", "m.ts"),
+        "model" => ("model", "m.model"),
+        "project" => (MESSAGE_PROJECT_NAME, "coalesce(p.name, 'Unknown project')"),
+        "tokens" => ("total_tokens", "m.total_tokens"),
+        "usd" => ("cost_total", "m.cost_total"),
+        "credits" => ("credits", "m.credits"),
+        "input" => ("input", "m.input"),
+        "output" => ("output", "m.output"),
+        "cacheRead" => ("cache_read", "m.cache_read"),
+        "duration" => ("duration_ms", "m.duration_ms"),
+        "ttft" => ("ttft_ms", "m.ttft_ms"),
         other => {
             return Err(QueryError::InvalidArgument(format!(
                 "unknown sort key {other:?}"
@@ -305,7 +345,7 @@ pub fn calls(
     page: Page,
     ctx: &QueryCtx,
 ) -> QueryResult<CallsPage> {
-    let column = sort_column(&sort.key)?;
+    let (column, outer_column) = sort_columns(&sort.key)?;
     let dir = match sort.dir.as_str() {
         "asc" => "ASC",
         "desc" => "DESC",
@@ -333,10 +373,16 @@ pub fn calls(
     )?;
     let limit = w.bind(Value::Integer(page.size));
     let skip = w.bind(Value::Integer(offset));
+    // The page is cut first and the Project name joined after, so the lookup runs per returned row.
     let sql = format!(
-        "SELECT ts, session_id, model, reasoning, project_label, agent_type, input, output, cache_read, \
-         cache_write, total_tokens, cost_total, credits, duration_ms, ttft_ms, stop_reason \
-         FROM messages{} ORDER BY {column} {dir}, ts DESC, entry_id LIMIT {limit} OFFSET {skip}",
+        "SELECT m.ts, m.session_id, m.model, m.reasoning, coalesce(p.name, '{UNKNOWN_PROJECT_LABEL}'), m.agent_type, \
+         m.input, m.output, m.cache_read, m.cache_write, m.total_tokens, m.cost_total, m.credits, \
+         m.duration_ms, m.ttft_ms, m.stop_reason \
+         FROM (SELECT ts, session_id, model, reasoning, project_id, agent_type, input, output, cache_read, \
+         cache_write, total_tokens, cost_total, credits, duration_ms, ttft_ms, stop_reason, entry_id \
+         FROM messages{} ORDER BY {column} {dir}, ts DESC, entry_id LIMIT {limit} OFFSET {skip}) m \
+         LEFT JOIN projects p ON p.project_id = m.project_id \
+         ORDER BY {outer_column} {dir}, m.ts DESC, m.entry_id",
         w.sql()
     );
     let mut stmt = conn.prepare(&sql)?;

@@ -34,6 +34,7 @@ pub struct Filters {
     pub range: String,
     pub from: Option<i64>,
     pub to: Option<i64>,
+    /// A stable Project id (`UsageProject.id`), not a display name.
     pub project: Option<String>,
     pub model: Option<String>,
     pub reasoning: Option<String>,
@@ -71,7 +72,7 @@ pub(super) struct Target {
 
 pub(super) const MESSAGE_ROLLUP: Target = Target {
     time: "hour",
-    project: Some("project_label"),
+    project: Some("project_id"),
     model: Some("model"),
     reasoning: Some("reasoning"),
     agent: Some("agent_type"),
@@ -79,7 +80,7 @@ pub(super) const MESSAGE_ROLLUP: Target = Target {
 };
 pub(super) const MESSAGES: Target = Target {
     time: "ts",
-    project: Some("project_label"),
+    project: Some("project_id"),
     model: Some("model"),
     reasoning: Some("reasoning"),
     agent: Some("agent_type"),
@@ -87,7 +88,7 @@ pub(super) const MESSAGES: Target = Target {
 };
 pub(super) const TOOL_ROLLUP: Target = Target {
     time: "hour",
-    project: Some("project_label"),
+    project: Some("project_id"),
     model: None,
     reasoning: None,
     agent: Some("agent_type"),
@@ -95,7 +96,7 @@ pub(super) const TOOL_ROLLUP: Target = Target {
 };
 pub(super) const TOOL_CALLS: Target = Target {
     time: "ts",
-    project: Some("project_label"),
+    project: Some("project_id"),
     model: Some("model"),
     reasoning: Some("reasoning"),
     agent: Some("agent_type"),
@@ -103,7 +104,7 @@ pub(super) const TOOL_CALLS: Target = Target {
 };
 pub(super) const USER_MESSAGES: Target = Target {
     time: "ts",
-    project: Some("project_label"),
+    project: Some("project_id"),
     model: None,
     reasoning: None,
     agent: None,
@@ -111,7 +112,7 @@ pub(super) const USER_MESSAGES: Target = Target {
 };
 pub(super) const SESSION_ROLLUP: Target = Target {
     time: "last_ts",
-    project: Some("project_label"),
+    project: Some("project_id"),
     model: None,
     reasoning: None,
     agent: None,
@@ -131,19 +132,19 @@ impl Rollup {
         match self {
             Self::Messages => (
                 "message_rollup",
-                "hour, project_label, model, reasoning, agent_type, calls, input, output, \
+                "hour, project_id, model, reasoning, agent_type, calls, input, output, \
                  cache_read, cache_write, total_tokens, cost_total, cost_input, cost_output, \
                  cost_cache_read, cost_cache_write, credits",
                 "messages",
-                "project_label, model, reasoning, agent_type, 1 AS calls, input, output, cache_read, \
+                "project_id, model, reasoning, agent_type, 1 AS calls, input, output, cache_read, \
                  cache_write, total_tokens, cost_total, cost_input, cost_output, cost_cache_read, \
                  cost_cache_write, coalesce(credits, 0) AS credits",
             ),
             Self::Tools => (
                 "tool_rollup",
-                "hour, project_label, tool, agent_type, calls, errors, result_chars, cost_usd",
+                "hour, project_id, tool, agent_type, calls, errors, result_chars, cost_usd",
                 "tool_calls",
-                "project_label, tool, agent_type, 1 AS calls, coalesce(is_error, 0) AS errors, result_chars, cost_usd",
+                "project_id, tool, agent_type, 1 AS calls, coalesce(is_error, 0) AS errors, result_chars, cost_usd",
             ),
         }
     }
