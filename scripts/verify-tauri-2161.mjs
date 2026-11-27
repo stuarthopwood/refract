@@ -204,7 +204,7 @@ async function main() {
     await shot('01-switcher-sizes-total.png');
 
     // --- 2. Delete a non-current Conversation. ---
-    await cdp.clickByLabel(`Delete ${DOOMED_TITLE}`);
+    await cdp.clickByLabel(`Delete ${DOOMED_TITLE},`, { prefix: true });
     await waitForDialogText('cannot be undone', 'Delete confirm dialog open');
     const confirmText = await cdp.evaluate(`(${ALERT}).textContent`);
     check(confirmText.includes(DOOMED_TITLE) && confirmText.includes(formatByteSize(expected.get(DOOMED_TITLE))), `confirm names the Conversation and its size ${formatByteSize(expected.get(DOOMED_TITLE))}`);
@@ -221,7 +221,7 @@ async function main() {
     await shot('03-deleted-freed-space.png');
 
     // --- 3. The current Conversation is refused. ---
-    await cdp.clickByLabel(`Delete ${CURRENT_TITLE}`);
+    await cdp.clickByLabel(`Delete ${CURRENT_TITLE},`, { prefix: true });
     await waitForDialogText('The current Conversation cannot be deleted.', 'refusal dialog open');
     const refusal = await cdp.evaluate(`({ text: (${ALERT}).textContent, hasDelete: Array.from((${ALERT}).querySelectorAll('button')).some((el) => el.textContent.trim() === 'Delete') })`);
     check(refusal.text.includes('This Conversation cannot be deleted') && !refusal.hasDelete, 'refusal shown with no Delete button offered');
