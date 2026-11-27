@@ -1,11 +1,13 @@
 import { GitPullRequestIcon } from 'lucide-react'
 import { HeaderActionButton } from '@/components/HeaderActionButton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { HeaderRefBadge } from '@/components/HeaderRefBadge'
 import { cn } from '@/lib/utils'
 import { READOUT_CHECK_DISPLAY } from '@/features/pull-requests/check-display'
 import { PULL_REQUEST_STATE_DISPLAY } from '@/features/pull-requests/PullRequestRow'
 import { StatePill } from '@/features/pull-requests/StatePill'
 import { usePinnedPanelsStore } from '@/state'
+import { pullRequestBadgeStatus } from './pullRequestBadgeStatus'
 import type { PullRequestDisplayState, SessionPullRequest } from '../../../../shared/model'
 
 interface PullRequestControlsProps {
