@@ -53,6 +53,7 @@ pub mod repositories;
 pub mod repositories_clone;
 pub mod repositories_color;
 pub mod session_kickoff;
+pub mod session_logs_sweep;
 pub mod sessions_agent;
 pub mod sessions_lifecycle;
 pub mod sessions_visibility;
@@ -190,6 +191,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     sessions_lifecycle::register(dispatcher);
     personal_agent::register(dispatcher);
     sessions_visibility::register(dispatcher);
+    session_logs_sweep::register(dispatcher);
     home::register(dispatcher);
     issues::register(dispatcher);
     item_refs::register(dispatcher);

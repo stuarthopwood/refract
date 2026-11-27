@@ -2,7 +2,9 @@
 
 use std::path::Path;
 
+use crate::fs::remove_tree::remove_tree;
 use crate::git::worktree_validity::comparable_path;
+use crate::store::registry::Session;
 
 /// Call point for future worktree/branch reclaim (#657/#658); a no-op today.
 pub(super) fn on_worktree_released(_session_id: &str) {
@@ -35,6 +37,38 @@ pub(super) fn is_strict_descendant_of_omp_sessions(dir: &str) -> bool {
         && resolved.starts_with(&format!("{sessions_root}{}", std::path::MAIN_SEPARATOR))
 }
 
+/// True when another Session uses the same `session_dir`; the Personal Agent's Sessions all share
+/// the home folder's, so that folder outlives any one of them.
+pub(crate) fn shares_session_dir(sessions: &[Session], session: &Session) -> bool {
+    let Some(dir) = session.session_dir.as_deref() else {
+        return false;
+    };
+    let key = comparable_path(dir);
+    sessions.iter().any(|other| {
+        other.id != session.id
+            && other
+                .session_dir
+                .as_deref()
+                .is_some_and(|other_dir| comparable_path(other_dir) == key)
+    })
+}
+
+/// Removes a deleted Session's OMP log folder. A folder another Session still uses loses only this
+/// Session's own files; otherwise the whole folder goes, including files OMP wrote that this app
+/// has no record of. Best-effort: a failure leaves files behind but never fails the delete.
+pub(super) async fn delete_session_logs(session_dir: &str, shared: bool, sessions_root: &Path) {
+    if shared {
+        delete_session_conversations(session_dir).await;
+        return;
+    }
+    if !tokio::fs::try_exists(session_dir).await.unwrap_or(false) {
+        return;
+    }
+    if let Err(err) = remove_tree(Path::new(session_dir), sessions_root).await {
+        log::warn!("sessions.delete: could not remove the session log folder {session_dir}: {err}");
+    }
+}
+
 /// Deletes only this Session's Conversation files (`*.jsonl`) and same-stem directories, then
 /// `session_dir` if empty; never a recursive remove. Best-effort: failures are swallowed.
 pub(super) async fn delete_session_conversations(session_dir: &str) {
@@ -63,3 +97,7 @@ pub(super) async fn delete_session_conversations(session_dir: &str) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "sessions_delete_support.test.rs"]
+mod tests;

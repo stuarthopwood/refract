@@ -483,6 +483,9 @@ export const DEFAULT_CONVERSATION_RETENTION: Readonly<ConversationRetention> = O
 export interface RetentionCandidate { sessionId: string; file: string; sizeBytes: number; modifiedAtMs: number; }
 export interface RetentionPreview { enabled: boolean; days: number; candidates: RetentionCandidate[]; totalBytes: number; }
 export interface RetentionRun { enabled: boolean; days: number; deleted: number; failed: number; bytesFreed: number; }
+export interface OrphanLogFolder { folder: string; sizeBytes: number; }
+export interface SessionLogsSweepPreview { folders: OrphanLogFolder[]; totalBytes: number; }
+export interface SessionLogsSweepRun { deleted: number; failed: number; bytesFreed: number; }
 
 /** Refract never stores a GitHub access token. */
 export interface ProfileCache {

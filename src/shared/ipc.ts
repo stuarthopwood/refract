@@ -15,6 +15,8 @@ import type {
   ConversationRetention,
   RetentionPreview,
   RetentionRun,
+  SessionLogsSweepPreview,
+  SessionLogsSweepRun,
   DiffStat,
   FilePreview,
   FileTreeNode,
@@ -297,6 +299,8 @@ export const IPC_REQUESTS = {
   CONVERSATIONS_DELETE: 'conversations.delete',
   CONVERSATIONS_RETENTION_PREVIEW: 'conversations.retentionPreview',
   CONVERSATIONS_RETENTION_RUN: 'conversations.retentionRun',
+  SESSION_LOGS_SWEEP_PREVIEW: 'sessionLogs.sweepPreview',
+  SESSION_LOGS_SWEEP_RUN: 'sessionLogs.sweepRun',
   CHAT_SEND: 'chat.send',
   CHAT_STOP: 'chat.stop',
   CHAT_REMOVE_QUEUED: 'chat.removeQueued',
@@ -541,6 +545,10 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     delete(sessionId: string, file: string): Promise<Result<{ bytesFreed: number }>>;
     retentionPreview(): Promise<Result<RetentionPreview>>; // #2161: what the stored retention setting would delete; nothing while it is off.
     retentionRun(): Promise<Result<RetentionRun>>; // #2161: user-triggered; deletes the previewed Conversations through `conversations.delete`'s refusals.
+  };
+  sessionLogs: {
+    sweepPreview(): Promise<Result<SessionLogsSweepPreview>>; // #2161: OMP session log folders of deleted Sessions whose worktree is gone; deletes nothing.
+    sweepRun(): Promise<Result<SessionLogsSweepRun>>; // #2161: user-triggered; removes the previewed folders.
   };
 
   chat: {

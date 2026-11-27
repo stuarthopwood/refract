@@ -12,7 +12,8 @@ use crate::ipc::{map_git_error, map_registry_error, AppState, IpcError};
 use crate::store::registry::{Repository, Session};
 
 use super::sessions_delete_support::{
-    delete_session_conversations, is_strict_descendant_of_omp_sessions, on_worktree_released,
+    delete_session_logs, is_strict_descendant_of_omp_sessions, on_worktree_released,
+    shares_session_dir,
 };
 
 static IN_FLIGHT: LazyLock<Mutex<HashSet<String>>> = LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -139,12 +140,17 @@ async fn remove(
     .map_err(map_git_error)?;
 
     if let Some(session_dir) = &session.session_dir {
-        if is_strict_descendant_of_omp_sessions(session_dir) {
-            delete_session_conversations(session_dir).await;
-        } else {
-            log::warn!(
+        match crate::ipc::conversations_delete::omp_sessions_root() {
+            Some(root) if is_strict_descendant_of_omp_sessions(session_dir) => {
+                let shared = {
+                    let registry = state.registry.lock().await;
+                    shares_session_dir(&registry.snapshot().sessions, &session)
+                };
+                delete_session_logs(session_dir, shared, &root).await;
+            }
+            _ => log::warn!(
                 "sessions.delete: refusing to delete sessionDir outside ~/.omp/agent/sessions: {session_dir}"
-            );
+            ),
         }
     }
 

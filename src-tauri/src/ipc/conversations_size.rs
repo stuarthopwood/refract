@@ -24,7 +24,7 @@ pub(crate) fn conversation_size_bytes(file: &Path) -> u64 {
     own + tree_size_bytes(&artifact_dir(file))
 }
 
-fn tree_size_bytes(root: &Path) -> u64 {
+pub(crate) fn tree_size_bytes(root: &Path) -> u64 {
     // A link at the root itself is skipped for the same reason as links below it.
     let root_is_dir = std::fs::symlink_metadata(root).is_ok_and(|meta| meta.is_dir());
     if !root_is_dir {

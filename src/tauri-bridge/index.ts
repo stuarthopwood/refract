@@ -68,6 +68,8 @@ import type {
   ConversationInfo,
   RetentionPreview,
   RetentionRun,
+  SessionLogsSweepPreview,
+  SessionLogsSweepRun,
   ModelCatalogEntry,
   ModelRoleId,
   PendingRequest,
@@ -232,6 +234,10 @@ const refract: RefractApi = {
     delete: (sessionId, file) => request<{ bytesFreed: number }>(IPC_REQUESTS.CONVERSATIONS_DELETE, sessionId, file),
     retentionPreview: () => request<RetentionPreview>(IPC_REQUESTS.CONVERSATIONS_RETENTION_PREVIEW),
     retentionRun: () => request<RetentionRun>(IPC_REQUESTS.CONVERSATIONS_RETENTION_RUN)
+  },
+  sessionLogs: {
+    sweepPreview: () => request<SessionLogsSweepPreview>(IPC_REQUESTS.SESSION_LOGS_SWEEP_PREVIEW),
+    sweepRun: () => request<SessionLogsSweepRun>(IPC_REQUESTS.SESSION_LOGS_SWEEP_RUN)
   },
 
   chat: {

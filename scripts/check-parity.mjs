@@ -268,6 +268,8 @@ const REQUEST_LANES = {
   CONVERSATIONS_DELETE: 'R1', // #2161, ipc/conversations_delete.rs
   CONVERSATIONS_RETENTION_PREVIEW: 'R1', // #2161, ipc/conversations_retention.rs
   CONVERSATIONS_RETENTION_RUN: 'R1',
+  SESSION_LOGS_SWEEP_PREVIEW: 'R1', // #2161, ipc/session_logs_sweep.rs
+  SESSION_LOGS_SWEEP_RUN: 'R1',
   CHAT_SEND: 'R4', // #787, ipc/chat.rs (chat send path)
   CHAT_STOP: 'R4',
   CHAT_REMOVE_QUEUED: 'R4',
