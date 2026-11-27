@@ -12,6 +12,8 @@ import { commandRowText, sanitizeLines } from './formatToolCommand'
 import { callDuration, callLead, editStatForItem, diffStatAriaText, joinMetaParts } from './toolRowLabels'
 import type { ToolGroup } from './groupToolItems'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
+import { BashOutputBadges } from './BashOutputBadges'
+import { bashOutputAriaText, bashOutputFacts } from './bashOutputMeta'
 import { ToolRowKebab, ToolRowMenu } from './ToolRowMenu'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
@@ -131,9 +133,11 @@ export function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange,
   const targetDisplay = toolTargetDisplay(toolTargets, display.rawId, target, rawId !== undefined)
   const failed = item.status === 'error'
   const memberDuration = callDuration(item)
+  const outputFacts = bashOutputFacts(item)
   const memberAriaLabel = joinAriaParts([
     toolAriaHead(item.status, display.entryTool, item.intent, label, rawId, target),
     diffStatAriaText(editStatForItem(item)),
+    bashOutputAriaText(outputFacts),
     memberDuration
   ])
   return (
@@ -147,7 +151,7 @@ export function ToolCallRow({ item, summaryWrap, dialogOpen, onDialogOpenChange,
       summary={toolRowSummary(rawId, targetDisplay.chip)}
       summaryWrap={summaryWrap}
       wrapWhenOpen
-      meta={toolRowMeta(item.status, callLead(item), memberDuration)}
+      meta={toolRowMeta(item.status, outputFacts.truncated || outputFacts.minimized ? <BashOutputBadges facts={outputFacts} /> : callLead(item), memberDuration)}
       triggerAriaLabel={memberAriaLabel}
       detail={item.status === 'error' ? errorLine(item) : undefined}
       open={open}

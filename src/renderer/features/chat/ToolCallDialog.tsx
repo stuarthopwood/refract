@@ -7,6 +7,9 @@ import { inferOutputBlock, mutedLinkClassName } from './Markdown'
 import { formatDuration, StatusIcon, toolStatusLabel } from './toolStatus'
 import { CappedCodeBlock, SectionBlock, type Section } from './ToolSectionBlock'
 import { defaultSectionView } from './toolViewRules'
+import { BashCommandSection } from './BashCommandSection'
+import { BashOutputNotes } from './BashOutputBadges'
+import { bashOutputFacts } from './bashOutputMeta'
 
 type ToolItem = Extract<TranscriptItem, { kind: 'tool' }>
 
@@ -36,6 +39,7 @@ function argumentSections(item: ToolItem): Section[] {
 
 function ToolCallDialogBody({ item }: { item: ToolItem }) {
   const sections = React.useMemo(() => argumentSections(item), [item.tool, item.args, item.target])
+  const outputFacts = React.useMemo(() => bashOutputFacts(item), [item.tool, item.details])
   const outputBlock = React.useMemo(() => (item.output != null ? inferOutputBlock(item.output) : null), [item.output])
   const jsonText = React.useMemo(
     () => JSON.stringify({ arguments: item.args, output: item.output ?? null }, null, 2),
@@ -58,9 +62,14 @@ function ToolCallDialogBody({ item }: { item: ToolItem }) {
             {item.durationMs != null ? ` · ${formatDuration(item.durationMs)}` : ''}
           </span>
         </div>
-        {sections.map((section) => (
-          <SectionBlock key={`arg:${section.label}`} section={section} />
-        ))}
+        {sections.map((section) =>
+          item.tool === 'bash' && section.label === 'command' ? (
+            <BashCommandSection key={`arg:${section.label}`} section={section} />
+          ) : (
+            <SectionBlock key={`arg:${section.label}`} section={section} />
+          )
+        )}
+        <BashOutputNotes facts={outputFacts} />
         {outputBlock != null && (
           <SectionBlock key="__output" section={{
               label: 'Output',
