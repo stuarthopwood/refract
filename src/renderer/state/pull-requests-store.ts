@@ -211,6 +211,8 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
         : get().limit
     refreshSequence += 1
     const sequence = refreshSequence
+    // A direct refresh supersedes any shared fetch, so a later mount must not join its dead promise.
+    refreshInFlight = null
     set(more ? { loading: true, error: null } : { loading: true, error: null, appliedQuery: query, limit })
     let result: Result<{ items: PullRequestAcrossItem[]; hasMore: boolean; skipped: IssueSkippedProject[]; fetchedAt: string }>
     try {

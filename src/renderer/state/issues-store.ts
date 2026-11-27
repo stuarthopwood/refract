@@ -120,8 +120,24 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
     refreshSequence += 1
     const sequence = refreshSequence
+    // A direct refresh supersedes any shared fetch, so a later mount must not join its dead promise.
+    refreshInFlight = null
     set({ loading: true, error: null, appliedQuery: query })
-    const result = await window.refract.issues.list(tab, state, ids, labels, query.trim())
+    let result: Result<IssueListResult>
+    try {
+      result = await window.refract.issues.list(tab, state, ids, labels, query.trim())
+    } catch {
+      if (sequence !== refreshSequence) return
+      set({
+        loading: false,
+        error: { code: 'gh-failed', message: 'Could not list issues.' },
+        items: [],
+        skipped: [],
+        freshness: null,
+        stale: false
+      })
+      return
+    }
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
     if (sequence !== refreshSequence) return
     if (!result.ok) {
