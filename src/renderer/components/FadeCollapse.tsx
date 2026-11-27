@@ -6,8 +6,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 import { isMotionReduced } from '@/lib/reducedMotion'
-
-const EXIT_MS = 200
+import { exitDelayMs } from './fadeCollapseExit'
 
 export function FadeCollapse({ show, children, className }: { show: boolean; children: ReactNode; className?: string }) {
   const [mounted, setMounted] = useState(show)
@@ -22,11 +21,12 @@ export function FadeCollapse({ show, children, className }: { show: boolean; chi
       return
     }
     setOpen(false)
-    if (isMotionReduced()) {
+    const delay = exitDelayMs(isMotionReduced())
+    if (delay === 0) {
       setMounted(false)
       return
     }
-    const timer = setTimeout(() => setMounted(false), EXIT_MS)
+    const timer = setTimeout(() => setMounted(false), delay)
     return () => clearTimeout(timer)
   }, [show])
 

@@ -32,4 +32,11 @@ describe('reducedMotion', () => {
     vi.stubGlobal('document', undefined)
     expect(isMotionReduced()).toBe(false)
   })
+
+  it('still follows the OS setting where there is no document', () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: true }))
+    vi.stubGlobal('document', undefined)
+    expect(appReducesMotion()).toBe(false)
+    expect(isMotionReduced()).toBe(true)
+  })
 })

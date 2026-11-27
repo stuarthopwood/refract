@@ -46,10 +46,6 @@ function measureSources(viewport: HTMLElement, kindById: ReadonlyMap<string, Nav
   return sources.sort((a, b) => a.top - b.top)
 }
 
-export function prefersReducedMotion(): boolean {
-  return isMotionReduced()
-}
-
 export interface ScrollbarMapHandles {
   canvasRef: React.RefObject<HTMLCanvasElement | null>
   probeRef: React.RefObject<HTMLSpanElement | null>
@@ -145,7 +141,7 @@ export function useScrollbarMap(sessionId: string, viewport: HTMLElement | null,
       const area = markArea(metrics.clientHeight, hasStub)
       const marks = layoutMarks(sources, metrics.scrollHeight, area)
       const previous = modelRef.current
-      const animate = previous !== null && !prefersReducedMotion() && sameMarkSet(previous.marks, marks)
+      const animate = previous !== null && !isMotionReduced() && sameMarkSet(previous.marks, marks)
       from = animate ? previous.marks : []
       tweenStart = animate ? performance.now() : 0
       modelRef.current = { marks, area, hasStub, hiddenTurnCount, trackHeight: metrics.clientHeight, metrics }

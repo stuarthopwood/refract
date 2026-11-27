@@ -249,8 +249,12 @@ function applyCodeLigatures(settings: Settings): void {
 }
 
 function applyReduceMotion(settings: Settings): void {
-  if (settings.reduceMotion === true) document.documentElement.dataset.reduceMotion = 'on'
-  else delete document.documentElement.dataset.reduceMotion
+  const root = document.documentElement
+  const next = settings.reduceMotion === true ? 'on' : undefined
+  // The subscriber runs on every settings change; skip the DOM write (and its style invalidation) when nothing moved.
+  if (root.dataset.reduceMotion === next) return
+  if (next) root.dataset.reduceMotion = next
+  else delete root.dataset.reduceMotion
 }
 
 useSettingsStore.subscribe((state) => applyCodeLigatures(state.settings))
