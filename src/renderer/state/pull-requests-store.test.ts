@@ -113,6 +113,8 @@ describe('pull requests list freshness', () => {
   })
 
   it('a_direct_refresh_stops_a_later_mount_joining_the_fetch_it_superseded', async () => {
+    // Non-default filters: the default open search is deliberately shared with the badge fetch.
+    usePullRequestsStore.getState().setState('closed')
     void usePullRequestsStore.getState().refreshIfStale(['r1'])
     void usePullRequestsStore.getState().refresh(['r1'])
     await usePullRequestsStore.getState().refreshIfStale(['r1'])
