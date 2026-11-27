@@ -17,7 +17,7 @@ pub fn register(d: &mut Dispatcher) {
 
 /// The active GitHub account the list handlers' `gh` calls run as: the active one on github.com,
 /// else the first active one. `None` when `gh` cannot say, so nothing is read or written.
-async fn active_account() -> Option<CacheAccount> {
+pub(crate) async fn active_account() -> Option<CacheAccount> {
     let mut entries = cli::auth_status().await.ok()?;
     entries.retain(|entry| entry.active);
     let index = entries
@@ -68,18 +68,29 @@ fn has_no_skipped(result: &Value) -> bool {
         .is_some_and(Vec::is_empty)
 }
 
+/// The account to write under: the one the fetch ran as, only while `gh` still reports it active.
+/// A switch during the fetch, or `gh` not answering, means the rows may belong to another account.
+fn account_to_write(
+    fetched_as: Option<CacheAccount>,
+    active_now: Option<CacheAccount>,
+) -> Option<CacheAccount> {
+    fetched_as.filter(|account| active_now.as_ref() == Some(account))
+}
+
 /// Persists `result` as the last good default list. The caller has already checked the filters are
 /// the default open ones (tab all, state open, no query or label, first page); this checks the
 /// Projects cover the whole registry and none was skipped, then writes without delaying the reply.
-/// `epoch` is `list_cache::epoch()` from before the fetch: an account change since then drops it.
+/// `epoch` and `account` are `list_cache::epoch()` and `active_account()` from before the fetch: an
+/// account change since then drops the write.
 pub async fn remember_default_list(
     state: &AppState,
     kind: ListKind,
     ids: &[String],
     result: &Value,
     epoch: u64,
+    account: Option<CacheAccount>,
 ) {
-    if !has_no_skipped(result) {
+    if account.is_none() || !has_no_skipped(result) {
         return;
     }
     let registered: Vec<String> = state
@@ -97,7 +108,7 @@ pub async fn remember_default_list(
     let data_dir = state.data_dir.clone();
     let result = result.clone();
     tokio::spawn(async move {
-        let Some(account) = active_account().await else {
+        let Some(account) = account_to_write(account, active_account().await) else {
             return;
         };
         if let Err(err) = list_cache::write(&data_dir, kind, result, &account, epoch).await {
@@ -146,5 +157,26 @@ mod tests {
             &json!({ "skipped": [{ "repositoryId": "a" }] })
         ));
         assert!(!has_no_skipped(&json!({})));
+    }
+
+    fn account(login: &str) -> CacheAccount {
+        CacheAccount {
+            host: "github.com".to_string(),
+            login: login.to_string(),
+        }
+    }
+
+    #[test]
+    fn a_write_is_skipped_when_the_active_account_changed_during_the_fetch() {
+        assert_eq!(
+            account_to_write(Some(account("a")), Some(account("a"))),
+            Some(account("a"))
+        );
+        assert_eq!(
+            account_to_write(Some(account("a")), Some(account("b"))),
+            None
+        );
+        assert_eq!(account_to_write(Some(account("a")), None), None);
+        assert_eq!(account_to_write(None, Some(account("a"))), None);
     }
 }

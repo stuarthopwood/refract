@@ -76,6 +76,7 @@ fn skipped_for(project: &Project, err: GhError) -> SkippedProject {
 pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let cache_epoch = list_cache::epoch();
+        let cache_account = crate::ipc::list_cache::active_account().await;
         const USAGE: &str =
             "pullRequests.listAcross expects (tab, state, repositoryIds, query, limit)";
         let tab = args
@@ -205,7 +206,15 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
         let value = serde_json::to_value(result).expect("list result is always JSON-serialisable");
         // Only the default open list is the List cache's (FR-181 (d)).
         if is_default_list {
-            remember_default_list(&state, ListKind::PullRequests, &ids, &value, cache_epoch).await;
+            remember_default_list(
+                &state,
+                ListKind::PullRequests,
+                &ids,
+                &value,
+                cache_epoch,
+                cache_account,
+            )
+            .await;
         }
         Ok(value)
     })

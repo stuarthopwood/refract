@@ -113,6 +113,30 @@ describe('issues list freshness', () => {
     expect(useIssuesStore.getState().loading).toBe(false)
   })
 
+  it('a_rejected_fetch_stops_loading_and_sets_the_error', async () => {
+    list.mockRejectedValueOnce(new Error('ipc down'))
+    await useIssuesStore.getState().refresh(['r1'])
+    expect(useIssuesStore.getState().loading).toBe(false)
+    expect(useIssuesStore.getState().error).toEqual({ code: 'gh-failed', message: 'Could not list issues.' })
+  })
+
+  it('a_rejection_from_a_superseded_fetch_does_not_touch_the_newer_one', async () => {
+    let reject: (reason: unknown) => void = () => {}
+    list.mockReturnValueOnce(new Promise((_, rej) => (reject = rej)))
+    const first = useIssuesStore.getState().refresh(['r1'])
+    await useIssuesStore.getState().refresh(['r1'])
+    reject(new Error('late'))
+    await first
+    expect(useIssuesStore.getState().error).toBeNull()
+  })
+
+  it('a_direct_refresh_stops_a_later_mount_joining_the_fetch_it_superseded', async () => {
+    void useIssuesStore.getState().refreshIfStale(['r1'])
+    void useIssuesStore.getState().refresh(['r1'])
+    await useIssuesStore.getState().refreshIfStale(['r1'])
+    expect(list).toHaveBeenCalledTimes(3)
+  })
+
   it('a_failed_quiet_refresh_clears_the_stale_mark', async () => {
     useIssuesStore.setState({ stale: true })
     list.mockResolvedValueOnce({ ok: false, error: { code: 'gh-failed', message: 'x' } })
