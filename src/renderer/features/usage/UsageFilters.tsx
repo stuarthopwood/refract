@@ -3,6 +3,7 @@
 import { useEffect, useId, useMemo, useState } from 'react'
 import { FilterTabs } from '@/components/FilterTabs'
 import { ListToolbar } from '@/components/ListToolbar'
+import { InlineStatus } from '@/components/InlineStatus'
 import { OptionSelect } from '@/components/OptionSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -131,9 +132,9 @@ function fromDateInput(value: string, endOfDay: boolean): number | undefined {
           )}
         </ListToolbar>
         {rangeError && (
-          <p id={errorId} role="alert" className="px-4 pb-2 text-xs text-destructive">
+          <InlineStatus id={errorId} tone="error" density="compact" className="px-4 pt-0 pb-2">
             {rangeError}
-          </p>
+          </InlineStatus>
         )}
       </div>
     )

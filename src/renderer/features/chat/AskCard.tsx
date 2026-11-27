@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { AskFormFooter } from '@/components/AskFormFooter'
 import { AskFormShell } from '@/components/AskFormShell'
+import { InlineStatus } from '@/components/InlineStatus'
 import { AskChoiceGroup } from '@/components/AskChoiceGroup'
 import { choiceDigitIndex, focusChoiceRow, focusedOptionIndex, isNoteShortcut, isRowEnter, pickBeforeNote } from '@/components/askChoiceKeys'
 import { type AskChoiceNotes, OptionNoteHint } from '@/components/OptionNote'
@@ -456,9 +457,9 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
         />
         {notes && <OptionNoteHint />}
         {showIncompleteNote && (
-          <p id={noteId} role="alert" className="text-sm text-destructive">
+          <InlineStatus id={noteId} tone="error" density="compact" className="p-0 text-sm">
             Choose an option or type your own.
-          </p>
+          </InlineStatus>
         )}
       </CardContent>
     </div>

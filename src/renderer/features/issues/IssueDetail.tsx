@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CircleCheckIcon, CircleDotIcon } from 'lucide-react'
 import { ColourDot } from '@/components/ColourDot'
+import { InlineStatus } from '@/components/InlineStatus'
 import { OpenOnGitHubButton } from '@/components/OpenOnGitHubButton'
 import { Button } from '@/components/ui/button'
 import { CopyButton } from '@/components/ui/copy-button'
@@ -98,9 +99,9 @@ export function IssueDetail({ repositoryId, number }: IssueDetailProps) {
           </div>
         </div>
         {error && (
-          <p role="alert" className="mt-1 text-xs text-destructive">
+          <InlineStatus tone="error" density="compact" className="mt-1 p-0">
             {error}
-          </p>
+          </InlineStatus>
         )}
         {detail.labels.length > 0 && (
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">

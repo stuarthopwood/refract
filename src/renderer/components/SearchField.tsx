@@ -26,6 +26,7 @@ export interface SearchFieldProps {
   /** Applied to the field's own wrapper, never the `<input>` directly. */
   className?: string
   inputRef?: RefObject<HTMLInputElement | null>
+  /** Makes the field a combobox over the listbox `listboxId` names; `activeDescendantId` is the option the arrow keys are on. The listbox is always open while the field is shown, so `aria-expanded` is fixed true. */
   combobox?: { listboxId: string; activeDescendantId?: string }
   onInputKeyDown?(event: KeyboardEvent<HTMLInputElement>): void
   /** Replaces the `<input>`, which still gets the field's styling, `value` and label but keeps its own role and aria wiring. Give it its own change callback (a cmdk input's `onValueChange`), since it may ignore `onChange`. */

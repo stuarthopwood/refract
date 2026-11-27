@@ -8,9 +8,8 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { CpuIcon, Loader2Icon } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { FILTER_MIN_CHARS, effectiveFilterQuery } from '@/components/filterQueryRule'
-import { FilterResultStatus } from '@/components/FilterResultStatus'
-import { Input } from '@/components/ui/input'
+import { effectiveFilterQuery } from '@/components/filterQueryRule'
+import { SearchField } from '@/components/SearchField'
 import { cn } from '@/lib/utils'
 import { notify, useModelRolesStore, useSessionsStore } from '@/state'
 import { ROLE_ICON, ROLE_LABEL, roleTone, type RoleChipRoleId } from '@/lib/modelRoles'
@@ -281,21 +280,16 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
           ))}
         </div>
         <div className="shrink-0 p-1">
-          <Input
-            ref={filterInputRef}
-            role="combobox"
-            aria-autocomplete="list"
-            aria-expanded
-            aria-controls={listboxId}
-            aria-activedescendant={activeModelDomId}
+          <SearchField
+            inputRef={filterInputRef}
+            combobox={{ listboxId, activeDescendantId: activeModelDomId }}
             value={filter}
-            onChange={(event) => setFilter(event.target.value)}
-            onKeyDown={handleFilterKeyDown}
-            placeholder={`Filter models… (${FILTER_MIN_CHARS}+ characters)`}
-            aria-label="Filter models"
-            className="h-6 rounded-[max(0px,calc(var(--radius-lg)-0.25rem))]"
+            onValueChange={setFilter}
+            onInputKeyDown={handleFilterKeyDown}
+            placeholder="Filter models…"
+            label="Filter models"
+            resultCount={catalog && !catalogError ? filteredCatalog.length : undefined}
           />
-          <FilterResultStatus query={filter} count={catalog && !catalogError ? filteredCatalog.length : undefined} />
         </div>
         <div ref={listRef} id={listboxId} role="listbox" aria-label="Models" className="min-h-0 flex-1 overflow-y-auto" onMouseDown={(event) => event.preventDefault()}>
           {specialCount > 0 && (
