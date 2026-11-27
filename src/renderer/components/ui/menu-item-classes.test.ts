@@ -37,7 +37,7 @@ describe("shared menu classes (#2173)", () => {
 
   it("gives the focused row a Highlight outline in forced colours", () => {
     expect(hasClassToken(MENU_ITEM_CLASS, "forced-colors:focus:outline-[color:Highlight]")).toBe(true)
-    expect(hasClassToken(MENU_FORCED_FOCUS_CLASS, "forced-colors:focus:outline-2")).toBe(true)
+    expect(hasClassToken(MENU_FORCED_FOCUS_CLASS, "forced-colors:focus:outline-(length:--focus-ring-width)")).toBe(true)
   })
 
   it("keeps checked items on an accent label with no fill, reverting to foreground on the focus wash", () => {

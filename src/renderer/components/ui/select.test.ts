@@ -26,7 +26,7 @@ describe('select panel (#2229)', () => {
   })
 
   test('Given forced colours, Then a focused row gets the Highlight outline the menu rows use', () => {
-    expect(hasClassToken(SELECT_ITEM_CLASS, 'forced-colors:focus:outline-2')).toBe(true)
+    expect(hasClassToken(SELECT_ITEM_CLASS, 'forced-colors:focus:outline-(length:--focus-ring-width)')).toBe(true)
     expect(hasClassToken(SELECT_ITEM_CLASS, 'forced-colors:focus:outline-[color:Highlight]')).toBe(true)
   })
 })
