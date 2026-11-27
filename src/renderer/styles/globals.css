@@ -2551,7 +2551,7 @@ samp {
  * level out-ranks sonner's own rule regardless of stylesheet order. */
 [data-sonner-toaster] [data-sonner-toast] [data-button]:focus-visible,
 [data-sonner-toaster] [data-sonner-toast] [data-close-button]:focus-visible {
-  outline: 2px solid var(--ring);
+  outline: var(--focus-ring-width) solid var(--ring);
   outline-offset: 2px;
   box-shadow: none;
 }
