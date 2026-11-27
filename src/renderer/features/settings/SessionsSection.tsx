@@ -7,6 +7,7 @@ import { SettingsPage } from '@/components/settings/SettingsPage'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
 import { useSettingsStore } from '@/state'
 import { useGhStackStore } from '@/state/gh-stack-store'
+import { ConversationCleanupGroup } from './ConversationCleanupGroup'
 
 export function SessionsSection() {
   const showAgentStoppedBar = useSettingsStore((state) => state.settings.showAgentStoppedBar !== false)
@@ -43,6 +44,7 @@ export function SessionsSection() {
           onCheckedChange={(checked) => void setStackedPullRequests(checked)}
         />
       </SettingsGroup>
+      <ConversationCleanupGroup />
     </SettingsPage>
   )
 }
