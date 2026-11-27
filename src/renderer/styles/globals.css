@@ -13,7 +13,8 @@
  * brand display font; Geist Mono (same licence) is the default code font (issue #1246). Both are
  * variable fonts (100-900), so one file each covers every step of the weight scale below. The
  * Geist Mono file comes from vercel/geist-font `fonts/GeistMono/webfonts`, not the npm `geist`
- * package, whose copy has no `liga` feature. */
+ * package, whose copy has no `liga` feature. Upstream's ligature glyphs keep a one-cell advance
+ * and paint over the previous token, so the bundled copy has them widened (fonts/PROVENANCE.md, #2058). */
 @font-face {
   font-family: 'Geist';
   src: url('../assets/fonts/Geist-Variable.woff2') format('woff2-variations');
