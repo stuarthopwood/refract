@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.48.1 (2026-11-27)
+
+### Fixes
+
+- fix(scripts): token-guard-probe CLI tests pass on Linux (#2330) (https://github.com/stuarthopwood/refract/pull/2331)
+- perf(lists): cached and fresher PR and issue lists (#1894, #1895) (https://github.com/stuarthopwood/refract/pull/2337)
+- perf(github): cache the gh rate-limit probe (#1896) (https://github.com/stuarthopwood/refract/pull/2338)
+- perf(startup): show the window before deferred startup work (#1897, #1898) (https://github.com/stuarthopwood/refract/pull/2339)
+
+### Other
+
+- docs(spec): epic #1272 agents panel and subagent retention FRs and convergence tasks (https://github.com/stuarthopwood/refract/pull/2332)
+- docs(spec): epic #1136 /new prompt and pasted-image path FRs and convergence tasks (https://github.com/stuarthopwood/refract/pull/2334)
+- docs(spec): goal and prewalk composer modes (#1865) (https://github.com/stuarthopwood/refract/pull/2335)
+- docs(spec): typed code snippet preview in the composer (#525) (https://github.com/stuarthopwood/refract/pull/2336)
+- docs/1901 plan done (https://github.com/stuarthopwood/refract/pull/2342)
+
 ## v0.48.0 (2026-11-27)
 
 ### Features
