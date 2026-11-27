@@ -94,7 +94,7 @@ interface SubagentCardButtonProps {
   fallbackLabel?: string
 }
 
-// One sub-card is one native <button> covering the whole card (FR-178): Tab, Enter, Space and click open the agent in the
+// One sub-card is one native button element covering the whole card (FR-178): Tab, Enter, Space and click open the agent in the
 // Subagents panel. The body inside is non-interactive so no control nests in the button. With no live match to open, it is a plain block.
 export function SubagentCardButton({ item, agent, sessionId, flat = false, fallbackLabel }: SubagentCardButtonProps) {
   const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
