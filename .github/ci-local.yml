@@ -1,44 +1,12 @@
-name: CI
-
-on:
-  pull_request:
-    branches: [main]
-  push:
-    branches: [main]
-  workflow_dispatch:
-
-permissions:
-  contents: read
-
-concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
+# The full merge gate, replayed by `pnpm ci:local` (scripts/ci-local.mjs). It lives outside
+# `.github/workflows/` on purpose: GitHub Actions never runs it, because the full Windows suite
+# used up the Actions minutes (2026-10-14). Actions runs only the fast tier in
+# `workflows/pr-fast.yml` (#1807); keep that file's steps a subset of the `run:` steps below.
+# ci-local.mjs reads only `jobs.*.steps[].run`; there is no runner here, so no `uses:` steps.
 jobs:
   build:
     name: Typecheck, test, lint, build
-    runs-on: windows-latest
-    timeout-minutes: 45
     steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
-
-      - name: Setup Node
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Setup Rust
-        uses: actions-rust-lang/setup-rust-toolchain@a188e68d0fd2bd36ad51dccb2b07ba6e75105f30 # v2.0.1
-        with:
-          cache-workspaces: "src-tauri -> target"
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// `pnpm ci:local`: runs every `run:` step of `.github/workflows/ci.yml` locally, in order, stopping at the first failure.
-// Re-parses the workflow so the step list cannot drift; `uses:` setup steps are skipped.
+// `pnpm ci:local`: runs every `run:` step of `.github/ci-local.yml` locally, in order, stopping at the first failure.
+// Re-parses the file so the step list cannot drift; `uses:` setup steps are skipped. `--list` prints the steps and exits.
 // CARGO_TARGET_DIR passes through unchanged; incremental compilation is off repo-wide in `.cargo/config.toml` (#1736).
 // Cargo/tauri steps refuse a worktree-local target (#946) and warn when the cache is over 10 GB.
 
@@ -14,7 +14,7 @@ import { CACHE_WARN_BYTES, dirSizeBytes, formatGiB } from './cargo-cache-helpers
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
-const WORKFLOW_PATH = path.join(repoRoot, '.github', 'workflows', 'ci.yml');
+const WORKFLOW_PATH = path.join(repoRoot, '.github', 'ci-local.yml');
 const WORKFLOW_REL = path.relative(repoRoot, WORKFLOW_PATH).replace(/\\/g, '/');
 
 function fail(message) {
@@ -118,6 +118,10 @@ function warnIfCacheLarge() {
 
 function main() {
   const steps = loadSteps();
+  if (process.argv.includes('--list')) {
+    steps.forEach((step, i) => console.log(`${String(i + 1).padStart(2)}. ${step.name} :: ${step.run}`));
+    return;
+  }
   // Unset, cargo falls back to a worktree-local `src-tauri/target` (#946); refuse before any step runs.
   if (steps.some((step) => /\b(cargo|tauri)\b/i.test(step.run))) {
     try {
