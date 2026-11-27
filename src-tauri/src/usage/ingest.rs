@@ -335,9 +335,7 @@ impl Pass<'_> {
                         .unwrap_or(false);
                     let chars: usize = text_parts(message).map(|t| t.chars().count()).sum();
                     // Only the category is kept; the result text is dropped here.
-                    let error = is_error.then(|| {
-                        classify(&text_parts(message).collect::<Vec<_>>().join("\n"))
-                    });
+                    let error = is_error.then(|| classify(text_parts(message)));
                     record_tool_result(self.conn, self.key, call_id, error, chars as i64)?;
                 }
             }

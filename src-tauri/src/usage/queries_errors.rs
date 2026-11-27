@@ -35,3 +35,7 @@ pub fn error_categories(
     })?;
     Ok(rows.collect::<Result<_, _>>()?)
 }
+
+#[cfg(test)]
+#[path = "queries_errors.test.rs"]
+mod tests;

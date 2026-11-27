@@ -29,7 +29,8 @@ export interface SortableTableProps<T> {
   rowKey(row: T): string
   sort: { key: string; dir: SortDirection }
   onSortChange(sort: { key: string; dir: SortDirection }): void
-  emptyText: string
+  /** Omit when the caller never renders an empty table. */
+  emptyText?: string
   /** First fetch in flight: one muted "Loading…" row instead of the empty text. */
   loading?: boolean
   paging?: { index: number; size: number; total: number; onIndexChange(index: number): void }

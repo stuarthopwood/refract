@@ -84,7 +84,6 @@ export function ErrorCategoryTable({ rows, loading }: { rows: UsageErrorCategory
         rowKey={(r) => r.category}
         sort={table.sort}
         onSortChange={table.onSortChange}
-        emptyText="No failed tool calls in this range."
       />
     </ScreenSection>
   )

@@ -145,3 +145,7 @@ fn tool_totals(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<(i
         })?,
     )
 }
+
+#[cfg(test)]
+#[path = "queries_summary.test.rs"]
+mod tests;

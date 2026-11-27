@@ -56,10 +56,17 @@ const RULES: [(ErrorCategory, &[&str]); 6] = [
     (ErrorCategory::Policy, &["blocked by tool policy"]),
     (
         ErrorCategory::EditRejected,
-        &["edit rejected", "this edit anchors", "no preceding hunk header"],
+        &[
+            "edit rejected",
+            "this edit anchors",
+            "no preceding hunk header",
+        ],
     ),
     (ErrorCategory::Timeout, &["timed out", "timeout"]),
-    (ErrorCategory::Aborted, &["aborted", "cancelled", "canceled"]),
+    (
+        ErrorCategory::Aborted,
+        &["aborted", "cancelled", "canceled"],
+    ),
     (
         ErrorCategory::NotFound,
         &["not found", "no such file", "does not exist", "enoent"],
@@ -70,10 +77,13 @@ const RULES: [(ErrorCategory, &[&str]); 6] = [
     ),
 ];
 
-/// Categorises the text of a result whose `isError` is set. Never returns `Unknown`.
-pub fn classify(text: &str) -> ErrorCategory {
-    let head = text
-        .chars()
+/// Categorises the text parts of a result whose `isError` is set. Only the first `MAX_SCAN_CHARS`
+/// characters are read, lazily across the parts (a newline ends each), so a huge result is never
+/// joined or copied whole. Never returns `Unknown`.
+pub fn classify<'a>(parts: impl IntoIterator<Item = &'a str>) -> ErrorCategory {
+    let head: String = parts
+        .into_iter()
+        .flat_map(|part| part.chars().chain(std::iter::once('\n')))
         .take(MAX_SCAN_CHARS)
         .collect::<String>()
         .to_lowercase();

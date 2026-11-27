@@ -60,16 +60,17 @@ UPDATE session_rollup SET project_id = '@legacy:' || project_id WHERE project_id
 
 /// Tool errors gain a category, and the rollup counts calls whose result arrived (the error-rate
 /// denominator). Errors recorded earlier kept no text, so they become `unknown`; `resolved` is
-/// rebuilt exactly from the per-call rows, so no OMP file is re-read.
+/// rebuilt exactly from the per-call rows in one grouped pass (a per-row subquery would rescan
+/// `tool_calls` for every rollup row), so no OMP file is re-read.
 const MIGRATE_5_TO_6: &str = "
 ALTER TABLE tool_calls ADD COLUMN error_category TEXT;
 ALTER TABLE tool_rollup ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0;
 UPDATE tool_calls SET error_category = 'unknown' WHERE is_error = 1;
-UPDATE tool_rollup SET resolved = coalesce((
-  SELECT count(is_error) FROM tool_calls c
-  WHERE c.project_id = tool_rollup.project_id AND c.tool = tool_rollup.tool
-    AND c.agent_type = tool_rollup.agent_type AND c.ts - c.ts % 3600000 = tool_rollup.hour
-), 0);
+UPDATE tool_rollup SET resolved = r.n FROM (
+  SELECT ts - ts % 3600000 AS h, project_id AS p, tool AS t, agent_type AS a, count(is_error) AS n
+  FROM tool_calls GROUP BY 1, 2, 3, 4
+) AS r WHERE tool_rollup.hour = r.h AND tool_rollup.project_id = r.p
+  AND tool_rollup.tool = r.t AND tool_rollup.agent_type = r.a;
 CREATE INDEX IF NOT EXISTS tool_calls_errors_ts ON tool_calls (ts) WHERE is_error = 1;
 ";
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import type { UsageErrorCategory } from '../../../shared/ipc-usage'
 import { ERROR_CATEGORY_COLUMNS, errorCategoryDisplayRows } from './errorCategories'
 
 describe('errorCategoryDisplayRows', () => {
@@ -24,6 +25,12 @@ describe('errorCategoryDisplayRows', () => {
 
     expect(rows[0]?.label).toMatch(/before categories/)
     expect(rows[0]?.share).toBe(1)
+  })
+
+  it('falls back to the raw key for a category a newer build stored, rather than hiding it', () => {
+    const rows = errorCategoryDisplayRows([{ category: 'rate_limited' as UsageErrorCategory, count: 2 }])
+
+    expect(rows).toEqual([{ category: 'rate_limited', label: 'rate_limited', count: 2, share: 1 }])
   })
 
   it('sorts by count through the share column', () => {
