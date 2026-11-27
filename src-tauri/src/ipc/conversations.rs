@@ -209,6 +209,18 @@ pub(crate) fn parse_file_name(file_name: &str) -> Option<(String, String)> {
 
 const PREVIEW_SCAN_HARD_CAP_BYTES: usize = 64 * 1024;
 const PREVIEW_MAX_LENGTH: usize = 120;
+const TITLE_MAX_LENGTH: usize = 60;
+
+/// A one-line title cut from the first user message (#440, FR-191): whitespace runs, line breaks
+/// included, collapse to one space, and a cut text ends in an ellipsis. Empty when the message has no text.
+fn title_from_message(text: &str) -> String {
+    let single_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if single_line.chars().count() <= TITLE_MAX_LENGTH {
+        return single_line;
+    }
+    let cut: String = single_line.chars().take(TITLE_MAX_LENGTH).collect();
+    format!("{}…", cut.trim_end())
+}
 
 /// Plain text of a stored user message, from a string or from `text` parts.
 fn extract_user_text(content: &Value) -> String {
@@ -280,6 +292,9 @@ async fn read_conversation_file(
                                     .get("content")
                                     .map(extract_user_text)
                                     .unwrap_or_default();
+                                if title.is_empty() {
+                                    title = title_from_message(&text);
+                                }
                                 preview = Some(text.chars().take(PREVIEW_MAX_LENGTH).collect());
                             }
                         }
