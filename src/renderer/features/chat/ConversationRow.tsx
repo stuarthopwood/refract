@@ -5,6 +5,7 @@ import { IconButton } from '@/components/IconButton'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatByteSize } from '@/lib/formatBytes'
+import { cn } from '@/lib/utils'
 import type { ConversationInfo } from '../../../shared/model'
 import { conversationTitle } from './conversationDelete'
 
@@ -79,6 +80,11 @@ interface CompactConversationRowProps {
   /** Lets a tree make the row a `treeitem` and manage its roving focus. */
   role?: AriaRole
   tabIndex?: number
+  /** A tree reaches the row by arrow keys, so its buttons stay out of the Tab order. */
+  buttonTabIndex?: number
+  /** The id of the element that says why opening is blocked. */
+  describedBy?: string
+  className?: string
 }
 
 /** One-line variant for the Session row's nested list: title, current marker, size and a delete button. */
@@ -91,13 +97,25 @@ export const CompactConversationRow = memo(function CompactConversationRow({
   onOpen,
   onDelete,
   role,
-  tabIndex
+  tabIndex,
+  buttonTabIndex,
+  describedBy,
+  className
 }: CompactConversationRowProps) {
   const blocked = openDisabled || deleting
   return (
-    <li data-conversation-file={conversation.file} role={role} tabIndex={tabIndex} className="flex min-w-0 items-center gap-1">
+    <li
+      data-conversation-file={conversation.file}
+      role={role}
+      data-conversation-entry={role === 'treeitem' ? '' : undefined}
+      tabIndex={tabIndex}
+      aria-label={role === 'treeitem' ? `${title}${conversation.isCurrent ? ', current' : ''}, ${size}` : undefined}
+      className={cn('flex min-w-0 items-center gap-1', className)}
+    >
       <Button
         variant="ghost"
+        tabIndex={buttonTabIndex}
+        aria-describedby={blocked ? describedBy : undefined}
         aria-disabled={blocked}
         aria-current={conversation.isCurrent}
         onClick={() => {
@@ -110,7 +128,13 @@ export const CompactConversationRow = memo(function CompactConversationRow({
         {conversation.isCurrent && <Badge variant="secondary">Current</Badge>}
         <span className="shrink-0 text-muted-foreground">{deleting ? 'Deleting…' : size}</span>
       </Button>
-      <IconButton label={`Delete ${title}`} aria-disabled={deleting} className="aria-disabled:opacity-50" onClick={() => !deleting && onDelete(conversation)}>
+      <IconButton
+        label={`Delete ${title}`}
+        tabIndex={buttonTabIndex}
+        aria-disabled={deleting}
+        className="aria-disabled:opacity-50"
+        onClick={() => !deleting && onDelete(conversation)}
+      >
         <Trash2Icon />
       </IconButton>
     </li>

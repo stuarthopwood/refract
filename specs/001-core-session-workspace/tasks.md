@@ -6034,8 +6034,8 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 
 ### Lane #472 (UI, after T754 to T759)
 
-- [ ] T762 [US1] #472: nested Conversation list under `SessionRow.tsx` in `SessionList.tsx`, with chevron, count badge, remembered per-Session expand state (`src/renderer/state/session-list-store.ts`), lazy load and cap, current marker, switch, New conversation, size and delete, Archived Sessions excluded, per FR-194, FR-195 (missing). Tests: `SessionRowTree.test.ts` and `session-list-store.test.ts`.
-- [ ] T763 [US1] #472: ARIA, tab order, Ctrl+1 to Ctrl+9 and focus fallback unchanged, reduced motion, per FR-196, SC-038 (missing). Tests: `treeKeyDecision.test.ts`, `SessionRowTree.test.ts`.
+- [x] T762 [US1] #472: nested Conversation list under `SessionRow.tsx` in `SessionList.tsx`, with chevron, count badge, remembered per-Session expand state (`src/renderer/state/session-list-store.ts`), lazy load and cap, current marker, switch, New conversation, size and delete, Archived Sessions excluded, per FR-194, FR-195 (done). Tests: `SessionRowTree.test.ts` and `session-list-store.test.ts`.
+- [x] T763 [US1] #472: ARIA, tab order, Ctrl+1 to Ctrl+9 and focus fallback unchanged, reduced motion, per FR-196, SC-038 (done). Tests: `treeKeyDecision.test.ts`, `SessionRowTree.test.ts`.
 
 ### Lane #696 (after T762; probe first)
 
