@@ -2,6 +2,7 @@
 // `--popover`. `--foreground` is 90% alpha (#1074), so `/40` multiplies to 0.36 effective.
 // Separate file: theme-contrast-pairs.mjs is at the #806 size cap.
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
+import { isLightThemeId } from './theme-groups.mjs'
 
 export function switchTrackContrastRows(themes) {
   const rows = []
@@ -15,7 +16,7 @@ export function switchTrackContrastRows(themes) {
     }
     // Light presets drop `.dark`, so the track is `bg-input`, not foreground/40.
     const input = props['input']
-    const trackEntry = /^light/.test(themeId) && input ? input : { raw: 'foreground/40', alpha: foreground.alpha * 0.4, linear: foreground.linear }
+    const trackEntry = isLightThemeId(themeId) && input ? input : { raw: 'foreground/40', alpha: foreground.alpha * 0.4, linear: foreground.linear }
     for (const [bgName, bgEntry] of [['background', background], ['popover', popover]]) {
       const trackLinear = resolvedLinear(trackEntry, bgEntry)
       const ratio = contrastRatio(relativeLuminance(trackLinear), relativeLuminance(bgEntry.linear))

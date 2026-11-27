@@ -28,7 +28,7 @@ interface ThemePickerProps {
 }
 
 export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
-  const { builtins, customs, all, customThemes, customId, isActive, choose: chooseEntry } = useThemeEntries()
+  const { builtins, builtinGroups, customs, all, customThemes, customId, isActive, choose: chooseEntry } = useThemeEntries()
   const rejected = useThemeStore((s) => s.rejected)
   const actions = useThemeFileActions()
   const buttonRefs = useRef<Array<HTMLButtonElement | null>>([])
@@ -120,8 +120,12 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   return (
     <div className="max-w-sm">
       <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
-        <p className="px-2 pt-1 text-xs text-muted-foreground">Built-in themes</p>
-        {builtins.map((e, i) => renderRow(e, i))}
+        {builtinGroups.map((group, g) => (
+          <div key={group.label} role="presentation" className="flex flex-col gap-1">
+            <p className="px-2 pt-1 text-xs text-muted-foreground">{group.label} themes</p>
+            {group.entries.map((e, i) => renderRow(e, builtinGroups.slice(0, g).reduce((n, prev) => n + prev.entries.length, 0) + i))}
+          </div>
+        ))}
         {customs.length > 0 && <p className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>}
         {customs.map((e, i) => renderRow(e, builtins.length + i))}
       </div>

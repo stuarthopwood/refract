@@ -8,6 +8,19 @@
 @import "./themes/amethyst.css";
 @import "./themes/amber-obsidian.css";
 @import "./themes/hearth.css";
+@import "./themes/solarized-light.css";
+@import "./themes/github-light.css";
+@import "./themes/catppuccin-latte.css";
+@import "./themes/one-light.css";
+@import "./themes/gruvbox-light.css";
+@import "./themes/rose-pine-dawn.css";
+@import "./themes/dracula.css";
+@import "./themes/nord.css";
+@import "./themes/tokyo-night.css";
+@import "./themes/catppuccin-mocha.css";
+@import "./themes/gruvbox-dark.css";
+@import "./themes/solarized-dark.css";
+@import "./themes/one-dark.css";
 
 /* Geist (SIL OFL-1.1, see src/renderer/assets/fonts/OFL.txt) is the default UI font and the
  * brand display font; Geist Mono (same licence) is the default code font (issue #1246). Both are

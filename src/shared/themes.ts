@@ -4,7 +4,7 @@
 /** The one Shiki theme whose colours are CSS custom properties (#456). */
 export const CSS_VARIABLES_SYNTAX_THEME = 'css-variables'
 
-/** Additive: a further preset adds a key. `light*` ids are light-toned, every other id is dark-toned (see `isLightTheme`). */
+/** Additive: a further preset adds a key. light-toned ids are listed in `LIGHT_THEME_IDS`, every other id is dark-toned (see `isLightTheme`). */
 export type ThemeId =
   | 'dark'
   | 'dark-high-contrast'
@@ -18,6 +18,19 @@ export type ThemeId =
   | 'lagoon'
   | 'amethyst'
   | 'hearth'
+  | 'solarized-light'
+  | 'github-light'
+  | 'catppuccin-latte'
+  | 'one-light'
+  | 'gruvbox-light'
+  | 'rose-pine-dawn'
+  | 'dracula'
+  | 'nord'
+  | 'tokyo-night'
+  | 'catppuccin-mocha'
+  | 'gruvbox-dark'
+  | 'solarized-dark'
+  | 'one-dark'
 
 export interface ThemeDefinition {
   id: ThemeId
@@ -138,6 +151,110 @@ export const THEMES: Record<ThemeId, ThemeDefinition> = {
     swatchPrimary: '#9f4500',
     syntaxTheme: 'css-variables',
     titleBarOverlay: { color: '#311f16', symbolColor: '#eae9e8' }
+  },
+  'solarized-light': {
+    id: 'solarized-light',
+    name: 'Solarized Light',
+    swatch: '#fdf6e3',
+    swatchPrimary: '#1b6aa5',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#eeead9', symbolColor: '#073642' }
+  },
+  'github-light': {
+    id: 'github-light',
+    name: 'GitHub Light',
+    swatch: '#ffffff',
+    swatchPrimary: '#0969da',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#f2f2f2', symbolColor: '#1f2328' }
+  },
+  'catppuccin-latte': {
+    id: 'catppuccin-latte',
+    name: 'Catppuccin Latte',
+    swatch: '#eff1f5',
+    swatchPrimary: '#8839ef',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#e5e7ed', symbolColor: '#4c4f69' }
+  },
+  'one-light': {
+    id: 'one-light',
+    name: 'One Light',
+    swatch: '#fafafa',
+    swatchPrimary: '#2f62d9',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#eeeeef', symbolColor: '#383a42' }
+  },
+  'gruvbox-light': {
+    id: 'gruvbox-light',
+    name: 'Gruvbox Light',
+    swatch: '#fbf1c7',
+    swatchPrimary: '#af3a03',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#f0e6be', symbolColor: '#3c3836' }
+  },
+  'rose-pine-dawn': {
+    id: 'rose-pine-dawn',
+    name: 'Rose Pine Dawn',
+    swatch: '#faf4ed',
+    swatchPrimary: '#286983',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#f0eae6', symbolColor: '#575279' }
+  },
+  dracula: {
+    id: 'dracula',
+    name: 'Dracula',
+    swatch: '#282a36',
+    swatchPrimary: '#bd93f9',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#32333f', symbolColor: '#fcfcf9' }
+  },
+  nord: {
+    id: 'nord',
+    name: 'Nord',
+    swatch: '#2e3440',
+    swatchPrimary: '#81a1c1',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#343a46', symbolColor: '#f9fafc' }
+  },
+  'tokyo-night': {
+    id: 'tokyo-night',
+    name: 'Tokyo Night',
+    swatch: '#1a1b26',
+    swatchPrimary: '#7aa2f7',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#232430', symbolColor: '#e0e5fa' }
+  },
+  'catppuccin-mocha': {
+    id: 'catppuccin-mocha',
+    name: 'Catppuccin Mocha',
+    swatch: '#1e1e2e',
+    swatchPrimary: '#cba6f7',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#272737', symbolColor: '#e6eaf9' }
+  },
+  'gruvbox-dark': {
+    id: 'gruvbox-dark',
+    name: 'Gruvbox Dark',
+    swatch: '#282828',
+    swatchPrimary: '#d79921',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#313131', symbolColor: '#f9f5e9' }
+  },
+  'solarized-dark': {
+    id: 'solarized-dark',
+    name: 'Solarized Dark',
+    swatch: '#002b36',
+    swatchPrimary: '#1f77b8',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#0b343e', symbolColor: '#f8f5ed' }
+  },
+  'one-dark': {
+    id: 'one-dark',
+    name: 'One Dark',
+    swatch: '#282c34',
+    swatchPrimary: '#61afef',
+    syntaxTheme: 'css-variables',
+    titleBarOverlay: { color: '#30343c', symbolColor: '#f2f3f5' }
   }
 }
 
@@ -147,6 +264,18 @@ export function isThemeId(value: unknown): value is ThemeId {
 }
 
 /** True for the light-toned presets; they get the `light` class and light Mermaid/toast branches. */
+const LIGHT_THEME_IDS: ReadonlySet<ThemeId> = new Set<ThemeId>([
+  'light',
+  'light-warm-paper',
+  'light-high-contrast',
+  'solarized-light',
+  'github-light',
+  'catppuccin-latte',
+  'one-light',
+  'gruvbox-light',
+  'rose-pine-dawn'
+])
+
 export function isLightTheme(id: ThemeId): boolean {
-  return id === 'light' || id === 'light-warm-paper' || id === 'light-high-contrast'
+  return LIGHT_THEME_IDS.has(id)
 }

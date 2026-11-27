@@ -3,6 +3,7 @@
 
 import { contrastRatio, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
 import { applyProfile, lightness } from './display-profiles.mjs'
+import { isLightThemeId } from './theme-groups.mjs'
 
 export const STEP = 'step'
 export const RATIO = 'ratio'
@@ -37,7 +38,7 @@ export function measure(pair, themeId, props, profile) {
   }
   if (pair.kind !== STEP) return contrastRatio(lumA, lumB)
   const step = lightness(lumA) - lightness(lumB)
-  return /^light/.test(themeId) ? -step : step
+  return isLightThemeId(themeId) ? -step : step
 }
 
 /** Pairs that miss their threshold under `profile`, whether or not they already miss with no profile applied. */

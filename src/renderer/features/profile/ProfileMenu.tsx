@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import {
   ActivityIcon,
   ExternalLinkIcon,
@@ -51,7 +51,7 @@ export interface ProfileMenuContentProps {
 }
 
 function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void }) {
-  const { builtins, customs, all, isActive, choose } = useThemeEntries()
+  const { builtinGroups, customs, all, isActive, choose } = useThemeEntries()
   const activeEntry = all.find(isActive)
   const [open, setOpen] = useState(false)
   const subContentRef = useRef<HTMLDivElement>(null)
@@ -89,8 +89,12 @@ function ThemeSubmenu({ onThemeApplied }: { onThemeApplied(label: string): void 
             if (entry) void choose(entry).then((ok) => ok && onThemeApplied(entry.name))
           }}
         >
-          {customs.length > 0 && <DropdownMenuLabel>Built-in themes</DropdownMenuLabel>}
-          {builtins.map(renderItem)}
+          {builtinGroups.map((group) => (
+            <Fragment key={group.label}>
+              <DropdownMenuLabel>{group.label} themes</DropdownMenuLabel>
+              {group.entries.map(renderItem)}
+            </Fragment>
+          ))}
           {customs.length > 0 && <DropdownMenuLabel>Custom</DropdownMenuLabel>}
           {customs.map(renderItem)}
         </DropdownMenuRadioGroup>

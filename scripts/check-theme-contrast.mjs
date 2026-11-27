@@ -12,6 +12,7 @@ import { composerSelectionContrastRows, COMMAND_PILL_PAIRS } from './composer-se
 import { focusedBadgeContrastRows } from './focused-badge-contrast.mjs'
 import { contextUsageContrastRows } from './context-usage-contrast.mjs'; import { findNavContrastRows } from './find-nav-contrast.mjs'; import { recommendedHoverContrastRows } from './recommended-hover-contrast.mjs'; import { optionStateContrastRows } from './option-state-contrast.mjs'
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
+import { isLightThemeId } from './theme-groups.mjs'
 import { css, cssPath, repoRoot, themes, sidebarBorderAliasesDivider } from './theme-tokens.mjs'
 import { DARK_HIGH_CONTRAST_THEMES } from './theme-groups.mjs'
 
@@ -247,7 +248,7 @@ for (const [themeId, props] of Object.entries(themes)) {
     const lum = relativeLuminance(linear)
     if (prevName !== undefined) {
       checkedCount++
-      const pass = /^light/.test(themeId) ? lum <= prevLum + 1e-9 : lum >= prevLum - 1e-9
+      const pass = isLightThemeId(themeId) ? lum <= prevLum + 1e-9 : lum >= prevLum - 1e-9
       if (!pass) failCount++
       rows.push({
         themeId,

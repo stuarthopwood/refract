@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { toast } from 'sonner'
 import { useThemeStore, useActiveThemeId } from '@/state'
-import { THEMES } from '../../shared/themes'
+import { THEMES, isLightTheme } from '../../shared/themes'
 import type { ThemeId } from '../../shared/themes'
 import type { CustomTheme } from '../../shared/ipc-themes'
 
@@ -14,10 +14,26 @@ export interface ThemeEntry {
   customId: string | null
 }
 
-const BUILTINS: ThemeEntry[] = Object.values(THEMES).map((t) => ({ key: t.id, name: t.name, swatch: t.swatch, swatchPrimary: t.swatchPrimary, builtin: t.id, customId: null }))
+const toEntry = (t: (typeof THEMES)[ThemeId]): ThemeEntry => ({ key: t.id, name: t.name, swatch: t.swatch, swatchPrimary: t.swatchPrimary, builtin: t.id, customId: null })
+
+export interface BuiltinGroup {
+  label: string
+  entries: ThemeEntry[]
+}
+
+const THEME_LIST = Object.values(THEMES)
+
+/** Light then dark, each in `THEMES` order (#2172); the picker and profile menu render the groups, arrow keys walk `builtins`. */
+export const BUILTIN_GROUPS: BuiltinGroup[] = [
+  { label: 'Light', entries: THEME_LIST.filter((t) => isLightTheme(t.id)).map(toEntry) },
+  { label: 'Dark', entries: THEME_LIST.filter((t) => !isLightTheme(t.id)).map(toEntry) }
+]
+
+const BUILTINS: ThemeEntry[] = BUILTIN_GROUPS.flatMap((g) => g.entries)
 
 export interface ThemeEntries {
   builtins: ThemeEntry[]
+  builtinGroups: BuiltinGroup[]
   customs: ThemeEntry[]
   /** Built-ins then customs, in display order. */
   all: ThemeEntry[]
@@ -58,5 +74,5 @@ export function useThemeEntries(): ThemeEntries {
     }
   }
 
-  return { builtins: BUILTINS, customs, all, customThemes, customId, isActive, choose }
+  return { builtins: BUILTINS, builtinGroups: BUILTIN_GROUPS, customs, all, customThemes, customId, isActive, choose }
 }
