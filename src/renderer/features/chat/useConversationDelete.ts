@@ -3,6 +3,7 @@
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ConversationInfo } from '../../../shared/model'
 import { conversationTitle, deleteRefusal, freedMessage } from './conversationDelete'
+import { emitConversationsChanged } from './conversationChanges'
 
 interface DeleteNotice {
   tone: 'error' | 'notice'
@@ -35,6 +36,7 @@ export function useConversationDelete(
       }
       onRemoved(file)
       setConversations((previous) => previous.filter((conversation) => conversation.file !== file))
+      emitConversationsChanged(sessionId)
       setNotice({ tone: 'notice', text: freedMessage(title, result.value.bytesFreed) })
     } finally {
       setDeleting((previous) => {

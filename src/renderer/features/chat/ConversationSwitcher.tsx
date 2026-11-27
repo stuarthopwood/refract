@@ -8,9 +8,9 @@ import { DialogError } from '@/components/DialogError'
 import { InlineStatus } from '@/components/InlineStatus'
 import { cn } from '@/lib/utils'
 import { formatByteSize } from '@/lib/formatBytes'
-import { notify, useChatScrollStore, useSessionsStore } from '@/state'
+import { notify, useSessionsStore } from '@/state'
 import type { ConversationInfo } from '../../../shared/model'
-import { applySnapshot } from './applySnapshot'
+import { startNewConversation, switchToConversation } from './conversationActions'
 import { ConversationRow } from './ConversationRow'
 import { conversationTitle, historySummary } from './conversationDelete'
 import { useConversationDelete } from './useConversationDelete'
@@ -50,24 +50,11 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   async function handleNewConversation() {
     setCreating(true)
     setSwitching(true)
-    // Snapshot first so a failed switch can put back exactly what it removed (only if nothing newer
-    // has been recorded for this Session meanwhile).
-    const previousScroll = useChatScrollStore.getState().bySession[sessionId]
-    useChatScrollStore.getState().clear(sessionId)
-    useChatScrollStore.getState().setInFlight(sessionId, true)
     try {
-      const result = await window.refract.conversations.startNew(sessionId)
-      if (!result.ok) {
-        useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
-        notify(result.error)
-        return
-      }
-      useChatScrollStore.getState().clear(sessionId)
-      applySnapshot(sessionId, result.value)
+      await startNewConversation(sessionId)
     } finally {
       setCreating(false)
       setSwitching(false)
-      useChatScrollStore.getState().setInFlight(sessionId, false)
     }
   }
 
@@ -88,21 +75,10 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   const handleOpenConversation = useCallback(
     async (file: string) => {
       setSwitching(true)
-      // Clear BEFORE awaiting below (not after), same reasoning as `handleNewConversation` above.
-      useChatScrollStore.getState().clear(sessionId)
-      useChatScrollStore.getState().setInFlight(sessionId, true)
       try {
-        const result = await window.refract.conversations.open(sessionId, file)
-        if (!result.ok) {
-          notify(result.error)
-          return
-        }
-        useChatScrollStore.getState().clear(sessionId)
-        applySnapshot(sessionId, result.value)
-        setHistoryOpen(false)
+        if (await switchToConversation(sessionId, file)) setHistoryOpen(false)
       } finally {
         setSwitching(false)
-        useChatScrollStore.getState().setInFlight(sessionId, false)
       }
     },
     [sessionId]
