@@ -7,7 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { Result } from '../../../shared/ipc'
 import type { ConversationTreeEntry } from '../../../shared/model'
 import { ConversationTreeRow, type ConversationTreeRowProps } from './ConversationTreeRow'
-import { NOT_IDLE_TREE_REASON, NO_AGENT_TREE_MESSAGE, composerTextAfterRewind, labelToSave, saveEntryLabel, treeActionMessage, treeDepths } from './conversationTree'
+import { NOT_IDLE_TREE_REASON, NO_AGENT_TREE_MESSAGE, composerTextAfterRewind, labelToSave, roleLabel, saveEntryLabel, treeActionMessage, treeDepths } from './conversationTree'
 
 function entry(over: Partial<ConversationTreeEntry> = {}): ConversationTreeEntry {
   return { id: 'e1', parentId: null, role: 'user', text: 'Fix the build', timestamp: null, label: null, ...over }
@@ -60,6 +60,11 @@ describe('Conversation tree row (FR-197)', () => {
     expect(row({ depth: 2 })).toContain('margin-left:1.5rem')
     expect(row({ depth: 50 })).toContain('margin-left:4.5rem')
   })
+
+  it('Given an entry, When its row renders, Then the label button names the message it tags', () => {
+    expect(row()).toContain('aria-label="Add label for You message: Fix the build"')
+    expect(row({ entry: entry({ label: 'x' }) })).toContain('aria-label="Edit label for You message: Fix the build"')
+  })
 })
 
 describe('Rewind and Fork while the agent works (FR-198)', () => {
@@ -81,6 +86,11 @@ describe('Rewind and Fork while the agent works (FR-198)', () => {
     expect(html).not.toContain('aria-describedby')
   })
 
+  it('Given a working Session and a failed action, When the row renders, Then both the reason and the failure describe the actions', () => {
+    const html = row({ actionsDisabled: true, actionError: 'Something broke' })
+    expect(html.match(/aria-describedby="reason [^"]+"/g)).toHaveLength(2)
+  })
+
   it('Given a refused action, When the row renders, Then the failure shows on the row', () => {
     expect(row({ actionError: 'Something broke' })).toContain('Something broke')
   })
@@ -96,6 +106,25 @@ describe('Tree ordering', () => {
   it('Given parents-first entries, When depths are computed, Then each is one deeper than its parent', () => {
     const depths = treeDepths([entry({ id: 'a' }), entry({ id: 'b', parentId: 'a' }), entry({ id: 'c', parentId: 'b' }), entry({ id: 'd', parentId: 'a' })])
     expect([...depths.entries()]).toEqual([['a', 0], ['b', 1], ['c', 2], ['d', 1]])
+  })
+
+  it('Given an entry whose parent is not in the list, When depths are computed, Then it is a root', () => {
+    const depths = treeDepths([entry({ id: 'a', parentId: 'missing' }), entry({ id: 'b', parentId: 'a' })])
+    expect([...depths.entries()]).toEqual([['a', 0], ['b', 1]])
+  })
+})
+
+describe('Role labels', () => {
+  it('Given a known role, When labelled, Then it reads as a person-friendly name', () => {
+    expect(roleLabel('user')).toBe('You')
+    expect(roleLabel('toolResult')).toBe('Tool result')
+    expect(roleLabel('bashExecution')).toBe('Shell command')
+  })
+
+  it('Given an unknown role, When labelled, Then it reads generically and never as the raw id', () => {
+    expect(roleLabel('futureRole')).toBe('Other')
+    expect(roleLabel('unknown')).toBe('Other')
+    expect(roleLabel('toString')).toBe('Other')
   })
 })
 

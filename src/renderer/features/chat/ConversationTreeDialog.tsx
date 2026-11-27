@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { GitBranchIcon } from 'lucide-react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { DialogError } from '@/components/DialogError'
@@ -12,7 +12,7 @@ import type { ConversationTree, ConversationTreeEntry } from '../../../shared/mo
 import { applySnapshot } from './applySnapshot'
 import { ConversationTreeRow } from './ConversationTreeRow'
 import { emitConversationsChanged } from './conversationChanges'
-import { FILES_NOT_CHANGED, NOT_IDLE_TREE_REASON, composerTextAfterRewind, saveEntryLabel, treeActionMessage, treeDepths } from './conversationTree'
+import { FILES_NOT_CHANGED, NOT_IDLE_TREE_REASON, composerTextAfterRewind, labelToSave, saveEntryLabel, treeActionMessage, treeDepths } from './conversationTree'
 
 const REASON_ID = 'conversation-tree-reason'
 
@@ -32,6 +32,7 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
   const [actionError, setActionError] = useState<{ entryId: string; message: string } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const focusComposerOnClose = useRef(false)
+  const rewindInvokerId = useRef<string | null>(null)
   const busy = working !== null
 
   async function loadTree() {
@@ -43,41 +44,53 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
     else setLoadError(treeActionMessage(result.error))
   }
 
+  const close = useCallback(() => {
+    setOpen(false)
+    // The entries are dropped with the dialog so a closed one holds no transcript text.
+    setTree(null)
+  }, [])
+
   function handleOpenChange(next: boolean) {
     if (!next && busy) return
-    setOpen(next)
-    if (!next) return
+    if (!next) {
+      close()
+      return
+    }
+    setOpen(true)
     setActionError(null)
     setNotice(null)
     void loadTree()
   }
 
-  async function handleFork(entry: ConversationTreeEntry) {
-    if (busy) return
-    setWorking('fork')
-    setActionError(null)
-    setNotice(null)
-    // Cleared before awaiting, like opening a Conversation: the new transcript must not land on the old scroll position.
-    const previousScroll = useChatScrollStore.getState().bySession[sessionId]
-    useChatScrollStore.getState().clear(sessionId)
-    useChatScrollStore.getState().setInFlight(sessionId, true)
-    try {
-      const result = await window.refract.conversations.fork(sessionId, entry.id)
-      if (!result.ok) {
-        useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
-        setActionError({ entryId: entry.id, message: treeActionMessage(result.error) })
-        return
-      }
+  const handleFork = useCallback(
+    async (entry: ConversationTreeEntry) => {
+      if (busy) return
+      setWorking('fork')
+      setActionError(null)
+      setNotice(null)
+      // Cleared before awaiting, like opening a Conversation: the new transcript must not land on the old scroll position.
+      const previousScroll = useChatScrollStore.getState().bySession[sessionId]
       useChatScrollStore.getState().clear(sessionId)
-      applySnapshot(sessionId, result.value.snapshot)
-      emitConversationsChanged(sessionId)
-      notifyInfo('Forked into a new Conversation. The original stays in the history.')
-      setOpen(false)
-    } finally {
-      setWorking(null)
-      useChatScrollStore.getState().setInFlight(sessionId, false)
-    }
-  }
+      useChatScrollStore.getState().setInFlight(sessionId, true)
+      try {
+        const result = await window.refract.conversations.fork(sessionId, entry.id)
+        if (!result.ok) {
+          useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
+          setActionError({ entryId: entry.id, message: treeActionMessage(result.error) })
+          return
+        }
+        useChatScrollStore.getState().clear(sessionId)
+        applySnapshot(sessionId, result.value.snapshot)
+        emitConversationsChanged(sessionId)
+        notifyInfo('Forked into a new Conversation. The original stays in the history.')
+        close()
+      } finally {
+        setWorking(null)
+        useChatScrollStore.getState().setInFlight(sessionId, false)
+      }
+    },
+    [busy, sessionId, close]
+  )
 
   async function handleRewind() {
     if (busy || !rewindTarget) return
@@ -101,22 +114,34 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
       const drafts = useDraftStore.getState()
       drafts.setText(sessionId, composerTextAfterRewind(drafts.bySession[sessionId]?.text ?? '', result.value.editorText))
       focusComposerOnClose.current = true
-      setOpen(false)
+      close()
     } finally {
       setWorking(null)
       useChatScrollStore.getState().setInFlight(sessionId, false)
     }
   }
 
-  async function handleLabel(entry: ConversationTreeEntry, draft: string): Promise<string | null> {
-    const failure = await saveEntryLabel(window.refract.conversations.label, sessionId, entry, draft)
-    if (failure) return failure
-    const label = draft.trim() === '' ? null : draft.trim()
-    setTree((current) => (current ? { ...current, entries: current.entries.map((e) => (e.id === entry.id ? { ...e, label } : e)) } : current))
-    return null
-  }
+  const handleLabel = useCallback(
+    async (entry: ConversationTreeEntry, draft: string): Promise<string | null> => {
+      setNotice(null)
+      const failure = await saveEntryLabel(window.refract.conversations.label, sessionId, entry, draft)
+      if (failure) return failure
+      const label = draft.trim() === '' ? null : draft.trim()
+      setTree((current) => (current ? { ...current, entries: current.entries.map((e) => (e.id === entry.id ? { ...e, label } : e)) } : current))
+      if (labelToSave(entry.label, draft) !== null) setNotice(label === null ? 'Label removed' : 'Label saved')
+      return null
+    },
+    [sessionId]
+  )
 
-  const depths = tree ? treeDepths(tree.entries) : null
+  const handleRewindRequest = useCallback((target: ConversationTreeEntry) => {
+    rewindInvokerId.current = target.id
+    setSummarize(false)
+    setActionError(null)
+    setRewindTarget(target)
+  }, [])
+
+  const depths = useMemo(() => (tree ? treeDepths(tree.entries) : null), [tree])
 
   return (
     <>
@@ -128,6 +153,10 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
         </DialogTrigger>
         <DialogContent
           className="max-h-[70vh] overflow-x-hidden overflow-y-auto sm:max-w-lg"
+          onEscapeKeyDown={(event) => {
+            // Escape in a label field only cancels that edit; Radix listens on the document, so the row's own handler cannot stop it.
+            if (event.target instanceof Element && event.target.closest('[data-slot="conversation-tree-label-form"]')) event.preventDefault()
+          }}
           onCloseAutoFocus={(event) => {
             if (!focusComposerOnClose.current) return
             focusComposerOnClose.current = false
@@ -161,12 +190,8 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
                   actionsDisabled={!canAct || busy}
                   reasonId={canAct ? undefined : REASON_ID}
                   actionError={actionError?.entryId === entry.id ? actionError.message : null}
-                  onRewind={(target) => {
-                    setSummarize(false)
-                    setActionError(null)
-                    setRewindTarget(target)
-                  }}
-                  onFork={(target) => void handleFork(target)}
+                  onRewind={handleRewindRequest}
+                  onFork={handleFork}
                   onLabel={handleLabel}
                 />
               ))}
@@ -188,7 +213,13 @@ export function ConversationTreeDialog({ sessionId }: { sessionId: string }) {
         bodyLabel="Rewind options"
         onCancel={() => setRewindTarget(null)}
         onConfirm={() => void handleRewind()}
-        onCloseAutoFocus={() => false}
+        onCloseAutoFocus={() => {
+          // The Rewind button that opened this dialog is the one place focus can return to; when the tree has already closed it is gone.
+          const id = rewindInvokerId.current
+          const button = id ? document.querySelector<HTMLElement>(`[data-entry-id="${CSS.escape(id)}"] [data-action="rewind"]`) : null
+          if (!button) return false
+          button.focus()
+        }}
       >
         <label className="flex items-center gap-2 text-sm">
           <CheckboxItem checked={summarize} aria-disabled={working === 'rewind'} className={CHECKBOX_BOX_ONLY_CLASS} onCheckedChange={(next) => !busy && setSummarize(next === true)}>

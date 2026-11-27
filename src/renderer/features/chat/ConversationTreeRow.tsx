@@ -1,4 +1,4 @@
-import { useId, useRef, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { CheckIcon, TagIcon, XIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -25,16 +25,26 @@ export interface ConversationTreeRowProps {
   onLabel(entry: ConversationTreeEntry, label: string): Promise<string | null>
 }
 
-export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, reasonId, actionError, onRewind, onFork, onLabel }: ConversationTreeRowProps) {
+function ConversationTreeRowView({ entry, depth, isLeaf, actionsDisabled, reasonId, actionError, onRewind, onFork, onLabel }: ConversationTreeRowProps) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
   const [saving, setSaving] = useState(false)
   const [labelError, setLabelError] = useState<string | null>(null)
   const editButtonRef = useRef<HTMLButtonElement>(null)
+  const restoreFocus = useRef(false)
   const errorId = useId()
   const who = roleLabel(entry.role)
   const preview = entry.text || `(${who} message without text)`
-  const when = entry.timestamp ? new Date(entry.timestamp).toLocaleString() : null
+  const when = useMemo(() => (entry.timestamp ? new Date(entry.timestamp).toLocaleString() : null), [entry.timestamp])
+  const shownError = labelError ?? actionError
+  const actionDescribedBy = [actionsDisabled ? reasonId : undefined, actionError ? errorId : undefined].filter(Boolean).join(' ') || undefined
+
+  // The edit button is replaced while editing, so focus is put back once it has remounted.
+  useEffect(() => {
+    if (editing || !restoreFocus.current) return
+    restoreFocus.current = false
+    editButtonRef.current?.focus()
+  }, [editing])
 
   function startEditing() {
     setDraft(entry.label ?? '')
@@ -43,10 +53,9 @@ export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, rea
   }
 
   function stopEditing() {
+    restoreFocus.current = true
     setEditing(false)
     setLabelError(null)
-    // The edit button is replaced while editing, so focus would otherwise fall to the page.
-    queueMicrotask(() => editButtonRef.current?.focus())
   }
 
   async function save() {
@@ -75,10 +84,15 @@ export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, rea
       <p className="line-clamp-2 text-sm [overflow-wrap:anywhere]">{preview}</p>
       {editing ? (
         <form
+          data-slot="conversation-tree-label-form"
           className="flex items-center gap-1"
           onSubmit={(event) => {
             event.preventDefault()
             void save()
+          }}
+          onKeyDown={(event) => {
+            // The dialog's own Escape handler is told to stand down for this form, so the edit is all that ends.
+            if (event.key === 'Escape') stopEditing()
           }}
         >
           <Input
@@ -89,12 +103,6 @@ export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, rea
             aria-invalid={labelError ? true : undefined}
             placeholder="Label (empty removes it)"
             onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== 'Escape') return
-              // The Escape that cancels an edit must not also close the dialog.
-              event.stopPropagation()
-              stopEditing()
-            }}
           />
           <IconButton label="Save label" type="submit" aria-disabled={saving} className="aria-disabled:opacity-50">
             <CheckIcon />
@@ -109,9 +117,10 @@ export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, rea
             variant="outline"
             size="xs"
             aria-disabled={actionsDisabled}
-            aria-describedby={(actionsDisabled ? reasonId : undefined) ?? (actionError ? errorId : undefined)}
+            aria-describedby={actionDescribedBy}
             aria-label={`Rewind to here: ${preview.slice(0, 40)}`}
             className={cn(actionsDisabled && 'opacity-50')}
+            data-action="rewind"
             onClick={guarded(onRewind)}
           >
             Rewind to here
@@ -120,23 +129,25 @@ export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, rea
             variant="outline"
             size="xs"
             aria-disabled={actionsDisabled}
-            aria-describedby={(actionsDisabled ? reasonId : undefined) ?? (actionError ? errorId : undefined)}
+            aria-describedby={actionDescribedBy}
             aria-label={`Fork from here: ${preview.slice(0, 40)}`}
             className={cn(actionsDisabled && 'opacity-50')}
             onClick={guarded(onFork)}
           >
             Fork from here
           </Button>
-          <IconButton ref={editButtonRef} label={entry.label ? 'Edit label' : 'Add label'} onClick={startEditing}>
+          <IconButton ref={editButtonRef} label={`${entry.label ? 'Edit' : 'Add'} label for ${who} message: ${preview.slice(0, 40)}`} onClick={startEditing}>
             <TagIcon />
           </IconButton>
         </div>
       )}
-      {(labelError ?? actionError) && (
+      {shownError && (
         <InlineStatus tone="error" density="compact" id={errorId} className="p-0">
-          {labelError ?? actionError}
+          {shownError}
         </InlineStatus>
       )}
     </li>
   )
 }
+
+export const ConversationTreeRow = memo(ConversationTreeRowView)

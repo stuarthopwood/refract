@@ -9,10 +9,24 @@ export const FILES_NOT_CHANGED = 'Files in the worktree are not changed.'
 /** Deepest indent step shown; a long chain of replies would otherwise push the text off the row. */
 export const MAX_TREE_INDENT = 6
 
-const ROLE_LABELS: Record<string, string> = { user: 'You', assistant: 'Agent', branchSummary: 'Summary' }
+// OMP message roles the tree projection can carry (`unknown` is its own fallback for a message without one).
+const ROLE_LABELS: Record<string, string> = {
+  user: 'You',
+  assistant: 'Agent',
+  toolResult: 'Tool result',
+  bashExecution: 'Shell command',
+  pythonExecution: 'Python run',
+  branchSummary: 'Summary',
+  compactionSummary: 'Summary',
+  custom: 'Note',
+  developer: 'System',
+  hookMessage: 'Hook'
+}
+const UNKNOWN_ROLE_LABEL = 'Other'
 
+/** A person-readable name for a message role; a role this view does not know reads generically, never as its raw id. */
 export function roleLabel(role: string): string {
-  return ROLE_LABELS[role] ?? role
+  return (Object.hasOwn(ROLE_LABELS, role) ? ROLE_LABELS[role] : undefined) ?? UNKNOWN_ROLE_LABEL
 }
 
 /** Indent step per entry. Entries arrive parents-first, so one pass over `parentId` is enough. */
