@@ -1,11 +1,7 @@
-import { GitPullRequestIcon } from 'lucide-react'
-import { HeaderActionButton } from '@/components/HeaderActionButton'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { HeaderRefBadge } from '@/components/HeaderRefBadge'
 import { cn } from '@/lib/utils'
 import { READOUT_CHECK_DISPLAY } from '@/features/pull-requests/check-display'
 import { PULL_REQUEST_STATE_DISPLAY } from '@/features/pull-requests/PullRequestRow'
-import { StatePill } from '@/features/pull-requests/StatePill'
 import { usePinnedPanelsStore } from '@/state'
 import { pullRequestBadgeStatus } from './pullRequestBadgeStatus'
 import type { PullRequestDisplayState, SessionPullRequest } from '../../../../shared/model'
@@ -17,43 +13,26 @@ interface PullRequestControlsProps {
   liveState: PullRequestDisplayState | null
 }
 
-/** The header's PR badge (state, number, checks) and the View PR button. */
+/** The header's PR badge (state, number, checks); clicking it pins the pull request. */
 export function PullRequestControls({ sessionId, repositoryId, pullRequest, liveState }: PullRequestControlsProps) {
   const checks = pullRequest.checks ? READOUT_CHECK_DISPLAY[pullRequest.checks] : null
   const ChecksIcon = checks?.icon
-  const label = `View pull request #${pullRequest.number}`
   const state = liveState ?? pullRequest.state
+  const display = PULL_REQUEST_STATE_DISPLAY[state]
+  const StateIcon = display.icon
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex rounded-md">
-            <StatePill state={state} variant="subtle" labelClassName="@max-chat-narrow/chat:sr-only" />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent>{PULL_REQUEST_STATE_DISPLAY[state].label}</TooltipContent>
-      </Tooltip>
-      <span className="text-xs text-muted-foreground">#{pullRequest.number}</span>
-      {checks && ChecksIcon && (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span
-              tabIndex={0}
-              role="img"
-              aria-label={checks.label}
-              className={cn('flex rounded-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring forced-colors:text-[CanvasText] forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid', checks.colorClass)}
-            >
-              <ChecksIcon aria-hidden className={cn('size-4', pullRequest.checks === 'pending' && 'animate-spin motion-reduce:animate-none')} />
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{checks.label}</TooltipContent>
-        </Tooltip>
-      )}
-      <HeaderActionButton
-        icon={GitPullRequestIcon}
-        text="View PR"
-        label={label}
+      <HeaderRefBadge
+        icon={<StateIcon aria-hidden className={cn('size-4', display.colorClass)} />}
+        text={`#${pullRequest.number}`}
+        status={pullRequestBadgeStatus(state, pullRequest.checks)}
+        action="open pull request"
+        trailing={
+          checks && ChecksIcon ? (
+            <ChecksIcon aria-hidden className={cn('size-4', checks.colorClass, 'forced-colors:text-[CanvasText]', pullRequest.checks === 'pending' && 'animate-spin motion-reduce:animate-none')} />
+          ) : undefined
+        }
         onClick={(event) => usePinnedPanelsStore.getState().pin('pull-request', { repositoryId, number: pullRequest.number, sessionId, opener: event.currentTarget })}
       />
     </div>

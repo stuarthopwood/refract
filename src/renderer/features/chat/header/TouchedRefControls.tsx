@@ -1,6 +1,4 @@
 import { useRef } from 'react'
-import { CircleDotIcon, EllipsisIcon, GitPullRequestIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
 import { EllipsisIcon, GitPullRequestIcon } from 'lucide-react'
 import { HeaderActionButton } from '@/components/HeaderActionButton'
 import { HeaderRefBadge } from '@/components/HeaderRefBadge'
@@ -21,15 +19,16 @@ interface TouchedRefControlsProps {
 }
 
 const refLabel = (item: TouchedRef) => `${item.repositoryId ? '' : item.ownerRepo}#${item.number}`
-const kindWord = (item: TouchedRef) => (item.kind === 'pr' ? 'Pull request' : 'Issue')
+const kindWord = (item: TouchedRef) => (item.kind === 'pr' ? 'pull request' : 'issue')
 
-/** Bare state icon shared by the badge and menu rows so labels line up for PRs and issues alike. */
-function TouchedState({ item }: { item: TouchedRef }) {
+/** State icon shared by the badge and menu rows so labels line up for PRs and issues alike; menu rows also speak the state. */
+function TouchedState({ item, speakState = true }: { item: TouchedRef; speakState?: boolean }) {
+  const stateWord = speakState ? <span className="sr-only">{item.state}</span> : null
   if (item.kind === 'issue') {
     return (
       <>
         <IssueIcon state={item.state} />
-        <span className="sr-only">{item.state}</span>
+        {stateWord}
       </>
     )
   }
@@ -38,7 +37,7 @@ function TouchedState({ item }: { item: TouchedRef }) {
   return (
     <>
       <Icon aria-hidden className={cn('size-4', display?.colorClass)} />
-      <span className="sr-only">{item.state}</span>
+      {stateWord}
     </>
   )
 }
@@ -50,7 +49,6 @@ export function TouchedRefControls({ sessionId, mode, items }: TouchedRefControl
   const first = items[0]
   if (!first) return null
   const extra = items.length - 1
-  const badgeText = `${kindWord(first)} ${refLabel(first)}, ${first.state}${extra > 0 ? `, and ${extra} more` : ''}`
   const menu = (trigger: React.ReactNode) => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
@@ -82,18 +80,13 @@ export function TouchedRefControls({ sessionId, mode, items }: TouchedRefControl
     )
   }
 
-  const openLabel = `Open ${kindWord(first).toLowerCase()} ${refLabel(first)}`
+  const badgeProps = { ref: triggerRef, icon: <TouchedState item={first} speakState={false} />, text: refLabel(first), status: first.state, extra, itemTitle: first.title || undefined }
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Badge variant="outline" role="img" title={first.title || undefined} aria-label={badgeText}>
-        <TouchedState item={first} />
-        <span aria-hidden>{refLabel(first)}</span>
-        {extra > 0 && <span aria-hidden>+{extra}</span>}
-      </Badge>
       {extra > 0 ? (
-        menu(<HeaderActionButton ref={triggerRef} icon={first.kind === 'pr' ? GitPullRequestIcon : CircleDotIcon} text="View" label={`View ${items.length} pull requests and issues`} />)
+        menu(<HeaderRefBadge {...badgeProps} action="show pull requests and issues" />)
       ) : (
-        <HeaderActionButton ref={triggerRef} icon={first.kind === 'pr' ? GitPullRequestIcon : CircleDotIcon} text="View" label={openLabel} onClick={() => openTouched(first, sessionId, triggerRef.current)} />
+        <HeaderRefBadge {...badgeProps} action={`open ${kindWord(first)}`} onClick={() => openTouched(first, sessionId, triggerRef.current)} />
       )}
     </div>
   )
