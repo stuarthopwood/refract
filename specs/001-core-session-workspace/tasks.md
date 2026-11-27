@@ -5973,7 +5973,7 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 
 ## Phase 132: Convergence (2026-11-27, #2318 Subagents card and drawer redesign, FR-175 to FR-179, epic #2222)
 
-- [ ] T736 [US1] #2318 (FR-177): `viewModel/derive.ts` `stepLabel()` and `chat/stageMeta.ts` `extractContextLabel` strip `cd ... &&`, `export X=...;` and env prefixes; `viewModel/derive.test.ts` and `chat/stageMeta.test.ts` pin the cases, and `subagents/SubagentPanel.tsx` detail keeps the raw command, per US1/AC22 (missing)
+- [x] T736 [US1] #2318 (FR-177): `viewModel/derive.ts` `stepLabel()` and `chat/stageMeta.ts` `extractContextLabel` strip `cd ... &&`, `export X=...;` and env prefixes; `viewModel/derive.test.ts` and `chat/stageMeta.test.ts` pin the cases, and the raw command stays as the step's tooltip (`SubStepList`), per US1/AC22 (done)
 - [ ] T737 [US1] #2318 (FR-177): `components/FileChip.tsx` deduplicates by basename, drops bare numeric fragments and drops the heavy border; `FileChip.test.ts` pins it, per US1/AC22 (partial)
 - [ ] T738 [US1] #2318 (FR-175): `subagents/card/stageRowModel.ts`, `subagents/card/StageHeader.tsx` and `subagents/subagentStatus.tsx` render the `grid-cols-[18px_1fr_auto]` row with hairline dividers, foreground titles, tick-only success colour and one chevron; `ParallelBadge.tsx` becomes the borderless fork glyph; tests follow, per US1/AC22 (missing)
 - [ ] T739 [US1] #2318 (FR-175): `components/ProgressStrip.tsx` and `subagents/card/SubagentsCardHeader.tsx` draw the slim `h-1` segmented bar beside "X/Y stages done"; `ProgressStrip.test.ts` follows, per US1/AC22 (partial)

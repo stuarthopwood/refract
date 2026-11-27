@@ -48,7 +48,7 @@ export function SubStepList({ steps }: { steps: readonly SubStep[] | undefined }
       {visible.map(({ step, index }) => (
         <li key={index} className="flex items-center gap-2">
           <StepGlyph step={step} />
-          <span className={cn('min-w-0 truncate', step.status === 'running' ? 'font-medium text-card-foreground' : 'text-muted-foreground')}>
+          <span title={step.rawLabel} className={cn('min-w-0 truncate', step.status === 'running' ? 'font-medium text-card-foreground' : 'text-muted-foreground')}>
             {step.label}
             <span className="sr-only"> ({step.isError && step.status === 'done' ? 'failed' : STEP_STATE_LABEL[step.status]})</span>
           </span>

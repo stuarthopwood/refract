@@ -1,7 +1,7 @@
 // The one set of derivations both entry points share, so the chat card and the panel can never disagree on a title or a count.
 import type { SubagentRecentStep } from '../../../../shared/model'
 import { formatElapsed } from '../../chat/formatElapsed'
-import { extractContextLabel, resolveStageDependencies, stageRollupText, type StageDependency } from '../../chat/stageMeta'
+import { extractContextLabel, resolveStageDependencies, stageRollupText, stripShellSetup, type StageDependency } from '../../chat/stageMeta'
 import { overallStatus } from '../../chat/subagentChainStatus'
 import { formatHeaderStats } from '../card/headerStats'
 import { summarizeSubagentStatuses, type SubagentRowStatus } from '../subagentStatus'
@@ -54,16 +54,23 @@ export interface StageInput {
   agents: AgentInput[]
 }
 
-function stepLabel(step: SubagentRecentStep): string {
-  return [step.intent ?? step.tool, step.target].filter(Boolean).join(' ')
+// `clean: false` keeps the raw command; the card shows the stripped one and the raw one stays a tooltip (FR-177).
+function stepLabel(step: SubagentRecentStep, clean = true): string {
+  const target = clean && step.target ? stripShellSetup(step.target) : step.target
+  return [step.intent ?? step.tool, target].filter(Boolean).join(' ')
 }
 
 function deriveSubSteps(steps: readonly SubagentRecentStep[]): SubStep[] {
-  return steps.map((step) => ({
-    label: stepLabel(step),
-    status: step.endMs != null ? 'done' : 'running',
-    ...(step.isError ? { isError: true } : {})
-  }))
+  return steps.map((step): SubStep => {
+    const label = stepLabel(step)
+    const rawLabel = stepLabel(step, false)
+    return {
+      label,
+      ...(rawLabel !== label ? { rawLabel } : {}),
+      status: step.endMs != null ? 'done' : 'running',
+      ...(step.isError ? { isError: true } : {})
+    }
+  })
 }
 
 /** Exported for its own tests; the entry points reach it through `deriveScenario`. */

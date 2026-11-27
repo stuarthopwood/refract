@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { summarizeSubagentStatuses } from '../subagents/subagentStatus'
-import { extractContextLabel, extractResultSummary, plainSummary, stripTaskResultWrapper, stripWorktreePaths, unsettledRollupText } from './stageMeta'
+import { extractContextLabel, extractResultSummary, plainSummary, stripShellSetup, stripTaskResultWrapper, stripWorktreePaths, unsettledRollupText } from './stageMeta'
 
 describe('extractResultSummary (#2242)', () => {
   const wrapped = '<task-result id="AwaySpecLane" agent="task" status="completed" duration="3m31s">\n## Fixed the **flaky** test\nMore detail\n</task-result>'
@@ -143,6 +143,34 @@ describe('extractContextLabel', () => {
 
   it('stops at a Rules (HARD) line instead of labelling from boilerplate', () => {
     expect(extractContextLabel('## Rules (HARD)\nNever push', true)).toBeNull()
+  })
+})
+
+describe('stripShellSetup (FR-177)', () => {
+  it.each([
+    ['cd C:/Repos/x && pnpm test', 'pnpm test'],
+    ['cd "C:/My Repos/x" && export GIT_TERMINAL_PROMPT=0 && git status', 'git status'],
+    ['export A=1; export B="two words"; node build.js', 'node build.js'],
+    ['FOO=bar BAZ=1 pnpm ci:local', 'pnpm ci:local'],
+    ['set -e; cargo build', 'cargo build'],
+    ["$env:CI='1'; pnpm test", 'pnpm test']
+  ])('strips the setup from %s', (input, expected) => {
+    expect(stripShellSetup(input)).toBe(expected)
+  })
+
+  it('leaves a plain command and a lone cd alone', () => {
+    expect(stripShellSetup('pnpm test')).toBe('pnpm test')
+    expect(stripShellSetup('cd C:/x')).toBe('cd C:/x')
+  })
+
+  it('returns the raw text when only setup is present', () => {
+    expect(stripShellSetup('export A=1;')).toBe('export A=1;')
+  })
+
+  it('cleans a context label that is a shell line but not the raw one', () => {
+    const context = 'cd C:/Repos/x/worktrees/lane-1 && export GIT_TERMINAL_PROMPT=0 && Rebase lane 1980'
+    expect(extractContextLabel(context)).toBe('Rebase lane 1980')
+    expect(extractContextLabel(context, false)).toContain('cd C:/Repos')
   })
 })
 

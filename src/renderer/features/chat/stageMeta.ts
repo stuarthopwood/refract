@@ -33,6 +33,27 @@ export function stripWorktreePaths(text: string): string {
   return text.replace(WORKTREE_PATH_RE, ' ').replace(/\s{2,}/g, ' ').trim()
 }
 
+// A shell argument: a quoted string or a run with no separator in it.
+const SHELL_ARG = `(?:"[^"]*"|'[^']*'|[^\\s;&|]+)`
+// Setup that precedes the real command (`cd <dir> &&`, `export X=1;`, `set -e;`, `$env:X='1';`); none of it says what the step does.
+const SHELL_SETUP_RE = new RegExp(
+  `^(?:cd\\s+${SHELL_ARG}|export\\s+[A-Za-z_]\\w*(?:=${SHELL_ARG})?|set\\s+-\\S+|\\$env:[A-Za-z_]\\w*\\s*=\\s*${SHELL_ARG})\\s*(?:&&|;)\\s*`,
+  'i'
+)
+// `FOO=bar BAZ=1 cmd`: environment assignments written straight before the command.
+const ENV_ASSIGN_RE = new RegExp(`^[A-Za-z_]\\w*=${SHELL_ARG}?\\s+`)
+
+/** `text` without leading `cd ... &&`, `export X=...;` and `VAR=value` setup, so a step reads as its command. Raw text is returned when nothing but setup is there. */
+export function stripShellSetup(text: string): string {
+  let rest = text.trim()
+  for (;;) {
+    const next = rest.replace(SHELL_SETUP_RE, '').replace(ENV_ASSIGN_RE, '')
+    if (next === rest) break
+    rest = next
+  }
+  return rest.length > 0 ? rest : text.trim()
+}
+
 function findFirstContentLine(lines: string[], clean = false): { index: number; stripped: string } | null {
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!.trim()
@@ -40,7 +61,7 @@ function findFirstContentLine(lines: string[], clean = false): { index: number; 
     if (HEADING_ONLY_GOAL_RE.test(line)) continue
     if (clean && RULES_HARD_RE.test(line)) return null
     let stripped = line.replace(HEADING_OR_GOAL_PREFIX_RE, '').trim()
-    if (clean) stripped = stripWorktreePaths(stripped)
+    if (clean) stripped = stripWorktreePaths(stripShellSetup(stripped))
     if (stripped.length === 0) continue
     if (clean && BARE_PATH_LABEL_RE.test(stripped)) continue
     return { index: i, stripped }
