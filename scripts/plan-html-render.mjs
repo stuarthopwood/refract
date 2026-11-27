@@ -10,6 +10,7 @@ const CSS = `
 body{margin:0 auto;max-width:72rem;padding:1.5rem;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,sans-serif}
 a{color:var(--link)}h1{margin:0 0 .25rem}h2{margin:2.5rem 0 .75rem;border-bottom:1px solid var(--line);padding-bottom:.25rem}h3{margin:1.5rem 0 .25rem}
 .muted{color:var(--muted)}.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+tr.closed th,tr.closed td,tr.closed a{color:var(--muted);font-weight:400}
 .bar{height:.75rem;background:var(--track);border-radius:.375rem;overflow:hidden;max-width:32rem}.bar span{display:block;height:100%;background:var(--ok)}
 .val{display:block;margin:.25rem 0 .5rem}
 table{border-collapse:collapse;width:100%;margin:.5rem 0 1rem;font-size:.9rem}
@@ -26,11 +27,12 @@ function bar(done, total) {
     + `<span class="val">${done} of ${total} closed (${pct}%)</span>`;
 }
 
-function table(caption, head, rows) {
+function table(caption, head, rows, rowClass = () => '') {
   const ths = head.map((h) => `<th scope="col">${esc(h)}</th>`).join('');
-  const body = rows.map((cells) => {
+  const body = rows.map((cells, n) => {
     const [first, ...rest] = cells;
-    return `<tr><th scope="row">${first}</th>${rest.map((c) => `<td>${c}</td>`).join('')}</tr>`;
+    const cls = rowClass(n);
+    return `<tr${cls ? ` class="${cls}"` : ''}><th scope="row">${first}</th>${rest.map((c) => `<td>${c}</td>`).join('')}</tr>`;
   }).join('\n');
   return `<table><caption class="sr">${esc(caption)}</caption><thead><tr>${ths}</tr></thead><tbody>\n${body}\n</tbody></table>`;
 }
@@ -65,7 +67,7 @@ function renderGroup(m, section, g) {
   const intro = g.epic ? '' : '<p class="muted">Not a sub-issue of any epic yet.</p>';
   const rows = g.issues.map((i) => [link(m.repo, i.number), esc(i.title), esc(i.priority ?? 'none'), esc(i.type ?? ''), esc(i.state.toLowerCase())]);
   return `<h3>${title}</h3>${intro}
-${table(`${section.title} issues in ${g.epic ? g.epic.title : 'no epic'}`, ['Issue', 'Title', 'Priority', 'Type', 'State'], rows)}`;
+${table(`${section.title} issues in ${g.epic ? g.epic.title : 'no epic'}`, ['Issue', 'Title', 'Priority', 'Type', 'State'], rows, (n) => (g.issues[n].state === 'CLOSED' ? 'closed' : ''))}`;
 }
 
 function renderSection(m, s) {
