@@ -1,4 +1,4 @@
-// No-admin installs of Git, omp, and gh. gh uses the zip, not the MSI, to avoid an elevation prompt.
+// No-admin installs of Git, omp, and gh (plus gh's pinned gh-stack extension). gh uses the zip, not the MSI, to avoid an elevation prompt.
 // Git always reports `restart_required: true`; the resolver cache cannot be primed in-process.
 
 use std::env;
@@ -45,6 +45,7 @@ pub enum Dependency {
     Git,
     Omp,
     GithubCli,
+    GhStack,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -67,7 +68,7 @@ pub struct DependencyInstallProgress {
     pub restart_required: Option<bool>,
 }
 
-fn progress(
+pub(super) fn progress(
     dependency: Dependency,
     phase: InstallPhase,
     detail: Option<String>,
@@ -336,7 +337,10 @@ pub async fn install_github_cli(
             None,
         ));
     }
-    result
+    super::gh_stack_install::finish_github_cli_install(result, || {
+        super::gh_stack_install::install_gh_stack(&on_progress)
+    })
+    .await
 }
 
 async fn install_github_cli_inner(

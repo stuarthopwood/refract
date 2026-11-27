@@ -1,21 +1,24 @@
-// State of the `gh-stack` extension: probe, version floor, install/upgrade, and the in-memory
+// State of the `gh-stack` extension: probe, pinned-version floor, install, and the in-memory
 // per-repository "stacks unavailable" set (#1867, spec 132). Nothing here touches disk.
 
 use std::collections::HashSet;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 
-use super::gh::{gh_raw, map_gh_failure, non_empty_or, GhError, GhErrorCode, GhRawResult};
+use super::gh::{gh_raw, map_gh_failure, GhError, GhErrorCode, GhRawResult};
+use crate::updates::gh_stack_install::{install_gh_stack, GH_STACK_PINNED_TAG};
 
-/// v0.1.0 reports exit 9 ("stacks unavailable") falsely, which would wrongly trip the
-/// per-repository fallback, so anything older than this is `Outdated`.
-const MIN_VERSION: (u32, u32, u32) = (0, 3, 0);
+/// The pinned release is the floor: older (v0.1.0 reports exit 9 "stacks unavailable" falsely,
+/// which would wrongly trip the per-repository fallback) is `Outdated`. A newer build stays
+/// `Ready`, because the pinned install never downgrades it.
+fn pinned_version() -> (u32, u32, u32) {
+    parse_version(GH_STACK_PINNED_TAG).expect("GH_STACK_PINNED_TAG is a vX.Y.Z tag")
+}
 const PROBE_TIMEOUT: Duration = Duration::from_secs(15);
-/// An extension install clones and builds, far beyond `gh_raw`'s 15 s default.
-const INSTALL_TIMEOUT: Duration = Duration::from_secs(120);
 /// Settings and the Merge dialog both ask; one probe serves them both.
 const STATE_TTL: Duration = Duration::from_secs(30);
 
@@ -60,19 +63,10 @@ pub fn classify_probe(result: &GhRawResult) -> Result<GhStackState, GhError> {
         return Err(map_gh_failure(&result.stderr, &result.stdout));
     }
     Ok(match parse_version(&result.stdout) {
-        Some(version) if version >= MIN_VERSION => GhStackState::Ready,
+        Some(version) if version >= pinned_version() => GhStackState::Ready,
         // An unreadable version is treated as old: behave as off and offer the upgrade.
         _ => GhStackState::Outdated,
     })
-}
-
-/// The `gh` arguments that bring the extension to `Ready`; `None` when nothing needs doing.
-pub fn install_args(state: GhStackState) -> Option<&'static [&'static str]> {
-    match state {
-        GhStackState::Missing => Some(&["extension", "install", "github/gh-stack"]),
-        GhStackState::Outdated => Some(&["extension", "upgrade", "gh-stack"]),
-        GhStackState::Ready => None,
-    }
 }
 
 /// Stack rules apply only with the toggle on and `gh stack` ready; a probe error is "off".
@@ -156,29 +150,26 @@ pub async fn state(runtime: &GhStackRuntime) -> Result<GhStackState, GhError> {
     Ok(state)
 }
 
-/// Installs (`Missing`) or upgrades (`Outdated`) through the `gh` Refract resolves, then
-/// re-probes. A failure surfaces `gh`'s own stderr and leaves the state as it was.
+/// Installs (`Missing`) or replaces (`Outdated`) gh-stack at the pinned tag through the same
+/// path as the installer, then re-probes. A failure leaves the state as it was.
 pub async fn install(runtime: &GhStackRuntime) -> Result<GhStackState, GhError> {
+    install_with(runtime, probe, || install_gh_stack(|_| {})).await
+}
+
+/// `install` with the probe and the installer injected, so tests never launch gh.
+pub(crate) async fn install_with<
+    PF: Future<Output = Result<GhStackState, GhError>>,
+    IF: Future<Output = Result<(), String>>,
+>(
+    runtime: &GhStackRuntime,
+    probe: impl Fn() -> PF,
+    install_stack: impl FnOnce() -> IF,
+) -> Result<GhStackState, GhError> {
     runtime.invalidate();
-    let current = probe().await?;
-    if let Some(args) = install_args(current) {
-        let result = gh_raw(&neutral_cwd(), args, None, INSTALL_TIMEOUT).await?;
-        if result.timed_out {
-            return Err(GhError::new(
-                GhErrorCode::Timeout,
-                "Installing gh-stack timed out.",
-            ));
-        }
-        if result.code != 0 {
-            return Err(GhError::new(
-                GhErrorCode::GhFailed,
-                non_empty_or(
-                    &result.stderr,
-                    &result.stdout,
-                    "Installing gh-stack failed.",
-                ),
-            ));
-        }
+    if probe().await? != GhStackState::Ready {
+        install_stack()
+            .await
+            .map_err(|detail| GhError::new(GhErrorCode::GhFailed, detail))?;
     }
     let state = probe().await?;
     runtime.store_state(state, Instant::now());
@@ -269,18 +260,51 @@ mod tests {
     }
 
     #[test]
-    fn install_args_pick_install_or_upgrade_and_nothing_when_ready() {
+    fn the_floor_is_the_pinned_tag_and_newer_builds_stay_ready() {
+        let pinned = pinned_version();
         assert_eq!(
-            install_args(GhStackState::Missing),
-            Some(&["extension", "install", "github/gh-stack"][..])
+            classify_probe(&version(&format!("{}.{}.{}", pinned.0, pinned.1, pinned.2))).unwrap(),
+            GhStackState::Ready
         );
         assert_eq!(
-            install_args(GhStackState::Outdated),
-            Some(&["extension", "upgrade", "gh-stack"][..])
+            classify_probe(&version(&format!(
+                "{}.{}.{}",
+                pinned.0,
+                pinned.1 + 1,
+                pinned.2
+            )))
+            .unwrap(),
+            GhStackState::Ready
         );
-        assert_eq!(install_args(GhStackState::Ready), None);
+        assert_eq!(
+            classify_probe(&version(&format!(
+                "{}.{}.{}",
+                pinned.0,
+                pinned.1,
+                pinned.2 + 1
+            )))
+            .unwrap(),
+            GhStackState::Ready
+        );
     }
 
+    #[test]
+    fn a_build_below_the_pinned_tag_is_outdated() {
+        let pinned = pinned_version();
+        assert!(
+            pinned.2 > 0 || pinned.1 > 0,
+            "the pin must have a lower neighbour"
+        );
+        let below = if pinned.2 > 0 {
+            (pinned.0, pinned.1, pinned.2 - 1)
+        } else {
+            (pinned.0, pinned.1 - 1, 99)
+        };
+        assert_eq!(
+            classify_probe(&version(&format!("{}.{}.{}", below.0, below.1, below.2))).unwrap(),
+            GhStackState::Outdated
+        );
+    }
     #[test]
     fn stack_rules_need_the_toggle_and_a_ready_probe() {
         let err = || Err(GhError::new(GhErrorCode::Timeout, "t"));

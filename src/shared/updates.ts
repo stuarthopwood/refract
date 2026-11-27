@@ -1,6 +1,6 @@
 // Installer/updates types, split out of `ipc.ts` (over its size cap, #806) and re-exported from there.
 
-export type InstallableDependency = 'git' | 'omp' | 'github-cli';
+export type InstallableDependency = 'git' | 'omp' | 'github-cli' | 'gh-stack';
 
 /** The three launch checks in run order; the keys of the `Readiness` fields `allPass` depends on. */
 export type ReadinessStepKey = 'git' | 'omp' | 'ompSignedIn';

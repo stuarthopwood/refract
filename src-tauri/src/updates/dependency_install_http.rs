@@ -215,15 +215,24 @@ pub(super) async fn download_to_file(
     Ok(())
 }
 
+/// Exit code plus both streams, for callers that parse stdout (`run_process` folds them into one message).
+pub(super) struct ProcessOutput {
+    pub(super) code: i32,
+    pub(super) stdout: String,
+    pub(super) stderr: String,
+}
+
 /// Runs a process with a timeout. A non-zero exit is not an error; callers read the code.
-pub(super) async fn run_process(
+pub(super) async fn run_process_capture(
     exe_path: &Path,
     args: &[&str],
+    envs: &[(&str, &str)],
     timeout: Duration,
-) -> Result<(i32, String), String> {
+) -> Result<ProcessOutput, String> {
     let mut command = Command::new(exe_path);
     command
         .args(args)
+        .envs(envs.iter().copied())
         .creation_flags(CREATE_NO_WINDOW)
         .kill_on_drop(true);
     let output = match tokio::time::timeout(timeout, command.output()).await {
@@ -231,13 +240,26 @@ pub(super) async fn run_process(
         Ok(Err(err)) => return Err(format!("failed to launch {}: {err}", exe_path.display())),
         Err(_) => return Err(format!("{} timed out", exe_path.display())),
     };
-    let code = output.status.code().unwrap_or(1);
-    let message = if !output.stderr.is_empty() {
-        String::from_utf8_lossy(&output.stderr).trim().to_string()
+    Ok(ProcessOutput {
+        code: output.status.code().unwrap_or(1),
+        stdout: String::from_utf8_lossy(&output.stdout).trim().to_string(),
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+    })
+}
+
+/// Like `run_process_capture`, with one message: stderr when present, else stdout.
+pub(super) async fn run_process(
+    exe_path: &Path,
+    args: &[&str],
+    timeout: Duration,
+) -> Result<(i32, String), String> {
+    let output = run_process_capture(exe_path, args, &[], timeout).await?;
+    let message = if output.stderr.is_empty() {
+        output.stdout
     } else {
-        String::from_utf8_lossy(&output.stdout).trim().to_string()
+        output.stderr
     };
-    Ok((code, message))
+    Ok((output.code, message))
 }
 
 pub(super) fn exit_detail(what: &str, code: i32, message: &str) -> String {
