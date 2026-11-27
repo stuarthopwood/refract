@@ -1,0 +1,93 @@
+# Fast tier (#1807, docs/development/test-strategy.md): pull requests to main only, on the cheap
+# Linux runner. No cargo, no Windows, no push trigger, no nightly: the full suite is
+# `pnpm ci:local` (.github/ci-local.yml), run locally before merge. Keep these `run:` steps a
+# subset of that file's.
+name: PR fast tier
+
+on:
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-fast-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: Typecheck, test, check scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Vitest
+        run: pnpm test
+
+      - name: Check indentation
+        run: pnpm check:indent
+
+      - name: Check theme contrast
+        run: pnpm check:theme-contrast
+
+      - name: Check theme ids
+        run: pnpm check:theme-ids
+
+      - name: Check drag regions
+        run: pnpm check:drag-regions
+
+      - name: Check IPC parity
+        run: pnpm check:parity -- --gate
+
+      - name: Check file size
+        run: pnpm check:file-size
+
+      - name: Check comment density
+        run: pnpm check:comment-density
+
+      - name: Check spacing grid
+        run: pnpm check:spacing
+
+      - name: Check opacity modifiers
+        run: pnpm check:alpha-modifiers
+
+      - name: Check icon-only controls
+        run: pnpm check:icon-only-controls
+
+      - name: Check literal colours
+        run: pnpm check:literal-colours
+
+      - name: Check hit targets
+        run: pnpm check:hit-targets
+
+      - name: Check advisor roster
+        run: pnpm check:advisor-roster
+
+      - name: Check version consistency
+        run: pnpm check:versions
+
+      - name: Check OMP schema drift
+        run: pnpm check:omp-schema -- --check-pin
+
+      - name: Check OMP schema drift self-test
+        run: pnpm check:omp-schema -- --self-test

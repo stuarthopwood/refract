@@ -13,7 +13,12 @@ normally.
   check:parity` (generated IPC parity table, `src/shared/ipc.ts` against `src-tauri/src`).
   For `src-tauri/`: `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, `cargo test`
   (run with `--manifest-path src-tauri/Cargo.toml` from the repository root, or `cd src-tauri`
-  first). CI (`.github/workflows/ci.yml`) runs all of these on every pull request to `main`.
+  first). `pnpm ci:local` (`.github/ci-local.yml`) runs all of these and is the merge gate. GitHub
+  Actions runs only the fast tier (`.github/workflows/pr-fast.yml`) on every pull request to `main`:
+  `pnpm typecheck`, `pnpm test`, and the `check:*` steps that need no cargo, Windows, or built
+  bundle, on `ubuntu-latest`. It has no cargo, no Windows runner, no push trigger and no nightly
+  run, because the full Windows suite used up the Actions minutes (2026-10-14). Run the same fast
+  tier locally with `pnpm test:fast`; see `docs/development/test-strategy.md`.
   `check:mermaid-contrast` is NOT in that list: it already had known failures tracked in #388,
   and since #796 (the Electron build deleted) it can no longer run at all -- it `require('electron')`s
   a real Electron renderer to capture Mermaid diagram colours, and there is no `electron` package

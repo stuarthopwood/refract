@@ -17,7 +17,7 @@ on:
 
 # `contents: read` (not `{}`): this repo is PRIVATE, so `actions/checkout` needs at least read
 # access to clone it at all -- gate finding, PR #837 round 1, High (`{}` made every `v*` tag
-# push fail before any build step ran). `ci.yml` uses the same grant for the same reason.
+# push fail before any build step ran). `pr-fast.yml` uses the same grant for the same reason.
 permissions:
   contents: read
 
