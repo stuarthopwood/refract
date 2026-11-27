@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { Trash2Icon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { IconButton } from '@/components/IconButton'
@@ -11,17 +12,18 @@ interface ConversationRowProps {
   /** Opening is blocked (the agent is working, a switch is running, or this is the current one). */
   openDisabled: boolean
   deleting: boolean
-  onOpen(): void
-  onDelete(): void
+  /** Stable callbacks taking the row's own data, so a list update only re-renders the rows that changed. */
+  onOpen(file: string): void
+  onDelete(conversation: ConversationInfo): void
 }
 
-export function ConversationRow({ conversation, openDisabled, deleting, onOpen, onDelete }: ConversationRowProps) {
+export const ConversationRow = memo(function ConversationRow({ conversation, openDisabled, deleting, onOpen, onDelete }: ConversationRowProps) {
   const title = conversationTitle(conversation)
-  const created = new Date(conversation.createdAt).toLocaleString()
+  const created = useMemo(() => new Date(conversation.createdAt).toLocaleString(), [conversation.createdAt])
   const size = formatByteSize(conversation.sizeBytes)
   const blocked = openDisabled || deleting
   return (
-    <li className="flex min-w-0 items-center gap-1">
+    <li data-conversation-file={conversation.file} className="flex min-w-0 items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild aria-describedby={undefined}>
           <button
@@ -29,7 +31,7 @@ export function ConversationRow({ conversation, openDisabled, deleting, onOpen, 
             aria-disabled={blocked}
             aria-current={conversation.isCurrent}
             onClick={() => {
-              if (!blocked) onOpen()
+              if (!blocked) onOpen(conversation.file)
             }}
             data-choice-item
             className="flex min-w-0 flex-1 flex-col gap-1 border-l-2 border-transparent px-2 py-2 text-left outline-none focus-visible:outline-hidden hover:bg-muted focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
@@ -57,9 +59,9 @@ export function ConversationRow({ conversation, openDisabled, deleting, onOpen, 
           {conversation.preview && <p className="text-muted-foreground">{conversation.preview}</p>}
         </TooltipContent>
       </Tooltip>
-      <IconButton label={`Delete ${title}`} aria-disabled={deleting} className="aria-disabled:opacity-50" onClick={() => !deleting && onDelete()}>
+      <IconButton label={`Delete ${title}`} aria-disabled={deleting} className="aria-disabled:opacity-50" onClick={() => !deleting && onDelete(conversation)}>
         <Trash2Icon />
       </IconButton>
     </li>
   )
-}
+})

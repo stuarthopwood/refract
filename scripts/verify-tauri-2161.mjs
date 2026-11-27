@@ -1,11 +1,9 @@
 #!/usr/bin/env node
-// Live CDP check for #2161 (FR-186..FR-190): Conversation sizes and total in the history dialog, deleting a
-// non-current Conversation (confirm, freed space, file and attachments gone), the current-Conversation refusal,
-// and the two Settings > Sessions cleanup previews (old Conversations; leftover OMP log folders), which must
-// delete nothing. Every step also asserts the disk. All data is scratch: REFRACT_DATA_DIR, a scratch
-// REFRACT_OMP_SESSIONS_DIR, the recorded-frame fake omp. Never %APPDATA%\refract-tauri or the real ~/.omp.
-// Not covered: the "Delete old Conversations?" / "Delete leftover Session logs?" confirm buttons (the run is
-// unit-tested in Rust; here only the previews are driven so the preview-deletes-nothing claim is the one proven).
+// Live CDP check for #2161 (FR-186..FR-190): sizes and total in the history dialog, deleting a non-current
+// Conversation (confirm, freed space, file and attachments gone), the current-Conversation refusal, and the
+// two Settings > Sessions cleanup previews (which must delete nothing). Every step also asserts the disk.
+// All data is scratch (REFRACT_DATA_DIR, REFRACT_OMP_SESSIONS_DIR, the recorded-frame fake omp), never the
+// real %APPDATA%\refract-tauri or ~/.omp. The cleanup confirm buttons are unit-tested in Rust, not driven here.
 
 import { mkdirSync, mkdtempSync, writeFileSync, existsSync, readFileSync, readdirSync, statSync, utimesSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -33,7 +31,9 @@ const DAY_MS = 86_400_000;
 
 const ALERT = `document.querySelector('[data-slot="alert-dialog-content"]')`;
 const navButton = (label) => `Array.from(document.querySelectorAll('nav[aria-label="Settings sections"] button')).find((el) => el.textContent.trim() === ${JSON.stringify(label)})`;
-const previewButton = (index) => `Array.from(document.querySelectorAll('button')).filter((el) => el.textContent.trim() === 'Preview and delete…')[${index}]`;
+const previewButton = (label) => `Array.from(document.querySelectorAll('button')).find((el) => el.textContent.trim() === ${JSON.stringify(label)})`;
+const RETENTION_PREVIEW = 'Preview old Conversations…';
+const SWEEP_PREVIEW = 'Preview leftover logs…';
 
 /** Same rounding as `formatByteSize` in the renderer, so the expected text is computed independently of the UI. */
 function formatByteSize(bytes) {
@@ -237,13 +237,13 @@ async function main() {
     await cdp.click(navButton('Sessions'));
     await cdp.waitFor(`document.body.textContent.includes('Conversation cleanup')`, { timeoutMs: 30_000, label: 'Sessions section rendered' });
     await cdp.click(`document.getElementById('conversation-retention-toggle')`);
-    await cdp.waitFor(`document.getElementById('conversation-retention-toggle')?.getAttribute('aria-checked') === 'true' && ${previewButton(0)}?.getAttribute('aria-disabled') !== 'true'`, {
+    await cdp.waitFor(`document.getElementById('conversation-retention-toggle')?.getAttribute('aria-checked') === 'true' && ${previewButton(RETENTION_PREVIEW)}?.getAttribute('aria-disabled') !== 'true'`, {
       timeoutMs: 15_000,
       label: 'retention switched on, Preview enabled'
     });
     const diskBeforePreviews = snapshot(dirs.sessions);
 
-    await cdp.click(previewButton(0));
+    await cdp.click(previewButton(RETENTION_PREVIEW));
     await waitForDialogText('in total', 'retention preview open');
     const retention = await cdp.evaluate(`({ title: (${ALERT}).querySelector('[data-slot="alert-dialog-title"]')?.textContent, text: (${ALERT}).textContent, items: Array.from((${ALERT}).querySelectorAll('ul li')).map((li) => li.textContent) })`);
     check(retention.title === 'Delete old Conversations?', 'retention preview dialog opened');
@@ -254,7 +254,7 @@ async function main() {
     check(JSON.stringify(snapshot(dirs.sessions)) === JSON.stringify(diskBeforePreviews), 'disk: retention preview deleted nothing');
     await cancelAlert('retention preview closed');
 
-    await cdp.click(previewButton(1));
+    await cdp.click(previewButton(SWEEP_PREVIEW));
     await waitForDialogText('in total', 'sweep preview open');
     const sweep = await cdp.evaluate(`({ title: (${ALERT}).querySelector('[data-slot="alert-dialog-title"]')?.textContent, text: (${ALERT}).textContent, items: Array.from((${ALERT}).querySelectorAll('ul li')).map((li) => li.textContent) })`);
     check(sweep.title === 'Delete leftover Session logs?', 'sweep preview dialog opened');

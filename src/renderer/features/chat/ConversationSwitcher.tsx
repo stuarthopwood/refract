@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { HistoryIcon, PlusIcon } from 'lucide-react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { HeaderActionButton } from '@/components/HeaderActionButton'
 import { IconButton } from '@/components/IconButton'
+import { DialogError } from '@/components/DialogError'
 import { InlineStatus } from '@/components/InlineStatus'
 import { cn } from '@/lib/utils'
 import { formatByteSize } from '@/lib/formatBytes'
@@ -24,7 +25,27 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [conversations, setConversations] = useState<ConversationInfo[]>([])
-  const remove = useConversationDelete(sessionId, idle, setConversations)
+  // Where focus goes once a deleted row has left the list: a neighbouring row's file, or null for the heading.
+  const pendingFocus = useRef<{ file: string | null } | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const headingRef = useRef<HTMLHeadingElement>(null)
+  const findRow = (file: string) => Array.from(listRef.current?.children ?? []).find((row) => (row as HTMLElement).dataset.conversationFile === file) as HTMLElement | undefined
+  const remove = useConversationDelete(sessionId, idle, setConversations, (file) => {
+    const row = findRow(file)
+    const active = document.activeElement
+    // Only take focus when it was on the deleted row (or lost); the delete runs in the background.
+    if (!row || !(row.contains(active) || active === document.body)) return
+    const neighbour = (row.nextElementSibling ?? row.previousElementSibling) as HTMLElement | null
+    pendingFocus.current = { file: neighbour?.dataset.conversationFile ?? null }
+  })
+
+  useEffect(() => {
+    const pending = pendingFocus.current
+    if (!pending) return
+    pendingFocus.current = null
+    const openButton = pending.file === null ? null : findRow(pending.file)?.querySelector<HTMLElement>('[data-choice-item]')
+    ;(openButton ?? headingRef.current)?.focus()
+  }, [conversations])
 
   async function handleNewConversation() {
     setCreating(true)
@@ -64,25 +85,28 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
     setConversations(result.value)
   }
 
-  async function handleOpenConversation(file: string) {
-    setSwitching(true)
-    // Clear BEFORE awaiting below (not after), same reasoning as `handleNewConversation` above.
-    useChatScrollStore.getState().clear(sessionId)
-    useChatScrollStore.getState().setInFlight(sessionId, true)
-    try {
-      const result = await window.refract.conversations.open(sessionId, file)
-      if (!result.ok) {
-        notify(result.error)
-        return
-      }
+  const handleOpenConversation = useCallback(
+    async (file: string) => {
+      setSwitching(true)
+      // Clear BEFORE awaiting below (not after), same reasoning as `handleNewConversation` above.
       useChatScrollStore.getState().clear(sessionId)
-      applySnapshot(sessionId, result.value)
-      setHistoryOpen(false)
-    } finally {
-      setSwitching(false)
-      useChatScrollStore.getState().setInFlight(sessionId, false)
-    }
-  }
+      useChatScrollStore.getState().setInFlight(sessionId, true)
+      try {
+        const result = await window.refract.conversations.open(sessionId, file)
+        if (!result.ok) {
+          notify(result.error)
+          return
+        }
+        useChatScrollStore.getState().clear(sessionId)
+        applySnapshot(sessionId, result.value)
+        setHistoryOpen(false)
+      } finally {
+        setSwitching(false)
+        useChatScrollStore.getState().setInFlight(sessionId, false)
+      }
+    },
+    [sessionId]
+  )
 
   return (
     <div className="flex shrink-0 items-center gap-2">
@@ -105,7 +129,9 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
         </DialogTrigger>
         <DialogContent className="max-h-[70vh] overflow-x-hidden overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Conversation history</DialogTitle>
+            <DialogTitle ref={headingRef} tabIndex={-1} className="outline-none">
+              Conversation history
+            </DialogTitle>
           </DialogHeader>
           {loadingHistory ? (
             <p className="text-sm text-muted-foreground">Loading…</p>
@@ -114,23 +140,24 @@ export function ConversationSwitcher({ sessionId }: { sessionId: string }) {
           ) : (
             <>
               <p className="text-xs text-muted-foreground">{historySummary(conversations)}</p>
-              <ul className="flex min-w-0 flex-col gap-1">
+              <ul ref={listRef} className="flex min-w-0 flex-col gap-1">
                 {conversations.map((conversation) => (
                   <ConversationRow
                     key={conversation.file}
                     conversation={conversation}
                     openDisabled={!canSwitch || switching || conversation.isCurrent}
                     deleting={remove.deleting.has(conversation.file)}
-                    onOpen={() => void handleOpenConversation(conversation.file)}
-                    onDelete={() => remove.ask(conversation)}
+                    onOpen={handleOpenConversation}
+                    onDelete={remove.ask}
                   />
                 ))}
               </ul>
             </>
           )}
-          <InlineStatus tone={remove.notice?.tone ?? 'notice'} density="compact" className={cn('p-0', !remove.notice && 'sr-only')}>
-            {remove.notice?.text ?? ''}
+          <InlineStatus tone="notice" density="compact" className={cn('p-0', !remove.status && 'sr-only')}>
+            {remove.status}
           </InlineStatus>
+          <DialogError message={remove.failure} />
         </DialogContent>
       </Dialog>
       <ConfirmAlertDialog

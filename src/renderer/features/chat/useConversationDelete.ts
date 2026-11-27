@@ -1,15 +1,21 @@
 // Delete flow for the Conversation history (#2161, FR-186/FR-187): ask, confirm, then remove in the
 // background (the row shows "Deleting…" and leaves the list when Rust reports the bytes freed).
-import { useState, type Dispatch, type SetStateAction } from 'react'
+import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ConversationInfo } from '../../../shared/model'
 import { conversationTitle, deleteRefusal, freedMessage } from './conversationDelete'
 
-export interface DeleteNotice {
+interface DeleteNotice {
   tone: 'error' | 'notice'
   text: string
 }
 
-export function useConversationDelete(sessionId: string, sessionIdle: boolean, setConversations: Dispatch<SetStateAction<ConversationInfo[]>>) {
+/** `onRemoved` runs just before the row leaves the list, so the caller can pick where focus goes next. */
+export function useConversationDelete(
+  sessionId: string,
+  sessionIdle: boolean,
+  setConversations: Dispatch<SetStateAction<ConversationInfo[]>>,
+  onRemoved: (file: string) => void
+) {
   const [target, setTarget] = useState<ConversationInfo | null>(null)
   const [deleting, setDeleting] = useState<ReadonlySet<string>>(new Set())
   const [notice, setNotice] = useState<DeleteNotice | null>(null)
@@ -27,6 +33,7 @@ export function useConversationDelete(sessionId: string, sessionIdle: boolean, s
         setNotice({ tone: 'error', text: result.error.message })
         return
       }
+      onRemoved(file)
       setConversations((previous) => previous.filter((conversation) => conversation.file !== file))
       setNotice({ tone: 'notice', text: freedMessage(title, result.value.bytesFreed) })
     } finally {
@@ -38,12 +45,16 @@ export function useConversationDelete(sessionId: string, sessionIdle: boolean, s
     }
   }
 
+  const ask = useCallback((conversation: ConversationInfo) => setTarget(conversation), [])
+
   return {
     target,
     deleting,
-    notice,
+    // Two separate texts so the page can keep one polite and one assertive live region mounted.
+    status: notice?.tone === 'notice' ? notice.text : '',
+    failure: notice?.tone === 'error' ? notice.text : '',
     refusal: target ? deleteRefusal(target, sessionIdle) : null,
-    ask: (conversation: ConversationInfo) => setTarget(conversation),
+    ask,
     cancel: () => setTarget(null),
     clearNotice: () => setNotice(null),
     confirm

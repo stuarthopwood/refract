@@ -1,20 +1,25 @@
-// Settings > Sessions > Conversation cleanup (#2161, FR-189/FR-190). Retention is off by default and
-// previews before it deletes; the log sweep only ever offers folders Refract can tie to a deleted Session.
+// Settings > Sessions > Conversation cleanup (#2161, FR-189/FR-190). Nothing runs automatically: each
+// cleanup is previewed and then confirmed by hand; the log sweep only ever offers folders Refract can
+// tie to a deleted Session.
 import { SettingRow } from '@/components/settings/SettingRow'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
 import { SettingSwitchRow } from '@/components/SettingSwitchRow'
+import { CleanupPreviewButton, type CleanupPreview } from '@/components/CleanupPreviewButton'
 import { useSettingsStore } from '@/state'
-import { DEFAULT_CONVERSATION_RETENTION } from '../../../shared/model'
+import { DEFAULT_CONVERSATION_RETENTION, MAX_RETENTION_DAYS, MIN_RETENTION_DAYS } from '../../../shared/model'
 import type { Result } from '../../../shared/ipc'
 import { NumberUnitField } from './advanced/NumberUnitField'
-import { CleanupPreviewButton } from './CleanupPreviewButton'
-import { retentionPreviewData, sweepPreviewData, type CleanupPreviewData } from './cleanupPreview'
+import { retentionPreviewData, runSummary, sweepPreviewData, previewSummary, type CleanupPreviewData, type CleanupRunData } from './cleanupPreview'
 
-const MIN_DAYS = 1
-const MAX_DAYS = 3650
-
-function mapResult<T>(result: Result<T>, map: (value: T) => CleanupPreviewData): Result<CleanupPreviewData> {
+function mapResult<T, U>(result: Result<T>, map: (value: T) => U): Result<U> {
   return result.ok ? { ok: true, value: map(result.value) } : result
+}
+
+function toPreview(data: CleanupPreviewData, noun: string): CleanupPreview {
+  return {
+    summary: previewSummary(data, noun),
+    items: data.items.map((item) => ({ key: item.key, label: item.label, caption: item.detail, value: '' }))
+  }
 }
 
 export function ConversationCleanupGroup() {
@@ -25,19 +30,19 @@ export function ConversationCleanupGroup() {
     <SettingsGroup title="Conversation cleanup">
       <SettingSwitchRow
         id="conversation-retention-toggle"
-        label="Delete old Conversations automatically"
-        description="Off by default. Removes Conversations not changed for the number of days below, never the current one or one being written. Use Preview and delete to see what goes first."
+        label="Enable old-Conversation cleanup"
+        description="Off by default. Nothing is deleted automatically: turning this on only unlocks the preview below, and you confirm every deletion. Only Conversations not changed for the number of days below are listed, never the current one or one being written."
         checked={retention.enabled}
         onCheckedChange={(enabled) => void setRetention({ ...retention, enabled })}
       />
-      <SettingRow id="conversation-retention-days" label="Keep Conversations for" description="Between 1 and 3650 days.">
+      <SettingRow id="conversation-retention-days" label="Keep Conversations for" description={`Between ${MIN_RETENTION_DAYS} and ${MAX_RETENTION_DAYS} days.`}>
         <NumberUnitField
           id="conversation-retention-days-input"
           labelId="conversation-retention-days-label"
           value={retention.days}
           unit="days"
-          min={MIN_DAYS}
-          max={MAX_DAYS}
+          min={MIN_RETENTION_DAYS}
+          max={MAX_RETENTION_DAYS}
           disabled={!retention.enabled}
           onCommit={(days) => setRetention({ ...retention, days })}
         />
@@ -49,14 +54,14 @@ export function ConversationCleanupGroup() {
         labelAsText
       >
         <CleanupPreviewButton
-          buttonLabel="Preview and delete…"
+          buttonLabel="Preview old Conversations…"
           title="Delete old Conversations?"
-          noun="Conversation"
+          listLabel="Conversations to delete"
           confirmLabel="Delete"
           disabled={!retention.enabled}
           describedBy="conversation-retention-run-description"
-          load={async () => mapResult(await window.refract.conversations.retentionPreview(), retentionPreviewData)}
-          run={() => window.refract.conversations.retentionRun()}
+          load={async () => mapResult(await window.refract.conversations.retentionPreview(), (preview) => toPreview(retentionPreviewData(preview), 'Conversation'))}
+          run={async () => mapResult(await window.refract.conversations.retentionRun(), (run: CleanupRunData) => runSummary(run, 'Conversation'))}
         />
       </SettingRow>
       <SettingRow
@@ -66,13 +71,13 @@ export function ConversationCleanupGroup() {
         labelAsText
       >
         <CleanupPreviewButton
-          buttonLabel="Preview and delete…"
+          buttonLabel="Preview leftover logs…"
           title="Delete leftover Session logs?"
-          noun="log folder"
+          listLabel="Log folders to delete"
           confirmLabel="Delete"
           describedBy="session-log-sweep-description"
-          load={async () => mapResult(await window.refract.sessionLogs.sweepPreview(), sweepPreviewData)}
-          run={() => window.refract.sessionLogs.sweepRun()}
+          load={async () => mapResult(await window.refract.sessionLogs.sweepPreview(), (preview) => toPreview(sweepPreviewData(preview), 'log folder'))}
+          run={async () => mapResult(await window.refract.sessionLogs.sweepRun(), (run: CleanupRunData) => runSummary(run, 'log folder'))}
         />
       </SettingRow>
     </SettingsGroup>

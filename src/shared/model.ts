@@ -478,6 +478,9 @@ export interface ConversationInfo {
 /** Opt-in Conversation retention (#2161, FR-189): off by default; `days` is clamped to 1..3650 by Rust. */
 export interface ConversationRetention { enabled: boolean; days: number; }
 export const DEFAULT_CONVERSATION_RETENTION: Readonly<ConversationRetention> = Object.freeze({ enabled: false, days: 90 });
+/** Mirrors the Rust clamp in `conversation_retention.rs`; the Settings field uses them as its bounds. */
+export const MIN_RETENTION_DAYS = 1;
+export const MAX_RETENTION_DAYS = 3650;
 
 /** One Conversation the retention setting would delete. */
 export interface RetentionCandidate { sessionId: string; file: string; sizeBytes: number; modifiedAtMs: number; }
