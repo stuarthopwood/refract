@@ -52,14 +52,15 @@ export function IssueList() {
   const allIdsKey = allIds.join('|')
   const scopeIds = store.repositoryIds.length > 0 ? store.repositoryIds : allIds
   const labelOptions = useIssueLabelOptions(scopeIds, store.labels)
-  const { refresh } = store
+  const { refresh, refreshIfStale } = store
 
-  // Fetches on open and on every filter change; never polled (spec 051).
+  // Fetches on open and on every filter change, unless the held rows are fresh for these filters
+  // (FR-180); never polled (spec 051). Refresh always fetches.
   useEffect(() => {
-    void refresh(allIds)
+    void refreshIfStale(allIds)
     // `allIds` is covered by `allIdsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [store.tab, store.state, store.repositoryIds, store.labels, allIdsKey, refresh])
+  }, [store.tab, store.state, store.repositoryIds, store.labels, allIdsKey, refreshIfStale])
 
   return (
     <ProjectListPane
@@ -107,6 +108,7 @@ export function IssueList() {
         )
       }
       loading={store.loading}
+      stale={store.stale}
       fetchedAt={store.fetchedAt}
       error={store.error}
       skipped={store.skipped}

@@ -77,6 +77,8 @@ export interface ProjectListPaneProps<Tab extends string> {
   /** Blurs the rows behind a Loading card while refetching, when rows are already shown. */
   blurWhileLoading?: boolean
   loading: boolean
+  /** The rows are the on-disk List cache's, shown until the fresh fetch lands: a quiet "refreshing" hint replaces the Loading card and the blur (FR-181 (c)). */
+  stale?: boolean
   fetchedAt: string | null
   error: IpcError | null
   skipped: IssueSkippedProject[]
@@ -107,7 +109,8 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
     props.onRefresh()
   }
 
-  const reloadLocksRows = Boolean(props.blurWhileLoading) && loading && !loadingMore && itemCount > 0
+  // Stale rows stay live and readable while the fresh fetch runs; the hint, not the blur, says they are being replaced.
+  const reloadLocksRows = Boolean(props.blurWhileLoading) && loading && !loadingMore && itemCount > 0 && !props.stale
   const showCapNote = Boolean(paging?.atCap) && !loading
   // A filter change replaces the rows, so a pending Show more focus hand-off must not steal focus.
   const filterKey = `${state}|${repositoryIds.join(',')}|${props.appliedQuery}`
@@ -162,11 +165,13 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
 
   const projectSummary =
     repositoryIds.length === 0 ? 'All projects' : `${repositoryIds.length} of ${projects.length} projects`
-  const resultsSummary = loading
-    ? 'Loading…'
-    : props.fetchedAt
-      ? `${plural(itemCount, noun.singular)} across ${plural(props.projectCount, 'project')}`
-      : ''
+  const resultsSummary = props.stale && itemCount > 0
+    ? `Saved ${noun.plural} · refreshing…`
+    : loading
+      ? 'Loading…'
+      : props.fetchedAt
+        ? `${plural(itemCount, noun.singular)} across ${plural(props.projectCount, 'project')}`
+        : ''
 
   return (
     <div className="flex h-full flex-col gap-2 overflow-hidden p-2">
@@ -227,7 +232,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
       )}
       <div className="text-xs text-muted-foreground" role="status" aria-live="polite">
         {resultsSummary}
-        {props.fetchedAt && !loading ? ` · Last updated ${formatRelativeTime(props.fetchedAt)}` : ''}
+        {props.fetchedAt && !loading && !props.stale ? ` · Last updated ${formatRelativeTime(props.fetchedAt)}` : ''}
       </div>
       {skipped.length > 0 && !friendlyError && (
         <div className="text-xs text-muted-foreground">

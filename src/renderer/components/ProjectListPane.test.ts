@@ -51,3 +51,29 @@ describe('ProjectListPane first load', () => {
     expect(html).toContain('No issues match this tab.')
   })
 })
+
+// FR-181 (c): cached rows show at once with a quiet "refreshing" hint, not the Loading card or the blur.
+describe('ProjectListPane stale rows', () => {
+  const rows = createElement('div', { 'data-testid': 'row' }, 'cached row')
+
+  it('shows_the_cached_rows_with_a_quiet_refreshing_hint_while_the_fresh_fetch_runs', () => {
+    const html = render({ stale: true, loading: true, itemCount: 1, fetchedAt: '2026-11-26T09:00:00Z', children: rows })
+    expect(html).toContain('cached row')
+    expect(html).toContain('Saved issues · refreshing…')
+    expect(html).not.toContain('Loading…')
+    expect(html).not.toContain('list-rows-skeleton')
+  })
+
+  it('does_not_blur_or_lock_the_stale_rows_even_when_the_list_blurs_while_loading', () => {
+    const stale = render({ stale: true, blurWhileLoading: true, loading: true, itemCount: 1, children: rows })
+    const fresh = render({ stale: false, blurWhileLoading: true, loading: true, itemCount: 1, children: rows })
+    expect(fresh).toContain('aria-busy="true"')
+    expect(stale).not.toContain('aria-busy="true"')
+  })
+
+  it('drops_the_hint_and_shows_last_updated_once_fresh_rows_arrive', () => {
+    const html = render({ stale: false, loading: false, itemCount: 1, projectCount: 1, fetchedAt: '2026-11-27T00:00:00Z', children: rows })
+    expect(html).not.toContain('refreshing')
+    expect(html).toContain('Last updated just now')
+  })
+})

@@ -1,105 +1,95 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { PullRequestAcrossItem } from '../../shared/ipc-pull-requests'
-import { PAGE_SIZE, usePullRequestsStore } from './pull-requests-store'
+// FR-180: a remount inside the freshness window makes no `gh` call; stale, a changed filter and
+// an explicit Refresh each make one.
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { LIST_FRESH_MS } from './list-freshness'
+import { usePullRequestsStore } from './pull-requests-store'
 
 const listAcross = vi.fn()
-
-interface SearchPage {
-  ok: true
-  value: { items: PullRequestAcrossItem[]; hasMore: boolean; skipped: never[]; fetchedAt: string }
-}
-
-const pr = (number: number): PullRequestAcrossItem => ({ repositoryId: 'a', number }) as PullRequestAcrossItem
-const page = (...numbers: number[]): SearchPage => ({
-  ok: true,
-  value: { items: numbers.map(pr), hasMore: false, skipped: [], fetchedAt: '2026-11-27T10:00:00Z' }
-})
-
-/** One `listAcross` call the test settles by hand, so two callers can race on it. */
-function deferredSearch(): { resolve: (value: SearchPage) => void } {
-  let resolve!: (value: SearchPage) => void
-  const promise = new Promise<SearchPage>((settle) => {
-    resolve = settle
-  })
-  listAcross.mockImplementationOnce(() => promise)
-  return { resolve }
-}
+const ok = { ok: true, value: { items: [], hasMore: false, skipped: [], fetchedAt: '2026-11-27T00:00:00Z' } }
 
 beforeEach(() => {
-  listAcross.mockReset()
+  vi.useFakeTimers()
+  vi.setSystemTime(new Date('2026-11-27T10:00:00Z'))
+  listAcross.mockReset().mockResolvedValue(ok)
   vi.stubGlobal('window', { refract: { pullRequests: { listAcross } } })
-  usePullRequestsStore.getState().clearActiveCounts()
   usePullRequestsStore.setState({
     tab: 'all',
     state: 'open',
     repositoryIds: [],
     query: '',
     appliedQuery: '',
+    limit: 50,
     items: [],
-    limit: PAGE_SIZE,
+    freshness: null,
     loading: false,
-    fetchedAt: null
+    error: null
   })
 })
 
-describe('sidebar count and default list share one search (FR-183)', () => {
-  it('sidebar_count_then_list_make_one_listAcross_call', async () => {
-    const search = deferredSearch()
-    const store = usePullRequestsStore.getState()
-    const count = store.refreshActiveCount(['a'])
-    const list = store.refresh(['a'])
-    search.resolve(page(1, 2, 3))
-    await Promise.all([count, list])
+afterEach(() => {
+  vi.useRealTimers()
+  vi.unstubAllGlobals()
+})
+
+describe('pull requests list freshness', () => {
+  it('makes_no_call_when_the_rows_were_fetched_under_a_minute_ago_for_the_same_filters', async () => {
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    vi.advanceTimersByTime(LIST_FRESH_MS - 1)
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
     expect(listAcross).toHaveBeenCalledTimes(1)
-    expect(usePullRequestsStore.getState().items).toHaveLength(3)
-    expect(usePullRequestsStore.getState().activeCount.count).toBe(3)
   })
 
-  it('list_then_sidebar_count_make_one_listAcross_call', async () => {
-    const search = deferredSearch()
-    const store = usePullRequestsStore.getState()
-    const list = store.refresh(['a'])
-    const count = store.refreshActiveCount(['a'])
-    search.resolve(page(1, 2))
-    await Promise.all([list, count])
-    expect(listAcross).toHaveBeenCalledTimes(1)
-    expect(usePullRequestsStore.getState().activeCount.count).toBe(2)
-  })
-
-  it('a_later_search_is_not_served_by_a_settled_one', async () => {
-    listAcross.mockResolvedValue(page(1))
-    await usePullRequestsStore.getState().refreshActiveCount(['a'])
-    await usePullRequestsStore.getState().refresh(['a'])
+  it('fetches_again_once_the_rows_are_a_minute_old', async () => {
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    vi.advanceTimersByTime(LIST_FRESH_MS)
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
     expect(listAcross).toHaveBeenCalledTimes(2)
   })
 
-  it('a_different_project_set_does_not_share_the_request', async () => {
-    listAcross.mockResolvedValue(page(1))
-    const store = usePullRequestsStore.getState()
-    await Promise.all([store.refreshActiveCount(['a']), store.refresh(['a', 'b'])])
+  it('fetches_when_the_tab_state_or_project_set_changed', async () => {
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    usePullRequestsStore.getState().setTab('authored')
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    usePullRequestsStore.getState().setState('closed')
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    await usePullRequestsStore.getState().refreshIfStale(['r1', 'r2'])
+    expect(listAcross).toHaveBeenCalledTimes(4)
+  })
+
+  it('fetches_when_a_search_is_typed_but_not_yet_applied', async () => {
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    usePullRequestsStore.getState().setQuery('flaky')
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
     expect(listAcross).toHaveBeenCalledTimes(2)
   })
 
-  it('a_filtered_refresh_leaves_the_count_and_makes_its_own_call', async () => {
-    listAcross.mockResolvedValueOnce(page(1, 2, 3))
-    await usePullRequestsStore.getState().refresh(['a'])
-    expect(usePullRequestsStore.getState().activeCount.count).toBe(3)
-
-    listAcross.mockResolvedValueOnce(page(9))
-    usePullRequestsStore.getState().setState('all')
-    await usePullRequestsStore.getState().refresh(['a'])
-    expect(listAcross).toHaveBeenLastCalledWith('all', 'all', ['a'], '', PAGE_SIZE)
-    expect(usePullRequestsStore.getState().items).toHaveLength(1)
-    expect(usePullRequestsStore.getState().activeCount.count).toBe(3)
+  it('an_explicit_refresh_and_show_more_fetch_even_when_fresh', async () => {
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    await usePullRequestsStore.getState().refresh(['r1'])
+    await usePullRequestsStore.getState().loadMore(['r1'])
+    expect(listAcross).toHaveBeenCalledTimes(3)
   })
 
-  it('a_failed_shared_search_clears_the_count_and_lists_the_error', async () => {
-    const error = { code: 'gh-failed', message: 'boom' }
-    listAcross.mockResolvedValue({ ok: false, error })
-    const store = usePullRequestsStore.getState()
-    await Promise.all([store.refreshActiveCount(['a']), store.refresh(['a'])])
-    expect(listAcross).toHaveBeenCalledTimes(1)
-    expect(usePullRequestsStore.getState().error).toEqual(error)
-    expect(usePullRequestsStore.getState().activeCount.count).toBeNull()
+  it('a_failed_fetch_leaves_nothing_fresh_so_the_next_mount_retries', async () => {
+    listAcross.mockResolvedValueOnce({ ok: false, error: { code: 'gh-failed', message: 'x' } })
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    expect(listAcross).toHaveBeenCalledTimes(2)
+  })
+
+  it('invalidating_freshness_makes_the_next_mount_fetch', async () => {
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    usePullRequestsStore.getState().invalidateFreshness()
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    expect(listAcross).toHaveBeenCalledTimes(2)
+  })
+
+  it('a_quiet_refresh_after_a_write_restarts_the_window', async () => {
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    vi.advanceTimersByTime(LIST_FRESH_MS - 1000)
+    await usePullRequestsStore.getState().refreshQuiet(['r1'])
+    vi.advanceTimersByTime(LIST_FRESH_MS - 1000)
+    await usePullRequestsStore.getState().refreshIfStale(['r1'])
+    expect(listAcross).toHaveBeenCalledTimes(2)
   })
 })
