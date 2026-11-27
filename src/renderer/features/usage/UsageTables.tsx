@@ -6,8 +6,9 @@ import { SortableTable, sortRowsBy } from '@/components/SortableTable'
 import type { SortableColumn } from '@/components/SortableTable'
 import { ScreenSection } from '@/components/ScreenSection'
 import { useSessionsStore, useSplitStore, useViewStore } from '@/state'
-import type { UsageBreakdownRow, UsageTopSession } from '../../../shared/ipc-usage'
+import type { UsageBreakdownRow, UsageErrorCategoryRow, UsageTopSession } from '../../../shared/ipc-usage'
 import { formatCompact, formatInt, formatUsd } from './format'
+import { ERROR_CATEGORY_COLUMNS, errorCategoryDisplayRows } from './errorCategories'
 import { TOOL_COLUMNS } from './toolColumns'
 
 type Sort = { key: string; dir: 'asc' | 'desc' }
@@ -68,6 +69,26 @@ export const ModelTable = ({ rows, loading }: BreakdownProps) => (
 export const ToolTable = ({ rows, loading }: BreakdownProps) => (
   <BreakdownTable title="By tool" columns={TOOL_COLUMNS} rows={rows} loading={loading} emptyText="No tool calls in this range." />
 )
+
+/** Absent when the window has no failed tool call (FR-020). */
+export function ErrorCategoryTable({ rows, loading }: { rows: UsageErrorCategoryRow[]; loading?: boolean }) {
+  const display = errorCategoryDisplayRows(rows)
+  const table = useTable(ERROR_CATEGORY_COLUMNS, display, { key: 'count', dir: 'desc' })
+  if (display.length === 0) return null
+  return (
+    <ScreenSection title="Tool errors by category" count={display.length} loading={loading}>
+      <SortableTable
+        caption="Failed tool calls by category"
+        columns={ERROR_CATEGORY_COLUMNS}
+        rows={table.rows}
+        rowKey={(r) => r.category}
+        sort={table.sort}
+        onSortChange={table.onSortChange}
+        emptyText="No failed tool calls in this range."
+      />
+    </ScreenSection>
+  )
+}
 
 /** Opens the Session when Refract knows it; otherwise the label is plain text (FR-014). */
 function SessionLabel({ row }: { row: UsageTopSession }) {

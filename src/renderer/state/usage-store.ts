@@ -6,6 +6,7 @@
 import { create } from 'zustand'
 import type {
   UsageProjectOption,
+  UsageErrorCategoryRow,
   UsageBreakdownRow,
   UsageBudget,
   UsageCallRow,
@@ -47,6 +48,7 @@ interface UsageState {
   byModel: UsageBreakdownRow[]
   byTool: UsageBreakdownRow[]
   topSessions: UsageTopSession[]
+  errorCategories: UsageErrorCategoryRow[]
   calls: UsageCallsState
   frustration: UsageFrustration | null
   budget: UsageBudget | null
@@ -93,6 +95,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
   byModel: [],
   byTool: [],
   topSessions: [],
+  errorCategories: [],
   calls: { sort: { key: 'ts', dir: 'desc' }, pageIndex: 0, rows: [], total: 0 },
   frustration: null,
   budget: null,
@@ -167,13 +170,14 @@ export const useUsageStore = create<UsageState>((set, get) => ({
     const { filters, bucket, calls } = get()
     const api = window.refract.usage
     const offset = tz()
-    const [summary, timeseries, tokenMix, byProject, byModel, byTool, top, callPage, frustration, budget, projectOptions] = await Promise.all([
+    const [summary, timeseries, tokenMix, byProject, byModel, byTool, errorCategories, top, callPage, frustration, budget, projectOptions] = await Promise.all([
       api.summary(filters, offset),
       api.timeseries(filters, bucket, offset),
       api.tokenMix(filters, offset),
       api.breakdown(filters, 'project', offset),
       api.breakdown(filters, 'model', offset),
       api.breakdown(filters, 'tool', offset),
+      api.errorCategories(filters, offset),
       api.topSessions(filters, offset),
       api.calls(filters, calls.sort, { index: calls.pageIndex, size: CALLS_PAGE_SIZE }, offset),
       api.frustration(filters, offset),
@@ -181,7 +185,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
       api.projects()
     ])
     if (mine !== sequence) return
-    const failure = [summary, timeseries, tokenMix, byProject, byModel, byTool, top, callPage, frustration].find((r) => !r.ok)
+    const failure = [summary, timeseries, tokenMix, byProject, byModel, byTool, errorCategories, top, callPage, frustration].find((r) => !r.ok)
     const projects = byProject.ok ? byProject.value : []
     const models = byModel.ok ? byModel.value : []
     set((state) => ({
@@ -194,6 +198,7 @@ export const useUsageStore = create<UsageState>((set, get) => ({
       byProject: projects,
       byModel: models,
       byTool: byTool.ok ? byTool.value : state.byTool,
+      errorCategories: errorCategories.ok ? errorCategories.value : state.errorCategories,
       topSessions: top.ok ? top.value : state.topSessions,
       calls: callPage.ok ? { ...state.calls, rows: callPage.value.rows, total: callPage.value.total } : state.calls,
       frustration: frustration.ok ? frustration.value : state.frustration,

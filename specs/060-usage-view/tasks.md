@@ -86,3 +86,15 @@ Findings: FR-009 and FR-015 (partial): attribution was a cwd-derived `project_la
 - [X] C-20 `UsageFilters.tsx`, `usage-store.ts`: the Project filter lists `{id, name}` and sends the id (partial)
 - [X] C-21 Co-located tests: v4 to v5 migration keeps rows and names, Personal bucket, rename shows the new name on the same rows, removal keeps rows and last name, the copilot writer stamps the id (missing)
 - [X] C-22 Docs: `spec.md`, `data-model.md`, `contracts/ipc.md`, `CONTEXT.md` Project label (met)
+
+## Phase 7: Convergence (#2053, tool-call error categories, phase 1)
+
+Findings: the spec had no error taxonomy (FR-015 forbids keeping result text, so a category must be derived at ingest) and the tool error rate divided by all calls, counting in-flight calls as successes (partial).
+
+- [X] C-23 `error_category.rs` + `error_category.test.rs`: `ErrorCategory` and the ordered rules per the Categories decision (missing)
+- [X] C-24 `schema.rs`, `rollup.rs`, `ingest.rs`: `user_version` 6, `error_category` and `resolved` columns, categorise on the result landing, in-place migration per the Migration decision (missing)
+- [X] C-25 `queries.rs`, `queries_summary.rs`, `queries_tables.rs`, `queries_errors.rs`, `ipc/usage.rs`: the `resolved` denominator and `usage.errorCategories` per FR-020 (missing)
+- [X] C-26 `ipc-usage.ts`, `tauri-bridge/usage.ts`, `scripts/check-parity.mjs`, `usage-store.ts`: `toolResolved`, `resolved`, `errorCategories` plumbing (missing)
+- [X] C-27 `ErrorCategoriesTable.tsx`, `UsageView.tsx`, `captions`/`HeadlineCards.tsx`: the category table and the denominator caption per the Display decision, with Vitest coverage (missing)
+- [X] C-28 Co-located tests: categoriser rules, v5 to v6 migration keeps rows and marks errors `unknown`, a result landing stores its category and counts as resolved, the rate ignores in-flight calls, `errorCategories` honours filters (missing)
+- [X] C-29 Docs: `spec.md`, `data-model.md`, `contracts/ipc.md` (met)

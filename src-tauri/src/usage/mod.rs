@@ -3,12 +3,14 @@
 pub mod budget;
 pub mod copilot_cli;
 pub mod credits;
+pub mod error_category;
 mod fingerprint;
 pub mod frustration;
 pub mod ingest;
 pub mod paths;
 pub mod project_label;
 pub mod queries;
+pub mod queries_errors;
 mod queries_session;
 pub mod queries_summary;
 pub mod queries_tables;

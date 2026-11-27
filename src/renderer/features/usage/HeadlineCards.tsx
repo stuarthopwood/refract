@@ -20,7 +20,11 @@ export function HeadlineCards({ summary, jokes, layout = 'grid' }: { summary: Us
     { label: 'Cache hit rate', value: formatPercent(summary.cacheHitRate), caption: captions.cache },
     { label: 'Average context per call', value: formatCompact(summary.avgContextPerCall), caption: captions.context },
     { label: 'Tool calls', value: formatInt(summary.toolCalls), caption: captions.tools },
-    { label: 'Tool error rate', value: formatPercent(summary.toolErrorRate), caption: captions.toolErrors }
+    {
+      label: 'Tool error rate',
+      value: formatPercent(summary.toolErrorRate),
+      caption: [captions.toolErrors, `Over ${formatInt(summary.toolResolved)} calls with a result.`].filter(Boolean).join(' ')
+    }
   ]
   if (stacked) {
     const perCall = spendPerCall(summary)

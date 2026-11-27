@@ -47,7 +47,7 @@ vi.mock('./FrustrationCard', () => ({ FrustrationCard: () => null }))
 vi.mock('./HeadlineCards', () => ({ HeadlineCards: () => null }))
 vi.mock('./SpendChart', () => ({ SpendChart: () => null }))
 vi.mock('./TokenMixChart', () => ({ TokenMixChart: () => null }))
-vi.mock('./UsageTables', () => ({ ModelTable: () => null, ProjectTable: () => null, ToolTable: () => null, TopSessionsTable: () => null }))
+vi.mock('./UsageTables', () => ({ ErrorCategoryTable: () => null, ModelTable: () => null, ProjectTable: () => null, ToolTable: () => null, TopSessionsTable: () => null }))
 
 import { UsageView } from './UsageView'
 
@@ -66,6 +66,7 @@ function renderWith(overrides: Record<string, unknown>): string {
     byProject: [],
     byModel: [],
     byTool: [],
+    errorCategories: [],
     topSessions: [],
     calls: { rows: [] },
     budget: null,

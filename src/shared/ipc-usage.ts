@@ -8,6 +8,7 @@ export const IPC_USAGE_REQUESTS = {
   USAGE_TOKEN_MIX: 'usage.tokenMix',
   USAGE_BREAKDOWN: 'usage.breakdown',
   USAGE_TOP_SESSIONS: 'usage.topSessions',
+  USAGE_ERROR_CATEGORIES: 'usage.errorCategories',
   USAGE_CALLS: 'usage.calls',
   USAGE_FRUSTRATION: 'usage.frustration',
   USAGE_BUDGET: 'usage.budget',
@@ -61,6 +62,8 @@ export interface UsageSummary {
   cacheHitRate: number
   avgContextPerCall: number
   toolCalls: number
+  /** Tool calls whose result arrived: the denominator of `toolErrorRate`. */
+  toolResolved: number
   toolErrorRate: number
   /** Local days with a call in the filtered window. */
   activeDays: number
@@ -98,6 +101,8 @@ export interface UsageBreakdownRow {
   credits: number
   /** Tool rows only. */
   errors?: number
+  /** Tool rows only: calls whose result arrived (the error-rate denominator). */
+  resolved?: number
   resultChars?: number
   /** Share of the window's tool spend (0 to 1); absent when no tool call was priced. */
   costShare?: number
@@ -111,6 +116,14 @@ export interface UsageTopSession {
   credits: number
   calls: number
   conversationKnown: boolean
+}
+
+export type UsageErrorCategory =
+  | 'policy' | 'edit_rejected' | 'invalid_input' | 'not_found' | 'timeout' | 'aborted' | 'other' | 'unknown'
+
+export interface UsageErrorCategoryRow {
+  category: UsageErrorCategory
+  count: number
 }
 
 export type UsageCallSortKey =
@@ -193,6 +206,7 @@ export interface UsageApi {
     tzOffsetMinutes?: number
   ): Promise<Result<UsageBreakdownRow[]>>
   topSessions(filters: UsageFilters, tzOffsetMinutes?: number): Promise<Result<UsageTopSession[]>>
+  errorCategories(filters: UsageFilters, tzOffsetMinutes?: number): Promise<Result<UsageErrorCategoryRow[]>>
   /** `page.size` is 1 to 100; `sort.key` must be a `UsageCallSortKey`. */
   calls(
     filters: UsageFilters,

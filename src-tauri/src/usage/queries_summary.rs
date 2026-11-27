@@ -19,6 +19,8 @@ pub struct Summary {
     pub cache_hit_rate: f64,
     pub avg_context_per_call: f64,
     pub tool_calls: i64,
+    /// Tool calls whose result arrived: the denominator of `tool_error_rate`.
+    pub tool_resolved: i64,
     pub tool_error_rate: f64,
     /// Local days with at least one call in the filtered window.
     pub active_days: i64,
@@ -86,7 +88,7 @@ pub fn summary(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<Su
         Ok(out)
     })?;
     let [calls, input, cache_read, cache_write, tokens, usd, credits] = v;
-    let (tool_calls, tool_errors) = tool_totals(conn, f, ctx)?;
+    let (tool_calls, tool_resolved, tool_errors) = tool_totals(conn, f, ctx)?;
     let context = input + cache_read + cache_write;
     let active_days = active_days(conn, f, ctx)?;
     // Only the date range is dropped; Project, model, reasoning, agent type and Session stay.
@@ -105,7 +107,8 @@ pub fn summary(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<Su
         cache_hit_rate: ratio(cache_read, context),
         avg_context_per_call: ratio(context, calls),
         tool_calls,
-        tool_error_rate: ratio(tool_errors as f64, tool_calls as f64),
+        tool_resolved,
+        tool_error_rate: ratio(tool_errors as f64, tool_resolved as f64),
         active_days,
         sessions: session_count(conn, f, ctx)?,
         month_to_date_usd,
@@ -113,13 +116,14 @@ pub fn summary(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<Su
     })
 }
 
-/// `(calls, errors)` over the filtered tool calls. Errors count only calls whose result arrived.
-fn tool_totals(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<(i64, i64)> {
+/// `(calls, resolved, errors)` over the filtered tool calls. `resolved` counts calls whose result
+/// arrived; a call still running has no verdict yet, so it is neither an error nor a success.
+fn tool_totals(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<(i64, i64, i64)> {
     let (sql, w) = if f.needs_tool_calls() {
         let w = f.build(&TOOL_CALLS, ctx)?;
         (
             format!(
-                "SELECT count(*), coalesce(sum(coalesce(is_error,0)),0) FROM tool_calls{}",
+                "SELECT count(*), count(is_error), coalesce(sum(coalesce(is_error,0)),0) FROM tool_calls{}",
                 w.sql()
             ),
             w,
@@ -129,7 +133,7 @@ fn tool_totals(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<(i
         let src = f.rollup_source(&mut w, Rollup::Tools, ctx, false)?;
         (
             format!(
-                "SELECT coalesce(sum(calls),0), coalesce(sum(errors),0) FROM {src}{}",
+                "SELECT coalesce(sum(calls),0), coalesce(sum(resolved),0), coalesce(sum(errors),0) FROM {src}{}",
                 w.sql()
             ),
             w,
@@ -137,7 +141,7 @@ fn tool_totals(conn: &Connection, f: &Filters, ctx: &QueryCtx) -> QueryResult<(i
     };
     Ok(
         conn.query_row(&sql, rusqlite::params_from_iter(w.params()), |r| {
-            Ok((r.get(0)?, r.get(1)?))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })?,
     )
 }

@@ -3,6 +3,7 @@
 
 use rusqlite::{params, Connection};
 
+use super::error_category::ErrorCategory;
 use super::timeutil::hour_start;
 
 /// One assistant message or `model_usage` entry; unknown labels are `''`.
@@ -82,9 +83,9 @@ first_ts = MIN(first_ts, excluded.first_ts), last_ts = MAX(last_ts, excluded.las
 calls = calls + 1, cost_total = cost_total + excluded.cost_total, credits = credits + excluded.credits, \
 project_id = excluded.project_id";
 
-const UPSERT_TOOL_ROLLUP: &str = "INSERT INTO tool_rollup (hour, project_id, tool, agent_type, calls, errors, result_chars, cost_usd) \
-VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8) ON CONFLICT(hour, project_id, tool, agent_type) DO UPDATE SET \
-calls = calls + excluded.calls, errors = errors + excluded.errors, \
+const UPSERT_TOOL_ROLLUP: &str = "INSERT INTO tool_rollup (hour, project_id, tool, agent_type, calls, errors, resolved, result_chars, cost_usd) \
+VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) ON CONFLICT(hour, project_id, tool, agent_type) DO UPDATE SET \
+calls = calls + excluded.calls, errors = errors + excluded.errors, resolved = resolved + excluded.resolved, \
 result_chars = result_chars + excluded.result_chars, cost_usd = cost_usd + excluded.cost_usd";
 
 /// Records or renames the name shown for a Project id; the id is never deleted, so a removed
@@ -198,31 +199,36 @@ pub fn record_tool_call(
             1i64,
             0i64,
             0i64,
+            0i64,
             t.cost_usd,
         ])?;
     }
     Ok(inserted)
 }
 
-/// Joins a `toolResult` to its call; only the first result counts. Returns whether it updated.
+/// Joins a `toolResult` to its call; only the first result counts. `error` is the category of a
+/// failed result, `None` for a success. Returns whether it updated.
 pub fn record_tool_result(
     conn: &Connection,
     session_file: &str,
     tool_call_id: &str,
-    is_error: bool,
+    error: Option<ErrorCategory>,
     result_chars: i64,
 ) -> rusqlite::Result<bool> {
-    let updated =
-        conn.prepare(
-            "UPDATE tool_calls SET is_error = ?3, result_chars = ?4 \
+    let is_error = error.is_some();
+    let updated = conn
+        .prepare(
+            "UPDATE tool_calls SET is_error = ?3, result_chars = ?4, error_category = ?5 \
              WHERE session_file = ?1 AND tool_call_id = ?2 AND is_error IS NULL",
         )?
         .execute(params![
             session_file,
             tool_call_id,
             i64::from(is_error),
-            result_chars
-        ])? == 1;
+            result_chars,
+            error.map(ErrorCategory::as_str),
+        ])?
+        == 1;
     if !updated {
         return Ok(false);
     }
@@ -241,6 +247,7 @@ pub fn record_tool_result(
         agent_type,
         0i64,
         i64::from(is_error),
+        1i64,
         result_chars,
         0.0f64,
     ])?;
@@ -296,9 +303,10 @@ cost_cache_write = cost_cache_write + excluded.cost_cache_write, credits = credi
 
 fn rollup_tools_of_file(id_expr: &str) -> String {
     format!(
-        "INSERT INTO tool_rollup (hour, project_id, tool, agent_type, calls, errors, result_chars, cost_usd) \
+        "INSERT INTO tool_rollup (hour, project_id, tool, agent_type, calls, errors, resolved, result_chars, cost_usd) \
 SELECT ts - ts % 3600000, {id_expr}, tool, agent_type, ?2 * count(*), ?2 * sum(coalesce(is_error, 0)), \
-?2 * sum(result_chars), ?2 * sum(cost_usd) FROM tool_calls WHERE session_file = ?3 AND project_id <> ?1 \
+?2 * count(is_error), ?2 * sum(result_chars), ?2 * sum(cost_usd) FROM tool_calls \
+WHERE session_file = ?3 AND project_id <> ?1 \
 GROUP BY ts - ts % 3600000, project_id, tool, agent_type {ROLLUP_TOOLS_UPSERT}"
     )
 }
@@ -306,6 +314,7 @@ GROUP BY ts - ts % 3600000, project_id, tool, agent_type {ROLLUP_TOOLS_UPSERT}"
 const ROLLUP_TOOLS_UPSERT: &str = "\
 ON CONFLICT(hour, project_id, tool, agent_type) DO UPDATE SET \
 calls = calls + excluded.calls, errors = errors + excluded.errors, \
+resolved = resolved + excluded.resolved, \
 result_chars = result_chars + excluded.result_chars, cost_usd = cost_usd + excluded.cost_usd";
 
 /// Moves one file's rows to project id `new`, subtracting each row from its own stored id's rollup first.

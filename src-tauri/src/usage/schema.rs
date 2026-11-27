@@ -8,10 +8,10 @@ use rusqlite::{Connection, ErrorCode, OptionalExtension, TransactionBehavior};
 
 use super::project_label::LEGACY_PREFIX;
 
-pub const USER_VERSION: i64 = 5;
+pub const USER_VERSION: i64 = 6;
 /// The `prefs` key that holds the Usage view's saved filters.
 pub const PREF_FILTERS: &str = "filters";
-/// Older files are rebuilt; versions 2, 3 and 4 are migrated in place.
+/// Older files are rebuilt; versions 2 to 5 are migrated in place.
 const MIN_MIGRATABLE: i64 = 2;
 
 /// `tail_len` 0 reads as an unknown window: the next ingest pass records it without a reset.
@@ -56,6 +56,21 @@ UPDATE user_messages SET project_id = '@legacy:' || project_id WHERE project_id 
 UPDATE message_rollup SET project_id = '@legacy:' || project_id WHERE project_id <> '';
 UPDATE tool_rollup SET project_id = '@legacy:' || project_id WHERE project_id <> '';
 UPDATE session_rollup SET project_id = '@legacy:' || project_id WHERE project_id <> '';
+";
+
+/// Tool errors gain a category, and the rollup counts calls whose result arrived (the error-rate
+/// denominator). Errors recorded earlier kept no text, so they become `unknown`; `resolved` is
+/// rebuilt exactly from the per-call rows, so no OMP file is re-read.
+const MIGRATE_5_TO_6: &str = "
+ALTER TABLE tool_calls ADD COLUMN error_category TEXT;
+ALTER TABLE tool_rollup ADD COLUMN resolved INTEGER NOT NULL DEFAULT 0;
+UPDATE tool_calls SET error_category = 'unknown' WHERE is_error = 1;
+UPDATE tool_rollup SET resolved = coalesce((
+  SELECT count(is_error) FROM tool_calls c
+  WHERE c.project_id = tool_rollup.project_id AND c.tool = tool_rollup.tool
+    AND c.agent_type = tool_rollup.agent_type AND c.ts - c.ts % 3600000 = tool_rollup.hour
+), 0);
+CREATE INDEX IF NOT EXISTS tool_calls_errors_ts ON tool_calls (ts) WHERE is_error = 1;
 ";
 
 /// Unknown key parts are `''` rather than NULL so the primary keys stay unique.
@@ -111,6 +126,7 @@ CREATE TABLE IF NOT EXISTS tool_calls (
   entry_id TEXT NOT NULL,
   tool TEXT NOT NULL,
   is_error INTEGER,
+  error_category TEXT,
   result_chars INTEGER NOT NULL DEFAULT 0,
   cost_usd REAL NOT NULL DEFAULT 0,
   project_id TEXT NOT NULL DEFAULT '',
@@ -157,6 +173,7 @@ CREATE TABLE IF NOT EXISTS tool_rollup (
   agent_type TEXT NOT NULL,
   calls INTEGER NOT NULL DEFAULT 0,
   errors INTEGER NOT NULL DEFAULT 0,
+  resolved INTEGER NOT NULL DEFAULT 0,
   result_chars INTEGER NOT NULL DEFAULT 0,
   cost_usd REAL NOT NULL DEFAULT 0,
   PRIMARY KEY (hour, project_id, tool, agent_type)
@@ -184,6 +201,7 @@ CREATE INDEX IF NOT EXISTS messages_ts ON messages (ts);
 CREATE INDEX IF NOT EXISTS messages_project_ts ON messages (project_id, ts);
 CREATE INDEX IF NOT EXISTS messages_model_ts ON messages (model, reasoning, ts);
 CREATE INDEX IF NOT EXISTS tool_calls_tool_ts ON tool_calls (tool, ts);
+CREATE INDEX IF NOT EXISTS tool_calls_errors_ts ON tool_calls (ts) WHERE is_error = 1;
 CREATE INDEX IF NOT EXISTS user_messages_ts ON user_messages (ts);
 ";
 
@@ -237,9 +255,10 @@ fn migrate(conn: &mut Connection) -> rusqlite::Result<()> {
     }
     // Older rows may be gone from a rewritten session file, so an older file is altered, not rebuilt.
     let ddl = match version {
-        2 => format!("{MIGRATE_2_TO_3}{MIGRATE_3_TO_4}{MIGRATE_4_TO_5}"),
-        3 => format!("{MIGRATE_3_TO_4}{MIGRATE_4_TO_5}"),
-        4 => MIGRATE_4_TO_5.to_string(),
+        2 => format!("{MIGRATE_2_TO_3}{MIGRATE_3_TO_4}{MIGRATE_4_TO_5}{MIGRATE_5_TO_6}"),
+        3 => format!("{MIGRATE_3_TO_4}{MIGRATE_4_TO_5}{MIGRATE_5_TO_6}"),
+        4 => format!("{MIGRATE_4_TO_5}{MIGRATE_5_TO_6}"),
+        5 => MIGRATE_5_TO_6.to_string(),
         _ => DDL.to_string(),
     };
     tx.execute_batch(&format!("{ddl}PRAGMA user_version = {USER_VERSION};"))?;
