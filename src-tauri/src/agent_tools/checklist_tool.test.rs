@@ -336,3 +336,148 @@ async fn clear_resolved_runs_after_each_op_kind() {
     call(&host, create_args("r2", true)).await;
     assert_eq!(pending_len(&host).await, 0, "create replace");
 }
+
+/// The developer moves items `i1..=count` to `next`, one rev each, as the panel would.
+async fn developer_moves_to_next(host: &FakeHost, count: usize) {
+    let live = LiveSession::check("s1", |_| true, |_| false).unwrap();
+    host.store
+        .apply(&live, |file| {
+            let list = file.active.as_mut().unwrap();
+            for n in 1..=count {
+                let op = crate::checklist::ops::decode_op(
+                    &json!({ "op": "setStatus", "id": format!("i{n}"), "status": "next" }),
+                )
+                .unwrap();
+                *list = crate::checklist::developer_ops::apply_developer(list, list.rev, &op)?
+                    .checklist;
+            }
+            Ok(())
+        })
+        .await
+        .unwrap();
+}
+
+fn many_items_args(count: usize) -> Value {
+    let items: Vec<Value> = (0..count)
+        .map(|n| json!({ "text": format!("step {n}") }))
+        .collect();
+    json!({ "action": "create", "requestId": "r1", "title": "Plan", "items": items })
+}
+
+async fn hint_of(host: &FakeHost) -> Option<String> {
+    let live = LiveSession::check("s1", |_| true, |_| false).unwrap();
+    host.store
+        .read(&live, crate::checklist::hint::checklist_hint)
+        .await
+        .unwrap()
+}
+
+async fn agent_seen_of(host: &FakeHost) -> u64 {
+    let live = LiveSession::check("s1", |_| true, |_| false).unwrap();
+    host.store
+        .read(&live, |file| file.active.as_ref().unwrap().agent_seen_rev)
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn plain_get_acknowledges_changes_it_delivers() {
+    let host = host(true);
+    call(&host, create_args("r1", false)).await;
+    developer_moves_to_next(&host, 1).await;
+    assert!(hint_of(&host).await.is_some(), "the change is pending");
+
+    let got = call(&host, json!({ "action": "get" })).await;
+
+    assert_eq!(got["userChanges"].as_array().unwrap().len(), 1, "{got}");
+    assert_eq!(agent_seen_of(&host).await, got["seenRev"].as_u64().unwrap());
+    assert_eq!(hint_of(&host).await, None);
+}
+
+#[tokio::test]
+async fn plain_get_with_overflow_leaves_undelivered_pending() {
+    let host = host(true);
+    let total = crate::checklist::model::MAX_USER_CHANGES + 5;
+    call(&host, many_items_args(total)).await;
+    developer_moves_to_next(&host, total).await;
+
+    let first = call(&host, json!({ "action": "get" })).await;
+
+    let delivered = crate::checklist::model::MAX_USER_CHANGES;
+    assert_eq!(first["userChanges"].as_array().unwrap().len(), delivered);
+    assert_eq!(first["moreChanges"], json!(true));
+    assert_eq!(
+        agent_seen_of(&host).await,
+        first["seenRev"].as_u64().unwrap()
+    );
+    assert!(
+        hint_of(&host).await.is_some(),
+        "undelivered changes keep the hint"
+    );
+
+    let second = call(&host, json!({ "action": "get" })).await;
+
+    assert_eq!(second["userChanges"].as_array().unwrap().len(), 5);
+    assert_eq!(hint_of(&host).await, None);
+}
+
+#[tokio::test]
+async fn get_with_base_rev_behaves_as_before() {
+    let host = host(true);
+    let created = call(&host, create_args("r1", false)).await;
+    developer_moves_to_next(&host, 2).await;
+
+    let delivered = call(
+        &host,
+        json!({ "action": "get", "baseRev": created["seenRev"] }),
+    )
+    .await;
+
+    assert_eq!(delivered["userChanges"].as_array().unwrap().len(), 2);
+    assert_eq!(
+        agent_seen_of(&host).await,
+        1,
+        "the quote, not the result's seenRev"
+    );
+    assert!(hint_of(&host).await.is_some());
+
+    // Quoting past what was issued is clamped to the issued mark.
+    call(&host, json!({ "action": "get", "baseRev": 99 })).await;
+
+    assert_eq!(
+        agent_seen_of(&host).await,
+        delivered["seenRev"].as_u64().unwrap()
+    );
+    assert_eq!(hint_of(&host).await, None);
+}
+
+#[tokio::test]
+async fn update_acknowledges_only_the_seen_rev_it_quotes() {
+    let host = host(true);
+    let created = call(&host, many_items_args(3)).await;
+    developer_moves_to_next(&host, 1).await;
+    let update = json!({
+        "action": "update", "baseRev": created["seenRev"],
+        "ops": [{ "op": "setStatus", "id": "i3", "status": "next" }],
+    });
+
+    let updated = call(&host, update).await;
+
+    assert_eq!(
+        updated["userChanges"].as_array().unwrap().len(),
+        1,
+        "{updated}"
+    );
+    assert_eq!(agent_seen_of(&host).await, 1);
+    assert!(hint_of(&host).await.is_some());
+}
+
+#[tokio::test]
+async fn get_with_no_active_checklist_changes_nothing() {
+    let host = host(true);
+
+    let got = call(&host, json!({ "action": "get" })).await;
+
+    assert_eq!(got, json!({ "state": "none" }));
+    assert!(!host.file_of("s1").exists());
+}
