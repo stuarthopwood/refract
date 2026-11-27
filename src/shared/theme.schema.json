@@ -1,0 +1,1173 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/stuarthopwood/refract/main/src/shared/theme.schema.json",
+  "title": "Refract theme file",
+  "description": "A custom Refract theme: a built-in preset (base) plus colour overrides. Any token the file leaves out falls back to base.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "name",
+    "base",
+    "tokens"
+  ],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Where this schema lives; editors use it for autocomplete and validation."
+    },
+    "version": {
+      "const": 1,
+      "description": "The file format version. Always 1."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 40,
+      "pattern": "^[A-Za-z0-9_()._-](?:[A-Za-z0-9 _()._-]*[A-Za-z0-9_()._-])?$",
+      "description": "Shown in the theme list. 1 to 40 letters, digits, spaces, dashes, dots or brackets, with no leading or trailing space."
+    },
+    "base": {
+      "enum": [
+        "dark",
+        "dark-high-contrast",
+        "obsidian",
+        "amber-obsidian",
+        "nordic-frost",
+        "cyber-amber",
+        "light",
+        "light-warm-paper",
+        "light-high-contrast",
+        "lagoon",
+        "amethyst",
+        "hearth"
+      ],
+      "description": "The built-in theme this file starts from; tokens the file omits take its values."
+    },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Colour overrides keyed by token name, without the leading \"--\". Leave out any token you do not want to change.",
+      "properties": {
+        "accent": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Highlight fill for hovered or selected neutral surfaces such as menu items.",
+          "x-refract-layer": "semantic"
+        },
+        "accent-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the accent fill.",
+          "x-refract-layer": "semantic"
+        },
+        "accent-text": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Accent colour used for text and links on the page background.",
+          "x-refract-layer": "semantic"
+        },
+        "active-indicator": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of the marker that shows the active item, for example the selected tab bar.",
+          "x-refract-layer": "component"
+        },
+        "active-indicator-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text and icons drawn on the active-item indicator.",
+          "x-refract-layer": "component"
+        },
+        "agent-message": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of agent replies in the chat transcript.",
+          "x-refract-layer": "component"
+        },
+        "agent-spinner-core": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Centre colour of the agent activity spinner.",
+          "x-refract-layer": "component"
+        },
+        "alert-caution": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Accent colour of Caution callouts in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "alert-important": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Accent colour of Important callouts in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "alert-note": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Accent colour of Note callouts in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "alert-tip": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Accent colour of Tip callouts in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "alert-warning": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Accent colour of Warning callouts in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "approval-card-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of the approval card shown when an agent asks permission.",
+          "x-refract-layer": "component"
+        },
+        "approval-card-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of the approval card.",
+          "x-refract-layer": "component"
+        },
+        "approval-card-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of the approval card.",
+          "x-refract-layer": "component"
+        },
+        "background": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Main app background behind every pane.",
+          "x-refract-layer": "semantic"
+        },
+        "border": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Default border and outline colour.",
+          "x-refract-layer": "semantic"
+        },
+        "border-strong": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Stronger border for edges that must stay clearly visible.",
+          "x-refract-layer": "semantic"
+        },
+        "button-destructive-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of destructive buttons.",
+          "x-refract-layer": "component"
+        },
+        "button-destructive-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text and icons on destructive buttons.",
+          "x-refract-layer": "component"
+        },
+        "button-destructive-hover-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of destructive buttons while hovered.",
+          "x-refract-layer": "component"
+        },
+        "button-outline-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of outline buttons.",
+          "x-refract-layer": "component"
+        },
+        "button-outline-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of outline buttons.",
+          "x-refract-layer": "component"
+        },
+        "button-outline-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text and icons on outline buttons.",
+          "x-refract-layer": "component"
+        },
+        "button-outline-hover-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of outline buttons while hovered.",
+          "x-refract-layer": "component"
+        },
+        "button-secondary-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of secondary buttons.",
+          "x-refract-layer": "component"
+        },
+        "button-secondary-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text and icons on secondary buttons.",
+          "x-refract-layer": "component"
+        },
+        "button-secondary-hover-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of secondary buttons while hovered.",
+          "x-refract-layer": "component"
+        },
+        "card": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Background of cards and raised panels.",
+          "x-refract-layer": "semantic"
+        },
+        "card-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text colour on cards and raised panels.",
+          "x-refract-layer": "semantic"
+        },
+        "chart-1": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Chart series colour 1 of 5.",
+          "x-refract-layer": "semantic"
+        },
+        "chart-2": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Chart series colour 2 of 5.",
+          "x-refract-layer": "semantic"
+        },
+        "chart-3": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Chart series colour 3 of 5.",
+          "x-refract-layer": "semantic"
+        },
+        "chart-4": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Chart series colour 4 of 5.",
+          "x-refract-layer": "semantic"
+        },
+        "chart-5": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Chart series colour 5 of 5.",
+          "x-refract-layer": "semantic"
+        },
+        "chat-card-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of cards inside the chat transcript.",
+          "x-refract-layer": "component"
+        },
+        "chat-code-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of inline code in chat messages.",
+          "x-refract-layer": "component"
+        },
+        "chat-code-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of inline code in chat messages.",
+          "x-refract-layer": "component"
+        },
+        "chat-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Default text colour of the chat transcript.",
+          "x-refract-layer": "component"
+        },
+        "chat-user-bubble-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of your own message bubbles.",
+          "x-refract-layer": "component"
+        },
+        "chat-user-bubble-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of your own message bubbles.",
+          "x-refract-layer": "component"
+        },
+        "chat-user-bubble-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of your own message bubbles.",
+          "x-refract-layer": "component"
+        },
+        "code-block-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of fenced code blocks.",
+          "x-refract-layer": "component"
+        },
+        "code-block-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Default text colour in fenced code blocks; overriding it or any syntax-* token switches code highlighting to the css-variables theme, so set them together.",
+          "x-refract-layer": "component"
+        },
+        "command-pill-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of command pills in the message box.",
+          "x-refract-layer": "component"
+        },
+        "command-pill-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of command pills.",
+          "x-refract-layer": "component"
+        },
+        "composer-background": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of the message box.",
+          "x-refract-layer": "component"
+        },
+        "composer-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of the message box.",
+          "x-refract-layer": "component"
+        },
+        "composer-control-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of the small controls in the message box toolbar.",
+          "x-refract-layer": "component"
+        },
+        "composer-control-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text and icons of the message box toolbar controls.",
+          "x-refract-layer": "component"
+        },
+        "composer-control-hover-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of a message box toolbar control while hovered.",
+          "x-refract-layer": "component"
+        },
+        "composer-control-hover-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text and icons of a message box toolbar control while hovered.",
+          "x-refract-layer": "component"
+        },
+        "composer-control-open-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of a message box toolbar control while its menu is open.",
+          "x-refract-layer": "component"
+        },
+        "composer-control-open-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text and icons of a message box toolbar control while its menu is open.",
+          "x-refract-layer": "component"
+        },
+        "composer-focus": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of the message box while it has focus.",
+          "x-refract-layer": "component"
+        },
+        "composer-placeholder": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Placeholder text in the empty message box.",
+          "x-refract-layer": "component"
+        },
+        "composer-ring": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Focus ring around the message box.",
+          "x-refract-layer": "component"
+        },
+        "composer-selection-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of selected text in the message box.",
+          "x-refract-layer": "component"
+        },
+        "composer-selection-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Colour of selected text in the message box.",
+          "x-refract-layer": "component"
+        },
+        "context-usage-0": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Context usage meter colour at 0 percent full; colours between steps blend.",
+          "x-refract-layer": "component"
+        },
+        "context-usage-100": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Context usage meter colour at 100 percent full; colours between steps blend.",
+          "x-refract-layer": "component"
+        },
+        "context-usage-30": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Context usage meter colour at 30 percent full; colours between steps blend.",
+          "x-refract-layer": "component"
+        },
+        "context-usage-70": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Context usage meter colour at 70 percent full; colours between steps blend.",
+          "x-refract-layer": "component"
+        },
+        "destructive": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Colour for destructive actions and errors.",
+          "x-refract-layer": "semantic"
+        },
+        "destructive-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the destructive colour.",
+          "x-refract-layer": "semantic"
+        },
+        "diff-added": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Marker and tint for added lines in diffs.",
+          "x-refract-layer": "component"
+        },
+        "diff-removed": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Marker and tint for removed lines in diffs.",
+          "x-refract-layer": "component"
+        },
+        "divider": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Thin lines that separate regions, lists and sections.",
+          "x-refract-layer": "semantic"
+        },
+        "field-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of text fields and other form controls.",
+          "x-refract-layer": "component"
+        },
+        "focused-badge-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of the badge that marks the focused pane or session.",
+          "x-refract-layer": "component"
+        },
+        "foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Default text colour.",
+          "x-refract-layer": "semantic"
+        },
+        "git-added": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Git status colour for added files.",
+          "x-refract-layer": "semantic"
+        },
+        "git-conflicted": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Git status colour for conflicted files.",
+          "x-refract-layer": "semantic"
+        },
+        "git-deleted": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Git status colour for deleted files.",
+          "x-refract-layer": "semantic"
+        },
+        "git-ignored": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Git status colour for ignored files.",
+          "x-refract-layer": "semantic"
+        },
+        "git-modified": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Git status colour for modified files.",
+          "x-refract-layer": "semantic"
+        },
+        "git-renamed": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Git status colour for renamed files.",
+          "x-refract-layer": "semantic"
+        },
+        "git-staged": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Git status colour for staged files.",
+          "x-refract-layer": "semantic"
+        },
+        "git-untracked": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Git status colour for untracked files.",
+          "x-refract-layer": "semantic"
+        },
+        "input": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Border and fill base for form inputs.",
+          "x-refract-layer": "semantic"
+        },
+        "md-code-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of inline code in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "md-code-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of inline code in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "md-code-label": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Language label above fenced code blocks in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "md-heading": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Headings in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "md-marker": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. List bullets and numbers in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "md-quote-bar": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Left bar of block quotes in rendered markdown.",
+          "x-refract-layer": "component"
+        },
+        "md-table-header-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Header-row text in rendered markdown tables.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-accent": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Accent colour for emphasised Mermaid diagram elements.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-accent-fill": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of flowchart nodes in Mermaid diagrams; set this, not mermaid-node-fill, to recolour flowchart nodes.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of Mermaid diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Borders of Mermaid diagram nodes and clusters.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-crit": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Colour of critical tasks in Mermaid Gantt diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-cscale-11": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Eleventh colour of the Mermaid colour scale (renamed from mermaid-cscale-12).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-cscale-label-11": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Label colour on the eleventh colour of the Mermaid colour scale (renamed from mermaid-cscale-label-12).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-fill-1": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram fill 1 of 8.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-fill-2": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram fill 2 of 8.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-fill-3": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram fill 3 of 8.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-fill-4": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram fill 4 of 8.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-fill-5": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram fill 5 of 8.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-fill-6": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram fill 6 of 8.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-fill-7": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram fill 7 of 8.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-fill-8": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram fill 8 of 8.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-ink": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Ink colour for strokes and fine detail in Mermaid diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-line": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Lines and arrows in Mermaid diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-node-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour on Mermaid diagram nodes.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-node-fill": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Node fill in Mermaid diagrams other than flowcharts; flowchart nodes take mermaid-accent-fill.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-note-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of notes in Mermaid diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-note-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of notes in Mermaid diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-1": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 1 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-10": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 10 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-11": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 11 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-12": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 12 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-2": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 2 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-3": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 3 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-4": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 4 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-5": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 5 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-6": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 6 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-7": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 7 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-8": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 8 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-palette-9": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Mermaid diagram palette colour 9 of 12 (1-based).",
+          "x-refract-layer": "component"
+        },
+        "mermaid-secondary": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Secondary fill in Mermaid diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-task-text": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Task text in Mermaid Gantt diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-tertiary": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Tertiary fill in Mermaid diagrams.",
+          "x-refract-layer": "component"
+        },
+        "mermaid-text": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Default text colour in Mermaid diagrams.",
+          "x-refract-layer": "component"
+        },
+        "muted": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Subtle fill for quiet surfaces such as the selected list row.",
+          "x-refract-layer": "semantic"
+        },
+        "muted-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Secondary text and icons.",
+          "x-refract-layer": "semantic"
+        },
+        "notice-error-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of error notices.",
+          "x-refract-layer": "component"
+        },
+        "notice-info-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of informational notices.",
+          "x-refract-layer": "component"
+        },
+        "notice-warning-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of warning notices.",
+          "x-refract-layer": "component"
+        },
+        "pane-focused": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Tint of the focused pane in split view.",
+          "x-refract-layer": "component"
+        },
+        "pane-focused-edge": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Edge line of the focused pane in split view.",
+          "x-refract-layer": "component"
+        },
+        "popover": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Background of menus, popovers and dialogs.",
+          "x-refract-layer": "semantic"
+        },
+        "popover-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text colour inside menus, popovers and dialogs.",
+          "x-refract-layer": "semantic"
+        },
+        "pr-closed": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Pull request closed state.",
+          "x-refract-layer": "semantic"
+        },
+        "pr-closed-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the closed pull request colour.",
+          "x-refract-layer": "semantic"
+        },
+        "pr-draft": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Pull request draft state.",
+          "x-refract-layer": "semantic"
+        },
+        "pr-draft-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the draft pull request colour.",
+          "x-refract-layer": "semantic"
+        },
+        "pr-merged": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Pull request merged state.",
+          "x-refract-layer": "semantic"
+        },
+        "pr-merged-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the merged pull request colour.",
+          "x-refract-layer": "semantic"
+        },
+        "pr-open": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Pull request open state.",
+          "x-refract-layer": "semantic"
+        },
+        "pr-open-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the open pull request colour.",
+          "x-refract-layer": "semantic"
+        },
+        "primary": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Main brand and call-to-action fill, for example the default button.",
+          "x-refract-layer": "semantic"
+        },
+        "primary-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the primary fill.",
+          "x-refract-layer": "semantic"
+        },
+        "project-1": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 1 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-10": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 10 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-2": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 2 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-3": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 3 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-4": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 4 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-5": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 5 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-6": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 6 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-7": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 7 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-8": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 8 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "project-9": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Project colour 9 of 10, offered when you colour a project.",
+          "x-refract-layer": "semantic"
+        },
+        "ring": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Focus ring colour.",
+          "x-refract-layer": "semantic"
+        },
+        "role-default": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Model role badge for the default role.",
+          "x-refract-layer": "semantic"
+        },
+        "role-plan": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Model role badge for the plan role.",
+          "x-refract-layer": "semantic"
+        },
+        "role-slow": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Model role badge for the slow role.",
+          "x-refract-layer": "semantic"
+        },
+        "role-smol": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Model role badge for the smol role.",
+          "x-refract-layer": "semantic"
+        },
+        "scrollbar-thumb": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Scrollbar thumb at rest.",
+          "x-refract-layer": "component"
+        },
+        "scrollbar-thumb-hover": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Scrollbar thumb while hovered or dragged.",
+          "x-refract-layer": "component"
+        },
+        "scrollbar-track": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Scrollbar track.",
+          "x-refract-layer": "component"
+        },
+        "secondary": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Fill for secondary surfaces and buttons.",
+          "x-refract-layer": "semantic"
+        },
+        "secondary-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the secondary fill.",
+          "x-refract-layer": "semantic"
+        },
+        "send": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of the send button in the message box.",
+          "x-refract-layer": "component"
+        },
+        "send-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Icon colour on the send button.",
+          "x-refract-layer": "component"
+        },
+        "session-row-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Session name text in the session list.",
+          "x-refract-layer": "component"
+        },
+        "session-row-hover-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Session row fill while hovered.",
+          "x-refract-layer": "component"
+        },
+        "session-row-meta-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Secondary text on a session row, such as the project and age.",
+          "x-refract-layer": "component"
+        },
+        "session-row-selected-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of the selected session row.",
+          "x-refract-layer": "component"
+        },
+        "session-row-selected-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of the selected session row.",
+          "x-refract-layer": "component"
+        },
+        "severity-error": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Error severity colour.",
+          "x-refract-layer": "semantic"
+        },
+        "severity-error-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Error severity background tint.",
+          "x-refract-layer": "semantic"
+        },
+        "severity-info": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Info severity colour.",
+          "x-refract-layer": "semantic"
+        },
+        "severity-info-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Info severity background tint.",
+          "x-refract-layer": "semantic"
+        },
+        "severity-success": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Success severity colour.",
+          "x-refract-layer": "semantic"
+        },
+        "severity-success-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Success severity background tint.",
+          "x-refract-layer": "semantic"
+        },
+        "severity-warning": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Warning severity colour.",
+          "x-refract-layer": "semantic"
+        },
+        "severity-warning-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Warning severity background tint.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Background of the session sidebar.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar-accent": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Hover and selected fill inside the sidebar.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar-accent-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons on the sidebar accent fill.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Borders inside and around the sidebar.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text colour in the sidebar.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar-primary": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Primary fill inside the sidebar.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar-primary-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons on the sidebar primary fill.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar-right": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Background of the right pane.",
+          "x-refract-layer": "semantic"
+        },
+        "sidebar-ring": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Focus ring colour inside the sidebar.",
+          "x-refract-layer": "semantic"
+        },
+        "state-idle": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Session state colour: idle.",
+          "x-refract-layer": "semantic"
+        },
+        "state-needs-you": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Session state colour: waiting for you.",
+          "x-refract-layer": "semantic"
+        },
+        "state-needs-you-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the needs-you state colour.",
+          "x-refract-layer": "semantic"
+        },
+        "state-stopped": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Session state colour: stopped.",
+          "x-refract-layer": "semantic"
+        },
+        "state-stopped-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the stopped state colour.",
+          "x-refract-layer": "semantic"
+        },
+        "state-unread-response": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Session state colour: an unread response.",
+          "x-refract-layer": "semantic"
+        },
+        "state-working": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Session state colour: the agent is working.",
+          "x-refract-layer": "semantic"
+        },
+        "state-working-foreground": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Text and icons drawn on the working state colour.",
+          "x-refract-layer": "semantic"
+        },
+        "status-bar-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of the status line.",
+          "x-refract-layer": "component"
+        },
+        "status-bar-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of the status line.",
+          "x-refract-layer": "component"
+        },
+        "status-pill-attention-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of status pills that need attention.",
+          "x-refract-layer": "component"
+        },
+        "status-pill-attention-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of status pills that need attention.",
+          "x-refract-layer": "component"
+        },
+        "status-pill-attention-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of status pills that need attention.",
+          "x-refract-layer": "component"
+        },
+        "status-pill-attention-hover-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Fill of status pills that need attention while hovered.",
+          "x-refract-layer": "component"
+        },
+        "surface-1": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Lowest raised surface above the background.",
+          "x-refract-layer": "semantic"
+        },
+        "surface-2": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Surface raised above surface-1.",
+          "x-refract-layer": "semantic"
+        },
+        "surface-3": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Highest raised surface, above surface-2.",
+          "x-refract-layer": "semantic"
+        },
+        "surface-hover": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Fill of a surface while hovered.",
+          "x-refract-layer": "semantic"
+        },
+        "syntax-comment": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Code highlighting colour for comments; set all syntax-* tokens and code-block-fg together.",
+          "x-refract-layer": "component"
+        },
+        "syntax-constant": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Code highlighting colour for constants; set all syntax-* tokens and code-block-fg together.",
+          "x-refract-layer": "component"
+        },
+        "syntax-function": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Code highlighting colour for function names; set all syntax-* tokens and code-block-fg together.",
+          "x-refract-layer": "component"
+        },
+        "syntax-keyword": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Code highlighting colour for keywords; set all syntax-* tokens and code-block-fg together.",
+          "x-refract-layer": "component"
+        },
+        "syntax-parameter": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Code highlighting colour for parameters; set all syntax-* tokens and code-block-fg together.",
+          "x-refract-layer": "component"
+        },
+        "syntax-punctuation": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Code highlighting colour for punctuation; set all syntax-* tokens and code-block-fg together.",
+          "x-refract-layer": "component"
+        },
+        "syntax-string": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Code highlighting colour for strings; set all syntax-* tokens and code-block-fg together.",
+          "x-refract-layer": "component"
+        },
+        "thinking-row-active-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of the agent thinking row while the agent is still thinking.",
+          "x-refract-layer": "component"
+        },
+        "thinking-row-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of a finished agent thinking row.",
+          "x-refract-layer": "component"
+        },
+        "titlebar": {
+          "$ref": "#/definitions/colour",
+          "description": "Semantic role token. Background of the window title bar.",
+          "x-refract-layer": "semantic"
+        },
+        "tool-row-error-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of a failed tool call row.",
+          "x-refract-layer": "component"
+        },
+        "tool-row-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of a tool call row.",
+          "x-refract-layer": "component"
+        },
+        "tooltip-bg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Background of tooltips.",
+          "x-refract-layer": "component"
+        },
+        "tooltip-border": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Border of tooltips.",
+          "x-refract-layer": "component"
+        },
+        "tooltip-fg": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Text colour of tooltips.",
+          "x-refract-layer": "component"
+        },
+        "viewer-tint": {
+          "$ref": "#/definitions/colour",
+          "description": "Component token. Tint behind the image and file viewers.",
+          "x-refract-layer": "component"
+        }
+      }
+    }
+  },
+  "definitions": {
+    "colour": {
+      "type": "string",
+      "maxLength": 64,
+      "pattern": "^(?:#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})|transparent|(?:rgba?|hsla?|oklch)\\(\\s*[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:%|deg)?(?:[\\s,/]+[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:%|deg)?){2,3}\\s*\\))$",
+      "description": "A hex colour (3, 4, 6 or 8 digits), transparent, or rgb(), hsl() or oklch() with numeric arguments.",
+      "examples": [
+        "#1f6feb",
+        "oklch(0.7 0.15 250)",
+        "rgb(31 111 235 / 50%)"
+      ]
+    }
+  }
+}
