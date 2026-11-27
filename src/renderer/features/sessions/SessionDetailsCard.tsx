@@ -14,6 +14,9 @@ import { isProjectSession, type Repository } from '../../../shared/model'
 import { DiffStatLine, StateIcon, displayLabel, displayStatus, formatAbsoluteTime, formatRelativeTime } from './sessionDisplay'
 import { useWorktreeActions } from './useWorktreeActions'
 
+/** Issue #1760 (FR-192): long enough that switching Sessions with the pointer does not cover the chat pane. */
+export const SESSION_DETAILS_OPEN_DELAY_MS = 1200
+
 /** Extracted out of `SessionRow` so that row (focus management, rename, menu) and card (hover-card lifecycle, diff stat, worktree actions) each stay a single concern. */
 export function SessionDetailsCard({
   session,
@@ -79,7 +82,8 @@ export function SessionDetailsCard({
   return (
     <>
       <HoverCard
-        openDelay={750}
+        openDelay={SESSION_DETAILS_OPEN_DELAY_MS}
+        suppressAfterClick
         open={cardOpen && !menuOpen}
         onOpenChange={(open) => {
           if (open && menuOpen) return
