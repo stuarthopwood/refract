@@ -93,6 +93,16 @@ describe('FileChipList (#1928)', () => {
     expect(html).toMatch(/<button[^>]*data-variant="ghost"/)
     expect(html).not.toContain('data-variant="outline"')
   })
+
+  it('renders a role-less inline span, never a div group, when not interactive, so a button may hold it (#2318)', () => {
+    const html = renderToStaticMarkup(createElement(FileChipList, { files: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts'], label: 'Files touched', interactive: false }))
+    expect(html.startsWith('<span')).toBe(true)
+    expect(html).not.toContain('<div')
+    expect(html).not.toContain('role=')
+    expect(html).not.toContain('aria-label=')
+    expect(html).not.toContain('<button')
+    expect(html).toContain('+1')
+  })
 })
 
 describe('FileChipList tabbable mode', () => {

@@ -55,7 +55,7 @@ interface FileChipListProps {
   /** False takes the "+N" button out of the tab order, for a host that is already one tab stop and shows the whole list elsewhere; defaults to the nearest `FileChipTabbableContext`. */
   tabbable?: boolean
   className?: string
-  /** False renders the overflow as plain "+N" text instead of a button, for a host that is itself one control (no interactive child inside a button). */
+  /** False renders the overflow as plain "+N" text instead of a button, and the whole list as a role-less inline `span` instead of a labelled `div` group, for a host that is itself one control (a button may hold only phrasing content and no interactive child). */
   interactive?: boolean
 }
 
@@ -66,8 +66,9 @@ export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, 
   const [expanded, setExpanded] = React.useState(false)
   const { shown, hidden } = splitFileChips(files ?? [], limit)
   if (shown.length === 0) return null
+  const Wrapper = interactive ? 'div' : 'span'
   return (
-    <div role="group" aria-label={label} className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
+    <Wrapper {...(interactive && { role: 'group', 'aria-label': label })} className={cn('flex min-w-0 flex-wrap items-center gap-1', className)}>
       {shown.map((path) => (
         <FileChip key={path} path={path} />
       ))}
@@ -91,6 +92,6 @@ export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, 
             <span className="sr-only"> more files</span>
           </Badge>
         ))}
-    </div>
+    </Wrapper>
   )
 }
