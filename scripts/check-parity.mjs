@@ -324,6 +324,7 @@ const REQUEST_LANES = {
   ISSUES_CREATE: 'R9',
   ISSUES_LIST: 'R9', // #504, ipc/issues.rs
   ISSUES_VIEW: 'R9',
+  LIST_CACHE_READ: 'R9', // #1895, ipc/list_cache.rs
   PULL_REQUESTS_FETCH_IMAGE: 'R9',
   PULL_REQUESTS_NEW_SESSION_FROM_PULL_REQUEST: 'R9',
   THEME_SET: 'R8', // #791, theme.rs
