@@ -63,24 +63,12 @@ export function ImageThumbnail({ state, src, label, onClick, single, maxHeight, 
       </span>
     ) : null
 
-  if (state === 'unavailable') {
-    const placeholder = (
-      <>
+  const unavailable = state === 'unavailable'
+  if (unavailable && !(overflow > 0 && onClick)) {
+    return (
+      <div role="img" aria-label={label} className={cn(frame, 'min-h-16 min-w-16 p-2')}>
         <ImageUnavailable className="size-full" />
         {badge}
-      </>
-    )
-    const unavailableFrame = cn(frame, 'min-h-16 min-w-16 p-2')
-    if (overflow > 0 && onClick) {
-      return (
-        <button type="button" aria-label={label} onClick={onClick} className={cn(unavailableFrame, 'block cursor-zoom-in focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring')}>
-          {placeholder}
-        </button>
-      )
-    }
-    return (
-      <div role="img" aria-label={label} className={unavailableFrame}>
-        {placeholder}
       </div>
     )
   }
@@ -90,7 +78,7 @@ export function ImageThumbnail({ state, src, label, onClick, single, maxHeight, 
   const drawn = natural ? maxDrawnSize(natural.width, natural.height, devicePixelRatio, single ? maxHeight : undefined) : undefined
 
   let reserve: CSSProperties | undefined
-  if (!ready && single) {
+  if (state === 'loading' && single) {
     reserve = drawn
       ? { width: drawn.width + FRAME_BORDER_TOTAL_PX, aspectRatio: `${drawn.width + FRAME_BORDER_TOTAL_PX} / ${drawn.height + FRAME_BORDER_TOTAL_PX}` }
       : { width: UNKNOWN_SIZE_PLACEHOLDER_PX, height: UNKNOWN_SIZE_PLACEHOLDER_PX }
@@ -108,15 +96,18 @@ export function ImageThumbnail({ state, src, label, onClick, single, maxHeight, 
     imageClass = 'size-full object-cover'
   }
 
+  const layout = unavailable ? 'block min-h-16 min-w-16 p-2' : cn(single ? 'block' : 'flex items-center justify-center', 'min-h-6 min-w-6')
+
   return (
     <button
       ref={tile}
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={cn(frame, single ? 'block' : 'flex items-center justify-center', 'min-h-6 min-w-6 cursor-zoom-in focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring', !ready && 'animate-pulse motion-reduce:animate-none')}
+      className={cn(frame, layout, 'cursor-zoom-in focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring', state === 'loading' && 'animate-pulse motion-reduce:animate-none')}
       style={reserve}
     >
+      {unavailable && <ImageUnavailable className="size-full" />}
       {ready && (
         <img
           src={src}
