@@ -53,11 +53,13 @@ interface FileChipListProps {
   /** False takes the "+N" button out of the tab order, for a host that is already one tab stop and shows the whole list elsewhere; defaults to the nearest `FileChipTabbableContext`. */
   tabbable?: boolean
   className?: string
+  /** False renders the overflow as plain "+N" text instead of a button, for a host that is itself one control (no interactive child inside a button). */
+  interactive?: boolean
 }
 
 // Renders nothing for no files, so a caller never leaves an empty row. The "+N" control is a real button
 // (keyboard and screen-reader reachable), unlike a hover-only tooltip on a chip.
-export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, className }: FileChipListProps) {
+export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, interactive = true, className }: FileChipListProps) {
   const inheritedTabbable = React.useContext(FileChipTabbableContext)
   const [expanded, setExpanded] = React.useState(false)
   const { shown, hidden } = splitFileChips(files ?? [], limit)
@@ -68,19 +70,25 @@ export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, 
         <FileChip key={path} path={path} />
       ))}
       {expanded && hidden.map((path) => <FileChip key={path} path={path} />)}
-      {hidden.length > 0 && (
-        <Button
-          variant="outline"
-          size="xs"
-          tabIndex={(tabbable ?? inheritedTabbable) ? undefined : -1}
-          aria-expanded={expanded}
-          onClick={() => setExpanded((open) => !open)}
-          className="text-muted-foreground"
-        >
-          {expanded ? 'Show fewer' : `+${hidden.length}`}
-          {!expanded && <span className="sr-only"> more files</span>}
-        </Button>
-      )}
+      {hidden.length > 0 &&
+        (interactive ? (
+          <Button
+            variant="outline"
+            size="xs"
+            tabIndex={(tabbable ?? inheritedTabbable) ? undefined : -1}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((open) => !open)}
+            className="text-muted-foreground"
+          >
+            {expanded ? 'Show fewer' : `+${hidden.length}`}
+            {!expanded && <span className="sr-only"> more files</span>}
+          </Button>
+        ) : (
+          <Badge variant="secondary" title={hidden.map(fileBasename).join(', ')} className="bg-surface-2 text-muted-foreground">
+            +{hidden.length}
+            <span className="sr-only"> more files</span>
+          </Badge>
+        ))}
     </div>
   )
 }

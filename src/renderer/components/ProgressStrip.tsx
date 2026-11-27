@@ -1,7 +1,7 @@
 // The shared progress strip (spec 060 S2-04, ADR 0003): a labelled `role="progressbar"` with a
 // numeric value, plus a polite live region that announces `doneText` once when it completes.
 // The label is the visible text; the bar itself is a shape cue (fill over a bordered track), or,
-// with `segments`, one aria-hidden block per step whose state reads by fill, edge and pulse (FR-146).
+// with `segments`, a slim h-1 row of aria-hidden blocks beside the label whose state reads by fill, edge and pulse (FR-146, FR-175).
 import { useEffect, useId, useRef, useState } from 'react'
 import { cn } from '@/lib/utils'
 
@@ -51,28 +51,32 @@ export function ProgressStrip({ value, max, label, doneText, state = 'ok', segme
     wasDone.current = done
   }, [done, doneText])
   const percent = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0
+  const bar = (
+    <div
+      role="progressbar"
+      aria-labelledby={labelId}
+      aria-valuemin={0}
+      aria-valuemax={max}
+      aria-valuenow={Math.min(value, max)}
+      aria-valuetext={valueText ?? `${percent}%`}
+      className={segments ? 'flex h-1 min-w-0 flex-1 gap-0.5' : 'h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted'}
+    >
+      {segments ? (
+        segments.map((segment, index) => (
+          <span key={index} aria-hidden="true" data-segment={segment} className={cn('h-full min-w-1 flex-1 rounded-full', SEGMENT_CLASS[segment])} />
+        ))
+      ) : (
+        <div className={`h-full ${FILL_CLASS[state]} transition-[width] motion-reduce:transition-none`} style={{ width: `${percent}%` }} />
+      )}
+    </div>
+  )
   return (
-    <div className={cn('flex flex-col gap-1', className)}>
-      <p id={labelId} className="text-xs text-muted-foreground">
+    // Segmented: the label and the slim bar share one row so the header stays one calm line; the continuous bar keeps the stacked layout.
+    <div className={cn(segments ? 'flex items-center gap-2' : 'flex flex-col gap-1', className)}>
+      <p id={labelId} className={cn('text-xs text-muted-foreground', segments && 'shrink-0 tabular-nums')}>
         {label}
       </p>
-      <div
-        role="progressbar"
-        aria-labelledby={labelId}
-        aria-valuemin={0}
-        aria-valuemax={max}
-        aria-valuenow={Math.min(value, max)}
-        aria-valuetext={valueText ?? `${percent}%`}
-        className={segments ? 'flex h-2 w-full gap-1' : 'h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted'}
-      >
-        {segments ? (
-          segments.map((segment, index) => (
-            <span key={index} aria-hidden="true" data-segment={segment} className={cn('h-full min-w-2 flex-1 rounded-sm', SEGMENT_CLASS[segment])} />
-          ))
-        ) : (
-          <div className={`h-full ${FILL_CLASS[state]} transition-[width] motion-reduce:transition-none`} style={{ width: `${percent}%` }} />
-        )}
-      </div>
+      {bar}
       <div role="status" aria-live="polite" className="sr-only">
         {announce}
       </div>

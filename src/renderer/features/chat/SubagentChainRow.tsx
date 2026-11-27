@@ -13,7 +13,7 @@ import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { StageContextBrief } from './StageContextBrief'
 import { StageUsesLine } from './StageDependencies'
 import { stageRowDomId } from './stageJump'
-import { SubagentBody, SubagentRow } from './SubagentRow'
+import { SubagentCardButton } from './SubagentRow'
 import { SubagentGoalPreview } from './SubagentGoalPreview'
 import { formatElapsed } from './formatElapsed'
 import { stageHeading, extractContextLabel, extractResultSummary } from './stageMeta'
@@ -191,12 +191,12 @@ export function StageGroupRow({ group, sessionId, shimmer }: { group: StageGroup
             <SpineList gap="member">
               {group.items.map((item, index) => (
                 <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                  <SubagentRow item={item} agent={group.view.agents[index]!} showGoal={!toolCallIdsWithContext.has(item.toolCallId)} />
+                  <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
                 </SpineItem>
               ))}
             </SpineList>
           ) : (
-            <SubagentBody item={group.items[0]!} showGoal={false} />
+            <SubagentCardButton item={group.items[0]!} agent={group.view.agents[0]!} sessionId={sessionId} flat fallbackLabel={group.items[0]!.name !== group.view.cleanTitle ? group.items[0]!.name : undefined} />
           )}
         </div>
       </div>

@@ -97,10 +97,10 @@ describe('ChainStageLine', () => {
 
 describe('ChainStageLine open state (FR-149)', () => {
   describe('given a settled Stage', () => {
-    it('collapses it, hiding the agents but keeping the header, chip, badge and outcome', () => {
+    it('collapses it, hiding the agents but keeping the header, chip and badge, with no "N done" subline (#2318, FR-176)', () => {
       const collapsed = render(GATE())
       expect(collapsed).toContain('data-parallel-badge')
-      expect(collapsed).toContain('data-stage-outcome')
+      expect(collapsed).not.toContain('data-stage-outcome')
       expect(collapsed).not.toContain('<ol')
       expect(render(SOLO())).not.toContain('<ol')
     })

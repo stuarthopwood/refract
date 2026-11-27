@@ -210,22 +210,27 @@ export function resolveStageDependencies<
   }
 }
 
-export function stageRollupText(counts: Record<SubagentRowStatus, number>, total: number, isRunning: boolean): string {
-  const parts = [isRunning ? `${counts.finished} of ${total} done` : `${counts.finished} done`]
+/** The failed, cancelled, exited and parked counts, in that order; zero parts are dropped. */
+function shortfallParts(counts: Record<SubagentRowStatus, number>): string[] {
+  const parts: string[] = []
   if (counts.failed > 0) parts.push(`${counts.failed} failed`)
   if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
   if (counts.exited > 0) parts.push(`${counts.exited} exited`)
   if (counts.parked > 0) parts.push(`${counts.parked} parked`)
-  return parts.join(', ')
+  return parts
+}
+
+/** The Stage's spoken roll-up ("3 of 5 done" while it runs, "5 done" once settled); never drawn as a line (see `stageOutcomeText`). */
+export function stageRollupText(counts: Record<SubagentRowStatus, number>, total: number, isRunning: boolean): string {
+  return [isRunning ? `${counts.finished} of ${total} done` : `${counts.finished} done`, ...shortfallParts(counts)].join(', ')
+}
+
+/** The line a parallel Stage draws under its title: "1/3 done" while it runs, nothing once everyone finished, only the shortfall ("1 failed") otherwise (#2318, FR-176). */
+export function stageOutcomeText(counts: Record<SubagentRowStatus, number>, total: number, isRunning: boolean): string {
+  return [...(isRunning ? [`${counts.finished}/${total} done`] : []), ...shortfallParts(counts)].join(', ')
 }
 
 /** The unsettled counts only ("1 running, 2 failed"); cancelled is always its own word, never folded into "failed". Zero parts are dropped. */
 export function unsettledRollupText(counts: Record<SubagentRowStatus, number>): string {
-  const parts: string[] = []
-  if (counts.running > 0) parts.push(`${counts.running} running`)
-  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
-  if (counts.cancelled > 0) parts.push(`${counts.cancelled} cancelled`)
-  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
-  if (counts.parked > 0) parts.push(`${counts.parked} parked`)
-  return parts.join(', ')
+  return [...(counts.running > 0 ? [`${counts.running} running`] : []), ...shortfallParts(counts)].join(', ')
 }

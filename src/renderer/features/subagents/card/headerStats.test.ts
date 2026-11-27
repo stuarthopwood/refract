@@ -43,9 +43,9 @@ describe('formatHeaderStats', () => {
 
 describe('progress text', () => {
   it('formats the visible "X/Y done"', () => {
-    expect(formatProgressText(2, 4)).toBe('2/4 done')
-    expect(formatProgressText(0, 4)).toBe('0/4 done')
-    expect(formatProgressText(4, 4)).toBe('4/4 done')
+    expect(formatProgressText(2, 4)).toBe('2/4 stages done')
+    expect(formatProgressText(0, 4)).toBe('0/4 stages done')
+    expect(formatProgressText(4, 4)).toBe('4/4 stages done')
   })
 
   it('formats the accessible "X of Y stages done" with a singular stage', () => {

@@ -1,8 +1,7 @@
 import { cn } from '@/lib/utils'
 import * as React from 'react'
-import { ChevronRightIcon, PanelRightOpenIcon } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, useReadoutStore, useSettingsStore } from '@/state'
-import { openHostedPanel } from '../right-pane/hosted-panel-actions'
+import { ChevronRightIcon } from 'lucide-react'
+import { useSettingsStore } from '@/state'
 import { IconButton } from '@/components/IconButton'
 import { FadeCollapse } from '@/components/FadeCollapse'
 import { StageHeader } from '../subagents/card/StageHeader'
@@ -10,7 +9,7 @@ import { stageAccessibleName, stageAgentsGridClass, stageRowModel } from '../sub
 import type { SubAgentItem } from '../subagents/viewModel'
 import { StageUsesLine } from './StageDependencies'
 import { SpineItem, SpineList } from './SpineList'
-import { SubagentRow } from './SubagentRow'
+import { SubagentCardButton } from './SubagentRow'
 import { rowVisibility } from './transcriptRowVisibility'
 import { JumpToStageContext } from './stageJump'
 import { stageHeading } from './stageMeta'
@@ -21,33 +20,10 @@ import type { SubagentItem } from './subagentChainStatus'
 /** The Stage's own toggle key; `card:` keeps it apart from `StageGroupRow`'s bare id and the panel's `panel:` keys (FR-150 d). */
 export const stageToggleRowId = (stageId: string): string => `card:${stageId}`
 
-function ChainAgentEntry({ item, agent, sessionId }: { item: SubagentItem; agent: SubAgentItem; sessionId: string | null }) {
-  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
-  const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
-  return (
-    <div className="flex min-w-0 items-start gap-1">
-      <div className="min-w-0 flex-1">
-        <SubagentRow item={item} agent={agent} showGoal={false} variant="card" />
-      </div>
-      {match && sessionId && (
-        <IconButton
-          variant="ghost"
-          size="icon-xs"
-          className="shrink-0"
-          label={`Open ${item.name} in the subagents panel`}
-          onClick={(event) =>
-            openHostedPanel('subagents', sessionId, {
-              selectSubagentId: match.id,
-              selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
-              opener: event.currentTarget
-            })
-          }
-        >
-          <PanelRightOpenIcon aria-hidden className="size-4" />
-        </IconButton>
-      )}
-    </div>
-  )
+function ChainAgentEntry({ item, agent, sessionId, flat, stageTitle }: { item: SubagentItem; agent: SubAgentItem; sessionId: string | null; flat: boolean; stageTitle: string | null }) {
+  // Rule 3 (#2318): an agent name equal to the Stage title is not repeated.
+  const fallbackLabel = agent.name !== stageTitle ? agent.name : undefined
+  return <SubagentCardButton item={item} agent={agent} sessionId={sessionId} flat={flat} fallbackLabel={fallbackLabel} />
 }
 
 // A labelled `role="group"` per stage: `SpineList`'s `<ol>` only gives an unlabelled "1 of 2".
@@ -121,7 +97,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
           <SpineList bare className={cn('pb-2 pl-9 pr-2', stageAgentsGridClass(parallelCount))}>
             {stage.items.map((item, index) => (
               <SpineItem key={item.id} isNew={false}>
-                <ChainAgentEntry item={item} agent={stage.view.agents[index]!} sessionId={sessionId} />
+                <ChainAgentEntry item={item} agent={stage.view.agents[index]!} sessionId={sessionId} flat={stage.items.length === 1} stageTitle={stage.view.cleanTitle} />
               </SpineItem>
             ))}
           </SpineList>

@@ -52,6 +52,15 @@ describe('ProgressStrip segments', () => {
     expect(html.match(/data-segment="queued"[^>]*class="([^"]*)"/)![1]).not.toContain('animate-pulse')
   })
 
+  it('draws a slim h-1 bar on one row beside the label, never the h-2 stacked bar (#2318)', () => {
+    // Mutation: restore the h-2 chunky bar or stack the label above it.
+    const html = render({ segments, value: 1, max: 3 })
+    expect(html).toMatch(/role="progressbar"[^>]*class="[^"]*\bh-1\b/)
+    expect(html).not.toMatch(/role="progressbar"[^>]*class="[^"]*\bh-2\b/)
+    expect(html).toMatch(/^<div class="flex items-center gap-2/)
+    expect(html.indexOf('1/4 done')).toBeLessThan(html.indexOf('role="progressbar"'))
+  })
+
   it('keeps the progressbar role, label and values and takes a custom aria-valuetext', () => {
     const html = render({ segments, value: 1, max: 3, valueText: '1 of 3 stages done', label: '1/3 done' })
     expect(html).toContain('role="progressbar"')

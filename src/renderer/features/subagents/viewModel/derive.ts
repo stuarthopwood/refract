@@ -1,7 +1,7 @@
 // The one set of derivations both entry points share, so the chat card and the panel can never disagree on a title or a count.
 import type { SubagentRecentStep } from '../../../../shared/model'
 import { formatElapsed } from '../../chat/formatElapsed'
-import { extractContextLabel, resolveStageDependencies, stageRollupText, stripShellSetup, type StageDependency } from '../../chat/stageMeta'
+import { extractContextLabel, resolveStageDependencies, stageOutcomeText, stageRollupText, stripShellSetup, type StageDependency } from '../../chat/stageMeta'
 import { overallStatus } from '../../chat/subagentChainStatus'
 import { formatHeaderStats } from '../card/headerStats'
 import { summarizeSubagentStatuses, type SubagentRowStatus } from '../subagentStatus'
@@ -127,7 +127,7 @@ export function deriveScenario(stages: readonly StageInput[]): ChatScenario {
     const rawLabel = input.context ? extractContextLabel(input.context, false) : null
     const triggeredBy = draft.dependencies.length > 0 ? draft.dependencies.map((d) => d.agentId).join(', ') : undefined
     const derived = agents.map((agent) => deriveAgent(agent, triggeredBy))
-    const outcomeSummary = agents.length === 1 ? derived[0]!.whatItDid : status === 'running' ? undefined : rollupText
+    const outcomeSummary = agents.length === 1 ? derived[0]!.whatItDid : stageOutcomeText(counts, agents.length, status === 'running')
     return {
       id: input.id,
       number: draft.stageIndex,
