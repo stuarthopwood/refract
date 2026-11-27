@@ -56,6 +56,9 @@ jobs:
       - name: Check theme contrast
         run: pnpm check:theme-contrast
 
+      - name: Check theme ids
+        run: pnpm check:theme-ids
+
       - name: Check drag regions
         run: pnpm check:drag-regions
 

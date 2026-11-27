@@ -68,6 +68,7 @@ mod tests {
         assert!(parse_theme_id("dark").is_some());
         assert!(parse_theme_id("dark-high-contrast").is_some());
         assert!(parse_theme_id("obsidian").is_some());
+        assert!(parse_theme_id("amber-obsidian").is_some());
         assert!(parse_theme_id("not-a-theme").is_none());
     }
 
