@@ -38,7 +38,7 @@ describe('Conversation size and total (SC-032)', () => {
   it('Given a Conversation, When its row renders, Then the size shows and a delete button is named for it', () => {
     const html = row(conversation())
     expect(html).toContain('2.0 KB')
-    expect(html).toContain('aria-label="Delete Fix the build"')
+    expect(html).toContain(`aria-label="Delete Fix the build, ${new Date('2026-11-01T10:00:00Z').toLocaleString()}"`)
   })
 
   it('Given a Conversation with no title, When its row renders, Then the fallback title is used', () => {

@@ -2,6 +2,7 @@ import { memo, useMemo } from 'react'
 import { Trash2Icon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { IconButton } from '@/components/IconButton'
+import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { formatByteSize } from '@/lib/formatBytes'
 import type { ConversationInfo } from '../../../shared/model'
@@ -26,15 +27,15 @@ export const ConversationRow = memo(function ConversationRow({ conversation, ope
     <li data-conversation-file={conversation.file} className="flex min-w-0 items-center gap-1">
       <Tooltip>
         <TooltipTrigger asChild aria-describedby={undefined}>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
             aria-disabled={blocked}
             aria-current={conversation.isCurrent}
             onClick={() => {
               if (!blocked) onOpen(conversation.file)
             }}
             data-choice-item
-            className="flex min-w-0 flex-1 flex-col gap-1 border-l-2 border-transparent px-2 py-2 text-left outline-none focus-visible:outline-hidden hover:bg-muted focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
+            className="h-auto min-w-0 flex-1 flex-col items-stretch justify-start gap-1 rounded-none border-0 border-l-2 border-transparent px-2 py-2 text-left whitespace-normal focus-visible:border-ring aria-disabled:opacity-50 aria-[current=true]:border-l-active-indicator aria-[current=true]:bg-muted aria-[current=true]:opacity-100"
           >
             <span className="flex items-center gap-2 text-sm">
               <span className="min-w-0 truncate">{title}</span>
@@ -44,7 +45,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, ope
               {created} · {deleting ? 'Deleting…' : size}
             </span>
             {conversation.preview && <span className="truncate text-xs text-muted-foreground">{conversation.preview}</span>}
-          </button>
+          </Button>
         </TooltipTrigger>
         <TooltipContent
           side="right"
@@ -59,7 +60,7 @@ export const ConversationRow = memo(function ConversationRow({ conversation, ope
           {conversation.preview && <p className="text-muted-foreground">{conversation.preview}</p>}
         </TooltipContent>
       </Tooltip>
-      <IconButton label={`Delete ${title}`} aria-disabled={deleting} className="aria-disabled:opacity-50" onClick={() => !deleting && onDelete(conversation)}>
+      <IconButton label={`Delete ${title}, ${created}`} aria-disabled={deleting} className="aria-disabled:opacity-50" onClick={() => !deleting && onDelete(conversation)}>
         <Trash2Icon />
       </IconButton>
     </li>
