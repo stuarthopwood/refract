@@ -1,10 +1,17 @@
 import * as React from 'react'
 import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { IconButton } from '@/components/IconButton'
+import { useDevicePixelRatio } from '@/hooks/useDevicePixelRatio'
+import { maxDrawnSize, widthWithinHeight } from '@/lib/imageSize'
 import { formatByteSize, imageTypeLabel } from '@/lib/formatBytes'
 import { ImageUnavailable } from './ImageUnavailable'
+
+// The image never draws above its pixel size; this caps it to the window height too (header and padding take the 14rem).
+const STAGE_MAX_HEIGHT = '100dvh - 14rem'
+// The dialog sizes to the image, with room for the loading state and the Previous and Next buttons.
+const DIALOG_CLASS = 'w-fit min-w-[20rem] max-w-[calc(100dvw-4rem)] sm:max-w-[calc(100dvw-4rem)]'
+const IMAGE_CLASS = 'h-auto max-h-[calc(100dvh-14rem)] max-w-full rounded-md object-contain'
 
 export interface ViewerImageData {
   src: string
@@ -77,21 +84,26 @@ export function ImageViewer({ open, onOpenChange, items, index, onIndexChange, t
   const dimensions = current?.state === 'ready' && current.data.width && current.data.height ? `${current.data.width}×${current.data.height}` : ''
   const meta = [typeAndSize, dimensions].filter(Boolean).join(', ')
   const position = total > 1 ? `Image ${index + 1} of ${total}` : 'Image'
+  const devicePixelRatio = useDevicePixelRatio()
+  const drawn = current?.state === 'ready' && current.data.width && current.data.height ? maxDrawnSize(current.data.width, current.data.height, devicePixelRatio) : null
+  const imageStyle = drawn ? { width: widthWithinHeight(drawn, STAGE_MAX_HEIGHT) } : undefined
+  const contentRef = React.useRef<HTMLDivElement>(null)
   const navButton = (label: string, side: string, delta: number, icon: React.ReactNode) => (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label={label} className={`absolute top-1/2 ${side} z-10 -translate-y-1/2 bg-popover/80`} onClick={() => go(delta)}>
-          {icon}
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <IconButton label={label} className={`absolute top-1/2 ${side} z-10 size-11 -translate-y-1/2 bg-popover/80`} onClick={() => go(delta)}>
+      {icon}
+    </IconButton>
   )
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
-        className="max-w-[calc(100vw-4rem)] sm:max-w-[calc(100vw-4rem)]"
+        ref={contentRef}
+        className={DIALOG_CLASS}
+        // Focus the dialog itself: the first tabbable (Previous) would take focus and show its tooltip, and so would Close.
+        onOpenAutoFocus={(event) => {
+          event.preventDefault()
+          contentRef.current?.focus()
+        }}
         onCloseAutoFocus={(event) => {
           event.preventDefault()
           const opener = openerRef.current
@@ -100,8 +112,13 @@ export function ImageViewer({ open, onOpenChange, items, index, onIndexChange, t
         }}
         onKeyDown={(event) => {
           if (total < 2) return
-          if (event.key === 'ArrowLeft') go(-1)
-          else if (event.key === 'ArrowRight') go(1)
+          if (event.key === 'ArrowLeft') {
+            event.preventDefault()
+            go(-1)
+          } else if (event.key === 'ArrowRight') {
+            event.preventDefault()
+            go(1)
+          }
         }}
       >
         <DialogHeader>
@@ -111,7 +128,7 @@ export function ImageViewer({ open, onOpenChange, items, index, onIndexChange, t
         <span aria-live="polite" className="sr-only">
           {typeAndSize ? `${position}, ${typeAndSize}` : ''}
         </span>
-        <div className="relative flex h-[calc(100vh-14rem)] min-h-40 items-center justify-center">
+        <div className="relative flex min-h-40 items-center justify-center">
           {total > 1 && navButton('Previous image', 'left-0', -1, <ChevronLeftIcon aria-hidden />)}
           {current === null && (
             <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -119,7 +136,7 @@ export function ImageViewer({ open, onOpenChange, items, index, onIndexChange, t
               Loading image…
             </p>
           )}
-          {current?.state === 'ready' && <img src={current.data.src} alt="Attached image, full size" className="max-h-full max-w-full rounded-md object-contain" />}
+          {current?.state === 'ready' && <img src={current.data.src} alt="Enlarged attachment" className={IMAGE_CLASS} style={imageStyle} />}
           {current?.state === 'unavailable' && <ImageUnavailable role="status" />}
           {total > 1 && navButton('Next image', 'right-0', 1, <ChevronRightIcon aria-hidden />)}
         </div>

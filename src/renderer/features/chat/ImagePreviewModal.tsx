@@ -12,8 +12,8 @@ export interface ImagePreviewModalProps {
 export function ImagePreviewModal({ attachment, trigger }: ImagePreviewModalProps) {
   const [open, setOpen] = React.useState(false)
   const items = React.useMemo(
-    () => [{ key: attachment.id, data: { src: attachment.previewUrl, byteLength: attachment.byteLength } }],
-    [attachment.id, attachment.previewUrl, attachment.byteLength]
+    () => [{ key: attachment.id, data: { src: attachment.previewUrl, mimeType: attachment.mimeType, byteLength: attachment.byteLength } }],
+    [attachment.id, attachment.previewUrl, attachment.mimeType, attachment.byteLength]
   )
   return (
     <>

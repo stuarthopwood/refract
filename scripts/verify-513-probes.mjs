@@ -59,7 +59,7 @@ export function viewerProbe() {
       const dialog = document.querySelector('[role="dialog"]');
       if (!dialog) return { error: 'no dialog' };
       const title = dialog.querySelector('h2, [data-slot="dialog-title"]');
-      const img = dialog.querySelector('img[alt="Attached image, full size"]');
+      const img = dialog.querySelector('img[alt="Enlarged attachment"]');
       const desc = dialog.querySelector('[data-slot="dialog-description"]');
       return {
         description: desc ? desc.textContent.trim() : null,

@@ -1,15 +1,20 @@
 import * as React from 'react'
 import { loadMessageImage } from '@/lib/messageImageCache'
-import { formatByteSize, imageTypeLabel } from '@/lib/formatBytes'
 import { cn } from '@/lib/utils'
 import type { MessageImageData, TranscriptImageRef } from '../../shared/ipc-images'
 import { ImageThumbnail } from './ImageThumbnail'
+import { messageImageTileLabel } from './messageImageTileLabel'
 import { ImageViewer, type ViewerItem } from './ImageViewer'
 
 const MAX_VISIBLE_TILES = 4
 const SINGLE_IMAGE_MAX_HEIGHT_PX = 320
 const NEAR_VIEW_MARGIN = '200px'
 const INVALID_ID = 'invalid'
+// Whole class strings, because Tailwind only emits classes it can read literally. `gap-2` is on the 8px grid.
+const MULTI_GRID_CONTAINER_CLASS = '@container w-[30rem] max-w-full'
+const GRID_CLASS = 'grid grid-cols-2 gap-2 @md:grid-cols-4'
+// The group takes focus when the viewer closes over an opener that has since unmounted.
+const GROUP_FOCUS_CLASS = 'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 type TileState = { status: 'loading' } | { status: 'ready'; data: MessageImageData } | { status: 'unavailable' }
 
@@ -64,12 +69,14 @@ function ImageTile({ image, index, total, single, overflow, onOpen }: TileProps)
   const cell = React.useRef<HTMLDivElement>(null)
   const near = useNearView(cell)
   const state = useMessageImage(image.id, near)
-  const position = total > 1 ? `Image ${index + 1} of ${total} attached to your message` : 'Image attached to your message'
-  const more = overflow > 0 ? `, plus ${overflow} more` : ''
-  let label: string
-  if (state.status === 'unavailable') label = `Image no longer available${more}`
-  else if (state.status === 'ready') label = `${position}, ${imageTypeLabel(state.data.mimeType)}, ${formatByteSize(state.data.byteLength)}${more}. Open larger view`
-  else label = `${position}, loading${more}. Open larger view`
+  const label = messageImageTileLabel({
+    status: state.status,
+    index,
+    total,
+    overflow,
+    mimeType: state.status === 'ready' ? state.data.mimeType : undefined,
+    byteLength: state.status === 'ready' ? state.data.byteLength : undefined
+  })
 
   return (
     <div ref={cell} className={single ? 'max-w-full' : undefined}>
@@ -79,8 +86,8 @@ function ImageTile({ image, index, total, single, overflow, onOpen }: TileProps)
         label={label}
         single={single}
         maxHeight={SINGLE_IMAGE_MAX_HEIGHT_PX}
-        width={image.width}
-        height={image.height}
+        width={image.width ?? (state.status === 'ready' ? state.data.width : undefined)}
+        height={image.height ?? (state.status === 'ready' ? state.data.height : undefined)}
         overflow={overflow}
         onClick={() => onOpen(overflow > 0 ? MAX_VISIBLE_TILES : index)}
       />
@@ -111,8 +118,8 @@ export function MessageImageGrid({ images, className }: MessageImageGridProps) {
   }
 
   return (
-    <div role="group" tabIndex={-1} aria-label="Attached images" className={cn('outline-none', !single && '@container w-[30rem] max-w-full', className)}>
-      <div className={single ? undefined : 'grid grid-cols-2 gap-1 @md:grid-cols-4'}>
+    <div role="group" tabIndex={-1} aria-label="Attached images" className={cn(GROUP_FOCUS_CLASS, !single && MULTI_GRID_CONTAINER_CLASS, className)}>
+      <div className={single ? undefined : GRID_CLASS}>
         {visible.map((image, index) => (
           <ImageTile key={image.id + index} image={image} index={index} total={images.length} single={single} overflow={index === visible.length - 1 ? images.length - visible.length : 0} onOpen={open} />
         ))}
