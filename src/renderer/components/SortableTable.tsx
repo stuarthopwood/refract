@@ -1,11 +1,14 @@
 // The shared sortable table (spec 060 S2-03, ADR 0003): column headers are real buttons (keyboard
 // reachable, Enter or Space sorts) inside `th` cells carrying `aria-sort`; an optional pager with
-// a polite page line; one muted row when there is nothing to show. Sort is controlled: pass
+// a polite page line; skeleton rows while loading, one muted row when there is nothing to show. Sort is controlled: pass
 // `sortRowsBy` output for client-side data, or send the sort to the server for paged data.
 import type { ReactNode } from 'react'
 import { ArrowDownIcon, ArrowUpIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+
+const SKELETON_ROW_KEYS = [0, 1, 2]
 
 // aria-disabled keeps the button focusable, so focus is not lost when the last page is reached.
 const PAGER_DISABLED_CLASS = 'aria-disabled:opacity-50'
@@ -31,7 +34,7 @@ export interface SortableTableProps<T> {
   onSortChange(sort: { key: string; dir: SortDirection }): void
   /** Omit when the caller never renders an empty table. */
   emptyText?: string
-  /** First fetch in flight: one muted "Loading…" row instead of the empty text. */
+  /** First fetch in flight: skeleton rows in the table's column shape instead of the empty text. */
   loading?: boolean
   paging?: { index: number; size: number; total: number; onIndexChange(index: number): void }
 }
@@ -87,10 +90,21 @@ export function SortableTable<T>({ caption, columns, rows, rowKey, sort, onSortC
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 || loading ? (
+            {loading ? (
+              SKELETON_ROW_KEYS.map((rowIndex) => (
+                <tr key={rowIndex} data-slot="table-skeleton-row" className="border-t border-divider">
+                  {columns.map((column, columnIndex) => (
+                    <td key={column.key} className="px-2 py-2">
+                      {rowIndex === 0 && columnIndex === 0 && <span className="sr-only">Loading…</span>}
+                      <Skeleton aria-hidden className={cn('h-4', column.align === 'right' ? 'ml-auto w-1/2' : 'w-3/4')} />
+                    </td>
+                  ))}
+                </tr>
+              ))
+            ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length} className="px-2 py-4 text-muted-foreground">
-                  {loading ? 'Loading…' : emptyText}
+                  {emptyText}
                 </td>
               </tr>
             ) : (

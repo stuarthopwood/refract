@@ -37,12 +37,12 @@ export function LoadingOverlay({ loading, children, className, contentClassName,
         (overlay ? (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-scrim-bg">{overlay}</div>
         ) : (
-          // Zero-height sticky anchor keeps the card in view when the content scrolls.
-          <div className="sticky top-0 z-10 h-0">
+          // Zero-height sticky anchor: `top-1/2` resolves against the scrollport, so the card stays centred both ways in the visible area while the content scrolls.
+          <div className="sticky top-1/2 z-10 h-0">
             {/* Same surface as the chat start-up notice (`SessionStartNotice`), so every loading card in the app looks alike. */}
             <div
               aria-hidden
-              className="absolute top-16 left-1/2 flex w-max -translate-x-1/2 items-center gap-2 rounded-xl bg-background/90 px-6 py-4 text-base text-muted-foreground backdrop-blur-sm"
+              className="absolute left-1/2 flex w-max -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-xl bg-background/90 px-6 py-4 text-base text-muted-foreground backdrop-blur-sm"
             >
               <LoaderCircleIcon aria-hidden className="size-4 shrink-0 animate-spin motion-reduce:animate-none" />
               Loading
