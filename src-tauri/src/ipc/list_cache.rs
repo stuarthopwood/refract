@@ -6,7 +6,8 @@ use std::collections::HashSet;
 
 use serde_json::{json, Value};
 
-use crate::store::list_cache::{self, ListKind};
+use crate::github::cli;
+use crate::store::list_cache::{self, CacheAccount, ListKind};
 
 use super::{AppState, Dispatcher, HandlerFuture};
 
@@ -14,15 +15,37 @@ pub fn register(d: &mut Dispatcher) {
     d.register("listCache.read", list_cache_read);
 }
 
-/// `listCache.read()`: the cached default open lists, `null` for a list with nothing usable cached.
+/// The active GitHub account the list handlers' `gh` calls run as: the active one on github.com,
+/// else the first active one. `None` when `gh` cannot say, so nothing is read or written.
+async fn active_account() -> Option<CacheAccount> {
+    let mut entries = cli::auth_status().await.ok()?;
+    entries.retain(|entry| entry.active);
+    let index = entries
+        .iter()
+        .position(|entry| entry.host == "github.com")
+        .unwrap_or(0);
+    (index < entries.len()).then(|| {
+        let entry = entries.swap_remove(index);
+        CacheAccount {
+            host: entry.host,
+            login: entry.login,
+        }
+    })
+}
+
+/// `listCache.read()`: the cached default open lists for the active account, `null` for a list
+/// with nothing usable cached.
 fn list_cache_read(state: AppState, _args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
-        let cache = list_cache::read(&state.data_dir)
-            .await
-            .unwrap_or_else(|err| {
-                log::debug!("list cache: could not read it: {err}");
-                list_cache::ListCache::default()
-            });
+        let cache = match active_account().await {
+            Some(account) => list_cache::read(&state.data_dir, &account)
+                .await
+                .unwrap_or_else(|err| {
+                    log::debug!("list cache: could not read it: {err}");
+                    list_cache::ListCache::default()
+                }),
+            None => list_cache::ListCache::default(),
+        };
         Ok(json!({ "pullRequests": cache.pull_requests, "issues": cache.issues }))
     })
 }
@@ -48,11 +71,13 @@ fn has_no_skipped(result: &Value) -> bool {
 /// Persists `result` as the last good default list. The caller has already checked the filters are
 /// the default open ones (tab all, state open, no query or label, first page); this checks the
 /// Projects cover the whole registry and none was skipped, then writes without delaying the reply.
+/// `epoch` is `list_cache::epoch()` from before the fetch: an account change since then drops it.
 pub async fn remember_default_list(
     state: &AppState,
     kind: ListKind,
     ids: &[String],
     result: &Value,
+    epoch: u64,
 ) {
     if !has_no_skipped(result) {
         return;
@@ -72,7 +97,10 @@ pub async fn remember_default_list(
     let data_dir = state.data_dir.clone();
     let result = result.clone();
     tokio::spawn(async move {
-        if let Err(err) = list_cache::write(&data_dir, kind, result).await {
+        let Some(account) = active_account().await else {
+            return;
+        };
+        if let Err(err) = list_cache::write(&data_dir, kind, result, &account, epoch).await {
             log::debug!("list cache: could not write it: {err}");
         }
     });

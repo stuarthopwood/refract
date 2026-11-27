@@ -106,6 +106,8 @@ interface PullRequestsState {
 export type QuietRefreshOutcome = 'done' | 'failed' | 'deferred' | 'superseded'
 
 let refreshSequence = 0
+// A mount and an idle prefetch asking for the same list share one fetch.
+let refreshInFlight: { key: string; promise: Promise<void> } | null = null
 // So a stale count fetch never overwrites a newer one.
 let activeCountSequence = 0
 // Callers racing at startup (account load, sidebar mount) share one in-flight fetch per Project set.
@@ -163,7 +165,14 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     }),
   hydrateFromCache(cached) {
     const current = get()
-    if (current.loading || current.fetchedAt !== null || current.items.length > 0 || cached.items.length === 0) return
+    if (
+      current.loading ||
+      current.error !== null ||
+      current.fetchedAt !== null ||
+      current.items.length > 0 ||
+      cached.items.length === 0
+    )
+      return
     if (!isDefaultOpenList(current) || current.limit !== PAGE_SIZE) return
     set({ items: cached.items, skipped: cached.skipped, hasMore: cached.hasMore, fetchedAt: cached.fetchedAt, stale: true })
   },
@@ -171,10 +180,23 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     const { tab, state, repositoryIds, query, freshness } = get()
     const projectIds = effectiveProjectIds(repositoryIds, allRepositoryIds)
     // `refresh` applies the typed text, so a half-typed search is a changed key, never a stale hit.
-    if (isFresh(freshness, listKey({ tab, state, projectIds, query: effectiveFilterQuery(query) }))) return Promise.resolve()
-    return get().refresh(allRepositoryIds)
+    const key = listKey({ tab, state, projectIds, query: effectiveFilterQuery(query) })
+    if (isFresh(freshness, key)) return Promise.resolve()
+    if (refreshInFlight?.key === key) return refreshInFlight.promise
+    const promise = get()
+      .refresh(allRepositoryIds)
+      .finally(() => {
+        if (refreshInFlight?.promise === promise) refreshInFlight = null
+      })
+    refreshInFlight = { key, promise }
+    return promise
   },
-  invalidateFreshness: () => set({ freshness: null }),
+  // Bumping the sequence drops an old-account refresh still in flight, so it never stamps freshness or rows.
+  invalidateFreshness: () => {
+    refreshSequence += 1
+    refreshInFlight = null
+    set({ freshness: null, loading: false })
+  },
   async refresh(allRepositoryIds, more = false) {
     const { tab, state, repositoryIds } = get()
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
@@ -242,11 +264,15 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     try {
       result = await window.refract.pullRequests.listAcross(tab, state, ids, appliedQuery.trim(), limit)
     } catch {
+      if (sequence === refreshSequence) set({ stale: false })
       return 'failed'
     }
     // A later fetch (user or quiet) started meanwhile; whichever started last wins.
     if (sequence !== refreshSequence) return 'superseded'
-    if (!result.ok) return 'failed'
+    if (!result.ok) {
+      set({ stale: false })
+      return 'failed'
+    }
     const { items: previous, selected } = get()
     set({
       stale: false,

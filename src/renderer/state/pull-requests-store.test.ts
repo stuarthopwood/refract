@@ -92,4 +92,38 @@ describe('pull requests list freshness', () => {
     await usePullRequestsStore.getState().refreshIfStale(['r1'])
     expect(listAcross).toHaveBeenCalledTimes(2)
   })
+
+  it('a_second_mount_while_the_same_list_is_in_flight_shares_the_fetch', async () => {
+    const first = usePullRequestsStore.getState().refreshIfStale(['r1'])
+    const second = usePullRequestsStore.getState().refreshIfStale(['r1'])
+    await Promise.all([first, second])
+    expect(listAcross).toHaveBeenCalledTimes(1)
+  })
+
+  it('a_refresh_from_before_an_account_change_never_stamps_freshness_or_rows', async () => {
+    let release: (value: unknown) => void = () => {}
+    listAcross.mockReturnValueOnce(new Promise((resolve) => (release = resolve)))
+    const pending = usePullRequestsStore.getState().refreshIfStale(['r1'])
+    usePullRequestsStore.getState().invalidateFreshness()
+    release({ ok: true, value: { items: [{ repositoryId: 'r1', number: 1 }], hasMore: false, skipped: [], fetchedAt: '2026-11-27T00:00:00Z' } })
+    await pending
+    expect(usePullRequestsStore.getState().freshness).toBeNull()
+    expect(usePullRequestsStore.getState().items).toEqual([])
+    expect(usePullRequestsStore.getState().loading).toBe(false)
+  })
+
+  it('a_failed_quiet_refresh_clears_the_stale_mark', async () => {
+    usePullRequestsStore.setState({ stale: true })
+    listAcross.mockResolvedValueOnce({ ok: false, error: { code: 'gh-failed', message: 'x' } })
+    await usePullRequestsStore.getState().refreshQuiet(['r1'])
+    expect(usePullRequestsStore.getState().stale).toBe(false)
+  })
+
+  it('the_cache_does_not_hydrate_over_an_error', () => {
+    usePullRequestsStore.setState({ error: { code: 'gh-failed', message: 'x' } })
+    usePullRequestsStore
+      .getState()
+      .hydrateFromCache({ items: [{ repositoryId: 'r1', number: 1 }], hasMore: false, skipped: [], fetchedAt: '2026-11-27T00:00:00Z' } as never)
+    expect(usePullRequestsStore.getState().items).toEqual([])
+  })
 })
