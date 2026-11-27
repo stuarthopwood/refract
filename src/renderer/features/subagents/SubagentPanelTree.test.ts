@@ -75,7 +75,7 @@ describe('PanelTree', () => {
 
       it('is a left guide line under the Stage title, with no nested bordered card or card fill', () => {
         expect(agentRow).toContain('border-l-2 border-divider')
-        expect(agentRow).toContain('pl-3')
+        expect(agentRow).toContain('pl-2')
         expect(agentRow).not.toContain('bg-surface-1')
         expect(agentRow).not.toContain('rounded-lg')
         expect(agentRow).not.toMatch(/\bgap-1\b|\bp-1\b|\bmy-1\b/)
