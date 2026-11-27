@@ -8,9 +8,11 @@ pub const CHECKLIST: &str = "refract_checklist";
 pub fn description() -> &'static str {
     "Keep the developer's checklist for this Session: a shared list of steps they can see, tick and \
 add to. `create` starts one (give a unique `requestId`); `update` applies up to 20 ops all-or-none \
-and needs `baseRev`; `get` reads it back. Always call `get` before you edit a checklist you have \
-not read in this run, and quote the `seenRev` of the last result, not `rev`, as `baseRev`, so \
-developer changes in `userChanges` reach you. This is not the working mode's plan and does not \
+and needs `baseRev`; `get` reads it back, and a `get` without `baseRev` also marks the developer \
+changes it lists as seen. Always call `get` before you edit a checklist you have not read in this \
+run, and quote the `seenRev` of the last result, not `rev`, as `baseRev` on `update` and on a `get` \
+that must not mark them seen, so developer changes in `userChanges` reach you. This is not the \
+working mode's plan and does not \
 replace it; the OMP todo is for your own scratch tracking. Give the developer the items only they \
 can do by setting `owner` to `human` when you create or add them (`agent` is the default, `either` \
 lets both complete it). You cannot edit or remove what the developer wrote, or complete a step \
@@ -71,7 +73,7 @@ pub fn parameters() -> Value {
             "title": { "type": "string", "description": "create: the checklist title." },
             "items": { "type": "array", "maxItems": 40, "items": new_item(), "description": "create: the starting items." },
             "replace": { "type": "boolean", "description": "create: archive an unfinished checklist and start this one." },
-            "baseRev": { "type": "integer", "minimum": 0, "description": "update, get: the `seenRev` of the last result you saw." },
+            "baseRev": { "type": "integer", "minimum": 0, "description": "update: the `seenRev` of the last result you saw. get: omit it to mark the listed developer changes as seen; quote the `seenRev` of the last result to leave them for a later call." },
             "ops": { "type": "array", "maxItems": crate::checklist::model::MAX_OPS, "items": op(), "description": "update: the ops, applied all or none." },
             "itemId": { "type": "string", "description": "get: read one item whole." },
             "full": { "type": "boolean", "description": "get: whole items instead of compact ones." },

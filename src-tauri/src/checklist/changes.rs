@@ -1,6 +1,7 @@
 // The change record: what the developer changed since the agent last confirmed a
 // `seenRev`. Nothing is logged separately; entries are read back from each item's
-// `lastDeveloperOps` and from `removed`, and the watermark only moves when the agent quotes one.
+// `lastDeveloperOps` and from `removed`. The watermark moves when the agent quotes a `seenRev`,
+// or when a plain `get` delivers the changes (the overflow guard still holds the rest back).
 
 use super::model::{Actor, Checklist, ItemStatus, OpKind, MAX_USER_CHANGES};
 
@@ -27,7 +28,9 @@ pub struct ChangeSet {
     pub seen_rev: u64,
 }
 
-/// Pure: reading never moves the watermark, so a lost result returns the same changes again.
+/// Pure: reading never moves the watermark. A lost result returns the same changes again for
+/// `update` and for a `get` that quotes `baseRev`; a lost plain `get` result can drop what it
+/// delivered (accepted trade-off).
 pub fn user_changes(list: &Checklist) -> ChangeSet {
     let seen = list.agent_seen_rev;
     let mut all = Vec::new();
@@ -77,8 +80,11 @@ pub fn user_changes(list: &Checklist) -> ChangeSet {
 }
 
 /// Raises `agentSeenRev` to the `seenRev` the agent quoted, clamped to what Rust issued and to
-/// `rev`, so quoting `rev` after an overflow cannot skip undelivered changes. Call it on the
-/// checklist the call's own op produced, so both reach the file in one write.
+/// `rev`, so quoting `rev` after an overflow cannot skip undelivered changes. A plain `get`
+/// passes the `seenRev` of its own result, because a finished Checklist never prompts a quote and
+/// the hint would otherwise repeat on every message; a lost plain `get` result can therefore drop
+/// the changes it delivered. Call it on the checklist the call's own op produced, so both reach
+/// the file in one write.
 pub fn acknowledge(list: &mut Checklist, quoted: Option<u64>) {
     if let Some(quoted) = quoted {
         let reach = quoted.min(list.issued_seen_rev).min(list.rev);

@@ -8,6 +8,17 @@ fn description_requires_seen_rev_and_get_before_edit() {
 }
 
 #[test]
+fn description_says_a_plain_get_marks_developer_changes_seen() {
+    let text = description();
+    assert!(
+        text.contains("`get` without `baseRev` also marks the developer changes it lists as seen")
+    );
+    assert!(text.contains("on `update` and on a `get` that must not mark them seen"));
+    let base_rev = parameters()["properties"]["baseRev"]["description"].to_string();
+    assert!(base_rev.contains("omit it to mark the listed developer changes as seen"));
+}
+
+#[test]
 fn description_says_not_checklist_mode_and_todo_for_scratch() {
     let text = description();
     assert!(text.contains("not the working mode's plan"));
