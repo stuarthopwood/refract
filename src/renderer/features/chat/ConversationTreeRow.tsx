@@ -65,7 +65,7 @@ export function ConversationTreeRow({ entry, depth, isLeaf, actionsDisabled, rea
   }
 
   return (
-    <li data-slot="conversation-tree-row" data-entry-id={entry.id} aria-current={isLeaf ? 'true' : undefined} className="flex min-w-0 flex-col gap-1 rounded-md bg-muted/50 px-2 py-1.5" style={{ marginLeft: `${Math.min(depth, MAX_TREE_INDENT) * 0.75}rem` }}>
+    <li data-slot="conversation-tree-row" data-entry-id={entry.id} aria-current={isLeaf ? 'true' : undefined} className="flex min-w-0 flex-col gap-1 rounded-md bg-muted/50 px-2 py-2" style={{ marginLeft: `${Math.min(depth, MAX_TREE_INDENT) * 0.75}rem` }}>
       <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
         <span className="font-medium text-foreground">{who}</span>
         {when && <span>{when}</span>}
