@@ -99,13 +99,14 @@ describe('SubagentCardBody (#1928, FR-148)', () => {
     expect(html).not.toContain('fixes issue from')
   })
 
-  it('draws no border of its own: the agent panel is a background step on the card (#2235)', () => {
+  it('draws a divider hairline and the surface-1 step, never the bare 3:1 control border (#2318, rule 1 and 7)', () => {
     const html = render(agent({ status: 'running', role: 'Gate', whatItDid: 'Done' }))
-    expect(html).toContain('bg-surface-subtle')
+    expect(html).toContain('border-divider')
+    expect(html).toContain('bg-surface-1')
     const tokens = [...html.matchAll(/class="([^"]*)"/g)].flatMap((match) => match[1]!.split(' '))
-    expect(tokens).not.toContain('border')
-    // Forced colours drops fills, so the panel keeps a border there only.
-    expect(tokens).toContain('forced-colors:border')
+    expect(tokens).toContain('border')
+    expect(tokens).not.toContain('border-border')
+    expect(tokens).not.toContain('bg-surface-subtle')
   })
 
   it('renders the outcome through the shared Markdown, inert and embedded (#2242)', () => {
@@ -119,9 +120,9 @@ describe('SubagentCardBody (#1928, FR-148)', () => {
 describe('SubagentCardBody flat (#2318, FR-176)', () => {
   it('is a left guide line with the role only: no name, status, outcome or border box', () => {
     const html = render(agent({ role: 'Accessibility Gate', whatItDid: 'Flagged one defect', duration: '2m' }), true)
-    expect(html).toContain('border-l border-divider')
+    expect(html).toContain('border-l-2 border-divider')
     expect(html).toContain('Accessibility Gate')
-    for (const gone of ['GateA11y', 'Flagged one defect', '2m', 'bg-surface-subtle']) expect(html).not.toContain(gone)
+    for (const gone of ['GateA11y', 'Flagged one defect', '2m', 'bg-surface-1']) expect(html).not.toContain(gone)
   })
 })
 

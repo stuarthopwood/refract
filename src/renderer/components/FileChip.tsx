@@ -10,9 +10,11 @@ export function fileBasename(path: string): string {
 }
 
 /** A compact borderless monospace chip of a file's basename; the full path stays in `title` so nothing is lost to the truncation. */
+const FILE_CHIP_CLASS = 'h-auto min-w-0 max-w-full rounded-sm bg-command-pill-bg px-1.5 py-0.5 font-code text-micro text-command-pill-fg'
+
 export function FileChip({ path, className }: { path: string; className?: string }) {
   return (
-    <Badge variant="secondary" title={path} className={cn('min-w-0 max-w-full bg-surface-2 font-mono text-muted-foreground', className)}>
+    <Badge variant="secondary" title={path} className={cn(FILE_CHIP_CLASS, className)}>
       <span className="truncate">{fileBasename(path)}</span>
     </Badge>
   )
@@ -84,7 +86,7 @@ export function FileChipList({ files, label, limit = FILE_CHIP_LIMIT, tabbable, 
             {!expanded && <span className="sr-only"> more files</span>}
           </Button>
         ) : (
-          <Badge variant="secondary" title={hidden.map(fileBasename).join(', ')} className="bg-surface-2 text-muted-foreground">
+          <Badge variant="secondary" title={hidden.map(fileBasename).join(', ')} className={FILE_CHIP_CLASS}>
             +{hidden.length}
             <span className="sr-only"> more files</span>
           </Badge>

@@ -35,7 +35,7 @@ describe('StageHeader', () => {
 
     it('keeps a settled Stage title in the foreground colour: green is only on the tick', () => {
       const html = render({})
-      expect(html).toMatch(/<span class="min-w-0 truncate">/)
+      expect(html).toMatch(/<span class="min-w-0 truncate text-readout text-chat-foreground">/)
       expect(html.match(/text-severity-success/g)).toHaveLength(1)
     })
 

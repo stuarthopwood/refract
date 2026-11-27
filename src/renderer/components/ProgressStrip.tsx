@@ -29,9 +29,9 @@ const FILL_CLASS = { ok: 'bg-foreground', warning: 'bg-severity-warning', error:
 // The queued edge is `muted-foreground` (3:1 against the card, unlike the `divider` hairline). Forced colours drop the fills, so there
 // the same three states read by border: a thick solid block, a thin dashed outline and a medium outline in the highlight colour.
 export const SEGMENT_CLASS: Record<ProgressSegmentState, string> = {
-  done: 'border border-severity-success bg-severity-success forced-colors:border-4 forced-colors:border-solid forced-colors:border-[CanvasText]',
+  done: 'border border-severity-success bg-severity-success/65 forced-colors:border-4 forced-colors:border-solid forced-colors:border-[CanvasText]',
   queued: 'border border-muted-foreground bg-muted forced-colors:border-dashed forced-colors:border-[CanvasText]',
-  running: 'animate-pulse border-2 border-state-working bg-transparent motion-reduce:animate-none forced-colors:border-solid forced-colors:border-[Highlight]'
+  running: 'animate-pulse border-2 border-accent-text bg-transparent motion-reduce:animate-none forced-colors:border-solid forced-colors:border-[Highlight]'
 }
 
 /** The live region's text after a render: `doneText` on a below-max to max change, empty while unfinished, otherwise unchanged. */

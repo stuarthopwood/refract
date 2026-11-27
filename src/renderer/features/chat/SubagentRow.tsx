@@ -35,7 +35,7 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
   const hasRole = role != null && role !== ''
   const flatLead = hasRole ? role : fallbackLabel
   return (
-    <div className={cn('min-w-0 space-y-2', flat ? 'min-h-5 border-l border-divider py-0.5 pl-3' : 'rounded-lg bg-surface-subtle p-2 forced-colors:border')}>
+    <div className={cn('min-w-0 space-y-2', flat ? 'min-h-5 border-l-2 border-divider py-0.5 pl-3' : 'rounded-lg border border-divider bg-surface-1 p-2 group-hover/subcard:bg-surface-hover')}>
       {flat ? (
         flatLead && <div className="min-w-0 truncate text-xs text-muted-foreground">{flatLead}</div>
       ) : (
@@ -105,7 +105,7 @@ export function SubagentCardButton({ item, agent, sessionId, flat = false, fallb
     <button
       type="button"
       aria-label={subagentCardButtonName(agent)}
-      className="block w-full min-w-0 cursor-pointer rounded-lg text-left hover:bg-muted/50 focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring"
+      className="group/subcard block w-full min-w-0 cursor-pointer rounded-lg text-left focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring"
       onClick={(event) => openSubagentInPanel(sessionId, match, event.currentTarget)}
     >
       {body}

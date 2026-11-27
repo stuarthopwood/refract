@@ -44,11 +44,12 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
   const speechLabel = stageHeading(stage.number, cleanTitle, true)
   const { chipAgent, parallelCount, outcome, outcomePlain, rawLabel } = stageRowModel(stage)
   const running = status === 'running'
-  // Titles stay foreground; only a failure recolours one, and a settled Stage's tick alone is green.
-  const titleClass = cn(subagentStatusTextClass(counts), running && 'font-medium')
+  // #2318 rule 2: a running title is foreground and semibold, a settled one is the 78% chat foreground, and only a failure recolours it; the tick alone is green.
+  const failedClass = subagentStatusTextClass(counts)
+  const titleClass = cn('text-readout', failedClass ?? (running ? 'font-semibold text-foreground' : 'text-chat-foreground'))
   const title = (
     <>
-      <span className="shrink-0 text-xs tabular-nums text-muted-foreground">Stage {stage.number}</span>
+      <span className="shrink-0 font-code text-xs tabular-nums text-muted-foreground">Stage {stage.number}</span>
       {cleanTitle && (
         <>
           <span aria-hidden="true" className="shrink-0 text-muted-foreground">
@@ -61,7 +62,7 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
   )
   return (
     // A tint, not a left border, marks the running Stage; the glyph and word still carry the status (#1927).
-    <div className={cn('grid min-w-0 grid-cols-[18px_1fr_auto] items-start gap-x-2.5 rounded px-2 py-2', running && 'bg-state-working-tint forced-colors:border')}>
+    <div className={cn('grid min-w-0 grid-cols-[18px_1fr_auto] items-center gap-x-2.5 rounded px-3.5 py-2', running && 'bg-state-working-tint forced-colors:border')}>
       {/* Status is in the row's accessible name; the glyph keeps it from being colour-only. */}
       <span aria-hidden="true" className="flex h-5 items-center justify-center">
         <SubagentStatusGlyph status={status} />
@@ -96,7 +97,7 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
       </Tooltip>
       {/* The shared duration column (#2189), kept when the Stage has no duration so the one chevron stays in one x. */}
       <div className="flex items-center gap-1">
-        <DurationColumn aria-hidden="true" className={cn('text-xs', running ? 'font-medium text-state-working' : 'text-muted-foreground')}>
+        <DurationColumn aria-hidden="true" className={cn('font-code text-xs tabular-nums', running ? 'text-accent-text' : 'text-muted-foreground')}>
           {durationMs != null ? formatElapsed(durationMs) : null}
         </DurationColumn>
         <span className="shrink-0">{trailing}</span>

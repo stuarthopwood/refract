@@ -87,8 +87,8 @@ describe('ChainStageLine', () => {
   describe('given each agent in the Stage list', () => {
     it('renders it as a card, not a collapsed line', () => {
       const html = render(RUNNING_GATE())
-      expect(html.match(/rounded-lg bg-surface-subtle/g)).toHaveLength(2)
-      expect(html).not.toMatch(/rounded-lg border/)
+      expect(html.match(/rounded-lg border border-divider bg-surface-1/g)).toHaveLength(2)
+      expect(html).not.toContain('bg-surface-subtle')
       expect(html).toContain('GateA')
       expect(html).toContain('GateB')
     })

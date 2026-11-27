@@ -11,7 +11,7 @@ describe('AgentChip', () => {
     expect(html).toContain('Reviewer')
     expect(html).toContain('max-w-[40%]')
     expect(html).toContain('truncate')
-    expect(html).toContain('font-mono')
+    expect(html).toContain('font-code')
     expect(html).not.toContain('<svg')
     expect(html).not.toMatch(/\bborder\b/)
   })

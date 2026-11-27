@@ -137,6 +137,23 @@ export const PAIRS = [
   { fg: 'divider', bg: 'chat-card-bg', on: 'background', min: 1.39 },
   { fg: 'divider', bg: 'chat-card-bg', on: 'background', min: 3, onlyThemes: HIGH_CONTRAST_THEMES },
   { fg: 'chat-card-bg', bg: 'background', min: 1.04 },
+  // #2318 (FR-179, SC-023): the redesigned Subagents card. Titles and the 78% `--chat-foreground` outcome text sit on the card fill and on
+  // the sub-card's `--surface-1` step; muted labels, the green tick and the running accent text share those two surfaces.
+  { fg: 'chat-foreground', bg: 'chat-card-bg', on: 'background', min: 4.5 },
+  { fg: 'chat-foreground', bg: 'surface-1', min: 4.5 },
+  { fg: 'chat-foreground', bg: 'surface-hover', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'surface-1', min: 4.5 },
+  { fg: 'severity-success', bg: 'chat-card-bg', on: 'background', min: 4.5 },
+  { fg: 'severity-success', bg: 'surface-1', min: 4.5 },
+  { fg: 'severity-error', bg: 'chat-card-bg', on: 'background', min: 4.5 },
+  { fg: 'severity-error', bg: 'surface-1', min: 4.5 },
+  { fg: 'accent-text', bg: 'chat-card-bg', on: 'background', min: 4.5 },
+  { fg: 'accent-text', bg: 'surface-1', min: 4.5 },
+  // Progress strip edges (non-text, 3:1) are the success, accent-text and muted-foreground rows above on the card fill, so their 4.5:1 floors subsume the 3:1 one.
+  // The sub-card button's focus ring (offset 2px, so it paints on the card fill, never on the sub-card step).
+  { fg: 'ring', bg: 'chat-card-bg', on: 'background', min: 3 },
+  // Hairline: the sub-card edge and the flat guide line are `--divider`, decorative below high contrast (accepted, docs/design/accessibility.md).
+  { fg: 'divider', bg: 'surface-1', min: 3, onlyThemes: HIGH_CONTRAST_THEMES },
   // Chrome band (#682): text and icons on the shared `--titlebar` surface.
   { fg: 'foreground', bg: 'titlebar', min: 4.5 },
   { fg: 'muted-foreground', bg: 'titlebar', min: 4.5 },

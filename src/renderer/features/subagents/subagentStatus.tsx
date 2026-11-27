@@ -34,9 +34,12 @@ export function subagentStatusTextClass(counts: Record<SubagentRowStatus, number
   return counts.failed > 0 ? SUBAGENT_ERROR_TEXT_CLASS : undefined
 }
 
+// A running agent's spinner takes the accent text colour, not the Session working-state token, which equals the success colour in some themes (#2318 rule 2).
+const RUNNING_GLYPH_CLASS = 'text-accent-text'
+
 function SubagentStatusGlyphIcons({ status }: { status: SubagentRowStatus }) {
   const { Icon, className } = STATUS_GLYPH[GLYPH_KEY_BY_STATUS[status]]
-  return <Icon aria-hidden className={cn('size-4 shrink-0', className)} />
+  return <Icon aria-hidden className={cn('size-4 shrink-0', status === 'running' ? RUNNING_GLYPH_CLASS : className)} />
 }
 
 /** A distinct icon per state, never colour alone. */

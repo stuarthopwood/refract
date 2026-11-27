@@ -17,7 +17,8 @@ describe('ParallelBadge', () => {
     expect(html).toMatch(/<svg[^>]*aria-hidden="true"/)
     expect(html).toContain('<span aria-hidden="true">3</span>')
     expect(html).toContain('<span class="sr-only">3 agents in parallel</span>')
-    expect(html).not.toMatch(/\bborder\b|\bbg-/)
+    expect(html).not.toMatch(/\bborder\b/)
+    expect(html).toContain('bg-surface-1')
   })
 
   it.each([0, 1])('renders nothing for %i agent(s)', (count) => {
