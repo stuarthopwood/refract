@@ -3,9 +3,17 @@
 // handles arrow-key roving and announces the checked item itself.
 import { createElement, createElement as h, type ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { BashCommandBody, BashCommandSection } from './BashCommandSection'
+import { BashCommandBody, BashCommandSection, commandViewFrom } from './BashCommandSection'
+import type * as PseudoShellModule from './pseudoShell'
+import { parsePseudoShell } from './pseudoShell'
+
+// A spy over the real reader: the section must read the command only once Pseudo is asked for.
+vi.mock('./pseudoShell', async (importOriginal) => {
+  const actual = await importOriginal<typeof PseudoShellModule>()
+  return { ...actual, parsePseudoShell: vi.fn(actual.parsePseudoShell) }
+})
 
 // The real header and code block pull in the stores and the Shiki highlighter, neither of which
 // loads without a browser; the toggle and the view switch under test are this component's own.
@@ -46,5 +54,55 @@ describe('BashCommandSection', () => {
     expect(out).toContain("Can&#x27;t show this command as steps.")
     expect(out).toContain('echo $(date)')
     expect(out).not.toContain('Command steps')
+  })
+
+  it('announces the refusal note as a status so a screen reader hears why the steps are missing', () => {
+    const out = renderToStaticMarkup(createElement(BashCommandBody, { view: 'pseudo', code: 'echo $(date)', lang: 'bash' }))
+    expect(out).toMatch(/<p [^>]*role="status"[^>]*>Can&#x27;t show this command as steps\./)
+  })
+
+  it('says under the steps that shell expansions are not evaluated', () => {
+    const out = renderToStaticMarkup(createElement(BashCommandBody, { view: 'pseudo', code: 'echo $HOME *.ts', lang: 'bash' }))
+    expect(out).toContain('Shell expansions aren&#x27;t evaluated.')
+  })
+
+  it('does not show the expansion caption in the Raw view', () => {
+    const out = renderToStaticMarkup(createElement(BashCommandBody, { view: 'raw', code: 'echo $HOME', lang: 'bash' }))
+    expect(out).not.toContain('expansions')
+  })
+
+  it('gives a nested step a screen-reader-only level prefix and leaves top-level steps without one', () => {
+    const nested = renderToStaticMarkup(createElement(BashCommandBody, { view: 'pseudo', code: '(cd a; ls) | wc -l', lang: 'bash' }))
+    expect(nested.match(/<span class="sr-only">Level 2: <\/span>/g)).toHaveLength(2)
+    const flat = renderToStaticMarkup(createElement(BashCommandBody, { view: 'pseudo', code: 'cd a; ls', lang: 'bash' }))
+    expect(flat).not.toContain('Level')
+  })
+
+  describe('reading the command', () => {
+    beforeEach(() => {
+      vi.mocked(parsePseudoShell).mockClear()
+    })
+
+    it('does not read the command while Raw is selected', () => {
+      renderToStaticMarkup(createElement(BashCommandBody, { view: 'raw', code: 'ls', lang: 'bash' }))
+      expect(parsePseudoShell).not.toHaveBeenCalled()
+    })
+
+    it('reads the command when Pseudo is selected', () => {
+      renderToStaticMarkup(createElement(BashCommandBody, { view: 'pseudo', code: 'ls', lang: 'bash' }))
+      expect(parsePseudoShell).toHaveBeenCalledTimes(1)
+    })
+  })
+})
+
+describe('commandViewFrom', () => {
+  it('accepts the two views', () => {
+    expect(commandViewFrom('raw')).toBe('raw')
+    expect(commandViewFrom('pseudo')).toBe('pseudo')
+  })
+
+  it('ignores the empty value a single toggle sends when the selected item is pressed again, and anything unknown', () => {
+    expect(commandViewFrom('')).toBeUndefined()
+    expect(commandViewFrom('steps')).toBeUndefined()
   })
 })

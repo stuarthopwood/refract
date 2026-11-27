@@ -105,8 +105,9 @@ function tokenize(src: string): Token[] {
     } else if (ch === '`') {
       refuse()
     } else if (ch === '$') {
-      // `$(...)` runs another command and `$'...'` / `$"..."` change what the quotes mean.
-      if (next === '(' || next === "'" || next === '"') refuse()
+      // `$(...)` runs another command, `${...}` can hold operators this tokenizer would split, and
+      // `$'...'` / `$"..."` change what the quotes mean.
+      if (next === '(' || next === '{' || next === "'" || next === '"') refuse()
       buf += ch
       active = true
       i++
@@ -142,6 +143,8 @@ function tokenize(src: string): Token[] {
       }
     } else if (ch === '&' || ch === '|' || ch === ';' || ch === '(' || ch === ')') {
       flush()
+      // `((` opens arithmetic, which is not two nested subshells.
+      if (ch === '(' && next === '(') refuse()
       if (ch === '&' && next === '>') {
         const append = src[i + 2] === '>'
         tokens.push({ t: 'redir', fd: null, op: append ? '&>>' : '&>' })
@@ -173,9 +176,17 @@ function callText(name: string, args: string[]): string {
   return `${head}${args.join(', ')})`
 }
 
+// The descriptor a redirect acts on: its own number, else the stream its operator defaults to.
+function streamName(fd: string | null, fallback: '0' | '1'): string {
+  const n = fd ?? fallback
+  return n === '0' ? 'stdin' : n === '1' ? 'stdout' : n === '2' ? 'stderr' : `fd${n}`
+}
+
 function redirectText(fd: string | null, op: Redirect, target: string): string {
   if (op === '&>' || op === '&>>') return `stdout+stderr ${op === '&>' ? '>' : '>>'} ${q(target)}`
-  const stream = fd === '2' ? 'stderr' : fd === '0' || op === '<' ? 'stdin' : fd === null || fd === '1' ? 'stdout' : `fd${fd}`
+  // `>&word` is a stream join only for a descriptor or `-`; any other word is a file that gets both streams.
+  if (op === '>&' && !/^([0-9]+|-)$/.test(target)) refuse()
+  const stream = streamName(fd, op === '<' ? '0' : '1')
   if (op === '>&') {
     const dest = target === '1' ? 'stdout' : target === '2' ? 'stderr' : target === '-' ? 'closed' : `fd ${q(target)}`
     return `${stream} -> ${dest}`

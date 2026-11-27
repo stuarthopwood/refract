@@ -44,6 +44,25 @@ describe('bashOutputFacts', () => {
   it('ignores a minimized record with no filter name', () => {
     expect(bashOutputFacts(bash({ meta: { minimized: { inputBytes: 10 } } }))).toEqual({})
   })
+
+  it('counts the column-cut lines from the meta range when the flat count is absent', () => {
+    const facts = bashOutputFacts(bash({ meta: { limits: { columnTruncated: { maxColumn: 768, lines: { first: 4, last: 9 } } } } }))
+    expect(facts.truncated).toMatchObject({ columnLines: 6, columnMax: 768 })
+  })
+
+  it('prefers the flat column-cut count over the meta range', () => {
+    const facts = bashOutputFacts(bash({ columnTruncatedLines: 2, meta: { limits: { columnTruncated: { maxColumn: 768, lines: { first: 4, last: 9 } } } } }))
+    expect(facts.truncated).toMatchObject({ columnLines: 2 })
+  })
+
+  it('reports a truncation that only dropped bytes', () => {
+    expect(bashOutputFacts(bash({ meta: { truncation: { totalBytes: 5000, outputBytes: 1000 } } })).truncated).toEqual({
+      elidedLines: undefined,
+      elidedBytes: 4000,
+      columnLines: undefined,
+      columnMax: undefined
+    })
+  })
 })
 
 describe('tooltips', () => {
@@ -61,6 +80,15 @@ describe('tooltips', () => {
 
   it('drops the sizes when OMP gave only one', () => {
     expect(minimizedTooltip({ filter: 'git', inputBytes: 10 })).toBe('Minimized by git')
+  })
+
+  it('says "1 line", not "1 lines"', () => {
+    expect(truncatedTooltip({ elidedLines: 1, elidedBytes: 100 })).toBe('Output truncated: 1 line (100 B) not shown')
+    expect(truncatedTooltip({ columnLines: 1, columnMax: 768 })).toBe('Output truncated: 1 line cut at 768 B')
+  })
+
+  it('names only the bytes when OMP gave no line count', () => {
+    expect(truncatedTooltip({ elidedBytes: 2048 })).toBe('Output truncated: 2.0 KB not shown')
   })
 })
 
@@ -84,5 +112,23 @@ describe('BashOutputBadges', () => {
   it('writes the same facts as visible sentences in the dialog notes', () => {
     const html = render(createElement(BashOutputNotes, { facts: bashOutputFacts(bash(MIDDLE_CUT)) }))
     expect(html).toContain('Output truncated: 1,240 lines (88.1 KB) not shown')
+  })
+
+  it('writes the minimized fact as a visible sentence in the dialog notes', () => {
+    const html = render(createElement(BashOutputNotes, { facts: bashOutputFacts(bash(MINIMIZED)) }))
+    expect(html).toContain('Minimized by git: 120.4 KB to 3.2 KB')
+    expect(html).not.toContain('Output truncated')
+  })
+
+  it('shows only the Truncated badge when nothing was minimized', () => {
+    const html = render(createElement(BashOutputBadges, { facts: bashOutputFacts(bash(MIDDLE_CUT)) }))
+    expect(html).toContain('Truncated')
+    expect(html).not.toContain('Minimized')
+  })
+
+  it('shows only the Minimized badge when nothing was truncated', () => {
+    const html = render(createElement(BashOutputBadges, { facts: bashOutputFacts(bash(MINIMIZED)) }))
+    expect(html).toContain('Minimized')
+    expect(html).not.toContain('Truncated')
   })
 })

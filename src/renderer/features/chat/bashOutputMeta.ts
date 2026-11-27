@@ -47,6 +47,13 @@ function readMinimized(meta: Record<string, unknown> | undefined, details: Recor
   return { filter, inputBytes: count(minimized.inputBytes), outputBytes: count(minimized.outputBytes) }
 }
 
+// OMP names the lines the column cap cut as an inclusive 1-based range.
+function columnLinesFromRange(range: Record<string, unknown> | undefined): number | undefined {
+  const first = range?.first
+  const last = range?.last
+  return typeof first === 'number' && typeof last === 'number' ? count(last - first + 1) : undefined
+}
+
 function readTruncated(meta: Record<string, unknown> | undefined, details: Record<string, unknown>): TruncatedFact | undefined {
   const truncation = record(meta?.truncation)
   const column = record(record(meta?.limits)?.columnTruncated)
@@ -59,7 +66,7 @@ function readTruncated(meta: Record<string, unknown> | undefined, details: Recor
     count(truncation?.elidedLines) ?? count(details.elidedLines) ?? (totalLines && outputLines ? count(totalLines - outputLines) : undefined)
   const elidedBytes =
     count(truncation?.elidedBytes) ?? count(details.elidedBytes) ?? (totalBytes && outputBytes ? count(totalBytes - outputBytes) : undefined)
-  const columnLines = count(details.columnTruncatedLines)
+  const columnLines = count(details.columnTruncatedLines) ?? columnLinesFromRange(record(column?.lines))
   const columnMax = count(column?.maxColumn) ?? count(details.columnMax)
   if (elidedLines === undefined && elidedBytes === undefined && columnLines === undefined && columnMax === undefined) return undefined
   return { elidedLines, elidedBytes, columnLines, columnMax }

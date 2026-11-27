@@ -78,12 +78,58 @@ describe('parsePseudoShell', () => {
     ['an unterminated quote', 'echo "oops'],
     ['an unbalanced subshell', '(ls'],
     ['a dangling pipe', 'ls |'],
-    ['an empty command', '   ']
+    ['an empty command', '   '],
+    ['arithmetic evaluation', '((i++))'],
+    ['arithmetic evaluation with spaces inside', '(( x > 3 )) && echo big'],
+    ['a file named by >& rather than a stream', 'cmd >&out.txt'],
+    ['a file named by 2>&', 'cmd 2>&out.txt'],
+    ['a stream named by letters after >&', 'cmd >&err'],
+    ['an unquoted parameter expansion', 'echo ${HOME:-a;b}'],
+    ['a parameter expansion with an operator', 'echo ${x%%a|b}']
   ])('refuses %s', (_name, command) => {
     expect(parsePseudoShell(command)).toEqual({ ok: false })
   })
 
   it('does not treat a quoted reserved word as syntax', () => {
     expect(steps('"if" x')).toEqual([['command', 0, 'if("x")']])
+  })
+
+  it('keeps a quoted parameter expansion as plain text', () => {
+    expect(steps('echo "${HOME}"')).toEqual([['command', 0, 'echo("${HOME}")']])
+  })
+
+  it('keeps a subshell that holds a subshell, which the arithmetic refusal must not catch', () => {
+    expect(steps('( (ls) )').map(([, depth, text]) => [depth, text])).toEqual([
+      [0, 'subshell():'],
+      [1, 'subshell():'],
+      [2, 'ls()']
+    ])
+  })
+
+  it('still reads a stream join and a closed stream after the >& refusal', () => {
+    expect(steps('cmd 2>&1 >&2 2>&-').map(([, , text]) => text)).toEqual(['cmd()', 'stderr -> stdout', 'stdout -> stderr', 'stderr -> closed'])
+  })
+
+  it('names a redirect from a descriptor other than 0 by that descriptor, not as stdin', () => {
+    expect(steps('cat 3<in.txt').map(([, , text]) => text)).toEqual(['cat()', 'fd3 < "in.txt"'])
+  })
+
+  it('reads a redirect from descriptor 0 and a bare < as stdin', () => {
+    expect(steps('cat 0<a.txt <b.txt').map(([, , text]) => text)).toEqual(['cat()', 'stdin < "a.txt"', 'stdin < "b.txt"'])
+  })
+
+  describe('size limits', () => {
+    it('reads a command of exactly 20,000 characters and refuses 20,001', () => {
+      const atLimit = `echo ${'a'.repeat(19_995)}`
+      expect(atLimit).toHaveLength(20_000)
+      expect(parsePseudoShell(atLimit).ok).toBe(true)
+      expect(parsePseudoShell(`${atLimit}a`)).toEqual({ ok: false })
+    })
+
+    it('reads a command of exactly 400 steps and refuses 401', () => {
+      const lines = (n: number) => Array.from({ length: n }, () => 'ls').join('\n')
+      expect(parsePseudoShell(lines(400)).ok).toBe(true)
+      expect(parsePseudoShell(lines(401))).toEqual({ ok: false })
+    })
   })
 })
