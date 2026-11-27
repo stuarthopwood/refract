@@ -28,7 +28,7 @@ import {
   DropdownMenuSubTrigger
 } from '@/components/ui/dropdown-menu'
 import { useThemeEntries } from '@/lib/useThemeEntries'
-import type { ThemeEntry } from '@/lib/useThemeEntries'
+import type { ThemeEntry } from '@/lib/themeGroups'
 import { useAccountsStore, useThemeStore, useViewStore } from '@/state'
 import type { GithubStatus } from '@/state'
 import type { GitHubAccount } from '../../../shared/accounts'

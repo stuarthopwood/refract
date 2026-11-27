@@ -21,6 +21,7 @@ export default defineConfig({
       'scripts/theme-tokens.test.mjs',
       'scripts/theme-contrast-pairs.test.mjs',
       'scripts/theme-id-parity.test.mjs',
+      'scripts/theme-groups.test.mjs',
       'scripts/token-guard-probe/ab.test.mjs',
       'scripts/token-guard-probe/cli.test.mjs',
       'scripts/token-guard-probe/host.test.mjs',

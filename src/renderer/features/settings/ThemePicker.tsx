@@ -13,7 +13,8 @@ import { ThemeSwatchChip } from '@/components/ui/theme-swatch-chip'
 import { checkThemeContrast, describeWarning } from '@/lib/themeContrast'
 import { cn } from '@/lib/utils'
 import { useThemeEntries } from '@/lib/useThemeEntries'
-import type { ThemeEntry } from '@/lib/useThemeEntries'
+import { groupStartOffsets } from '@/lib/themeGroups'
+import type { ThemeEntry } from '@/lib/themeGroups'
 import { useThemeStore } from '@/state'
 import { useThemeFileActions } from './useThemeFileActions'
 
@@ -36,6 +37,7 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
   const [open, setOpen] = useState<string | null>(null)
   const refresh = useThemeStore((s) => s.refreshCustomThemes)
   const contrast = useMemo(() => new Map(customThemes.map((t) => [t.id, checkThemeContrast(t)])), [customThemes])
+  const groupStarts = useMemo(() => groupStartOffsets(builtinGroups), [builtinGroups])
 
   useEffect(() => {
     void refresh()
@@ -119,15 +121,23 @@ export function ThemePicker({ labelledBy, describedBy }: ThemePickerProps) {
 
   return (
     <div className="max-w-sm">
-      <div role="radiogroup" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
-        {builtinGroups.map((group, g) => (
-          <div key={group.label} role="presentation" className="flex flex-col gap-1">
-            <p className="px-2 pt-1 text-xs text-muted-foreground">{group.label} themes</p>
-            {group.entries.map((e, i) => renderRow(e, builtinGroups.slice(0, g).reduce((n, prev) => n + prev.entries.length, 0) + i))}
+      {/* ARIA 1.2 radiogroup owns only radios, so it cannot hold a labelled `group` per section: the section is the radiogroup and this wrapper is the group that carries the overall label. Arrow keys still walk every row. */}
+      <div role="group" aria-labelledby={labelledBy} aria-describedby={describedBy} className="flex flex-col gap-1">
+        {builtinGroups.map((group, g) => {
+          const headingId = `theme-group-${group.label.toLowerCase()}`
+          return (
+            <div key={group.label} role="radiogroup" aria-labelledby={headingId} className="flex flex-col gap-1">
+              <p id={headingId} className="px-2 pt-1 text-xs text-muted-foreground">{group.label} themes</p>
+              {group.entries.map((e, i) => renderRow(e, (groupStarts[g] ?? 0) + i))}
+            </div>
+          )
+        })}
+        {customs.length > 0 && (
+          <div role="radiogroup" aria-labelledby="theme-group-custom" className="flex flex-col gap-1">
+            <p id="theme-group-custom" className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>
+            {customs.map((e, i) => renderRow(e, builtins.length + i))}
           </div>
-        ))}
-        {customs.length > 0 && <p className="px-2 pt-2 text-xs text-muted-foreground">Custom</p>}
-        {customs.map((e, i) => renderRow(e, builtins.length + i))}
+        )}
       </div>
       {rejected.map((r) => (
         <InlineStatus key={r.file} tone="error" density="compact" className="mt-2">Couldn&apos;t load {r.file}: {r.error}</InlineStatus>
