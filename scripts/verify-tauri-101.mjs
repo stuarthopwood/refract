@@ -23,8 +23,7 @@ if (existsSync(MANAGED_GH)) {
   process.exit(2);
 }
 
-const VIEW_PR = `document.querySelector('button[aria-label="View pull request #7"]')`;
-const PR_BADGE = `document.querySelector('button[aria-label="View pull request #7"]')?.parentElement?.firstElementChild?.firstElementChild`;
+const VIEW_PR = `Array.from(document.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '').startsWith('#7,'))`;
 const PANEL = `document.querySelector('[data-right-pane-content]')`;
 
 async function main() {
@@ -75,11 +74,11 @@ async function main() {
     await cdp.waitFor(`(() => { const b = document.querySelector('[data-readiness-primary]'); return !!b && b.getAttribute('aria-disabled') !== 'true' && !b.disabled; })()`, { timeoutMs: 90_000, label: 'Readiness green' });
     await addRepository(cdp, path.join(repoParent, 'hello-world'));
     await createSessionViaQuickCreate(cdp, 'hello-world');
-    await cdp.waitFor(`!!(${VIEW_PR})`, { timeoutMs: 60_000, label: 'View PR button' });
+    await cdp.waitFor(`!!(${VIEW_PR})`, { timeoutMs: 60_000, label: 'PR badge button' });
 
-    check(await cdp.evaluate(`/open|draft|merged|closed/i.test((${PR_BADGE})?.textContent || '')`), 'PR badge carries its state label', await cdp.evaluate(`(${PR_BADGE})?.textContent`));
-    check(await cdp.evaluate(`(${PR_BADGE})?.getAttribute('tabindex') === null && (${PR_BADGE})?.parentElement?.getAttribute('tabindex') === null`), 'PR badge is not a tab stop');
-    check(await cdp.evaluate(`(() => { const b = ${PR_BADGE}; return !!b && getComputedStyle(b).borderTopWidth !== '0px'; })()`), 'PR badge uses the subtle outlined variant');
+    check(await cdp.evaluate(`/open|draft|merged|closed/i.test((${VIEW_PR})?.getAttribute('aria-label') || '')`), 'PR badge name carries its state', await cdp.evaluate(`(${VIEW_PR})?.getAttribute('aria-label')`));
+    check(await cdp.evaluate(`(${VIEW_PR})?.tabIndex === 0 && (${VIEW_PR})?.textContent.startsWith('#7')`), 'PR badge is one tab stop whose visible text leads its name');
+    check(await cdp.evaluate(`(() => { const b = ${VIEW_PR}; return !!b && getComputedStyle(b).borderTopWidth !== '0px'; })()`), 'PR badge uses the outlined variant');
     await shot(cdp, '01-header-wide.png');
 
     await cdp.click(VIEW_PR);

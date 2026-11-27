@@ -1,7 +1,5 @@
 import { useRef } from 'react'
-import { CircleDotIcon } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { HeaderActionButton } from '@/components/HeaderActionButton'
+import { HeaderRefBadge } from '@/components/HeaderRefBadge'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { usePinnedPanelsStore } from '@/state'
 import { IssueIcon } from './IssueIcon'
@@ -15,7 +13,7 @@ interface LinkedIssueControlsProps {
   issues: LinkedIssue[]
 }
 
-/** The header's linked-issue badge, "+N" count and View issue button (a menu when there are several). */
+/** The header's linked-issue badge: it opens the issue, or a menu of them when there are several. */
 export function LinkedIssueControls({ sessionId, repositoryId, issues }: LinkedIssueControlsProps) {
   const triggerRef = useRef<HTMLButtonElement>(null)
   const { markPinned, onCloseAutoFocus } = usePinFromMenu()
@@ -24,19 +22,21 @@ export function LinkedIssueControls({ sessionId, repositoryId, issues }: LinkedI
   const extra = issues.length - 1
   const pin = (issue: LinkedIssue) =>
     usePinnedPanelsStore.getState().pin('issue', { repositoryId, number: issue.number, sessionId, opener: triggerRef.current })
-  const badgeText = `Issue #${first.number}, ${first.state}${extra > 0 ? `, and ${extra} more` : ''}`
+  const badgeProps = {
+    ref: triggerRef,
+    icon: <IssueIcon state={first.state} />,
+    text: `#${first.number}`,
+    status: first.state,
+    extra,
+    itemTitle: first.title || undefined
+  }
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <Badge variant="outline" role="img" title={first.title} aria-label={badgeText}>
-        <IssueIcon state={first.state} />
-        <span aria-hidden>#{first.number}</span>
-        {extra > 0 && <span aria-hidden>+{extra}</span>}
-      </Badge>
       {extra > 0 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <HeaderActionButton ref={triggerRef} icon={CircleDotIcon} text="View issue" label="View issue" />
+            <HeaderRefBadge {...badgeProps} action="show linked issues" />
           </DropdownMenuTrigger>
           {/* Radix would hand focus back to the trigger and undo the move into the panel. */}
           <DropdownMenuContent align="end" onCloseAutoFocus={onCloseAutoFocus}>
@@ -56,7 +56,7 @@ export function LinkedIssueControls({ sessionId, repositoryId, issues }: LinkedI
           </DropdownMenuContent>
         </DropdownMenu>
       ) : (
-        <HeaderActionButton ref={triggerRef} icon={CircleDotIcon} text="View issue" label={`View issue #${first.number}`} onClick={() => pin(first)} />
+        <HeaderRefBadge {...badgeProps} action="open issue" onClick={() => pin(first)} />
       )}
     </div>
   )

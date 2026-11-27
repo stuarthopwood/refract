@@ -24,10 +24,10 @@ if (existsSync(MANAGED_GH)) {
   process.exit(2);
 }
 
-const VIEW_PR = `document.querySelector('button[aria-label="View pull request #7"]')`;
-const VIEW_ISSUE = `Array.from(document.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '').startsWith('View issue'))`;
-const ISSUE_BADGE = `Array.from(document.querySelectorAll('[role="img"]')).find((e) => (e.getAttribute('aria-label') || '').startsWith('Issue #11'))`;
-const CHECKS_ICON = `Array.from(document.querySelectorAll('[role="img"]')).find((e) => e.getAttribute('aria-label') === 'Checks passed')`;
+const VIEW_PR = `Array.from(document.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '').startsWith('#7,'))`;
+const VIEW_ISSUE = `Array.from(document.querySelectorAll('button')).find((b) => (b.getAttribute('aria-label') || '').startsWith('#11,'))`;
+const ISSUE_BADGE = VIEW_ISSUE;
+const CHECKS_ICON = `(${VIEW_PR})?.getAttribute('aria-label')?.includes('checks passed') ? document.body : null`;
 const PANEL = `document.querySelector('[data-right-pane-content]')`;
 const MESSAGE_BOX = `document.querySelector('[aria-label="Message"]')`;
 
@@ -92,26 +92,26 @@ async function main() {
     await addRepository(cdp, path.join(repoParent, 'spoon-knife'));
     await createSessionViaQuickCreate(cdp, 'hello-world');
 
-    // 1. The badge, number and checks icon appear with a PR; the accessible names carry the state.
-    await cdp.waitFor(`!!(${VIEW_PR})`, { timeoutMs: 60_000, label: 'View PR button' });
+    // 1. The badge buttons, number and checks appear with a PR; the accessible name carries the state and the action (#1745).
+    await cdp.waitFor(`!!(${VIEW_PR})`, { timeoutMs: 60_000, label: 'PR badge button' });
     check(await cdp.evaluate(`document.body.textContent.includes('#7')`), 'Header shows the PR number');
-    check(await cdp.evaluate(`!!(${CHECKS_ICON})`), 'Checks icon has the accessible name "Checks passed"');
-    check(await cdp.evaluate(`(${ISSUE_BADGE})?.getAttribute('aria-label') === 'Issue #11, open, and 1 more'`), 'Issue badge names the first issue, its state and "and 1 more"', await cdp.evaluate(`(${ISSUE_BADGE})?.getAttribute('aria-label')`));
+    check(await cdp.evaluate(`!!(${CHECKS_ICON})`), 'PR badge name carries the checks state "checks passed"');
+    check(await cdp.evaluate(`(${ISSUE_BADGE})?.getAttribute('aria-label') === '#11, open, and 1 more: show linked issues'`), 'Issue badge names the first issue, its state, "and 1 more" and the action', await cdp.evaluate(`(${ISSUE_BADGE})?.getAttribute('aria-label')`));
     await shot(cdp, '01-header-badges.png');
 
-    // 2. View PR opens the pinned Pull request panel; Escape-free close returns focus to the button.
+    // 2. Clicking the PR badge opens the pinned Pull request panel; Escape-free close returns focus to the badge.
     await cdp.click(VIEW_PR);
     await cdp.waitFor(`document.body.textContent.includes('Description for pull request #7.')`, { timeoutMs: 20_000, label: 'pinned PR detail' });
-    check(await cdp.evaluate(`document.activeElement === (${PANEL})`), 'Opening View PR moves focus into the panel');
+    check(await cdp.evaluate(`document.activeElement === (${PANEL})`), 'Opening the PR badge moves focus into the panel');
     await shot(cdp, '02-pinned-pull-request-panel.png');
     await cdp.click(`document.querySelector('[data-panel-close]')`);
     await cdp.waitFor(`!document.body.textContent.includes('Description for pull request #7.')`, { timeoutMs: 10_000, label: 'PR panel closed' });
-    check(await cdp.evaluate(`document.activeElement === (${VIEW_PR})`), 'Closing the pinned panel returns focus to View PR');
+    check(await cdp.evaluate(`document.activeElement === (${VIEW_PR})`), 'Closing the pinned panel returns focus to the PR badge');
 
-    // 3. View issue offers a menu for two issues; choosing one pins the Issue panel.
+    // 3. The issue badge offers a menu for two issues; choosing one pins the Issue panel.
     await cdp.click(VIEW_ISSUE);
     await cdp.waitFor(`!!document.querySelector('[role="menuitem"]')`, { timeoutMs: 5_000, label: 'issue menu' });
-    check(await cdp.evaluate(`document.querySelectorAll('[role="menuitem"]').length === 2`), 'View issue menu lists both closing issues');
+    check(await cdp.evaluate(`document.querySelectorAll('[role="menuitem"]').length === 2`), 'Issue badge menu lists both closing issues');
     await shot(cdp, '03-issue-menu.png');
     await cdp.click(`Array.from(document.querySelectorAll('[role="menuitem"]')).find((e) => e.textContent.includes('#12'))`);
     await cdp.waitFor(`document.body.textContent.includes('Body of issue #12.')`, { timeoutMs: 20_000, label: 'pinned issue detail' });
@@ -120,7 +120,7 @@ async function main() {
     // 4. A Session whose Project has no PR shows no badge and no buttons.
     await createSessionViaQuickCreate(cdp, 'spoon-knife');
     await sleep(2500);
-    check(await cdp.evaluate(`!(${VIEW_PR}) && !(${VIEW_ISSUE}) && !(${ISSUE_BADGE})`), 'No badge or buttons when the Session has no pull request');
+    check(await cdp.evaluate(`!(${VIEW_PR}) && !(${VIEW_ISSUE})`), 'No badge when the Session has no pull request');
     check(await cdp.evaluate(`!!(${MESSAGE_BOX})`), 'Chat composer still renders');
     await shot(cdp, '05-no-pr-no-badges.png');
   } catch (err) {
