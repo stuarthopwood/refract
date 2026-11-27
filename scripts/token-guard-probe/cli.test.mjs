@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { assertScratchRootSafe, formatLine, parseArgs, selectGroups } from './cli.mjs';
 
@@ -21,33 +22,39 @@ describe('parseArgs', () => {
 });
 
 describe('assertScratchRootSafe', () => {
-  const real = ['C:\\Users\\u\\.omp', 'C:\\Users\\u\\.pi', 'C:\\Users\\u\\AppData\\Roaming\\refract-tauri'];
+  // path.resolve only understands the host's path syntax: on Linux `C:\Users\u` is one relative segment, so
+  // fixtures are built per platform to keep the same overlap/disjoint shapes on both.
+  const onWindows = process.platform === 'win32';
+  const home = onWindows ? 'C:\\Users\\u' : '/home/u';
+  const at = (...segments) => path.join(home, ...segments);
+  const real = [at('.omp'), at('.pi'), at('AppData', 'Roaming', 'refract-tauri')];
+  const otherRoot = onWindows ? 'D:\\scratch' : '/mnt/scratch';
 
   it('accepts a root disjoint from the real dirs', () => {
-    expect(() => assertScratchRootSafe('C:\\Users\\u\\refract-1935-probe', real)).not.toThrow();
+    expect(() => assertScratchRootSafe(at('refract-1935-probe'), real)).not.toThrow();
   });
 
   it('refuses a root equal to, inside, or containing a real dir', () => {
-    expect(() => assertScratchRootSafe('C:\\Users\\u\\.omp', real)).toThrow(/overlaps/);
-    expect(() => assertScratchRootSafe('C:\\Users\\u\\.pi\\scratch', real)).toThrow(/overlaps/);
-    expect(() => assertScratchRootSafe('C:\\Users\\u', real)).toThrow(/overlaps/);
-    expect(() => assertScratchRootSafe('C:\\Users\\U\\APPDATA\\roaming\\Refract-Tauri', real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe(at('.omp'), real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe(at('.pi', 'scratch'), real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe(home, real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe(path.join(home.toUpperCase(), 'APPDATA', 'roaming', 'Refract-Tauri'), real)).toThrow(/overlaps/);
   });
 
   it('does not treat a sibling sharing a name prefix as overlapping', () => {
-    expect(() => assertScratchRootSafe('C:\\Users\\u\\.omp2', real)).not.toThrow();
+    expect(() => assertScratchRootSafe(at('.omp2'), real)).not.toThrow();
   });
 
   it('refuses a trailing separator on a real dir root', () => {
-    expect(() => assertScratchRootSafe('C:\\Users\\u\\.omp\\', real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe(`${at('.omp')}${path.sep}`, real)).toThrow(/overlaps/);
   });
 
-  it('allows a root on a different drive', () => {
-    expect(() => assertScratchRootSafe('D:\\scratch\\refract-1935-probe', real)).not.toThrow();
+  it('allows a root outside the real dirs tree (another drive on Windows)', () => {
+    expect(() => assertScratchRootSafe(path.join(otherRoot, 'refract-1935-probe'), real)).not.toThrow();
   });
 
   it('refuses a child literally named `..foo` inside a real dir', () => {
-    expect(() => assertScratchRootSafe('C:\\Users\\u\\.omp\\..foo', real)).toThrow(/overlaps/);
+    expect(() => assertScratchRootSafe(at('.omp', '..foo'), real)).toThrow(/overlaps/);
   });
 });
 
