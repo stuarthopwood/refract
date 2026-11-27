@@ -1,5 +1,6 @@
 import * as React from 'react'
 import { useSettingsStore } from '@/state'
+import { DEFAULT_TRANSCRIPT_DISPLAY, isToolTargets, type ToolTargets } from '../../../shared/transcriptDisplay'
 import { cn } from '@/lib/utils'
 import { InlineCode } from '@/components/ui/inline-code'
 import { SummaryWrapContext } from './CollapsedLine'
@@ -12,6 +13,23 @@ import { toolAriaPrefix } from './toolVerbs'
 // FR-012: "Show tool names on rows" (`transcriptDisplay.toolNames`), off by default.
 export function useShowToolNames(): boolean {
   return useSettingsStore((state) => state.settings.transcriptDisplay?.toolNames === true)
+}
+
+// #1758: "Tool targets" (`transcriptDisplay.toolTargets`): hide the target, show it in the row's tooltip, or show it in the row.
+export function useToolTargets(): ToolTargets {
+  return useSettingsStore((state) => {
+    const value = state.settings.transcriptDisplay?.toolTargets
+    return isToolTargets(value) ? value : DEFAULT_TRANSCRIPT_DISPLAY.toolTargets
+  })
+}
+
+// The row summary's target chip (Show only) and the row tooltip text (the raw tool id, plus the full target on Hover). Hide and
+// Hover keep the target out of the row, but the accessible name still carries it (`toolAriaHead`).
+export function toolTargetDisplay(mode: ToolTargets, rawId: string, target: string | undefined): { chip: React.ReactNode | undefined; tooltip: string } {
+  return {
+    chip: mode === 'show' ? toolTargetChip(target) : undefined,
+    tooltip: mode === 'hover' && target ? `${rawId}: ${target}` : rawId
+  }
 }
 
 // FR-007: a non-empty intent is the label; whitespace-only counts as absent.

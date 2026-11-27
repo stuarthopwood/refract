@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
-import type { Alarm, ApprovalMode, ReadoutKind, Settings, TranscriptDisplaySettings } from '../../shared/model'
+import type { Alarm, ApprovalMode, ReadoutKind, Settings, ToolTargets, TranscriptDisplayFlag } from '../../shared/model'
 import type { ActivityText } from '../../shared/activity'
 import type { StatusStyle } from '../../shared/statusStyle'
 import type { ChatRowDensity } from '../../shared/chatRowDensity'
@@ -19,7 +19,8 @@ interface SettingsState {
   setActivityText(value: ActivityText): Promise<void>
   setStatusStyle(value: StatusStyle): Promise<void>
   setChatRowDensity(value: ChatRowDensity): Promise<void>
-  setTranscriptDisplay(field: keyof TranscriptDisplaySettings, visible: boolean): Promise<void>
+  setTranscriptDisplay(field: TranscriptDisplayFlag, visible: boolean): Promise<void>
+  setToolTargets(value: ToolTargets): Promise<void>
   setShowSampleData(enabled: boolean): Promise<void>
   setDetectImagePathsOnPaste(enabled: boolean): Promise<void>
   setShowContextUsageBar(enabled: boolean): Promise<void>
@@ -114,6 +115,14 @@ export const useSettingsStore = create<SettingsState>((set) => ({
   },
   setChatRowDensity: async (value) => {
     const result = await window.refract.settings.setChatRowDensity(value)
+    if (result.ok) {
+      set({ settings: result.value })
+    } else {
+      notify(result.error)
+    }
+  },
+  setToolTargets: async (value) => {
+    const result = await window.refract.settings.setToolTargets(value)
     if (result.ok) {
       set({ settings: result.value })
     } else {

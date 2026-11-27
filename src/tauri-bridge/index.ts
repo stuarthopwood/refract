@@ -296,6 +296,7 @@ const refract: RefractApi = {
     setSplit: (layout) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SPLIT, layout),
     setWatermarkEnabled: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_WATERMARK_ENABLED, enabled),
     setTranscriptDisplay: (field, visible) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TRANSCRIPT_DISPLAY, field, visible),
+    setToolTargets: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TOOL_TARGETS, value),
     setShowSampleData: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SAMPLE_DATA, enabled),
     setDetectImagePathsOnPaste: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE, enabled),
     setShowContextUsageBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR, enabled),

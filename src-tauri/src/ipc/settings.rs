@@ -3,7 +3,9 @@
 
 use serde_json::Value;
 
-use crate::store::settings::{ActivityText, ApprovalMode, ChatWidth, HolidayTouches, SplitLayout};
+use crate::store::settings::{
+    ActivityText, ApprovalMode, ChatWidth, HolidayTouches, SplitLayout, ToolTargets,
+};
 
 use super::{arg_str, invalid_argument, AppState, Dispatcher, HandlerFuture};
 
@@ -23,6 +25,7 @@ pub fn register(d: &mut Dispatcher) {
         "settings.setTranscriptDisplay",
         settings_set_transcript_display,
     );
+    d.register("settings.setToolTargets", settings_set_tool_targets);
     d.register("settings.setShowSampleData", settings_set_show_sample_data);
     d.register(
         "settings.setDetectImagePathsOnPaste",
@@ -315,6 +318,29 @@ pub fn settings_set_transcript_display(state: AppState, args: Vec<Value>) -> Han
             .lock()
             .await
             .set_transcript_display(&field, visible)
+            .await
+            .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
+        let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
+        state.session_manager.emit_settings_changed(&value_json);
+        Ok(value_json)
+    })
+}
+
+/// `settings.setToolTargets(value)`: enum-parse-then-persist, like `settings_set_activity_text` (#1758).
+pub fn settings_set_tool_targets(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let value = args
+            .first()
+            .and_then(|v| v.as_str())
+            .and_then(|v| serde_json::from_value::<ToolTargets>(Value::String(v.to_string())).ok())
+            .ok_or_else(|| {
+                invalid_argument("settings.setToolTargets expects one of 'hide' | 'hover' | 'show'")
+            })?;
+        let value = state
+            .settings
+            .lock()
+            .await
+            .set_tool_targets(value)
             .await
             .map_err(|err| super::IpcError::new("git-failed", err.to_string()))?;
         let value_json = serde_json::to_value(value).expect("Settings is always JSON-serialisable");
