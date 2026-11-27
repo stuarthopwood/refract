@@ -271,7 +271,7 @@ function ReasoningRadioItem({
       disabled={disabled}
       aria-disabled={unavailable || undefined}
       className={cn(
-        'min-h-6 w-auto flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-2 data-[state=checked]:border-none disabled:cursor-not-allowed disabled:opacity-50',
+        'min-h-6 w-auto flex-row items-center gap-2 rounded-none border-none bg-transparent px-0 py-0 text-xs font-normal hover:bg-transparent focus-visible:ring-(length:--focus-ring-width) data-[state=checked]:border-none disabled:cursor-not-allowed disabled:opacity-50',
         COMPOSER_DISABLED_OPACITY_CLASS,
         // Plain `bg-accent/70` ties with the base checked transparent bg and loses; use a mutually exclusive checked variant.
         pending ? 'rounded bg-accent/70 data-[state=checked]:bg-accent/70' : 'data-[state=checked]:bg-transparent'

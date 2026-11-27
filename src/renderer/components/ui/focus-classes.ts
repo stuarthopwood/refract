@@ -6,4 +6,4 @@ export const INSET_FOCUS_OUTLINE_CLASS =
 // Focus target for a finished card (tabIndex -1), so Submit or Esc never strands focus on the body;
 // `outline-hidden` gives forced colors an outline in place of the box-shadow ring high contrast drops.
 export const RESTING_FOCUS_CLASS =
-  'outline-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring'
+  'outline-none focus-visible:outline-hidden focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring'

@@ -217,7 +217,7 @@ export function RequestCard({ sessionId, request }: RequestCardProps) {
           tabIndex={0}
           role="region"
           aria-label="Question"
-          className="max-h-56 space-y-2 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          className="max-h-56 space-y-2 overflow-y-auto outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset"
         >
           {hasBody && (
             <div id={bodyTextId}>

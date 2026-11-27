@@ -119,7 +119,7 @@ function Slider({
         aria-valuetext={ariaValuetext}
         className={cn(
           "relative block h-11 w-6 outline-none after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 after:rounded-full after:bg-primary after:content-['']",
-          "group-active/slider:after:w-0.5 focus-visible:after:ring-3 focus-visible:after:ring-focus-glow",
+          "group-active/slider:after:w-0.5 focus-visible:after:ring-(length:--focus-ring-width) focus-visible:after:ring-focus-glow",
           trackBackground && "after:shadow-[0_0_0_2px_var(--background)]",
           "forced-colors:after:bg-[Highlight] forced-colors:focus-visible:after:outline-2 forced-colors:focus-visible:after:outline-[Highlight]"
         )}

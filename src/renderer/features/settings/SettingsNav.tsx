@@ -59,7 +59,7 @@ export function SettingsNav({ active, onSelect }: SettingsNavProps) {
                 data-choice-item
                 className={cn(
                   'relative flex w-full items-center gap-2 rounded-md border border-transparent bg-clip-padding px-2 py-1 text-left text-sm outline-none',
-                  'focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-focus-glow',
+                  'focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-glow',
                   // Forced colours strips the box-shadow ring and the transparent border, so draw a
                   // real outline there (same pattern as SessionList.tsx's Clear filter).
                   'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',

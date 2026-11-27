@@ -13,6 +13,7 @@ import { focusedBadgeContrastRows } from './focused-badge-contrast.mjs'
 import { contextUsageContrastRows } from './context-usage-contrast.mjs'; import { findNavContrastRows } from './find-nav-contrast.mjs'; import { recommendedHoverContrastRows } from './recommended-hover-contrast.mjs'; import { optionStateContrastRows } from './option-state-contrast.mjs'
 import { contrastRatio, linearToHex, relativeLuminance, resolvedLinear } from './contrast-math.mjs'
 import { css, cssPath, repoRoot, themes, sidebarBorderAliasesDivider } from './theme-tokens.mjs'
+import { DARK_HIGH_CONTRAST_THEMES } from './theme-groups.mjs'
 
 // A ThemeId declared in themes.ts with no `.theme-<id>` block would silently drop out of the table and still
 // exit 0, so parse the union and fail loudly for any missing block. The union may wrap lines (no trailing `;`);
@@ -65,7 +66,7 @@ const themeWatermarkOpacity = (themeId) => {
 
 // Soft decorative dividers (`--divider`, never `--border`) carry no WCAG 1.4.11 floor, so presence only --
 // except where a preset's `--sidebar-border` aliases `--divider` (a real hover fill), which a check below floors.
-// Dark (high contrast)'s stricter divider treatment is deferred to #552.
+// Dark (high contrast) is exempt: its dividers are enforced at 4.5:1 in dark-hc-contrast-pairs.mjs (#552).
 const DIVIDER_PAIRS = [
   { fg: 'divider', bg: 'background' },
   { fg: 'divider', bg: 'card' },
@@ -168,8 +169,10 @@ for (const [themeId, props] of Object.entries(themes)) {
   }
 }
 
-// Decorative-divider pairs: no floor in any theme, but still fail if the token is missing.
+// Decorative-divider pairs: no floor in any theme but Dark (high contrast), but still fail if the token is missing.
 for (const [themeId, props] of Object.entries(themes)) {
+  // Dark (high contrast) has soft dividers off: DARK_HC_PAIRS holds `--divider` to 4.5:1 instead.
+  if (DARK_HIGH_CONTRAST_THEMES.includes(themeId)) continue
   for (const { fg, bg } of DIVIDER_PAIRS) {
     const fgEntry = props[fg]
     const bgEntry = props[bg]

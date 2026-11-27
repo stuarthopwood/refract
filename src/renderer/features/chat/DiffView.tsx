@@ -114,7 +114,7 @@ export function DiffView({ path, oldText, newText, capped = false }: DiffViewPro
           role="region"
           aria-label={`Diff of ${path}`}
           className={cn(
-            'outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset',
+            'outline-none focus-visible:outline-hidden focus-visible:outline-offset-[-2px] focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset',
             capped && !expanded && 'max-h-96 overflow-auto'
           )}
         >

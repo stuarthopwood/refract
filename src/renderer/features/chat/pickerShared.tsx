@@ -37,4 +37,4 @@ export const PICKER_OPTION_ACTIVE_CLASS = 'border-l-active-indicator bg-composer
 
 /** The composer's own surface/border/focus treatment. */
 export const COMPOSER_INPUT_SURFACE_CLASS =
-  'border-composer-border bg-composer-background dark:bg-composer-background focus-visible:border-composer-focus focus-visible:ring-3 focus-visible:ring-composer-ring'
+  'border-composer-border bg-composer-background dark:bg-composer-background focus-visible:border-composer-focus focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-composer-ring'

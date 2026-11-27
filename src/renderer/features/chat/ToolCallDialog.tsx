@@ -46,7 +46,7 @@ function ToolCallDialogBody({ item }: { item: ToolItem }) {
     [item.args, item.output]
   )
   const panelClassName =
-    'min-h-0 flex-1 overflow-auto outline-none focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+    'min-h-0 flex-1 overflow-auto outline-none focus-visible:outline-hidden focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset'
 
   return (
     <Tabs defaultValue="formatted" className="flex min-h-0 flex-1 flex-col gap-2">

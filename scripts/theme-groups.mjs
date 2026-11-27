@@ -11,3 +11,6 @@ export const STANDARD_THEMES = [...DARK_STANDARD_THEMES, ...LIGHT_STANDARD_THEME
 
 /** High-contrast presets: solid composer fill, 7:1 text floor. */
 export const HIGH_CONTRAST_THEMES = ['dark-high-contrast', 'light-high-contrast']
+
+/** Dark (high contrast) only: the #552 floors (7:1 text, 4.5:1 edges) are enforced for this preset alone. */
+export const DARK_HIGH_CONTRAST_THEMES = ['dark-high-contrast']

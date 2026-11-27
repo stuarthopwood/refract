@@ -429,7 +429,7 @@ const AskQuestionBody = React.forwardRef<HTMLDivElement, AskQuestionBodyProps>(f
           tabIndex={0}
           role="region"
           aria-label="Question"
-          className="max-h-56 overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+          className="max-h-56 overflow-y-auto outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset"
         >
           <Markdown id={`${safeId}-body-md`} text={body} className="[&_p]:whitespace-pre-line" />
         </CardContent>

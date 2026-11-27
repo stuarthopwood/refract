@@ -140,9 +140,9 @@ export function CodeBlock({
   // Named and keyboard-reachable so a wide block is its own scrollable region.
   const regionLabel = `${label} code block`
   // `ring-inset` keeps the ring inside the box, where the wrapper's `overflow-hidden` can't clip it.
-  const scrollableClassName = 'overflow-x-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+  const scrollableClassName = 'overflow-x-auto outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset'
   // Applies regardless of `lang`/`html`: wrap works for highlighted and plain blocks alike.
-  const wrapClassName = 'whitespace-pre-wrap break-words outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+  const wrapClassName = 'whitespace-pre-wrap break-words outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset'
   const showLineNumbers = lineNumbers && !wrapOn
   const lineCount = showLineNumbers ? code.split('\n').length : 0
 
