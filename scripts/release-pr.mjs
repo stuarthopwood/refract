@@ -8,6 +8,8 @@ export const LEVELS = ['patch', 'minor', 'major'];
 
 const RELEASE_BRANCH_RE = /^release\/v(\d+\.\d+\.\d+)$/;
 
+export const RELEASE_REPO_OWNER = 'stuarthopwood';
+
 export function releaseBranchName(version) {
   return `release/v${version}`;
 }
@@ -111,21 +113,29 @@ export function prStepFailureMessage(stepId, version, { interrupted = false, det
   );
 }
 
+// `gh stack submit` opens a draft, so it must be marked ready first; no `--delete-branch`, which would
+// try to remove the release branch the local worktree may still have checked out.
+function mergeCommand(number) {
+  return `gh pr ready ${number} && gh pr merge ${number} --squash`;
+}
+
 export function openedPrMessage(version, pr) {
   const where = pr ? `${pr.url} (#${pr.number})` : `release/v${version}`;
-  const merge = pr ? `gh pr merge ${pr.number} --squash --delete-branch` : 'gh pr merge <pr> --squash --delete-branch';
   return [
-    `release: opened ${where} titled "${releaseCommitSubject(version)}". Stopping here: nothing was pushed to main.`,
-    `release: wait for its checks (CodeQL included), then squash-merge it: ${merge}`,
+    `release: opened ${where} as a draft titled "${releaseCommitSubject(version)}". Stopping here: nothing was pushed to main.`,
+    `release: wait for its checks (CodeQL included), then mark it ready and squash-merge it: ${mergeCommand(pr ? pr.number : '<pr>')}`,
     `release: a one-PR stack cannot use gh stack merge (docs/stacked-prs.md). After the merge, resume with:`,
     `  pnpm release --finish v${version}`,
   ].join('\n');
 }
 
-// `gh pr list --head release/vX.Y.Z --state all --json number,state,url,baseRefName,mergeCommit`.
+// `gh pr list --head release/vX.Y.Z --state all --json number,state,url,baseRefName,headRepositoryOwner,mergeCommit`.
+// A fork can reuse the branch name, so only a PR whose head repo is the owner's own counts.
 export function pickMergedReleasePr(prs, version) {
   const branch = releaseBranchName(version);
-  const onMain = prs.filter((p) => p.baseRefName === 'main').sort((a, b) => b.number - a.number);
+  const onMain = prs
+    .filter((p) => p.baseRefName === 'main' && p.headRepositoryOwner?.login === RELEASE_REPO_OWNER)
+    .sort((a, b) => b.number - a.number);
   if (onMain.length === 0) {
     throw new Error(`no pull request from ${branch} into main was found; run pnpm release first`);
   }
@@ -134,8 +144,8 @@ export function pickMergedReleasePr(prs, version) {
   const open = onMain.find((p) => p.state === 'OPEN');
   if (open) {
     throw new Error(
-      `${open.url} is still open; wait for its checks, then merge it (gh pr merge ${open.number} --squash ` +
-        `--delete-branch) and re-run: pnpm release --finish v${version}`,
+      `${open.url} is still open; wait for its checks, then merge it (${mergeCommand(open.number)}) ` +
+        `and re-run: pnpm release --finish v${version}`,
     );
   }
   throw new Error(`${onMain[0].url} was closed without merging; reopen and merge it, or re-cut the release`);
@@ -158,6 +168,27 @@ export function parseRemoteTagSha(output, tagName) {
   const peeled = lines.find((l) => l.endsWith(`refs/tags/${tagName}^{}`));
   const line = peeled ?? lines.find((l) => l.endsWith(`refs/tags/${tagName}`));
   return line ? line.split(/\s+/)[0] : null;
+}
+
+// The `--finish` commands, in one place so the executed argv and the dry-run plan cannot drift apart.
+export function finishStepCommands(version, sha) {
+  const tagName = `v${version}`;
+  return {
+    tag: ['git', 'tag', '-a', tagName, '-m', tagName, sha],
+    'push-tag': ['git', 'push', 'origin', `refs/tags/${tagName}`],
+  };
+}
+
+// Every command the release runs passes through this guard, so a bad helper can never push `main` (GH013).
+export function assertNoMainPush(argv) {
+  if (argv[0] !== 'git' || argv[1] !== 'push') return;
+  const rest = argv.slice(2);
+  const refspecs = rest.filter((a) => !a.startsWith('-')).slice(1);
+  const bulk = rest.filter((a) => a === '--all' || a === '--mirror');
+  const toMain = refspecs.filter((r) => /(^|[:/])main$/.test(r));
+  if (bulk.length > 0 || toMain.length > 0) {
+    throw new Error(`refusing to run "${argv.join(' ')}": the release never pushes main`);
+  }
 }
 
 // Lets `--finish` resume after a half-done run, but never moves a tag that points somewhere else.
@@ -216,11 +247,11 @@ export function phaseOnePlan(version, startBranch) {
 }
 
 export function phaseTwoPlan(version, sha, worktreeDir) {
-  const tagName = `v${version}`;
+  const commands = finishStepCommands(version, sha ?? '<squash commit>');
   return [
     `verify the release PR from ${releaseBranchName(version)} is merged${sha ? ` (squash commit ${sha})` : ''}`,
-    `git tag -a ${tagName} -m ${tagName} ${sha ?? '<squash commit>'}`,
-    `git push origin refs/tags/${tagName}`,
+    join(commands.tag),
+    join(commands['push-tag']),
     'print the publish commands (not run):',
     ...publishCommands(version, worktreeDir).map((c) => `  ${c}`),
   ];

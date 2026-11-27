@@ -4,9 +4,11 @@ import {
   assertCleanTree,
   assertCommitVersions,
   assertHeadAtOriginMain,
+  assertNoMainPush,
   classifyBranch,
   decideTag,
   finishFailureMessage,
+  finishStepCommands,
   openedPrMessage,
   parseArgs,
   parseRemoteTagSha,
@@ -78,6 +80,20 @@ describe('phase 1 commands and recovery', () => {
     expect(commands.join('\n')).not.toMatch(/pr create|origin main/);
   });
 
+  it('never lets an executed push target main, whichever helper built it', () => {
+    const executed = [...Object.values(prStepCommands('1.2.3')), ...Object.values(finishStepCommands('1.2.3', 'abc'))];
+    for (const argv of executed) expect(() => assertNoMainPush(argv)).not.toThrow();
+    for (const bad of [
+      ['git', 'push', 'origin', 'main'],
+      ['git', 'push', 'origin', 'HEAD:main'],
+      ['git', 'push', '--set-upstream', 'origin', 'refs/heads/main'],
+      ['git', 'push', '--all', 'origin'],
+    ]) {
+      expect(() => assertNoMainPush(bad)).toThrow(/never pushes main/);
+    }
+    expect(phaseTwoPlan('1.2.3', 'abc', '/w/r')).toContain('git push origin refs/tags/v1.2.3');
+  });
+
   it('titles the commit, and so the PR, chore(release): vX.Y.Z', () => {
     expect(releaseCommitSubject('1.2.3')).toBe('chore(release): v1.2.3');
   });
@@ -96,11 +112,12 @@ describe('phase 1 commands and recovery', () => {
     expect(prStepFailureMessage('push', '1.2.3', { interrupted: true })).toContain('stopped by SIGINT/SIGTERM');
   });
 
-  it('prints the merge and resume commands when the PR opened', () => {
+  it('marks the draft ready before merging, and never deletes the branch', () => {
     const msg = openedPrMessage('1.2.3', { number: 7, url: 'https://x/pull/7' });
-    expect(msg).toContain('gh pr merge 7 --squash --delete-branch');
+    expect(msg).toContain('gh pr ready 7 && gh pr merge 7 --squash');
+    expect(msg).not.toContain('--delete-branch');
     expect(msg).toContain('pnpm release --finish v1.2.3');
-    expect(openedPrMessage('1.2.3', null)).toContain('gh pr merge <pr>');
+    expect(openedPrMessage('1.2.3', null)).toContain('gh pr ready <pr> && gh pr merge <pr> --squash');
   });
 
   it('plans the whole of phase 1 for a dry run', () => {
@@ -112,7 +129,14 @@ describe('phase 1 commands and recovery', () => {
 });
 
 describe('phase 2 (--finish)', () => {
-  const merged = { number: 9, url: 'https://x/pull/9', state: 'MERGED', baseRefName: 'main', mergeCommit: { oid: 'abc' } };
+  const merged = {
+    number: 9,
+    url: 'https://x/pull/9',
+    state: 'MERGED',
+    baseRefName: 'main',
+    headRepositoryOwner: { login: 'stuarthopwood' },
+    mergeCommit: { oid: 'abc' },
+  };
 
   it('picks the merged release PR and its squash commit', () => {
     expect(pickMergedReleasePr([merged], '1.2.3')).toEqual({ number: 9, url: 'https://x/pull/9', sha: 'abc' });
@@ -129,6 +153,13 @@ describe('phase 2 (--finish)', () => {
     expect(() => pickMergedReleasePr([{ ...merged, baseRefName: 'dev' }], '1.2.3')).toThrow(/no pull request/);
   });
 
+  it('ignores a PR from a fork that reuses the release branch name', () => {
+    const fork = { ...merged, headRepositoryOwner: { login: 'someone-else' } };
+    expect(() => pickMergedReleasePr([fork], '1.2.3')).toThrow(/no pull request/);
+    expect(pickMergedReleasePr([fork, { ...merged, number: 3 }], '1.2.3').number).toBe(3);
+    expect(() => pickMergedReleasePr([{ ...merged, headRepositoryOwner: null }], '1.2.3')).toThrow(/no pull request/);
+  });
+
   it('refuses a squash commit whose manifests are not the release version', () => {
     expect(() => assertCommitVersions('1.2.3', { 'package.json': '1.2.3' })).not.toThrow();
     expect(() => assertCommitVersions('1.2.3', { 'package.json': '1.2.2' })).toThrow(/package\.json=1\.2\.2/);
@@ -139,6 +170,12 @@ describe('phase 2 (--finish)', () => {
     expect(parseRemoteTagSha(out, 'v1.2.3')).toBe('commit1');
     expect(parseRemoteTagSha('lightweight\trefs/tags/v1.2.3\n', 'v1.2.3')).toBe('lightweight');
     expect(parseRemoteTagSha('', 'v1.2.3')).toBeNull();
+  });
+
+  it('skips blank lines and takes the peeled commit even when its line precedes the tag line', () => {
+    const peeledFirst = '\ncommit1\trefs/tags/v1.2.3^{}\n\ntagobj\trefs/tags/v1.2.3\n';
+    expect(parseRemoteTagSha(peeledFirst, 'v1.2.3')).toBe('commit1');
+    expect(parseRemoteTagSha('\nother\trefs/tags/v1.2.30^{}\n\ntagobj\trefs/tags/v1.2.3\n', 'v1.2.3')).toBe('tagobj');
   });
 
   it('tags and pushes on a first run, resumes a half-done run, and never moves a wrong tag', () => {

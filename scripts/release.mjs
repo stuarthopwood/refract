@@ -9,7 +9,6 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
 import {
   buildChangelogSection,
@@ -27,31 +26,38 @@ import {
   readAllVersions,
   writeManifestVersions,
 } from './release-versions.mjs';
+import { finishRelease } from './release-finish.mjs';
 import {
   PR_STEPS,
   assertBranchMatchesVersion,
   assertCleanTree,
-  assertCommitVersions,
   assertHeadAtOriginMain,
   classifyBranch,
-  decideTag,
-  finishFailureMessage,
   openedPrMessage,
   parseArgs,
-  parseRemoteTagSha,
   phaseOnePlan,
   phaseTwoPlan,
-  pickMergedReleasePr,
   prStepCommands,
   prStepFailureMessage,
-  publishCommands,
   releaseBranchName,
   releaseCommitSubject,
 } from './release-pr.mjs';
+import {
+  REPO_SLUG,
+  checkInterrupted,
+  fail,
+  git,
+  gitInherit,
+  installInterruptHandlers,
+  printPlan,
+  repoRoot,
+  runCommand,
+  runStep,
+  settleSignals,
+  wasInterrupted,
+  worktreeDirFor,
+} from './release-run.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(__dirname, '..');
-const REPO_SLUG = 'stuarthopwood/refract';
 const CHANGELOG_PATH = path.join(repoRoot, 'CHANGELOG.md');
 
 // The release files this script stages or commits; also what gets unstaged on a failed `git add`/`git commit`.
@@ -63,33 +69,6 @@ const TRACKED_RELEASE_FILES = [
   'CHANGELOG.md',
 ];
 
-// Set by the SIGINT/SIGTERM handler installed before the first write. Without a handler Ctrl+C
-// (sent to the whole process group) would kill this script mid-edit with no restore; with one, the
-// child still dies, `spawnSync` returns non-zero and the catch block restores the files.
-let interrupted = false;
-
-function installInterruptHandlers() {
-  const onSignal = (signal) => {
-    interrupted = true;
-    console.error(`\nrelease: received ${signal}, stopping...`);
-  };
-  process.on('SIGINT', onSignal);
-  process.on('SIGTERM', onSignal);
-}
-
-// Thrown by `checkInterrupted` so catch sites can tell a user stop from an ordinary failure.
-class InterruptedError extends Error {}
-
-// `main()` is synchronous, so the signal handler only runs on a real event-loop tick: a catch block
-// right after a failed `spawnSync` can still see `interrupted === false` after a real SIGINT. Awaiting
-// `setImmediate` lets the queued handler run; called before every irreversible step.
-async function checkInterrupted() {
-  await new Promise((resolve) => setImmediate(resolve));
-  if (interrupted) {
-    throw new InterruptedError('interrupted');
-  }
-}
-
 // Best-effort and never throws: it runs inside an already-failing path and must not mask the real error.
 function unstageTrackedFiles() {
   spawnSync('git', ['reset', '--quiet', 'HEAD', '--', ...TRACKED_RELEASE_FILES], {
@@ -99,19 +78,6 @@ function unstageTrackedFiles() {
 }
 
 const argv = process.argv.slice(2);
-
-function fail(message) {
-  throw new Error(message);
-}
-
-function git(args) {
-  return execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' }).trim();
-}
-
-function gitInherit(args) {
-  const result = spawnSync('git', args, { cwd: repoRoot, stdio: 'inherit' });
-  if (result.status !== 0) fail(`git ${args.join(' ')} failed`);
-}
 
 // Returns the branch it started on: `main` (a release branch is cut) or an existing `release/*` branch.
 function checkPreconditions() {
@@ -186,9 +152,9 @@ function dateStamp() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// `targetCommitish` is the branch name `main`, not a SHA: generate-notes rejected a just-pushed SHA on a
-// non-default branch ("Invalid target_commitish parameter"). The tag does not exist yet in phase 1, and
-// `checkPreconditions` ensures HEAD == origin/main; `--finish` never calls generate-notes (it reads CHANGELOG.md).
+// `main` is the right target even though the release branch is cut from it: the tag `vX.Y.Z` does not exist yet,
+// and generate-notes rejected a just-pushed SHA on a non-default branch ("Invalid target_commitish parameter").
+// `checkPreconditions` guarantees HEAD == origin/main, so the notes cover exactly the commits this release ships.
 function buildChangelogPreview(nextVersion, tag) {
   const notes = fetchGeneratedNotes({
     repo: REPO_SLUG,
@@ -259,23 +225,6 @@ function determineNextVersion({ manifestVersion, tag, commits, level: LEVEL }) {
   return bumpVersion(manifestVersion, level);
 }
 
-// Both `pnpm release` and `pnpm release --finish` print the same plan under `--dry-run`, so the
-// two phases can be reviewed before either writes anything.
-function printPlan(title, lines) {
-  console.log(`\n${title}`);
-  lines.forEach((line, i) => console.log(`  ${i + 1}. ${line}`));
-}
-
-function worktreeDirFor(version) {
-  return path.resolve(repoRoot, '..', `refract-release-v${version}`);
-}
-
-function runCommand(argvList) {
-  const [cmd, ...rest] = argvList;
-  const result = spawnSync(cmd, rest, { cwd: repoRoot, stdio: 'inherit' });
-  if (result.status !== 0) fail(`${argvList.join(' ')} failed`);
-}
-
 function remoteRefExists(ref) {
   return git(['ls-remote', 'origin', ref]) !== '';
 }
@@ -315,15 +264,7 @@ function openedPr(version) {
 async function openReleasePr(version) {
   const commands = prStepCommands(version);
   for (const stepId of PR_STEPS) {
-    try {
-      await checkInterrupted();
-      runCommand(commands[stepId]);
-    } catch (err) {
-      await new Promise((resolve) => setImmediate(resolve));
-      const wasInterrupted = err instanceof InterruptedError || interrupted;
-      console.error(prStepFailureMessage(stepId, version, { interrupted: wasInterrupted, detail: err.message }));
-      process.exit(wasInterrupted ? 130 : 1);
-    }
+    await runStep(stepId, (id, opts) => prStepFailureMessage(id, version, opts), () => runCommand(commands[stepId]));
   }
   console.log(openedPrMessage(version, openedPr(version)));
 }
@@ -410,7 +351,7 @@ async function cutRelease({ dryRun, level }) {
   } catch (err) {
     // One more tick before reading `interrupted`: a signal that killed `cargo`/`git` directly surfaces
     // as a generic failure unless the queued handler gets to set the flag first.
-    await new Promise((resolve) => setImmediate(resolve));
+    await settleSignals();
     unstageTrackedFiles();
     restoreOriginals(originals);
     // Nothing is committed here, so the branch we cut is still at origin/main and `-d` is safe.
@@ -426,7 +367,7 @@ async function cutRelease({ dryRun, level }) {
         (branchBack ? `, and ${releaseBranch} was removed (back on ${startBranch}).` : '.') +
         (createdBranch && !branchBack ? ` Check your branch: ${releaseBranch} may still exist (git branch -d ${releaseBranch}).` : ''),
     );
-    if (err instanceof InterruptedError || interrupted) {
+    if (wasInterrupted(err)) {
       console.error('release: stopped by SIGINT/SIGTERM, exiting 130.');
       process.exit(130);
     }
@@ -437,91 +378,6 @@ async function cutRelease({ dryRun, level }) {
   // automatically, only print the resume command for the step that failed.
   console.log(`release: committed "${releaseCommitSubject(nextVersion)}" on ${releaseBranch}.`);
   await openReleasePr(nextVersion);
-}
-
-function readJsonAt(sha, file) {
-  return JSON.parse(git(['show', `${sha}:${file}`]));
-}
-
-function localTagSha(tagName) {
-  const result = spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/tags/${tagName}^{commit}`], {
-    cwd: repoRoot,
-    encoding: 'utf8',
-  });
-  return result.status === 0 ? result.stdout.trim() : null;
-}
-
-// Finds the squash commit of the merged release PR on origin/main and proves it is this release.
-function verifyMergedRelease(version) {
-  const fetchResult = spawnSync('git', ['fetch', 'origin'], { cwd: repoRoot, stdio: 'inherit' });
-  if (fetchResult.status !== 0) fail('git fetch origin failed');
-
-  const listed = execFileSync(
-    'gh',
-    ['pr', 'list', '--repo', REPO_SLUG, '--head', releaseBranchName(version), '--state', 'all', '--limit', '20',
-      '--json', 'number,state,url,baseRefName,mergeCommit'],
-    { cwd: repoRoot, encoding: 'utf8' },
-  );
-  const pr = pickMergedReleasePr(JSON.parse(listed), version);
-
-  const onMain = spawnSync('git', ['merge-base', '--is-ancestor', pr.sha, 'origin/main'], { cwd: repoRoot });
-  if (onMain.status !== 0) fail(`merge commit ${pr.sha} of ${pr.url} is not on origin/main`);
-
-  assertCommitVersions(version, {
-    'package.json': readJsonAt(pr.sha, 'package.json').version,
-    'src-tauri/tauri.conf.json': readJsonAt(pr.sha, 'src-tauri/tauri.conf.json').version,
-  });
-  return pr;
-}
-
-// Runs one `--finish` step; `process.exit` keeps the failure text the only thing the user sees.
-async function finishStep(stepId, version, action) {
-  try {
-    await checkInterrupted();
-    return action();
-  } catch (err) {
-    await new Promise((resolve) => setImmediate(resolve));
-    const wasInterrupted = err instanceof InterruptedError || interrupted;
-    console.error(finishFailureMessage(stepId, version, { interrupted: wasInterrupted, detail: err.message }));
-    process.exit(wasInterrupted ? 130 : 1);
-  }
-}
-
-async function finishRelease({ dryRun, finishVersion: version }) {
-  const tagName = `v${version}`;
-  const dir = worktreeDirFor(version);
-  installInterruptHandlers();
-
-  const pr = await finishStep('verify-pr', version, () => verifyMergedRelease(version));
-  const decision = await finishStep('verify-pr', version, () =>
-    decideTag({
-      tagName,
-      sha: pr.sha,
-      localSha: localTagSha(tagName),
-      remoteSha: parseRemoteTagSha(git(['ls-remote', 'origin', `refs/tags/${tagName}`, `refs/tags/${tagName}^{}`]), tagName),
-    }),
-  );
-  console.log(`release: ${pr.url} is merged as ${pr.sha}, and that commit carries v${version}.`);
-
-  if (dryRun) {
-    printPlan(`release --finish --dry-run: ${tagName} would:`, phaseTwoPlan(version, pr.sha, dir));
-    console.log(
-      `\nrelease --finish --dry-run: nothing was tagged or pushed (local tag ${decision.createLocal ? 'absent' : 'already present'}, ` +
-        `origin tag ${decision.push ? 'absent' : 'already present'}). Only "git fetch origin" touched anything.`,
-    );
-    return;
-  }
-
-  if (decision.createLocal) {
-    await finishStep('tag', version, () => runCommand(['git', 'tag', '-a', tagName, '-m', tagName, pr.sha]));
-  }
-  if (decision.push) {
-    await finishStep('push-tag', version, () => runCommand(['git', 'push', 'origin', `refs/tags/${tagName}`]));
-  }
-
-  console.log(`release: ${tagName} is tagged on ${pr.sha} and pushed. The publish stays a separate step; run it from a detached worktree at the tag:`);
-  for (const line of publishCommands(version, dir)) console.log(`  ${line}`);
-  console.log(`  (afterwards: cd back, then git worktree remove ${dir.replace(/\\/g, '/')})`);
 }
 
 async function main() {

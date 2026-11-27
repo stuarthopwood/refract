@@ -111,8 +111,9 @@ in Other); runs `pnpm ci:local` (see below) on the edited tree; and, only if tha
 and commits exactly those four version files plus `CHANGELOG.md` as `chore(release): vX.Y.Z`.
 It then pushes the branch and opens a one-PR stack with `gh stack` (flags only, never `gh pr
 create`; see `docs/stacked-prs.md`), titled `chore(release): vX.Y.Z` after the one commit, and
-stops, printing the `gh pr merge <pr> --squash --delete-branch` and `pnpm release --finish
-vX.Y.Z` commands. Wait for the PR's checks (CodeQL included), then squash-merge it yourself.
+stops, printing the `gh pr ready <pr> && gh pr merge <pr> --squash` and `pnpm release --finish
+vX.Y.Z` commands (the PR opens as a draft, and `--delete-branch` is left off so the local worktree
+stays intact). Wait for the PR's checks (CodeQL included), then mark it ready and squash-merge it yourself.
 
 If any step up to and including the commit fails -- including Ctrl+C/SIGTERM, which the script
 catches specifically so the restore below always runs -- it unstages anything already added and
@@ -134,8 +135,9 @@ cannot work at that point: the manifests are already at the new version.
 
 **Phase 2: `pnpm release --finish vX.Y.Z`** (after the PR merged). It fetches `origin`, finds the
 PR from `release/vX.Y.Z` into `main` through `gh pr list`, and refuses while it is still open or
-was closed unmerged. It checks the squash commit is on `origin/main` and that its `package.json`
-and `tauri.conf.json` versions are `X.Y.Z`, creates the annotated tag `vX.Y.Z` on that commit,
+was closed unmerged; only a PR whose head repo is `stuarthopwood`'s own counts. It checks the squash
+commit is on `origin/main` and that its `package.json`, `tauri.conf.json` and `Cargo.toml` versions
+are `X.Y.Z`, creates the annotated tag `vX.Y.Z` on that commit,
 pushes the tag, and prints the publish commands. It resumes a half-done run (an existing local
 tag on the right commit is reused; one already on `origin` is not pushed again) and refuses to
 move a tag that points at any other commit. A failing step names itself and prints the
