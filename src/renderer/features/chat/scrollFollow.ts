@@ -37,6 +37,10 @@ export interface ScrollFollow {
   handleScroll: () => void
   handleResize: () => void
   scrollToEnd: () => void
+  /** Records the current height as seen, so growth that happened while a landing or hold owned the view is not read as new content. */
+  syncHeight: () => void
+  /** Forgets the last height: the next resize only seeds it. Used when a different Session's content takes the viewport. */
+  resetHeight: () => void
 }
 
 /** Detach, re-attach and end-follow policy for one `Transcript`, kept free of React so a fake viewport can drive it. (#459) */
@@ -109,7 +113,16 @@ export function createScrollFollow(deps: FollowDeps): ScrollFollow {
     setState({ suppressed: false, isAtEnd: true, newContent: false })
   }
 
-  return { getState: () => state, setState, handleScroll, handleResize, scrollToEnd }
+  function syncHeight() {
+    const viewport = deps.getViewport()
+    if (viewport) lastScrollHeight = viewport.scrollHeight
+  }
+
+  function resetHeight() {
+    lastScrollHeight = -1
+  }
+
+  return { getState: () => state, setState, handleScroll, handleResize, scrollToEnd, syncHeight, resetHeight }
 }
 
 /** True when the newest item is a user message that was not there before: a send always follows. (#459) */

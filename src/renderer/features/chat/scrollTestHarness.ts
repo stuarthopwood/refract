@@ -1,5 +1,6 @@
-import { createScrollFollow, type FollowState, type ScrollFollow } from './scrollFollow'
+import type { FollowState } from './scrollFollow'
 import type { SessionScrollState } from '@/state/scroll-store'
+import { createTranscriptScroll, type TranscriptScroll } from './transcriptScroll'
 
 // Vitest runs this folder in a node environment (no jsdom), so the scroller is a plain object that
 // keeps the browser rules the policy depends on: `scrollTop` clamps to the scrollable range and a
@@ -59,6 +60,16 @@ export class FakeViewport extends FakeNode {
   contains(node: unknown) {
     return node === this || this.rows.includes(node as FakeRow)
   }
+  private readonly scrollListeners = new Set<() => void>()
+  addEventListener(type: string, listener: () => void) {
+    if (type === 'scroll') this.scrollListeners.add(listener)
+  }
+  removeEventListener(type: string, listener: () => void) {
+    if (type === 'scroll') this.scrollListeners.delete(listener)
+  }
+  emitScroll() {
+    for (const listener of [...this.scrollListeners]) listener()
+  }
   closest() {
     return null
   }
@@ -111,11 +122,12 @@ export interface FollowHarnessOptions {
 export class FollowHarness {
   readonly viewport: FakeViewport
   readonly root = new FakeRoot()
-  readonly follow: ScrollFollow
+  /** The controller `Transcript` builds through `useTranscriptScroll`: follow policy, jump control, send and Scroll to end handling. */
+  readonly scroll: TranscriptScroll
   readonly recorded: SessionScrollState[] = []
   states: FollowState[] = []
-  /** The flag `Transcript` shares with a landing or jump loop (`landingInProgressRef`); tests pass it on as a jump's control. */
-  readonly landingRef = { current: false }
+  /** True while the Session's turn streams; a jump away from the end holds only then. */
+  turnRunning = true
   recentGesture = false
   reducedMotion = true
   private queue: FrameRequestCallback[] = []
@@ -128,16 +140,26 @@ export class FollowHarness {
     this.viewport.scrollTop = this.viewport.maxScrollTop
     this.viewport.scrollEventPending = false
     this.lastSize = this.size()
-    this.follow = createScrollFollow({
+    this.scroll = createTranscriptScroll({
       getViewport: () => this.viewport,
-      isLanding: () => this.landingRef.current,
       isRecentGesture: () => this.recentGesture,
+      resetGesture: () => {},
       record: (state) => this.recorded.push(state),
       prefersReducedMotion: () => this.reducedMotion,
-      onChange: (state) => this.states.push(state)
+      onChange: (state) => this.states.push(state),
+      isTurnRunning: () => this.turnRunning
     })
     // A ResizeObserver reports once on observe; seeding it gives the policy its first height to compare against.
-    this.follow.handleResize()
+    this.scroll.follow.handleResize()
+  }
+
+  get follow() {
+    return this.scroll.follow
+  }
+
+  /** The flag a landing or jump loop shares with the follow policy. */
+  get landingRef() {
+    return this.scroll.landingRef
   }
 
   private size() {
@@ -156,6 +178,7 @@ export class FollowHarness {
     this.viewport.stepGlide()
     if (this.viewport.scrollEventPending) {
       this.viewport.scrollEventPending = false
+      this.viewport.emitScroll()
       this.follow.handleScroll()
     }
     const callbacks = this.queue

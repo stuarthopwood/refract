@@ -13,6 +13,8 @@ export interface JumpControl {
   setIsAtEnd: (atEnd: boolean) => void
   /** Raises the Scroll to end dot: the turn keeps growing below a held target. */
   markNewContent: () => void
+  /** Records the content height as seen when a landing or hold ends, so what grew meanwhile does not raise a false new-content dot. */
+  syncHeight: () => void
   /** True while the Session's turn is streaming; a jump away from the end is held for as long as it is. (#1021) */
   isTurnRunning: () => boolean
 }
@@ -33,13 +35,14 @@ export interface RowJumpLoopOptions {
  * While the turn streams, a landing away from the end is held on its target until the user takes
  * over, Scroll to end or a send cancels it, or the turn settles (#1021). */
 export function startRowJumpLoop({ sessionId, root, viewport, row, control, onLanded }: RowJumpLoopOptions): void {
-  const { jumpCancelRef, jumpTokenRef, landingInProgressRef, resetGesture, setAutoScrollSuppressed, setIsAtEnd } = control
+  const { jumpCancelRef, jumpTokenRef, landingInProgressRef, resetGesture, setAutoScrollSuppressed, setIsAtEnd, syncHeight } = control
   // A new jump always wins over a still-running previous one; its token guards `onAborted` below.
   jumpCancelRef.current?.()
   const myToken = ++jumpTokenRef.current
   const isViewportAtEnd = () => isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight: viewport.scrollHeight, clientHeight: viewport.clientHeight })
   const releaseAtCurrentPosition = () => {
     landingInProgressRef.current = false
+    syncHeight()
     const atEnd = isViewportAtEnd()
     setAutoScrollSuppressed(!atEnd)
     setIsAtEnd(atEnd)
@@ -59,7 +62,10 @@ export function startRowJumpLoop({ sessionId, root, viewport, row, control, onLa
     },
     onSettled: (landedAtEnd, holding) => {
       // A held jump keeps the claim so the follow policy ignores the scroll events the hold's own writes cause.
-      if (!holding) landingInProgressRef.current = false
+      if (!holding) {
+        landingInProgressRef.current = false
+        syncHeight()
+      }
       useChatScrollStore.getState().record(sessionId, { atEnd: landedAtEnd, scrollTop: viewport.scrollTop })
       setAutoScrollSuppressed(!landedAtEnd)
       setIsAtEnd(landedAtEnd)
@@ -68,6 +74,7 @@ export function startRowJumpLoop({ sessionId, root, viewport, row, control, onLa
     onInterrupted: (atEnd) => {
       useChatScrollStore.getState().record(sessionId, { atEnd, scrollTop: viewport.scrollTop })
       landingInProgressRef.current = false
+      syncHeight()
       setAutoScrollSuppressed(!atEnd)
       setIsAtEnd(atEnd)
     },

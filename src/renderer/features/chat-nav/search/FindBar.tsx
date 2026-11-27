@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { CaseSensitiveIcon, ChevronDownIcon, ChevronUpIcon, XIcon } from 'lucide-react'
 import { FloatingLayer } from '@/components/floating-layer'
 import { SearchField } from '@/components/SearchField'
@@ -8,6 +8,7 @@ import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { closeChatFind, EMPTY_CHAT_FIND, useChatFindStore } from '@/state/chat-find-store'
 import { focusChatFallback } from '../focusChatFallback'
+import { trackOpenFindBar } from '../jumpTopInset'
 import { FindResultsList } from './FindResultsList'
 import { useChatFind } from './useChatFind'
 
@@ -51,6 +52,7 @@ export function FindBar({ sessionId }: { sessionId: string }) {
   const returnTo = useRef<HTMLElement | null>(entry.returnFocus ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null))
   const find = useChatFind(sessionId, query, matchCase)
   const announced = useSettledText(find.status)
+  useLayoutEffect(trackOpenFindBar, [])
 
   useEffect(() => {
     inputRef.current?.focus()

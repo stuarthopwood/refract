@@ -41,7 +41,7 @@ export function resolveLandingScrollTop(
 export interface ScrollHold {
   /** Checked each frame after the first settle; the hold ends the first time this is false. */
   active: () => boolean
-  /** Called on each held frame in which `scrollHeight` grew. */
+  /** Called on each held frame in which the content below the target grew (distance from the target to the end), not on growth above it. */
   onGrow: () => void
   /** Called once when `active` turns false; the caller releases what the hold kept claimed. Never after an interrupt. */
   onEnded: () => void
@@ -58,7 +58,7 @@ export interface ScrollSettleLoopCallbacks {
   shouldAbort?: () => boolean
   /** Called once if `shouldAbort` fires; a caller supplying `shouldAbort` must release its in-progress state here or follow-bottom stays dead. (#1008) */
   onAborted: () => void
-  /** After a settle away from the end, keep re-asserting the target until user input, a cancel or `hold.active()` turning false. (#1021) */
+  /** After a settle away from the end, keep re-asserting the target until user input, a scroll that is not ours, a cancel or `hold.active()` turning false. (#1021) */
   hold?: ScrollHold
 }
 
@@ -69,6 +69,7 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
   let stableFrames = 0
   let lastHeight = -1
   let lastAssignedScrollTop = -1
+  let lastBelow = 0
   let holding = false
 
   function removeInputListeners() {
@@ -77,6 +78,7 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
     root.removeEventListener('pointerdown', handleViewportPointerOrWheel)
     root.removeEventListener('touchstart', handleViewportPointerOrWheel)
     root.removeEventListener('focusin', handleFocusInput)
+    viewport.removeEventListener('scroll', handleHeldScroll)
   }
 
   function handleUserInput() {
@@ -100,6 +102,14 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
     handleUserInput()
   }
 
+  // Voice control and switch access move the view without a wheel, key or pointer. A move off the held value that no height growth explains is the reader's.
+  function handleHeldScroll() {
+    if (cancelled || !holding) return
+    const { scrollTop, scrollHeight, clientHeight } = viewport
+    if (scrollHeight > lastHeight) return
+    const expected = Math.min(lastAssignedScrollTop, Math.max(0, scrollHeight - clientHeight))
+    if (Math.abs(scrollTop - expected) > SCROLL_PERTURBATION_TOLERANCE_PX) handleUserInput()
+  }
   function handleViewportPointerOrWheel(event: Event) {
     if (!(event.target instanceof Node) || !viewport.contains(event.target)) return
     handleUserInput()
@@ -128,9 +138,13 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
         hold.onEnded()
         return
       }
-      if (scrollHeight > lastHeight) hold.onGrow()
+      const target = callbacks.computeTarget({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
+      const below = scrollHeight - target - clientHeight
+      if (below > lastBelow) hold.onGrow()
+      lastBelow = below
       lastHeight = scrollHeight
-      viewport.scrollTop = callbacks.computeTarget({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
+      if (viewport.scrollTop !== target) viewport.scrollTop = target
+      lastAssignedScrollTop = target
       requestAnimationFrame(step)
       return
     }
@@ -140,12 +154,16 @@ export function runScrollSettleLoop(root: HTMLElement, viewport: HTMLElement, ca
     lastHeight = scrollHeight
     frame += 1
     const target = callbacks.computeTarget({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
-    viewport.scrollTop = target
+    if (viewport.scrollTop !== target) viewport.scrollTop = target
     lastAssignedScrollTop = target
     if (stableFrames >= SCROLL_LANDING_STABLE_FRAMES || frame >= SCROLL_LANDING_MAX_FRAMES) {
       const landedAtEnd = isAtScrollEnd({ scrollTop: viewport.scrollTop, scrollHeight, clientHeight })
       // A landing at the end needs no hold: the follow policy already keeps the end in view.
       holding = !landedAtEnd && Boolean(callbacks.hold?.active())
+      if (holding) {
+        lastBelow = scrollHeight - target - clientHeight
+        viewport.addEventListener('scroll', handleHeldScroll, { passive: true })
+      }
       if (!holding) {
         cancelled = true
         removeInputListeners()
