@@ -1478,6 +1478,8 @@ Also filed 2026-11-09 (Stuart): **#1813** (`p2`, `feature`, `chat`, `settings`),
 
 Also filed 2026-11-09 (Stuart): **#1810** (`p1`, `chore`, `build`), Epic: Unit tests, CI, and release, with children **#1806** to **#1809** (test strategy first, which ends the AGENTS.md no-new-tests rule when it lands; then CI, release automation, and backfill tests). **Status, 2026-11-27: v1 scope done apart from #1433.** Merged: #2128 (PR #2298), #1806 and #1807 (PR #2302), #1966 (PR #2306), #1980 and #1733 (PR #2310), #1809 (PRs #2313, #2315, #2316). **#1433** (updater fails after download and accept) stays open, waiting on Stuart's in-app update test from v0.47.0. Follow-up **#2305** (p3, v5, not in v1) filed under #1810.
 
+**Release note, 2026-11-27:** Release v0.48.0 (closing epic #1810) is deferred until #2318 merges; C: lacked the free disk a release needs. #2318 is in progress.
+
 Also filed 2026-11-09 (Stuart): **#1817** (`p1`, `bug`, `chat`), Bug: Chat: skill invocations show the raw injected prompt instead of the Skill invoked row; add a summary tooltip (regression of #547). Draft PR on `fix/1817-skill-row` (converge on FR-063): `transcript/skill_prompt.rs` builds the row on the live and history paths, tooltip from the skill text; Rust uncompiled, live check pending.
 
 Also filed 2026-11-09 (Stuart): **#1818** (`p1`, `chat`, `design`), UI Polish: Chat: Ask card action bar background matches the card. In progress on `fix/1818-card-footer`: the shared `CardFooter` drops its `bg-surface-subtle` band for every card.
