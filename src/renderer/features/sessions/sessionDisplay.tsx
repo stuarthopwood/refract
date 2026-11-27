@@ -178,9 +178,9 @@ export function hiddenSummary(sessions: SessionSummary[]): { hidden: number; att
 }
 
 /** Issue #1854: a Session that has started and is not idle -- working, waiting on the user or its subagents, or paused (stopped Sessions are not running). */
-export function isActiveSession(s: Pick<SessionSummary, 'status' | 'pause'>): boolean {
-  if (s.status === 'stopped') return false
-  return s.status !== 'idle' || s.pause !== undefined
+export function isActiveSession(s: Pick<SessionSummary, 'status' | 'unread' | 'pause'>): boolean {
+  const status = displayStatus(s)
+  return status !== 'idle' && status !== 'unread-response' && status !== 'stopped'
 }
 
 /** Issue #1854: one active Session's status line as its row shows it ("Waiting for 2 subagents"). The row's own held and playful text needs live hooks; this is the plain derive, and a pause reads as its label. */

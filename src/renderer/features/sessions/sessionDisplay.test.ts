@@ -30,7 +30,7 @@ describe('isActiveSession (issue #1854)', () => {
     ['idle with an unseen reply', { status: 'idle', unread: true }, false],
     ['stopped', { status: 'stopped' }, false]
   ] as const)('%s -> %s', (_name, fields, expected) => {
-    expect(isActiveSession(fields as Pick<SessionSummary, 'status' | 'pause'>)).toBe(expected)
+    expect(isActiveSession(fields as Pick<SessionSummary, 'status' | 'unread' | 'pause'>)).toBe(expected)
   })
 })
 

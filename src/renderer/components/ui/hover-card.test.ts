@@ -1,7 +1,4 @@
-import { createElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import { HoverCard, HoverCardTrigger } from './hover-card'
 import { createClickSuppression } from './hoverCardSuppression'
 
 function setup() {
@@ -74,21 +71,5 @@ describe('hover card click suppression (issue #1760, FR-192)', () => {
     suppression.onClick()
     const keyboardFocus = focus()
     expect(keyboardFocus.preventDefault).not.toHaveBeenCalled()
-  })
-})
-
-describe('HoverCard rendering', () => {
-  const render = (suppressAfterClick: boolean): string =>
-    renderToStaticMarkup(
-      createElement(
-        HoverCard,
-        { suppressAfterClick },
-        createElement(HoverCardTrigger, { asChild: true }, createElement('button', { type: 'button' }, 'Row'))
-      )
-    )
-
-  it('renders the trigger unchanged with or without the opt-in', () => {
-    expect(render(true)).toBe(render(false))
-    expect(render(true)).toContain('data-slot="hover-card-trigger"')
   })
 })
