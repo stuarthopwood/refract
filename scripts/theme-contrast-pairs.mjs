@@ -49,6 +49,16 @@ export const PAIRS = [
   // #1950: the item type icon (`text-pr-open` / `text-pr-merged`, non-text) in the hover card (`--popover`); the user bubble is in userBubbleContrastRows.
   { fg: 'pr-open', bg: 'popover', min: 3 },
   { fg: 'pr-merged', bg: 'popover', min: 3 },
+  // #2173: menus, popovers, select panels and the command palette paint `--menu-surface`; items fill with `--menu-hover` (a translucent wash, hence `on`).
+  { fg: 'popover-foreground', bg: 'menu-surface', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'menu-surface', min: 4.5 },
+  { fg: 'accent-text', bg: 'menu-surface', min: 4.5 },
+  { fg: 'destructive', bg: 'menu-surface', min: 4.5 },
+  { fg: 'active-indicator', bg: 'menu-surface', min: 3 },
+  { fg: 'foreground', bg: 'menu-hover', on: 'menu-surface', min: 4.5 },
+  { fg: 'accent-foreground', bg: 'menu-hover', on: 'menu-surface', min: 4.5 },
+  { fg: 'muted-foreground', bg: 'menu-hover', on: 'menu-surface', min: 4.5 },
+  { fg: 'active-indicator', bg: 'menu-hover', on: 'menu-surface', min: 3 },
   { fg: 'active-indicator', bg: 'accent', min: 3 }, // #1122: ActiveIndicatorBar now also sits on bg-accent
   { fg: 'active-indicator', bg: 'muted', min: 3 }, // #1122: SubagentPanel.tsx's `hover:bg-muted/50` row hover can paint under a selected row's bar
   { fg: 'ring', bg: 'accent', min: 3 }, // #1122: focus-visible:ring-ring now paints while focused on an accent-filled selected row

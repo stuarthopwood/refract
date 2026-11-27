@@ -162,6 +162,8 @@
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
   --color-surface-hover: var(--surface-hover);
+  --color-menu-surface: var(--menu-surface);
+  --color-menu-hover: var(--menu-hover);
   --color-divider: var(--divider);
   --color-field-border: var(--field-border);
   --color-ghost-edge: var(--ghost-edge);
@@ -407,6 +409,10 @@ samp {
   --chart-cursor-bg: color-mix(in oklab, var(--foreground) 10%, transparent);
   --focus-glow: color-mix(in oklab, var(--ring) 50%, transparent);
   --elevated-edge: color-mix(in oklab, var(--foreground) 10%, transparent);
+  /* #2173: menus and popovers sit one surface step above the page (`--surface-3`); `--surface-hover` equals
+   * `--surface-3` in most presets so it would vanish there, hence a foreground wash for the item fill. */
+  --menu-surface: var(--surface-3);
+  --menu-hover: color-mix(in oklab, var(--foreground) 4%, transparent);
   --scrim-bg: color-mix(in oklab, black 10%, transparent);
   --invalid-ring: color-mix(in oklab, var(--destructive) 40%, transparent);
   --primary-hover-bg: color-mix(in oklab, var(--primary) 80%, transparent);
