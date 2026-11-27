@@ -28,3 +28,22 @@ export function listKey(parts: { tab: string; state: string; projectIds: string[
 export function isFresh(freshness: ListFreshness | null, key: string, nowMs: number = Date.now()): boolean {
   return freshness !== null && freshness.key === key && nowMs - freshness.atMs < LIST_FRESH_MS
 }
+
+/** The default open list: every tab, open, every Project, no search and no label (FR-181 (d)); the only one prefetched or cached. */
+export function isDefaultOpenList(s: {
+  tab: string
+  state: string
+  repositoryIds: string[]
+  query: string
+  appliedQuery: string
+  labels?: string[]
+}): boolean {
+  return (
+    s.tab === 'all' &&
+    s.state === 'open' &&
+    s.repositoryIds.length === 0 &&
+    (s.labels?.length ?? 0) === 0 &&
+    s.query === '' &&
+    s.appliedQuery === ''
+  )
+}

@@ -7,7 +7,7 @@ import type { QuietRefreshOutcome } from './pull-requests-store'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import type { IpcError, Result } from '../../shared/ipc'
 import type { IssueListItem, IssueListResult, IssueSkippedProject, IssueStateFilter, IssueTab } from '../../shared/ipc-issues'
-import { effectiveProjectIds, isFresh, listKey, type ListFreshness } from './list-freshness'
+import { effectiveProjectIds, isDefaultOpenList, isFresh, listKey, type ListFreshness } from './list-freshness'
 
 interface IssuesState {
   tab: IssueTab
@@ -24,6 +24,8 @@ interface IssuesState {
   fetchedAt: string | null
   /** What the held rows were fetched for and when, so a remount can skip a fresh list (FR-180). */
   freshness: ListFreshness | null
+  /** The held rows came from the on-disk List cache and no fresh fetch has replaced them yet (FR-181 (c)). */
+  stale: boolean
   loading: boolean
   error: IpcError | null
   selected: { repositoryId: string; number: number } | null
@@ -41,6 +43,8 @@ interface IssuesState {
   refreshIfStale(allRepositoryIds: string[]): Promise<void>
   /** Forgets freshness so the next mount fetches (the active account changed). */
   invalidateFreshness(): void
+  /** Shows the on-disk List cache's default open list at once, marked stale; ignored once the list has rows, is loading or has left its defaults. */
+  hydrateFromCache(cached: IssueListResult): void
   /** Background refetch with the applied filters after a `github:changed` write: no loading or error state, old rows kept on failure, selection moves on if its row is gone. */
   refreshQuiet(allRepositoryIds: string[]): Promise<QuietRefreshOutcome>
 }
@@ -58,21 +62,28 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   skipped: [],
   fetchedAt: null,
   freshness: null,
+  stale: false,
   loading: false,
   error: null,
   selected: null,
   // A filter change drops the selection so the detail pane never shows an issue the list no longer has.
-  setTab: (tab) => set({ tab, selected: null }),
-  setState: (state) => set({ state, selected: null }),
-  setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null }),
-  setLabels: (labels) => set({ labels, selected: null }),
-  removeLabel: (label) => set((s) => ({ labels: s.labels.filter((l) => l !== label), selected: null })),
+  setTab: (tab) => set({ tab, selected: null, stale: false }),
+  setState: (state) => set({ state, selected: null, stale: false }),
+  setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null, stale: false }),
+  setLabels: (labels) => set({ labels, selected: null, stale: false }),
+  removeLabel: (label) => set((s) => ({ labels: s.labels.filter((l) => l !== label), selected: null, stale: false })),
   setQuery: (query) => set({ query }),
   // A fresh `repositoryIds` array on every reset is what re-runs the list's fetch effect, so Clear
   // filters refetches even when only the search was active.
   clearFilters: () =>
-    set({ state: 'open', repositoryIds: [], labels: [], query: '', appliedQuery: '', selected: null }),
+    set({ state: 'open', repositoryIds: [], labels: [], query: '', appliedQuery: '', selected: null, stale: false }),
   select: (selected) => set({ selected }),
+  hydrateFromCache(cached) {
+    const current = get()
+    if (current.loading || current.fetchedAt !== null || current.items.length > 0 || cached.issues.length === 0) return
+    if (!isDefaultOpenList(current)) return
+    set({ items: cached.issues, skipped: cached.skipped, fetchedAt: cached.fetchedAt, stale: true })
+  },
   refreshIfStale(allRepositoryIds) {
     const { tab, state, repositoryIds, labels, query, freshness } = get()
     const projectIds = effectiveProjectIds(repositoryIds, allRepositoryIds)
@@ -92,11 +103,12 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
     if (sequence !== refreshSequence) return
     if (!result.ok) {
-      set({ loading: false, error: result.error, items: [], skipped: [], freshness: null })
+      set({ loading: false, error: result.error, items: [], skipped: [], freshness: null, stale: false })
       return
     }
     set({
       loading: false,
+      stale: false,
       items: result.value.issues,
       skipped: result.value.skipped,
       fetchedAt: result.value.fetchedAt,
@@ -121,6 +133,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     if (!result.ok) return 'failed'
     const { items: previous, selected } = get()
     set({
+      stale: false,
       items: result.value.issues,
       skipped: result.value.skipped,
       fetchedAt: result.value.fetchedAt,

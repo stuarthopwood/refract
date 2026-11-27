@@ -34,6 +34,7 @@ export function PullRequestList() {
   const limit = usePullRequestsStore((s) => s.limit)
   const fetchedAt = usePullRequestsStore((s) => s.fetchedAt)
   const loading = usePullRequestsStore((s) => s.loading)
+  const stale = usePullRequestsStore((s) => s.stale)
   const error = usePullRequestsStore((s) => s.error)
   const selected = usePullRequestsStore((s) => s.selected)
   // Store actions are stable, so reading them once never subscribes the list to the store.
@@ -76,6 +77,7 @@ export function PullRequestList() {
       onClearFilters={clearFilters}
       blurWhileLoading
       loading={loading}
+      stale={stale}
       fetchedAt={fetchedAt}
       error={error}
       skipped={skipped}

@@ -2,16 +2,13 @@
 // GitHub is ready and Projects are loaded, fetch both lists into memory while nothing is waiting
 // on them, so the first open shows rows at once (the mount reuses them under FR-180).
 import { useAccountsStore } from './accounts'
+import { isDefaultOpenList } from './list-freshness'
 import { useIssuesStore } from './issues-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useRepositoriesStore } from './repositories-store'
 
 /** Idle gives way to first paint; this caps the wait on a busy main thread. */
 const IDLE_TIMEOUT_MS = 5000
-
-function isDefaultOpenList(s: { tab: string; state: string; repositoryIds: string[]; query: string; appliedQuery: string }): boolean {
-  return s.tab === 'all' && s.state === 'open' && s.repositoryIds.length === 0 && s.query === '' && s.appliedQuery === ''
-}
 
 /** Fetches whichever default list is still at its default filters and not already fresh. */
 export function prefetchDefaultLists(): void {
@@ -21,7 +18,7 @@ export function prefetchDefaultLists(): void {
   const pullRequests = usePullRequestsStore.getState()
   if (isDefaultOpenList(pullRequests)) void pullRequests.refreshIfStale(allIds)
   const issues = useIssuesStore.getState()
-  if (isDefaultOpenList(issues) && issues.labels.length === 0) void issues.refreshIfStale(allIds)
+  if (isDefaultOpenList(issues)) void issues.refreshIfStale(allIds)
 }
 
 function whenIdle(run: () => void): void {

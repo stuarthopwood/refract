@@ -10,8 +10,8 @@ import type { IpcError, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
 import { HOME_PROJECTS_MAX } from '../../shared/ipc-home'
-import type { PullRequestAcrossItem } from '../../shared/ipc-pull-requests'
-import { effectiveProjectIds, isFresh, listKey, type ListFreshness } from './list-freshness'
+import type { PullRequestAcrossItem, PullRequestAcrossResult } from '../../shared/ipc-pull-requests'
+import { effectiveProjectIds, isDefaultOpenList, isFresh, listKey, type ListFreshness } from './list-freshness'
 
 export const PAGE_SIZE = 50
 export const MAX_ROWS = 200
@@ -70,6 +70,8 @@ interface PullRequestsState {
   fetchedAt: string | null
   /** What the held rows were fetched for and when, so a remount can skip a fresh list (FR-180). */
   freshness: ListFreshness | null
+  /** The held rows came from the on-disk List cache and no fresh fetch has replaced them yet (FR-181 (c)). */
+  stale: boolean
   loading: boolean
   error: IpcError | null
   selected: SelectedPullRequest | null
@@ -87,6 +89,8 @@ interface PullRequestsState {
   refreshIfStale(allRepositoryIds: string[]): Promise<void>
   /** Forgets freshness so the next mount fetches (the active account changed). */
   invalidateFreshness(): void
+  /** Shows the on-disk List cache's default open list at once, marked stale; ignored once the list has rows, is loading or has left its defaults. */
+  hydrateFromCache(cached: PullRequestAcrossResult): void
   /** Background refetch with the applied filters after a `github:changed` write: no loading or error state, old rows kept on failure, selection moves on if its row is gone. */
   refreshQuiet(allRepositoryIds: string[]): Promise<QuietRefreshOutcome>
   loadMore(allRepositoryIds: string[]): Promise<void>
@@ -131,19 +135,20 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
   limit: PAGE_SIZE,
   fetchedAt: null,
   freshness: null,
+  stale: false,
   loading: false,
   error: null,
   selected: null,
   // A filter change drops the selection and the paging so the detail pane never shows a pull
   // request the list no longer has.
-  setTab: (tab) => set({ tab, selected: null, limit: PAGE_SIZE }),
-  setState: (state) => set({ state, selected: null, limit: PAGE_SIZE }),
-  setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null, limit: PAGE_SIZE }),
+  setTab: (tab) => set({ tab, selected: null, limit: PAGE_SIZE, stale: false }),
+  setState: (state) => set({ state, selected: null, limit: PAGE_SIZE, stale: false }),
+  setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null, limit: PAGE_SIZE, stale: false }),
   setQuery: (query) => set({ query }),
   // A fresh `repositoryIds` array on every reset is what re-runs the list's fetch effect, so Clear
   // filters refetches even when only the search was active.
   clearFilters: () =>
-    set({ state: 'open', repositoryIds: [], query: '', appliedQuery: '', selected: null, limit: PAGE_SIZE }),
+    set({ state: 'open', repositoryIds: [], query: '', appliedQuery: '', selected: null, limit: PAGE_SIZE, stale: false }),
   select: (selected) => set({ selected }),
   openPullRequest: (repositoryId, number) =>
     set({
@@ -153,8 +158,15 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       query: '',
       appliedQuery: '',
       limit: PAGE_SIZE,
+      stale: false,
       selected: { repositoryId, number }
     }),
+  hydrateFromCache(cached) {
+    const current = get()
+    if (current.loading || current.fetchedAt !== null || current.items.length > 0 || cached.items.length === 0) return
+    if (!isDefaultOpenList(current) || current.limit !== PAGE_SIZE) return
+    set({ items: cached.items, skipped: cached.skipped, hasMore: cached.hasMore, fetchedAt: cached.fetchedAt, stale: true })
+  },
   refreshIfStale(allRepositoryIds) {
     const { tab, state, repositoryIds, query, freshness } = get()
     const projectIds = effectiveProjectIds(repositoryIds, allRepositoryIds)
@@ -184,7 +196,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     } catch {
       if (sequence !== refreshSequence) return
       const error = { code: 'gh-failed' as const, message: 'Could not list pull requests.' }
-      set(more ? { loading: false, error, freshness: null } : { loading: false, error, items: [], skipped: [], hasMore: false, freshness: null })
+      set(more ? { loading: false, error, freshness: null } : { loading: false, error, items: [], skipped: [], hasMore: false, freshness: null, stale: false })
       return
     }
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
@@ -198,12 +210,13 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       set(
         more
           ? { loading: false, error: result.error, freshness: null }
-          : { loading: false, error: result.error, items: [], skipped: [], hasMore: false, freshness: null }
+          : { loading: false, error: result.error, items: [], skipped: [], hasMore: false, freshness: null, stale: false }
       )
       return
     }
     set({
       loading: false,
+      stale: false,
       limit,
       items: result.value.items,
       skipped: result.value.skipped,
@@ -236,6 +249,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     if (!result.ok) return 'failed'
     const { items: previous, selected } = get()
     set({
+      stale: false,
       items: result.value.items,
       skipped: result.value.skipped,
       hasMore: result.value.hasMore,

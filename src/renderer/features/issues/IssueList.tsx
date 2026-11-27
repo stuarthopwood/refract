@@ -108,6 +108,7 @@ export function IssueList() {
         )
       }
       loading={store.loading}
+      stale={store.stale}
       fetchedAt={store.fetchedAt}
       error={store.error}
       skipped={store.skipped}

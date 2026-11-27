@@ -14,6 +14,7 @@ import { useAskPicksStore } from './ask-picks-store'
 import { usePullRequestsStore } from './pull-requests-store'
 import { useIssuesStore } from './issues-store'
 import { startListPrefetch } from './list-prefetch'
+import { hydrateListsFromCache } from './list-cache-hydration'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { initHolidayOverrides } from './holiday-store'
@@ -354,6 +355,7 @@ export function initStores(): void {
     await initHolidayOverrides()
   })()
 
-  // Warm the default Pull requests and Issues lists once GitHub is ready, on idle. (#1895)
+  // Show the on-disk default lists marked stale at once, then warm them fresh on idle. (#1895)
+  void hydrateListsFromCache()
   startListPrefetch()
 }
