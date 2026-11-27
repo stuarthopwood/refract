@@ -6,8 +6,11 @@ import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { StateIcon } from './sessionDisplay'
-import type { GroupWaitingState } from './sessionDisplay'
+import { Badge } from '@/components/ui/badge'
+import { activeSessionText, activeSessionsAccessibleText, StateIcon } from './sessionDisplay'
+import type { ActiveSessionEntry, GroupWaitingState } from './sessionDisplay'
+
+const NO_ACTIVE_SESSIONS: readonly ActiveSessionEntry[] = []
 
 export const GROUP_HEADER_ACTIONS_WIDTH_PX = 80
 export const GROUP_HEADER_ACTIONS_OFFSET_PX = 88
@@ -43,6 +46,7 @@ export function GroupHeaderTrigger({
   onDoubleClick,
   onKeyDown,
   marker,
+  activeSessions = NO_ACTIVE_SESSIONS,
   containsOpenSession,
   color
 }: {
@@ -55,16 +59,19 @@ export function GroupHeaderTrigger({
   onDoubleClick?: () => void
   onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void
   marker?: GroupWaitingState | null
+  activeSessions?: readonly ActiveSessionEntry[]
   /** This (closed) Group contains the currently visible Session. */
   containsOpenSession?: boolean
   color?: string
 }) {
   const pathId = useId()
-  const describedByPath = tooltip && title
+  const hasTooltip = Boolean(tooltip) || activeSessions.length > 0
+  const describedByPath = hasTooltip && title
   // Marker status and "contains open session" extend the trigger's accessible name, like `tooltip` (no second aria-describedby).
   const extraNameParts = [
     count !== undefined ? String(count) : null,
     tooltip,
+    activeSessionsAccessibleText(activeSessions),
     marker?.label,
     containsOpenSession ? 'contains open session' : null
   ].filter((part): part is string => Boolean(part))
@@ -95,9 +102,15 @@ export function GroupHeaderTrigger({
           keying off it instead is immune to this. */}
       <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-aria-expanded/trigger:rotate-90" />
       {Icon && <Icon aria-hidden className="size-4 shrink-0" />}
-      <span className="truncate" title={tooltip ? undefined : title}>{label}</span>
+      <span className="truncate" title={hasTooltip ? undefined : title}>{label}</span>
       {/* #567 decision 5: a separate `tabular-nums` count, never `Archived (N)` in brackets. */}
       {count !== undefined && <span className="shrink-0 tabular-nums text-muted-foreground">{count}</span>}
+      {/* Issue #1854: sits in the flow beside the label, so the Waiting marker below keeps its `ml-auto` column (#908). The list is in the trigger's accessible name and tooltip. */}
+      {activeSessions.length > 0 && (
+        <Badge aria-hidden variant="secondary" className="tabular-nums">
+          {activeSessions.length}
+        </Badge>
+      )}
       {describedByPath && (
         <span id={pathId} className="sr-only">
           {title}
@@ -113,7 +126,7 @@ export function GroupHeaderTrigger({
       )}
     </CollapsibleTrigger>
   )
-  if (!tooltip) return trigger
+  if (!hasTooltip) return trigger
   return (
     <Tooltip>
       <TooltipTrigger asChild>{trigger}</TooltipTrigger>
@@ -133,7 +146,10 @@ export function GroupHeaderTrigger({
             in their own `flex-col` container does, and `break-all` keeps a long Windows path
             from overflowing the tooltip's own width. */}
         <div className="flex flex-col gap-1">
-          <span>{tooltip}</span>
+          {tooltip && <span>{tooltip}</span>}
+          {activeSessions.map((entry) => (
+            <span key={entry.id}>{activeSessionText(entry)}</span>
+          ))}
           {title && <span className="break-all">{title}</span>}
         </div>
       </TooltipContent>

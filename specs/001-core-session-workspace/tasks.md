@@ -6026,11 +6026,11 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 
 ### Lane #1760 (UI)
 
-- [ ] T760 [US1] #1760: add an opt-in click-suppression prop to `src/renderer/components/ui/hover-card.tsx` (pointerdown ignores the following focus; reopen needs pointer leave and return) and set `openDelay={1200}` in `src/renderer/features/sessions/SessionDetailsCard.tsx`, keeping side and align, per FR-192, SC-036 (missing). Tests: new `hover-card.test.tsx` and `SessionDetailsCard.test.tsx`; confirm reopen-after-click live.
+- [x] T760 [US1] #1760: add an opt-in click-suppression prop to `src/renderer/components/ui/hover-card.tsx` (pointerdown ignores the following focus; reopen needs pointer leave and return) and set `openDelay={1200}` in `src/renderer/features/sessions/SessionDetailsCard.tsx`, keeping side and align, per FR-192, SC-036. Done: the state machine is `hoverCardSuppression.ts`; tests `hover-card.test.ts` and `SessionDetailsCard.test.ts` (server-render and state-machine only, node vitest has no DOM); reopen-after-click live check still owed (verification backlog).
 
 ### Lane #1854 (UI)
 
-- [ ] T761 [US1] #1854: pass the active-Session count and list from `RepositoryGroup.tsx` (using `displayStatus` in `sessionDisplay.tsx`) to `GroupHeader.tsx`: badge on a collapsed header, tooltip list, accessible name, no shift of the waiting marker column, per FR-193, SC-037 (missing). Tests: `GroupHeader.test.tsx` and `sessionDisplay.test.ts`.
+- [x] T761 [US1] #1854: pass the active-Session count and list from `RepositoryGroup.tsx` (`collapsedActiveSessions` in `sessionDisplay.tsx`) to `GroupHeader.tsx`: badge on a collapsed header, tooltip list, accessible name, no shift of the waiting marker column, per FR-193, SC-037. Done: tests `GroupHeader.test.ts` and `sessionDisplay.test.ts`.
 
 ### Lane #472 (UI, after T754 to T759)
 

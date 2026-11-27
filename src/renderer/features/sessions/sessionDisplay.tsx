@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { useSettingsStore } from '@/state'
 import { StatusDot } from './StatusDot'
 import type { DiffStat, SessionSummary } from '../../../shared/ipc'
+import { deriveActivity } from '../../../shared/activity'
 import type { SessionStatus } from '../../../shared/model'
 import type { StatusStyle } from '../../../shared/statusStyle'
 
@@ -174,6 +175,54 @@ export function hiddenSummary(sessions: SessionSummary[]): { hidden: number; att
     attention: hidden.filter((session) => groupWaitingState([session]) !== null).length,
     needsYou: hidden.filter((session) => session.status === 'needs-you').length
   }
+}
+
+/** Issue #1854: a Session that has started and is not idle -- working, waiting on the user or its subagents, or paused (stopped Sessions are not running). */
+export function isActiveSession(s: Pick<SessionSummary, 'status' | 'pause'>): boolean {
+  if (s.status === 'stopped') return false
+  return s.status !== 'idle' || s.pause !== undefined
+}
+
+/** Issue #1854: one active Session's status line as its row shows it ("Waiting for 2 subagents"). The row's own held and playful text needs live hooks; this is the plain derive, and a pause reads as its label. */
+export function activeSessionLine(s: Pick<SessionSummary, 'status' | 'unread' | 'pause' | 'activity'>): string {
+  if (s.pause !== undefined) return displayLabel(s)
+  const readout = s.activity ?? null
+  return deriveActivity({
+    needsYou: s.status === 'needs-you',
+    runningSubagents: readout?.runningSubagents ?? 0,
+    todo: readout?.todo ?? null,
+    latestIntent: readout?.latestIntent,
+    latestTool: readout?.latestTool,
+    retry: readout?.retry,
+    compacting: readout?.compacting
+  }).text
+}
+
+export interface ActiveSessionEntry {
+  id: string
+  name: string
+  line: string
+}
+
+/** Issue #1854: the collapsed Project header's badge count and tooltip list; empty when no Session is active. */
+export function activeSessionEntries(sessions: readonly SessionSummary[]): ActiveSessionEntry[] {
+  return sessions.filter(isActiveSession).map((session) => ({ id: session.id, name: session.name, line: activeSessionLine(session) }))
+}
+
+/** Issue #1854: what the Project header shows -- the active Sessions while the group is collapsed, nothing while it is expanded. */
+export function collapsedActiveSessions(sessions: readonly SessionSummary[], open: boolean): ActiveSessionEntry[] {
+  return open ? [] : activeSessionEntries(sessions)
+}
+
+/** Issue #1854: one tooltip line, as in "Refract Dev Team: Waiting for 2 subagents". */
+export function activeSessionText(entry: ActiveSessionEntry): string {
+  return `${entry.name}: ${entry.line}`
+}
+
+/** Issue #1854: the badge's share of the trigger's accessible name; `null` when nothing is active. */
+export function activeSessionsAccessibleText(entries: readonly ActiveSessionEntry[]): string | null {
+  if (entries.length === 0) return null
+  return `${entries.length} active ${entries.length === 1 ? 'Session' : 'Sessions'}: ${entries.map(activeSessionText).join('; ')}`
 }
 
 // A distinct icon per Session state, never colour alone (docs/design/product-look-and-feel.md "Look
