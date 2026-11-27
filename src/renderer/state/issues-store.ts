@@ -7,6 +7,7 @@ import type { QuietRefreshOutcome } from './pull-requests-store'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import type { IpcError, Result } from '../../shared/ipc'
 import type { IssueListItem, IssueListResult, IssueSkippedProject, IssueStateFilter, IssueTab } from '../../shared/ipc-issues'
+import { effectiveProjectIds, isFresh, listKey, type ListFreshness } from './list-freshness'
 
 interface IssuesState {
   tab: IssueTab
@@ -21,6 +22,8 @@ interface IssuesState {
   items: IssueListItem[]
   skipped: IssueSkippedProject[]
   fetchedAt: string | null
+  /** What the held rows were fetched for and when, so a remount can skip a fresh list (FR-180). */
+  freshness: ListFreshness | null
   loading: boolean
   error: IpcError | null
   selected: { repositoryId: string; number: number } | null
@@ -34,6 +37,10 @@ interface IssuesState {
   select(selected: { repositoryId: string; number: number } | null): void
   /** `allRepositoryIds` is every added Project, used when no Project is chosen. `submittedOnly` refetches with the applied search, leaving half-typed text unapplied. */
   refresh(allRepositoryIds: string[], submittedOnly?: boolean): Promise<void>
+  /** The list's mount and filter-change fetch: no call while the held rows are fresh for the current filters (FR-180). */
+  refreshIfStale(allRepositoryIds: string[]): Promise<void>
+  /** Forgets freshness so the next mount fetches (the active account changed). */
+  invalidateFreshness(): void
   /** Background refetch with the applied filters after a `github:changed` write: no loading or error state, old rows kept on failure, selection moves on if its row is gone. */
   refreshQuiet(allRepositoryIds: string[]): Promise<QuietRefreshOutcome>
 }
@@ -50,6 +57,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   items: [],
   skipped: [],
   fetchedAt: null,
+  freshness: null,
   loading: false,
   error: null,
   selected: null,
@@ -65,6 +73,14 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
   clearFilters: () =>
     set({ state: 'open', repositoryIds: [], labels: [], query: '', appliedQuery: '', selected: null }),
   select: (selected) => set({ selected }),
+  refreshIfStale(allRepositoryIds) {
+    const { tab, state, repositoryIds, labels, query, freshness } = get()
+    const projectIds = effectiveProjectIds(repositoryIds, allRepositoryIds)
+    // `refresh` applies the typed text, so a half-typed search is a changed key, never a stale hit.
+    if (isFresh(freshness, listKey({ tab, state, projectIds, query: effectiveFilterQuery(query), labels }))) return Promise.resolve()
+    return get().refresh(allRepositoryIds)
+  },
+  invalidateFreshness: () => set({ freshness: null }),
   async refresh(allRepositoryIds, submittedOnly = false) {
     const { tab, state, repositoryIds, labels } = get()
     const query = submittedOnly ? get().appliedQuery : effectiveFilterQuery(get().query)
@@ -76,10 +92,16 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
     if (sequence !== refreshSequence) return
     if (!result.ok) {
-      set({ loading: false, error: result.error, items: [], skipped: [] })
+      set({ loading: false, error: result.error, items: [], skipped: [], freshness: null })
       return
     }
-    set({ loading: false, items: result.value.issues, skipped: result.value.skipped, fetchedAt: result.value.fetchedAt })
+    set({
+      loading: false,
+      items: result.value.issues,
+      skipped: result.value.skipped,
+      fetchedAt: result.value.fetchedAt,
+      freshness: { key: listKey({ tab, state, projectIds: ids, query, labels }), atMs: Date.now() }
+    })
   },
   async refreshQuiet(allRepositoryIds) {
     // A user fetch in flight owns the list; the caller reruns once it lands.
@@ -102,6 +124,7 @@ export const useIssuesStore = create<IssuesState>((set, get) => ({
       items: result.value.issues,
       skipped: result.value.skipped,
       fetchedAt: result.value.fetchedAt,
+      freshness: { key: listKey({ tab, state, projectIds: ids, query: appliedQuery, labels }), atMs: Date.now() },
       selected: selectionAfterRefresh(previous, result.value.issues, selected)
     })
     return 'done'

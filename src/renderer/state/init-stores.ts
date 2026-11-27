@@ -12,6 +12,8 @@ import { usePendingRequestsStore } from './pending-requests-store'
 import { useQueueStore } from './queue-store'
 import { useAskPicksStore } from './ask-picks-store'
 import { usePullRequestsStore } from './pull-requests-store'
+import { useIssuesStore } from './issues-store'
+import { startListPrefetch } from './list-prefetch'
 import { useRepositoriesStore } from './repositories-store'
 import { DEFAULT_SETTINGS, useSettingsStore } from './settings-store'
 import { initHolidayOverrides } from './holiday-store'
@@ -264,6 +266,9 @@ export function initStores(): void {
     if (identity === lastActiveAccountIdentity) return
     lastActiveAccountIdentity = identity
     usePullRequestsStore.getState().clearActiveCounts()
+    // The held list rows belong to the old account (`@me`), so the next mount must fetch. (FR-180)
+    usePullRequestsStore.getState().invalidateFreshness()
+    useIssuesStore.getState().invalidateFreshness()
     // Refetch immediately for the new account so the sidebar isn't blank until the next focus.
     if (identity !== null && state.githubStatus === 'ready') {
       const repositoryIds = useRepositoriesStore.getState().repositories.map((repo) => repo.id)
@@ -348,4 +353,7 @@ export function initStores(): void {
   void (async () => {
     await initHolidayOverrides()
   })()
+
+  // Warm the default Pull requests and Issues lists once GitHub is ready, on idle. (#1895)
+  startListPrefetch()
 }

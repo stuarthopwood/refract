@@ -11,6 +11,7 @@ import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
 import { HOME_PROJECTS_MAX } from '../../shared/ipc-home'
 import type { PullRequestAcrossItem } from '../../shared/ipc-pull-requests'
+import { effectiveProjectIds, isFresh, listKey, type ListFreshness } from './list-freshness'
 
 export const PAGE_SIZE = 50
 export const MAX_ROWS = 200
@@ -67,6 +68,8 @@ interface PullRequestsState {
   /** Rows asked for, 50 to 200; "Show more" raises it by 50. */
   limit: number
   fetchedAt: string | null
+  /** What the held rows were fetched for and when, so a remount can skip a fresh list (FR-180). */
+  freshness: ListFreshness | null
   loading: boolean
   error: IpcError | null
   selected: SelectedPullRequest | null
@@ -80,6 +83,10 @@ interface PullRequestsState {
   openPullRequest(repositoryId: string, number: number): void
   /** `allRepositoryIds` is every added Project, used when no Project is chosen. */
   refresh(allRepositoryIds: string[], more?: boolean): Promise<void>
+  /** The list's mount and filter-change fetch: no call while the held rows are fresh for the current filters (FR-180). */
+  refreshIfStale(allRepositoryIds: string[]): Promise<void>
+  /** Forgets freshness so the next mount fetches (the active account changed). */
+  invalidateFreshness(): void
   /** Background refetch with the applied filters after a `github:changed` write: no loading or error state, old rows kept on failure, selection moves on if its row is gone. */
   refreshQuiet(allRepositoryIds: string[]): Promise<QuietRefreshOutcome>
   loadMore(allRepositoryIds: string[]): Promise<void>
@@ -123,6 +130,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
   hasMore: false,
   limit: PAGE_SIZE,
   fetchedAt: null,
+  freshness: null,
   loading: false,
   error: null,
   selected: null,
@@ -147,6 +155,14 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       limit: PAGE_SIZE,
       selected: { repositoryId, number }
     }),
+  refreshIfStale(allRepositoryIds) {
+    const { tab, state, repositoryIds, query, freshness } = get()
+    const projectIds = effectiveProjectIds(repositoryIds, allRepositoryIds)
+    // `refresh` applies the typed text, so a half-typed search is a changed key, never a stale hit.
+    if (isFresh(freshness, listKey({ tab, state, projectIds, query: effectiveFilterQuery(query) }))) return Promise.resolve()
+    return get().refresh(allRepositoryIds)
+  },
+  invalidateFreshness: () => set({ freshness: null }),
   async refresh(allRepositoryIds, more = false) {
     const { tab, state, repositoryIds } = get()
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
@@ -168,7 +184,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     } catch {
       if (sequence !== refreshSequence) return
       const error = { code: 'gh-failed' as const, message: 'Could not list pull requests.' }
-      set(more ? { loading: false, error } : { loading: false, error, items: [], skipped: [], hasMore: false })
+      set(more ? { loading: false, error, freshness: null } : { loading: false, error, items: [], skipped: [], hasMore: false, freshness: null })
       return
     }
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
@@ -181,8 +197,8 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       }
       set(
         more
-          ? { loading: false, error: result.error }
-          : { loading: false, error: result.error, items: [], skipped: [], hasMore: false }
+          ? { loading: false, error: result.error, freshness: null }
+          : { loading: false, error: result.error, items: [], skipped: [], hasMore: false, freshness: null }
       )
       return
     }
@@ -192,7 +208,8 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       items: result.value.items,
       skipped: result.value.skipped,
       hasMore: result.value.hasMore,
-      fetchedAt: result.value.fetchedAt
+      fetchedAt: result.value.fetchedAt,
+      freshness: { key: listKey({ tab, state, projectIds: ids, query }), atMs: Date.now() }
     })
     // On default filters this search is the badge's search; reuse it and drop any badge fetch in flight.
     if (!more && sharesActiveCountSearch({ tab, state, repositoryIds, query, limit }, allRepositoryIds)) {
@@ -223,6 +240,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       skipped: result.value.skipped,
       hasMore: result.value.hasMore,
       fetchedAt: result.value.fetchedAt,
+      freshness: { key: listKey({ tab, state, projectIds: ids, query: appliedQuery }), atMs: Date.now() },
       selected: selectionAfterRefresh(previous, result.value.items, selected)
     })
     if (sharesActiveCountSearch({ tab, state, repositoryIds, query: appliedQuery, limit }, allRepositoryIds)) {
