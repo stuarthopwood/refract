@@ -5981,3 +5981,31 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 - [x] T741 [US1] #2318 (FR-178): `chat/ChainStageLine.tsx` `ChainAgentEntry` and `chat/SubagentRow.tsx` make each sub-card one native `<button>` named "<agent>, <status>, open in Subagents panel" calling `openHostedPanel` from `right-pane/hosted-panel-actions.ts`; remove the panel icon button and the "See input & output" disclosure (#2307); `SubagentBody.test.ts` and a new sub-card test pin the name and Enter and Space, per US1/AC22 (done)
 - [x] T742 [US1] #2318 (FR-179, SC-023): `scripts/theme-contrast-pairs.mjs` gains the card's text, icon, hairline and focus-ring pairs checked in all 25 themes; `scripts/check-theme-contrast.mjs` passes (11124 pairs across 25 themes), per US1/AC22 (done)
 - [ ] T743 [US1] #2318 (FR-175 to FR-179): update `docs/design/` Subagents card notes, `docs/PLAN.md` row 1d #2318, and run `pnpm typecheck`, the touched vitest files and `scripts/check-theme-contrast.mjs`; live-check the card and panel, per US1/AC22
+## Phase 133: Convergence (2026-11-27, epic #1901 performance children #1894 to #1900, FR-180 to FR-185, SC-024 to SC-030)
+
+Written before the build, assessed against `origin/main` 73cde82d. File names come from the issues and are verified when each task starts.
+
+### Lane A (#1894, then the #1899 check, then #1895)
+
+- [ ] T744 [US1] #1894: add `src/renderer/state/list-freshness.ts` (`LIST_FRESH_MS = 60_000`, key builder, `isFresh`); record `fetchedAt` per list key in `pull-requests-store.ts` and `issues-store.ts`; make the mount effects in `PullRequestList.tsx` (`:45-48`) and `IssueList.tsx` (`:58-59`) skip `refresh` when fresh, while Refresh, Show more and filter changes bypass, per FR-180, US1/AC22 (missing). Tests: new `list-freshness.test.ts`, `pull-requests-store.test.ts`, `issues-store.test.ts` (fresh makes no IPC call; stale, changed filter and Refresh make one).
+- [ ] T745 [US1] #1899 check: confirm `ProjectListPane.tsx` shows `ListRowsSkeleton` for loading with no rows (`itemCount === 0 && loading`) and the list components pass `blurWhileLoading`; if so close #1899 as done by #1848 with that file and line, per FR-185 (expected met). Test: `ProjectListPane.test.ts` already pins the skeleton (`shows_skeleton_rows_and_no_dashed_empty_state_while_the_first_fetch_is_in_flight`); add a case only if a gap is found.
+- [ ] T746 [US1] #1895 (Rust): add `src-tauri/src/store/list_cache.rs` (modelled on `store/profile_cache.rs`, through `atomic_json`), register it in `store/mod.rs`, and read and write it from `ipc/pull_requests/extra_handlers/list_across.rs` and the Issues list handler for the default open key only, per FR-181 (b), (d), US1/AC22 (missing). Tests: co-located `list_cache` tests (round trip, missing or corrupt file, non-default key never persisted).
+- [ ] T747 [US1] #1895 (renderer): hydrate both stores from the cache before first render marked stale, show a quiet "refreshing" hint in `ProjectListPane.tsx`, swap on fresh data; prefetch the default open lists on idle from `init-stores.ts` after first paint (T751), per FR-181 (a), (c), US1/AC22 (missing). Tests: store tests for the stale-then-fresh swap and prefetch reuse; `ProjectListPane.test.ts` for the hint.
+
+### Lane B (#1896)
+
+- [ ] T748 [US1] #1896: cache a healthy `ensure_search_budget` result for 60 s in `src-tauri/src/github/gh_pr_search_across.rs`, clearing it on a rate-limit search error and never caching a failed probe, per FR-182 (missing). Tests: new Rust tests in the same file (two calls inside the TTL probe once; a probe after the TTL and after a rate-limit error), with an injectable clock.
+
+### Lane C (#1897, then #1898)
+
+- [ ] T749 [US1] #1897: in `src/renderer/state/pull-requests-store.ts` derive `activeCount` from the loaded default open list and make the sidebar count and the list share one in-flight request per key; update the `init-stores.ts` focus refresh to match, per FR-183, SC-027 (partial: the store already shares one in-flight request per Project set for the count). Tests: `pull-requests-store.test.ts` (one `listAcross` call for count plus list; a filtered refresh leaves the count).
+- [ ] T750 [US1] #1898 (Rust): move `ipc::usage::start_at_launch` and other non-visual setup out of the `block_on` in `src-tauri/src/lib.rs` into tasks spawned after the window shows, keeping theme bootstrap and the settings that pick theme and layout before it, per FR-184 (a) (missing). Tests: pull the ordering into a small function with a Rust test in the same module; live-check the first frame.
+- [ ] T751 [US1] #1898 (renderer): in `src/renderer/main.tsx` and `state/init-stores.ts` render first, then start remote detection, the PR count, the prefetch and background refreshes after the first frame, per FR-184 (b), (c) (missing). Tests: `init-stores.test.ts` (nothing starts before the first-frame callback runs).
+
+### Spike (#1900)
+
+- [ ] T752 #1900: measure `gh` spawn time (`src-tauri/src/github/gh.rs`), list blank-on-refresh, `start_at_launch` and `ipc::themes::bootstrap` first-paint cost and long-transcript render cost; post the numbers report on #1900 and file a follow-up per path worth optimising, per SC-030. No source or test change.
+
+### Close-out
+
+- [ ] T753 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` where T744 to T751 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules, and live-check the cold start and a reopen within 60 s.
