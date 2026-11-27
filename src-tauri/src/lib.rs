@@ -257,11 +257,6 @@ pub fn run() {
                 .app_handle
                 .lock()
                 .expect("app_handle mutex poisoned") = Some(app.handle().clone());
-            // The logger plugin is up only now; `RegistryStore::open` runs before it.
-            tauri::async_runtime::block_on(managed.app_state.registry.lock())
-                .warn_duplicate_personal();
-            ipc::usage::start_at_launch(&managed.app_state);
-
             // Set before any renderer script runs, so the synchronous theme bootstrap can read it.
             let (bootstrap_custom, reset_notice) =
                 tauri::async_runtime::block_on(ipc::themes::bootstrap(&managed.app_state));
@@ -316,6 +311,17 @@ pub fn run() {
             shell::alarms::spawn(app.handle().clone(), managed.app_state.settings.clone());
 
             window.show()?;
+
+            // Non-visual setup runs after the window shows so it never delays the first frame (FR-184 (a)).
+            // `start_at_launch` is idempotent with the renderer's `usage.start`, so order against it is safe.
+            {
+                let post_show_state = managed.app_state.clone();
+                tauri::async_runtime::spawn(async move {
+                    // The logger plugin is up only now; `RegistryStore::open` runs before it.
+                    post_show_state.registry.lock().await.warn_duplicate_personal();
+                    ipc::usage::start_at_launch(&post_show_state);
+                });
+            }
 
             {
                 let update_state = update_state_for_setup.clone();

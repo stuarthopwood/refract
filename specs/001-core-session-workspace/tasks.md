@@ -5998,9 +5998,9 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 
 ### Lane C (#1897, then #1898)
 
-- [ ] T749 [US1] #1897: in `src/renderer/state/pull-requests-store.ts` derive `activeCount` from the loaded default open list and make the sidebar count and the list share one in-flight request per key; update the `init-stores.ts` focus refresh to match, per FR-183, SC-027 (partial: the store already shares one in-flight request per Project set for the count). Tests: `pull-requests-store.test.ts` (one `listAcross` call for count plus list; a filtered refresh leaves the count).
+- [x] T749 [US1] #1897: in `src/renderer/state/pull-requests-store.ts` derive `activeCount` from the loaded default open list and make the sidebar count and the list share one in-flight request per key; update the `init-stores.ts` focus refresh to match, per FR-183, SC-027 (partial: the store already shares one in-flight request per Project set for the count). Tests: `pull-requests-store.test.ts` (one `listAcross` call for count plus list; a filtered refresh leaves the count).
 - [ ] T750 [US1] #1898 (Rust): move `ipc::usage::start_at_launch` and other non-visual setup out of the `block_on` in `src-tauri/src/lib.rs` into tasks spawned after the window shows, keeping theme bootstrap and the settings that pick theme and layout before it, per FR-184 (a) (missing). Tests: pull the ordering into a small function with a Rust test in the same module; live-check the first frame.
-- [ ] T751 [US1] #1898 (renderer): in `src/renderer/main.tsx` and `state/init-stores.ts` render first, then start remote detection, the PR count, the prefetch and background refreshes after the first frame, per FR-184 (b), (c) (missing). Tests: `init-stores.test.ts` (nothing starts before the first-frame callback runs).
+- [x] T751 [US1] #1898 (renderer): in `src/renderer/main.tsx` and `state/init-stores.ts` render first, then start remote detection, the PR count, the prefetch and background refreshes after the first frame, per FR-184 (b), (c) (missing). Tests: `init-stores.test.ts` (nothing starts before the first-frame callback runs).
 
 ### Spike (#1900)
 

@@ -8,6 +8,7 @@ import { Toaster } from './components/ui/sonner'
 import { initStores, initThemeStore, useViewStore } from './state'
 import { toast } from 'sonner'
 import { initTypographyStore } from './state/typography-store'
+import { openGateAfterFirstFrame } from './state/first-frame'
 
 const bootstrap = window.refract.themeBootstrap()
 initThemeStore(bootstrap.theme, bootstrap.customTheme)
@@ -43,3 +44,6 @@ createRoot(container).render(
     </TooltipProvider>
   </StrictMode>
 )
+
+// Non-visual startup work queued by `initStores` (remote detection, GitHub accounts and the PR count, updates) starts after this first frame. (FR-184)
+openGateAfterFirstFrame()

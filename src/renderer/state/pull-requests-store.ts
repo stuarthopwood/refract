@@ -100,6 +100,23 @@ let activeCountSequence = 0
 // Callers racing at startup (account load, sidebar mount) share one in-flight fetch per Project set.
 let activeCountInFlight: { key: string; promise: Promise<void> } | null = null
 
+type ListAcrossResult = Result<{ items: PullRequestAcrossItem[]; hasMore: boolean; skipped: IssueSkippedProject[]; fetchedAt: string }>
+// The default open search (the badge's key) in flight: the badge fetch and the list's default fetch share one request. (FR-183)
+let defaultSearchInFlight: { key: string; request: Promise<ListAcrossResult> } | null = null
+
+function sharedDefaultSearch(allRepositoryIds: string[]): Promise<ListAcrossResult> {
+  const key = allRepositoryIds.join('|')
+  if (defaultSearchInFlight?.key === key) return defaultSearchInFlight.request
+  const request = window.refract.pullRequests.listAcross('all', 'open', allRepositoryIds.slice(0, HOME_PROJECTS_MAX), '', ACTIVE_COUNT_LIMIT)
+  const entry = { key, request }
+  defaultSearchInFlight = entry
+  const clear = (): void => {
+    if (defaultSearchInFlight === entry) defaultSearchInFlight = null
+  }
+  request.then(clear, clear)
+  return request
+}
+
 function activeCountFrom(
   value: { items: PullRequestAcrossItem[]; skipped?: IssueSkippedProject[]; fetchedAt: string },
   projectCount: number
@@ -164,7 +181,11 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     set(more ? { loading: true, error: null } : { loading: true, error: null, appliedQuery: query, limit })
     let result: Result<{ items: PullRequestAcrossItem[]; hasMore: boolean; skipped: IssueSkippedProject[]; fetchedAt: string }>
     try {
-      result = await window.refract.pullRequests.listAcross(tab, state, ids, query.trim(), limit)
+      // On default filters this is the badge's search too: join a badge fetch already in flight instead of spawning a second `gh search prs`. (FR-183)
+      result =
+        !more && sharesActiveCountSearch({ tab, state, repositoryIds, query, limit }, allRepositoryIds)
+          ? await sharedDefaultSearch(allRepositoryIds)
+          : await window.refract.pullRequests.listAcross(tab, state, ids, query.trim(), limit)
     } catch {
       if (sequence !== refreshSequence) return
       const error = { code: 'gh-failed' as const, message: 'Could not list pull requests.' }
@@ -246,7 +267,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       // window-focus refresh and the mount effect (both skip while loading).
       let result: Result<{ items: PullRequestAcrossItem[]; skipped: IssueSkippedProject[]; fetchedAt: string }>
       try {
-        result = await window.refract.pullRequests.listAcross('all', 'open', allRepositoryIds.slice(0, HOME_PROJECTS_MAX), '', ACTIVE_COUNT_LIMIT)
+        result = await sharedDefaultSearch(allRepositoryIds)
       } catch {
         if (activeCountSequence === sequence) set({ activeCount: emptyActiveCount() })
         return
