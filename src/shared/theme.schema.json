@@ -40,7 +40,20 @@
         "light-high-contrast",
         "lagoon",
         "amethyst",
-        "hearth"
+        "hearth",
+        "solarized-light",
+        "github-light",
+        "catppuccin-latte",
+        "one-light",
+        "gruvbox-light",
+        "rose-pine-dawn",
+        "dracula",
+        "nord",
+        "tokyo-night",
+        "catppuccin-mocha",
+        "gruvbox-dark",
+        "solarized-dark",
+        "one-dark"
       ],
       "description": "The built-in theme this file starts from; tokens the file omits take its values."
     },
