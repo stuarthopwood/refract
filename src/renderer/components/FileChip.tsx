@@ -1,5 +1,4 @@
 import * as React from 'react'
-import { FileIcon } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -10,11 +9,10 @@ export function fileBasename(path: string): string {
   return segments[segments.length - 1] ?? path
 }
 
-/** A compact monospace chip of a file's basename; the full path stays in `title` so nothing is lost to the truncation. */
+/** A compact borderless monospace chip of a file's basename; the full path stays in `title` so nothing is lost to the truncation. */
 export function FileChip({ path, className }: { path: string; className?: string }) {
   return (
-    <Badge variant="outline" title={path} className={cn('min-w-0 max-w-full bg-surface-2 font-mono', className)}>
-      <FileIcon aria-hidden />
+    <Badge variant="secondary" title={path} className={cn('min-w-0 max-w-full bg-surface-2 font-mono text-muted-foreground', className)}>
       <span className="truncate">{fileBasename(path)}</span>
     </Badge>
   )
@@ -22,9 +20,25 @@ export function FileChip({ path, className }: { path: string; className?: string
 
 export const FILE_CHIP_LIMIT = 4
 
-/** Duplicates collapse to one chip; collapsed shows the first `limit`, the rest wait behind the "+N" button. */
+// A bare number is a fragment of a path or a count the source split off, never a file.
+const NUMERIC_FRAGMENT_RE = /^\d+$/
+
+/** The files worth a chip: bare numeric fragments dropped, and one entry per basename (the first path wins) so `a/x.ts` and `b/x.ts` do not read as a repeat. */
+export function distinctFileChips(files: readonly string[]): string[] {
+  const seen = new Set<string>()
+  const kept: string[] = []
+  for (const path of files) {
+    const name = fileBasename(path)
+    if (NUMERIC_FRAGMENT_RE.test(name) || seen.has(name)) continue
+    seen.add(name)
+    kept.push(path)
+  }
+  return kept
+}
+
+/** Duplicates and numeric fragments collapse away; collapsed shows the first `limit`, the rest wait behind the "+N" button. */
 export function splitFileChips(files: readonly string[], limit: number = FILE_CHIP_LIMIT): { shown: string[]; hidden: string[] } {
-  const unique = [...new Set(files)]
+  const unique = distinctFileChips(files)
   return { shown: unique.slice(0, limit), hidden: unique.slice(limit) }
 }
 

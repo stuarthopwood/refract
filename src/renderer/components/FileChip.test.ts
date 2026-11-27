@@ -21,12 +21,14 @@ describe('fileBasename (#1928)', () => {
 })
 
 describe('FileChip (#1928)', () => {
-  it('shows the basename in monospace with the full path in the title, composing the outline Badge', () => {
+  it('shows the basename in monospace with the full path in the title, as a borderless Badge', () => {
     const html = renderToStaticMarkup(createElement(FileChip, { path: 'C:\\repo\\src\\a.ts' }))
     expect(html).toContain('title="C:\\repo\\src\\a.ts"')
     expect(html).toContain('>a.ts<')
     expect(html).toContain('font-mono')
-    expect(html).toContain('data-variant="outline"')
+    expect(html).toContain('data-variant="secondary"')
+    expect(html).not.toContain('data-variant="outline"')
+    expect(html).not.toContain('<svg')
   })
 
   it('truncates a long basename instead of overflowing the row', () => {
@@ -54,6 +56,14 @@ describe('splitFileChips (#1928)', () => {
 
   it('handles no files', () => {
     expect(splitFileChips([])).toEqual({ shown: [], hidden: [] })
+  })
+
+  it('collapses paths sharing a basename to the first one (FR-177)', () => {
+    expect(splitFileChips(['src/a/index.ts', 'src/b/index.ts', 'src/c.ts'])).toEqual({ shown: ['src/a/index.ts', 'src/c.ts'], hidden: [] })
+  })
+
+  it('drops a bare numeric fragment but keeps a numbered file name (FR-177)', () => {
+    expect(splitFileChips(['1', 'src/2', 'src/1.ts', '404.html'])).toEqual({ shown: ['src/1.ts', '404.html'], hidden: [] })
   })
 })
 
