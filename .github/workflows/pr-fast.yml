@@ -50,6 +50,9 @@ jobs:
       - name: Check theme contrast
         run: pnpm check:theme-contrast
 
+      - name: Check theme ids
+        run: pnpm check:theme-ids
+
       - name: Check drag regions
         run: pnpm check:drag-regions
 
@@ -64,6 +67,21 @@ jobs:
 
       - name: Check spacing grid
         run: pnpm check:spacing
+
+      - name: Check opacity modifiers
+        run: pnpm check:alpha-modifiers
+
+      - name: Check icon-only controls
+        run: pnpm check:icon-only-controls
+
+      - name: Check literal colours
+        run: pnpm check:literal-colours
+
+      - name: Check hit targets
+        run: pnpm check:hit-targets
+
+      - name: Check advisor roster
+        run: pnpm check:advisor-roster
 
       - name: Check version consistency
         run: pnpm check:versions

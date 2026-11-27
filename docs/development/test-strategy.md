@@ -23,12 +23,16 @@ runner, and no built bundle, so it stays cheap enough to run on every push to a 
 Locally, `pnpm test:fast` (`scripts/test-fast.mjs`) does the following, in order, and stops at the
 first failure:
 
-1. Runs `vitest run --changed origin/main`, which runs only the test files affected by your
+1. Checks that `origin/main` exists (`git rev-parse --verify origin/main`) and stops with a message
+   if it does not. Run `git fetch origin main` first in a fresh clone or worktree.
+2. Runs `vitest run --changed origin/main`, which runs only the test files affected by your
    changes since `origin/main`. A change that touches no test-covered module passes.
-2. Runs the `check:*` scripts: `check:indent`, `check:theme-contrast`, `check:drag-regions`,
-   `check:parity -- --gate`, `check:file-size`, `check:comment-density`, `check:spacing`,
-   `check:versions`, and `check:omp-schema` (plus its `--self-test`).
-3. Prints the total time and warns if it went over the 3-minute budget.
+3. Runs the `check:*` scripts: `check:indent`, `check:theme-contrast`, `check:theme-ids`,
+   `check:drag-regions`, `check:parity -- --gate`, `check:file-size`, `check:comment-density`,
+   `check:spacing`, `check:alpha-modifiers`, `check:icon-only-controls`, `check:literal-colours`,
+   `check:hit-targets`, `check:advisor-roster`, `check:versions`, and `check:omp-schema` (with
+   `--check-pin`, plus its `--self-test`).
+4. Prints the total time and warns if it went over the 3-minute budget.
 
 In Actions, the same checks run on `ubuntu-latest` for every pull request to `main`, with two
 differences: the job runs `pnpm typecheck` first, and it runs the whole vitest suite (`pnpm test`)
@@ -37,7 +41,9 @@ instead of only the changed files, because a PR job has no local state to diff a
 The fast tier does not run:
 
 - `cargo fmt`, `cargo clippy`, or `cargo test`.
-- `pnpm tauri build` and `check:ui-text`, which scans the bundle that build writes.
+- `pnpm tauri build` and `check:ui-text`, which scans the bundle that build writes. It is the one
+  `check:*` script in `.github/ci-local.yml` that the fast tier leaves out: it cannot run without
+  the build output, and the build needs cargo.
 - Any Windows-only step.
 
 The fast tier is a smoke test, not a gate. A green fast tier does not mean the change is safe to
@@ -47,7 +53,9 @@ merge.
 
 If `pnpm test:fast` regularly passes 3 minutes, trim it instead of raising the budget. Move the
 slowest step to the full suite only. The steps in `pr-fast.yml` must stay a subset of the steps in
-`.github/ci-local.yml`, so the full suite never runs less than the fast tier.
+`.github/ci-local.yml`, so the full suite never runs less than the fast tier. The test
+`scripts/test-fast.test.mjs` fails when a `pr-fast.yml` step is missing from `ci-local.yml`, or when
+the `check:*` steps of `pr-fast.yml` and `scripts/test-fast.mjs` differ.
 
 ### Full suite
 

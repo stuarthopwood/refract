@@ -5,24 +5,16 @@
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { STEPS, originMainProblem } from './test-fast-steps.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const BUDGET_MS = 3 * 60 * 1000;
 
-// `--passWithNoTests`: a change that touches no test-covered module is not a failure.
-const STEPS = [
-  'pnpm exec vitest run --changed origin/main --passWithNoTests',
-  'pnpm check:indent',
-  'pnpm check:theme-contrast',
-  'pnpm check:drag-regions',
-  'pnpm check:parity -- --gate',
-  'pnpm check:file-size',
-  'pnpm check:comment-density',
-  'pnpm check:spacing',
-  'pnpm check:versions',
-  'pnpm check:omp-schema',
-  'pnpm check:omp-schema -- --self-test',
-];
+const problem = originMainProblem(spawnSync, repoRoot);
+if (problem) {
+  console.error(problem);
+  process.exit(1);
+}
 
 const started = Date.now();
 for (const command of STEPS) {

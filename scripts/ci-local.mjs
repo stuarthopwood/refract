@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import yaml from 'js-yaml';
+import { parseSteps, printListIfRequested } from './ci-local-steps.mjs';
 import { requireSharedCargoTarget } from './verify-tauri-scratch-helpers.mjs';
 import { CACHE_WARN_BYTES, dirSizeBytes, formatGiB } from './cargo-cache-helpers.mjs';
 
@@ -22,77 +22,12 @@ function fail(message) {
   process.exit(1);
 }
 
-// Strict parse: an unknown job/step key (`env`, `if`, `strategy`, `working-directory`, ...) changes execution
-// semantics this script does not implement, so it must fail loudly rather than diverge silently from Actions.
-const ALLOWED_JOB_KEYS = new Set(['name', 'runs-on', 'timeout-minutes', 'permissions', 'steps']);
-const ALLOWED_STEP_KEYS = new Set(['name', 'run', 'uses', 'with', 'id']);
-
 function loadSteps() {
-  const raw = readFileSync(WORKFLOW_PATH, 'utf8');
-  let doc;
   try {
-    doc = yaml.load(raw);
+    return parseSteps(readFileSync(WORKFLOW_PATH, 'utf8'), WORKFLOW_REL);
   } catch (err) {
-    fail(`failed to parse ${WORKFLOW_REL}: ${err.message}`);
+    return fail(err.message);
   }
-  if (doc == null || typeof doc !== 'object' || doc.jobs == null || typeof doc.jobs !== 'object') {
-    fail(`${WORKFLOW_REL} has no top-level "jobs" map`);
-  }
-
-  const steps = [];
-  for (const [jobName, job] of Object.entries(doc.jobs)) {
-    if (job == null || !Array.isArray(job.steps)) {
-      fail(`${WORKFLOW_REL}: job "${jobName}" has no "steps" array`);
-    }
-    for (const key of Object.keys(job)) {
-      if (!ALLOWED_JOB_KEYS.has(key)) {
-        fail(
-          `${WORKFLOW_REL}: job "${jobName}" has a "${key}:" key ci-local.mjs does not understand ` +
-            '-- it may change execution semantics locally without error',
-        );
-      }
-    }
-    job.steps.forEach((step, i) => {
-      const where = `job "${jobName}" step ${i + 1}`;
-      if (step == null || typeof step !== 'object') {
-        fail(`${WORKFLOW_REL}: ${where} is not a mapping`);
-      }
-      for (const key of Object.keys(step)) {
-        if (!ALLOWED_STEP_KEYS.has(key)) {
-          fail(
-            `${WORKFLOW_REL}: ${where} ("${step.name ?? '(unnamed)'}") has a "${key}:" key ` +
-              'ci-local.mjs does not understand -- it may change execution semantics locally without error',
-          );
-        }
-      }
-      if (step.run == null) {
-        return; // a `uses:` step (checkout/toolchain setup) -- nothing to run locally.
-      }
-      if (typeof step.run !== 'string') {
-        fail(`${WORKFLOW_REL}: ${where} ("${step.name ?? '(unnamed)'}") has a non-string "run:"`);
-      }
-      // A multi-line run is unexpected; fail rather than flatten it into several commands.
-      if (step.run.includes('\n')) {
-        fail(
-          `${WORKFLOW_REL}: ${where} ("${step.name ?? '(unnamed)'}") has a multi-line "run:", ` +
-            'which ci-local.mjs does not support',
-        );
-      }
-      // The runner substitutes `${{ }}` before the shell sees it; run unexpanded it would diverge from CI.
-      if (step.run.includes('${{')) {
-        fail(
-          `${WORKFLOW_REL}: ${where} ("${step.name ?? '(unnamed)'}") has a "\${{ ... }}" GitHub ` +
-            'Actions expression in its "run:", which ci-local.mjs cannot evaluate locally',
-        );
-      }
-      steps.push({ job: jobName, name: step.name ?? step.run, run: step.run });
-    });
-  }
-
-  if (steps.length === 0) {
-    fail(`${WORKFLOW_REL} has no steps with a "run:" command`);
-  }
-  return steps;
 }
 
 function runStep(step) {
@@ -118,8 +53,7 @@ function warnIfCacheLarge() {
 
 function main() {
   const steps = loadSteps();
-  if (process.argv.includes('--list')) {
-    steps.forEach((step, i) => console.log(`${String(i + 1).padStart(2)}. ${step.name} :: ${step.run}`));
+  if (printListIfRequested(process.argv, steps, console.log)) {
     return;
   }
   // Unset, cargo falls back to a worktree-local `src-tauri/target` (#946); refuse before any step runs.

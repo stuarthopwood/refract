@@ -30,6 +30,8 @@ export default defineConfig({
       'scripts/token-guard-probe/host.test.mjs',
       'scripts/token-guard-probe/groups/helpers.test.mjs',
       'scripts/token-guard-probe/observe.test.mjs',
+      'scripts/ci-local.test.mjs',
+      'scripts/test-fast.test.mjs',
     ],
   },
 });
