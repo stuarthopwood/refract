@@ -193,3 +193,98 @@ fn validate_transition_matches_the_full_expected_legal_set_exhaustively() {
         "expected-legal table itself should have exactly 23 illegal pairs"
     );
 }
+
+// A cancelled start must stay dropped: the banner goes, the Session reads stopped, and no late
+// event can bring the start back.
+mod cancelled_start {
+    use super::*;
+    use crate::session::subagents::test_support::agent_fixture;
+
+    async fn transcript_len(agent: &SessionAgent) -> usize {
+        agent.runtime_view().await["transcript"]
+            .as_array()
+            .map_or(0, Vec::len)
+    }
+
+    #[tokio::test]
+    async fn queued_banner_is_published_with_its_wire_shape() {
+        let fx = agent_fixture(false).await;
+
+        set_stage(&fx.agent, StartStage::Queued, 0).await;
+        let queued = fx.agent.summary_fields().await;
+        assert_eq!(queued["startProgress"], json!({ "kind": "queued" }));
+
+        set_stage(&fx.agent, StartStage::Waiting, 1200).await;
+        let waiting = fx.agent.summary_fields().await;
+        assert_eq!(
+            waiting["startProgress"],
+            json!({ "kind": "waiting", "elapsedMs": 1200 })
+        );
+    }
+
+    #[tokio::test]
+    async fn a_plain_cancel_ends_start_failed_with_a_notice_and_no_banner() {
+        let fx = agent_fixture(false).await;
+        set_stage(&fx.agent, StartStage::Queued, 0).await;
+        let notices_before = transcript_len(&fx.agent).await;
+
+        end_cancelled_attempt(&fx.agent).await;
+
+        let summary = fx.agent.summary_fields().await;
+        assert_eq!(summary["status"], "stopped");
+        assert_eq!(summary["stopReason"], "start-failed");
+        assert!(summary.get("startProgress").is_none());
+        let view = fx.agent.runtime_view().await;
+        assert_eq!(view["stopDetail"], "SessionAgent: start cancelled");
+        assert_eq!(transcript_len(&fx.agent).await, notices_before + 1);
+    }
+
+    #[tokio::test]
+    async fn a_cancel_after_a_deliberate_stop_ends_not_started_without_a_notice() {
+        let fx = agent_fixture(false).await;
+        fx.agent.shutdown().await;
+        set_stage(&fx.agent, StartStage::Queued, 0).await;
+        let notices_before = transcript_len(&fx.agent).await;
+
+        end_cancelled_attempt(&fx.agent).await;
+
+        let summary = fx.agent.summary_fields().await;
+        assert_eq!(summary["status"], "stopped");
+        assert_eq!(summary["stopReason"], "not-started");
+        assert!(summary.get("startProgress").is_none());
+        assert_eq!(transcript_len(&fx.agent).await, notices_before);
+        assert!(fx.agent.runtime_view().await.get("stopDetail").is_none());
+    }
+
+    #[tokio::test]
+    async fn a_cancel_at_the_prompt_leaves_nothing_for_late_events_to_resume() {
+        let fx = agent_fixture(false).await;
+        set_stage(&fx.agent, StartStage::Waiting, 5_000).await;
+        set_stage(&fx.agent, StartStage::Prompt, 31_000).await;
+
+        end_cancelled_attempt(&fx.agent).await;
+        // A late "Keep waiting" click and a late ready-wait tick both arrive after the cancel.
+        fx.agent.keep_waiting_for_start().await;
+        on_start_progress(&fx.agent, ReadyWaitStage::Waiting, 32_000).await;
+
+        let summary = fx.agent.summary_fields().await;
+        assert!(
+            summary.get("startProgress").is_none(),
+            "a cancelled start came back: {summary}"
+        );
+        assert_eq!(summary["status"], "stopped");
+    }
+
+    #[tokio::test]
+    async fn a_start_after_shutdown_is_refused_before_it_waits_for_a_slot() {
+        let fx = agent_fixture(false).await;
+        fx.agent.shutdown().await;
+
+        let refused = acquire_slot(&fx.agent).await.err().expect("start refused");
+
+        assert_eq!(refused.code, "not-started");
+        let summary = fx.agent.summary_fields().await;
+        assert_eq!(summary["stopReason"], "not-started");
+        assert!(summary.get("startProgress").is_none());
+    }
+}
