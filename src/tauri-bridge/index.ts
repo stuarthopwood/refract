@@ -66,6 +66,8 @@ import type {
   Alarm,
   CatalogKind,
   ConversationInfo,
+  RetentionPreview,
+  RetentionRun,
   ModelCatalogEntry,
   ModelRoleId,
   PendingRequest,
@@ -227,7 +229,9 @@ const refract: RefractApi = {
     list: (sessionId) => request<ConversationInfo[]>(IPC_REQUESTS.CONVERSATIONS_LIST, sessionId),
     startNew: (sessionId) => request<SessionSnapshot>(IPC_REQUESTS.CONVERSATIONS_START_NEW, sessionId),
     open: (sessionId, file) => request<SessionSnapshot>(IPC_REQUESTS.CONVERSATIONS_OPEN, sessionId, file),
-    delete: (sessionId, file) => request<{ bytesFreed: number }>(IPC_REQUESTS.CONVERSATIONS_DELETE, sessionId, file)
+    delete: (sessionId, file) => request<{ bytesFreed: number }>(IPC_REQUESTS.CONVERSATIONS_DELETE, sessionId, file),
+    retentionPreview: () => request<RetentionPreview>(IPC_REQUESTS.CONVERSATIONS_RETENTION_PREVIEW),
+    retentionRun: () => request<RetentionRun>(IPC_REQUESTS.CONVERSATIONS_RETENTION_RUN)
   },
 
   chat: {
@@ -310,6 +314,7 @@ const refract: RefractApi = {
     setShowScrollbarMap: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_SCROLLBAR_MAP, enabled),
     setStackedPullRequests: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_STACKED_PULL_REQUESTS, enabled),
     setTypography: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_TYPOGRAPHY, value),
+    setConversationRetention: (value) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CONVERSATION_RETENTION, value),
     upsertAlarm: (alarm) => request<Settings>(IPC_REQUESTS.SETTINGS_UPSERT_ALARM, alarm),
     deleteAlarm: (id) => request<Settings>(IPC_REQUESTS.SETTINGS_DELETE_ALARM, id),
     setShowFinishedTurnTimes: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_FINISHED_TURN_TIMES, enabled),

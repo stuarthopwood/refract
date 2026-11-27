@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
+import { DEFAULT_CONVERSATION_RETENTION, DEFAULT_SESSION_LIST_COLLAPSE, DEFAULT_SESSION_READOUT, DEFAULT_TRANSCRIPT_DISPLAY } from '../../shared/model'
 import type { Alarm, ApprovalMode, ReadoutKind, Settings, ToolTargets, TranscriptDisplayFlag } from '../../shared/model'
 import type { ActivityText } from '../../shared/activity'
 import type { StatusStyle } from '../../shared/statusStyle'
@@ -57,6 +57,7 @@ export const DEFAULT_SETTINGS: Settings = {
   showSampleData: false,
   detectImagePathsOnPaste: true,
   sessionListCollapse: DEFAULT_SESSION_LIST_COLLAPSE,
+  conversationRetention: DEFAULT_CONVERSATION_RETENTION,
   rightPane: DEFAULT_RIGHT_PANE,
   pullRequestsListWidthPx: PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, // #930: default and remembered-width floor; see `pull-requests-layout-store.ts`
   // Placeholder until the real row arrives (Rust default is `false`); `true` keeps ghost text from flickering off meanwhile.

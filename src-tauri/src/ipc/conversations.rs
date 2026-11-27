@@ -14,6 +14,7 @@ pub fn register(d: &mut Dispatcher) {
     d.register("conversations.startNew", conversations_start_new);
     d.register("conversations.open", conversations_open);
     d.register("conversations.delete", conversations_delete);
+    super::conversations_retention::register(d);
 }
 
 /// Conversation metadata returned by `conversations.list`.

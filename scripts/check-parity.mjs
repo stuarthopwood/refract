@@ -266,6 +266,8 @@ const REQUEST_LANES = {
   CONVERSATIONS_START_NEW: 'R1',
   CONVERSATIONS_OPEN: 'R1',
   CONVERSATIONS_DELETE: 'R1', // #2161, ipc/conversations_delete.rs
+  CONVERSATIONS_RETENTION_PREVIEW: 'R1', // #2161, ipc/conversations_retention.rs
+  CONVERSATIONS_RETENTION_RUN: 'R1',
   CHAT_SEND: 'R4', // #787, ipc/chat.rs (chat send path)
   CHAT_STOP: 'R4',
   CHAT_REMOVE_QUEUED: 'R4',
@@ -302,6 +304,7 @@ const REQUEST_LANES = {
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'R8',
   SETTINGS_SET_WORD_PREDICTION_ENABLED: 'R6', // #772's off switch, registered in ipc/settings.rs
   SETTINGS_SET_SESSION_LIST_COLLAPSE: 'R8', // #735, registered in ipc/settings.rs
+  SETTINGS_SET_CONVERSATION_RETENTION: 'R8', // #2161, ipc/settings_conversation_retention.rs
   MODEL_ROLES_LIST: 'R8', // #791, "model roles" in R8's own work description
   MODEL_ROLES_SET: 'R8',
   MODEL_ROLES_LIST_CATALOG: 'R8',

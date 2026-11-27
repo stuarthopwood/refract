@@ -113,6 +113,8 @@ pub struct Settings {
     pub session_notification_sounds: bool,
     /// Looping sound on the alarm OS notification; default on (#1666).
     pub alarm_sounds: bool,
+    /// Opt-in Conversation retention; default off (`conversation_retention.rs`, #2161).
+    pub conversation_retention: ConversationRetention,
     /// Unrecognised keys, flattened into the top-level object; never overlaps a known field.
     #[serde(flatten)]
     pub extra: Map<String, Value>,
@@ -146,6 +148,9 @@ pub use chat_row_density::ChatRowDensity;
 mod animated_status_text;
 #[path = "code_ligatures.rs"]
 mod code_ligatures;
+#[path = "conversation_retention.rs"]
+mod conversation_retention;
+pub use conversation_retention::ConversationRetention;
 #[path = "default_clone_folder.rs"]
 mod default_clone_folder;
 #[path = "finished_turn_times.rs"]
@@ -241,6 +246,7 @@ impl SettingsStore {
         let show_scrollbar_map = scrollbar_map::parse(&object);
         let session_notification_sounds = notification_sounds::parse_session(&object);
         let alarm_sounds = notification_sounds::parse_alarm(&object);
+        let conversation_retention = conversation_retention::parse(&object);
         let show_finished_turn_times = finished_turn_times::parse(&object);
         let stacked_pull_requests = stacked_pull_requests::parse(&object);
         let typography = typography::parse(&object);
@@ -272,7 +278,7 @@ impl SettingsStore {
             .filter(|id| !id.is_empty() && id.len() <= 48)
             .map(str::to_string);
 
-        const KNOWN_FIELDS: [&str; 33] = [
+        const KNOWN_FIELDS: [&str; 34] = [
             "customTheme",
             "version",
             "approvalMode",
@@ -306,6 +312,7 @@ impl SettingsStore {
             alarms::KEY,
             notification_sounds::SESSION_KEY,
             notification_sounds::ALARM_KEY,
+            conversation_retention::KEY,
         ];
         let extra: Map<String, Value> = object
             .iter()
@@ -347,6 +354,7 @@ impl SettingsStore {
             alarms,
             session_notification_sounds,
             alarm_sounds,
+            conversation_retention,
             extra,
         };
 
@@ -446,6 +454,7 @@ impl SettingsStore {
         map.insert(right_pane::KEY.to_string(), json!(self.data.right_pane));
         default_clone_folder::write(&mut map, &self.data.default_clone_folder);
         alarms::write(&mut map, &self.data.alarms);
+        conversation_retention::write(&mut map, self.data.conversation_retention);
         notification_sounds::write(
             &mut map,
             self.data.session_notification_sounds,

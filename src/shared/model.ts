@@ -102,7 +102,7 @@ export interface Settings {
   transcriptDisplay: TranscriptDisplaySettings;
   showSampleData: boolean;
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean;
-  wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; reduceMotion?: boolean; showScrollbarMap?: boolean; stackedPullRequests?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean;
+  wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; reduceMotion?: boolean; showScrollbarMap?: boolean; stackedPullRequests?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean; conversationRetention?: ConversationRetention;
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings;
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; collapsedParentIds: string[]; }
@@ -474,6 +474,15 @@ export interface ConversationInfo {
   /** The `.jsonl` plus its artifact folder on disk. */
   sizeBytes: number;
 }
+
+/** Opt-in Conversation retention (#2161, FR-189): off by default; `days` is clamped to 1..3650 by Rust. */
+export interface ConversationRetention { enabled: boolean; days: number; }
+export const DEFAULT_CONVERSATION_RETENTION: Readonly<ConversationRetention> = Object.freeze({ enabled: false, days: 90 });
+
+/** One Conversation the retention setting would delete. */
+export interface RetentionCandidate { sessionId: string; file: string; sizeBytes: number; modifiedAtMs: number; }
+export interface RetentionPreview { enabled: boolean; days: number; candidates: RetentionCandidate[]; totalBytes: number; }
+export interface RetentionRun { enabled: boolean; days: number; deleted: number; failed: number; bytesFreed: number; }
 
 /** Refract never stores a GitHub access token. */
 export interface ProfileCache {
