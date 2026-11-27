@@ -7,9 +7,11 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::github::gh::{owner_repo_for, GhError};
-use crate::github::gh_issue_list::{self, IssueListQuery, IssueRow};
+use crate::github::gh_issue_list::{self, IssueListQuery, IssueRow, IssueStateFilter, IssueTab};
 use crate::github::gh_issues;
+use crate::store::list_cache::{self, ListKind};
 
+use super::list_cache::remember_default_list;
 use super::pull_requests::{map_gh_error, repo_path_for};
 use super::{arg_str, invalid_argument, now_iso8601, Dispatcher, HandlerFuture};
 
@@ -67,6 +69,8 @@ struct Resolved {
 /// One `gh issue list` per distinct owner/repo, newest first; failures go in `skipped`.
 fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
+        let cache_epoch = list_cache::epoch();
+        let cache_account = super::list_cache::active_account().await;
         const USAGE: &str = "issues.list expects (tab, state, repositoryIds, labels, query)";
         let tab = arg_str(&args, 0)
             .and_then(gh_issue_list::parse_tab)
@@ -100,19 +104,19 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
 
         let mut skipped: Vec<SkippedProject> = Vec::new();
         let mut resolved: Vec<Resolved> = Vec::new();
-        for id in ids {
+        for id in &ids {
             // A Project removed since the last listing is skipped, not failed.
-            let Ok((path, name)) = repo_path_for(&state, &id).await else {
+            let Ok((path, name)) = repo_path_for(&state, id).await else {
                 skipped.push(SkippedProject {
                     repository_name: id.clone(),
-                    repository_id: id,
+                    repository_id: id.clone(),
                     code: "gh-failed",
                     message: "This project is no longer available.".to_string(),
                 });
                 continue;
             };
             resolved.push(Resolved {
-                repository_id: id,
+                repository_id: id.clone(),
                 repository_name: name,
                 path,
             });
@@ -168,12 +172,29 @@ fn issues_list(state: super::AppState, args: Vec<Value>) -> HandlerFuture {
             }
         }
         issues.sort_by(|a, b| b.row.updated_at.cmp(&a.row.updated_at));
+        let is_default_list = tab == IssueTab::All
+            && state_filter == IssueStateFilter::Open
+            && labels.is_empty()
+            && search.is_none_or(|text| text.trim().is_empty());
         let result = ListResult {
             issues,
             skipped,
             fetched_at: now_iso8601(),
         };
-        Ok(serde_json::to_value(result).expect("list result is always JSON-serialisable"))
+        let value = serde_json::to_value(result).expect("list result is always JSON-serialisable");
+        // Only the default open list is the List cache's (FR-181 (d)).
+        if is_default_list {
+            remember_default_list(
+                &state,
+                ListKind::Issues,
+                &ids,
+                &value,
+                cache_epoch,
+                cache_account,
+            )
+            .await;
+        }
+        Ok(value)
     })
 }
 

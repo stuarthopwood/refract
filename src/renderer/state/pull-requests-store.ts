@@ -10,7 +10,8 @@ import type { IpcError, Result } from '../../shared/ipc'
 import type { FilterTab, PullRequestStateFilter } from '../../shared/github'
 import type { IssueSkippedProject } from '../../shared/ipc-issues'
 import { HOME_PROJECTS_MAX } from '../../shared/ipc-home'
-import type { PullRequestAcrossItem } from '../../shared/ipc-pull-requests'
+import type { PullRequestAcrossItem, PullRequestAcrossResult } from '../../shared/ipc-pull-requests'
+import { effectiveProjectIds, isDefaultOpenList, isFresh, listKey, type ListFreshness } from './list-freshness'
 
 export const PAGE_SIZE = 50
 export const MAX_ROWS = 200
@@ -67,6 +68,10 @@ interface PullRequestsState {
   /** Rows asked for, 50 to 200; "Show more" raises it by 50. */
   limit: number
   fetchedAt: string | null
+  /** What the held rows were fetched for and when, so a remount can skip a fresh list (FR-180). */
+  freshness: ListFreshness | null
+  /** The held rows came from the on-disk List cache and no fresh fetch has replaced them yet (FR-181 (c)). */
+  stale: boolean
   loading: boolean
   error: IpcError | null
   selected: SelectedPullRequest | null
@@ -80,6 +85,12 @@ interface PullRequestsState {
   openPullRequest(repositoryId: string, number: number): void
   /** `allRepositoryIds` is every added Project, used when no Project is chosen. */
   refresh(allRepositoryIds: string[], more?: boolean): Promise<void>
+  /** The list's mount and filter-change fetch: no call while the held rows are fresh for the current filters (FR-180). */
+  refreshIfStale(allRepositoryIds: string[]): Promise<void>
+  /** Forgets freshness so the next mount fetches (the active account changed). */
+  invalidateFreshness(): void
+  /** Shows the on-disk List cache's default open list at once, marked stale; ignored once the list has rows, is loading or has left its defaults. */
+  hydrateFromCache(cached: PullRequestAcrossResult): void
   /** Background refetch with the applied filters after a `github:changed` write: no loading or error state, old rows kept on failure, selection moves on if its row is gone. */
   refreshQuiet(allRepositoryIds: string[]): Promise<QuietRefreshOutcome>
   loadMore(allRepositoryIds: string[]): Promise<void>
@@ -95,6 +106,8 @@ interface PullRequestsState {
 export type QuietRefreshOutcome = 'done' | 'failed' | 'deferred' | 'superseded'
 
 let refreshSequence = 0
+// A mount and an idle prefetch asking for the same list share one fetch.
+let refreshInFlight: { key: string; promise: Promise<void> } | null = null
 // So a stale count fetch never overwrites a newer one.
 let activeCountSequence = 0
 // Callers racing at startup (account load, sidebar mount) share one in-flight fetch per Project set.
@@ -123,19 +136,21 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
   hasMore: false,
   limit: PAGE_SIZE,
   fetchedAt: null,
+  freshness: null,
+  stale: false,
   loading: false,
   error: null,
   selected: null,
   // A filter change drops the selection and the paging so the detail pane never shows a pull
   // request the list no longer has.
-  setTab: (tab) => set({ tab, selected: null, limit: PAGE_SIZE }),
-  setState: (state) => set({ state, selected: null, limit: PAGE_SIZE }),
-  setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null, limit: PAGE_SIZE }),
+  setTab: (tab) => set({ tab, selected: null, limit: PAGE_SIZE, stale: false }),
+  setState: (state) => set({ state, selected: null, limit: PAGE_SIZE, stale: false }),
+  setRepositoryIds: (repositoryIds) => set({ repositoryIds, selected: null, limit: PAGE_SIZE, stale: false }),
   setQuery: (query) => set({ query }),
   // A fresh `repositoryIds` array on every reset is what re-runs the list's fetch effect, so Clear
   // filters refetches even when only the search was active.
   clearFilters: () =>
-    set({ state: 'open', repositoryIds: [], query: '', appliedQuery: '', selected: null, limit: PAGE_SIZE }),
+    set({ state: 'open', repositoryIds: [], query: '', appliedQuery: '', selected: null, limit: PAGE_SIZE, stale: false }),
   select: (selected) => set({ selected }),
   openPullRequest: (repositoryId, number) =>
     set({
@@ -145,8 +160,43 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       query: '',
       appliedQuery: '',
       limit: PAGE_SIZE,
+      stale: false,
       selected: { repositoryId, number }
     }),
+  hydrateFromCache(cached) {
+    const current = get()
+    if (
+      current.loading ||
+      current.error !== null ||
+      current.fetchedAt !== null ||
+      current.items.length > 0 ||
+      cached.items.length === 0
+    )
+      return
+    if (!isDefaultOpenList(current) || current.limit !== PAGE_SIZE) return
+    set({ items: cached.items, skipped: cached.skipped, hasMore: cached.hasMore, fetchedAt: cached.fetchedAt, stale: true })
+  },
+  refreshIfStale(allRepositoryIds) {
+    const { tab, state, repositoryIds, query, freshness } = get()
+    const projectIds = effectiveProjectIds(repositoryIds, allRepositoryIds)
+    // `refresh` applies the typed text, so a half-typed search is a changed key, never a stale hit.
+    const key = listKey({ tab, state, projectIds, query: effectiveFilterQuery(query) })
+    if (isFresh(freshness, key)) return Promise.resolve()
+    if (refreshInFlight?.key === key) return refreshInFlight.promise
+    const promise = get()
+      .refresh(allRepositoryIds)
+      .finally(() => {
+        if (refreshInFlight?.promise === promise) refreshInFlight = null
+      })
+    refreshInFlight = { key, promise }
+    return promise
+  },
+  // Bumping the sequence drops an old-account refresh still in flight, so it never stamps freshness or rows.
+  invalidateFreshness: () => {
+    refreshSequence += 1
+    refreshInFlight = null
+    set({ freshness: null, loading: false })
+  },
   async refresh(allRepositoryIds, more = false) {
     const { tab, state, repositoryIds } = get()
     const ids = repositoryIds.length > 0 ? repositoryIds.filter((id) => allRepositoryIds.includes(id)) : allRepositoryIds
@@ -161,6 +211,8 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
         : get().limit
     refreshSequence += 1
     const sequence = refreshSequence
+    // A direct refresh supersedes any shared fetch, so a later mount must not join its dead promise.
+    refreshInFlight = null
     set(more ? { loading: true, error: null } : { loading: true, error: null, appliedQuery: query, limit })
     let result: Result<{ items: PullRequestAcrossItem[]; hasMore: boolean; skipped: IssueSkippedProject[]; fetchedAt: string }>
     try {
@@ -168,7 +220,7 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     } catch {
       if (sequence !== refreshSequence) return
       const error = { code: 'gh-failed' as const, message: 'Could not list pull requests.' }
-      set(more ? { loading: false, error } : { loading: false, error, items: [], skipped: [], hasMore: false })
+      set(more ? { loading: false, error, freshness: null } : { loading: false, error, items: [], skipped: [], hasMore: false, freshness: null, stale: false })
       return
     }
     // A newer refresh superseded this one; dropping the stale response keeps the list coherent.
@@ -181,18 +233,20 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
       }
       set(
         more
-          ? { loading: false, error: result.error }
-          : { loading: false, error: result.error, items: [], skipped: [], hasMore: false }
+          ? { loading: false, error: result.error, freshness: null }
+          : { loading: false, error: result.error, items: [], skipped: [], hasMore: false, freshness: null, stale: false }
       )
       return
     }
     set({
       loading: false,
+      stale: false,
       limit,
       items: result.value.items,
       skipped: result.value.skipped,
       hasMore: result.value.hasMore,
-      fetchedAt: result.value.fetchedAt
+      fetchedAt: result.value.fetchedAt,
+      freshness: { key: listKey({ tab, state, projectIds: ids, query }), atMs: Date.now() }
     })
     // On default filters this search is the badge's search; reuse it and drop any badge fetch in flight.
     if (!more && sharesActiveCountSearch({ tab, state, repositoryIds, query, limit }, allRepositoryIds)) {
@@ -212,17 +266,23 @@ export const usePullRequestsStore = create<PullRequestsState>((set, get) => ({
     try {
       result = await window.refract.pullRequests.listAcross(tab, state, ids, appliedQuery.trim(), limit)
     } catch {
+      if (sequence === refreshSequence) set({ stale: false })
       return 'failed'
     }
     // A later fetch (user or quiet) started meanwhile; whichever started last wins.
     if (sequence !== refreshSequence) return 'superseded'
-    if (!result.ok) return 'failed'
+    if (!result.ok) {
+      set({ stale: false })
+      return 'failed'
+    }
     const { items: previous, selected } = get()
     set({
+      stale: false,
       items: result.value.items,
       skipped: result.value.skipped,
       hasMore: result.value.hasMore,
       fetchedAt: result.value.fetchedAt,
+      freshness: { key: listKey({ tab, state, projectIds: ids, query: appliedQuery }), atMs: Date.now() },
       selected: selectionAfterRefresh(previous, result.value.items, selected)
     })
     if (sharesActiveCountSearch({ tab, state, repositoryIds, query: appliedQuery, limit }, allRepositoryIds)) {

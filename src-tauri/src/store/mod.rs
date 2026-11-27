@@ -7,6 +7,7 @@ pub mod handoff_notes;
 pub mod holiday_touches;
 pub mod import;
 pub mod last_commands;
+pub mod list_cache;
 pub mod profile_cache;
 pub mod registry;
 pub mod session_kind;

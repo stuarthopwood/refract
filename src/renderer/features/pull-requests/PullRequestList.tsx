@@ -34,22 +34,23 @@ export function PullRequestList() {
   const limit = usePullRequestsStore((s) => s.limit)
   const fetchedAt = usePullRequestsStore((s) => s.fetchedAt)
   const loading = usePullRequestsStore((s) => s.loading)
+  const stale = usePullRequestsStore((s) => s.stale)
   const error = usePullRequestsStore((s) => s.error)
   const selected = usePullRequestsStore((s) => s.selected)
   // Store actions are stable, so reading them once never subscribes the list to the store.
-  const { refresh, loadMore, setTab, setState, setRepositoryIds, setQuery, clearFilters, select, refreshActiveCount } =
+  const { refresh, refreshIfStale, loadMore, setTab, setState, setRepositoryIds, setQuery, clearFilters, select, refreshActiveCount } =
     usePullRequestsStore.getState()
 
   const allIds = repositories.map((repo) => repo.id)
   const allIdsKey = allIds.join('|')
 
-  // Fetches on open and on every filter change; never polled. A search applies on Enter, which
-  // calls the Refresh below.
+  // Fetches on open and on every filter change, unless the held rows are fresh for these filters
+  // (FR-180); never polled. A search applies on Enter, which calls the Refresh below.
   useEffect(() => {
-    void refresh(allIds)
+    void refreshIfStale(allIds)
     // `allIds` is covered by `allIdsKey`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, state, repositoryIds, allIdsKey, refresh])
+  }, [tab, state, repositoryIds, allIdsKey, refreshIfStale])
 
   return (
     <ProjectListPane
@@ -76,6 +77,7 @@ export function PullRequestList() {
       onClearFilters={clearFilters}
       blurWhileLoading
       loading={loading}
+      stale={stale}
       fetchedAt={fetchedAt}
       error={error}
       skipped={skipped}
