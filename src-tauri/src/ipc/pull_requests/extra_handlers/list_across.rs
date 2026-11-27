@@ -9,7 +9,7 @@ use serde_json::Value;
 use crate::github::gh::{owner_repo_for, GhError, GhErrorCode};
 use crate::github::gh_issues::clean_search_query;
 use crate::github::gh_pr_search_across::{
-    ensure_search_budget, note_search_rate_limited, search_across,
+    ensure_search_budget, invalidate_search_budget, search_across,
 };
 use crate::github::gh_pull_requests::SearchQualifierFlag;
 use crate::ipc::list_cache::remember_default_list;
@@ -175,7 +175,7 @@ pub(super) fn pull_requests_list_across(state: AppState, args: Vec<Value>) -> Ha
                     Ok(entries) => entries,
                     Err(err) => {
                         if err.code == GhErrorCode::RateLimited {
-                            note_search_rate_limited().await;
+                            invalidate_search_budget().await;
                         }
                         return Err(map_gh_error(err));
                     }
