@@ -28,7 +28,7 @@ function ScrollArea({
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
         {...viewportProps}
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring [&>div]:block! [&>div]:min-w-0!"
+        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-inset focus-visible:ring-ring [&>div]:block! [&>div]:min-w-0!"
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

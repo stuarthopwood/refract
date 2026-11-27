@@ -9,10 +9,18 @@ import { parseRustThemeIds, parseTsThemeIds, themeIdParity } from './theme-id-pa
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const tsPath = 'src/shared/themes.ts'
 const rustPath = 'src-tauri/src/store/theme_id.rs'
-const tsIds = parseTsThemeIds(readFileSync(path.join(repoRoot, tsPath), 'utf-8'))
-const rustIds = parseRustThemeIds(readFileSync(path.join(repoRoot, rustPath), 'utf-8'))
 
-// An unparsable file would read as "no ids" and pass vacuously, so fail loudly instead.
+// An unparsable file would read as "no ids" and pass vacuously, and a file the parser cannot trust (a renamed variant,
+// a split union) would read as a wrong list, so both fail loudly with exit 2.
+let tsIds
+let rustIds
+try {
+  tsIds = parseTsThemeIds(readFileSync(path.join(repoRoot, tsPath), 'utf-8'))
+  rustIds = parseRustThemeIds(readFileSync(path.join(repoRoot, rustPath), 'utf-8'))
+} catch (error) {
+  console.error(error.message)
+  process.exit(2)
+}
 if (tsIds.length === 0 || rustIds.length === 0) {
   console.error(`could not parse theme ids (${tsPath}: ${tsIds.length}, ${rustPath}: ${rustIds.length})`)
   process.exit(2)

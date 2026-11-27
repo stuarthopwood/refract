@@ -219,7 +219,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
         id={id}
         tabIndex={-1}
         {...focusHandlers}
-        className={cn('-mx-2 flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
+        className={cn('-mx-2 flex min-w-0 items-start gap-2 rounded-md px-2 py-1 text-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring', className)}
       >
         {row}
         {/* A row with a body that cannot expand keeps the chevron and action columns, so its summary width does not jump when it later can. */}
@@ -244,7 +244,7 @@ export const CollapsedLine = React.forwardRef<HTMLElement, CollapsedLineProps>(f
           aria-describedby={describedBy}
           {...focusHandlers}
           className={cn(
-            'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm group-hover/line:bg-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+            'flex min-w-0 flex-1 items-start gap-2 rounded-md px-2 py-1 text-left text-sm group-hover/line:bg-muted focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
             triggerClassName
           )}
         >

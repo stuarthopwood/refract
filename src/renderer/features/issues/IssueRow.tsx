@@ -51,7 +51,7 @@ export function IssueRow({ issue, selected, onSelect }: IssueRowProps) {
         data-issue-number={issue.number}
         data-issue-repo={issue.ownerRepo}
         data-issue-state={issue.state}
-        className="flex w-full flex-col gap-1 text-left outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:outline-2 focus-visible:after:outline-solid focus-visible:after:outline-offset-[-2px] focus-visible:after:outline-ring"
+        className="flex w-full flex-col gap-1 text-left outline-none after:absolute after:inset-0 after:content-[''] focus-visible:after:outline-(length:--focus-ring-width) focus-visible:after:outline-solid focus-visible:after:outline-offset-[-2px] focus-visible:after:outline-ring"
       >
         <span className="flex items-center gap-2">
           <span className="min-w-0 flex-1 truncate">{issue.title}</span>

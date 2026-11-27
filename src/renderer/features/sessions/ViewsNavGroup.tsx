@@ -33,7 +33,7 @@ function NavItem({ active, label, icon: Icon, onClick, children, text }: NavItem
       className={cn(
         'relative mx-2',
         SIDEBAR_NAV_BUTTON_CLASS,
-        'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-[-2px]',
+        'forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-(length:--focus-ring-width) forced-colors:focus-visible:outline-offset-[-2px]',
         active && 'bg-sidebar-accent text-sidebar-accent-foreground'
       )}
       aria-label={label}

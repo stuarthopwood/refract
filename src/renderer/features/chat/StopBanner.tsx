@@ -75,7 +75,7 @@ export function StopBanner(p: StopBannerProps) {
       tabIndex={-1}
       aria-labelledby={titleId}
       className={cn(
-        'shrink-0 px-4 pt-4 outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-solid forced-colors:focus-visible:-outline-offset-2',
+        'shrink-0 px-4 pt-4 outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-ring focus-visible:ring-inset forced-colors:focus-visible:outline-(length:--focus-ring-width) forced-colors:focus-visible:outline-solid forced-colors:focus-visible:-outline-offset-2',
         // Without the details block the banner has no bottom content to supply spacing.
         !p.startFailureDetails && 'pb-2'
       )}

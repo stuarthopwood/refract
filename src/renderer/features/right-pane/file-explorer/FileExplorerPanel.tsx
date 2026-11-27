@@ -382,7 +382,7 @@ export function FileExplorerPanel({ sessionId }: FileExplorerPanelProps) {
       role="group"
       tabIndex={-1}
       aria-label="File explorer"
-      className="@container flex h-full flex-col overflow-hidden p-2 focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="@container flex h-full flex-col overflow-hidden p-2 focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       {!sessionId ? (
         <Empty className="h-full">

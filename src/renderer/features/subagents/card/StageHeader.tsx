@@ -49,7 +49,7 @@ export function StageHeader({ stage, expanded, trailing, renderTitle, columnFocu
         {/* The column is the trigger so hovering the outcome line shows the full text too. */}
         <TooltipTrigger asChild>
           <div
-            className="flex min-w-0 flex-1 flex-col rounded focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+            className="flex min-w-0 flex-1 flex-col rounded focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring"
             tabIndex={columnFocusable ? 0 : undefined}
             // A focusable column with no role has no name, so its outcome would be read without its Stage.
             role={columnFocusable ? 'group' : undefined}

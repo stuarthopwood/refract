@@ -138,7 +138,7 @@ export function SessionList() {
     <nav
       aria-label="Sessions"
       tabIndex={-1}
-      className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
+      className="flex h-full flex-col overflow-hidden bg-sidebar text-sidebar-foreground focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
     >
       <ViewsNavGroup />
       {restored && (

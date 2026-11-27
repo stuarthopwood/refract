@@ -20,7 +20,7 @@ const MENU_LABEL: Record<AppMenuId, string> = {
 const MENUS: Array<{ id: AppMenuId; label: string }> = APP_MENU_IDS.map((id) => ({ id, label: MENU_LABEL[id] }))
 
 const MENU_BUTTON_CLASS =
-  'px-2 py-1 hover:bg-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  'px-2 py-1 hover:bg-accent focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 /** In-app menu bar toggled by a standalone Alt tap; each item opens the native menu by id. */
 export function AppMenuBar() {

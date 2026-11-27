@@ -30,6 +30,8 @@ export const DARK_HC_PAIRS = [
   ),
   ...edgeRows('input', ['background', 'card', 'popover', 'muted']),
   ...edgeRows('ring', ['background', 'card', 'popover', 'muted', 'sidebar', 'sidebar-accent', 'accent', 'composer-background']),
+  ...edgeRows('sidebar-ring', ['sidebar', 'sidebar-accent']),
+  ...edgeRows('composer-ring', ['background', 'composer-background']),
   ...edgeRows('composer-border', ['background', 'composer-background']),
   ...edgeRows('composer-control-border', ['background', 'composer-background']),
   ...edgeRows('composer-focus', ['background', 'composer-background']),

@@ -14,7 +14,7 @@ const INVALID_ID = 'invalid'
 const MULTI_GRID_CONTAINER_CLASS = '@container w-[30rem] max-w-full'
 const GRID_CLASS = 'grid grid-cols-2 gap-2 @md:grid-cols-4'
 // The group takes focus when the viewer closes over an opener that has since unmounted.
-const GROUP_FOCUS_CLASS = 'outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+const GROUP_FOCUS_CLASS = 'outline-none focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 type TileState = { status: 'loading' } | { status: 'ready'; data: MessageImageData } | { status: 'unavailable' }
 

@@ -92,7 +92,7 @@ export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessio
                 <button
                   type="button"
                   className={cn(
-                    'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 -my-1 hover:bg-muted hover:underline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring',
+                    'min-w-0 max-w-full cursor-pointer truncate rounded px-1 -mx-1 py-1 -my-1 hover:bg-muted hover:underline focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring',
                     colorClass
                   )}
                   aria-label={`Go to ${speechHeading}`}

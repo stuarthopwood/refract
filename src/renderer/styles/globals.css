@@ -1251,7 +1251,8 @@ samp {
   --focus-ring-width: 3px;
   --ghost-edge: var(--border);
   --composer-focus: var(--ring);
-  --composer-ring: color-mix(in oklab, var(--ring) 50%, transparent);
+  /* 60%, not the 50% the literal used: 50% of `--ring` measured 4.17:1 against `--background`, under this theme's 4.5:1 edge floor (#552). */
+  --composer-ring: color-mix(in oklab, var(--ring) 60%, transparent);
   /* U1 (High, gate951UI/A11y): the Approval/Model/Reasoning triggers must keep a visible,
    * enforced >=3:1 resting border in this theme (decision 3) -- `var(--border)` is already
    * >=3:1 against `--composer-background` (see `scripts/theme-contrast-pairs.mjs`'s own new

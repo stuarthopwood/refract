@@ -5,14 +5,14 @@
 // every existing caller (`StageContextBrief.tsx`, `StageDependencies.tsx`, `ToolCallDialog.tsx`)
 // keeps importing from `./Markdown` with no other change.
 export const linkClassName =
-  'text-accent-text underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  'text-accent-text underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 // Issue #610, decision 9: `--accent-text` did not clear 4.5:1 on `bg-muted` then (Dark 4.00:1, Obsidian
 // 4.28:1), so a link on a muted surface drops the accent colour and relies on the ambient text colour it
 // inherits. Later token retunes lifted the pair to 4.62:1 and `check-theme-contrast.mjs` now enforces 4.5:1
 // on it (#2114); the muted look is kept as it is.
 export const mutedLinkClassName =
-  'underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring'
+  'underline underline-offset-2 hover:decoration-2 [overflow-wrap:anywhere] rounded-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring'
 
 // The one muted text-link disclosure toggle (Show more / Show less, Show full brief, Show source):
 // the muted link look plus a 24px target (WCAG 2.5.8). Callers add their own spacing above it.

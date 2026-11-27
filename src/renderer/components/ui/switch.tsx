@@ -6,7 +6,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { Switch as SwitchPrimitive } from "radix-ui"
 
 const switchVariants = cva(
-  "peer inline-flex shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-focus-glow disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input dark:data-[state=unchecked]:bg-switch-off-dark-bg",
+  "peer inline-flex shrink-0 items-center rounded-full border border-transparent shadow-xs transition-all outline-none focus-visible:border-ring focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-focus-glow disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input dark:data-[state=unchecked]:bg-switch-off-dark-bg",
   {
     variants: {
       size: {

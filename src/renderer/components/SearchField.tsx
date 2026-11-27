@@ -115,7 +115,7 @@ export function SearchField({
         placeholder={instant ? placeholder : `${placeholder} (${FILTER_MIN_CHARS}+ characters)`}
         aria-label={label}
         aria-describedby={describedBy}
-        className="h-8 pl-8 text-sm forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-2 forced-colors:focus-visible:outline-offset-1"
+        className="h-8 pl-8 text-sm forced-colors:focus-visible:outline-solid forced-colors:focus-visible:outline-(length:--focus-ring-width) forced-colors:focus-visible:outline-offset-1"
         {...inputProps}
       >
         <SearchIcon aria-hidden className="pointer-events-none absolute left-[9px] top-2 size-4 text-muted-foreground" />

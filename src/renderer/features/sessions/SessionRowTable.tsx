@@ -59,7 +59,7 @@ export function SessionRowTable({
                 data-choice-item
                 // A fixed grid, not a natural-width flex row, so the columns line up across every row.
                 // The padding sits on this button so the whole hover fill is clickable.
-                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[8rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-2 rounded-md py-2 pl-4 pr-1 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                className="manage-session-open-button grid min-w-0 flex-1 grid-cols-[8rem_minmax(8rem,24rem)_minmax(0,10rem)_minmax(0,9rem)_minmax(5rem,1fr)] items-center gap-2 rounded-md py-2 pl-4 pr-1 text-left text-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
                 {/* No aria-label (WCAG 2.5.3, 4.1.2): one would replace the visible content and hide
                     status, branch, Archived, Worktree missing and last activity from screen readers.

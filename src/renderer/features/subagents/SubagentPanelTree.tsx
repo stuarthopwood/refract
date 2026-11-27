@@ -20,7 +20,7 @@ import { SubagentStatusGlyph, type SubagentRowStatus } from './subagentStatus'
 import { FILES_TOUCHED_LABEL, type ChatScenario, type SubAgentItem } from './viewModel'
 
 const ROW_CLASS =
-  'relative rounded-md text-left text-sm focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
+  'relative rounded-md text-left text-sm focus-visible:outline-solid focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
 
 // The row the developer is on shows its whole outcome: a clamped line is unreadable from the keyboard, where there is no hover tooltip.
 const FULL_OUTCOME_CLASS = 'aria-selected:[&_p]:line-clamp-none focus:[&_p]:line-clamp-none'

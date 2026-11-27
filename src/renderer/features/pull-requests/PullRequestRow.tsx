@@ -62,7 +62,7 @@ export function PullRequestRow({ pullRequest, selected, stack, onSelect }: PullR
       // Issue #1122: the PR list row gains the same accent fill every other persistent selected
       // row already has (it previously had the bar below but no fill at all).
       className={cn(
-        'relative flex w-full flex-col gap-1 py-2 pl-4 text-left text-sm focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
+        'relative flex w-full flex-col gap-1 py-2 pl-4 text-left text-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring',
         ROW_KEBAB_INSET_CLASS,
         selected ? 'bg-accent text-accent-foreground' : 'group-hover/row:bg-surface-hover'
       )}

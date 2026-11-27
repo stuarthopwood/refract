@@ -9,7 +9,9 @@ const TS = `export type ThemeId =
 
 export interface ThemeDefinition {}`
 
-const RUST = `pub enum ThemeId {
+const RUST = `#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ThemeId {
     Dark,
     // Additive (#551).
     DarkHighContrast,
@@ -24,6 +26,11 @@ describe('parseTsThemeIds', () => {
   it('returns nothing when the union is absent', () => {
     expect(parseTsThemeIds('export const x = 1')).toEqual([])
   })
+
+  it('rejects a union split by a blank line instead of truncating it', () => {
+    const split = TS.replace("  | 'amber-obsidian'", "\n  | 'amber-obsidian'")
+    expect(() => parseTsThemeIds(split)).toThrow(/blank line/)
+  })
 })
 
 describe('parseRustThemeIds', () => {
@@ -33,6 +40,16 @@ describe('parseRustThemeIds', () => {
 
   it('returns nothing when the enum is absent', () => {
     expect(parseRustThemeIds('pub enum Other { A }')).toEqual([])
+  })
+
+  it('rejects a per-variant serde rename, which breaks the kebab-case derivation', () => {
+    const renamed = RUST.replace('    AmberObsidian,', '    #[serde(rename = "amber")]\n    AmberObsidian,')
+    expect(() => parseRustThemeIds(renamed)).toThrow(/serde\(rename/)
+  })
+
+  it('rejects an enum without rename_all = "kebab-case"', () => {
+    expect(() => parseRustThemeIds(RUST.replace('kebab-case', 'snake_case'))).toThrow(/kebab-case/)
+    expect(() => parseRustThemeIds(RUST.replace('#[serde(rename_all = "kebab-case")]\n', ''))).toThrow(/kebab-case/)
   })
 })
 
