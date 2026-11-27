@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { BrainIcon, Loader2Icon } from 'lucide-react'
+import { BrainIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { Markdown } from './Markdown'
 import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
@@ -17,7 +18,7 @@ const THINKING_PREVIEW_CHARS = 120
 
 function thoughtIcon(streaming: boolean) {
   return streaming ? (
-    <Loader2Icon className="size-4 shrink-0 animate-spin text-thinking-row-active-fg" />
+    <Spinner className="size-4 shrink-0 text-thinking-row-active-fg" />
   ) : (
     <BrainIcon className="size-4 shrink-0 text-thinking-row-fg" />
   )

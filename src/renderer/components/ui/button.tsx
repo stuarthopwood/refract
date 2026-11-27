@@ -1,7 +1,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/lib/utils"
-import { LoaderCircleIcon } from "lucide-react"
+import { Spinner } from "@/components/ui/spinner"
 import { Slot } from "radix-ui"
 
 const buttonVariants = cva(
@@ -83,7 +83,7 @@ function Button({
     >
       {loading && !asChild ? (
         <>
-          <LoaderCircleIcon aria-hidden className="animate-spin motion-reduce:animate-none" />
+          <Spinner />
           {children}
         </>
       ) : (

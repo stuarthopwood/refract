@@ -1,4 +1,5 @@
-import { Loader2Icon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
+import { SkeletonLines } from '@/components/LoadingSkeletons'
 import { cn } from '@/lib/utils'
 import { RadioMark } from '@/components/ui/radio-group'
 import type { ModelCatalogEntry } from '../../../shared/model'
@@ -64,15 +65,14 @@ export function ModelCatalogGroup({
         >
           <span className="min-w-0 flex-1 whitespace-normal break-words text-muted-foreground">{catalogError}</span>
           <span className="flex shrink-0 items-center gap-1 text-xs">
-            {retrying && <Loader2Icon aria-hidden className="size-4 animate-spin" />}
+            {retrying && <Spinner className="size-4" />}
             {retrying ? 'Retrying…' : 'Retry'}
           </span>
         </div>
       )}
       {!catalogError && catalog === undefined && (
-        <div role="option" aria-disabled className="flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
-          Loading models…
+        <div role="option" aria-disabled className="px-2 py-2">
+          <SkeletonLines label="Loading models…" widths={['w-3/4', 'w-1/2', 'w-2/3']} />
         </div>
       )}
       {!catalogError && catalog !== undefined && catalog.length === 0 && (

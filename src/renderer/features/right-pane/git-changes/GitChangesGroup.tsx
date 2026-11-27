@@ -4,7 +4,8 @@
 // Conflicts gets no bulk action at all (a developer resolves a conflict per-file, matching
 // `ipc/git_changes.rs`'s own bulk handlers, which already exclude it server-side).
 import { useEffect, useRef, useState } from 'react'
-import { Loader2Icon, MinusIcon, PlusIcon, type LucideIcon } from 'lucide-react'
+import { MinusIcon, PlusIcon, type LucideIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -99,7 +100,7 @@ export function GitChangesGroup({
                   className={cn('shrink-0', HEADER_ACTION_BUTTON_CLASS, 'aria-disabled:pointer-events-none aria-disabled:opacity-50', bulkPending && 'opacity-100')}
                   onClick={() => void runBulkAction()}
                 >
-                  {bulkPending ? <Loader2Icon aria-hidden className="size-4 animate-spin" /> : <bulk.icon aria-hidden className="size-4" />}
+                  {bulkPending ? <Spinner className="size-4" /> : <bulk.icon aria-hidden className="size-4" />}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{bulkAccessibleName}</TooltipContent>

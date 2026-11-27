@@ -4,6 +4,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { InlineStatus } from '@/components/InlineStatus'
+import { DetailPaneSkeleton } from '@/components/LoadingSkeletons'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -135,7 +136,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
   const stack = useStackPosition(repositoryId, number, stackState)
   const stackFeatureOn = useStackFeatureOn()
   if (loading && !detail) {
-    return <InlineStatus tone="loading">Loading…</InlineStatus>
+    return <DetailPaneSkeleton />
   }
   if (error && !detail) {
     return (
@@ -184,7 +185,7 @@ export function PullRequestDetail({ repositoryId, number, compact = false }: Pul
               <StatePill state={detail.state} />
               {/* Check status carries its own severity colour (`CHECK_STATE_DISPLAY.colorClass`, shared with `PullRequestRow.tsx`) (#1121). */}
               <span className={cn('flex items-center gap-1 text-xs', check.colorClass)}>
-                <CheckIcon aria-hidden className={cn('size-4', detail.checkState === 'pending' && 'animate-spin')} />
+                <CheckIcon aria-hidden className="size-4" />
                 {check.label}
               </span>
             </div>

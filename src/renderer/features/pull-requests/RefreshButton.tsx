@@ -2,6 +2,7 @@
 // decision 8: both call sites settle on the detail view's existing `size-4` icon, not the list's
 // old smaller icon).
 import { RefreshCwIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
@@ -40,7 +41,7 @@ export function RefreshButton({ loading, onClick, label, className }: RefreshBut
           }}
           className={cn(COMPOSER_DISABLED_CLASS, COMPOSER_BUTTON_FOCUS_CLASS, className)}
         >
-          <RefreshCwIcon aria-hidden className={cn('size-4', loading && 'animate-spin')} />
+          {loading ? <Spinner className="size-4" /> : <RefreshCwIcon aria-hidden className="size-4" />}
         </Button>
       </TooltipTrigger>
       <TooltipContent>{label}</TooltipContent>

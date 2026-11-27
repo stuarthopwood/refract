@@ -3,15 +3,17 @@
 // (search, State, Project, plus an `extraFilters` slot), a polite results summary, a closed-by-
 // default "N projects skipped" disclosure, the error alert, the one empty state with "Clear
 // filters", optional "Show more", and the rows as `children`.
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { ChevronRightIcon, SearchXIcon } from 'lucide-react'
 import { FilterToggleButton } from '@/components/FilterToggleButton'
 import { FilterTabs } from '@/components/FilterTabs'
 import { MultiSelectChecklist } from '@/components/MultiSelectChecklist'
+import { ListRowsSkeleton } from '@/components/LoadingSkeletons'
 import { LoadingOverlay } from '@/components/ui/loading-overlay'
 import { SearchField } from '@/components/SearchField'
 import { InlineStatus } from '@/components/InlineStatus'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
+import { shouldHandOffFocus } from '@/components/listFocusHandoff'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { FILTER_PICKER_CLASS, Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -89,12 +91,15 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   const { noun, idPrefix, state, repositoryIds, projects, skipped, error, itemCount, loading, paging } = props
   const [filtersOpen, setFiltersOpen] = useFilterBarOpen(idPrefix)
   const [skippedOpen, setSkippedOpen] = useState(false)
+  // Show more keeps the rows live and focusable (the button hands focus to the first new row), so only a refetch that replaces them blurs.
+  const [loadingMore, setLoadingMore] = useState(false)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const filtersButtonRef = useRef<HTMLButtonElement>(null)
   const moreRef = useRef<HTMLButtonElement>(null)
   const capNoteRef = useRef<HTMLDivElement>(null)
   const listRef = useRef<HTMLDivElement>(null)
   const askedForMore = useRef<number | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // A Refresh replaces the rows, so a pending Show more focus hand-off no longer applies.
   const refresh = () => {
@@ -102,6 +107,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
     props.onRefresh()
   }
 
+  const reloadLocksRows = Boolean(props.blurWhileLoading) && loading && !loadingMore && itemCount > 0
   const showCapNote = Boolean(paging?.atCap) && !loading
   // A filter change replaces the rows, so a pending Show more focus hand-off must not steal focus.
   const filterKey = `${state}|${repositoryIds.join(',')}|${props.appliedQuery}`
@@ -111,6 +117,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
   // After "Show more", focus the first newly loaded row; if none arrived, fall back to the cap
   // note or the list so focus is not lost with the button.
   useEffect(() => {
+    if (!loading) setLoadingMore(false)
     if (loading) return
     const previousCount = askedForMore.current
     askedForMore.current = null
@@ -120,6 +127,20 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
     if (target instanceof HTMLElement) target.focus()
     else if (!paging?.hasMore) (capNoteRef.current ?? listRef.current)?.focus({ preventScroll: true })
   }, [loading, itemCount, paging?.hasMore, showCapNote])
+
+  // `inert` on the rows would drop focus to the body, and an inert element cannot take it, so the
+  // non-inert scroller holds focus for the reload and the rows get it back afterwards.
+  const handedOff = useRef(false)
+  useLayoutEffect(() => {
+    const active = document.activeElement
+    if (shouldHandOffFocus(reloadLocksRows, Boolean(active && listRef.current?.contains(active)))) {
+      scrollRef.current?.focus({ preventScroll: true })
+      handedOff.current = true
+    } else if (!reloadLocksRows && handedOff.current) {
+      handedOff.current = false
+      if (document.activeElement === scrollRef.current) listRef.current?.focus({ preventScroll: true })
+    }
+  }, [reloadLocksRows])
 
   const activeFilterCount =
     (props.appliedQuery.trim() !== '' ? 1 : 0) +
@@ -231,10 +252,12 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           )}
         </div>
       )}
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div ref={scrollRef} tabIndex={-1} className="min-h-0 flex-1 overflow-auto outline-none">
         {friendlyError ? (
           <InlineStatus tone="error">{friendlyError}</InlineStatus>
-        ) : itemCount === 0 && !loading ? (
+        ) : itemCount === 0 && loading ? (
+          <ListRowsSkeleton />
+        ) : itemCount === 0 ? (
           activeFilterCount > 0 ? (
             <Empty>
               <EmptyHeader>
@@ -261,7 +284,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
           )
         ) : (
           <>
-            <LoadingOverlay loading={Boolean(props.blurWhileLoading) && loading && itemCount > 0}>
+            <LoadingOverlay loading={reloadLocksRows}>
             <div
               ref={listRef}
               tabIndex={-1}
@@ -287,6 +310,7 @@ export function ProjectListPane<Tab extends string>(props: ProjectListPaneProps<
                   onClick={() => {
                     if (loading) return
                     askedForMore.current = itemCount
+                    setLoadingMore(true)
                     paging.onLoadMore()
                   }}
                 >

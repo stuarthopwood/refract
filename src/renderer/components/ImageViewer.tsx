@@ -1,5 +1,6 @@
 import * as React from 'react'
-import { ChevronLeftIcon, ChevronRightIcon, Loader2Icon } from 'lucide-react'
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { IconButton } from '@/components/IconButton'
 import { useDevicePixelRatio } from '@/hooks/useDevicePixelRatio'
@@ -132,7 +133,7 @@ export function ImageViewer({ open, onOpenChange, items, index, onIndexChange, t
           {total > 1 && navButton('Previous image', 'left-0', -1, <ChevronLeftIcon aria-hidden />)}
           {current === null && (
             <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Loader2Icon aria-hidden className="size-4 animate-spin motion-reduce:animate-none" />
+              <Spinner className="size-4" />
               Loading image…
             </p>
           )}

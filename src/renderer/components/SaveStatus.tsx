@@ -1,5 +1,6 @@
 import type { ComponentProps } from 'react'
-import { CheckIcon, Loader2Icon } from 'lucide-react'
+import { CheckIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 import { InlineStatus } from './InlineStatus'
 import { describeSaveStatus } from './saveStatusView'
@@ -14,7 +15,7 @@ const ICON_CLASS = 'mr-1 inline size-4 shrink-0 align-[-0.2em]'
 export function SaveStatus({ state, error, className, ...props }: Omit<ComponentProps<typeof InlineStatus>, 'tone' | 'density' | 'leading' | 'children'> & { state: SaveState; error?: string }) {
   const view = describeSaveStatus(state, error)
   const failed = view?.tone === 'error'
-  const leading = view?.icon === 'spinner' ? <Loader2Icon aria-hidden className={cn(ICON_CLASS, 'animate-spin motion-reduce:animate-none')} /> : view?.icon === 'check' ? <CheckIcon aria-hidden className={ICON_CLASS} /> : undefined
+  const leading = view?.icon === 'spinner' ? <Spinner className={ICON_CLASS} /> : view?.icon === 'check' ? <CheckIcon aria-hidden className={ICON_CLASS} /> : undefined
   return (
     <>
       {/* `contents` keeps the idle region out of flex gaps; the text inside is tone `info` so it carries no nested live role. */}

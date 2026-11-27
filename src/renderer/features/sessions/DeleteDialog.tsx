@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileIcon, FolderIcon, Loader2Icon } from 'lucide-react'
+import { FileIcon, FolderIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import type { LeftoverSummary } from '../../../shared/ipc'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { useSessionsStore } from '@/state/sessions-store'
@@ -255,7 +256,7 @@ export function DeleteDialog({
       )}
       {recheckFailed && <InlineStatus className="p-0">Couldn't re-check what Delete would lose.</InlineStatus>}
       <InlineStatus tone="loading" className="flex min-h-5 items-center gap-2 p-0">
-        {statusBusy && <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />}
+        {statusBusy && <Spinner className="size-4 shrink-0" />}
         {statusText}
       </InlineStatus>
       {hasLeftoverList && leftoverSummary && (

@@ -1,5 +1,6 @@
 import { Toaster as Sonner, type ToasterProps } from "sonner"
-import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, Loader2Icon, type LucideIcon } from "lucide-react"
+import { CircleCheckIcon, InfoIcon, TriangleAlertIcon, OctagonXIcon, type LucideIcon } from "lucide-react"
+import { Spinner } from "@/components/ui/spinner"
 import { cn } from "@/lib/utils"
 import { useActiveThemeId } from "../../state/theme-store"
 import { isLightTheme } from "../../../shared/themes"
@@ -29,7 +30,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
         info: <SeverityIcon icon={InfoIcon} className="text-severity-info" label="Info" />,
         warning: <SeverityIcon icon={TriangleAlertIcon} className="text-severity-warning" label="Warning" />,
         error: <SeverityIcon icon={OctagonXIcon} className="text-severity-error" label="Error" />,
-        loading: <Loader2Icon className="size-4 animate-spin" aria-hidden="true" />,
+        loading: <Spinner className="size-4" />,
       }}
       style={
         {

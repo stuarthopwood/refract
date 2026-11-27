@@ -6,6 +6,7 @@ import { PlusIcon } from 'lucide-react'
 import { ListDetailSplit } from '@/components/ListDetailSplit'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { Button } from '@/components/ui/button'
+import { Empty, EmptyDescription } from '@/components/ui/empty'
 import { ReportIssueDialog } from '@/features/sessions/ReportIssueDialog'
 import { useDefaultRepositoryId } from '@/lib/defaultRepository'
 import { useIssuesStore, useRepositoriesStore, useViewStore } from '@/state'
@@ -61,8 +62,10 @@ export function IssuesView({ reservesWindowControls = true }: { reservesWindowCo
         )}
       </ScreenHeader>
       {repositories.length === 0 ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center p-6 text-sm text-muted-foreground">
-          Add a project to browse its issues.
+        <div className="flex min-h-0 flex-1 p-4">
+          <Empty className="border">
+            <EmptyDescription>Add a project to browse its issues.</EmptyDescription>
+          </Empty>
         </div>
       ) : (
         <ListDetailSplit
@@ -73,8 +76,10 @@ export function IssuesView({ reservesWindowControls = true }: { reservesWindowCo
             selected ? (
               <IssueDetail key={`${selected.repositoryId}#${selected.number}`} repositoryId={selected.repositoryId} number={selected.number} />
             ) : (
-              <div className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">
-                Select an issue to view its details.
+              <div className="flex h-full p-4">
+                <Empty className="border">
+                  <EmptyDescription>Select an issue to view its details.</EmptyDescription>
+                </Empty>
               </div>
             )
           }

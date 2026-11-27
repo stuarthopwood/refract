@@ -1,4 +1,5 @@
-import { CheckCircle2Icon, CircleDashedIcon, LoaderCircleIcon, XCircleIcon } from 'lucide-react'
+import { CheckCircle2Icon, CircleDashedIcon, XCircleIcon } from 'lucide-react'
+import { Spinner } from '@/components/ui/spinner'
 import type { PullRequestChecks } from '../../../shared/model'
 import type { PullRequestSummary } from '../../../shared/github'
 import type { ComponentType } from 'react'
@@ -17,7 +18,7 @@ export interface CheckStateDisplay extends CheckDisplay {
 export const CHECK_STATE_DISPLAY: Record<PullRequestSummary['checkState'], CheckStateDisplay> = {
   passed: { icon: CheckCircle2Icon, label: 'Checks passed', colorClass: 'text-severity-success' },
   failed: { icon: XCircleIcon, label: 'Checks failed', colorClass: 'text-severity-error' },
-  pending: { icon: LoaderCircleIcon, label: 'Checks running', colorClass: 'text-severity-warning' },
+  pending: { icon: Spinner, label: 'Checks running', colorClass: 'text-severity-warning' },
   none: { icon: CircleDashedIcon, label: 'No checks', colorClass: 'text-muted-foreground' }
 }
 

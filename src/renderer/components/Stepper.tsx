@@ -1,5 +1,6 @@
-import { CheckIcon, CircleAlertIcon, LoaderCircleIcon } from 'lucide-react'
+import { CheckIcon, CircleAlertIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { SpinnerRing } from '@/components/ui/spinner'
 import { cn } from '@/lib/utils'
 
 export type StepStatus = 'waiting' | 'running' | 'passed' | 'failed'
@@ -57,13 +58,7 @@ function StepMarker({ index, status, selected }: { index: number; status: StepSt
       )}
     >
       {status === 'passed' ? <CheckIcon className="size-4 sm:size-5" /> : status === 'failed' ? <CircleAlertIcon className="size-4 sm:size-5" /> : index}
-      {status === 'running' && (
-        <span
-          data-stepper-spinner
-          style={{ inset: -2 }}
-          className="absolute animate-spin rounded-full border-2 border-transparent border-r-accent-text border-t-accent-text motion-reduce:animate-none"
-        />
-      )}
+      {status === 'running' && <SpinnerRing data-stepper-spinner style={{ inset: -2 }} className="absolute" />}
     </span>
   )
 }

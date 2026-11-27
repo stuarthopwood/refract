@@ -5,7 +5,8 @@
     "src/shared/ipc-checklist.test.ts",
     "src/shared/themeNotices.test.ts",
     "src/renderer/features/chat-nav/highlightRow.test.ts",
-    "src/renderer/styles/focus-ring-width.test.ts"
+    "src/renderer/styles/focus-ring-width.test.ts",
+    "src/renderer/components/ui/spinner.test.ts"
   ],
   "compilerOptions": {
     "composite": true,
