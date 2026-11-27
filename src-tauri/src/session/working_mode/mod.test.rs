@@ -215,3 +215,182 @@ fn a_waiting_switch_that_keeps_the_launch_mode_needs_no_restart_and_nothing_wait
     assert_eq!(settle_pending(&mut s), Some((WorkingMode::Plan, false)));
     assert_eq!(settle_pending(&mut s), None);
 }
+
+fn applied_name(applied: &Applied) -> &'static str {
+    match applied {
+        Applied::Same => "same",
+        Applied::Switched => "switched",
+        Applied::Pending => "pending",
+        Applied::Restart => "restart",
+    }
+}
+
+use WorkingMode::{Away, Grill, Interactive, Plan};
+
+type Case = (WorkingMode, bool, WorkingMode, SessionStatus, bool);
+type Expected = (&'static str, WorkingMode, Option<WorkingMode>);
+
+#[test]
+fn every_mode_transition_lands_on_the_outcome_a_user_sees() {
+    use SessionStatus::{Idle, NeedsYou, Stopped, Working};
+    // (from, launched in plan, to, status, has process) -> (outcome, mode now, waiting switch)
+    let table: [(Case, Expected); 22] = [
+        // Modes that need no OMP restart switch at once, busy or not.
+        (
+            (Interactive, false, Grill, Working, true),
+            ("switched", Grill, None),
+        ),
+        (
+            (Grill, false, Away, NeedsYou, true),
+            ("switched", Away, None),
+        ),
+        (
+            (Interactive, false, Away, Idle, true),
+            ("switched", Away, None),
+        ),
+        (
+            (Grill, false, Interactive, Working, true),
+            ("switched", Interactive, None),
+        ),
+        // Plan changes the launch mode, so it restarts a live process when idle or stopped.
+        (
+            (Interactive, false, Plan, Idle, true),
+            ("restart", Plan, None),
+        ),
+        ((Grill, false, Plan, Stopped, true), ("restart", Plan, None)),
+        ((Away, false, Plan, Idle, true), ("restart", Plan, None)),
+        (
+            (Plan, true, Interactive, Idle, true),
+            ("restart", Interactive, None),
+        ),
+        ((Plan, true, Away, Idle, true), ("restart", Away, None)),
+        ((Plan, true, Grill, Stopped, true), ("restart", Grill, None)),
+        // Mid-turn the switch waits and the mode holds.
+        (
+            (Interactive, false, Plan, Working, true),
+            ("pending", Interactive, Some(Plan)),
+        ),
+        (
+            (Grill, false, Plan, NeedsYou, true),
+            ("pending", Grill, Some(Plan)),
+        ),
+        (
+            (Plan, true, Interactive, Working, true),
+            ("pending", Plan, Some(Interactive)),
+        ),
+        (
+            (Plan, true, Away, NeedsYou, true),
+            ("pending", Plan, Some(Away)),
+        ),
+        // Leaving Away is immediate even when the plan switch waits.
+        (
+            (Away, false, Plan, Working, true),
+            ("pending", Interactive, Some(Plan)),
+        ),
+        (
+            (Away, false, Plan, NeedsYou, true),
+            ("pending", Interactive, Some(Plan)),
+        ),
+        // No process yet: nothing to restart, whatever the status.
+        (
+            (Interactive, false, Plan, Working, false),
+            ("switched", Plan, None),
+        ),
+        (
+            (Plan, true, Interactive, Idle, false),
+            ("switched", Interactive, None),
+        ),
+        // A process already launched in the target's plan-ness needs no restart.
+        (
+            (Interactive, true, Plan, Working, true),
+            ("switched", Plan, None),
+        ),
+        (
+            (Plan, false, Grill, Working, true),
+            ("switched", Grill, None),
+        ),
+        // Re-picking the current mode is never a change.
+        ((Away, false, Away, Working, true), ("same", Away, None)),
+        ((Plan, true, Plan, Idle, true), ("same", Plan, None)),
+    ];
+    for ((from, launched, to, status, has_process), (outcome, mode, waiting)) in table {
+        let mut s = state(from, launched);
+        let (previous, applied) = decide(&mut s, to, status, has_process);
+        let case = format!(
+            "{from:?} (plan launch {launched}) -> {to:?} while {status:?}, process {has_process}"
+        );
+        assert_eq!(previous, from, "{case}");
+        assert_eq!(applied_name(&applied), outcome, "{case}");
+        assert_eq!(s.mode, mode, "{case}");
+        assert_eq!(s.pending, waiting, "{case}");
+    }
+}
+
+#[test]
+fn a_new_pick_replaces_a_waiting_switch() {
+    let mut s = state(Interactive, false);
+    decide(&mut s, Plan, SessionStatus::Working, true);
+    assert_eq!(s.pending, Some(Plan));
+
+    let (_, applied) = decide(&mut s, Grill, SessionStatus::Working, true);
+
+    assert_eq!(applied_name(&applied), "switched");
+    assert_eq!(s.mode, Grill);
+    assert_eq!(
+        s.pending, None,
+        "the earlier Plan request no longer applies"
+    );
+}
+
+#[test]
+fn the_wire_state_carries_the_mode_and_only_a_waiting_switch() {
+    let mut s = state(Interactive, false);
+    let mut wire = Map::new();
+    s.insert_wire(&mut wire);
+    assert_eq!(wire["workingMode"], json!("interactive"));
+    assert!(!wire.contains_key("workingModePending"));
+
+    s.pending = Some(Plan);
+    s.insert_wire(&mut wire);
+    assert_eq!(wire["workingModePending"], json!("plan"));
+}
+
+#[test]
+fn only_the_four_known_modes_parse() {
+    for (raw, mode) in [
+        ("interactive", Interactive),
+        ("plan", Plan),
+        ("grill", Grill),
+        ("away", Away),
+    ] {
+        assert_eq!(WorkingMode::parse(raw), Some(mode), "{raw}");
+    }
+    for raw in ["", "Plan", "AWAY", "yolo", " plan"] {
+        assert_eq!(WorkingMode::parse(raw), None, "{raw:?}");
+    }
+}
+
+#[test]
+fn away_is_the_only_mode_that_does_not_survive_a_restart() {
+    assert_eq!(Away.persistable(), Interactive);
+    for mode in [Interactive, Plan, Grill] {
+        assert_eq!(mode.persistable(), mode);
+    }
+}
+
+#[tokio::test]
+async fn an_unknown_mode_is_refused_and_the_current_mode_is_untouched() {
+    let fx = crate::session::subagents::test_support::agent_fixture(false).await;
+    fx.agent
+        .with_working_mode_state(|s| {
+            s.loaded = true;
+            s.mode = Grill;
+        })
+        .await;
+
+    let err = set_mode(&fx.agent, "turbo").await.unwrap_err();
+
+    assert_eq!(err.code, "invalid-argument");
+    assert!(err.message.contains("turbo"), "{}", err.message);
+    assert_eq!(fx.agent.with_working_mode_state(|s| s.mode).await, Grill);
+}

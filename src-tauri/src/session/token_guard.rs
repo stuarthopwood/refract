@@ -253,4 +253,39 @@ mod tests {
         state.pause_if_current(stale);
         assert!(state.shake.needs_shake(Some(70_000)));
     }
+
+    #[test]
+    fn a_pause_read_after_a_reset_applies_to_the_new_conversation() {
+        let mut state = State::default();
+        state.counter.reset(0);
+        let current = state.counter.conversation;
+
+        state.pause_if_current(current);
+
+        assert!(!state.shake.needs_shake(Some(70_000)));
+    }
+
+    #[test]
+    fn a_reset_lifts_an_earlier_pause() {
+        let mut state = State::default();
+        state.pause_if_current(state.counter.conversation);
+        assert!(!state.shake.needs_shake(Some(70_000)));
+
+        state.counter.reset(0);
+        state.shake.reset_baseline();
+
+        assert!(state.shake.needs_shake(Some(70_000)));
+    }
+
+    #[test]
+    fn a_pause_from_two_resets_ago_is_dropped() {
+        let mut state = State::default();
+        let stale = state.counter.conversation;
+        state.counter.reset(0);
+        state.counter.reset(0);
+
+        state.pause_if_current(stale);
+
+        assert!(state.shake.needs_shake(Some(70_000)));
+    }
 }

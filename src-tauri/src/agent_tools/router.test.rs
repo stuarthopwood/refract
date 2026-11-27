@@ -350,6 +350,69 @@ async fn approval_answers_route_by_request_id() {
     assert!(matches!(rx.await, Ok(Reply::Approval(Decision::Denied))));
 }
 
+/// A late click on a card whose call already ended (timed out or cancelled) must not apply.
+#[tokio::test]
+async fn an_approval_answered_after_its_call_finished_is_refused() {
+    let router = ToolRouter::default();
+    let _cancel = router.begin("c1").unwrap();
+    let rx = router.wait_for(&approval::request_id("c1"));
+
+    router.finish("c1");
+
+    assert!(!router.answer_approval("refract-tool-c1", Decision::Approved));
+    assert!(rx.await.is_err());
+}
+
+#[tokio::test]
+async fn a_second_click_on_an_approval_card_is_refused_and_the_first_decision_stands() {
+    let router = ToolRouter::default();
+    let rx = router.wait_for(&approval::request_id("c1"));
+
+    assert!(router.answer_approval("refract-tool-c1", Decision::Denied));
+    assert!(!router.answer_approval("refract-tool-c1", Decision::Approved));
+
+    assert!(matches!(rx.await, Ok(Reply::Approval(Decision::Denied))));
+}
+
+#[tokio::test]
+async fn an_approval_for_an_unknown_request_or_a_dropped_waiter_is_refused() {
+    let router = ToolRouter::default();
+    assert!(!router.answer_approval("refract-tool-missing", Decision::Approved));
+
+    drop(router.wait_for("refract-tool-c2"));
+    assert!(!router.answer_approval("refract-tool-c2", Decision::Approved));
+}
+
+#[tokio::test]
+async fn an_approval_card_answer_never_completes_another_calls_wait() {
+    let router = ToolRouter::default();
+    let mut other = router.wait_for(&approval::request_id("c2"));
+    let _rx = router.wait_for(&approval::request_id("c1"));
+
+    assert!(router.answer_approval("refract-tool-c1", Decision::Approved));
+
+    assert!(other.try_recv().is_err());
+    assert!(router.answer_approval("refract-tool-c2", Decision::Denied));
+}
+
+#[test]
+fn each_approval_decision_maps_to_its_outcome() {
+    assert!(approval_outcome(Some(Reply::Approval(Decision::Approved))).is_ok());
+    assert_eq!(
+        approval_outcome(Some(Reply::Approval(Decision::Denied)))
+            .unwrap_err()
+            .code,
+        DENIED
+    );
+    for reply in [
+        None,
+        Some(Reply::Ask(None)),
+        Some(Reply::Renderer(Ok(json!(1)))),
+    ] {
+        assert_eq!(approval_outcome(reply).unwrap_err().code, CANCELLED);
+    }
+}
+
 #[tokio::test]
 async fn drop_all_frees_waits_and_wakes_cancels() {
     let router = ToolRouter::default();

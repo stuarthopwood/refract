@@ -89,3 +89,35 @@ impl SessionAgent {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::agent_tools::approval::needs_approval;
+    use crate::store::settings::ApprovalMode;
+
+    /// Only the yolo mode (`Auto`) skips Refract's own approval card; a read never asks in any mode.
+    #[tokio::test]
+    async fn the_approval_card_shows_for_a_mutating_call_in_every_mode_except_auto() {
+        let fx = crate::session::subagents::test_support::agent_fixture(false).await;
+        let table = [
+            (ApprovalMode::Ask, true, true),
+            (ApprovalMode::Ask, false, false),
+            (ApprovalMode::AskAndRemember, true, true),
+            (ApprovalMode::AskAndRemember, false, false),
+            (ApprovalMode::EditFreely, true, true),
+            (ApprovalMode::EditFreely, false, false),
+            (ApprovalMode::Auto, true, false),
+            (ApprovalMode::Auto, false, false),
+        ];
+
+        for (mode, mutates, card_shown) in table {
+            fx.agent.state.lock().await.launched_mode = mode;
+            let yolo = fx.agent.tool_is_yolo().await;
+            assert_eq!(
+                needs_approval(mutates, yolo),
+                card_shown,
+                "{mode:?} mutates={mutates}"
+            );
+        }
+    }
+}
