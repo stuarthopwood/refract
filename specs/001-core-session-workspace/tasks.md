@@ -5908,3 +5908,8 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 
 - [x] T-459-1 (#459) Repro tests first in `chat/scrollFollow.test.ts` over `scrollTestHarness.ts`: stick to the end, late height change, resize re-pin, detach, new-content cue, expand while detached, send re-attach, Scroll to end motion; six failed on the old behaviour.
 - [x] T-459-2 (#459) `chat/scrollFollow.ts` follow policy wired into `Transcript.tsx`; new-content dot and "New messages" status on the Scroll to end button; reduced-motion and short-glide rule.
+
+## Phase 118: Convergence (2026-11-27, #1021 hold a jump target while the turn streams, FR-154; epic #2222)
+
+- [x] T-1021-1 (#1021) Repro tests first in `chat-nav/rowJumpLoop.test.ts` over `scrollTestHarness.ts` (`drags-always` library mode): `holds the target in view while later content streams in`, `shows the new-content cue as the held turn keeps growing`, `lets go when the turn settles and leaves the position to the reader`, `lets a newer jump take over the hold`; four failed on the old behaviour, plus user-input, Scroll to end, end-landing and #1008 settled-turn tests.
+- [x] T-1021-2 (#1021) `chat/scrollLanding.ts` optional `hold` on `runScrollSettleLoop` (ends on user input, cancel or `active()` turning false); `chat-nav/rowJumpLoop.ts` holds a landing away from the end while `isTurnRunning`; `Transcript.tsx` supplies `isTurnRunning` and `markNewContent` through `JumpControl`. The scroll library is untouched.

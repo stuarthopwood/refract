@@ -342,7 +342,21 @@ export function Transcript({
     }
   }, [sessionId, transcript.generation])
 
-  const jumpControl: JumpControl = { jumpCancelRef, jumpTokenRef, landingInProgressRef, resetGesture, setAutoScrollSuppressed, setIsAtEnd }
+  // `jumpToStageRow` is memoised per Session, so the hold reads the running state through a ref rather than a stale closure.
+  const turnRunningRef = React.useRef(isTurnRunning)
+  React.useLayoutEffect(() => {
+    turnRunningRef.current = isTurnRunning
+  }, [isTurnRunning])
+  const jumpControl: JumpControl = {
+    jumpCancelRef,
+    jumpTokenRef,
+    landingInProgressRef,
+    resetGesture,
+    setAutoScrollSuppressed,
+    setIsAtEnd,
+    markNewContent: () => follow.setState({ newContent: true }),
+    isTurnRunning: () => turnRunningRef.current
+  }
   // `jumpToMessage` reveals windowed-out turns without "Load earlier"'s anchor restore (it would
   // fight the jump).
   const revealEarlierForJump = () => {

@@ -114,7 +114,8 @@ export class FollowHarness {
   readonly follow: ScrollFollow
   readonly recorded: SessionScrollState[] = []
   states: FollowState[] = []
-  landing = false
+  /** The flag `Transcript` shares with a landing or jump loop (`landingInProgressRef`); tests pass it on as a jump's control. */
+  readonly landingRef = { current: false }
   recentGesture = false
   reducedMotion = true
   private queue: FrameRequestCallback[] = []
@@ -129,7 +130,7 @@ export class FollowHarness {
     this.lastSize = this.size()
     this.follow = createScrollFollow({
       getViewport: () => this.viewport,
-      isLanding: () => this.landing,
+      isLanding: () => this.landingRef.current,
       isRecentGesture: () => this.recentGesture,
       record: (state) => this.recorded.push(state),
       prefersReducedMotion: () => this.reducedMotion,
