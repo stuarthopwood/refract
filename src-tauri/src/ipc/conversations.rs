@@ -5,12 +5,15 @@ use serde::Serialize;
 use serde_json::Value;
 
 use super::conversations_core::{start_new_core, switch_core};
+use super::conversations_delete::conversations_delete;
+use super::conversations_size::conversation_size_bytes;
 use super::{invalid_argument, not_found, AppState, Dispatcher, HandlerFuture};
 
 pub fn register(d: &mut Dispatcher) {
     d.register("conversations.list", conversations_list);
     d.register("conversations.startNew", conversations_start_new);
     d.register("conversations.open", conversations_open);
+    d.register("conversations.delete", conversations_delete);
 }
 
 /// Conversation metadata returned by `conversations.list`.
@@ -23,6 +26,8 @@ pub(crate) struct ConversationInfo {
     pub(crate) title: String,
     pub(crate) preview: String,
     pub(crate) is_current: bool,
+    /// The `.jsonl` plus its artifact folder on disk.
+    pub(crate) size_bytes: u64,
 }
 
 /// Builds the `SessionSnapshot` shared by `sessions.open`, `.recover`, `.resume`, and conversation switches.
@@ -156,7 +161,7 @@ pub fn conversations_list(state: AppState, args: Vec<Value>) -> HandlerFuture {
 
 // File names are `<timestamp>_<uuid>.jsonl`, with the timestamp's `:` and `.` replaced by `-`.
 // The timestamp prefix is a fixed 25 characters, so it is parsed by position, not by regex.
-fn parse_file_name(file_name: &str) -> Option<(String, String)> {
+pub(crate) fn parse_file_name(file_name: &str) -> Option<(String, String)> {
     const SUFFIX: &str = ".jsonl";
     const PREFIX_LEN: usize = 25;
     if !file_name.ends_with(SUFFIX) || file_name.len() <= PREFIX_LEN + SUFFIX.len() {
@@ -351,6 +356,10 @@ pub(crate) async fn list_conversations(
         };
         let file = file_path.to_string_lossy().into_owned();
         let is_current = current_conversation.is_some_and(|current| same_file(&file, current));
+        let sized = file_path.clone();
+        let size_bytes = tokio::task::spawn_blocking(move || conversation_size_bytes(&sized))
+            .await
+            .unwrap_or(0);
         results.push(ConversationInfo {
             file,
             id,
@@ -358,6 +367,7 @@ pub(crate) async fn list_conversations(
             title,
             preview: preview.unwrap_or_default(),
             is_current,
+            size_bytes,
         });
     }
     results

@@ -265,6 +265,7 @@ const REQUEST_LANES = {
   CONVERSATIONS_LIST: 'R1', // scaffold; conversations.rs not reassigned
   CONVERSATIONS_START_NEW: 'R1',
   CONVERSATIONS_OPEN: 'R1',
+  CONVERSATIONS_DELETE: 'R1', // #2161, ipc/conversations_delete.rs
   CHAT_SEND: 'R4', // #787, ipc/chat.rs (chat send path)
   CHAT_STOP: 'R4',
   CHAT_REMOVE_QUEUED: 'R4',

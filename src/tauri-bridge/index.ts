@@ -226,7 +226,8 @@ const refract: RefractApi = {
   conversations: {
     list: (sessionId) => request<ConversationInfo[]>(IPC_REQUESTS.CONVERSATIONS_LIST, sessionId),
     startNew: (sessionId) => request<SessionSnapshot>(IPC_REQUESTS.CONVERSATIONS_START_NEW, sessionId),
-    open: (sessionId, file) => request<SessionSnapshot>(IPC_REQUESTS.CONVERSATIONS_OPEN, sessionId, file)
+    open: (sessionId, file) => request<SessionSnapshot>(IPC_REQUESTS.CONVERSATIONS_OPEN, sessionId, file),
+    delete: (sessionId, file) => request<{ bytesFreed: number }>(IPC_REQUESTS.CONVERSATIONS_DELETE, sessionId, file)
   },
 
   chat: {

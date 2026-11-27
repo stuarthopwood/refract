@@ -101,7 +101,8 @@ export type IpcErrorCode =
   | 'dependency-install-failed' | 'update-unavailable' | 'checksum-mismatch' | 'settings-write-failed' // lane R11b (#794); #1265 settings.json write failed
   | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape' | 'working-folder-unavailable'
   | 'no-repository'
-  | 'request-gone';
+  | 'request-gone'
+  | 'current-conversation' | 'delete-failed'; // #2161 conversations.delete
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -290,6 +291,7 @@ export const IPC_REQUESTS = {
   CONVERSATIONS_LIST: 'conversations.list',
   CONVERSATIONS_START_NEW: 'conversations.startNew',
   CONVERSATIONS_OPEN: 'conversations.open',
+  CONVERSATIONS_DELETE: 'conversations.delete',
   CHAT_SEND: 'chat.send',
   CHAT_STOP: 'chat.stop',
   CHAT_REMOVE_QUEUED: 'chat.removeQueued',
@@ -530,6 +532,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     list(sessionId: string): Promise<Result<ConversationInfo[]>>;
     startNew(sessionId: string): Promise<Result<SessionSnapshot>>;
     open(sessionId: string, file: string): Promise<Result<SessionSnapshot>>;
+    delete(sessionId: string, file: string): Promise<Result<{ bytesFreed: number }>>;
   };
 
   chat: {

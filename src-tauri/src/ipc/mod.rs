@@ -27,6 +27,8 @@ pub mod checklist_item;
 pub mod clipboard;
 pub mod conversations;
 pub mod conversations_core;
+pub mod conversations_delete;
+pub mod conversations_size;
 pub mod copilot_plan;
 pub mod debug;
 pub mod file_attachments;
