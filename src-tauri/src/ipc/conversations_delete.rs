@@ -50,9 +50,19 @@ fn claim_file(file: &str) -> Result<FileClaim, IpcError> {
     Ok(FileClaim { key })
 }
 
-/// OMP's Sessions folder, the only boundary a Conversation delete may act inside.
+/// OMP's Sessions folder, the only boundary a Conversation delete may act inside. Follows the same
+/// `REFRACT_OMP_SESSIONS_DIR` override the usage reader honours, so a scratch run never touches the
+/// real folder (on Windows the home folder cannot be redirected through the environment).
 pub(crate) fn omp_sessions_root() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".omp").join("agent").join("sessions"))
+    resolve_omp_sessions_root(
+        std::env::var("REFRACT_OMP_SESSIONS_DIR").ok(),
+        dirs::home_dir(),
+    )
+}
+
+/// `None` when neither an absolute override nor a home folder exists, never a relative path.
+fn resolve_omp_sessions_root(raw: Option<String>, home: Option<PathBuf>) -> Option<PathBuf> {
+    Some(crate::usage::paths::resolve_sessions_dir(raw, home)).filter(|dir| dir.is_absolute())
 }
 
 /// What a passed check will remove; a part that is already gone is `None`.

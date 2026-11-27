@@ -418,3 +418,25 @@ async fn the_in_flight_claim_is_released_so_a_retry_can_run() {
     assert!(r.delete(&r.doomed()).await.is_ok());
     r.finish().await;
 }
+
+#[test]
+fn the_sessions_root_follows_an_absolute_override() {
+    let override_dir = std::env::temp_dir().join("scratch-sessions");
+    let root = resolve_omp_sessions_root(
+        Some(override_dir.to_string_lossy().into_owned()),
+        Some(std::env::temp_dir().join("home")),
+    );
+
+    assert_eq!(root, Some(override_dir));
+}
+
+#[test]
+fn the_sessions_root_falls_back_to_the_home_folder_and_never_to_a_relative_path() {
+    let home = std::env::temp_dir().join("home");
+
+    assert_eq!(
+        resolve_omp_sessions_root(Some("relative".to_string()), Some(home.clone())),
+        Some(home.join(".omp").join("agent").join("sessions"))
+    );
+    assert_eq!(resolve_omp_sessions_root(None, None), None);
+}
