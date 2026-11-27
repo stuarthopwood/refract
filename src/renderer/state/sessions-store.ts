@@ -121,6 +121,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       useChecklistStore.getState().pruneSessions(listedIds)
       useChecklistDraftsStore.getState().pruneSessions(listedIds)
       useSessionListStore.getState().pruneParents(liveParentIds(result.value))
+      useSessionListStore.getState().pruneConversationLists(listedIds)
       const liveIds = new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id))
       useGitChangesStore.getState().pruneSessionUi(liveIds)
       useSideChatStore.getState().pruneDrafts(liveIds)

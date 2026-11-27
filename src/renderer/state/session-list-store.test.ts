@@ -13,6 +13,7 @@ beforeEach(() => {
   useSessionListStore.setState({
     collapsedRepositoryIds: new Set(),
     collapsedParentIds: new Set(),
+    expandedConversationSessionIds: new Set(),
     archivedOpen: false,
     showHidden: false,
     query: '',
@@ -41,6 +42,7 @@ describe('parent collapse', () => {
       collapsedRepositoryIds: [],
       archivedOpen: false,
       collapsedParentIds: ['p'],
+      expandedConversationSessionIds: [],
     });
   });
 
@@ -84,6 +86,65 @@ describe('parent collapse', () => {
   it('writes nothing when every collapsed parent still has a live child', () => {
     useSessionListStore.setState({ collapsedParentIds: new Set(['keep']) });
     useSessionListStore.getState().pruneParents(new Set(['keep', 'other']));
+    vi.advanceTimersByTime(300);
+    expect(setSessionListCollapse).not.toHaveBeenCalled();
+  });
+});
+
+describe('conversation list expansion (#472)', () => {
+  it('starts every Session collapsed', () => {
+    expect(useSessionListStore.getState().isConversationListOpen('s')).toBe(false);
+  });
+
+  it('opens on toggle and writes the whole value once the debounce settles', () => {
+    useSessionListStore.getState().toggleConversationList('s');
+    expect(useSessionListStore.getState().isConversationListOpen('s')).toBe(true);
+    expect(setSessionListCollapse).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(300);
+    expect(setSessionListCollapse).toHaveBeenCalledTimes(1);
+    expect(setSessionListCollapse).toHaveBeenCalledWith(expect.objectContaining({ expandedConversationSessionIds: ['s'] }));
+  });
+
+  it('collapses again on a second toggle', () => {
+    const { toggleConversationList } = useSessionListStore.getState();
+    toggleConversationList('s');
+    toggleConversationList('s');
+    expect(useSessionListStore.getState().isConversationListOpen('s')).toBe(false);
+  });
+
+  it('is per Session: opening one leaves another collapsed', () => {
+    useSessionListStore.getState().toggleConversationList('a');
+    expect(useSessionListStore.getState().isConversationListOpen('b')).toBe(false);
+  });
+
+  it('keeps the remembered state while a search is active', () => {
+    useSessionListStore.getState().toggleConversationList('s');
+    useSessionListStore.getState().setQuery('abc');
+    expect(useSessionListStore.getState().isConversationListOpen('s')).toBe(true);
+  });
+
+  it('restores the saved open Sessions without writing them back', () => {
+    useSessionListStore.getState().restore({ ...DEFAULT_SESSION_LIST_COLLAPSE, expandedConversationSessionIds: ['a'] });
+    expect(useSessionListStore.getState().isConversationListOpen('a')).toBe(true);
+    vi.advanceTimersByTime(300);
+    expect(setSessionListCollapse).not.toHaveBeenCalled();
+  });
+
+  it('restores a value without the field as nothing open', () => {
+    const { expandedConversationSessionIds: _omitted, ...legacy } = DEFAULT_SESSION_LIST_COLLAPSE;
+    useSessionListStore.getState().restore(legacy as typeof DEFAULT_SESSION_LIST_COLLAPSE);
+    expect(useSessionListStore.getState().isConversationListOpen('a')).toBe(false);
+  });
+
+  it('prunes deleted Sessions and persists, but writes nothing when all are live', () => {
+    useSessionListStore.setState({ expandedConversationSessionIds: new Set(['keep', 'gone']) });
+    useSessionListStore.getState().pruneConversationLists(new Set(['keep']));
+    vi.advanceTimersByTime(300);
+    expect(setSessionListCollapse).toHaveBeenCalledWith(expect.objectContaining({ expandedConversationSessionIds: ['keep'] }));
+
+    setSessionListCollapse.mockClear();
+    useSessionListStore.getState().pruneConversationLists(new Set(['keep', 'other']));
     vi.advanceTimersByTime(300);
     expect(setSessionListCollapse).not.toHaveBeenCalled();
   });

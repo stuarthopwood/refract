@@ -75,6 +75,7 @@ pub(super) fn default_session_list_collapse() -> SessionListCollapse {
         archived_open: false,
         show_hidden: false,
         collapsed_parent_ids: Vec::new(),
+        expanded_conversation_session_ids: Vec::new(),
     }
 }
 
@@ -117,11 +118,17 @@ pub(super) fn parse_session_list_collapse(value: &Value) -> Option<SessionListCo
         .and_then(Value::as_array)
         .and_then(|ids| sanitize_collapsed_ids(ids))
         .unwrap_or_default();
+    let expanded_conversation_session_ids = object
+        .get("expandedConversationSessionIds")
+        .and_then(Value::as_array)
+        .and_then(|ids| sanitize_collapsed_ids(ids))
+        .unwrap_or_default();
     Some(SessionListCollapse {
         collapsed_repository_ids,
         archived_open,
         show_hidden,
         collapsed_parent_ids,
+        expanded_conversation_session_ids,
     })
 }
 

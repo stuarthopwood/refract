@@ -52,6 +52,8 @@ import {
 } from './SessionRowTree'
 import type { SessionRowTreeProps } from './SessionRowTree'
 import { IconButton } from '@/components/IconButton'
+import { SessionConversationTree } from './SessionConversationTree'
+import { hasConversationList } from './conversationTreeFocus'
 
 // The menu trigger stays in the DOM and focusable (opacity/pointer-events swap, overlaid on the time cell under
 // hover:hover) because a `hidden` trigger can't take focus, stranding keyboard close paths. `group-has[...]`
@@ -350,7 +352,19 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
       <ArchiveParentDialog controls={row.archiveDialog} />
     </>
   )
-  if (!tree) {
+  // Selecting a Conversation selects its Session the way a click on the row does.
+  const conversations =
+    hasConversationList(session) && !deleting ? (
+      <SessionConversationTree
+        session={session}
+        tree={Boolean(tree)}
+        onSelect={() => {
+          replaceFocused(session.id)
+          if (isFocusedPane) void open(session.id)
+        }}
+      />
+    ) : null
+  if (!tree && !conversations) {
     return (
       <li ref={rowRef} data-choice-item className="group relative w-full">
         {body}
@@ -358,10 +372,11 @@ export const SessionRow = memo(function SessionRow(props: SessionRowProps) {
     )
   }
   // The tree item is the `<li>`, but hover, the active bar and the menu's `group-has` rules must stop at
-  // this Session's own row, so `group` sits on an inner element and the children list sits beside it.
+  // this Session's own row, so `group` sits on an inner element and the nested lists sit beside it.
   return (
-    <li ref={rowRef} data-choice-item className="relative w-full" {...treeItemAttributes(tree, session.id)}>
+    <li ref={rowRef} data-choice-item className="relative w-full" {...(tree ? treeItemAttributes(tree, session.id) : {})}>
       <div className="group relative w-full">{body}</div>
+      {conversations}
       {children}
     </li>
   )

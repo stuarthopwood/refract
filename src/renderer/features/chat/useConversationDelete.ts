@@ -1,8 +1,22 @@
-// Delete flow for the Conversation history (#2161, FR-186/FR-187): ask, confirm, then remove in the
+// Delete flow for the Conversation history (#2161): ask, confirm, then remove in the
 // background (the row shows "Deleting…" and leaves the list when Rust reports the bytes freed).
 import { useCallback, useState, type Dispatch, type SetStateAction } from 'react'
 import type { ConversationInfo } from '../../../shared/model'
 import { conversationTitle, deleteRefusal, freedMessage } from './conversationDelete'
+import { emitConversationsChanged } from './conversationChanges'
+
+export interface ConversationDelete {
+  /** The Conversation awaiting confirmation (or refusal), if any. */
+  target: ConversationInfo | null
+  deleting: ReadonlySet<string>
+  status: string
+  failure: string
+  refusal: string | null
+  ask(conversation: ConversationInfo): void
+  cancel(): void
+  clearNotice(): void
+  confirm(): Promise<void>
+}
 
 interface DeleteNotice {
   tone: 'error' | 'notice'
@@ -15,7 +29,7 @@ export function useConversationDelete(
   sessionIdle: boolean,
   setConversations: Dispatch<SetStateAction<ConversationInfo[]>>,
   onRemoved: (file: string) => void
-) {
+): ConversationDelete {
   const [target, setTarget] = useState<ConversationInfo | null>(null)
   const [deleting, setDeleting] = useState<ReadonlySet<string>>(new Set())
   const [notice, setNotice] = useState<DeleteNotice | null>(null)
@@ -35,6 +49,7 @@ export function useConversationDelete(
       }
       onRemoved(file)
       setConversations((previous) => previous.filter((conversation) => conversation.file !== file))
+      emitConversationsChanged(sessionId)
       setNotice({ tone: 'notice', text: freedMessage(title, result.value.bytesFreed) })
     } finally {
       setDeleting((previous) => {

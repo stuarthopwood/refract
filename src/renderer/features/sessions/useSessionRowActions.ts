@@ -15,7 +15,9 @@ import { useHideSession } from './useHideSession'
 import { useSurfaceArchiveActions } from './sessionRowSurface'
 import { useArchiveSession } from './useArchiveSession'
 import { flattenVisible } from './sessionTree'
-import { decideTreeKey } from './treeKeyDecision'
+import { decideSessionConversationKey, decideTreeKey } from './treeKeyDecision'
+import { conversationEntries, focusFirstConversationEntry, hasConversationList } from './conversationTreeFocus'
+import { hasTreeChildren } from './SessionRowTree'
 import type { SessionRowTreeProps } from './SessionRowTree'
 import type { SessionRowSurface } from './sessionRowSurface'
 import { setSessionPaused } from '@/features/chat/pauseActions'
@@ -135,11 +137,28 @@ export function useSessionRowActions(
   }
 
   function handleOpenButtonKeyDown(event: KeyboardEvent<HTMLButtonElement>): void {
+    if (handleConversationKey(event)) return
     if (handleTreeKeyDown(event)) return
     // Only F2 is claimed; every other key (Tab, arrows) must keep navigating while the row is deleting.
     if (event.key !== 'F2') return
     event.preventDefault()
     if (!deleting) startRenaming()
+  }
+
+  // Right, Left and Down reach the nested Conversation list before the Session tree takes the key.
+  function handleConversationKey(event: KeyboardEvent<HTMLElement>): boolean {
+    if (!hasConversationList(session)) return false
+    const listState = useSessionListStore.getState()
+    const decision = decideSessionConversationKey(event, {
+      hasChildSessions: tree ? hasTreeChildren(tree) : false,
+      listOpen: listState.isConversationListOpen(session.id),
+      entryCount: conversationEntries(session.id).length
+    })
+    if (!decision.prevent) return false
+    event.preventDefault()
+    if (decision.setOpen !== null) listState.toggleConversationList(session.id)
+    if (decision.focusFirstEntry) focusFirstConversationEntry(session.id)
+    return true
   }
 
   // Down, Up, Home, End, Right and Left in a tree group (FR-009). Bound to the open button and the toggle

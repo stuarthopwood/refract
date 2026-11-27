@@ -9,6 +9,9 @@ vi.mock('@/state', () => ({ useSettingsStore: () => undefined }))
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { SessionSummary } from '../../../shared/ipc'
 import { buildSessionTree, fromLabel, type FromLabel, type SessionTreeNode } from './sessionTree'
+import type { ConversationInfo } from '../../../shared/model'
+import { SessionConversationListView, capConversations, type SessionConversationListViewProps } from './SessionConversationListView'
+import { hasConversationList } from './conversationTreeFocus'
 import {
   TreeFromLine,
   TreeLineTwo,
@@ -197,5 +200,122 @@ describe('TreeFromLine', () => {
   it('omits the suffix for a live parent', () => {
     const html = render(createElement(TreeFromLine, { from: { name: 'Parent', suffix: null }, metaFg: 'meta' }))
     expect(html).not.toContain('(')
+  })
+})
+
+describe('the nested Conversation list', () => {
+  function conversation(index: number, over: Partial<ConversationInfo> = {}): ConversationInfo {
+    return {
+      file: `c${index}.jsonl`,
+      id: `c${index}`,
+      createdAt: `2026-01-0${index + 1}T00:00:00Z`,
+      title: `Conversation ${index}`,
+      preview: '',
+      isCurrent: false,
+      sizeBytes: 2048,
+      ...over
+    }
+  }
+  const many = Array.from({ length: 7 }, (_, index) => conversation(index))
+
+  function view(over: Partial<SessionConversationListViewProps> = {}): string {
+    return render(
+      createElement(SessionConversationListView, {
+        sessionId: 's1',
+        sessionName: 'Session s1',
+        tree: true,
+        open: false,
+        total: null,
+        loading: false,
+        error: null,
+        conversations: [],
+        showAll: false,
+        blockedReason: null,
+        deleting: new Set<string>(),
+        onToggle: () => undefined,
+        onReload: () => undefined,
+        onShowAll: () => undefined,
+        onNew: () => undefined,
+        onOpen: () => undefined,
+        onDelete: () => undefined,
+        onKeyDown: () => undefined,
+        ...over
+      })
+    )
+  }
+
+  it('is collapsed by default: a named, unexpanded chevron and no group', () => {
+    const html = view()
+    expect(html).toContain('aria-label="Show conversations for Session s1"')
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).not.toContain('role="group"')
+    expect(html).not.toContain('aria-controls')
+  })
+
+  it('shows the count badge only once the list has loaded', () => {
+    expect(view()).not.toContain('session-conversation-count')
+    expect(view({ total: 7 })).toContain('7 conversations')
+  })
+
+  it('expands into a group of treeitems that are not Tab stops', () => {
+    const html = view({ open: true, total: 2, conversations: [conversation(1, { isCurrent: true }), conversation(0)] })
+    expect(html).toContain('aria-expanded="true"')
+    expect(html).toContain('aria-controls="s1-conversations"')
+    expect(html).toContain('role="group"')
+    expect(html.match(/role="treeitem"/g)).toHaveLength(3)
+    expect(html).not.toMatch(/tabindex="0"/)
+    expect(html).toContain('New conversation')
+    expect(html).toContain('aria-current="true"')
+  })
+
+  it('in a flat group renders a plain list: no tree roles, buttons keep their own semantics, entries stay reachable by arrows', () => {
+    const html = view({ tree: false, open: true, total: 7, conversations: many })
+    expect(html).not.toContain('role="treeitem"')
+    expect(html).not.toContain('role="group"')
+    expect(html).toContain('<ul id="s1-conversations"')
+    expect(html.match(/data-conversation-entry=""/g)).toHaveLength(7)
+    expect(html).toContain('Show all (7)')
+    expect(html).toContain('New conversation')
+  })
+
+  it('caps a long history at 5 and offers Show all with the total', () => {
+    expect(capConversations(many, false)).toMatchObject({ hidden: 2 })
+    expect(capConversations(many, false).visible).toHaveLength(5)
+    expect(capConversations(many, true)).toMatchObject({ hidden: 0 })
+    const html = view({ open: true, total: 7, conversations: many })
+    expect(html).toContain('Show all (7)')
+    expect(html.match(/data-conversation-file=/g)).toHaveLength(5)
+    expect(view({ open: true, total: 7, conversations: many, showAll: true })).not.toContain('Show all')
+  })
+
+  it('says why an entry cannot be opened', () => {
+    const html = view({ open: true, total: 1, conversations: [conversation(0)], blockedReason: 'The agent is working' })
+    expect(html).toContain('The agent is working')
+    expect(html).toContain('aria-describedby="s1-conversations-reason"')
+  })
+
+  it('has a loading row and an error row with retry', () => {
+    expect(view({ open: true, loading: true })).toContain('Loading conversations')
+    const html = view({ open: true, error: 'disk' })
+    expect(html).toContain('Could not load conversations: disk')
+    expect(html).toContain('Retry')
+  })
+
+  it('keeps the error announcement beside the Retry button, so the button is named just "Retry"', () => {
+    const html = view({ open: true, error: 'disk' })
+    expect(html).toMatch(/<span role="alert"[^>]*>Could not load conversations: disk\.<\/span>/)
+    expect(html).not.toMatch(/<button[^>]*>(?:(?!<\/button>)[\s\S])*role="alert"/)
+    expect(html).toMatch(/data-conversation-action="retry"/)
+    expect(html).toMatch(/<button[^>]*>Retry<\/button>/)
+  })
+
+  it('excludes Archived Sessions and the Personal Agent', () => {
+    expect(hasConversationList(session('a'))).toBe(true)
+    expect(hasConversationList(session('a', { archivedAt: '2026-01-02T00:00:00Z' }))).toBe(false)
+    expect(hasConversationList({ kind: 'personal', archivedAt: null })).toBe(false)
+  })
+
+  it('does not animate the chevron under reduced motion', () => {
+    expect(view()).toContain('motion-reduce:transition-none')
   })
 })
