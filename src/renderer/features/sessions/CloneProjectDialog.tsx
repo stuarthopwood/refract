@@ -7,6 +7,7 @@ import { FilterableGroupedListbox } from '@/components/FilterableGroupedListbox'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import type { ListboxGroup } from '@/components/FilterableGroupedListbox'
 import { Badge } from '@/components/ui/badge'
+import { SkeletonLines } from '@/components/LoadingSkeletons'
 import { Button } from '@/components/ui/button'
 import { CHECKBOX_BOX_CLASS, CHECKBOX_LIST_ITEM_CLASS, CheckboxIndicator, CheckboxItem } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -311,7 +312,7 @@ export function CloneProjectDialog({ open, onOpenChange }: CloneProjectDialogPro
               )}
               empty={
                 loading ? (
-                  'Loading repositories…'
+                  <SkeletonLines label="Loading repositories…" widths={['w-2/3', 'w-1/2', 'w-3/4']} />
                 ) : loadError ? (
                   <div role="alert" className="flex items-center justify-between gap-2">
                     <span className="min-w-0">{loadError.message}</span>

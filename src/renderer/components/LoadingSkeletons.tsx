@@ -11,7 +11,7 @@ export function ListRowsSkeleton({ rows = ROW_KEYS.length, className }: { rows?:
   return (
     <div aria-hidden data-slot="list-rows-skeleton" className={cn('flex flex-col divide-y divide-divider', className)}>
       {ROW_KEYS.slice(0, rows).map((key) => (
-        <div key={key} className="flex flex-col gap-2 px-3 py-3">
+        <div key={key} className="flex flex-col gap-2 p-4">
           <Skeleton className="h-4 w-3/4" />
           <Skeleton className="h-3 w-1/2" />
         </div>
@@ -20,11 +20,11 @@ export function ListRowsSkeleton({ rows = ROW_KEYS.length, className }: { rows?:
   )
 }
 
-/** A title, meta line and body blocks; polite status text names the load for screen readers. */
-export function DetailPaneSkeleton({ className }: { className?: string }) {
+/** A title, meta line and body blocks; polite status text (`label`) names the load for screen readers. */
+export function DetailPaneSkeleton({ className, label = 'Loading…' }: { className?: string; label?: string }) {
   return (
     <div role="status" data-slot="detail-pane-skeleton" className={cn('flex flex-col gap-4 p-4', className)}>
-      <span className="sr-only">Loading…</span>
+      <span className="sr-only">{label}</span>
       <div aria-hidden className="flex flex-col gap-2">
         <Skeleton className="h-6 w-2/3" />
         <Skeleton className="h-3 w-1/3" />
@@ -35,6 +35,18 @@ export function DetailPaneSkeleton({ className }: { className?: string }) {
         <Skeleton className="h-4 w-5/6" />
         <Skeleton className="h-4 w-2/3" />
       </div>
+    </div>
+  )
+}
+
+/** Bars of the given width classes inside a picker or settings row; the sr-only `label` is the only text, and the caller owns the role (a `status` region, or the option it sits in). */
+export function SkeletonLines({ label, widths, className }: { label: string; widths: string[]; className?: string }) {
+  return (
+    <div data-slot="skeleton-lines" className={cn('flex flex-col gap-2', className)}>
+      <span className="sr-only">{label}</span>
+      {widths.map((width, index) => (
+        <Skeleton key={index} aria-hidden className={cn('h-4', width)} />
+      ))}
     </div>
   )
 }

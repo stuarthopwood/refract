@@ -5957,3 +5957,7 @@ Written after the WIP build (commit 6272e1fb on `fix/2116-plan-mode-enforced`), 
 ## Phase 128: Convergence (2026-11-27, #2272 model picker filter on SearchField and #2273 inline status through InlineStatus, FR-171, epic #2229)
 
 - [x] T731 [US1] #2272 and #2273 (FR-171): `ModelPicker.tsx` renders its filter through `SearchField` (combobox slot, shared radius); `AskCard`, `IssueDetail`, `PullRequestDetail`, `ChangesTab`, `UsageFilters`, `ProjectListPane` and `MermaidBlock` render their inline status through `InlineStatus` with the matching tone; `SearchField.test.ts` and `ChangesTab.test.ts` pin the combobox wiring and the polite truncation note.
+
+## Phase 129: Convergence (2026-11-27, #1848 remaining slices and #2274 skeletons and shared Empty, FR-172, epic #2229)
+
+- [x] T732 [US1] #1848 and #2274 (FR-172): `components/LoadingSkeletons.tsx` gains `SkeletonLines` and a `DetailPaneSkeleton` label; Pull requests, Issues, Sessions, Clone dialog, Git changes and diff, Settings Models and the chat model picker swap bare loading text and spinner rows for skeletons; `LoadingSkeletons.test.ts` and `RoleCatalogStatus.test.ts` pin the markup. Closes #1848.

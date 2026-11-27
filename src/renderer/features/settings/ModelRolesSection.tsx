@@ -5,7 +5,8 @@
 // Catalog status renders once per kind per group (not per role) and keeps the error mounted
 // while retrying; a successful catalog retry moves focus to that kind's first role trigger.
 import { useEffect, useRef, useState } from 'react'
-import { Loader2Icon, OctagonXIcon } from 'lucide-react'
+import { OctagonXIcon } from 'lucide-react'
+import { SkeletonLines } from '@/components/LoadingSkeletons'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { SettingsGroup } from '@/components/settings/SettingsGroup'
@@ -277,10 +278,9 @@ export function ModelRolesSection() {
         {assertive}
       </div>
       {!loaded ? (
-        <p className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-4 animate-spin" />
-          Loading model roles…
-        </p>
+        <div role="status">
+          <SkeletonLines label="Loading model roles…" widths={['w-full', 'w-full', 'w-3/4', 'w-full', 'w-2/3']} />
+        </div>
       ) : loadError ? (
         <Alert variant="destructive">
           <OctagonXIcon aria-hidden />

@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef } from 'react'
+import { ListRowsSkeleton } from '@/components/LoadingSkeletons'
 import { SectionHeading } from '@/components/SectionHeading'
 import { Separator } from '@/components/ui/separator'
 import { ChevronsDownUpIcon, ChevronsUpDownIcon, SearchXIcon } from 'lucide-react'
@@ -275,6 +276,12 @@ export function SessionList() {
             </div>
           </ScrollArea>
         </>
+      )}
+      {!restored && (
+        <div role="status" data-slot="session-list-skeleton" className="mt-4 min-h-0 flex-1 px-2">
+          <span className="sr-only">Loading sessions…</span>
+          <ListRowsSkeleton rows={4} className="divide-y-0" />
+        </div>
       )}
       {/* The one persistent footer for adding a repository; its divider is inset like the Views separator (#1385). */}
       <div className="shrink-0">

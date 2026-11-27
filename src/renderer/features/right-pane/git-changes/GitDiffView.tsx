@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DocumentHeader } from '@/components/DocumentHeader'
+import { DetailPaneSkeleton } from '@/components/LoadingSkeletons'
 import { InlineStatus } from '@/components/InlineStatus'
 import { DiffViewFromPatch } from '@/features/chat/DiffView'
 import { useGitChangesStore } from '@/state'
@@ -82,7 +83,7 @@ export function GitDiffView({ sessionId, group, path, scrollTop, onScrollTopChan
         {gone ? (
           <InlineStatus>{NO_LONGER_CHANGED}</InlineStatus>
         ) : state === 'loading' ? (
-          <InlineStatus tone="loading">Loading diff…</InlineStatus>
+          <DetailPaneSkeleton label="Loading diff…" className="p-2" />
         ) : 'error' in state ? (
           <InlineStatus tone="error">{state.error}</InlineStatus>
         ) : (

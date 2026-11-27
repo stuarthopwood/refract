@@ -1,6 +1,7 @@
 // Catalog loading/error status for ONE catalog kind, rendered once per kind in a group (not once
 // per role: ten chat roles share the `chat` kind). Extracted from `ModelRolesSection.tsx`.
-import { Loader2Icon, OctagonXIcon } from 'lucide-react'
+import { OctagonXIcon } from 'lucide-react'
+import { SkeletonLines } from '@/components/LoadingSkeletons'
 import { Button } from '@/components/ui/button'
 import type { CatalogKind, ModelCatalogEntry } from '../../../shared/model'
 
@@ -26,12 +27,7 @@ interface RoleCatalogStatusProps {
 
 export function RoleCatalogStatus({ kind, catalog, error, isRetrying, onRetry }: RoleCatalogStatusProps) {
   if (catalog === undefined && !error && !isRetrying) {
-    return (
-      <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-        <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
-        Loading models…
-      </p>
-    )
+    return <SkeletonLines label="Loading models…" widths={['w-40']} className="mt-2" />
   }
   if (!error) return null
   const kindLabel = CATALOG_KIND_LABEL[kind]

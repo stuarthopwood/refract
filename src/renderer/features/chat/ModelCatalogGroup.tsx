@@ -1,4 +1,5 @@
 import { Loader2Icon } from 'lucide-react'
+import { SkeletonLines } from '@/components/LoadingSkeletons'
 import { cn } from '@/lib/utils'
 import { RadioMark } from '@/components/ui/radio-group'
 import type { ModelCatalogEntry } from '../../../shared/model'
@@ -70,9 +71,8 @@ export function ModelCatalogGroup({
         </div>
       )}
       {!catalogError && catalog === undefined && (
-        <div role="option" aria-disabled className="flex items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
-          <Loader2Icon aria-hidden className="size-4 shrink-0 animate-spin" />
-          Loading models…
+        <div role="option" aria-disabled className="px-2 py-2">
+          <SkeletonLines label="Loading models…" widths={['w-3/4', 'w-1/2', 'w-2/3']} />
         </div>
       )}
       {!catalogError && catalog !== undefined && catalog.length === 0 && (

@@ -2,7 +2,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { DetailPaneSkeleton, ListRowsSkeleton } from './LoadingSkeletons'
+import { DetailPaneSkeleton, ListRowsSkeleton, SkeletonLines } from './LoadingSkeletons'
 
 describe('ListRowsSkeleton', () => {
   it('draws_pulsing_rows_hidden_from_assistive_tech_without_a_dashed_box', () => {
@@ -24,6 +24,24 @@ describe('DetailPaneSkeleton', () => {
     expect(html).toContain('role="status"')
     expect(html.match(/Loading…/g)).toHaveLength(1)
     expect(html).toContain('aria-hidden="true"')
+    expect(html).not.toContain('border-dashed')
+  })
+})
+
+describe('DetailPaneSkeleton label', () => {
+  it('uses_the_caller_label_as_the_only_text', () => {
+    const html = renderToStaticMarkup(createElement(DetailPaneSkeleton, { label: 'Loading diff…' }))
+    expect(html).toContain('Loading diff…')
+    expect(html).not.toContain('>Loading…<')
+  })
+})
+
+describe('SkeletonLines', () => {
+  it('draws_one_hidden_bar_per_width_and_one_sr_only_label', () => {
+    const html = renderToStaticMarkup(createElement(SkeletonLines, { label: 'Loading models…', widths: ['w-1/2', 'w-1/3', 'w-2/3'] }))
+    expect(html.match(/data-slot="skeleton"/g)).toHaveLength(3)
+    expect(html.match(/Loading models…/g)).toHaveLength(1)
+    expect(html).toContain('class="sr-only"')
     expect(html).not.toContain('border-dashed')
   })
 })

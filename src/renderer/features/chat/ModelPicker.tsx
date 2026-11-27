@@ -6,7 +6,8 @@
 // Earlier gate-round history for this component lives in git (`git log -- ModelPicker.tsx`).
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
-import { CpuIcon, Loader2Icon } from 'lucide-react'
+import { CpuIcon } from 'lucide-react'
+import { SkeletonLines } from '@/components/LoadingSkeletons'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { effectiveFilterQuery } from '@/components/filterQueryRule'
 import { SearchField } from '@/components/SearchField'
@@ -256,12 +257,7 @@ export function ModelPicker({ sessionId }: { sessionId: string }) {
           onKeyDown={handleRoleKeyDown}
           className="flex shrink-0 flex-wrap gap-1 p-1 focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-solid focus-visible:outline-offset-[-2px] focus-visible:outline-composer-focus"
         >
-          {roleItems.length === 0 && (
-            <span className="flex items-center gap-2 px-2 py-1 text-xs text-muted-foreground">
-              <Loader2Icon aria-hidden className="size-4 animate-spin" />
-              Loading roles…
-            </span>
-          )}
+          {roleItems.length === 0 && <SkeletonLines label="Loading roles…" widths={['w-32']} className="px-2 py-1" />}
           {roleItems.map((item, index) => (
             <RoleOption
               key={item.role}

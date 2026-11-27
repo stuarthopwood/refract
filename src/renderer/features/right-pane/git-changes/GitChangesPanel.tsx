@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2Icon, FileWarningIcon, FolderIcon } from 'lucide-react'
+import { DetailPaneSkeleton } from '@/components/LoadingSkeletons'
 import { InlineStatus } from '@/components/InlineStatus'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { DEFAULT_GROUP_OPEN, useGitChangesStore } from '@/state'
@@ -81,7 +82,7 @@ export function GitChangesPanel({ sessionId }: { sessionId: string | null }) {
       <div className="flex-1 overflow-auto">
         {!snapshot ? (
           loading && !hasLoadedOnce ? (
-            <InlineStatus tone="loading">Loading…</InlineStatus>
+            <DetailPaneSkeleton label="Loading changes…" />
           ) : (
             <Empty className="h-full">
               <EmptyHeader>
