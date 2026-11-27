@@ -16,6 +16,7 @@ import {
   useChartCursor,
   type ChartTooltipEntry
 } from '@/components/ui/chart-tooltip'
+import { barEntry, sparklineEntry, stackedEntry } from '@/components/ui/chart-entries'
 
 export interface ChartSeries {
   name: string
@@ -212,16 +213,7 @@ export function StackedBarChart({ title, summary, view, series, buckets, formatV
   const seriesTotals = series.map((_, i) => buckets.reduce((sum, bucket) => sum + (bucket.values[i] ?? 0), 0))
   const cursor = useChartCursor(buckets.length, 'column')
   const activeBucket = cursor.active !== null ? buckets[cursor.active] : undefined
-  const entry: ChartTooltipEntry | null =
-    cursor.active !== null && activeBucket
-      ? {
-          heading: activeBucket.label,
-          lines: [
-            ...series.map((s, si) => ({ label: s.name, value: formatValue(activeBucket.values[si] ?? 0) })),
-            { label: 'Total', value: formatValue(totals[cursor.active] ?? 0), strong: true }
-          ]
-        }
-      : null
+  const entry: ChartTooltipEntry | null = activeBucket ? stackedEntry(activeBucket, series, formatValue) : null
   return (
     <ChartFrame
       view={view}
@@ -329,12 +321,7 @@ export function BarChart({ title, summary, view, rows, formatValue, labelHeader,
   const hasDetail = rows.some((row) => row.detail !== undefined)
   const cursor = useChartCursor(rows.length, 'row')
   const activeRow = cursor.active !== null ? rows[cursor.active] : undefined
-  const entry: ChartTooltipEntry | null = activeRow
-    ? {
-        heading: activeRow.label,
-        lines: [{ label: '', value: formatValue(activeRow.value) }, ...(activeRow.detail !== undefined ? [{ label: '', value: activeRow.detail }] : [])]
-      }
-    : null
+  const entry: ChartTooltipEntry | null = activeRow ? barEntry(activeRow, formatValue) : null
   return (
     <ChartFrame
       view={view}
@@ -406,10 +393,7 @@ export function Sparkline({ label, values, labels, className, formatValue = roun
   const points = values.map((v, i) => `${(i * step).toFixed(2)},${yAt(v).toFixed(2)}`).join(' ')
   const last = values.length > 0 ? points.split(' ')[values.length - 1]?.split(',') : null
   const activeValue = cursor.active !== null ? values[cursor.active] : undefined
-  const entry: ChartTooltipEntry | null =
-    cursor.active !== null && activeValue !== undefined
-      ? { heading: labels?.[cursor.active] ?? `Point ${cursor.active + 1}`, lines: [{ label: '', value: formatValue(activeValue) }] }
-      : null
+  const entry: ChartTooltipEntry | null = cursor.active !== null ? sparklineEntry(cursor.active, values, labels, formatValue) : null
   return (
     <div
       role="group"

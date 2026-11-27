@@ -20,5 +20,6 @@ type OpenUpdate = boolean | ((open: boolean) => boolean)
 export function useFilterBarOpen(viewId: string): [boolean, (next: OpenUpdate) => void] {
   const open = useFilterBarStore((state) => state.open[viewId] ?? false)
   const setOpen = useFilterBarStore((state) => state.setOpen)
-  return [open, (next) => setOpen(viewId, typeof next === 'function' ? next(open) : next)]
+  // An updater sees the store's current value, not this render's, so two updates in one tick compose.
+  return [open, (next) => setOpen(viewId, typeof next === 'function' ? next(useFilterBarStore.getState().open[viewId] ?? false) : next)]
 }

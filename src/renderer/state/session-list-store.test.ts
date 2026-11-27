@@ -132,6 +132,10 @@ describe('parent collapse during a search', () => {
 });
 
 describe('Show hidden is a filter held in memory (#1850)', () => {
+  it('starts off in a fresh store, before any restore or toggle', () => {
+    expect(useSessionListStore.getInitialState().showHidden).toBe(false);
+  });
+
   it('keeps the toggle without writing it to disk', () => {
     useSessionListStore.getState().setShowHidden(true);
     expect(useSessionListStore.getState().showHidden).toBe(true);

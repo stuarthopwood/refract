@@ -39,6 +39,14 @@ export function sliderStopFractions(min: number, max: number, step: number): num
   return Array.from({ length: count + 1 }, (_, i) => i / count)
 }
 
+/** Radix reports an array; this control is single-thumb, so only its first value is passed on. */
+export function forwardFirstValue(onValueChange: (value: number) => void): (next: number[]) => void {
+  return (next) => {
+    const first = next[0]
+    if (first !== undefined) onValueChange(first)
+  }
+}
+
 // Material Design 3 (#1852): a 16px track split by a 6px gap each side of a 4x44px vertical bar handle.
 // The thumb itself is the 24x44px hit target; the bar is its pseudo-element, so focus, drag and the
 // arrow/Page/Home/End keys stay on Radix. No transition: the control must not animate for users who
@@ -67,10 +75,7 @@ function Slider({
       min={min}
       max={max}
       step={step}
-      onValueChange={(next) => {
-        const first = next[0]
-        if (first !== undefined) onValueChange(first)
-      }}
+      onValueChange={forwardFirstValue(onValueChange)}
       className={cn("group/slider relative flex h-11 w-full min-w-24 touch-none items-center select-none data-[disabled]:opacity-50", className)}
       {...props}
     >

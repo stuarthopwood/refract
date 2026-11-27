@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
-import { Slider, sliderFraction, sliderStopFractions } from './slider'
+import { Slider, forwardFirstValue, sliderFraction, sliderStopFractions } from './slider'
 
 const render = (props: Partial<Parameters<typeof Slider>[0]> = {}): string =>
   renderToStaticMarkup(createElement(Slider, { value: 50, onValueChange: () => undefined, ...props }))
@@ -23,6 +23,22 @@ describe('sliderStopFractions', () => {
   it('draws_no_dots_for_a_fine_range_or_a_single_stop', () => {
     expect(sliderStopFractions(0, 100, 1)).toEqual([])
     expect(sliderStopFractions(0, 1, 1)).toEqual([])
+  })
+})
+
+describe('forwardFirstValue', () => {
+  it('passes_the_first_value_through_to_the_callback', () => {
+    const seen: number[] = []
+    forwardFirstValue((value) => seen.push(value))([42])
+
+    expect(seen).toEqual([42])
+  })
+
+  it('ignores_an_empty_report', () => {
+    const seen: number[] = []
+    forwardFirstValue((value) => seen.push(value))([])
+
+    expect(seen).toEqual([])
   })
 })
 

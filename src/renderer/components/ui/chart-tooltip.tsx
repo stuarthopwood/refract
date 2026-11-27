@@ -1,7 +1,7 @@
 // Hover and keyboard tooltips for the shared charts (#1882, ADR 0003). Each chart is one tab stop:
 // the arrow keys step the cursor and the same entry the pointer shows is announced through a polite
 // status line, because focus stays on the chart and so never reaches the tooltip itself.
-import { useState, type CSSProperties, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { useEffect, useReducer, type CSSProperties, type FocusEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -56,40 +56,76 @@ export function cursorAfterKey(current: number | null, key: string, count: numbe
   }
 }
 
-interface Cursor {
+export interface Cursor {
   index: number | null
+  /** True once the keyboard drove the cursor: only then is the entry announced. */
   keyboard: boolean
 }
 
+export type CursorAction =
+  | { type: 'hover'; index: number }
+  | { type: 'key'; index: number | null }
+  | { type: 'focus' }
+  | { type: 'leave' }
+  | { type: 'clear' }
+
+const CLEARED: Cursor = { index: null, keyboard: false }
+
+/** Returns the same object for a no-op so React skips the render, which matters for every pointer move. */
+export function cursorReducer(cursor: Cursor, action: CursorAction): Cursor {
+  switch (action.type) {
+    case 'hover':
+      return cursor.index === action.index && !cursor.keyboard ? cursor : { index: action.index, keyboard: false }
+    case 'key':
+      return action.index === null ? CLEARED : { index: action.index, keyboard: true }
+    case 'focus':
+      return { index: 0, keyboard: true }
+    case 'leave':
+      return cursor.keyboard ? cursor : CLEARED
+    case 'clear':
+      return cursor.index === null && !cursor.keyboard ? cursor : CLEARED
+  }
+}
+
+/** WCAG 1.4.13: Escape dismisses the open tooltip from anywhere, for pointer users too. Returns the detach function. */
+export function dismissOnEscape(target: Pick<Document, 'addEventListener' | 'removeEventListener'>, dismiss: () => void): () => void {
+  const onKeyDown: EventListener = (event) => {
+    if ((event as globalThis.KeyboardEvent).key === 'Escape') dismiss()
+  }
+  target.addEventListener('keydown', onKeyDown)
+  return () => target.removeEventListener('keydown', onKeyDown)
+}
+
 export function useChartCursor(count: number, mode: CursorMode) {
-  const [cursor, setCursor] = useState<Cursor>({ index: null, keyboard: false })
+  const [cursor, dispatch] = useReducer(cursorReducer, CLEARED)
   const active = cursor.index !== null && cursor.index < count ? cursor.index : null
-  const clear = () => setCursor({ index: null, keyboard: false })
+  const open = active !== null
+  useEffect(() => (open ? dismissOnEscape(document, () => dispatch({ type: 'clear' })) : undefined), [open])
   const onKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     const next = cursorAfterKey(active, event.key, count)
     if (next === undefined) return
     event.preventDefault()
-    setCursor({ index: next, keyboard: true })
+    dispatch({ type: 'key', index: next })
   }
   const plotProps = {
     tabIndex: 0,
     onKeyDown,
     onFocus: (event: FocusEvent<HTMLElement>) => {
-      if (active === null && event.currentTarget.matches(':focus-visible')) setCursor({ index: 0, keyboard: true })
+      if (active === null && event.currentTarget.matches(':focus-visible')) dispatch({ type: 'focus' })
     },
-    onBlur: clear,
-    onPointerLeave: () => setCursor((c) => (c.keyboard ? c : { index: null, keyboard: false })),
+    onBlur: () => dispatch({ type: 'clear' }),
+    onPointerLeave: () => dispatch({ type: 'leave' }),
     ...(mode === 'row'
       ? {}
       : {
           onPointerMove: (event: PointerEvent<HTMLElement>) => {
             const rect = event.currentTarget.getBoundingClientRect()
             if (rect.width <= 0) return
-            setCursor({ index: pointerIndex((event.clientX - rect.left) / rect.width, count, mode), keyboard: false })
+            dispatch({ type: 'hover', index: pointerIndex((event.clientX - rect.left) / rect.width, count, mode) })
           }
         })
   }
-  const rowProps = (index: number) => ({ onPointerEnter: () => setCursor({ index, keyboard: false }) })
+  const rowProps = (index: number) => ({ onPointerEnter: () => dispatch({ type: 'hover', index }) })
   return { active, announcement: cursor.keyboard, plotProps, rowProps }
 }
 
