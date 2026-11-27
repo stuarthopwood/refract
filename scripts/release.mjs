@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// `pnpm release [patch|minor|major] [--dry-run]`: the one-command release. Any failure before the
-// commit restores the four manifests (package.json, tauri.conf.json, Cargo.toml, Cargo.lock) byte-for-byte, never via `git`.
-// With no level, the bump is inferred from conventional-commit subjects since the last tag.
-// `--dry-run` runs the preconditions, version choice, a printed changelog preview and `ci:local`, writing nothing.
-//
-// Usage: node scripts/release.mjs [patch|minor|major] [--dry-run]  (or `pnpm release ...`)
+// `pnpm release [patch|minor|major] [--dry-run]` cuts `release/vX.Y.Z` from origin/main, commits the version bump and
+// CHANGELOG.md, pushes the branch and opens a one-PR stack with `gh stack`, then stops; it never pushes `main` (GH013).
+// `pnpm release --finish vX.Y.Z [--dry-run]` runs after the squash merge: it tags that commit and prints the publish commands.
+// A failure before the commit restores the four manifests byte-for-byte, never via `git`. With no level, the bump is
+// inferred from conventional-commit subjects since the last tag. `--dry-run` covers both phases and writes nothing.
+// Usage: node scripts/release.mjs [patch|minor|major] [--dry-run] | --finish vX.Y.Z [--dry-run]
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -27,6 +27,27 @@ import {
   readAllVersions,
   writeManifestVersions,
 } from './release-versions.mjs';
+import {
+  PR_STEPS,
+  assertBranchMatchesVersion,
+  assertCleanTree,
+  assertCommitVersions,
+  assertHeadAtOriginMain,
+  classifyBranch,
+  decideTag,
+  finishFailureMessage,
+  openedPrMessage,
+  parseArgs,
+  parseRemoteTagSha,
+  phaseOnePlan,
+  phaseTwoPlan,
+  pickMergedReleasePr,
+  prStepCommands,
+  prStepFailureMessage,
+  publishCommands,
+  releaseBranchName,
+  releaseCommitSubject,
+} from './release-pr.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -77,11 +98,7 @@ function unstageTrackedFiles() {
   });
 }
 
-const LEVELS = ['patch', 'minor', 'major'];
 const argv = process.argv.slice(2);
-const DRY_RUN = argv.includes('--dry-run');
-const LEVEL = argv.find((a) => LEVELS.includes(a)) ?? null;
-const unknownArgs = argv.filter((a) => a !== '--dry-run' && a !== LEVEL);
 
 function fail(message) {
   throw new Error(message);
@@ -96,21 +113,17 @@ function gitInherit(args) {
   if (result.status !== 0) fail(`git ${args.join(' ')} failed`);
 }
 
+// Returns the branch it started on: `main` (a release branch is cut) or an existing `release/*` branch.
 function checkPreconditions() {
   const branch = git(['rev-parse', '--abbrev-ref', 'HEAD']);
-  if (branch !== 'main') fail(`must be run on branch main (current: ${branch})`);
-
-  const status = git(['status', '--porcelain']);
-  if (status) fail(`working tree is not clean -- commit, stash, or remove these first:\n${status}`);
+  classifyBranch(branch);
+  assertCleanTree(git(['status', '--porcelain']));
 
   const fetchResult = spawnSync('git', ['fetch', 'origin'], { cwd: repoRoot, stdio: 'inherit' });
   if (fetchResult.status !== 0) fail('git fetch origin failed');
 
-  const head = git(['rev-parse', 'HEAD']);
-  const originMain = git(['rev-parse', 'origin/main']);
-  if (head !== originMain) {
-    fail(`HEAD (${head}) does not equal origin/main (${originMain}); pull or rebase first`);
-  }
+  assertHeadAtOriginMain(git(['rev-parse', 'HEAD']), git(['rev-parse', 'origin/main']));
+  return branch;
 }
 
 // The highest semver `v*` tag reachable from HEAD, or null if there is none yet.
@@ -174,7 +187,8 @@ function dateStamp() {
 }
 
 // `targetCommitish` is the branch name `main`, not a SHA: generate-notes rejected a just-pushed SHA on a
-// non-default branch ("Invalid target_commitish parameter"); `checkPreconditions` ensures HEAD == origin/main.
+// non-default branch ("Invalid target_commitish parameter"). The tag does not exist yet in phase 1, and
+// `checkPreconditions` ensures HEAD == origin/main; `--finish` never calls generate-notes (it reads CHANGELOG.md).
 function buildChangelogPreview(nextVersion, tag) {
   const notes = fetchGeneratedNotes({
     repo: REPO_SLUG,
@@ -221,7 +235,7 @@ function restoreOriginals(originals) {
   }
 }
 
-function determineNextVersion({ manifestVersion, tag, commits }) {
+function determineNextVersion({ manifestVersion, tag, commits, level: LEVEL }) {
   if (LEVEL) {
     if (tag && tag.version !== manifestVersion) {
       fail(
@@ -245,10 +259,78 @@ function determineNextVersion({ manifestVersion, tag, commits }) {
   return bumpVersion(manifestVersion, level);
 }
 
-async function main() {
-  if (unknownArgs.length > 0) fail(`unknown argument(s): ${unknownArgs.join(', ')}`);
+// Both `pnpm release` and `pnpm release --finish` print the same plan under `--dry-run`, so the
+// two phases can be reviewed before either writes anything.
+function printPlan(title, lines) {
+  console.log(`\n${title}`);
+  lines.forEach((line, i) => console.log(`  ${i + 1}. ${line}`));
+}
 
-  checkPreconditions();
+function worktreeDirFor(version) {
+  return path.resolve(repoRoot, '..', `refract-release-v${version}`);
+}
+
+function runCommand(argvList) {
+  const [cmd, ...rest] = argvList;
+  const result = spawnSync(cmd, rest, { cwd: repoRoot, stdio: 'inherit' });
+  if (result.status !== 0) fail(`${argvList.join(' ')} failed`);
+}
+
+function remoteRefExists(ref) {
+  return git(['ls-remote', 'origin', ref]) !== '';
+}
+
+function localRefExists(ref) {
+  return spawnSync('git', ['rev-parse', '--verify', '--quiet', ref], { cwd: repoRoot }).status === 0;
+}
+
+// A leftover branch or tag would make the PR route fail halfway, so refuse before any file is written.
+function assertReleaseNotCutYet(version, startBranch) {
+  const branch = releaseBranchName(version);
+  const tagName = `v${version}`;
+  if (localRefExists(`refs/tags/${tagName}`) || remoteRefExists(`refs/tags/${tagName}`)) {
+    fail(`tag ${tagName} already exists; this release was already cut (git tag -d ${tagName} if it is only a stale local tag)`);
+  }
+  if (startBranch === 'main' && localRefExists(`refs/heads/${branch}`)) {
+    fail(`branch ${branch} already exists locally; switch to it and re-run pnpm release, or delete it (git branch -D ${branch})`);
+  }
+  if (remoteRefExists(`refs/heads/${branch}`)) {
+    fail(`branch ${branch} already exists on origin; if its PR is merged run pnpm release --finish ${tagName}, else delete it first`);
+  }
+}
+
+function openedPr(version) {
+  try {
+    const raw = execFileSync('gh', ['pr', 'view', releaseBranchName(version), '--json', 'number,url'], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    });
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+// Never pushes `main`: only the release branch goes to origin, and the squash merge happens in GitHub.
+async function openReleasePr(version) {
+  const commands = prStepCommands(version);
+  for (const stepId of PR_STEPS) {
+    try {
+      await checkInterrupted();
+      runCommand(commands[stepId]);
+    } catch (err) {
+      await new Promise((resolve) => setImmediate(resolve));
+      const wasInterrupted = err instanceof InterruptedError || interrupted;
+      console.error(prStepFailureMessage(stepId, version, { interrupted: wasInterrupted, detail: err.message }));
+      process.exit(wasInterrupted ? 130 : 1);
+    }
+  }
+  console.log(openedPrMessage(version, openedPr(version)));
+}
+
+async function cutRelease({ dryRun, level }) {
+  const startBranch = checkPreconditions();
+  const startInfo = classifyBranch(startBranch);
 
   const { paths, raw, versions } = readAllVersions(repoRoot);
   const { ok, entries } = checkVersionsEqual(versions);
@@ -260,17 +342,25 @@ async function main() {
   const tag = lastTag();
   const commits = tag ? commitsSince(tag.tag) : [];
 
-  const nextVersion = determineNextVersion({ manifestVersion, tag, commits });
+  const nextVersion = determineNextVersion({ manifestVersion, tag, commits, level });
+  assertBranchMatchesVersion(startInfo, startBranch, nextVersion);
+  assertReleaseNotCutYet(nextVersion, startBranch);
+  const releaseBranch = releaseBranchName(nextVersion);
   const section = buildChangelogPreview(nextVersion, tag);
 
-  if (DRY_RUN) {
+  if (dryRun) {
     console.log(`release --dry-run: next version v${nextVersion}\n`);
     console.log(section);
+    printPlan('release --dry-run: phase 1, pnpm release, would:', phaseOnePlan(nextVersion, startBranch));
+    printPlan(
+      `release --dry-run: phase 2, pnpm release --finish v${nextVersion}, would:`,
+      phaseTwoPlan(nextVersion, null, worktreeDirFor(nextVersion)),
+    );
     runCiLocal();
     console.log(
       `\nrelease --dry-run: v${nextVersion} -- ci:local passed on the current tree. Only "git fetch origin" ` +
         '(step a) and ci:local\'s own installs/builds touched anything; none of the tracked release files, ' +
-        'the git index, or any ref were written, committed, tagged, pushed, or published.',
+        'the git index, any branch, or any ref were written, committed, tagged, pushed, or published.',
     );
     return;
   }
@@ -286,8 +376,14 @@ async function main() {
   ];
 
   installInterruptHandlers();
+  let createdBranch = false;
 
   try {
+    if (startInfo.kind === 'main') {
+      gitInherit(['switch', '-c', releaseBranch]);
+      createdBranch = true;
+    }
+
     // The first release (no tag, no level) ships the current version, so there is nothing for the
     // manifests or `cargo update` to change; running them left Cargo.lock unchanged, which
     // `assertCargoLockOnlyVersionChanged` rejected. Only touch them when a real bump happens.
@@ -310,18 +406,25 @@ async function main() {
     await checkInterrupted();
     gitInherit(['add', ...TRACKED_RELEASE_FILES]);
     await checkInterrupted();
-    gitInherit(['commit', '-m', `chore: release v${nextVersion}`]);
+    gitInherit(['commit', '-m', releaseCommitSubject(nextVersion)]);
   } catch (err) {
     // One more tick before reading `interrupted`: a signal that killed `cargo`/`git` directly surfaces
     // as a generic failure unless the queued handler gets to set the flag first.
     await new Promise((resolve) => setImmediate(resolve));
     unstageTrackedFiles();
     restoreOriginals(originals);
+    // Nothing is committed here, so the branch we cut is still at origin/main and `-d` is safe.
+    const branchBack =
+      createdBranch &&
+      spawnSync('git', ['switch', startBranch], { cwd: repoRoot, stdio: 'inherit' }).status === 0 &&
+      spawnSync('git', ['branch', '-d', releaseBranch], { cwd: repoRoot, stdio: 'inherit' }).status === 0;
     console.error(
       'release: failed before committing -- unstaged and restored package.json, ' +
         'src-tauri/tauri.conf.json, src-tauri/Cargo.toml and src-tauri/Cargo.lock' +
         (changelogExistedBefore ? ', and CHANGELOG.md,' : ', and removed the CHANGELOG.md this run created,') +
-        ' to their original state. Nothing was committed.',
+        ' to their original state. Nothing was committed' +
+        (branchBack ? `, and ${releaseBranch} was removed (back on ${startBranch}).` : '.') +
+        (createdBranch && !branchBack ? ` Check your branch: ${releaseBranch} may still exist (git branch -d ${releaseBranch}).` : ''),
     );
     if (err instanceof InterruptedError || interrupted) {
       console.error('release: stopped by SIGINT/SIGTERM, exiting 130.');
@@ -331,103 +434,100 @@ async function main() {
   }
 
   // The commit exists, so restoring file bytes would contradict history: never restore or reset
-  // automatically, only print the commands to run. Tag and push are separate `try` blocks so the
-  // recovery text matches which one failed (don't tell the user to push/delete a tag never created).
-  try {
-    await checkInterrupted();
-    gitInherit(['tag', '-a', `v${nextVersion}`, '-m', `v${nextVersion}`]);
-  } catch (err) {
-    if (err instanceof InterruptedError) {
-      console.error(
-        `release: stopped by SIGINT/SIGTERM before tagging v${nextVersion} -- "chore: release v${nextVersion}" ` +
-          'is committed locally but not tagged or pushed. A plain re-run of pnpm release will NOT work here ' +
-          '(HEAD no longer equals origin/main, and the manifests are already at the new version) -- resume ' +
-          `yourself: git tag -a v${nextVersion} -m v${nextVersion} && git push --atomic origin main v${nextVersion} ` +
-          '&& pnpm release:local -- --notes-from-changelog. To abandon this release commit entirely instead: ' +
-          'git reset --keep HEAD~1',
-      );
-      process.exit(130);
-    }
-    // One more tick: a signal can kill `git tag -a` after `checkInterrupted()` passed; a killed run leaves no tag.
-    await new Promise((resolve) => setImmediate(resolve));
-    if (interrupted) {
-      console.error(
-        `release: stopped by SIGINT/SIGTERM while tagging v${nextVersion} -- "chore: release v${nextVersion}" ` +
-          'is committed locally but not tagged or pushed. A plain re-run of pnpm release will NOT work here ' +
-          '(HEAD no longer equals origin/main, and the manifests are already at the new version) -- resume ' +
-          `yourself: git tag -a v${nextVersion} -m v${nextVersion} && git push --atomic origin main v${nextVersion} ` +
-          '&& pnpm release:local -- --notes-from-changelog. To abandon this release commit entirely instead: ' +
-          'git reset --keep HEAD~1',
-      );
-      process.exit(130);
-    }
-    console.error(
-      `release: "chore: release v${nextVersion}" was committed locally, but creating the tag v${nextVersion} failed: ${err.message}`,
-    );
-    console.error(
-      'release: this script will NOT retry or reset automatically. A plain re-run of pnpm release will NOT ' +
-        'work here (HEAD no longer equals origin/main, and the manifests are already at the new version). If ' +
-        `a stale local tag is the cause (check: git tag -l v${nextVersion}), remove it first: ` +
-        `git tag -d v${nextVersion}. Then resume: git tag -a v${nextVersion} -m v${nextVersion} && ` +
-        `git push --atomic origin main v${nextVersion} && pnpm release:local -- --notes-from-changelog. ` +
-        'To abandon this release commit entirely instead: git reset --keep HEAD~1',
-    );
-    process.exit(1);
-  }
+  // automatically, only print the resume command for the step that failed.
+  console.log(`release: committed "${releaseCommitSubject(nextVersion)}" on ${releaseBranch}.`);
+  await openReleasePr(nextVersion);
+}
 
-  try {
-    await checkInterrupted();
-    gitInherit(['push', '--atomic', 'origin', 'main', `v${nextVersion}`]);
-  } catch (err) {
-    if (err instanceof InterruptedError) {
-      console.error(
-        `release: stopped by SIGINT/SIGTERM before pushing -- "chore: release v${nextVersion}" is committed ` +
-          'and tagged locally but not pushed. Since this was before the push started, nothing was sent: ' +
-          `retry: git push --atomic origin main v${nextVersion}  (then)  pnpm release:local -- --notes-from-changelog. ` +
-          `Abandon: git tag -d v${nextVersion}  (then)  git reset --keep HEAD~1`,
-      );
-      process.exit(130);
-    }
-    console.error(
-      `release: "chore: release v${nextVersion}" was committed and tagged locally, but the atomic push failed: ${err.message}`,
-    );
-    console.error(
-      'release: this script will NOT retry or reset automatically. If this was a Ctrl+C during the push ' +
-        'itself, the atomic push may have already landed on the remote despite the error -- check first: ' +
-        `git ls-remote origin refs/tags/v${nextVersion}. If it is NOT there, retry: ` +
-        `git push --atomic origin main v${nextVersion}  (then)  pnpm release:local -- --notes-from-changelog. ` +
-        `If it IS there, just run: pnpm release:local -- --notes-from-changelog. To abandon this release ` +
-        `entirely instead (only if the tag is confirmed NOT on the remote): git tag -d v${nextVersion}  (then)  ` +
-        'git reset --keep HEAD~1',
-    );
-    process.exit(1);
-  }
+function readJsonAt(sha, file) {
+  return JSON.parse(git(['show', `${sha}:${file}`]));
+}
 
-  console.log(`release: committed, tagged, and pushed v${nextVersion}.`);
-
-  try {
-    await checkInterrupted();
-  } catch {
-    console.error(
-      `release: v${nextVersion} was committed, tagged, and pushed, but stopped by SIGINT/SIGTERM before publishing. ` +
-        'Resume with: pnpm release:local -- --notes-from-changelog',
-    );
-    process.exit(130);
-  }
-
-  const publish = spawnSync('node', ['scripts/release-local.mjs', '--notes-from-changelog'], {
+function localTagSha(tagName) {
+  const result = spawnSync('git', ['rev-parse', '--verify', '--quiet', `refs/tags/${tagName}^{commit}`], {
     cwd: repoRoot,
-    stdio: 'inherit',
+    encoding: 'utf8',
   });
-  if (publish.status !== 0) {
-    console.error(
-      'release: v' + nextVersion + ' was committed, tagged, and pushed, but the publish step failed. ' +
-        'Resume with: pnpm release:local -- --notes-from-changelog',
+  return result.status === 0 ? result.stdout.trim() : null;
+}
+
+// Finds the squash commit of the merged release PR on origin/main and proves it is this release.
+function verifyMergedRelease(version) {
+  const fetchResult = spawnSync('git', ['fetch', 'origin'], { cwd: repoRoot, stdio: 'inherit' });
+  if (fetchResult.status !== 0) fail('git fetch origin failed');
+
+  const listed = execFileSync(
+    'gh',
+    ['pr', 'list', '--repo', REPO_SLUG, '--head', releaseBranchName(version), '--state', 'all', '--limit', '20',
+      '--json', 'number,state,url,baseRefName,mergeCommit'],
+    { cwd: repoRoot, encoding: 'utf8' },
+  );
+  const pr = pickMergedReleasePr(JSON.parse(listed), version);
+
+  const onMain = spawnSync('git', ['merge-base', '--is-ancestor', pr.sha, 'origin/main'], { cwd: repoRoot });
+  if (onMain.status !== 0) fail(`merge commit ${pr.sha} of ${pr.url} is not on origin/main`);
+
+  assertCommitVersions(version, {
+    'package.json': readJsonAt(pr.sha, 'package.json').version,
+    'src-tauri/tauri.conf.json': readJsonAt(pr.sha, 'src-tauri/tauri.conf.json').version,
+  });
+  return pr;
+}
+
+// Runs one `--finish` step; `process.exit` keeps the failure text the only thing the user sees.
+async function finishStep(stepId, version, action) {
+  try {
+    await checkInterrupted();
+    return action();
+  } catch (err) {
+    await new Promise((resolve) => setImmediate(resolve));
+    const wasInterrupted = err instanceof InterruptedError || interrupted;
+    console.error(finishFailureMessage(stepId, version, { interrupted: wasInterrupted, detail: err.message }));
+    process.exit(wasInterrupted ? 130 : 1);
+  }
+}
+
+async function finishRelease({ dryRun, finishVersion: version }) {
+  const tagName = `v${version}`;
+  const dir = worktreeDirFor(version);
+  installInterruptHandlers();
+
+  const pr = await finishStep('verify-pr', version, () => verifyMergedRelease(version));
+  const decision = await finishStep('verify-pr', version, () =>
+    decideTag({
+      tagName,
+      sha: pr.sha,
+      localSha: localTagSha(tagName),
+      remoteSha: parseRemoteTagSha(git(['ls-remote', 'origin', `refs/tags/${tagName}`, `refs/tags/${tagName}^{}`]), tagName),
+    }),
+  );
+  console.log(`release: ${pr.url} is merged as ${pr.sha}, and that commit carries v${version}.`);
+
+  if (dryRun) {
+    printPlan(`release --finish --dry-run: ${tagName} would:`, phaseTwoPlan(version, pr.sha, dir));
+    console.log(
+      `\nrelease --finish --dry-run: nothing was tagged or pushed (local tag ${decision.createLocal ? 'absent' : 'already present'}, ` +
+        `origin tag ${decision.push ? 'absent' : 'already present'}). Only "git fetch origin" touched anything.`,
     );
-    process.exit(publish.status ?? 1);
+    return;
   }
 
-  console.log(`release: v${nextVersion} published.`);
+  if (decision.createLocal) {
+    await finishStep('tag', version, () => runCommand(['git', 'tag', '-a', tagName, '-m', tagName, pr.sha]));
+  }
+  if (decision.push) {
+    await finishStep('push-tag', version, () => runCommand(['git', 'push', 'origin', `refs/tags/${tagName}`]));
+  }
+
+  console.log(`release: ${tagName} is tagged on ${pr.sha} and pushed. The publish stays a separate step; run it from a detached worktree at the tag:`);
+  for (const line of publishCommands(version, dir)) console.log(`  ${line}`);
+  console.log(`  (afterwards: cd back, then git worktree remove ${dir.replace(/\\/g, '/')})`);
+}
+
+async function main() {
+  const args = parseArgs(argv);
+  if (args.finishVersion) return finishRelease(args);
+  return cutRelease(args);
 }
 
 main().catch((err) => {

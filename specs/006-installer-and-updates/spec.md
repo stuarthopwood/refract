@@ -345,6 +345,23 @@ draft, are never offered as an update by User Story 3's check.
   timed-out verification MUST return an error to the renderer and leave Refract running. A
   repeated quit request while the quit is in progress MUST NOT start the stop-all and install
   hand-off a second time (issue #1175).
+- **FR-036** (issue #2128): `pnpm release` MUST cut a release through a pull request, because the
+  `main` ruleset rejects a direct push (GH013). It MUST run only from `main` or a `release/*`
+  branch with a clean tree and `HEAD` at `origin/main`, cut `release/vX.Y.Z`, commit the version
+  bump and `CHANGELOG.md` as `chore(release): vX.Y.Z`, push that branch, open a one-PR stack with
+  `gh stack` (flags only, never `gh pr create`), and stop. It MUST NOT push `main`.
+- **FR-037** (issue #2128): It MUST refuse to start when the tag, or the release branch locally
+  or on origin, already exists, and MUST name the command that resumes or abandons the release.
+- **FR-038** (issue #2128): `pnpm release --finish vX.Y.Z` MUST verify through `gh` that the
+  release PR merged into `main` and that the squash commit carries the release version, then
+  create an annotated tag on that commit and push the tag. It MUST resume a half-done run and
+  MUST NOT move a tag that points at another commit.
+- **FR-039** (issue #2128): After tagging, `--finish` MUST print the publish commands
+  (`release:local -- --notes-from-changelog` from a detached worktree at the tag) and MUST NOT
+  run them; the publish stays a separate, explicit step.
+- **FR-040** (issue #2128): `--dry-run` MUST print the plan of both phases without a side effect.
+  Every failure after the release commit exists MUST name the failed step and the command that
+  resumes from it.
 
 ### Key Entities
 
