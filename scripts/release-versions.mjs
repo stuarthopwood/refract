@@ -58,7 +58,7 @@ function packageTableSlice(raw, label) {
   return { start, end };
 }
 
-function extractCargoTomlVersion(raw, label) {
+export function extractCargoTomlVersion(raw, label) {
   const { start, end } = packageTableSlice(raw, label);
   const m = raw.slice(start, end).match(/^version = "([^"]*)"/m);
   if (!m) versionFail(`${label}: no version field in [package] table`);

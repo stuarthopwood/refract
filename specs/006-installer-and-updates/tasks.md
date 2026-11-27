@@ -216,3 +216,12 @@ without installing, and a repeated `ExitRequested` can double the hand-off. Task
 - [x] T040 [US3] FR-035 (partial): `updates.installNow` calls `install_on_quit::verify_installer_before_quit` (bounded) before flagging the relaunch and exiting, returning a `checksum-mismatch`/`update-unavailable` IPC error on failure so Refract stays open.
 - [x] T041 [US3] FR-035 (missing): `lib.rs`'s `ExitRequested` handler runs the stop-all and install hand-off once, guarded by a process-global `AtomicBool` quit-in-progress flag.
 - [x] T042 [US3] Verify live on a scratch exe, update `docs/PLAN.md` row #1175, then run `node scripts/ci-local.mjs`.
+
+## Phase 12: Convergence (issue #2128, FR-036 to FR-040)
+
+Appended by `/speckit.converge` on 2026-11-27: `pnpm release` pushed `main`, which the `main` ruleset rejects (GH013). Task ids continue after T042.
+
+- [x] T043 FR-036, FR-037 (missing): `scripts/release-pr.mjs` (pure helpers: argument parsing, branch and tree preconditions, the `gh stack` step commands, every recovery message) and `scripts/release.mjs` phase 1: cut `release/vX.Y.Z`, commit `chore(release): vX.Y.Z`, push, `gh stack init` and `submit --auto --open`, stop and print the merge and `--finish` commands. Refuse an existing tag or release branch.
+- [x] T044 FR-038, FR-039 (missing): `release.mjs --finish vX.Y.Z`: `gh pr list` proves the PR merged, the squash commit is on `origin/main` and carries the version, annotated tag, tag push (resumable), then print the `release:local --notes-from-changelog` commands for a detached worktree.
+- [x] T045 FR-040 (missing): `--dry-run` prints both phase plans; the recovery text names the failed step and its resume command. Co-located tests in `scripts/release-pr.test.mjs`.
+- [x] T046 Docs: README "Releasing" describes the two-phase flow; `docs/PLAN.md` is left to the controller.
