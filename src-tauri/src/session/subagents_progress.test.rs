@@ -5,6 +5,7 @@ use serde_json::json;
 
 use super::super::test_support::agent_fixture;
 use super::*;
+use crate::session::subagents::on_attach_reconcile;
 
 fn rows(progress: &Value) -> Vec<Value> {
     let mut state = State::default();
@@ -224,22 +225,91 @@ async fn a_session_with_nothing_to_show_has_no_group() {
     assert_eq!(fx.manager.agents_snapshot().await, json!([]));
 }
 
+/// Gives the fixture's Session one running subagent and pushes the aggregate carrying its group.
+async fn show_group(fx: &super::super::test_support::AgentFixture) {
+    fx.agent
+        .with_subagents_state(|s| s.summaries.push(entry()))
+        .await;
+    notify_agents_aggregate(&fx.agent);
+    past_the_coalescing_window().await;
+}
+
 #[tokio::test(start_paused = true)]
 async fn deleting_a_session_pushes_the_aggregate_without_its_group() {
     let fx = idle_fixture().await;
     let emits = watch_agents(&fx);
-    fx.agent
-        .with_subagents_state(|s| s.summaries.push(entry()))
-        .await;
-    assert_eq!(
-        fx.manager.agents_snapshot().await.as_array().unwrap().len(),
-        1
-    );
+    show_group(&fx).await;
+    assert_eq!(emits.lock().unwrap().len(), 1);
 
     fx.manager.remove_agent(&fx.id);
     past_the_coalescing_window().await;
 
-    assert_eq!(emits.lock().unwrap().last(), Some(&json!([])));
+    let emits = emits.lock().unwrap();
+    assert_eq!(emits.len(), 2);
+    assert_eq!(emits[1], json!([]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_unchanged_aggregate_is_not_pushed_again() {
+    let fx = idle_fixture().await;
+    let emits = watch_agents(&fx);
+    show_group(&fx).await;
+
+    notify_agents_aggregate(&fx.agent);
+    past_the_coalescing_window().await;
+    notify_agents_aggregate(&fx.agent);
+    past_the_coalescing_window().await;
+
+    assert_eq!(emits.lock().unwrap().len(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn reattaching_pushes_one_aggregate_carrying_the_retained_agents() {
+    let fx = idle_fixture().await;
+    let emits = watch_agents(&fx);
+    // A finished agent with output survives a reattach; a running one would be dropped.
+    fx.agent
+        .with_subagents_state(|s| {
+            let mut retained = entry();
+            retained.status = SummaryStatus::Finished;
+            s.streams.insert(
+                retained.id.clone(),
+                vec![json!({ "id": "row-1", "kind": "text" })],
+            );
+            s.summaries.push(retained);
+        })
+        .await;
+
+    on_attach_reconcile(&fx.agent).await;
+    past_the_coalescing_window().await;
+
+    let emits = emits.lock().unwrap();
+    assert_eq!(emits.len(), 1, "one push for the whole reattach");
+    assert_eq!(emits[0][0]["sessionId"], fx.id.as_str());
+    assert_eq!(emits[0][0]["subagents"][0]["status"], "finished");
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_deliberate_stop_pushes_the_aggregate_without_the_sessions_group() {
+    let fx = idle_fixture().await;
+    let emits = watch_agents(&fx);
+    show_group(&fx).await;
+
+    // `shutdown()` only asks the process to exit; the exit handler then records `Stopped`, which
+    // is the status change that drops the group. An unlaunched fixture has no process to exit.
+    fx.agent.shutdown().await;
+    fx.agent
+        .set_status(
+            crate::session::SessionStatus::Stopped,
+            Some("not-started"),
+            None,
+        )
+        .await;
+    past_the_coalescing_window().await;
+
+    let emits = emits.lock().unwrap();
+    assert_eq!(emits.len(), 2);
+    assert_eq!(emits[1], json!([]));
 }
 
 #[tokio::test(start_paused = true)]

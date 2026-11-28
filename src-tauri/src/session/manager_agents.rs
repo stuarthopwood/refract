@@ -9,10 +9,14 @@ use serde_json::{json, Map, Value};
 use crate::session::subagents::{current_summaries_value, SUMMARIES_COALESCE_MS};
 use crate::session::{SessionManager, SessionStatus};
 
-/// The one pending-emit flag; the groups themselves are read from the live agents at emit time.
+/// The one pending-emit flag plus the last payload sent; the groups themselves are read from the
+/// live agents at emit time.
 #[derive(Default)]
 pub(super) struct AgentsAggregate {
     pending: AtomicBool,
+    /// Held across snapshot and emit, so two overlapping windows cannot deliver out of order, and
+    /// so an unchanged snapshot is not pushed again.
+    last_emitted: tokio::sync::Mutex<Option<Value>>,
 }
 
 impl SessionManager {
@@ -38,7 +42,12 @@ impl SessionManager {
                 .agents_aggregate
                 .pending
                 .store(false, Ordering::Release);
+            let mut last = manager.agents_aggregate.last_emitted.lock().await;
             let groups = manager.agents_snapshot().await;
+            if last.as_ref() == Some(&groups) {
+                return;
+            }
+            *last = Some(groups.clone());
             manager.events.emit_agents_update(groups);
         });
     }
@@ -46,24 +55,31 @@ impl SessionManager {
     /// One group per live, unarchived, non-stopped Session that has subagents to show, ordered by
     /// Session id. The payload is a full replacement, so a Session missing from it has dropped out.
     pub(crate) async fn agents_snapshot(&self) -> Value {
-        let mut groups = Vec::new();
+        // Status and subagents are read from each agent first, so the registry lock is taken once
+        // and never held across an agent's own locks.
+        let mut live = Vec::new();
         for agent in self.live_agents() {
-            if agent.status().await == SessionStatus::Stopped {
+            let status = agent.status().await;
+            if status == SessionStatus::Stopped {
                 continue;
             }
             let subagents = current_summaries_value(&agent).await;
             if subagents.as_array().is_none_or(Vec::is_empty) {
                 continue;
             }
-            let mut group = Map::new();
-            {
-                let registry = self.registry.lock().await;
-                let Some(session) = registry.get_session(agent.session_id()) else {
+            live.push((agent.session_id().to_string(), status, subagents));
+        }
+        let mut groups = Vec::new();
+        {
+            let registry = self.registry.lock().await;
+            for (session_id, status, subagents) in live {
+                let Some(session) = registry.get_session(&session_id) else {
                     continue;
                 };
                 if session.archived_at.is_some() {
                     continue;
                 }
+                let mut group = Map::new();
                 group.insert("sessionId".into(), json!(session.id));
                 group.insert("name".into(), json!(session.name));
                 let repository = session
@@ -74,10 +90,10 @@ impl SessionManager {
                     group.insert("repositoryId".into(), json!(repository.id));
                     group.insert("repositoryName".into(), json!(repository.name));
                 }
+                group.insert("status".into(), json!(status));
+                group.insert("subagents".into(), subagents);
+                groups.push(Value::Object(group));
             }
-            group.insert("status".into(), json!(agent.status().await));
-            group.insert("subagents".into(), subagents);
-            groups.push(Value::Object(group));
         }
         groups.sort_by(|a, b| a["sessionId"].as_str().cmp(&b["sessionId"].as_str()));
         Value::Array(groups)
