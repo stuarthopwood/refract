@@ -6,6 +6,10 @@ import { useTypographyStore } from '@/state/typography-store'
 import { ACK_EVERY_BYTES, INPUT_MAX_BYTES } from '../../../shared/terminalLimits'
 import { FRAME_TAG_DATA } from '../../../shared/ipc-terminal'
 import type { TabState, TerminalApi } from '../../../shared/ipc-terminal'
+import { toast } from 'sonner'
+import { openInBrowser } from '@/lib/openInBrowser'
+import { isMotionReduced, subscribeOsReducedMotion } from '@/lib/reducedMotion'
+import { accessOptions } from './terminalOptions'
 import { readTerminalTheme } from './terminalTheme'
 import { opensContextMenu } from './terminalKeyboard'
 
@@ -57,13 +61,33 @@ function chunkInput(data: string): string[] {
   return chunks
 }
 
-export function createTerminalLink(bridge: TerminalBridge, surface: TerminalSurface, fit: () => void, debounceMs = RESIZE_DEBOUNCE_MS): TerminalLink {
+export function createTerminalLink(
+  bridge: TerminalBridge,
+  surface: TerminalSurface,
+  fit: () => void,
+  debounceMs = RESIZE_DEBOUNCE_MS,
+  onInputError: (message: string) => void = (message) => toast.error(`The terminal did not take your input: ${message}`)
+): TerminalLink {
   let shown: string | null = null
   let generation = 0
   let unacked = 0
   let sentSize = ''
   let resizeTimer: ReturnType<typeof setTimeout> | undefined
   let inputChain: Promise<unknown> = Promise.resolve()
+
+  const sendChunk = async (tabId: string, chunk: string, batch: { failed: boolean }): Promise<void> => {
+    if (batch.failed) return
+    let message: string | null = null
+    try {
+      const result = await bridge.input(tabId, chunk)
+      if (!result.ok) message = result.error.message
+    } catch (error) {
+      message = error instanceof Error ? error.message : 'The terminal did not answer'
+    }
+    if (message === null) return
+    batch.failed = true
+    onInputError(message)
+  }
 
   const sizeKey = (): string => `${surface.cols}x${surface.rows}`
 
@@ -118,9 +142,11 @@ export function createTerminalLink(bridge: TerminalBridge, surface: TerminalSurf
     sendInput(data) {
       const tabId = shown
       if (tabId === null) return
+      // One paste is one batch: after the first chunk the shell refuses, the rest would land as a corrupt half-paste.
+      const batch = { failed: false }
       for (const chunk of chunkInput(data)) {
         // Keystrokes must reach the shell in order; a rejected call must not wedge the ones behind it.
-        inputChain = inputChain.then(() => bridge.input(tabId, chunk)).catch(() => undefined)
+        inputChain = inputChain.then(() => sendChunk(tabId, chunk, batch))
       }
     },
 
@@ -191,8 +217,10 @@ export function useTerminalSession(sessionId: string, tabId: string | null, reat
         import('@xterm/xterm/css/xterm.css')
       ])
       if (cancelled) return
+      // OSC 8 links the shell prints open through the app's own external-link policy, not xterm's window.open default.
+      const linkHandler = { activate: (_event: MouseEvent, uri: string) => openInBrowser(uri) }
       // Bracketed paste is left at xterm's default (on): a multi-line paste reaches the shell as one paste, not as typed lines.
-      const term = new XTerm({ scrollback: VIEW_SCROLLBACK_LINES, cursorBlink: true, theme: readTerminalTheme(), ...readFont() })
+      const term = new XTerm({ scrollback: VIEW_SCROLLBACK_LINES, ...accessOptions(isMotionReduced()), linkHandler, theme: readTerminalTheme(), ...readFont() })
       const fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
       term.open(container)
@@ -241,6 +269,14 @@ export function useTerminalSession(sessionId: string, tabId: string | null, reat
     })
     return () => cancelAnimationFrame(frame)
   }, [ready, themeId])
+
+  // The OS setting can change while a terminal is open; the app's own Reduce motion switch still counts after it.
+  useEffect(() => {
+    if (!ready) return
+    return subscribeOsReducedMotion(() => {
+      if (runtime.current) runtime.current.term.options.cursorBlink = !isMotionReduced()
+    })
+  }, [ready])
 
   useEffect(() => {
     const current = runtime.current

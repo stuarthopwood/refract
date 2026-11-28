@@ -11,7 +11,7 @@ function dataFrame(bytes: number[] | number): ArrayBuffer {
   return Uint8Array.from([FRAME_TAG_DATA, ...body]).buffer
 }
 
-function setup() {
+function setup(onInputError?: (message: string) => void) {
   const sinks: Array<(frame: ArrayBuffer) => void> = []
   const bridge = {
     attach: vi.fn(async (_s: string, _t: string, _c: number, _r: number, onFrame: (frame: ArrayBuffer) => void) => {
@@ -36,7 +36,7 @@ function setup() {
     reset: vi.fn()
   }
   const fit = vi.fn()
-  const link = createTerminalLink(bridge as unknown as TerminalBridge, surface, fit)
+  const link = createTerminalLink(bridge as unknown as TerminalBridge, surface, fit, undefined, onInputError)
   const emit = (index: number, frame: ArrayBuffer): void => {
     const sink = sinks[index]
     if (!sink) throw new Error(`no attach #${index}`)
@@ -135,6 +135,31 @@ describe('terminal link', () => {
     link.sendInput('late')
     await vi.runAllTimersAsync()
     expect(bridge.input).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops a paste at the first refused chunk and reports it once', async () => {
+    const onInputError = vi.fn()
+    const { bridge, link } = setup(onInputError)
+    await link.attach('s1', 't1')
+    bridge.input.mockResolvedValueOnce(ok(null)).mockResolvedValueOnce({ ok: false, error: { code: 'terminal-ended', message: 'Shell has exited' } } as never)
+    link.sendInput('😀'.repeat(INPUT_MAX_BYTES))
+    await vi.runAllTimersAsync()
+    expect(bridge.input).toHaveBeenCalledTimes(2)
+    expect(onInputError).toHaveBeenCalledTimes(1)
+    expect(onInputError).toHaveBeenCalledWith('Shell has exited')
+  })
+
+  it('treats a thrown call like a refusal, and later typing still goes through', async () => {
+    const onInputError = vi.fn()
+    const { bridge, link } = setup(onInputError)
+    await link.attach('s1', 't1')
+    bridge.input.mockRejectedValueOnce(new Error('bridge down'))
+    link.sendInput('a')
+    link.sendInput('b')
+    await vi.runAllTimersAsync()
+    expect(onInputError).toHaveBeenCalledWith('bridge down')
+    expect(bridge.input.mock.calls.map((call) => call[1])).toEqual(['a', 'b'])
+    expect(onInputError).toHaveBeenCalledTimes(1)
   })
 
   it('splits a paste larger than the per-call limit without cutting a character in half', async () => {

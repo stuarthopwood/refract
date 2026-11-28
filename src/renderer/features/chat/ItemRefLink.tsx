@@ -17,17 +17,7 @@ import { lookupCard, peekCard } from './itemCardCache'
 import { ownerRepoOf, resolveItemRef, type ItemRefTarget } from './itemRefs'
 import { ItemTypeIcon, itemDisplayState, itemTypeVisual } from './ItemTypeIcon'
 import { isMiddleButton, openItemRef, wantsBrowser } from './openItemRef'
-
-// The shared external-link listener (tauri-bridge/externalLinks.ts) is the one place a URL opens.
-function openInBrowser(url: string): void {
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.target = '_blank'
-  anchor.rel = 'noreferrer noopener'
-  document.body.appendChild(anchor)
-  anchor.click()
-  anchor.remove()
-}
+import { openInBrowser } from '@/lib/openInBrowser'
 
 export function ItemCardBody({ card }: { card: ItemCard }) {
   return (

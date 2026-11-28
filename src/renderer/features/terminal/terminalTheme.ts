@@ -1,6 +1,6 @@
 import type { ITheme } from '@xterm/xterm'
 import { withResolvedTokens } from '@/lib/resolveCssColour'
-import { adjustForContrast, parseHex } from '@/lib/projectColor'
+import { adjustForContrast, parseHex, rgbToHex } from '@/lib/projectColor'
 
 // The terminal draws on the right pane's own surface, so its palette follows the active theme and is nudged to stay
 // readable there: a shell prints dim greys and pure blues that the tokens alone do not guarantee (spec 144 US1).
@@ -45,6 +45,12 @@ function readable(hex: string, surface: string, min: number): string {
   return background === null ? hex : adjustForContrast(hex, background, min + ROUNDING_MARGIN).hex
 }
 
+/** `#rrggbb59`: the colour at about a third opacity; `null` when the token did not resolve to hex, where an appended alpha would be invalid CSS. */
+function translucent(colour: string): string | null {
+  const rgb = parseHex(colour)
+  return rgb === null ? null : `${rgbToHex(rgb)}59`
+}
+
 export function buildTerminalTheme(read: Reader): ITheme {
   const background = read('sidebar-right')
   const foreground = readable(read('foreground'), background, TERMINAL_MIN_CONTRAST)
@@ -54,7 +60,7 @@ export function buildTerminalTheme(read: Reader): ITheme {
     cursor: foreground,
     cursorAccent: background,
     // A translucent primary keeps the selected text's own colour legible, unlike an opaque fill.
-    selectionBackground: `${read('primary')}59`
+    selectionBackground: translucent(read('primary')) ?? translucent(foreground) ?? undefined
   }
   for (const name of Object.keys(ANSI_TOKENS) as AnsiName[]) {
     const hex = read(ANSI_TOKENS[name])

@@ -61,4 +61,10 @@ describe('terminal theme with an unresolvable surface', () => {
     const theme = buildTerminalTheme((token) => (token === 'sidebar-right' ? 'not-a-colour' : '#123456'))
     expect(theme.red).toBe('#123456')
   })
+
+  it('keeps the selection a valid colour when the primary token is not hex', () => {
+    const theme = buildTerminalTheme((token) => (token === 'primary' ? 'oklch(0.6 0.2 260)' : '#123456'))
+    // Falls back to the contrast-adjusted foreground, still with a valid alpha suffix.
+    expect(theme.selectionBackground).toMatch(/^#[0-9a-f]{6}59$/)
+  })
 })

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { appReducesMotion, isMotionReduced, osPrefersReducedMotion } from './reducedMotion'
+import { appReducesMotion, isMotionReduced, osPrefersReducedMotion, subscribeOsReducedMotion } from './reducedMotion'
 
 function stub(os: boolean, app: 'on' | undefined) {
   vi.stubGlobal('matchMedia', () => ({ matches: os }))
@@ -38,5 +38,27 @@ describe('reducedMotion', () => {
     vi.stubGlobal('document', undefined)
     expect(appReducesMotion()).toBe(false)
     expect(isMotionReduced()).toBe(true)
+  })
+
+  it('reports each change of the OS setting until unsubscribed', () => {
+    let listener: (event: { matches: boolean }) => void = () => undefined
+    const removeEventListener = vi.fn()
+    vi.stubGlobal('matchMedia', () => ({
+      matches: false,
+      addEventListener: (_type: string, fn: typeof listener) => (listener = fn),
+      removeEventListener
+    }))
+    const seen: boolean[] = []
+    const stop = subscribeOsReducedMotion((reduced) => seen.push(reduced))
+    listener({ matches: true })
+    listener({ matches: false })
+    expect(seen).toEqual([true, false])
+    stop()
+    expect(removeEventListener).toHaveBeenCalledWith('change', listener)
+  })
+
+  it('subscribes to nothing where there is no matchMedia', () => {
+    vi.stubGlobal('matchMedia', undefined)
+    expect(() => subscribeOsReducedMotion(() => undefined)()).not.toThrow()
   })
 })
