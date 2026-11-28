@@ -6128,3 +6128,16 @@ Written before the build. Five lanes with disjoint files; run them in parallel. 
 ### Close-out
 
 - [ ] T806 [US1] Update `docs/PLAN.md` rows (epic #1272 children #1756, #1774, #2202, #2240, #2296, #2299, #2300, #2308), `quickstart.md` and `contracts/ipc.md` (the `cardSummary` field, the new setting) where T788 to T805 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check a background run, a failed Stage, the progress-bar tooltip, a tiny summary, the panel at narrow width and a Session message to a working Session.
+
+## Phase 138: Convergence (2026-11-28, epic #1136 child #2111 status-line Changes pill, FR-220, FR-221, SC-048)
+
+Written before the build. Needs nothing from Phases 136 or 137; touches `session/readout.rs`, `git/changes_status.rs` and the pill's renderer files only.
+
+- [ ] T807 [US1] #2111: in `src-tauri/src/git/changes_status.rs` add a pure `changes_summary(&GitChangesSnapshot)` returning a `DiffStatResult`-shaped value (distinct paths across the four groups, summed additions and deletions of scored rows, `partial` true when any row is partial) beside `read_changes_status`, per FR-220, FR-221 (missing). Tests: the existing `src-tauri/src/git/changes_status_tests.rs`: a clean tree is zero; staged, unstaged and untracked rows each count; a partially staged path counts once; deleted and conflicted rows count; more than 200 rows is `partial` with the cap unchanged.
+- [ ] T808 [US1] #2111: in `src-tauri/src/session/readout.rs` (the read at `:430-443`) replace `diff_stat(worktree, base_branch)` with `read_changes_status(worktree, base_branch)` plus T807's summary, keeping the one `read_guard_bounded` guard and the `not-available` fallback, and keep the readout's JSON shape (`files`, `additions`, `deletions`, `partial`) so `contracts/ipc.md` and the renderer type do not change, per FR-220 (missing). Tests: the existing `src-tauri/src/session/readout.test.rs`: a worktree with an uncommitted file and no commits ahead gives `files: 1`; a clean tree with a commit ahead gives `files: 0`; an unreadable worktree stays `not-available`.
+- [ ] T809 [US1] #2111: in `src/renderer/features/sessions/sessionDisplay.tsx` make `DiffStatLine` show `200+` instead of the count and drop the " (partial)" suffix when `stat.partial` is true, and make its accessible description (`:303-309`) say "more than 200 files changed", per FR-221, US1/AC34 (missing). Tests: the existing `src/renderer/features/sessions/sessionDisplay.test.ts`: exact count at 200 or fewer, `200+` when partial, singular "file" at 1, the description wording; confirm the Session details card, which reads the same component, is checked against FR-039 and changed only if it shows the partial form.
+
+### Close-out
+
+- [ ] T810 [US1] Update `docs/PLAN.md` row #2111, `quickstart.md` and `contracts/ipc.md` only where T807 to T809 change them (the source of the pill; no field changes); run `pnpm typecheck`, `pnpm test` and `cargo test` for the touched modules.
+- [ ] T811 [US1] Live-check in a scratch debug build per `skill://verify-refract-tauri-build-live`: edit a file and see the pill show 1 file, commit it and see the pill return to 0 (the #2111 report), add 201 files and see `200+ files changed`, with screenshots on the PR.
