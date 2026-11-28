@@ -4,6 +4,7 @@ import type { GitHubAccount } from '../../shared/accounts'
 import { onGithubChanged } from './github-changed-refresh'
 import { useAccountsStore } from './accounts'
 import { useAdvisorRosterStore } from './advisor-roster-store'
+import { useAgentsStore } from './agents-store'
 import { useCommandsStore } from './commands-store'
 import { useMemoryStore } from './memory-store'
 import { showTokenGuardWarning } from './token-guard-store'
@@ -150,6 +151,9 @@ export function initStores(): void {
   })
   window.refract.onSubagentsUpdate(({ sessionId, subagents }) => {
     useReadoutStore.getState().applySubagents(sessionId, subagents)
+  })
+  window.refract.onAgentsUpdate(({ groups }) => {
+    useAgentsStore.getState().apply(groups)
   })
   window.refract.onAdvisorUpdate(({ sessionId, advisorOn }) => {
     useAdvisorStore.getState().applyAdvisorOn(sessionId, advisorOn)

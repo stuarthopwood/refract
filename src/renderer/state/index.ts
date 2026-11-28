@@ -1,6 +1,7 @@
 import { initStores } from './init-stores'
 import { dismissSlashCommandRefusalToast, notify, notifyInfo, notifyPersistentError, notifyProgress } from './notify'
 import { useAdvisorStore } from './advisor-store'
+import { useAgentsStore } from './agents-store'
 import { useAlertDismissStore } from './alert-dismiss-store'
 import { useAccountsStore } from './accounts'
 import { useCommandsStore } from './commands-store'
@@ -73,6 +74,8 @@ export { PULL_REQUESTS_LIST_DEFAULT_WIDTH_PX, PULL_REQUESTS_LIST_MIN_WIDTH_PX, u
 export { useThemeStore, activeThemeId, useActiveThemeId, useThemeKey, useSyntaxTheme, themeClassName, initThemeStore } from './theme-store'
 export { useChatWidthStore, activeChatWidth, useActiveChatWidth } from './chat-width-store'
 export { useUpdateStore }
+export { useAgentsStore }
+export { EMPTY_AGENT_GROUPS, NO_AGENTS_TEXT, runningAgentCount, totalRunningAgents, visibleAgentGroups } from './agents-store'
 export { useStageToggleStore }
 export { useTodoPinStore }
 export { EMPTY_CHAT_NAV, useChatNavStore }
@@ -96,6 +99,7 @@ export interface RefractDevStores {
   transcript: typeof useTranscriptStore
   view: typeof useViewStore
   readout: typeof useReadoutStore
+  agents: typeof useAgentsStore
   subagentPanel: typeof useSubagentPanelStore
   sideChat: typeof useSideChatStore
   fileExplorer: typeof useFileExplorerStore
@@ -140,6 +144,7 @@ if (import.meta.env.DEV) {
     transcript: useTranscriptStore,
     view: useViewStore,
     readout: useReadoutStore,
+    agents: useAgentsStore,
     subagentPanel: useSubagentPanelStore,
     sideChat: useSideChatStore,
     fileExplorer: useFileExplorerStore,
