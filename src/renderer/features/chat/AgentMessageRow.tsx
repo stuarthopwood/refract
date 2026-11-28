@@ -50,7 +50,7 @@ export function AgentMessageRow({ item }: { item: AgentMessageItem }) {
       labelClassName={AGENT_MESSAGE_LABEL_CLASS}
       summary={item.text}
     >
-      <div className="whitespace-pre-wrap text-sm">{item.text}</div>
+      <div className="whitespace-pre-wrap text-sm leading-chat">{item.text}</div>
     </CollapsedLine>
   )
 }
@@ -73,7 +73,7 @@ export function AgentSteerRow({ item }: { item: ToolItem }) {
       labelClassName={cn(failed ? 'text-severity-error' : item.status === 'done' ? 'text-agent-message' : undefined)}
       summary={content.split('\n')[0]}
     >
-      <div className="whitespace-pre-wrap text-sm">{content}</div>
+      <div className="whitespace-pre-wrap text-sm leading-chat">{content}</div>
       <ToolCallDialog item={item} open={dialogOpen} onOpenChange={setDialogOpen} />
     </CollapsedLine>
   )

@@ -6142,6 +6142,14 @@ Written before the build. Needs nothing from Phases 136 or 137; touches `session
 - [x] T810 [US1] Update `docs/PLAN.md` row #2111, `quickstart.md` and `contracts/ipc.md` only where T807 to T809 change them (the source of the pill; no field changes, so only the PLAN row changed); run `pnpm typecheck`, `pnpm test` and `cargo test` for the touched modules.
 - [ ] T811 [US1] Live-check in a scratch debug build per `skill://verify-refract-tauri-build-live`: edit a file and see the pill show 1 file, commit it and see the pill return to 0 (the #2111 report), add 201 files and see `200+ files changed`, with screenshots on the PR.
 
+## Phase 139: Convergence (2026-11-28, epic #2222 child #360, FR-222, FR-223, SC-049)
+
+Renderer only; touches `globals.css`, `Markdown.tsx`, `markdownExtras.tsx`, `CodeBlock.tsx`, `ToolRow.tsx`, `AdvisoryRow.tsx`, `AgentMessageRow.tsx` and `NoticeRow.tsx`.
+
+- [x] T812 [US1] #360: declare `--leading-chat: 1.625` in the `@theme` block of `src/renderer/styles/globals.css` and replace `leading-relaxed` (`Markdown.tsx`) and `leading-[1.6]` (`CodeBlock.tsx`, three places plus the Shiki wrap case) with `leading-chat`; drop the table's own `text-sm` in `markdownExtras.tsx` and give chat-variant cells `px-4 py-2`; add `leading-chat` to the `ToolRow.tsx` body paragraphs, the `AgentMessageRow.tsx` bodies and the `NoticeRow.tsx` text (the `StopBanner.tsx` diagnostic `pre` is excluded), per FR-222 (done).
+- [x] T813 [US1] #360: in `AdvisoryRow.tsx` render the message and guidance (nit and open bodies) through `<Markdown variant="chat">` with `[&_p]:whitespace-pre-line` so single line breaks survive, and export `buildCopyText` and `buildAskAgentMessage`, leaving both on the raw text, per FR-223 (done). Tests: `src/renderer/features/chat/AdvisoryRow.test.ts` (code span and list render, `leading-chat` on message and guidance, a single line break kept in both, a nit body once expanded, raw Markdown in the copy text and ask-agent payload).
+- [ ] T814 [US1] #360: update `docs/PLAN.md` row #360 to "done, PR pending"; run the touched tests, `pnpm typecheck`, `pnpm check:file-size`, `pnpm check:comment-density` and `pnpm check:theme-contrast`; live-check a light and a dark theme transcript with prose, a table, a code block, an expanded tool call and an Advisor blocker, with before and after screenshots on the PR (needs a running build; not done in this lane).
+
 ## Phase 140: Convergence (2026-11-28, epic #2229 child #2322, FR-224, SC-050)
 
 Written before the build. Renderer only; touches `components/ui/dialog.tsx` and one new test.

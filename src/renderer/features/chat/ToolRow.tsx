@@ -99,15 +99,15 @@ export function ToolCallBody({ item, label, dialogOpen, onDialogOpenChange }: To
 
   return (
     <>
-      {fullIntent && <p className="[overflow-wrap:anywhere] text-xs text-tool-row-fg">{fullIntent}</p>}
+      {fullIntent && <p className="[overflow-wrap:anywhere] text-xs leading-chat text-tool-row-fg">{fullIntent}</p>}
       {item.edit && <DiffView path={item.edit.path} oldText={item.edit.oldText} newText={item.edit.newText} capped />}
       {isDone && item.write && (
-        <p className="text-xs text-tool-row-fg">
+        <p className="text-xs leading-chat text-tool-row-fg">
           Wrote {writeLineCount} {writeLineCount === 1 ? 'line' : 'lines'} to <FileLinkButton path={item.write.path} />
         </p>
       )}
       {isDone && !item.write && summary && (
-        <p className="[overflow-wrap:anywhere] text-xs text-tool-row-fg">{summary}</p>
+        <p className="[overflow-wrap:anywhere] text-xs leading-chat text-tool-row-fg">{summary}</p>
       )}
       <ToolCallDialog item={item} open={dialogOpen} onOpenChange={onDialogOpenChange} />
     </>

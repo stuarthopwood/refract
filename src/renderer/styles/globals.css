@@ -296,6 +296,10 @@
   --font-weight-semibold: 500;
   --font-weight-bold: 600;
   --text-readout: 13px;
+  /* #360: the one chat body line height (FR-222). Markdown prose, tables, code blocks, tool-call
+   * output and Advisor blocks all use the generated `leading-chat` utility instead of a per-component
+   * leading, so a message mixing prose, a table and a code block reads at one rhythm. */
+  --leading-chat: 1.625;
   /* Spec 036 (#842): named steps replacing former arbitrary `text-[...]` sizes. */
   --text-compact: 0.8rem;
   --text-micro: 0.7rem;

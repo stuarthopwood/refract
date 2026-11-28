@@ -110,7 +110,7 @@ export function NoticeRow({ level, text: rawText, source, commandOutput = false 
       summaryClassName={expandableToneClass}
       contentClassName={LABEL_COLUMN_CONTENT_CLASS}
     >
-      <div tabIndex={0} role="region" aria-label="Notice text" className={cn('max-h-60 overflow-y-auto text-xs whitespace-pre-wrap [overflow-wrap:anywhere]', fromExtension ? EXTENSION_INFO_CLASS : 'text-notice-info-fg')}>{text}</div>
+      <div tabIndex={0} role="region" aria-label="Notice text" className={cn('max-h-60 overflow-y-auto text-xs leading-chat whitespace-pre-wrap [overflow-wrap:anywhere]', fromExtension ? EXTENSION_INFO_CLASS : 'text-notice-info-fg')}>{text}</div>
     </CollapsedLine>
   )
 }

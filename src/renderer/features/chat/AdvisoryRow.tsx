@@ -10,6 +10,7 @@ import { extractAdvisoryLocations, type AdvisoryLocation } from '@/lib/advisory-
 import { notify, useSessionsStore } from '@/state'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
+import { Markdown } from './Markdown'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { CONCERN_RUN_THRESHOLD, type AdvisoryRun } from './groupAdvisoryItems'
@@ -53,6 +54,10 @@ function turnsAgoPhrase(turnsAgo: number): string {
   return turnsAgo === 0 ? 'this turn' : `${turnsAgo} ${turnsAgo === 1 ? 'turn' : 'turns'} ago`
 }
 
+// Advisor text arrives with single newlines the shared Markdown would fold into one line (it has no
+// breaks plugin), so the paragraphs keep them, as the ask and request cards do.
+const ADVISORY_MARKDOWN_CLASS = '[&_p]:whitespace-pre-line [overflow-wrap:anywhere]'
+
 // The advisor name lives in the SourceTag tooltip (hover only), so the trigger's accessible name
 // carries it for assistive technology; the name is omitted when unset.
 function buildTriggerLabel(item: AdvisoryItem): string {
@@ -62,7 +67,7 @@ function buildTriggerLabel(item: AdvisoryItem): string {
   return parts.join(', ')
 }
 
-function buildCopyText(item: AdvisoryItem, locations: AdvisoryLocation[]): string {
+export function buildCopyText(item: AdvisoryItem, locations: AdvisoryLocation[]): string {
   let text = `${ADVISORY_WORD[item.severity]}: ${item.text}`
   if (item.guidance) {
     text += `\n\nGuidance:\n${item.guidance}`
@@ -75,7 +80,7 @@ function buildCopyText(item: AdvisoryItem, locations: AdvisoryLocation[]): strin
 
 const MAX_ASK_AGENT_PAYLOAD_LENGTH = 8_000
 
-function buildAskAgentMessage(item: AdvisoryItem, locations: AdvisoryLocation[]): string {
+export function buildAskAgentMessage(item: AdvisoryItem, locations: AdvisoryLocation[]): string {
   let payload = item.advisor ? `Advisor: ${item.advisor}\n\n${item.text}` : item.text
   if (item.guidance) {
     payload += `\n\nGuidance: ${item.guidance}`
@@ -166,11 +171,11 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         meta={meta}
       >
         <div className="space-y-2">
-          <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
+          <Markdown text={item.text} id={`${item.id}-text`} variant="chat" className={ADVISORY_MARKDOWN_CLASS} />
           {item.guidance && (
             <div>
               <div className="mb-1 text-xs text-muted-foreground">Guidance</div>
-              <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.guidance}</div>
+              <Markdown text={item.guidance} id={`${item.id}-guidance`} variant="chat" className={ADVISORY_MARKDOWN_CLASS} />
             </div>
           )}
         </div>
@@ -196,11 +201,11 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         contentClassName={cn(LABEL_COLUMN_CONTENT_CLASS, STRIPE_CLASS[item.severity])}
       >
         {/* Decision 2 order: note, guidance, locations, then the actions row. */}
-        <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
+        <Markdown text={item.text} id={`${item.id}-text`} variant="chat" className={ADVISORY_MARKDOWN_CLASS} />
         {item.guidance && (
           <div>
             <div className="mb-1 text-xs text-muted-foreground">Guidance</div>
-            <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.guidance}</div>
+            <Markdown text={item.guidance} id={`${item.id}-guidance`} variant="chat" className={ADVISORY_MARKDOWN_CLASS} />
           </div>
         )}
         {locations.length > 0 && (

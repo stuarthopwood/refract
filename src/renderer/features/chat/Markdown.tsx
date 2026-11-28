@@ -391,7 +391,7 @@ function MarkdownImpl({ text, id, streaming = false, inert = false, className, g
   return (
     <StreamingContext.Provider value={streaming || inert}>
       <MarkdownOptionsContext.Provider value={options}>
-        <div className={cn('space-y-2 text-sm leading-relaxed break-words', className)}>
+        <div className={cn('space-y-2 text-sm leading-chat break-words', className)}>
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             remarkRehypeOptions={remarkRehypeOptions}
