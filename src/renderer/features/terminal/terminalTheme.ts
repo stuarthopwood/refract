@@ -25,6 +25,17 @@ const ANSI_TOKENS = {
 
 type AnsiName = keyof typeof ANSI_TOKENS
 
+const BRIGHT_KEYS = {
+  black: 'brightBlack',
+  red: 'brightRed',
+  green: 'brightGreen',
+  yellow: 'brightYellow',
+  blue: 'brightBlue',
+  magenta: 'brightMagenta',
+  cyan: 'brightCyan',
+  white: 'brightWhite'
+} as const satisfies Record<AnsiName, keyof ITheme>
+
 /** Rounding the nudged colour to 8-bit channels can land a hair under the target, so ask for a small margin. */
 const ROUNDING_MARGIN = 0.05
 
@@ -48,8 +59,7 @@ export function buildTerminalTheme(read: Reader): ITheme {
   for (const name of Object.keys(ANSI_TOKENS) as AnsiName[]) {
     const hex = read(ANSI_TOKENS[name])
     theme[name] = readable(hex, background, TERMINAL_MIN_CONTRAST)
-    const bright = `bright${name[0]!.toUpperCase()}${name.slice(1)}` as const
-    theme[bright] = readable(hex, background, TERMINAL_BRIGHT_MIN_CONTRAST)
+    theme[BRIGHT_KEYS[name]] = readable(hex, background, TERMINAL_BRIGHT_MIN_CONTRAST)
   }
   return theme
 }
