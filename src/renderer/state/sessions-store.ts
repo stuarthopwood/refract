@@ -7,6 +7,7 @@ import { useDocumentTabsStore } from './document-tabs-store'
 import { useChecklistDraftsStore } from './checklist-drafts'
 import { useChecklistStore } from './checklist-store'
 import { useSplitStore } from './split-store'
+import { useTerminalStore } from './terminal-store'
 import { useGitChangesStore } from './git-changes-store'
 import { useSideChatStore } from './side-chat-store'
 import { useSessionListStore } from './session-list-store'
@@ -120,6 +121,7 @@ export const useSessionsStore = create<SessionsState>((set, get) => ({
       useDocumentTabsStore.getState().pruneSessions(listedIds)
       useChecklistStore.getState().pruneSessions(listedIds)
       useChecklistDraftsStore.getState().pruneSessions(listedIds)
+      useTerminalStore.getState().pruneSessions(listedIds)
       useSessionListStore.getState().pruneParents(liveParentIds(result.value))
       useSessionListStore.getState().pruneConversationLists(listedIds)
       const liveIds = new Set(result.value.filter((session) => !session.archivedAt).map((session) => session.id))

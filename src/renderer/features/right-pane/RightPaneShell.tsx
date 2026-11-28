@@ -13,6 +13,7 @@ import { GitChangesPanel } from './git-changes/GitChangesPanel'
 import { OutlinePanel } from './outline/OutlinePanel'
 import { SessionUsagePanel } from '@/features/usage/SessionUsagePanel'
 import { ChecklistPanel } from './checklist/ChecklistPanel'
+import { TerminalPanel } from '@/features/terminal/TerminalPanel'
 import { PinnedIssuePanel } from './pinned/PinnedIssuePanel'
 import { PinnedPullRequestPanel } from './pinned/PinnedPullRequestPanel'
 import { resolveActiveTab } from '@/state/right-pane-store'
@@ -146,6 +147,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         {activePanelId === 'outline' && <OutlinePanel sessionId={sessionId} />}
         {activePanelId === 'session-usage' && <SessionUsagePanel sessionId={sessionId} />}
         {activePanelId === 'checklist' && <ChecklistPanel sessionId={sessionId} />}
+        {activePanelId === 'terminal' && <TerminalPanel sessionId={sessionId} />}
         {activePanelId === 'pull-request' && (
           <RequiresRepository sessionId={sessionId}>
             <PinnedPullRequestPanel sessionId={sessionId} />

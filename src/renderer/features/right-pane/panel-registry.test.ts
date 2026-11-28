@@ -51,6 +51,14 @@ describe('checklist panel registration', () => {
   })
 })
 
+describe('terminal panel registration', () => {
+  it('terminal_is_hosted_with_no_agent_actions', () => {
+    expect(HOSTED_PANELS.some((p) => p.id === 'terminal')).toBe(true)
+    expect(isPinnedPanelId('terminal')).toBe(false)
+    expect(getPanelDescriptor('terminal')).toMatchObject({ name: 'Terminal', hasCount: false, actions: [] })
+  })
+})
+
 describe('agents panel registration', () => {
   it('is_always_listed_in_the_rail_whatever_the_session', () => {
     expect(HOSTED_PANELS.some((p) => p.id === 'subagents')).toBe(true)
