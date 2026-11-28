@@ -192,6 +192,66 @@ async fn bare_new_still_only_starts_a_conversation() {
 }
 
 #[tokio::test]
+async fn new_followed_only_by_whitespace_is_the_bare_path_and_sends_no_prompt() {
+    for text in ["/new   ", "/new \t"] {
+        let r = rig(SessionStatus::Idle, json!({})).await;
+
+        let sent = r.send(text, None).await.unwrap();
+
+        assert_eq!(sent, json!({ "queued": false }), "{text:?}");
+        let types = r.types().await;
+        assert!(types.contains(&"new_session".to_string()), "{text:?}");
+        assert!(!types.contains(&"prompt".to_string()), "{text:?}");
+        r.finish().await;
+    }
+}
+
+#[tokio::test]
+async fn new_with_a_slash_command_as_the_prompt_is_refused_before_any_conversation_starts() {
+    for text in ["/new /compact", "/new   /compact now", "/new /new hello"] {
+        let r = rig(SessionStatus::Idle, json!({})).await;
+
+        let err = r.send(text, None).await.unwrap_err();
+
+        assert_eq!(err.code, "unsupported-arguments", "{text:?}");
+        assert!(err.message.contains("slash command"), "{text:?}");
+        assert!(r.commands().await.is_empty(), "{text:?}");
+        r.finish().await;
+    }
+}
+
+#[tokio::test]
+async fn a_slash_later_in_the_prompt_is_not_a_command_and_is_sent_as_given() {
+    let r = rig(SessionStatus::Idle, json!({})).await;
+
+    r.send("/new see src/main.rs", None).await.unwrap();
+
+    let commands = r.commands().await;
+    let prompt = commands.iter().find(|c| c["type"] == "prompt").unwrap();
+    assert_eq!(prompt["message"], "see src/main.rs");
+    r.finish().await;
+}
+
+#[tokio::test]
+async fn new_with_a_prompt_on_a_paused_session_reports_the_message_as_held() {
+    let r = rig(SessionStatus::Idle, json!({})).await;
+    r.state
+        .session_manager
+        .get_or_create_agent(&r.id)
+        .pause()
+        .await
+        .unwrap();
+
+    let sent = r.send("/new hello", None).await.unwrap();
+
+    assert_eq!(sent, json!({ "queued": true }));
+    let types = r.types().await;
+    assert!(types.contains(&"new_session".to_string()));
+    assert!(!types.contains(&"prompt".to_string()), "held, not sent");
+    r.finish().await;
+}
+
+#[tokio::test]
 async fn new_with_a_prompt_and_an_image_is_refused_before_any_conversation_starts() {
     let r = rig(SessionStatus::Idle, json!({})).await;
 
@@ -218,6 +278,7 @@ async fn a_send_failure_after_the_new_conversation_is_a_distinct_error_with_no_s
 
     assert_eq!(err.code, "new-prompt-send-failed");
     assert!(err.message.contains("new Conversation was started"));
+    assert!(err.message.ends_with("Press Enter to send it again."));
     let new_sessions = r
         .types()
         .await

@@ -78,12 +78,26 @@ fn map_chat_error(err: crate::session::AgentError) -> IpcError {
 const NEW_PROMPT_ATTACHMENT_REFUSAL: &str =
     "Slash commands can't carry attached files. Remove them and try again.";
 
+/// A first message starting with `/` would be run by omp as a command in the fresh Conversation, past
+/// every check `chat.send` makes on slash commands, so it is refused instead (mirrored in the composer).
+const NEW_PROMPT_SLASH_REFUSAL: &str =
+    "A slash command can't be the first message of /new. Send the command on its own after /new.";
+
 /// Refused before any Conversation starts, so the Session is untouched and the draft survives.
-fn refuse_new_prompt_attachments(images: Option<&[Value]>) -> Result<(), IpcError> {
+fn refuse_unsendable_new_prompt(
+    prompt: &str,
+    images: Option<&[Value]>,
+) -> Result<(), IpcError> {
     if images.is_some_and(|attached| !attached.is_empty()) {
         return Err(IpcError::new(
             "unsupported-arguments",
             NEW_PROMPT_ATTACHMENT_REFUSAL,
+        ));
+    }
+    if prompt.starts_with('/') {
+        return Err(IpcError::new(
+            "unsupported-arguments",
+            NEW_PROMPT_SLASH_REFUSAL,
         ));
     }
     Ok(())
@@ -97,7 +111,7 @@ fn map_new_prompt_error(failed: StartThenSendError) -> IpcError {
         StartStage::AfterNew => IpcError::new(
             "new-prompt-send-failed",
             format!(
-                "The new Conversation was started but your message was not sent: {}",
+                "The new Conversation was started but your message was not sent: {}. Press Enter to send it again.",
                 failed.error.message
             ),
         ),
@@ -105,20 +119,20 @@ fn map_new_prompt_error(failed: StartThenSendError) -> IpcError {
 }
 
 /// `/new <prompt>` (#1827): the prompt is the new Conversation's first message, sent as given.
+/// `queued` follows `send`, so a paused Session reports its held message honestly.
 async fn start_new_with_prompt(
     agent: &SessionAgent,
     prompt: String,
     images: Option<&[Value]>,
 ) -> Result<Value, IpcError> {
-    refuse_new_prompt_attachments(images)?;
+    refuse_unsendable_new_prompt(&prompt, images)?;
     agent
-        .start_conversation_then_send(FirstMessage {
+        .start_conversation_and_send(FirstMessage {
             text: prompt,
             handoff_note: false,
         })
         .await
-        .map_err(map_new_prompt_error)?;
-    Ok(json!({ "queued": false }))
+        .map_err(map_new_prompt_error)
 }
 
 /// Maps an image validation reason to its user-facing IPC error.

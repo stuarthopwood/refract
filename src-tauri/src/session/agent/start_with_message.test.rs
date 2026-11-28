@@ -206,6 +206,34 @@ async fn a_plain_message_records_nothing_in_the_sidecar() {
 }
 
 #[tokio::test]
+async fn the_send_result_reports_not_queued_for_an_idle_session() {
+    let r = rig(json!({})).await;
+    let sent =
+        r.fx.agent
+            .start_conversation_and_send(first(false))
+            .await
+            .unwrap();
+    assert_eq!(sent, json!({ "queued": false }));
+    r.fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_paused_session_holds_the_first_message_and_reports_it_queued() {
+    let r = rig(json!({})).await;
+    r.fx.agent.pause().await.unwrap();
+    let sent =
+        r.fx.agent
+            .start_conversation_and_send(first(false))
+            .await
+            .unwrap();
+    assert_eq!(sent, json!({ "queued": true }));
+    let types = r.types().await;
+    assert!(types.contains(&"new_session".to_string()), "{types:?}");
+    assert!(!types.contains(&"prompt".to_string()), "held, not sent: {types:?}");
+    r.fx.finish().await;
+}
+
+#[tokio::test]
 async fn a_stopped_session_takes_the_launch_path() {
     let fx = fixture_with(Stub {
         stopped: true,
