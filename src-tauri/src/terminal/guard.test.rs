@@ -26,7 +26,10 @@ fn non_terminal_channels_are_not_this_guards_business() {
 #[test]
 fn the_refusal_never_names_the_channel_arguments() {
     let refusal = refuse_caller("terminal.input", "preview").unwrap();
-    assert!(!refusal["error"]["message"].as_str().unwrap().contains("terminal.input"));
+    assert!(!refusal["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("terminal.input"));
 }
 
 #[test]
@@ -124,7 +127,9 @@ fn tokens_refill_with_time() {
     assert!(limiter.try_consume(1, t0).is_err());
     // Half a second refills half the bucket.
     let t1 = t0 + Duration::from_millis(500);
-    limiter.try_consume(INPUT_RATE_BYTES_PER_SEC / 2, t1).unwrap();
+    limiter
+        .try_consume(INPUT_RATE_BYTES_PER_SEC / 2, t1)
+        .unwrap();
     assert!(limiter.try_consume(1_000, t1).is_err());
 }
 
@@ -133,7 +138,9 @@ fn idle_time_never_banks_more_than_one_second() {
     let t0 = Instant::now();
     let mut limiter = RateLimiter::new(t0);
     let later = t0 + Duration::from_secs(3600);
-    limiter.try_consume(INPUT_RATE_BYTES_PER_SEC, later).unwrap();
+    limiter
+        .try_consume(INPUT_RATE_BYTES_PER_SEC, later)
+        .unwrap();
     assert!(limiter.try_consume(1, later).is_err());
 }
 

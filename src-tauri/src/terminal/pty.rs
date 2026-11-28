@@ -6,9 +6,7 @@ use std::fmt;
 use std::io::{Read, Write};
 use std::path::Path;
 
-use portable_pty::{
-    native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize,
-};
+use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
 use super::shell::{ResolvedShell, ADDED_ENV};
 
@@ -60,12 +58,7 @@ pub struct Spawned {
 
 /// Starts `shell` in `cwd` at `cols` x `rows`. The shell inherits the app's environment plus `TERM` and
 /// `COLORTERM` (`ADDED_ENV`).
-pub fn spawn(
-    shell: &ResolvedShell,
-    cwd: &Path,
-    cols: u16,
-    rows: u16,
-) -> Result<Spawned, PtyError> {
+pub fn spawn(shell: &ResolvedShell, cwd: &Path, cols: u16, rows: u16) -> Result<Spawned, PtyError> {
     if !cwd.is_dir() {
         return Err(PtyError("The working folder does not exist".into()));
     }
@@ -130,9 +123,11 @@ impl Pty {
         Ok((size.cols, size.rows))
     }
 
-    /// Ends the shell process. Descendants are the caller's to reap (`child_tree`).
-    pub fn kill(&mut self) -> std::io::Result<()> {
-        self.killer.kill()
+    /// Ends the shell process. Descendants are the caller's to reap (`child_tree`). Infallible by design:
+    /// portable-pty's Windows killer reports a stale OS error when `TerminateProcess` succeeds, so its result
+    /// says nothing; the owner learns the outcome from `ExitWaiter::wait`.
+    pub fn kill(&mut self) {
+        let _ = self.killer.kill();
     }
 }
 

@@ -48,7 +48,10 @@ fn pwsh_on_path_wins() {
         .file(CMD);
     let shell = resolve_shell(&env).unwrap();
     assert_eq!(shell.kind, ShellKind::Pwsh);
-    assert_eq!(shell.path, PathBuf::from(r"C:\Program Files\PowerShell\7\pwsh.exe"));
+    assert_eq!(
+        shell.path,
+        PathBuf::from(r"C:\Program Files\PowerShell\7\pwsh.exe")
+    );
 }
 
 #[test]
@@ -57,7 +60,10 @@ fn the_first_path_entry_with_pwsh_is_used() {
         .var("PATH", r"C:\A;C:\B")
         .file(r"C:\A\pwsh.exe")
         .file(r"C:\B\pwsh.exe");
-    assert_eq!(resolve_shell(&env).unwrap().path, PathBuf::from(r"C:\A\pwsh.exe"));
+    assert_eq!(
+        resolve_shell(&env).unwrap().path,
+        PathBuf::from(r"C:\A\pwsh.exe")
+    );
 }
 
 #[test]
@@ -78,7 +84,9 @@ fn comspec_is_the_last_resort() {
 
 #[test]
 fn a_missing_comspec_variable_falls_back_to_system32_cmd() {
-    let env = FakeEnv::default().var("SystemRoot", r"C:\Windows").file(CMD);
+    let env = FakeEnv::default()
+        .var("SystemRoot", r"C:\Windows")
+        .file(CMD);
     assert_eq!(resolve_shell(&env).unwrap().kind, ShellKind::Cmd);
 }
 
@@ -121,7 +129,10 @@ fn the_shell_kind_has_a_stable_saved_name() {
     assert_eq!(ShellKind::Powershell.as_str(), "powershell");
     assert_eq!(ShellKind::Cmd.as_str(), "cmd");
     assert_eq!(serde_json::to_string(&ShellKind::Pwsh).unwrap(), "\"pwsh\"");
-    assert_eq!(serde_json::from_str::<ShellKind>("\"cmd\"").unwrap(), ShellKind::Cmd);
+    assert_eq!(
+        serde_json::from_str::<ShellKind>("\"cmd\"").unwrap(),
+        ShellKind::Cmd
+    );
 }
 
 #[test]

@@ -19,7 +19,9 @@ fn a_channel_handle_string_parses() {
 #[test]
 fn a_missing_or_malformed_channel_argument_is_invalid() {
     for args in [vec![], vec![json!(5)], vec![json!("not-a-channel")]] {
-        let err = parse_channel_arg(&args).expect_err("refused");
+        let Err(err) = parse_channel_arg(&args) else {
+            panic!("expected a refusal for {args:?}");
+        };
         assert_eq!(err.code, "invalid-argument");
     }
 }

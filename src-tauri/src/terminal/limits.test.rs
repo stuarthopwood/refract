@@ -15,8 +15,3 @@ fn constants_match_the_frozen_data_model() {
     assert_eq!(ACK_EVERY_BYTES, 131_072);
     assert_eq!(UNACKED_PAUSE_BYTES, 524_288);
 }
-
-#[test]
-fn the_reader_pauses_only_after_several_acks_are_outstanding() {
-    assert!(UNACKED_PAUSE_BYTES > ACK_EVERY_BYTES);
-}
