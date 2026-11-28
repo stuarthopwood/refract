@@ -339,6 +339,8 @@ export interface SubagentSummary {
   filesTouched?: string[];
   /** The agent's last steps, newest last, at most 5. Live only. */
   recentSteps?: SubagentRecentStep[];
+  /** The synthesised one-line card summary, at most 160 characters; omitted when unset, off, failed or timed out. */
+  cardSummary?: string;
 }
 
 /** One file or folder attached via the Attach button, drag-and-drop, or a clipboard file paste, parsed back out of the prompt text. */

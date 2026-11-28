@@ -9,6 +9,8 @@ vi.hoisted(() => {
 })
 
 import { EMPTY_READOUT, useReadoutStore } from '@/state/readout-store'
+import type { SubagentSummary } from '../../../../shared/model'
+import { subagentSummary } from '../../subagents/viewModel/testFixtures'
 import type { SubagentCount } from './subagentDerive'
 import { useReadoutCard } from './useReadoutCard'
 import { SubagentsReadout } from './Readouts'
@@ -21,9 +23,12 @@ vi.mock('./useReadoutCard', async (importOriginal) => {
 
 const SESSION = 's1'
 
-// Server rendering reads the store's initial snapshot, so patch that too.
+// The pill counts the Session's registry list, so a test states its counts as one Stage of agents with those statuses.
 function setCount(subagentCount: SubagentCount | null): void {
-  const bySession = { [SESSION]: { readout: { ...EMPTY_READOUT, subagentCount }, subagents: [] } }
+  const subagents = Object.entries(subagentCount ?? {}).flatMap(([status, count]) =>
+    Array.from({ length: count }, (_, index) => subagentSummary({ id: `${status}-${index}`, nameOrTask: `${status}-${index}`, specIndex: index, status: status as SubagentSummary['status'] }))
+  )
+  const bySession = { [SESSION]: { readout: EMPTY_READOUT, subagents } }
   useReadoutStore.setState({ bySession })
   Object.assign(useReadoutStore.getInitialState(), { bySession })
 }

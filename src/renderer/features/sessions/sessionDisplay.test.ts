@@ -35,9 +35,9 @@ describe('isActiveSession (issue #1854)', () => {
 })
 
 describe('activeSessionLine', () => {
-  it('reads the row line for subagents', () => {
+  it('no longer reads a "Waiting for N subagents" line while agents run', () => {
     const s = session({ id: 'a', status: 'working', activity: { runningSubagents: 2 } } as Partial<SessionSummary> & { id: string })
-    expect(activeSessionLine(s)).toBe('Waiting for 2 subagents')
+    expect(activeSessionLine(s)).not.toContain('subagent')
   })
 
   it('reads the pause label for a paused Session', () => {

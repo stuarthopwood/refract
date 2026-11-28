@@ -23,6 +23,8 @@ import { isToolGroup } from './groupToolItems'
 import { reuseUnchangedTurns, splitIntoTurns, type Turn } from './splitIntoTurns'
 import { groupTurnStages } from './groupTurnStages'
 import { isStageGroup } from './groupSubagentStages'
+import { numberSessionStages, reuseStageNumbers, type StageNumbers } from '../subagents/viewModel/numbering'
+import { selectSubagentItems } from '../subagents/viewModel/selectors'
 import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
@@ -37,7 +39,6 @@ import { newestRunningRowId } from './newestRunningRow'
 import { findPrecedingAskItem } from './findPrecedingAskItem'
 import { type UserItem } from './UserMessageRow'
 import { useRepositoryAvatarUrl } from './useRepositoryAvatarUrl'
-import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 import { JumpToStageContext, stageRowDomId } from './stageJump'
 import { ChatNavBridge } from '../chat-nav/ChatNavBridge'
@@ -204,12 +205,18 @@ export function Transcript({
   )
 
   const subagentSummaries = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
+  // Numbered from the whole transcript, not the visible window, so a Stage keeps its number when earlier turns are windowed out.
+  const stageNumbersRef = React.useRef<StageNumbers | undefined>(undefined)
+  const stageNumbers = React.useMemo(() => {
+    const next = reuseStageNumbers(stageNumbersRef.current, numberSessionStages(selectSubagentItems(items), subagentSummaries))
+    stageNumbersRef.current = next
+    return next
+  }, [items, subagentSummaries])
   const turnsWithStages = React.useMemo(
-    () => visibleTurns.map((turn) => ({ turn, ...groupTurnStages(turn.items, transcriptDisplay.thinking, subagentSummaries) })),
-    [visibleTurns, transcriptDisplay.thinking, subagentSummaries]
+    () => visibleTurns.map((turn) => ({ turn, ...groupTurnStages(turn.items, transcriptDisplay.thinking, subagentSummaries, stageNumbers) })),
+    [visibleTurns, transcriptDisplay.thinking, subagentSummaries, stageNumbers]
   )
 
-  const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)
   let isFirstRow = true
 
   const { viewportRef, scrollerRootRef, buttonRef, contentRef, gestureProps, follow, jumpControl, followState, handleScrollToEnd } =
@@ -428,9 +435,6 @@ export function Transcript({
         {/* Always mounted: a live region created together with its text is generally not announced. */}
         <span role="status" aria-live="polite" className="sr-only">
           {revealedAnnouncement}
-        </span>
-        <span role="status" aria-live="polite" className="sr-only">
-          {stageAnnouncement}
         </span>
         <span role="status" aria-live="polite" className="sr-only">
           {!isAtEnd && newContent ? 'New messages' : ''}

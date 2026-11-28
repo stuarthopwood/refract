@@ -23,6 +23,12 @@ describe('groupSubagentStages', () => {
     ])
   })
 
+  it('keeps the Session number of a Stage when the Session numbering gives one', () => {
+    const numbers = new Map([['call0', 1], ['call1', 2], ['call2', 3]])
+    const stages = groupSubagentStages([subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2' })], [], numbers).filter(isStageGroup)
+    expect(stages.map((s) => s.stageIndex)).toEqual([3])
+  })
+
   it('carries the run items, context and view on the group', () => {
     const [stage] = groupSubagentStages([subagentItem({ name: 'A', context: 'Ship the thing' })], []).filter(isStageGroup)
     expect(stage!.items).toHaveLength(1)

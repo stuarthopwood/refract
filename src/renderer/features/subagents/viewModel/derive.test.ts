@@ -61,6 +61,15 @@ describe('deriveAgent', () => {
     expect(deriveAgent(input(), undefined)).not.toHaveProperty('subSteps')
   })
 
+  it('prefers the card summary over the result and task summaries', () => {
+    const agent = deriveAgent(input({ cardSummary: 'Card', resultSummary: 'Result', taskSummary: 'Task' }), undefined)
+    expect(agent.whatItDid).toBe('Card')
+  })
+
+  it('falls back to the result summary without a card summary', () => {
+    expect(deriveAgent(input({ resultSummary: 'Result', taskSummary: 'Task' }), undefined).whatItDid).toBe('Result')
+  })
+
   it('prefers the result summary over the task summary for what it did', () => {
     expect(deriveAgent(input({ resultSummary: 'Done it', taskSummary: 'Was asked' }), undefined).whatItDid).toBe('Done it')
     expect(deriveAgent(input({ taskSummary: 'Was asked' }), undefined).whatItDid).toBe('Was asked')

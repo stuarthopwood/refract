@@ -14,7 +14,10 @@ import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { StageContextBrief } from './StageContextBrief'
 import { StageUsesLine } from './StageDependencies'
 import { stageRowDomId } from './stageJump'
-import { SubagentCardButton } from './SubagentRow'
+import { SubagentCardButton, openSubagentInPanel } from './SubagentRow'
+import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
+import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
+import type { SubagentItem } from './subagentChainStatus'
 import { SubagentGoalPreview } from './SubagentGoalPreview'
 import { stageHeading } from './stageMeta'
 import type { StageGroup } from './groupSubagentStages'
@@ -112,61 +115,90 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   const columnClassName = 'pl-10 pr-4'
   const { parallelCount } = stageRowModel(group.view)
 
+  // The card announces its own settling; one polite status per Stage, outside the log's own announcements.
+  const settleAnnouncement = useStageSettleAnnouncement(React.useMemo(() => [{ stages: [group] }], [group]))
+
   return (
-    <div
-      id={stageRowDomId(sessionId, group.id)}
-      tabIndex={-1}
-      role="group"
-      aria-label={stageAccessibleName(group.view)}
-      aria-live="off"
-      className="@container text-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring"
-      data-status={status}
-    >
-      <StageHeader
-        stage={group.view}
-        expanded={open}
-        columnFocusable
-        trailing={
-          <IconButton
-            ref={triggerRef}
-            variant="ghost"
-            size="icon-xs"
-            aria-expanded={open}
-            label={`${stageLabel} agents`}
-            onClick={() => onOpenChange(!open)}
-          >
-            <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', open && 'rotate-90')} />
-          </IconButton>
-        }
-      />
-      <FadeCollapse show={open}>
-        {/* aria-live="off": the brief/Uses lines are static context, so an automatic expand must not announce them. */}
-        <div aria-live="off" className="space-y-1 pb-2">
-          {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
-          {/* A context-less solo Stage's goal renders here, before "Uses:", matching the context-bearing order. */}
-          {!group.context && soloItem && (
-            <div className={columnClassName}>
-              <SubagentGoalPreview task={soloItem.task} />
-            </div>
-          )}
-          <StageUsesLine dependencies={group.view.dependencies} sessionId={sessionId} className={columnClassName} />
-          {/* Scoped to the member content that swaps element type on a 1-to-2 transition, so focus tracking ignores the brief/Uses line. (#1001) */}
-          <div ref={memberContentRef} className={columnClassName}>
-            {total > 1 ? (
-              <SpineList gap="member" bare className={stageAgentsGridClass(parallelCount)}>
-                {group.items.map((item, index) => (
-                  <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                    <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
-                  </SpineItem>
-                ))}
-              </SpineList>
-            ) : (
-              <SubagentCardButton item={group.items[0]!} agent={group.view.agents[0]!} sessionId={sessionId} flat stageTitle={group.view.cleanTitle} />
+    <>
+      <div
+        id={stageRowDomId(sessionId, group.id)}
+        tabIndex={-1}
+        role="group"
+        aria-label={stageAccessibleName(group.view)}
+        aria-live="off"
+        className="@container text-sm focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-ring"
+        data-status={status}
+      >
+        <StageHeader
+          stage={group.view}
+          expanded={open}
+          columnFocusable
+          trailing={
+            <>
+              {soloItem && <AgentShowButton item={soloItem} name={group.view.agents[0]?.name ?? soloItem.name} sessionId={sessionId} />}
+              <IconButton
+                ref={triggerRef}
+                variant="ghost"
+                size="icon-xs"
+                aria-expanded={open}
+                label={`${stageLabel} agents`}
+                onClick={() => onOpenChange(!open)}
+              >
+                <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', open && 'rotate-90')} />
+              </IconButton>
+            </>
+          }
+        />
+        <FadeCollapse show={open}>
+          {/* aria-live="off": the brief/Uses lines are static context, so an automatic expand must not announce them. */}
+          <div aria-live="off" className="space-y-1 pb-2">
+            {group.context && <StageContextBrief id={`${group.id}-context`} context={group.context} className={columnClassName} />}
+            {/* A context-less solo Stage's goal renders here, before "Uses:", matching the context-bearing order. */}
+            {!group.context && soloItem && (
+              <div className={columnClassName}>
+                <SubagentGoalPreview task={soloItem.task} />
+              </div>
             )}
+            <StageUsesLine dependencies={group.view.dependencies} sessionId={sessionId} className={columnClassName} />
+            {/* Scoped to the member content that swaps element type on a 1-to-2 transition, so focus tracking ignores the brief/Uses line. (#1001) */}
+            <div ref={memberContentRef} className={columnClassName}>
+              {total > 1 ? (
+                <SpineList gap="member" bare className={stageAgentsGridClass(parallelCount)}>
+                  {group.items.map((item, index) => (
+                    <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
+                      {/* The card is one button, so Show sits beside it, never inside it. */}
+                      <div className="flex items-start gap-1">
+                        <div className="min-w-0 flex-1">
+                          <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
+                        </div>
+                        <AgentShowButton item={item} name={group.view.agents[index]?.name ?? item.name} sessionId={sessionId} />
+                      </div>
+                    </SpineItem>
+                  ))}
+                </SpineList>
+              ) : (
+                <SubagentCardButton item={group.items[0]!} agent={group.view.agents[0]!} sessionId={sessionId} flat stageTitle={group.view.cleanTitle} />
+              )}
+            </div>
           </div>
-        </div>
-      </FadeCollapse>
-    </div>
+        </FadeCollapse>
+      </div>
+      <span role="status" aria-live="polite" className="sr-only">
+        {settleAnnouncement}
+      </span>
+    </>
+  )
+}
+
+/** A ghost icon button opening one agent in the Subagents panel. Every agent has one: before its live registry entry exists it selects the agent by key and the panel picks it up on arrival (#1774). */
+function AgentShowButton({ item, name, sessionId }: { item: SubagentItem; name: string; sessionId: string | null }) {
+  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
+  if (!sessionId) return null
+  const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
+  return (
+    <IconButton variant="ghost" size="icon-xs" label={`Show ${name} in Subagents panel`} onClick={(event) => openSubagentInPanel(sessionId, { id: match?.id, toolCallId: item.toolCallId, specIndex: item.specIndex }, event.currentTarget)}>
+      <BotIcon aria-hidden className="size-4" />
+    </IconButton>
   )
 }
 
