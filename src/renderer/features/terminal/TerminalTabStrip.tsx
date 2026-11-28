@@ -102,6 +102,7 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
   }
 
   return (
+    // drag-regions-allow: renders in the Terminal panel body, below the right pane's own header, so it never touches App.tsx's strip despite the `border-b` shape.
     <div className="flex flex-col border-b border-border">
       <div className="flex items-center gap-1 px-1 py-1">
         <div ref={scrollerRef} role="tablist" aria-label="Terminal tabs" className="relative flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]">

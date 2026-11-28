@@ -113,7 +113,6 @@ export type IpcErrorCode =
   | 'new-prompt-send-failed' // #1827 `/new <prompt>`: the new Conversation exists but the first message was not sent
   | 'terminal-not-found' | 'terminal-limit' | 'terminal-spawn-failed' | 'terminal-rate-limited' // spec 144 terminal.*; messages never carry terminal content
   | 'terminal-not-running' | 'terminal-not-ended' | 'terminal-refused';
->>>>>>> origin/feat/3-terminal-web
 
 export interface IpcError {
   code: IpcErrorCode;

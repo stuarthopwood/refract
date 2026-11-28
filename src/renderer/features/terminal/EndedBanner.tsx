@@ -47,6 +47,7 @@ export function EndedBanner({ sessionId, tab, onRestarted }: EndedBannerProps) {
   return (
     <div role="status">
       {end && (
+        // drag-regions-allow: renders in the Terminal panel body, below the right pane's own header, so it never touches App.tsx's strip despite the `border-b` shape.
         <PaneBanner className="border-b border-border p-2" severity="warning" role="none" title={end.title} detail={end.detail}>
           <Button size="sm" variant="outline" aria-disabled={busy} className="aria-disabled:opacity-50" onClick={() => void restart()}>
             Restart shell

@@ -131,7 +131,7 @@ Gate:
 
 - [x] T034 [R] Privacy tests: `src-tauri/src/terminal/privacy.test.rs` asserts no `log::`, `tracing::`, `println!`, `eprintln!`, `dbg!`, `panic!` or error `format!` in `src-tauri/src/terminal/` takes a buffer, and an end-to-end test prints `PRIVACY-MARKER-144` through a tab and scans a temp data dir for it (SC-005). Depends on T027. The end-to-end half lives in `privacy_e2e.test.rs` to keep each file under 600 lines; it also scans the captured log.
 - [x] T035 [P] [R] `src-tauri/resources/THIRD_PARTY_NOTICES.md`: add a Libraries section with `@xterm/xterm`, `@xterm/addon-fit` (MIT) and `portable-pty` (MIT), each with its copyright line.
-- [ ] T036 [M] Parity test `src-tauri/src/terminal/limits.test.rs` that reads `src/shared/terminalLimits.ts` and asserts every constant equals its `limits.rs` twin. Needs both lanes merged.
+- [x] T036 [M] Parity test `src-tauri/src/terminal/limits.test.rs` that reads `src/shared/terminalLimits.ts` and asserts every constant equals its `limits.rs` twin. Needs both lanes merged.
 - [x] T037 [P] [W] Accessibility pass on `features/terminal/`: tab strip is a labelled `tablist`, context menu and close prompt work by keyboard, Ended banner is announced, focus returns to the terminal after the prompt; tests for the roles and focus return.
 - [ ] T038 [M] `scripts/verify-tauri-144.mjs`: live check on a build slot covering quickstart steps 2 to 8 where scriptable, screenshots into the PR.
 - [ ] T039 [M] Run the whole quickstart.md on a build slot (isolated data per `skill://refract-tauri-live-check-isolation`), including step 9 (flood, SC-003) and the `pwsh`, Windows PowerShell and oh-my-posh/Starship checks for R-6; record results in the PRs and carry any new open question back to research.md.
