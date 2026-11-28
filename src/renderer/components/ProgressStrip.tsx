@@ -2,7 +2,10 @@
 // numeric value, plus a polite live region that announces `doneText` once when it completes.
 // The label is the visible text; the bar itself is a shape cue (fill over a bordered track), or,
 // with `segments`, a slim h-1 row of aria-hidden blocks beside the label whose state reads by fill, edge and pulse (FR-146, FR-175).
-import { useEffect, useId, useRef, useState } from 'react'
+// `segmentLabels` adds a shared Tooltip per block on hover and one sr-only list the bar points to with `aria-describedby`, so the
+// bar keeps its single progressbar role and the detail needs no pointer.
+import { Fragment, useEffect, useId, useRef, useState } from 'react'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 export type ProgressSegmentState = 'done' | 'running' | 'queued'
@@ -18,6 +21,8 @@ export interface ProgressStripProps {
   state?: 'ok' | 'warning' | 'error'
   /** One block per step instead of the continuous fill; `value` and `max` still drive the progressbar values. */
   segments?: readonly ProgressSegmentState[]
+  /** One line per entry in `segments`, same order, for example "Stage 3 · Fix · Done · 13m 53s"; needs `segments`. A missing entry leaves that block without a tooltip. */
+  segmentLabels?: readonly string[]
   /** Replaces the default "{percent}%" `aria-valuetext`, for example "2 of 4 stages done". */
   valueText?: string
   className?: string
@@ -40,8 +45,10 @@ export function nextAnnouncement(done: boolean, wasDone: boolean, doneText: stri
   return done ? current : ''
 }
 
-export function ProgressStrip({ value, max, label, doneText, state = 'ok', segments, valueText, className }: ProgressStripProps) {
+export function ProgressStrip({ value, max, label, doneText, state = 'ok', segments, segmentLabels, valueText, className }: ProgressStripProps) {
   const labelId = useId()
+  const detailId = useId()
+  const hasLabels = segments != null && segmentLabels != null && segmentLabels.length > 0
   const done = max > 0 && value >= max
   const [announce, setAnnounce] = useState('')
   const wasDone = useRef(done)
@@ -55,6 +62,7 @@ export function ProgressStrip({ value, max, label, doneText, state = 'ok', segme
     <div
       role="progressbar"
       aria-labelledby={labelId}
+      aria-describedby={hasLabels ? detailId : undefined}
       aria-valuemin={0}
       aria-valuemax={max}
       aria-valuenow={Math.min(value, max)}
@@ -62,9 +70,24 @@ export function ProgressStrip({ value, max, label, doneText, state = 'ok', segme
       className={segments ? 'flex h-1 min-w-0 flex-1 gap-1' : 'h-2 w-full overflow-hidden rounded-full border border-foreground/60 bg-muted'}
     >
       {segments ? (
-        segments.map((segment, index) => (
-          <span key={index} aria-hidden="true" data-segment={segment} className={cn('h-full min-w-1 flex-1 rounded-full', SEGMENT_CLASS[segment])} />
-        ))
+        segments.map((segment, index) => {
+          const block = (
+            <span
+              aria-hidden="true"
+              data-segment={segment}
+              // The pseudo-element lifts the 4px block's hover target to the bar's height plus 8px above and below.
+              className={cn('h-full min-w-1 flex-1 rounded-full', SEGMENT_CLASS[segment], segmentLabels?.[index] && 'relative before:absolute before:inset-x-0 before:-inset-y-2 before:content-[""]')}
+            />
+          )
+          const segmentLabel = segmentLabels?.[index]
+          if (!segmentLabel) return <Fragment key={index}>{block}</Fragment>
+          return (
+            <Tooltip key={index}>
+              <TooltipTrigger asChild>{block}</TooltipTrigger>
+              <TooltipContent>{segmentLabel}</TooltipContent>
+            </Tooltip>
+          )
+        })
       ) : (
         <div className={`h-full ${FILL_CLASS[state]} transition-[width] motion-reduce:transition-none`} style={{ width: `${percent}%` }} />
       )}
@@ -77,6 +100,13 @@ export function ProgressStrip({ value, max, label, doneText, state = 'ok', segme
         {label}
       </p>
       {bar}
+      {hasLabels && (
+        <ul id={detailId} className="sr-only">
+          {segmentLabels.map((segmentLabel, index) => (
+            <li key={index}>{segmentLabel}</li>
+          ))}
+        </ul>
+      )}
       <div role="status" aria-live="polite" className="sr-only">
         {announce}
       </div>

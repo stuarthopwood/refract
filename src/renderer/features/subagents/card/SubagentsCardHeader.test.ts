@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import type { ProgressSegmentState } from '@/components/ProgressStrip'
 import type { SubagentRowStatus } from '../subagentStatus'
-import { stagesDoneText, SubagentsCardHeader } from './SubagentsCardHeader'
+import { stageSegmentLabels, stagesDoneText, SubagentsCardHeader, type StageLabelSource } from './SubagentsCardHeader'
 
 // CollapsedLine imports the renderer state barrel, which needs a browser `window`.
 vi.mock('@/state', () => ({ useSettingsStore: (select: (state: { settings: object }) => unknown) => select({ settings: {} }) }))
@@ -14,6 +14,7 @@ interface Over {
   status?: SubagentRowStatus
   headerStats?: string
   stageStates?: ProgressSegmentState[]
+  stages?: readonly StageLabelSource[]
   goal?: string
   durationMs?: number
   open?: boolean
@@ -107,5 +108,31 @@ describe('stagesDoneText', () => {
     // Mutation: ignore the flag (both surfaces would announce at once) or drop the card's text.
     expect(stagesDoneText(true)).toBe('All stages done')
     expect(stagesDoneText(false)).toBeUndefined()
+  })
+})
+
+describe('stageSegmentLabels (FR-216)', () => {
+  const stages = [
+    { number: 3, cleanTitle: 'Fix the build', status: 'finished', durationMs: 833_000 },
+    { number: 4, cleanTitle: null, status: 'running', durationMs: undefined },
+    { number: 7, cleanTitle: 'Ship', status: 'failed', durationMs: 5_000 }
+  ] as const
+
+  it('reads "Stage N · title · status · duration", dropping the missing parts', () => {
+    // Mutation: number from the array index, or keep a trailing separator when there is no duration.
+    expect(stageSegmentLabels(stages)).toEqual(['Stage 3 · Fix the build · Finished · 13m 53s', 'Stage 4 · Running', 'Stage 7 · Ship · Failed · 5s'])
+  })
+
+  it('puts one tooltip label per segment into the header, numbered from the Stage, not the position', () => {
+    // Mutation: pass no labels, or number by position.
+    const html = render({ stageStates: ['done', 'running', 'queued'], stages })
+    expect(html).toContain('<li>Stage 7 · Ship · Failed · 5s</li>')
+    expect(html).toMatch(/role="progressbar"[^>]*aria-describedby=/)
+  })
+
+  it('gives no labels when the Stages do not line up with the segments', () => {
+    // Mutation: label a mismatched list, pairing a title with the wrong block.
+    expect(render({ stageStates: ['done', 'running'], stages })).not.toContain('<li>')
+    expect(render()).not.toContain('<li>')
   })
 })
