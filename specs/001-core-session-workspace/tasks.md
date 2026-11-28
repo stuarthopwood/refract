@@ -6141,3 +6141,11 @@ Written before the build. Needs nothing from Phases 136 or 137; touches `session
 
 - [x] T810 [US1] Update `docs/PLAN.md` row #2111, `quickstart.md` and `contracts/ipc.md` only where T807 to T809 change them (the source of the pill; no field changes, so only the PLAN row changed); run `pnpm typecheck`, `pnpm test` and `cargo test` for the touched modules.
 - [ ] T811 [US1] Live-check in a scratch debug build per `skill://verify-refract-tauri-build-live`: edit a file and see the pill show 1 file, commit it and see the pill return to 0 (the #2111 report), add 201 files and see `200+ files changed`, with screenshots on the PR.
+
+## Phase 140: Convergence (2026-11-28, epic #2229 child #2322, FR-224, SC-050)
+
+Written before the build. Renderer only; touches `components/ui/dialog.tsx` and one new test.
+
+- [x] T815 [US1] #2322: in `src/renderer/components/ui/dialog.tsx` add `grid-cols-[minmax(0,1fr)]` to `DialogContent`'s base classes so the implicit `auto` column cannot grow to a child's min-content width, per FR-224 (done). The Theme file format dialog's classes stay as they are. Tests: T816.
+- [x] T816 [US1] #2322: new `src/renderer/components/ui/dialog.test.ts`: renders the real `DialogContent` to static markup (Radix dialog parts swapped for passthrough elements, as in `ConfirmAlertDialog.test.ts`) and asserts the `data-slot="dialog-content"` element's class list contains `grid` and `grid-cols-[minmax(0,1fr)]`, and still does when a caller passes `sm:max-w-2xl`, per FR-224 (done).
+- [x] T817 [US1] #2322: live-check in a scratch Vite page rendering `ThemeFormatDialog` in a dark and a light theme at 1365 px and 400 px: header, viewport, footer and **Done** inside the dialog rect and the `pre`'s `scrollWidth` above its `clientWidth`, per SC-050 (done 2026-11-28: before, header 721 px and footer 753 px in a 576 px dialog; after, dialog 576 px, footer 576 px, `pre` 532 px of 709 px; at 400 px dialog 368 px, `pre` 324 px).
