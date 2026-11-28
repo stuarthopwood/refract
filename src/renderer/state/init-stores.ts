@@ -37,6 +37,7 @@ import { useGitChangesStore } from './git-changes-store'
 import { useSplitStore } from './split-store'
 import { usePullRequestsLayoutStore } from './pull-requests-layout-store'
 import { initChecklistSubscription } from './checklist-subscription'
+import { useTerminalStore } from './terminal-store'
 import { restoreRightPane, startRightPanePersistence } from '../features/right-pane/right-pane-persistence'
 import { useSessionListStore } from './session-list-store'
 import { useThemeStore } from './theme-store'
@@ -79,6 +80,8 @@ async function loadInitialGithubAccounts(): Promise<
 // (`sessions.list`, `settings.get`, `repositories.list`). Call once from main.tsx.
 export function initStores(): void {
   initChecklistSubscription()
+  // A tab that ends, restarts or is renamed reaches the panel only through this event (spec 144).
+  window.refract.terminal.onTabState((event) => useTerminalStore.getState().applyTabState(event))
   window.refract.onSessionStatus((event) => {
     useSessionsStore.getState().applyStatus(event)
     // The agent process exited, so a `running` side-chat record can never settle and must not block Send/Retry.

@@ -384,6 +384,17 @@ const REQUEST_LANES = {
   USAGE_PROJECTS: 'U',
   USAGE_GET_PREFS: 'U',
   USAGE_SET_PREFS: 'U',
+  TERMINAL_LIST: 'T3', // spec 144, terminal/handlers.rs
+  TERMINAL_CREATE: 'T3',
+  TERMINAL_ATTACH: 'T3',
+  TERMINAL_DETACH: 'T3',
+  TERMINAL_INPUT: 'T3',
+  TERMINAL_RESIZE: 'T3',
+  TERMINAL_ACK: 'T3',
+  TERMINAL_CLOSE: 'T3',
+  TERMINAL_RENAME: 'T3',
+  TERMINAL_RESTART: 'T3',
+  TERMINAL_READ_OUTPUT: 'T3',
 };
 
 const EVENT_LANES = {
@@ -416,6 +427,7 @@ const EVENT_LANES = {
   ACCOUNTS_GITHUB_ADD_PROGRESS: 'R9',
   GITHUB_CHANGED: 'R9', // #1589, list refresh after a merge, close or Session write
   USAGE_PROGRESS: 'U', // #1331
+  TERMINAL_TAB_STATE: 'T3', // spec 144
 };
 
 const THEME_BOOTSTRAP_LANE = 'R8'; // #791, theme.rs

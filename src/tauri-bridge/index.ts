@@ -10,6 +10,7 @@ import { IPC_EVENTS, IPC_REQUESTS } from '../shared/ipc'
 import { chatPauseBridge } from './chatPause'
 import { usageBridge } from './usage'
 import { checklistBridge } from './checklist'
+import { terminalBridge } from './terminal'
 import { IPC_CONVERSATION_EVENTS } from '../shared/ipc-conversation-changed'
 import type { ConversationChangedPayload } from '../shared/ipc-conversation-changed'
 import type { AdvisorRoster, AdvisorRosterDetected } from '../shared/ipc-advisor-roster'
@@ -500,6 +501,7 @@ const refract: RefractApi = {
 
   usage: usageBridge(request, on),
   checklist: checklistBridge(request, on),
+  terminal: terminalBridge(request, on),
 
   updates: {
     check: () => request<UpdateState>(IPC_REQUESTS.UPDATES_CHECK),

@@ -110,7 +110,10 @@ export type IpcErrorCode =
   | 'request-gone'
   | 'current-conversation' | 'delete-failed' // #2161 conversations.delete
   | 'entry-not-found' | 'tree-failed' | 'ask-reanswer-unsupported' // #696 conversations.tree/rewind/fork/label; `not-idle` also covers a busy Rewind or Fork
-  | 'new-prompt-send-failed'; // #1827 `/new <prompt>`: the new Conversation exists but the first message was not sent
+  | 'new-prompt-send-failed' // #1827 `/new <prompt>`: the new Conversation exists but the first message was not sent
+  | 'terminal-not-found' | 'terminal-limit' | 'terminal-spawn-failed' | 'terminal-rate-limited' // spec 144 terminal.*; messages never carry terminal content
+  | 'terminal-not-running' | 'terminal-not-ended' | 'terminal-refused';
+>>>>>>> origin/feat/3-terminal-web
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -471,6 +474,17 @@ export const IPC_REQUESTS = {
   UPDATES_INSTALL: 'updates.install',
   UPDATES_INSTALL_NOW: 'updates.installNow',
   APP_GET_VERSION: 'app.getVersion',
+  TERMINAL_LIST: 'terminal.list',
+  TERMINAL_CREATE: 'terminal.create',
+  TERMINAL_ATTACH: 'terminal.attach',
+  TERMINAL_DETACH: 'terminal.detach',
+  TERMINAL_INPUT: 'terminal.input',
+  TERMINAL_RESIZE: 'terminal.resize',
+  TERMINAL_ACK: 'terminal.ack',
+  TERMINAL_CLOSE: 'terminal.close',
+  TERMINAL_RENAME: 'terminal.rename',
+  TERMINAL_RESTART: 'terminal.restart',
+  TERMINAL_READ_OUTPUT: 'terminal.readOutput',
 } as const;
 
 export const IPC_EVENTS = {
@@ -512,6 +526,7 @@ export const IPC_EVENTS = {
   READINESS_CHANGED: 'readiness:changed',
   UPDATES_STATE_CHANGED: 'updates:state-changed',
   REPOSITORIES_CLONE_PROGRESS: 'repositories:clone-progress',
+  TERMINAL_TAB_STATE: 'terminal:tab-state',
 } as const;
 
 /** The bootstrap payload (contracts/ipc.md). */

@@ -78,4 +78,10 @@ describe('initStores startup ordering (FR-184)', () => {
     expect(calls).toContain('repositories.list')
     await vi.advanceTimersByTimeAsync(0)
   })
+
+  it('feeds_terminal_tab_state_events_to_the_terminal_store', async () => {
+    initStores()
+    expect(calls).toContain('terminal.onTabState')
+    await vi.advanceTimersByTimeAsync(0)
+  })
 })
