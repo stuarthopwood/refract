@@ -26,7 +26,7 @@ impl SessionAgent {
         self.write_status(state, SessionStatus::Working, None, None);
     }
 
-    pub(super) async fn handle_frame(&self, frame: Value) {
+    pub(in crate::session) async fn handle_frame(&self, frame: Value) {
         let frame_type = frame.get("type").and_then(Value::as_str).unwrap_or("");
         match frame_type {
             "agent_start" => {

@@ -244,3 +244,165 @@ fn settled_agents_without_a_failure_hide_the_pill() {
     );
     assert_eq!(count_value(&state), None);
 }
+
+#[test]
+fn an_agent_with_no_stream_at_all_lacks_output() {
+    assert!(lacks_output(&State::default(), "never-seen"));
+}
+
+#[tokio::test]
+async fn reattach_stops_forwarding_a_visible_agent_it_drops() {
+    let (agent, _) = watched(vec![
+        entry("gone", "m1", 0, SummaryStatus::Running),
+        entry("kept", "m1", 0, SummaryStatus::Failed),
+    ])
+    .await;
+    agent
+        .with_subagents_state(|s| {
+            s.visible_id = Some("gone".into());
+            s.pending_patch_ops.push(json!({ "op": "upsert" }));
+        })
+        .await;
+
+    drop_unavailable(&agent).await;
+
+    agent
+        .with_subagents_state(|s| {
+            assert_eq!(s.visible_id, None);
+            assert!(s.pending_patch_ops.is_empty());
+        })
+        .await;
+}
+
+#[tokio::test]
+async fn reattach_keeps_a_visible_agent_it_retains() {
+    let (agent, _) = watched(vec![entry("kept", "m1", 0, SummaryStatus::Failed)]).await;
+    agent
+        .with_subagents_state(|s| s.visible_id = Some("kept".into()))
+        .await;
+
+    drop_unavailable(&agent).await;
+
+    let visible = agent.with_subagents_state(|s| s.visible_id.clone()).await;
+    assert_eq!(visible.as_deref(), Some("kept"));
+}
+
+#[tokio::test]
+async fn agents_without_a_stage_key_are_pruned_by_their_call_id() {
+    let mut busy = entry("busy", "", 0, SummaryStatus::Running);
+    busy.tool_call_id = "c1".into();
+    let mut sibling = entry("sibling", "", 0, SummaryStatus::Finished);
+    sibling.tool_call_id = "c1".into();
+    let mut other = entry("other", "", 0, SummaryStatus::Finished);
+    other.tool_call_id = "c2".into();
+    let (agent, _) = watched(vec![busy, sibling, other]).await;
+
+    prune_for_new_turn(&agent).await;
+
+    let kept = agent.with_subagents_state(|s| ids(s).join(",")).await;
+    assert_eq!(kept, "busy,sibling");
+}
+
+#[tokio::test]
+async fn retained_agents_keep_their_streams_through_a_prune() {
+    let (agent, _) = watched(vec![
+        entry("busy", "m1", 0, SummaryStatus::Running),
+        entry("old", "m0", 0, SummaryStatus::Finished),
+    ])
+    .await;
+
+    prune_for_new_turn(&agent).await;
+
+    agent
+        .with_subagents_state(|s| {
+            assert_eq!(s.streams.keys().collect::<Vec<_>>(), ["busy"]);
+            assert_eq!(s.stream_ids.keys().collect::<Vec<_>>(), ["busy"]);
+            assert_eq!(
+                s.streams["busy"],
+                vec![json!({ "kind": "text", "id": "row-1" })]
+            );
+        })
+        .await;
+}
+
+fn assistant_start(message_id: &str) -> Value {
+    json!({
+        "type": "message_start",
+        "messageId": message_id,
+        "message": { "role": "assistant", "content": [], "timestamp": 1 },
+    })
+}
+
+fn task_start(call_id: &str, names: &[&str]) -> Value {
+    let tasks: Vec<Value> = names
+        .iter()
+        .map(|name| json!({ "name": name, "task": "work" }))
+        .collect();
+    json!({
+        "type": "tool_execution_start",
+        "toolName": "task",
+        "toolCallId": call_id,
+        "args": { "tasks": tasks },
+    })
+}
+
+fn task_progress(call_id: &str, agent_id: &str, status: &str) -> Value {
+    json!({
+        "type": "tool_execution_update",
+        "toolName": "task",
+        "toolCallId": call_id,
+        "partialResult": { "details": { "progress": [{ "id": agent_id, "status": status }] } },
+    })
+}
+
+#[tokio::test]
+async fn frames_keep_a_running_stage_whole_and_drop_the_settled_one_at_the_next_turn() {
+    let fx = agent_fixture(true).await;
+    let agent = &fx.agent;
+    // Otherwise the task-start hook would run the real `tiny` executor.
+    super::super::discard_synthesis_cache(agent).await;
+
+    agent.handle_frame(json!({ "type": "agent_start" })).await;
+    agent.handle_frame(assistant_start("m1")).await;
+    agent.handle_frame(task_start("call-a", &["a"])).await;
+    agent
+        .handle_frame(task_progress("call-a", "a", "completed"))
+        .await;
+    agent.handle_frame(assistant_start("m2")).await;
+    agent
+        .handle_frame(task_start("call-b", &["b1", "b2", "b3", "b4"]))
+        .await;
+
+    let running = |count: Option<Value>| count.unwrap()["running"].clone();
+    assert_eq!(running(subagent_count(agent).await), json!(4));
+    let before = agent.with_subagents_state(|s| ids(s).join(",")).await;
+    assert_eq!(before, "call-a:a,call-b:b1,call-b:b2,call-b:b3,call-b:b4");
+
+    agent.handle_frame(json!({ "type": "agent_start" })).await;
+
+    let after = agent
+        .with_subagents_state(|s| (ids(s).join(","), s.streams.len()))
+        .await;
+    assert_eq!(after.0, "call-b:b1,call-b:b2,call-b:b3,call-b:b4");
+    assert_eq!(after.1, 4);
+    assert_eq!(running(subagent_count(agent).await), json!(4));
+}
+
+#[tokio::test]
+async fn a_conversation_reset_clears_the_current_message_id() {
+    let fx = agent_fixture(true).await;
+    fx.agent.handle_frame(assistant_start("m1")).await;
+    let noted = fx
+        .agent
+        .with_subagents_state(|s| s.current_message_id.clone())
+        .await;
+    assert_eq!(noted, "m1");
+
+    super::super::on_conversation_reset(&fx.agent).await;
+
+    let cleared = fx
+        .agent
+        .with_subagents_state(|s| s.current_message_id.clone())
+        .await;
+    assert_eq!(cleared, "");
+}
