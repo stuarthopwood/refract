@@ -185,8 +185,6 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     settings_status_style::register(dispatcher);
     settings_chat_row_density::register(dispatcher);
     debug::register(dispatcher);
-    #[cfg(debug_assertions)]
-    crate::terminal::probe::register(dispatcher);
     readiness::register(dispatcher);
     repositories::register(dispatcher);
     repositories_color::register(dispatcher);

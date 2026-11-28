@@ -5,11 +5,10 @@
 pub mod frame;
 pub mod guard;
 pub mod limits;
-#[cfg(debug_assertions)]
-pub mod probe;
 pub mod pty;
 pub mod ring;
 pub mod shell;
+pub mod stream;
 
 use std::sync::LazyLock;
 
