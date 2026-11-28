@@ -88,11 +88,17 @@ fn cmd_shell() -> ResolvedShell {
     }
 }
 
+// ConPTY holds the shell until the host answers its cursor query. With nobody attached the tab answers, but
+// xterm (not these recorders) answers for an attached receiver; so the banner, printed once the query was
+// answered, is awaited before any test attaches.
 #[cfg(windows)]
 fn running_tab() -> (Arc<Tab>, Notices) {
     let (tab, notices) = new_tab(std::env::temp_dir());
     tab.start_with(Some(cmd_shell()), 80, 24);
     assert_eq!(tab.state(), TabState::Running);
+    assert!(wait_until(
+        || String::from_utf8_lossy(&tab.snapshot()).contains("Microsoft Windows")
+    ));
     (tab, notices)
 }
 
@@ -195,8 +201,9 @@ fn a_started_shell_streams_output_to_the_attached_receiver_in_order() {
 fn a_detached_tab_keeps_reading_and_a_new_attach_replays_then_goes_live() {
     let (tab, _) = running_tab();
     tab.input("echo while-away-144\r").unwrap();
-    assert!(wait_until(|| String::from_utf8_lossy(&tab.snapshot())
-        .contains("while-away-144")));
+    assert!(wait_until(
+        || String::from_utf8_lossy(&tab.snapshot()).contains("while-away-144")
+    ));
 
     let recorder = Recorder::default();
     tab.attach(Box::new(recorder.clone()), 80, 24);
