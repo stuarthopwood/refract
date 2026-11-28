@@ -49,6 +49,7 @@ fn is_builtin_source(source: Option<&str>) -> bool {
 /// Refract's native command names, refused locally and never forwarded as a prompt.
 /// `ipc::chat` shares this list for both the send refusal and the menu exclusion.
 pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
+    // Never forwarded to OMP: bare `/new` and `/new <prompt>` are both handled in `ipc::chat`.
     "new",
     "resume",
     "plan",
@@ -68,7 +69,10 @@ pub const NATIVE_RESERVED_COMMANDS: &[&str] = &[
 /// Refract's native commands. `/btw` is listed for menu parity but is refused before classification.
 /// Tagged `source: "native"` so the menu can tell them apart from OMP's commands.
 const NATIVE_BUILT_COMMANDS: &[(&str, &str)] = &[
-    ("new", "Start a new Conversation in this Session"),
+    (
+        "new",
+        "Start a new Conversation in this Session; a message after /new is sent first",
+    ),
     ("btw", "Ask the agent a side question"),
     // Handled in the renderer; still reserved so `chat.send` refuses it if it arrives.
     ("models", "Open model role settings"),

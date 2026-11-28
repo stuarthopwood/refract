@@ -1,5 +1,5 @@
-// Starts a fresh Conversation and sends its first message (#1861). The #1212 summary handoff and
-// agent handoffs share it; #1827's `/new <prompt>` will too.
+// Starts a fresh Conversation and sends its first message (#1861). The #1212 summary handoff,
+// agent handoffs and #1827's `/new <prompt>` share it.
 
 use serde_json::{json, Value};
 
@@ -33,6 +33,15 @@ impl SessionAgent {
         &self,
         first: FirstMessage,
     ) -> Result<(), StartThenSendError> {
+        self.start_conversation_and_send(first).await.map(|_| ())
+    }
+
+    /// As `start_conversation_then_send`, returning `send`'s `{ queued }` so a caller can tell a paused
+    /// Session held the first message instead of delivering it.
+    pub async fn start_conversation_and_send(
+        &self,
+        first: FirstMessage,
+    ) -> Result<Value, StartThenSendError> {
         let started = if self.status().await == SessionStatus::Stopped {
             self.start_with_conversation(None).await
         } else {
@@ -49,7 +58,8 @@ impl SessionAgent {
             self.state.lock().await.handoff.note_live = true;
             recorded = self.record_note_file().await;
         }
-        self.send(first.text, None)
+        let sent = self
+            .send(first.text, None)
             .await
             .map_err(|error| StartThenSendError {
                 stage: StartStage::AfterNew,
@@ -59,7 +69,7 @@ impl SessionAgent {
             // omp may not name the file until the first message exists.
             self.record_note_file().await;
         }
-        Ok(())
+        Ok(sent)
     }
 
     /// The retry after an `AfterNew` failure: the Conversation exists, so only the send is repeated.

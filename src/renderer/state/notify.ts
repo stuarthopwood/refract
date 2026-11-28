@@ -29,7 +29,23 @@ export function notify(error: IpcError, sessionId?: string): void {
   notifyPersistentError(error.message)
 }
 
-/** Dismisses the open slash-command-refusal toast, but ONLY when one is tracked for THIS Session. */
+/**
+ * A composer-side refusal (e.g. `/new` with a slash-command prompt): persistent like any send failure, but
+ * tracked per Session so the next successful send dismisses it instead of leaving it over the new Conversation (#1827).
+ */
+export function notifyComposerRefusal(text: string, sessionId: string): void {
+  if (openRefusal) toast.dismiss(openRefusal.id)
+  const id = `composer-refusal-${++refusalCounter}`
+  openRefusal = { id, sessionId }
+  notifyPersistentError(text, {
+    id,
+    onDismiss: () => {
+      if (openRefusal?.id === id) openRefusal = null
+    }
+  })
+}
+
+/** Dismisses the open slash-command or composer refusal toast, but ONLY when one is tracked for THIS Session. */
 export function dismissSlashCommandRefusalToast(sessionId: string): void {
   if (openRefusal !== null && openRefusal.sessionId === sessionId) {
     toast.dismiss(openRefusal.id)

@@ -19,7 +19,7 @@ import {
 } from '@/components/ComposerBox'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
-import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore, useViewStore } from '@/state'
+import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, notifyComposerRefusal, notifyPersistentError, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
@@ -64,6 +64,7 @@ import { ComposerIndentHint } from './ComposerIndentHint'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import type { QueuedMessages } from './useQueuedMessages'
 import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
+import { draftUnchangedSinceSend, isNewConversationCommand, isNewPromptCommand, sendFailureRecovery, sendRefusal } from './newPromptCommand'
 import { isLocalNativeCommand, parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -269,6 +270,10 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       else openRoleSwitcher(sessionId)
       return
     }
+    // `/new <prompt>` cannot carry attachments or a slash command: refuse before a stopped Session starts its agent (#1827, FR-210).
+    // Persistent, like a failed send: the draft stays and the developer must act on it.
+    const newPromptRefusal = isNewPromptCommand(modelsInvocation) ? sendRefusal(modelsInvocation, attachments) : undefined
+    if (newPromptRefusal) return void notifyComposerRefusal(newPromptRefusal, sessionId)
     // Refract-native commands run locally and must not start the agent (#1812).
     const attachmentFree = attachments.images.length === 0 && attachments.files.length === 0
     const runsWithoutAgent = attachmentFree && modelsInvocation !== undefined && isLocalNativeCommand(modelsInvocation)
@@ -344,15 +349,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
     // #926 (D4 HIGH): a slash command with a pending file would append the marker text, which OMP rejects as unsupported-arguments.
-    if (slashInvocation && attachments.files.length > 0) {
-      toast.error("Slash commands can't carry attached files. Remove them and try again.")
+    // Also catches a `/new` whose chip expands to a slash command, which only the expanded `message` shows.
+    const attachmentRefusal = sendRefusal(slashInvocation, attachments)
+    if (attachmentRefusal) {
+      notifyComposerRefusal(attachmentRefusal, sessionId)
       return
     }
-    const isNewConversationCommand = slashInvocation?.name === 'new' && slashInvocation.rest === ''
-    const previousScroll = isNewConversationCommand
-      ? useChatScrollStore.getState().bySession[sessionId]
-      : undefined
-    if (isNewConversationCommand) {
+    const newConversation = isNewConversationCommand(slashInvocation)
+    const previousScroll = newConversation ? useChatScrollStore.getState().bySession[sessionId] : undefined
+    if (newConversation) {
       useChatScrollStore.getState().clear(sessionId)
       // `inFlight` blocks `record()` until send settles so the old Conversation's scroll isn't inherited by the new one.
       useChatScrollStore.getState().setInFlight(sessionId, true)
@@ -363,24 +368,30 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     try {
       result = await window.refract.chat.send(sessionId, outgoingMessage, images)
     } finally {
-      if (isNewConversationCommand) {
+      if (newConversation) {
         useChatScrollStore.getState().setInFlight(sessionId, false)
       }
     }
     if (!result.ok) {
-      if (isNewConversationCommand) {
-        useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
-      }
+      const recovery = sendFailureRecovery({
+        code: result.error.code,
+        newConversation,
+        draftText,
+        draftUnchanged: draftUnchangedSinceSend(useDraftStore.getState().bySession[sessionId], { text: draftText, attachments })
+      })
+      if (recovery.kind === 'restore-prompt') useDraftStore.getState().setText(sessionId, recovery.text)
+      else if (recovery.kind === 'restore-scroll') useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
       notify(result.error, sessionId)
       return
     }
     dismissSlashCommandRefusalToast(sessionId)
     if (imageOnly) useQueueStore.getState().setImageOnly(sessionId, result.value.queued ? imageDisplayNames(attachments.images) : null)
     // Clear only if the store still holds what this send captured; the user may have kept typing during the await.
-    const currentDraft = useDraftStore.getState().bySession[sessionId]
-    if (currentDraft?.text === draftText && currentDraft?.attachments === attachments) {
+    if (draftUnchangedSinceSend(useDraftStore.getState().bySession[sessionId], { text: draftText, attachments })) {
       useDraftStore.getState().clear(sessionId)
     }
+    // The new Conversation's reset must not strand keyboard focus away from the composer (WCAG 2.4.3).
+    if (isNewPromptCommand(slashInvocation)) textareaRef.current?.focus()
     // Typing during the awaits can schedule a ghost request against the wiped draft; invalidate again (#358/#359).
     clearGhostState()
   }

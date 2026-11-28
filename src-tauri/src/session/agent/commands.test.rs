@@ -68,6 +68,18 @@ fn filter_supported_commands_always_prepends_native_built_commands() {
 }
 
 #[test]
+fn the_new_command_stays_reserved_and_says_a_first_message_may_follow() {
+    assert!(NATIVE_RESERVED_COMMANDS.contains(&"new"));
+    let out = filter_supported_commands(&[]);
+    let new = out
+        .iter()
+        .find(|c| c.get("name").and_then(Value::as_str) == Some("new"))
+        .expect("new is in the menu");
+    let description = new.get("description").and_then(Value::as_str).unwrap();
+    assert!(description.contains("message after /new"), "{description}");
+}
+
+#[test]
 fn filter_supported_commands_drops_an_unverified_builtin() {
     let raw = vec![json!({ "name": "ratchet", "source": "builtin" })];
     let out = filter_supported_commands(&raw);

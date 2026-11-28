@@ -7,7 +7,8 @@ use crate::omp::images::{
 };
 use crate::session::agent::{
     classify_slash_invocation, classify_unsupported_arguments, is_chat_answer, parse_slash_command,
-    SlashInvocationClassification, SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
+    FirstMessage, SessionAgent, SlashInvocationClassification, StartStage, StartThenSendError,
+    SubcommandRefusal, NATIVE_RESERVED_COMMANDS,
 };
 use crate::session::{model, SessionManager};
 
@@ -72,6 +73,66 @@ fn manager(state: &AppState) -> &std::sync::Arc<SessionManager> {
 /// Maps a chat agent error straight through to its IPC error code.
 fn map_chat_error(err: crate::session::AgentError) -> IpcError {
     IpcError::new(err.code, err.message)
+}
+
+const NEW_PROMPT_ATTACHMENT_REFUSAL: &str =
+    "Slash commands can't carry attached files. Remove them and try again.";
+
+/// A first message starting with `/` would be run by omp as a command in the fresh Conversation, past
+/// every check `chat.send` makes on slash commands, so it is refused instead (mirrored in the composer).
+const NEW_PROMPT_SLASH_REFUSAL: &str =
+    "A slash command can't be the first message of /new. Send the command on its own after /new.";
+
+/// Refused before any Conversation starts, so the Session is untouched and the draft survives.
+fn refuse_unsendable_new_prompt(prompt: &str, images: Option<&[Value]>) -> Result<(), IpcError> {
+    if images.is_some_and(|attached| !attached.is_empty()) {
+        return Err(IpcError::new(
+            "unsupported-arguments",
+            NEW_PROMPT_ATTACHMENT_REFUSAL,
+        ));
+    }
+    if prompt
+        .trim_start_matches(|c: char| c.is_whitespace() || c == '\u{FEFF}')
+        .starts_with('/')
+    {
+        return Err(IpcError::new(
+            "unsupported-arguments",
+            NEW_PROMPT_SLASH_REFUSAL,
+        ));
+    }
+    Ok(())
+}
+
+/// `BeforeNew` leaves the Session as it was. `AfterNew` gets its own code: the old Conversation is
+/// gone, so the composer must retry the send only, never start another Conversation.
+fn map_new_prompt_error(failed: StartThenSendError) -> IpcError {
+    match failed.stage {
+        StartStage::BeforeNew => map_chat_error(failed.error),
+        StartStage::AfterNew => IpcError::new(
+            "new-prompt-send-failed",
+            format!(
+                "The new Conversation was started but your message was not sent: {}. Press Enter to send it again.",
+                failed.error.message
+            ),
+        ),
+    }
+}
+
+/// `/new <prompt>` (#1827): the prompt is the new Conversation's first message, sent as given.
+/// `queued` follows `send`, so a paused Session reports its held message honestly.
+async fn start_new_with_prompt(
+    agent: &SessionAgent,
+    prompt: String,
+    images: Option<&[Value]>,
+) -> Result<Value, IpcError> {
+    refuse_unsendable_new_prompt(&prompt, images)?;
+    agent
+        .start_conversation_and_send(FirstMessage {
+            text: prompt,
+            handoff_note: false,
+        })
+        .await
+        .map_err(map_new_prompt_error)
 }
 
 /// Maps an image validation reason to its user-facing IPC error.
@@ -178,6 +239,10 @@ pub fn chat_send(state: AppState, args: Vec<Value>) -> HandlerFuture {
                     .await
                     .map_err(map_chat_error)?;
                 return Ok(serde_json::json!({ "queued": false }));
+            }
+            // Before the reserved-command refusal below: `new` is reserved, but only bare `/new` was native.
+            if name == "new" && !rest.is_empty() {
+                return start_new_with_prompt(&agent, rest, parsed_images.as_deref()).await;
             }
             // `/pause` toggles here; `/resume` stays OMP's own.
             if name == "pause" && rest.is_empty() {
@@ -413,3 +478,7 @@ pub fn chat_send_now(state: AppState, args: Vec<Value>) -> HandlerFuture {
 #[cfg(test)]
 #[path = "chat.test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "chat_new_prompt.test.rs"]
+mod new_prompt_tests;

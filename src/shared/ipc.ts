@@ -109,7 +109,8 @@ export type IpcErrorCode =
   | 'no-repository'
   | 'request-gone'
   | 'current-conversation' | 'delete-failed' // #2161 conversations.delete
-  | 'entry-not-found' | 'tree-failed' | 'ask-reanswer-unsupported'; // #696 conversations.tree/rewind/fork/label; `not-idle` also covers a busy Rewind or Fork
+  | 'entry-not-found' | 'tree-failed' | 'ask-reanswer-unsupported' // #696 conversations.tree/rewind/fork/label; `not-idle` also covers a busy Rewind or Fork
+  | 'new-prompt-send-failed'; // #1827 `/new <prompt>`: the new Conversation exists but the first message was not sent
 
 export interface IpcError {
   code: IpcErrorCode;

@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-const info = vi.hoisted(() => vi.fn())
-vi.mock('sonner', () => ({ toast: { info } }))
+const { info, error, dismiss } = vi.hoisted(() => ({ info: vi.fn(), error: vi.fn(), dismiss: vi.fn() }))
+vi.mock('sonner', () => ({ toast: { info, error, dismiss } }))
 
-import { notifyInfo } from './notify'
+import { dismissSlashCommandRefusalToast, notifyComposerRefusal, notifyInfo } from './notify'
 
 describe('notifyInfo (#2135)', () => {
   const region = { textContent: '', isConnected: true, setAttribute: vi.fn(), className: '' }
@@ -33,5 +33,58 @@ describe('notifyInfo (#2135)', () => {
     notifyInfo('Already closed')
 
     expect(info).toHaveBeenCalledWith('Already closed', { id: 'info:Already closed', closeButton: true })
+  })
+})
+
+// Options of the most recent error toast; sonner's `toast.error(text, options)` second argument.
+function lastErrorOptions(): { id: string; onDismiss: () => void } {
+  return error.mock.lastCall?.[1] as { id: string; onDismiss: () => void }
+}
+
+describe('notifyComposerRefusal (#1827)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('document', { createElement: () => ({ setAttribute: vi.fn(), isConnected: true }), body: { appendChild: vi.fn() } })
+  })
+
+  afterEach(() => {
+    dismissSlashCommandRefusalToast('s1')
+    vi.unstubAllGlobals()
+    error.mockClear()
+    dismiss.mockClear()
+  })
+
+  it('is dismissed by the next successful send in the same Session', () => {
+    notifyComposerRefusal("A slash command can't be the first message of /new", 's1')
+    const refusalId = lastErrorOptions().id
+
+    dismissSlashCommandRefusalToast('s1')
+
+    expect(dismiss).toHaveBeenCalledWith(refusalId)
+  })
+
+  it('survives a send in a different Session', () => {
+    notifyComposerRefusal('refused', 's1')
+
+    dismissSlashCommandRefusalToast('s2')
+
+    expect(dismiss).not.toHaveBeenCalled()
+  })
+
+  it('replaces the previous refusal rather than stacking', () => {
+    notifyComposerRefusal('first', 's1')
+    const firstId = lastErrorOptions().id
+
+    notifyComposerRefusal('second', 's1')
+
+    expect(dismiss).toHaveBeenCalledWith(firstId)
+  })
+
+  it('is not dismissed twice after the developer closes it', () => {
+    notifyComposerRefusal('refused', 's1')
+    lastErrorOptions().onDismiss()
+
+    dismissSlashCommandRefusalToast('s1')
+
+    expect(dismiss).not.toHaveBeenCalled()
   })
 })
