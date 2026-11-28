@@ -187,13 +187,13 @@ existed for `chat.send`'s own re-validation (FR-018) and are reused as-is by `re
 ## Persisted by Refract (new, 2026-11-27, issue #431)
 
 The earlier "Nothing here is persisted" no longer holds for one case. A pasted image sent with a
-message is saved as `~/.omp/agent/blobs/<sha256><ext>` (`src-tauri/src/omp/blob_store.rs`, the store
-OMP also writes), and Refract keeps one `SavedPastedImages` record per Session: the list of hashes it
-saved (`hashes: string[]`, 64 lowercase hex each, `is_blob_hash`), stored in the Session's own data
-folder beside its other per-Session files and removed with the Session. The record never leaves Rust;
-the renderer sees neither the path nor the hash (FR-044). `PendingImageAttachment` is unchanged.
-On Session delete (#362) each listed file is removed unless another Session's record lists the same
-hash (FR-045).
+message is saved at send, never at paste, as `~/.omp/agent/blobs/<sha256><ext>`
+(`src-tauri/src/omp/blob_store.rs`, the store OMP also writes). The file is the only thing
+persisted: Refract keeps no per-Session record of saved hashes and deletes no blob when a Session is
+deleted (#362), because the store is shared by hash across Sessions and with OMP's own copy
+(amended 2026-11-28, away-mode grill on #431; FR-045, which supersedes the 2026-11-27
+`SavedPastedImages` record). The renderer sees neither the path nor the hash (FR-044).
+`PendingImageAttachment` is unchanged.
 
 ## No change to existing entities
 

@@ -29,6 +29,7 @@ Each task is for a fresh, narrow worker. Constraints for all: Testing V1 (a co-l
 - [ ] T014 Build slot, merge `origin/main`, `pnpm ci:local`.
 - [ ] T015 Live check (SC-007) in a scratch debug build per `skill://verify-refract-tauri-build-live`: type the three #525 examples, Ctrl+Z, send, switch Session and back (spec 010), toggle Reduce motion, screen-reader tree shows one status line and no extra tab stop; screenshots on the PR. Check the `MessageInput.tsx` wiring here (no unit test reaches it).
 - [ ] T016 PR (do not merge): `Refs #525`, `Refs #1136`.
+- [ ] T017 (FR-013, converge 2026-11-28, #525 away-mode grill) In the T010 test, also assert the mirror layer (`composerMarkdownSegments`) is the only overlay that styles the rewritten fence, and in T015 confirm the preview is an in-flow sibling above the textarea (not positioned over it) and that spec 010 stores the canonical fenced text, not the typed one-line form. FR-013 wording amended in place; no source change.
 
 ## Coverage
 

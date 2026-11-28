@@ -46,3 +46,7 @@ Each task is for a fresh, narrow worker. Constraints for all: Testing V1 (a co-l
 
 FR-001 T001, T002, T003, T009 | FR-002 T005, T006 | FR-003 T016 | FR-004 T008, T013 | FR-005 T007, T014 | FR-006 T016 | FR-007 T008, T016 | FR-008 T015 | FR-009 T016, T017 | FR-010 T022, T025 | FR-011 T010, T011 | FR-012 T018 | FR-013 T019 | FR-014 T020 | FR-015 T016, T021.
 SC-001 T001 to T003 | SC-002 T024 | SC-003 T024 | SC-004 T008, T016 | SC-005 T022, T025 | SC-006 T023 | SC-007 T017.
+
+## Phase 5: Convergence (2026-11-28, #1865 away-mode grill, FR-009 amended)
+
+- [ ] T026 [US3] (FR-009, missing) In `src-tauri/src/session/prewalk.rs` add a `prewalk_failure(frame_type, frame) -> Option<String>` beside `state_from_frame`: a `command_output` whose text is a reply to `/prewalk` but neither "Prewalk on:", "Prewalk off:" nor "Prewalk already off" returns its text; the caller surfaces it as a notice (the renderer shows it through `notify`) and emits no `armed`. `success` is never read. Tests: new `src-tauri/src/session/prewalk.test.rs` (wired by `#[path]`): unknown-model reply with `success: true` is a failure and not `armed`; armed, off and already-off replies are not failures; an unrelated `command_output` is not a failure. Live check with a real OMP and a bad model name in a scratch profile.
