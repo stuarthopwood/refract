@@ -4,13 +4,26 @@
 
 **Created**: 2026-11-28
 
-**Status**: Draft
+**Status**: Clarified
 
 **Input**: User description: "Issue #3, epic #2227 (Right panels): a built-in terminal in the right pane, with tabs and several shells per Session. PowerShell by default, falling back to the OS command interpreter. Shells run in the background. Closing Refract ends every shell; relaunch brings the tabs back as fresh shells. Scrollback is never written to disk. No output reaches the model automatically; the context menu has \"Add to chat\" and \"Ask agent about this\". Split view and app-wide terminals are refused. Grilled 2026-11-10 (Stuart); Away Mode decisions 2026-11-28."
 
 ## Epic context
 
 Epic #2227 groups the right-pane panels. The open v1 children are #3 (this feature), #391 (FDB Agent Builder), #392 (FDB Knowledge Base), #463 (file explorer with preview and Open in VS Code), #470 (edit files in the right pane with AI assist), #478 (Jira side panel), #878 (Markdown editor), and the polish follow-ups #1232, #1248, #1308, #1521, #2106 and #2151. This feature owns the Terminal panel only. It MUST NOT absorb: file editing or preview (#463, #470, #878), the rail and tab-strip polish (#1248, #2151, #2106), the other panels (#391, #392, #478), or the `@terminal` mention (#465).
+
+## Clarifications
+
+### Session 2026-11-28
+
+Answered by Skippy under Stuart's Away Mode (delegated); each answer is recorded on issue #3 in the "Decided (Away Mode)" comment.
+
+- Q: Where does the Terminal live in the right pane? -> A: Its own rail button and right-pane panel on the existing panel shell (FR-001).
+- Q: How is scrollback bounded, and does it survive a Session switch or renderer reload? -> A: A bounded in-memory ring buffer per tab in Rust, 2 MiB of raw output (INFERENCE: the figure), surviving a Session switch and a renderer reload, never on disk (FR-010, FR-011).
+- Q: Does closing a tab with a running child process confirm? -> A: Yes; an idle tab closes without asking (FR-013).
+- Q: What does "Ask agent about this" send when nothing is selected? -> A: The most recent command's output, falling back to the last 200 lines of scrollback when the shell cannot mark commands (INFERENCE: the fallback and the 200-line figure) (FR-020).
+- Q: How many tabs per Session? -> A: 8 (INFERENCE: the figure) (FR-009).
+- Q: Is `@terminal` or a per-repo shell profile in v1? -> A: No; `@terminal` is deferred to #465 and per-repo shell profiles are deferred, and the agent's own `bash` never runs through the Terminal (FR-022, FR-025).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -117,7 +130,7 @@ A shell that cannot start, or that exits, tells the developer plainly and offers
 
 **Panel and placement**
 
-- **FR-001**: The Terminal MUST be a **Panel** in the right pane, reached from [NEEDS CLARIFICATION: its own icon-rail button and panel, or a mode inside an existing panel?].
+- **FR-001**: The Terminal MUST be its own **Panel** in the right pane, with its own icon-rail button and panel, built on the existing panel shell; it MUST NOT be a mode inside another panel.
 - **FR-002**: The panel MUST follow the existing panel conventions: open and close as a whole, appear in the **Panel order** and the panel launcher, keep position and width across restarts, and be reachable by keyboard.
 - **FR-003**: The panel MUST show one tab strip of the active Session's Terminal tabs, with a control to add a tab.
 
@@ -128,17 +141,17 @@ A shell that cannot start, or that exits, tells the developer plainly and offers
 - **FR-006**: Shells MUST be hosted by the Rust backend; the renderer MUST only display them and MUST NOT start any process.
 - **FR-007**: Input, output, colour, cursor movement, bracketed paste and window resizes MUST work as in a normal terminal, and the shell's size MUST follow the visible area.
 - **FR-008**: A shell MUST keep running while its tab is not shown, while another Panel is open, while another Session is shown, and while the right pane is collapsed.
-- **FR-009**: A Session MUST NOT exceed a fixed maximum number of Terminal tabs; adding past the maximum MUST say why it cannot.
+- **FR-009**: A Session MUST NOT exceed 8 Terminal tabs; adding past the maximum MUST say why it cannot.
 
 **Scrollback**
 
-- **FR-010**: Each tab's output MUST be retained in a bounded in-memory buffer in the Rust backend [NEEDS CLARIFICATION: scrollback bound and whether it survives Session switch and renderer reload].
+- **FR-010**: Each tab's output MUST be retained in a bounded in-memory ring buffer in the Rust backend, 2 MiB of raw output per tab; the oldest output is dropped first. The buffer MUST survive a Session switch and a renderer reload, and MUST end with the tab.
 - **FR-011**: Scrollback, input and any other terminal content MUST NOT be written to disk by Refract, including in logs, crash reports and the saved tab list.
 
 **Lifecycle**
 
 - **FR-012**: Closing a tab MUST end its shell and every process it started.
-- **FR-013**: Closing a tab [NEEDS CLARIFICATION: confirm when a child process is running?].
+- **FR-013**: Closing a tab whose shell has a running child process MUST ask the developer to confirm first and end the shell only if they agree; closing an idle tab MUST NOT ask.
 - **FR-014**: Archiving or deleting a Session MUST end all of its shells; restoring an archived Session MUST NOT revive them.
 - **FR-015**: Quitting Refract, by any route, MUST end every shell and its children.
 - **FR-016**: Relaunching MUST restore each Session's tabs (name, working folder, shell kind, order) as fresh shells; it MUST NOT restore scrollback or running processes.
@@ -148,7 +161,7 @@ A shell that cannot start, or that exits, tells the developer plainly and offers
 
 - **FR-018**: No terminal output MUST reach the model without a developer action.
 - **FR-019**: The tab's context menu MUST offer **Add to chat**, which inserts the selected text into the Session's composer as a quoted block without sending.
-- **FR-020**: The tab's context menu MUST offer **Ask agent about this**, which sends a prompt with the chosen output to the Session's agent. [NEEDS CLARIFICATION: what is "the chosen output" when nothing is selected?]
+- **FR-020**: The tab's context menu MUST offer **Ask agent about this**, which sends a prompt with the chosen output to the Session's agent. The chosen output is the selection when there is one; otherwise the output of the most recent command, and when the shell cannot mark command boundaries (the `%COMSPEC%` fallback) the last 200 lines of the tab's scrollback.
 - **FR-021**: Output sent to the agent MUST be size-capped, and the developer MUST see that it was truncated when it is.
 - **FR-022**: The agent's own `bash` tool MUST NOT run through the Terminal.
 

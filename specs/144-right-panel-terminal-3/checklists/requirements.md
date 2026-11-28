@@ -13,7 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No [NEEDS CLARIFICATION] markers remain (4 open: FR-001, FR-010, FR-013, FR-020; resolved by `/speckit.clarify`)
+- [x] No [NEEDS CLARIFICATION] markers remain (all four resolved by `/speckit.clarify`, 2026-11-28)
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic
@@ -31,4 +31,4 @@
 
 ## Notes
 
-- Four markers are left on purpose; each maps to an Away Mode decision recorded on issue #3 (2026-11-28). The skill's limit of 3 is exceeded by one because the "chosen output" question is a distinct ambiguity.
+- The spec was drafted with four markers; each was resolved in Clarifications, Session 2026-11-28, and recorded on issue #3.
