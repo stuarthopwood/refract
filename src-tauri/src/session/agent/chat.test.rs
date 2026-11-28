@@ -189,6 +189,21 @@ async fn send_session_message_steers_a_busy_target() {
 }
 
 #[tokio::test]
+async fn send_session_message_to_a_non_working_target_is_a_plain_prompt() {
+    use crate::session::agent::pause_subagents::fixture::{fixture_with, Stub};
+    for status in [SessionStatus::Idle, SessionStatus::Stopped] {
+        let fx = fixture_with(Stub::default()).await;
+        fx.agent.state.lock().await.status = status;
+
+        let delivery = fx.agent.send_session_message("<env/>".to_string()).await;
+
+        assert_eq!(delivery.unwrap(), MessageDelivery::Sent, "{status:?}");
+        assert_eq!(prompt_behaviours(&fx).await, [None], "{status:?}");
+        fx.finish().await;
+    }
+}
+
+#[tokio::test]
 async fn send_session_message_to_an_idle_target_is_a_plain_prompt() {
     use crate::session::agent::pause_subagents::fixture::{fixture_with, Stub};
     let fx = fixture_with(Stub::default()).await;

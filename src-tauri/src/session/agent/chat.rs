@@ -7,7 +7,7 @@ use super::{
     AgentError, SessionAgent, SessionStatus, ABORT_SETTLE_TIMEOUT_MS, DEFAULT_REQUEST_TIMEOUT_MS,
 };
 
-/// How a Session message reached its target (#1858).
+/// How a Session message reached its target.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MessageDelivery {
     Sent,
@@ -55,7 +55,7 @@ impl SessionAgent {
         self.send_unheld(text, images, false).await
     }
 
-    /// Delivers another Session's envelope (#1858): held while paused, steered into the turn in
+    /// Delivers another Session's envelope: held while paused, steered into the turn in
     /// progress while busy, never decorated, since the envelope text must reach the target verbatim.
     pub async fn send_session_message(&self, text: String) -> Result<MessageDelivery, AgentError> {
         self.deliver_verbatim(text, true).await
