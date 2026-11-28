@@ -18,9 +18,18 @@ export function deriveSubagentSettledPhrase(counts: SubagentCount): string {
   return parts.join(', ')
 }
 
-/** FR-007/FR-017's own chip wording: the running count while any subagent this turn is still
- * running, else the quiet settled phrase above. */
+/** The composer pill's own wording (#1085, FR-201): "N running" while any agent runs, else the
+ * last Stage's "N failed"/"N exited" so a failure is never silent, else empty (no pill). It never
+ * says "finished" and never names a cancelled agent (a stop the user asked for). */
 export function deriveSubagentPhrase(counts: SubagentCount): string {
-  if (counts.running > 0) return `${counts.running} subagent${counts.running === 1 ? '' : 's'} running`
-  return deriveSubagentSettledPhrase(counts)
+  if (counts.running > 0) return `${counts.running} running`
+  const parts: string[] = []
+  if (counts.failed > 0) parts.push(`${counts.failed} failed`)
+  if (counts.exited > 0) parts.push(`${counts.exited} exited`)
+  return parts.join(', ')
+}
+
+/** True when the pill is showing a failure rather than running work, so it carries an icon as well as text. */
+export function isSubagentFailurePhrase(counts: SubagentCount): boolean {
+  return counts.running === 0 && (counts.failed > 0 || counts.exited > 0)
 }

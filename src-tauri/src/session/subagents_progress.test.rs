@@ -55,6 +55,8 @@ fn entry() -> SummaryEntry {
         overall_goal: None,
         files_touched: Vec::new(),
         recent_steps: Vec::new(),
+        stage_key: "m1".into(),
+        turn: 0,
     }
 }
 
@@ -197,4 +199,9 @@ fn serialisation_emits_present_fields_in_camel_case_without_nulls() {
         value[0]["recentSteps"],
         json!([{ "tool": "write", "target": "a.rs", "endMs": 9 }])
     );
+}
+
+#[test]
+fn serialisation_carries_the_stage_key() {
+    assert_eq!(summaries_to_value(&[entry()])[0]["stageKey"], "m1");
 }

@@ -1,6 +1,7 @@
 import { useChatAreaAnnouncer } from '../features/chat/chatAreaAnnouncer'
 import { useChatScrollStore } from './scroll-store'
 import { useSplitStore } from './split-store'
+import { useSubagentPanelStore } from './subagent-store'
 import { useViewStore } from './view-store'
 
 // A tool moved the Session to another Conversation (#1861). The transcript already rides the backend's
@@ -9,6 +10,8 @@ import { useViewStore } from './view-store'
 // Only the chat view shows panes, so any other view stays silent.
 export function handleConversationChanged(sessionId: string): void {
   useChatScrollStore.getState().clear(sessionId)
+  // Main also clears the Session's subagents, so the panel must not keep streams of the old Conversation.
+  useSubagentPanelStore.getState().resetForNewConversation(sessionId)
   const paneShown = useSplitStore.getState().paneSessionIds.includes(sessionId)
   if (paneShown && useViewStore.getState().view === 'chat') {
     useChatAreaAnnouncer.getState().announce('Conversation changed')

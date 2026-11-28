@@ -40,10 +40,8 @@ export const useReadoutStore = create<ReadoutState>((set, get) => ({
   },
   applySubagents: (sessionId, subagents) => {
     const current = get().bySession[sessionId] ?? EMPTY_READOUT_ENTRY
-    const hadSubagents = current.subagents.length > 0
     set({ bySession: { ...get().bySession, [sessionId]: { readout: current.readout, subagents } } })
-    if (hadSubagents && subagents.length === 0) {
-      useSubagentPanelStore.getState().resetForNewTurn(sessionId)
-    }
+    // An emptied list is a prune like any other (FR-204): the panel stays open on its empty state.
+    useSubagentPanelStore.getState().dropPrunedSelection(sessionId, subagents)
   }
 }))

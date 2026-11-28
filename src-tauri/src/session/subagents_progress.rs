@@ -374,6 +374,7 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
                 let mut obj = json!({
                     "id": e.id,
                     "toolCallId": e.tool_call_id,
+                    "stageKey": e.stage_key,
                     "specIndex": e.spec_index,
                     "nameOrTask": e.name_or_task,
                     "status": e.status.as_wire(),

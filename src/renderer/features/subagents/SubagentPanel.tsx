@@ -22,6 +22,7 @@ import {
 } from './subagentPanelRows'
 import { summarizeSubagentStatuses } from './subagentStatus'
 import { selectScenarioFromSummaries, selectSubagentItems } from './viewModel'
+import { usePanelFocusRecovery } from './usePanelFocusRecovery'
 
 // Stable singletons: a fresh `?? {}` or `?? []` each render would look like a changed snapshot to zustand.
 const NO_TOGGLES: Record<string, boolean> = {}
@@ -54,6 +55,8 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
 
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const typeaheadRef = useRef<{ buffer: string; timer: number | undefined }>({ buffer: '', timer: undefined })
+  const treeHostRef = useRef<HTMLDivElement>(null)
+  const { trackFocus, releaseFocus } = usePanelFocusRecovery(rows, rowRefs, treeHostRef)
 
   const tabbableIndex = useMemo(() => {
     if (rows.length === 0) return -1
@@ -135,7 +138,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
         <ResizablePanel defaultSize="60%" minSize="20%">
           {rows.length > 0 ? (
             // @container: the shared card pieces size themselves from this pane's width, not the viewport (FR-150 c).
-            <div className="@container h-full overflow-y-auto px-4 py-2">
+            <div ref={treeHostRef} onFocus={trackFocus} onBlur={releaseFocus} className="@container h-full overflow-y-auto px-4 py-2">
               <LivePanelHeader scenario={scenario} status={status} />
               <PanelTree rows={rows} selectedKey={selectedKey} tabbableIndex={tabbableIndex} sessionId={sessionId} rowRef={rowRef} onKeyDown={handleRowKeyDown} onFocusRow={onFocusRow} onToggleStage={onToggleStage} />
             </div>

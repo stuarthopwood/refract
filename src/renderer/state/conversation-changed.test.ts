@@ -1,6 +1,6 @@
-// Risk 5 audit: per-Session state keyed to a Conversation is the scroll record (cleared here). The queue, readout,
-// subagent, side-chat and token-guard state are reset by the backend's `on_conversation_reset` hooks and arrive as
-// their own events, so nothing else is cleared in the renderer.
+// Risk 5 audit: per-Session state keyed to a Conversation is the scroll record and the open subagent panel (both cleared here).
+// The queue, readout, subagent list, side-chat and token-guard state are reset by the backend's `on_conversation_reset`
+// hooks and arrive as their own events, so nothing else is cleared in the renderer.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useChatAreaAnnouncer } from '../features/chat/chatAreaAnnouncer'
 import { handleConversationChanged } from './conversation-changed'
@@ -9,6 +9,8 @@ import { useDraftStore } from './draft-store'
 import { useSessionsStore } from './sessions-store'
 import { useSplitStore } from './split-store'
 import { useViewStore } from './view-store'
+import { useRightPaneStore } from './right-pane-store'
+import { useSubagentPanelStore } from './subagent-store'
 
 describe('handleConversationChanged', () => {
   const announce = vi.fn()
@@ -25,6 +27,7 @@ describe('handleConversationChanged', () => {
 
   afterEach(() => {
     useChatAreaAnnouncer.setState({ announce: realAnnounce })
+    vi.unstubAllGlobals()
   })
 
   it("clears that Session's scroll record only", () => {
@@ -42,6 +45,17 @@ describe('handleConversationChanged', () => {
     handleConversationChanged('s1')
 
     expect(useDraftStore.getState().bySession['s1']?.text).toBe('half typed')
+  })
+
+  it("closes that Session's open subagents panel", () => {
+    vi.stubGlobal('window', { refract: { chat: { setVisibleSubagent: vi.fn().mockResolvedValue(undefined) } } })
+    useSubagentPanelStore.setState({ sessionId: 's1', selectedId: 'a', selectedKey: 'c1:0', streams: {} })
+    useRightPaneStore.setState({ open: true, openPanelIds: ['subagents'], activePanelId: 'subagents', chatCollapsed: false })
+
+    handleConversationChanged('s1')
+
+    expect(useSubagentPanelStore.getState().sessionId).toBeNull()
+    expect(useRightPaneStore.getState().openPanelIds).not.toContain('subagents')
   })
 
   it('is a no-op for a Session with no scroll record', () => {
