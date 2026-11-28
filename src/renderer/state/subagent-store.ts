@@ -53,7 +53,7 @@ interface SubagentPanelState {
   selectSubagent(subagentId: string, key?: string | null, options?: { silent?: boolean }): Promise<string | null>
   applyPatch(sessionId: string, subagentId: string, ops: TranscriptOp[]): void
   reset(): void
-  /** Closes the panel when the Session's Conversation is reset, so a reused subagent name never inherits the previous Conversation's cached stream. No-op for other Sessions. */
+  /** Clears the selection and cached streams when the Session's Conversation is reset, so a reused subagent name never inherits the previous Conversation's stream. Never closes the global panel (FR-204). No-op for other Sessions. */
   resetForNewConversation(sessionId: string): void
   /** Clears the selection and its cached stream when a Stage prune removed the selected agent, keeping the panel open (#1085). No-op for other Sessions or a kept selection. */
   dropPrunedSelection(sessionId: string, remaining: readonly { id: string }[]): void
@@ -175,12 +175,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     useRightPaneStore.getState().closePanel('subagents')
   },
   resetForNewConversation: (sessionId) => {
-    const state = get()
-    if (state.sessionId !== sessionId) return
-    if (useRightPaneStore.getState().openPanelIds.includes('subagents')) {
-      state.closePanel({ restoreFocus: false })
-      return
-    }
+    if (get().sessionId !== sessionId) return
     fetchSeq += 1
     set({ selectedId: null, selectedKey: null, streams: {}, suspended: false })
   },

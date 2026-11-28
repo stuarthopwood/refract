@@ -22,8 +22,7 @@ import {
   useReadoutStore,
   useSessionsStore,
   useSettingsStore,
-  useSplitStore,
-  useSubagentPanelStore
+  useSplitStore
 } from '@/state'
 import type { Result, SessionSnapshot, SessionStatusEvent } from '../../../shared/ipc'
 import { attachResolvedPaths, remainingAttachmentSlots } from './attachDroppedPaths'
@@ -260,11 +259,6 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
     })
     return () => cancelAnimationFrame(raf)
   }, [session, sessionId, paneIndex])
-
-  useEffect(() => {
-    if (session) return
-    useSubagentPanelStore.getState().clearSelectionForSession(sessionId)
-  }, [sessionId, session])
 
   function handleFocusPane(): void {
     focusPane(paneIndex)

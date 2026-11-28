@@ -121,11 +121,14 @@ describe('applySubagents feeds dropPrunedSelection', () => {
 })
 
 describe('resetForNewConversation', () => {
-  it('closes the open panel for its own Session', () => {
-    bindPanel()
+  it('clears the selection and streams for its own Session but leaves the panel open (FR-204)', () => {
+    bindPanel({ streams: { a: stream('a') } })
     panel().resetForNewConversation('s1')
-    expect(panel().sessionId).toBeNull()
-    expect(useRightPaneStore.getState().openPanelIds).not.toContain('subagents')
+    expect(panel().sessionId).toBe('s1')
+    expect(panel().selectedId).toBeNull()
+    expect(panel().selectedKey).toBeNull()
+    expect(panel().streams).toEqual({})
+    expect(useRightPaneStore.getState().openPanelIds).toContain('subagents')
   })
 
   it('ignores another Session', () => {

@@ -1,4 +1,5 @@
-// Risk 5 audit: per-Session state keyed to a Conversation is the scroll record and the open subagent panel (both cleared here).
+// Risk 5 audit: per-Session state keyed to a Conversation is the scroll record and the subagent selection (both cleared here;
+// the global Agents panel itself stays as the user left it).
 // The queue, readout, subagent list, side-chat and token-guard state are reset by the backend's `on_conversation_reset`
 // hooks and arrive as their own events, so nothing else is cleared in the renderer.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -47,15 +48,14 @@ describe('handleConversationChanged', () => {
     expect(useDraftStore.getState().bySession['s1']?.text).toBe('half typed')
   })
 
-  it("closes that Session's open subagents panel", () => {
-    vi.stubGlobal('window', { refract: { chat: { setVisibleSubagent: vi.fn().mockResolvedValue(undefined) } } })
+  it("clears that Session's subagent selection but leaves the global panel open", () => {
     useSubagentPanelStore.setState({ sessionId: 's1', selectedId: 'a', selectedKey: 'c1:0', streams: {} })
     useRightPaneStore.setState({ open: true, openPanelIds: ['subagents'], activePanelId: 'subagents', chatCollapsed: false })
 
     handleConversationChanged('s1')
 
-    expect(useSubagentPanelStore.getState().sessionId).toBeNull()
-    expect(useRightPaneStore.getState().openPanelIds).not.toContain('subagents')
+    expect(useSubagentPanelStore.getState().selectedId).toBeNull()
+    expect(useRightPaneStore.getState().openPanelIds).toContain('subagents')
   })
 
   it('is a no-op for a Session with no scroll record', () => {
