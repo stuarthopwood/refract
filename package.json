@@ -36,6 +36,7 @@
     "check:literal-colours": "node scripts/check-literal-colours.mjs",
     "check:hit-targets": "node scripts/check-hit-targets.mjs",
     "check:advisor-roster": "node scripts/check-advisor-roster.mjs",
+    "check:context-prefixes": "node scripts/check-context-prefixes.mjs",
     "worktrees:reap": "node scripts/worktrees-reap.mjs",
     "plan:html": "node scripts/plan-html.mjs",
     "check:omp-schema": "node scripts/check-omp-schema-drift.mjs",

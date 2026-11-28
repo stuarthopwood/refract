@@ -11,6 +11,9 @@ import { SessionSourceLine } from './SessionSourceLine'
 import { HandoffNoteLine } from './HandoffNoteLine'
 import { ChecklistItemSourceLine } from './ChecklistItemSourceLine'
 import { userTurnText } from './userTurnText'
+import { splitContextLines } from '../../../shared/contextLines'
+import { ContextLineStrip } from './ContextLineStrip'
+import { NoticeRow } from './NoticeRow'
 
 export type UserItem = Extract<TranscriptItem, { kind: 'user' }>
 
@@ -67,6 +70,21 @@ export function UserMessageRow({ item, sessionId, userName, userAvatarUrl, hideT
   const author = sender ? sender.name : (userName ?? 'You')
   const sourceLineId = React.useId()
   const bodyText = userTurnText(item)
+  // Only a turn the user typed (no source) can carry Refract's own lines; the copy text below stays the original.
+  const { lines: contextLines, body } = source ? { lines: [], body: bodyText } : splitContextLines(bodyText)
+  const hasAttachments = Boolean(item.fileAttachments?.length || item.images?.length)
+  if (contextLines.length > 0 && body.trim() === '' && !hasAttachments) {
+    return (
+      <>
+        <UserMessageTime at={item.at} hide={hideTime} />
+        <MessageMenu id={item.id} text={bodyText} align="end">
+          {contextLines.map((line, index) => (
+            <NoticeRow key={index} level="info" text={line.text} context={line.kind} />
+          ))}
+        </MessageMenu>
+      </>
+    )
+  }
   return (
     <>
       <UserMessageTime at={item.at} hide={hideTime} />
@@ -87,6 +105,7 @@ export function UserMessageRow({ item, sessionId, userName, userAvatarUrl, hideT
           className="w-fit max-w-[85%] rounded-lg bg-chat-user-bubble-bg px-4 py-2 outline-1 -outline-offset-1 outline-chat-user-bubble-border forced-colors:outline-2"
         >
           <MessageHeader className="px-0 text-muted-foreground">{author}</MessageHeader>
+          {contextLines.length > 0 && <ContextLineStrip lines={contextLines} />}
           {/* Chips instead of the raw inlined file text, which could flood the transcript (#926). */}
           {item.fileAttachments && item.fileAttachments.length > 0 && (
             <div role="group" aria-label="Attached files" className="mb-1 flex flex-wrap items-center gap-2">
@@ -96,9 +115,9 @@ export function UserMessageRow({ item, sessionId, userName, userAvatarUrl, hideT
             </div>
           )}
           {item.images && item.images.length > 0 && <MessageImageGrid images={item.images} className="mb-2" />}
-          {bodyText.trim() !== '' && <Markdown id={item.id} text={bodyText} variant="chat" className="text-chat-user-bubble-fg" />}
+          {body.trim() !== '' && <Markdown id={item.id} text={body} variant="chat" className="text-chat-user-bubble-fg" />}
           {/* An image-only message whose images are missing still says so (#744). */}
-          {bodyText.trim() === '' && !item.fileAttachments?.length && !item.images?.length && <p className="text-sm text-muted-foreground">Image attached</p>}
+          {body.trim() === '' && contextLines.length === 0 && !hasAttachments && <p className="text-sm text-muted-foreground">Image attached</p>}
         </MessageContent>
       </Message>
       </MessageMenu>
