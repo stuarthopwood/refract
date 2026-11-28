@@ -267,6 +267,58 @@ async fn more_than_the_cap_of_rows_is_partial_with_the_cap_unchanged() {
     );
 }
 
+/// Commits `count` files, then edits, stages and edits each again so every path has a Staged and a
+/// Changes row (two rows per path).
+async fn partially_stage_many(repo: &Path, count: usize) {
+    for i in 0..count {
+        write(repo, &format!("bulk/f{i:03}.txt"), "orig\n").await;
+    }
+    git_out(repo, &["add", "-A"]).await;
+    git_out(repo, &["commit", "-q", "-m", "bulk"]).await;
+    for i in 0..count {
+        write(repo, &format!("bulk/f{i:03}.txt"), "first\n").await;
+    }
+    git_out(repo, &["add", "-A"]).await;
+    for i in 0..count {
+        write(repo, &format!("bulk/f{i:03}.txt"), "second\n").await;
+    }
+}
+
+#[tokio::test]
+async fn partially_staged_paths_under_the_cap_are_not_partial_even_when_rows_exceed_it() {
+    let repo = init_repo().await;
+    partially_stage_many(&repo, 150).await;
+
+    let snapshot = read_changes_status(&repo, "main").await.unwrap();
+    let summary = changes_summary(&snapshot);
+
+    assert_eq!(snapshot.groups.staged.len() + snapshot.groups.changes.len(), 300);
+    assert_eq!(summary.files, 150);
+    assert!(!summary.partial);
+    assert_eq!(
+        (summary.additions, summary.deletions),
+        (300, 300),
+        "both rows of every path are scored"
+    );
+}
+
+#[tokio::test]
+async fn partially_staged_paths_past_the_cap_are_partial() {
+    let repo = init_repo().await;
+    partially_stage_many(&repo, MAX_FILES + 1).await;
+
+    let snapshot = read_changes_status(&repo, "main").await.unwrap();
+    let summary = changes_summary(&snapshot);
+
+    assert_eq!(summary.files, MAX_FILES as i64 + 1);
+    assert!(summary.partial);
+    assert_eq!(
+        summary.additions,
+        2 * MAX_FILES as i64,
+        "the path past the cap adds 0 on both rows"
+    );
+}
+
 #[test]
 fn exactly_the_cap_of_rows_is_not_partial() {
     let rows: Vec<GitChangesFileEntry> = (0..MAX_FILES)

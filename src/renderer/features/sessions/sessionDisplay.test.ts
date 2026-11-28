@@ -102,7 +102,7 @@ describe('diff stat wording (issue #2111, FR-221)', () => {
   const stat = (over: Partial<DiffStat>): DiffStat => ({ files: 3, additions: 5, deletions: 2, partial: false, ...over })
 
   it('shows the exact count at 200 files or fewer', () => {
-    expect(formatDiffStatFiles(stat({ files: 3 }))).toBe('3 files changed')
+    expect(formatDiffStatFiles(stat({ files: 3, partial: false }))).toBe('3 files changed')
     expect(formatDiffStatFiles(stat({ files: 200 }))).toBe('200 files changed')
   })
 
@@ -117,8 +117,9 @@ describe('diff stat wording (issue #2111, FR-221)', () => {
     expect(formatDiffStatFiles(stat({ partial: true }))).not.toContain('partial')
   })
 
-  it('describes a capped result as "more than 200 files changed"', () => {
-    expect(formatDiffStatAccessible(stat({ files: 201, partial: true }))).toBe('more than 200 files changed: 5 additions, 2 deletions')
+  it('describes a capped result as "more than 200 files changed" with line counts as floors', () => {
+    expect(formatDiffStatAccessible(stat({ files: 201, partial: true }))).toBe('more than 200 files changed: at least 5 additions, 2 deletions')
+    expect(formatDiffStatAccessible(stat({ files: 200, partial: true }))).toBe('more than 200 files changed: at least 5 additions, 2 deletions')
   })
 
   it('describes an exact result with its full count and singular nouns', () => {

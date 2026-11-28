@@ -314,5 +314,7 @@ export function formatDiffStatAccessible(stat: DiffStat): string {
   const deletionsFull = FULL_NUMBER_FORMAT.format(stat.deletions)
   const additionsNoun = stat.additions === 1 ? 'addition' : 'additions'
   const deletionsNoun = stat.deletions === 1 ? 'deletion' : 'deletions'
-  return `${filesPhrase}: ${additionsFull} ${additionsNoun}, ${deletionsFull} ${deletionsNoun}`
+  // Lines past the file cap were never counted, so a capped total is a floor.
+  const floor = stat.partial ? 'at least ' : ''
+  return `${filesPhrase}: ${floor}${additionsFull} ${additionsNoun}, ${deletionsFull} ${deletionsNoun}`
 }

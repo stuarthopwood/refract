@@ -89,7 +89,9 @@ pub struct GitChangesSnapshot {
 }
 
 /// Scores each row's counts and sorts each group by path. Runs two numstat calls concurrently.
-/// Past `MAX_FILES` rows, the rest get `partial: true` and no score.
+/// Past `MAX_FILES` distinct paths, the rest get `partial: true` and no score. The cap counts paths,
+/// not rows, so a partially staged path (a Staged and a Changes row) is scored in full or not at
+/// all, and `changes_summary`'s `partial` agrees with where scoring stopped.
 async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitChangesGroups {
     let mut groups = GitChangesGroups::default();
     if entries.is_empty() {
@@ -147,11 +149,12 @@ async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitCha
     let mut files_counted: usize = 0;
     for parsed in entries {
         let folder = folder_for(&parsed.path);
+        let capped = files_counted >= MAX_FILES;
+        files_counted += 1;
         for (group, mark) in parsed.groups.iter() {
-            let (additions, deletions, partial) = if files_counted >= MAX_FILES {
+            let (additions, deletions, partial) = if capped {
                 (0, 0, true)
             } else {
-                files_counted += 1;
                 match group {
                     GitChangesGroup::Untracked => {
                         score_untracked_file(worktree_path, &parsed.path).await
@@ -231,8 +234,9 @@ pub async fn read_changes_status(
 }
 
 /// The composer pill's count (#2111): distinct paths across the four groups, so a partially staged
-/// path counts once. Line counts sum only scored rows. `partial` means rows past `MAX_FILES` went
-/// unscored; a row's own `partial` also covers an oversized file, which must not read as "200+".
+/// path counts once. Line counts sum only scored rows. `partial` means paths past `MAX_FILES` went
+/// unscored (the same path-based cutoff as `build_groups`); a row's own `partial` also covers an
+/// oversized file, which must not read as "200+".
 pub fn changes_summary(snapshot: &GitChangesSnapshot) -> DiffStatResult {
     let groups = &snapshot.groups;
     let rows = || {
@@ -248,7 +252,7 @@ pub fn changes_summary(snapshot: &GitChangesSnapshot) -> DiffStatResult {
         files: paths.len() as i64,
         additions: rows().map(|row| row.additions).sum(),
         deletions: rows().map(|row| row.deletions).sum(),
-        partial: rows().count() > MAX_FILES,
+        partial: paths.len() > MAX_FILES,
     }
 }
 
