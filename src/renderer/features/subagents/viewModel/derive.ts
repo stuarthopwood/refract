@@ -4,6 +4,7 @@ import { formatElapsed } from '../../chat/formatElapsed'
 import { extractContextLabel, resolveStageDependencies, stageOutcomeText, stageRollupText, stripShellSetup, type StageDependency } from '../../chat/stageMeta'
 import { overallStatus } from '../../chat/subagentChainStatus'
 import { formatHeaderStats } from '../card/headerStats'
+import { countStagesAndAgents } from '../stageCounts'
 import { summarizeSubagentStatuses, type SubagentRowStatus } from '../subagentStatus'
 import { cleanTitle } from './cleanTitle'
 import { numberStages, type StageNumbers } from './numbering'
@@ -169,7 +170,7 @@ export function deriveHeader(stages: readonly StageItem[]): Omit<ChatScenario, '
   const { startedAt, endedAt } = stageTimeRange(agents)
   const totalDurationMs = startedAt != null && endedAt != null ? endedAt - startedAt : undefined
   const overallGoal = stages.find((stage) => stage.overallGoal)?.overallGoal
-  const headerStats = formatHeaderStats({ stageCount: stages.length, agentCount: agents.length, statusCounts: totals })
+  const headerStats = formatHeaderStats(countStagesAndAgents(stages.map((stage) => stage.agents.map((agent) => agent.status))))
   return {
     headerStats,
     rollupText: stageRollupText(totals, agents.length, totals.running > 0),

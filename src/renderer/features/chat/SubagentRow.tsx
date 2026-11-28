@@ -99,11 +99,14 @@ export function subagentCardButtonName(agent: Pick<SubAgentItem, 'name' | 'statu
   return `${agent.name}, ${SUBAGENT_STATUS_LABEL[agent.status]}, open in Subagents panel`
 }
 
-/** Opens the agent's inspector in the Subagents panel; the button passes itself as the opener so focus can return to it. */
-export function openSubagentInPanel(sessionId: string, match: { id: string; toolCallId: string; specIndex: number }, opener: HTMLElement | null): void {
+/**
+ * Opens the agent's inspector in the Subagents panel; the button passes itself as the opener so focus can return to it. An agent with
+ * no live registry entry yet has no `id`, so it is selected by its key alone and the panel picks it up once the entry arrives.
+ */
+export function openSubagentInPanel(sessionId: string, target: { id?: string; toolCallId: string; specIndex: number }, opener: HTMLElement | null): void {
   openHostedPanel('subagents', sessionId, {
-    selectSubagentId: match.id,
-    selectSubagentKey: `${match.toolCallId}:${match.specIndex}`,
+    ...(target.id ? { selectSubagentId: target.id } : {}),
+    selectSubagentKey: `${target.toolCallId}:${target.specIndex}`,
     opener
   })
 }

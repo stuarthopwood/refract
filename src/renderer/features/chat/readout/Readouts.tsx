@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, RefObject } from 'react'
 import { EyeIcon, PinIcon } from 'lucide-react'
 import { Spinner } from '@/components/ui/spinner'
@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover'
 import { DiffStatLine, formatDiffStatAccessible } from '@/features/sessions/sessionDisplay'
+import { countPill } from '@/features/subagents/stageCounts'
 import { formatElapsed } from '../formatElapsed'
 import { COMPOSER_DISABLED_HOVER_RESET_CLASS, COMPOSER_DISABLED_OPACITY_CLASS } from '../pickerShared'
 import { AgentsCard } from './AgentsCard'
@@ -84,8 +85,9 @@ export function CurrentTimeReadout({ className }: { className?: string } = {}) {
 }
 
 export function SubagentsReadout({ sessionId }: { sessionId: string }) {
-  const subagentCount = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount)
   const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
+  // The same counting function as the chat card header and the Agents panel, so the three never disagree (#2299).
+  const subagentCount = useMemo(() => countPill(subagents), [subagents])
   // Same `useReadoutCard` controller as the Todo pill; never a Radix `Tooltip`/`HoverCard`.
   const card = useReadoutCard({ disabled: (subagentCount?.running ?? 0) === 0 })
   const onActivate = (event: MouseEvent<HTMLButtonElement>) => {
