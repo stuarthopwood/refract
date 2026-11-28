@@ -408,6 +408,9 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
                 if let Some(goal) = &e.overall_goal {
                     obj["overallGoal"] = json!(goal);
                 }
+                if let Some(summary) = &e.card_summary {
+                    obj["cardSummary"] = json!(summary);
+                }
                 if !e.files_touched.is_empty() {
                     obj["filesTouched"] = json!(e.files_touched);
                 }

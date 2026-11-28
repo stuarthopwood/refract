@@ -21,7 +21,7 @@ function group(subagents: AgentsGroup['subagents'], overrides: Partial<AgentsGro
 
 function render(subagents: AgentsGroup['subagents'], { collapsed = false, selectedKey = null, ...overrides }: { collapsed?: boolean; selectedKey?: string | null } & Partial<AgentsGroup> = {}) {
   const [rows] = buildGroupRows([group(subagents, overrides)])
-  return renderToStaticMarkup(createElement(AgentsGroupSection, { group: rows!, collapsed, selectedKey, rowRef: noop, onSelect: noop, onToggle: noop }))
+  return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AgentsGroupSection, { group: rows!, collapsed, selectedKey, rowRef: noop, onSelect: noop, onToggle: noop })))
 }
 
 const MIXED = [
@@ -97,6 +97,40 @@ describe('AgentsGroupSection', () => {
     const html = render(MIXED)
     expect(html).not.toContain('aria-labelledby')
     expect(html).not.toContain('<section')
+  })
+
+  it('tells the levels apart by tint, not by a border of its own', () => {
+    const html = render(MIXED)
+    expect(html).toMatch(/<div[^>]*data-agents-group="s1"[^>]*class="[^"]*bg-surface-subtle/)
+    expect(html).toContain('bg-surface-1')
+    expect(html).not.toMatch(/border-(divider|border|strong)/)
+  })
+
+  it('gives the header and every agent row, selected or not, the same inset padding', () => {
+    const html = render(MIXED, { selectedKey: 's1|c1:0' })
+    // A quoted class value can hold a ">" (`has-[>svg]`), so the tag is matched with quotes kept whole.
+    const buttons = html.match(/<button(?:[^>"]|"[^"]*")*>/g) ?? []
+    // The button variants carry `aria-expanded:` and `aria-[current=true]:` classes, so only the attributes are matched.
+    const header = buttons.find((tag) => /\saria-expanded="/.test(tag))
+    const selectedRow = buttons.find((tag) => /\saria-current="true"/.test(tag))
+    const otherRow = buttons.find((tag) => !/\saria-expanded="/.test(tag) && !/\saria-current="/.test(tag))
+    for (const button of [header, selectedRow, otherRow]) {
+      expect(button).toMatch(/class="[^"]*\bpx-2\b[^"]*"/)
+      expect(button).toMatch(/class="[^"]*\bpy-1\b[^"]*"/)
+    }
+  })
+
+  it('keeps a group boundary in forced-colors mode, where tints disappear', () => {
+    expect(render(MIXED)).toMatch(/<div[^>]*data-agents-group="s1"[^>]*class="[^"]*forced-colors:border\b/)
+  })
+
+  it('truncates a long name inside the row instead of scrolling sideways, with no title attribute', () => {
+    const long = `feature/${'x'.repeat(120)}`
+    const html = render([subagentSummary({ nameOrTask: long, id: 'l', status: 'running' })], { name: long })
+    expect(html).toContain(long)
+    expect(html).toMatch(/class="[^"]*\btruncate\b/)
+    expect(html).not.toContain('title=')
+    expect(html).not.toContain('overflow-x-auto')
   })
 })
 

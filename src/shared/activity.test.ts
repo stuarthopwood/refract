@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import { deriveActivity, type ActivityInput } from './activity'
 
-const idle: ActivityInput = { needsYou: false, runningSubagents: 0, todo: null }
+const idle: ActivityInput = { needsYou: false, todo: null }
+
+it('words an idle Session as Working', () => {
+  expect(deriveActivity(idle).text).toBe('Working…')
+})
 
 describe('deriveActivity intent line (FR-140)', () => {
   it('shows the brief label of the latest intent, not the full intent', () => {

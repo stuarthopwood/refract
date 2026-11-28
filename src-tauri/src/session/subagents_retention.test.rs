@@ -21,6 +21,7 @@ fn entry(id: &str, stage: &str, turn: u32, status: SummaryStatus) -> SummaryEntr
         background: false,
         role: None,
         overall_goal: None,
+        card_summary: None,
         files_touched: Vec::new(),
         recent_steps: Vec::new(),
     }

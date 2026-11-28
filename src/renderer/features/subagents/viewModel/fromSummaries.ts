@@ -2,6 +2,7 @@ import type { SubagentSummary } from '../../../../shared/model'
 import { extractAgentRefs } from '../../chat/stageMeta'
 import { deriveScenario, type AgentInput, type StageInput } from './derive'
 import { agentKey, overlay } from './fromTranscript'
+import { numberSessionStages, stageKeyOf, type StageNumbers } from './numbering'
 import { runFacts } from './runFacts'
 import type { TranscriptSubagentItem } from './runs'
 import type { ChatScenario } from './types'
@@ -19,6 +20,7 @@ function fromSummaryOnly(item: SubagentSummary): AgentInput {
     role: item.role,
     overallGoal: item.overallGoal,
     taskSummary: item.taskSummary,
+    cardSummary: item.cardSummary,
     filesTouched: item.filesTouched,
     recentSteps: item.recentSteps
   }
@@ -38,6 +40,7 @@ function toStageInput(run: readonly SubagentSummary[], itemsByKey: ReadonlyMap<s
   const unmatchedNames = run.filter((_, index) => !matched[index]).map((summary) => summary.nameOrTask)
   return {
     id: `stage:${run[0]!.toolCallId}`,
+    stageKey: stageKeyOf(run[0]!.stageKey, run[0]!.toolCallId),
     context: facts?.context,
     agentRefs: [...new Set([...(facts?.agentRefs ?? []), ...extractAgentRefs(unmatchedNames.join('\n'))])],
     agents
@@ -45,16 +48,23 @@ function toStageInput(run: readonly SubagentSummary[], itemsByKey: ReadonlyMap<s
 }
 
 /**
- * The panel's entry point: readout summaries, one Stage per contiguous run of one `toolCallId`. `items` are the transcript's subagent
- * items; where one matches a summary it supplies the context, task and result text the summary lacks (ADR 0013).
+ * The panel's entry point: readout summaries, one Stage per owning message (`stageKeyOf`), the same Stage the chat card shows, so a
+ * message that launches two `task()` calls is one Stage here too. `items` are the transcript's subagent items; where one matches a
+ * summary it supplies the context, task and result text the summary lacks. `numbers` is the Session's Stage numbering, derived from
+ * `items` and `summaries` when the caller has none.
  */
-export function fromSummaries(summaries: readonly SubagentSummary[], items: readonly TranscriptSubagentItem[] = []): ChatScenario {
+export function fromSummaries(
+  summaries: readonly SubagentSummary[],
+  items: readonly TranscriptSubagentItem[] = [],
+  numbers: StageNumbers = numberSessionStages(items, summaries)
+): ChatScenario {
   const itemsByKey = new Map(items.map((item) => [agentKey(item.toolCallId, item.specIndex), item]))
-  const runs: SubagentSummary[][] = []
+  const runs = new Map<string, SubagentSummary[]>()
   for (const summary of summaries) {
-    const last = runs[runs.length - 1]
-    if (last && last[0]!.toolCallId === summary.toolCallId) last.push(summary)
-    else runs.push([summary])
+    const key = stageKeyOf(summary.stageKey, summary.toolCallId)
+    const run = runs.get(key)
+    if (run) run.push(summary)
+    else runs.set(key, [summary])
   }
-  return deriveScenario(runs.map((run) => toStageInput(run, itemsByKey)))
+  return deriveScenario([...runs.values()].map((run) => toStageInput(run, itemsByKey)), numbers)
 }

@@ -14,14 +14,21 @@ import { JumpToStageContext } from './stageJump'
 import { stageHeading } from './stageMeta'
 import { useStickyDisclosure } from './useStickyDisclosure'
 import type { StageGroup } from './groupSubagentStages'
+import type { SubagentRowStatus } from '../subagents/subagentStatus'
 
 /** The Stage's own toggle key; `card:` keeps it apart from `StageGroupRow`'s bare id and the panel's `panel:` keys (FR-150 d). */
 export const stageToggleRowId = (stageId: string): string => `card:${stageId}`
 
 // A labelled `role="group"` per stage: `SpineList`'s `<ol>` only gives an unlabelled "1 of 2".
-// A running Stage opens and a settled one collapses on its own; the developer's own toggle wins for the Session (FR-149).
+// A running Stage opens, a settled all-succeeded one collapses, and one with a failed, cancelled or exited agent stays open so a failure is never hidden;
+// the developer's own toggle wins for the Session (FR-149).
 // The header and outcome always show, and the chevron is a plain button so automatic changes never move focus,
 // except an auto-collapse that would strand focus in the content, which hands it to the chevron.
+
+/** True when a Stage should be open without the developer's say: it is running, or an agent in it did not succeed. */
+export function stageOpensByDefault(status: SubagentRowStatus, counts: Pick<Record<SubagentRowStatus, number>, 'failed' | 'cancelled' | 'exited'>): boolean {
+  return status === 'running' || counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
+}
 
 /** True when an auto-collapse is about to make the content inert while focus sits inside it (WCAG 2.4.3); the chevron then takes focus. */
 export function shouldMoveFocusToChevron(wasExpanded: boolean, expanded: boolean, focusInsideContent: boolean): boolean {
@@ -29,9 +36,9 @@ export function shouldMoveFocusToChevron(wasExpanded: boolean, expanded: boolean
 }
 
 export function ChainStageLine({ stage, sessionId }: { stage: StageGroup; sessionId: string | null }) {
-  const { status } = stage.view
+  const { status, counts } = stage.view
   const { parallelCount } = stageRowModel(stage.view)
-  const { open: expanded, onOpenChange } = useStickyDisclosure(sessionId, stageToggleRowId(stage.id), status === 'running', { latch: false })
+  const { open: expanded, onOpenChange } = useStickyDisclosure(sessionId, stageToggleRowId(stage.id), stageOpensByDefault(status, counts), { latch: false })
   const transcriptDisplay = useSettingsStore((s) => s.settings.transcriptDisplay)
   const jumpToStageRow = React.useContext(JumpToStageContext)
   const canJump = rowVisibility(stage, transcriptDisplay) === 'visible' && sessionId != null && jumpToStageRow != null

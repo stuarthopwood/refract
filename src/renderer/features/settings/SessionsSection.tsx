@@ -12,6 +12,8 @@ import { ConversationCleanupGroup } from './ConversationCleanupGroup'
 export function SessionsSection() {
   const showAgentStoppedBar = useSettingsStore((state) => state.settings.showAgentStoppedBar !== false)
   const setShowAgentStoppedBar = useSettingsStore((state) => state.setShowAgentStoppedBar)
+  const summariseAgentCards = useSettingsStore((state) => state.settings.summariseAgentCards !== false)
+  const setSummariseAgentCards = useSettingsStore((state) => state.setSummariseAgentCards)
   const stackedPullRequests = useSettingsStore((state) => state.settings.stackedPullRequests !== false)
   const setStackedPullRequests = useSettingsStore((state) => state.setStackedPullRequests)
   // Re-probed each time Settings opens, so an extension installed outside Refract shows as ready.
@@ -28,6 +30,15 @@ export function SessionsSection() {
           description="A bar above the message box with Start agent. Off hides it; sending a message still starts the agent."
           checked={showAgentStoppedBar}
           onCheckedChange={(checked) => void setShowAgentStoppedBar(checked)}
+        />
+      </SettingsGroup>
+      <SettingsGroup title="Subagents card">
+        <SettingSwitchRow
+          id="summarise-agent-cards-toggle"
+          label="Summarise agent cards with the tiny model"
+          description="Short agent summaries from your tiny model, including each agent's result. Off uses a plain excerpt and sends nothing."
+          checked={summariseAgentCards}
+          onCheckedChange={(checked) => void setSummariseAgentCards(checked)}
         />
       </SettingsGroup>
       <SettingsGroup title="Stacked pull requests">

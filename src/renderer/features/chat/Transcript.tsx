@@ -23,6 +23,8 @@ import { isToolGroup } from './groupToolItems'
 import { reuseUnchangedTurns, splitIntoTurns, type Turn } from './splitIntoTurns'
 import { groupTurnStages } from './groupTurnStages'
 import { isStageGroup } from './groupSubagentStages'
+import { useSessionStageNumbers } from './useSessionStageNumbers'
+import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
@@ -37,7 +39,6 @@ import { newestRunningRowId } from './newestRunningRow'
 import { findPrecedingAskItem } from './findPrecedingAskItem'
 import { type UserItem } from './UserMessageRow'
 import { useRepositoryAvatarUrl } from './useRepositoryAvatarUrl'
-import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { loadEarlierAnnouncement, restoreScrollTop, windowTranscriptTurns } from './windowTranscriptTurns'
 import { JumpToStageContext, stageRowDomId } from './stageJump'
 import { ChatNavBridge } from '../chat-nav/ChatNavBridge'
@@ -204,12 +205,15 @@ export function Transcript({
   )
 
   const subagentSummaries = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
+  const stageNumbers = useSessionStageNumbers(items, subagentSummaries)
   const turnsWithStages = React.useMemo(
-    () => visibleTurns.map((turn) => ({ turn, ...groupTurnStages(turn.items, transcriptDisplay.thinking, subagentSummaries) })),
-    [visibleTurns, transcriptDisplay.thinking, subagentSummaries]
+    () => visibleTurns.map((turn) => ({ turn, ...groupTurnStages(turn.items, transcriptDisplay.thinking, subagentSummaries, stageNumbers) })),
+    [visibleTurns, transcriptDisplay.thinking, subagentSummaries, stageNumbers]
   )
+  // Unfiltered Stages across the visible turns, so a Stage hidden by "Show tool calls" off still announces its settling.
+  const allStages = React.useMemo(() => turnsWithStages.flatMap((entry) => entry.stages), [turnsWithStages])
+  const stageAnnouncement = useStageSettleAnnouncement(allStages)
 
-  const stageAnnouncement = useStageSettleAnnouncement(turnsWithStages)
   let isFirstRow = true
 
   const { viewportRef, scrollerRootRef, buttonRef, contentRef, gestureProps, follow, jumpControl, followState, handleScrollToEnd } =
@@ -430,10 +434,10 @@ export function Transcript({
           {revealedAnnouncement}
         </span>
         <span role="status" aria-live="polite" className="sr-only">
-          {stageAnnouncement}
+          {!isAtEnd && newContent ? 'New messages' : ''}
         </span>
         <span role="status" aria-live="polite" className="sr-only">
-          {!isAtEnd && newContent ? 'New messages' : ''}
+          {stageAnnouncement}
         </span>
         <ChatNavOverlays sessionId={sessionId} />
         <IconButton

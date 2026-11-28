@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { summarizeSubagentStatuses } from '../subagents/subagentStatus'
-import { extractContextLabel, extractResultSummary, plainSummary, stripShellSetup, stripTaskResultWrapper, stripWorktreePaths, unsettledRollupText } from './stageMeta'
+import { computeStageLabel, extractContextLabel, extractResultSummary, plainSummary, stripShellSetup, stripTaskResultWrapper, stripWorktreePaths, unsettledRollupText } from './stageMeta'
 
 describe('extractResultSummary (#2242)', () => {
   const wrapped = '<task-result id="AwaySpecLane" agent="task" status="completed" duration="3m31s">\n## Fixed the **flaky** test\nMore detail\n</task-result>'
@@ -204,5 +204,19 @@ describe('unsettledRollupText', () => {
 
   it('drops zero counts and is empty when everything finished', () => {
     expect(unsettledRollupText(summarizeSubagentStatuses(['finished']))).toBe('')
+  })
+})
+
+describe('Stage label length (FR-215)', () => {
+  const ninety = `Audit ${'a'.repeat(84)}`
+
+  it('keeps a 90-character context label whole, clean or raw', () => {
+    // Mutation: restore the 60-character slice in `extractContextLabel`.
+    expect(extractContextLabel(ninety)).toBe(ninety)
+    expect(extractContextLabel(ninety, false)).toBe(ninety)
+  })
+
+  it('keeps it whole through the three-tier label', () => {
+    expect(computeStageLabel(ninety, ['A'])).toBe(ninety)
   })
 })

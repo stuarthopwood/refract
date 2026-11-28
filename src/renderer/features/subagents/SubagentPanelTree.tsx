@@ -3,6 +3,7 @@
 import { memo, useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
+import { TruncatedText, useFocusVisibleWithin } from '@/components/TruncatedText'
 import { FileChipList } from '@/components/FileChip'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -14,6 +15,9 @@ import { ResultMarkdown } from './card/ResultMarkdown'
 import { agentElapsedText, agentsStatusText, finishedText, runningText, type AgentRow, type FinishedRow, type GroupRows } from './subagentPanelRows'
 import { SubagentStatusIcon } from './subagentStatus'
 import { FILES_TOUCHED_LABEL, type SubAgentItem } from './viewModel'
+
+/** Every row shares this inset, so the selected one keeps its text clear of the left accent bar and does not shift. */
+const ROW_PADDING_CLASS = 'px-2 py-1'
 
 /** The running total as a polite live region, which doubles as the empty state; it is also where focus lands when a pruned row took it (#1085). */
 export function AgentsStatusLine({ totalRunning }: { totalRunning: number }) {
@@ -48,6 +52,7 @@ type AgentItemProps = { row: AgentRow; sessionId: string; selected: boolean } & 
 
 const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, onSelect }: AgentItemProps) {
   const { summary } = row
+  const { focused, focusProps } = useFocusVisibleWithin()
   return (
     <li>
       <Button
@@ -57,13 +62,14 @@ const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, on
         size="sm"
         aria-current={selected ? 'true' : undefined}
         onClick={() => onSelect(sessionId, row)}
-        className={cn('relative flex min-h-11 w-full min-w-0 items-center justify-start gap-2 rounded-md px-2 py-1 text-left text-sm whitespace-normal hover:bg-surface-hover aria-[current=true]:bg-accent forced-colors:aria-[current=true]:border forced-colors:aria-[current=true]:border-[Highlight]', INSET_FOCUS_OUTLINE_CLASS)}
+        {...focusProps}
+        className={cn('relative flex min-h-11 w-full min-w-0 items-center justify-start gap-2 rounded-md bg-surface-1 text-left text-sm whitespace-normal hover:bg-surface-hover aria-[current=true]:bg-accent forced-colors:aria-[current=true]:border forced-colors:aria-[current=true]:border-[Highlight]', ROW_PADDING_CLASS, INSET_FOCUS_OUTLINE_CLASS)}
       >
         {selected && <ActiveIndicatorBar />}
         <span className="flex shrink-0 items-center gap-1 text-xs">
           <SubagentStatusIcon status={summary.status} />
         </span>
-        <span className="min-w-0 flex-1 truncate" title={summary.name ?? summary.nameOrTask}>
+        <TruncatedText tooltip={summary.name ?? summary.nameOrTask} className="flex-1" focused={focused}>
           {summary.name ?? summary.nameOrTask}
           {summary.background && (
             <>
@@ -71,7 +77,7 @@ const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, on
               <span className="ml-2 text-xs text-muted-foreground">Background</span>
             </>
           )}
-        </span>
+        </TruncatedText>
         <AgentElapsed summary={summary} />
       </Button>
     </li>
@@ -81,7 +87,7 @@ const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, on
 function FinishedItem({ row }: { row: FinishedRow }) {
   const { Icon, className } = STATUS_GLYPH['success-done']
   return (
-    <li className="flex min-h-9 items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
+    <li className={cn('flex min-h-9 items-center gap-2 text-sm text-muted-foreground', ROW_PADDING_CLASS)}>
       <span aria-hidden="true" className={ICON_SLOT_CLASS}>
         <Icon className={cn('size-4 shrink-0', className)} />
       </span>
@@ -94,15 +100,17 @@ type GroupProps = { group: GroupRows; collapsed: boolean; selectedKey: string | 
 
 /** The `data-agents-group` anchor is stable per Session so a later task can scroll to the group. A plain div, not a named section, so a group is not a region landmark. */
 export const AgentsGroupSection = memo(function AgentsGroupSection({ group, collapsed, selectedKey, rowRef, onSelect, onToggle }: GroupProps) {
+  const { focused, focusProps } = useFocusVisibleWithin()
   return (
-    <Collapsible data-agents-group={group.sessionId} open={!collapsed} onOpenChange={() => onToggle(group.sessionId)} className="flex flex-col">
+    <Collapsible data-agents-group={group.sessionId} open={!collapsed} onOpenChange={() => onToggle(group.sessionId)} className="flex flex-col gap-1 rounded-lg bg-surface-subtle p-1 forced-colors:border forced-colors:border-[CanvasText]">
       <h3 className="m-0 text-sm font-medium">
         <CollapsibleTrigger
           ref={(element) => rowRef(group.key, element)}
-          className={cn('group/trigger flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-surface-hover', INSET_FOCUS_OUTLINE_CLASS)}
+          {...focusProps}
+          className={cn('group/trigger flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md text-left hover:bg-surface-hover', ROW_PADDING_CLASS, INSET_FOCUS_OUTLINE_CLASS)}
         >
           <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90 motion-reduce:transition-none" />
-          <span className="min-w-0 flex-1 truncate">
+          <TruncatedText tooltip={group.repositoryName ? `${group.name} ${group.repositoryName}` : group.name} className="flex-1" focused={focused}>
             {group.name}
             {group.repositoryName && (
               <>
@@ -110,7 +118,7 @@ export const AgentsGroupSection = memo(function AgentsGroupSection({ group, coll
                 <span className="ml-2 text-xs font-normal text-muted-foreground">{group.repositoryName}</span>
               </>
             )}
-          </span>
+          </TruncatedText>
           <span className="shrink-0 text-xs font-normal text-muted-foreground">{runningText(group.running)}</span>
         </CollapsibleTrigger>
       </h3>
@@ -131,7 +139,7 @@ export function AgentDetailSummary({ agent }: { agent: SubAgentItem }) {
   const files = agent.filesTouched ?? []
   if (!outcome && files.length === 0) return null
   return (
-    <section aria-label={`${agent.name} details`} className="space-y-1 px-1">
+    <section aria-label={`${agent.name} details`} className="space-y-1 rounded-md bg-surface-1 p-2">
       {outcome && <ResultMarkdown text={outcome} interactive className="break-words text-sm text-card-foreground" />}
       <FileChipList files={files} label={FILES_TOUCHED_LABEL} limit={files.length} />
     </section>

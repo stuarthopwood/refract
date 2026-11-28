@@ -4,19 +4,13 @@ import type { ProgressSegmentState } from '@/components/ProgressStrip'
 import { formatElapsed } from '../../chat/formatElapsed'
 import { unsettledRollupText } from '../../chat/stageMeta'
 import { SUBAGENT_STATUS_LABEL, type SubagentRowStatus } from '../subagentStatus'
+import type { StageCounts } from '../stageCounts'
 import type { StageItem } from '../viewModel'
-
-export interface HeaderCounts {
-  stageCount: number
-  agentCount: number
-  /** Agents by status across every Stage. */
-  statusCounts: Record<SubagentRowStatus, number>
-}
 
 const plural = (count: number, singular: string, many: string) => `${count} ${count === 1 ? singular : many}`
 
 /** "3 stages, 5 agents, 1 running"; singular and plural handled, a part with a zero count (such as "0 running") dropped. */
-export function formatHeaderStats({ stageCount, agentCount, statusCounts }: HeaderCounts): string {
+export function formatHeaderStats({ stageCount, agentCount, statusCounts }: StageCounts): string {
   return [plural(stageCount, 'stage', 'stages'), plural(agentCount, 'agent', 'agents'), unsettledRollupText(statusCounts)].filter((part) => part.length > 0).join(', ')
 }
 

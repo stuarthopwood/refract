@@ -109,17 +109,19 @@ export function SubagentPanel({ sessionId }: { sessionId: string | null }) {
       {/* FR-024: a vertical split, groups above stream -- the FileExplorerPanel.tsx tree/preview precedent. */}
       <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
         <ResizablePanel defaultSize="60%" minSize="20%">
-          <div ref={treeHostRef} onFocus={trackFocus} onBlur={releaseFocus} className="h-full overflow-y-auto px-2 py-2">
-            <AgentsStatusLine totalRunning={totalRunning} />
-            {groups.map((group) => (
-              <AgentsGroupSection key={group.key} group={group} collapsed={collapsed.has(group.sessionId)} selectedKey={selectedKey} rowRef={rowRef} onSelect={onSelect} onToggle={onToggle} />
-            ))}
-          </div>
+          <ScrollArea viewportRef={treeHostRef} className="h-full">
+            <div onFocus={trackFocus} onBlur={releaseFocus} className="flex flex-col gap-2 px-2 py-2 [overflow-wrap:anywhere]">
+              <AgentsStatusLine totalRunning={totalRunning} />
+              {groups.map((group) => (
+                <AgentsGroupSection key={group.key} group={group} collapsed={collapsed.has(group.sessionId)} selectedKey={selectedKey} rowRef={rowRef} onSelect={onSelect} onToggle={onToggle} />
+              ))}
+            </div>
+          </ScrollArea>
         </ResizablePanel>
         <ResizableHandle withHandle aria-label="Resize agent list and stream" />
         <ResizablePanel defaultSize="40%" minSize="15%">
           <ScrollArea className="h-full">
-            <div className="flex flex-col gap-2 px-4 py-2">
+            <div className="flex flex-col gap-2 px-4 py-2 [overflow-wrap:anywhere]">
               {selectedId === null && <p className="px-1 py-2 text-sm text-muted-foreground">Select an agent to see its live stream.</p>}
               {/* The row shows one line; the whole outcome and every touched file are here. */}
               {selectedAgent && <AgentDetailSummary agent={selectedAgent} />}
