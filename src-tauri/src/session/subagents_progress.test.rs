@@ -252,7 +252,14 @@ async fn a_stopped_session_drops_out_of_the_aggregate() {
         fx.manager.agents_snapshot().await.as_array().unwrap().len(),
         1
     );
-    fx.agent.shutdown().await;
+    // A process exit is what stops a live Session; an unlaunched fixture has no process to exit.
+    fx.agent
+        .set_status(
+            crate::session::SessionStatus::Stopped,
+            Some("crashed"),
+            None,
+        )
+        .await;
 
     assert_eq!(fx.manager.agents_snapshot().await, json!([]));
 }

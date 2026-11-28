@@ -83,3 +83,12 @@ impl SessionManager {
         Value::Array(groups)
     }
 }
+
+#[cfg(test)]
+impl SessionManager {
+    /// Test seam: gives the Session's agent one running subagent, so it has a group.
+    pub(crate) async fn seed_agents_group(&self, session_id: &str) {
+        let agent = self.get_or_create_agent(session_id);
+        crate::session::subagents::test_support::seed_running_subagent(&agent).await;
+    }
+}
