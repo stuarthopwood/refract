@@ -21,7 +21,7 @@ import { TooltipProvider } from '@/components/ui/tooltip'
 import type { TranscriptSubagentItem } from '../subagents/viewModel/runs'
 import { subagentItem } from '../subagents/viewModel/testFixtures'
 import { panelStageToggleId } from '../subagents/subagentPanelRows'
-import { ChainStageLine, shouldMoveFocusToChevron, stageToggleRowId } from './ChainStageLine'
+import { ChainStageLine, shouldMoveFocusToChevron, stageOpensByDefault, stageToggleRowId } from './ChainStageLine'
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 
 const setManualOpen = (sessionId: string, rowId: string, open: boolean) => {
@@ -116,6 +116,40 @@ describe('ChainStageLine open state (FR-149)', () => {
       expect(html).toContain('<ol')
       expect(html).not.toMatch(/data-stage-outcome[^>]*>\s*<div[^>]*\[&amp;_p\]:truncate/)
       expect(html).toMatch(/data-stage-outcome[^>]*>[\s\S]*?<p[^>]*>Fixed the flaky test<\/p>/)
+    })
+  })
+
+  describe('given a settled Stage with a failed agent (FR-215)', () => {
+    const FAILED_GATE = () =>
+      stageOf([subagentItem({ name: 'GateA', specIndex: 0, result: 'Passed' }), subagentItem({ name: 'GateB', specIndex: 1, status: 'error', result: 'Boom' })])
+
+    it('stays open on its own so the failure is not hidden', () => {
+      // Mutation: open only while running.
+      expect(render(FAILED_GATE())).toContain('<ol')
+      expect(render(FAILED_GATE())).toMatch(/<button[^>]*aria-expanded="true"/)
+    })
+
+    it('lets the developer collapse it, and that choice wins', () => {
+      // Mutation: ignore the sticky manual choice for a failed Stage.
+      const stage = FAILED_GATE()
+      setManualOpen('s1', stageToggleRowId(stage.id), false)
+      expect(render(stage, 's1')).not.toContain('<ol')
+    })
+
+    it('still collapses a Stage whose agents all succeeded', () => {
+      expect(render(GATE())).not.toContain('<ol')
+    })
+  })
+
+  describe('stageOpensByDefault', () => {
+    const none = { failed: 0, cancelled: 0, exited: 0 }
+
+    it('opens for running and for every non-success terminal count, not for a clean settle', () => {
+      expect(stageOpensByDefault('running', none)).toBe(true)
+      expect(stageOpensByDefault('finished', none)).toBe(false)
+      expect(stageOpensByDefault('failed', { ...none, failed: 1 })).toBe(true)
+      expect(stageOpensByDefault('finished', { ...none, cancelled: 1 })).toBe(true)
+      expect(stageOpensByDefault('finished', { ...none, exited: 1 })).toBe(true)
     })
   })
 

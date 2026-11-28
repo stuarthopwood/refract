@@ -1,8 +1,6 @@
-// The stack mounted directly above the composer in `ChatPane.tsx`: the pinned todo panel
-// (#700/#701), the Queued panel (#1145), the current-work banner (#687), then the Agent stopped
-// bar (#1205), last so it sits directly above the composer. Background agents live in the
-// Subagents card and panel, not here (#1774). One mount point so `ChatPane.tsx` (a
-// baseline-capped file) does not grow.
+// The stack mounted directly above the composer in `ChatPane.tsx`: the pinned todo panel, the Queued panel, the current-work
+// banner, then the Agent stopped bar, last so it sits directly above the composer. Background agents live in the Subagents card
+// and panel, not here. One mount point so `ChatPane.tsx` (a baseline-capped file) does not grow.
 import { AgentStoppedBar } from './AgentStoppedBar'
 import { AdvisorRosterNotice } from './AdvisorRosterNotice'
 import { CurrentWorkBanner } from './CurrentWorkBanner'
@@ -12,7 +10,7 @@ import { QueuedPanel } from './QueuedPanel'
 import { RetryLine } from './RetryLine'
 import type { QueuedMessages } from './useQueuedMessages'
 
-/** `stoppedBarAllowed` is false while a stop banner shows or a start is running (FR-105). */
+/** `stoppedBarAllowed` is false while a stop banner shows or a start is running. */
 export function ComposerAboveStack({ sessionId, stoppedBarAllowed, queued }: { sessionId: string; stoppedBarAllowed: boolean; queued: QueuedMessages }) {
   return (
     <>

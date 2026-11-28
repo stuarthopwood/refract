@@ -59,7 +59,7 @@ describe('fromTranscript', () => {
       [
         subagentItem({ name: 'A1', id: 'a1', messageId: 'm1', toolCallId: 'c1' }),
         assistantText('t'),
-        subagentItem({ name: 'B1', id: 'b1', messageId: 'm1', toolCallId: 'c2', task: 'Use agent://A1 output', specIndex: 0 })
+        subagentItem({ name: 'B1', id: 'b1', messageId: 'm2', toolCallId: 'c2', task: 'Use agent://A1 output', specIndex: 0 })
       ],
       []
     )
@@ -121,7 +121,7 @@ describe('fromTranscript', () => {
     })
 
     it('numbers Stages with the Session numbering when given', () => {
-      const scenario = fromTranscript(items, [], new Map([['call1', 4]]))
+      const scenario = fromTranscript(items, [], new Map([['m1', 4]]))
       expect(scenario.stages[0]!.number).toBe(4)
     })
   })

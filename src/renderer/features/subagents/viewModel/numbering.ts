@@ -1,11 +1,12 @@
-/** Stage number by Stage key; the key is the `toolCallId` of the Stage's first agent. */
+/** Stage number by Stage key. */
 export type StageNumbers = ReadonlyMap<string, number>
 
-/**
- * Numbers Stages 1, 2, 3... in the order given, which must be start order across the whole Session. A key seen twice keeps its
- * first number, and a Stage that later leaves a surface (pruned, scrolled out of the transcript window) keeps its number
- * because the list is the Session's, not the surface's, so a number is never reused.
- */
+/** The Stage identity every surface shares: the launching message, else the call. Two `task()` calls in one message are one Stage. */
+export function stageKeyOf(messageId: string | undefined, toolCallId: string): string {
+  return messageId || toolCallId
+}
+
+/** Numbers Stages in Session start order; a repeated key keeps its first number. */
 export function numberStages(stageKeysInStartOrder: readonly string[]): StageNumbers {
   const numbers = new Map<string, number>()
   for (const key of stageKeysInStartOrder) {
@@ -14,15 +15,15 @@ export function numberStages(stageKeysInStartOrder: readonly string[]): StageNum
   return numbers
 }
 
-/**
- * The Session's numbering from everything that can start a Stage: transcript items first (they are in start order), then any
- * summary the transcript does not carry yet, so an agent only the live registry knows still gets a number after the transcript's.
- */
+// Pure, so card and panel agree; a summary-only Stage can take a later number when the transcript gains a newer one.
 export function numberSessionStages(
-  items: readonly { toolCallId: string }[],
-  summaries: readonly { toolCallId: string }[]
+  items: readonly { toolCallId: string; messageId?: string }[],
+  summaries: readonly { toolCallId: string; stageKey?: string }[]
 ): StageNumbers {
-  return numberStages([...items, ...summaries].map((entry) => entry.toolCallId))
+  return numberStages([
+    ...items.map((item) => stageKeyOf(item.messageId, item.toolCallId)),
+    ...summaries.map((summary) => stageKeyOf(summary.stageKey, summary.toolCallId))
+  ])
 }
 
 /** `next`, or `previous` when it holds the same numbers, so a memo keyed on the map is not invalidated by a rebuild that changed nothing. */

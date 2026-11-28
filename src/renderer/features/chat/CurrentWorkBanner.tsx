@@ -20,7 +20,6 @@ export function CurrentWorkBanner({ sessionId }: { sessionId: string }) {
   const activity = deriveActivity({
     needsYou: status === 'needs-you',
     pending,
-    runningSubagents: readout.subagentCount?.running ?? 0,
     todo: totals && current ? { number: totals.done + 1, total: totals.total, content: current.task.content } : null,
     latestIntent: readout.latestIntent,
     latestTool: readout.latestTool,

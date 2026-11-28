@@ -228,3 +228,44 @@ fn settled_result_without_items_still_renders_a_tool_row() {
     state.apply_frame(&end, false);
     assert!(subagent_states(&state).is_empty());
 }
+
+fn task_end_frame(is_error: bool, progress: Value) -> Value {
+    json!({
+        "type": "tool_execution_end", "toolCallId": "call-1", "toolName": "task",
+        "isError": is_error,
+        "result": { "content": [], "details": { "progress": progress } }
+    })
+}
+
+#[test]
+fn failed_spawn_result_builds_no_agents() {
+    let mut state = TranscriptState::new();
+    let progress = spawn_result_frame()["result"]["details"]["progress"].clone();
+    state.apply_frame(&task_end_frame(true, progress), false);
+    assert!(subagent_states(&state).is_empty());
+}
+
+#[test]
+fn spawn_result_with_an_entry_missing_its_id_builds_no_agents() {
+    let mut state = TranscriptState::new();
+    let progress = json!([
+        { "id": "ScoutA", "status": "pending", "task": "scan a" },
+        { "status": "pending", "task": "scan b" }
+    ]);
+    state.apply_frame(&task_end_frame(false, progress), false);
+    assert!(subagent_states(&state).is_empty());
+}
+
+#[test]
+fn spawn_result_with_mixed_statuses_keeps_each_agents_own_status() {
+    let mut state = TranscriptState::new();
+    let progress = json!([
+        { "id": "ScoutA", "status": "running", "task": "scan a" },
+        { "id": "SonicB", "status": "completed", "task": "scan b" }
+    ]);
+    state.apply_frame(&task_end_frame(false, progress), false);
+    let rows = subagent_states(&state);
+    assert_eq!(rows.len(), 2);
+    assert_eq!(rows[0].0, SubagentStatus::Running);
+    assert_eq!(rows[1].0, SubagentStatus::Done);
+}

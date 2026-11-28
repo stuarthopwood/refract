@@ -183,13 +183,12 @@ export function isActiveSession(s: Pick<SessionSummary, 'status' | 'unread' | 'p
   return status !== 'idle' && status !== 'unread-response' && status !== 'stopped'
 }
 
-/** Issue #1854: one active Session's status line as its row shows it ("Waiting for 2 subagents"). The row's own held and playful text needs live hooks; this is the plain derive, and a pause reads as its label. */
+/** One active Session's status line as its row shows it. The row's own held and playful text needs live hooks; this is the plain derive, and a pause reads as its label. */
 export function activeSessionLine(s: Pick<SessionSummary, 'status' | 'unread' | 'pause' | 'activity'>): string {
   if (s.pause !== undefined) return displayLabel(s)
   const readout = s.activity ?? null
   return deriveActivity({
     needsYou: s.status === 'needs-you',
-    runningSubagents: readout?.runningSubagents ?? 0,
     todo: readout?.todo ?? null,
     latestIntent: readout?.latestIntent,
     latestTool: readout?.latestTool,

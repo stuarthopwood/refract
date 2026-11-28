@@ -86,7 +86,7 @@ export function CurrentTimeReadout({ className }: { className?: string } = {}) {
 
 export function SubagentsReadout({ sessionId }: { sessionId: string }) {
   const subagents = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
-  // The same counting function as the chat card header and the Agents panel, so the three never disagree (#2299).
+  // The same counting function as the chat card header and the Agents panel, so the three never disagree.
   const subagentCount = useMemo(() => countPill(subagents), [subagents])
   // Same `useReadoutCard` controller as the Todo pill; never a Radix `Tooltip`/`HoverCard`.
   const card = useReadoutCard({ disabled: (subagentCount?.running ?? 0) === 0 })
