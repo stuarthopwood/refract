@@ -5,14 +5,14 @@ import type { TranscriptItem } from '../../../shared/model'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AdvisoryRow } from './AdvisoryRow'
 
-const seed = vi.hoisted(() => ({ pending: false }))
+const seed = vi.hoisted(() => ({ pending: 0 }))
 vi.mock('react', async (importOriginal) => {
   const actual = await importOriginal<typeof import('react')>()
   return {
     ...actual,
     useState: ((initial: unknown) => {
-      if (seed.pending && typeof initial === 'boolean') {
-        seed.pending = false
+      if (seed.pending > 0 && typeof initial === 'boolean') {
+        seed.pending -= 1
         return actual.useState(true)
       }
       return actual.useState(initial as never)
@@ -27,16 +27,16 @@ vi.mock('@/state', () => ({
 
 type AdvisoryItem = Extract<TranscriptItem, { kind: 'advisory' }>
 
-// `forceOpen` seeds the row's `open` state (its first boolean `useState`) to true, since a static render cannot click the trigger.
-function render(severity: AdvisoryItem['severity'], forceOpen = false): string {
-  const item: AdvisoryItem = { kind: 'advisory', id: `a-${severity}`, severity, text: 'Check the migration.' } as AdvisoryItem
-  seed.pending = forceOpen
+// `forceOpen` seeds the open state to true, since a static render cannot click the trigger: a blocker's own `open` is the first boolean `useState`; a nit row skips its own `open` and `asking` states, so its collapsible's is the third.
+function render(severity: AdvisoryItem['severity'], forceOpen = false, extra: Partial<AdvisoryItem> = {}): string {
+  const item: AdvisoryItem = { kind: 'advisory', id: `a-${severity}`, severity, text: 'Check the migration.', ...extra } as AdvisoryItem
+  seed.pending = forceOpen ? (severity === 'nit' ? 3 : 1) : 0
   try {
     return renderToStaticMarkup(
       React.createElement(TooltipProvider, null, React.createElement(AdvisoryRow, { item, sessionId: undefined, onQueuedAnnounce: () => {} }))
     )
   } finally {
-    seed.pending = false
+    seed.pending = 0
   }
 }
 
@@ -63,5 +63,28 @@ describe('AdvisoryRow severity stripe (#1876)', () => {
     const body = openingTag(render('concern'), 'data-slot="collapsible-content"')
     expect(body).toContain('before:bg-severity-warning')
     expect(body).toContain('data-state="closed"')
+  })
+})
+
+describe('AdvisoryRow body renders Markdown at the chat line height (#360, FR-222)', () => {
+  const markdown = { text: 'Run `pnpm test` first:\n\n1. Fix the type error\n2. Rerun', guidance: 'Prefer `readFile` over a shell `cat`.' }
+
+  it('renders the message and guidance as code spans and a list, not raw characters', () => {
+    const html = render('blocker', true, markdown)
+    expect(html).toContain('>pnpm test</code>')
+    expect(html).toContain('>readFile</code>')
+    expect(html).toContain('<ol class="list-decimal')
+  })
+
+  it('gives the message and the guidance the shared chat leading, not the plain text-sm one', () => {
+    const html = render('blocker', true, markdown)
+    expect(html.match(/leading-chat/g)?.length).toBe(2)
+    expect(html).not.toContain('whitespace-pre-wrap text-sm')
+  })
+
+  it('renders a nit body the same way once expanded', () => {
+    const html = render('nit', true, markdown)
+    expect(html).toContain('>pnpm test</code>')
+    expect(html).toContain('leading-chat')
   })
 })

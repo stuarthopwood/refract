@@ -151,7 +151,7 @@ export function CodeBlock({
   const gutter = showLineNumbers ? (
     <pre
       aria-hidden
-      className="m-0 select-none border-r border-border bg-code-block py-4 pl-4 pr-2 text-right leading-[1.6] text-muted-foreground tabular-nums"
+      className="m-0 select-none border-r border-border bg-code-block py-4 pl-4 pr-2 text-right leading-chat text-muted-foreground tabular-nums"
     >
       {Array.from({ length: lineCount }, (_, i) => i + 1).join('\n')}
     </pre>
@@ -166,7 +166,8 @@ export function CodeBlock({
       className={cn(
         'min-w-0 flex-1 bg-code-block',
         wrapOn ? wrapClassName : scrollableClassName,
-        wrapOn ? '[&>pre]:m-0 [&>pre]:p-4 [&>pre]:whitespace-pre-wrap [&>pre]:break-words' : '[&>pre]:m-0 [&>pre]:p-4 [&>pre]:leading-[1.6]'
+        '[&>pre]:m-0 [&>pre]:p-4 [&>pre]:leading-chat',
+        wrapOn && '[&>pre]:whitespace-pre-wrap [&>pre]:break-words'
       )}
       dangerouslySetInnerHTML={{ __html: html }}
     />
@@ -175,7 +176,7 @@ export function CodeBlock({
       tabIndex={0}
       role="region"
       aria-label={regionLabel}
-      className={cn('min-w-0 flex-1', wrapOn ? wrapClassName : scrollableClassName, 'bg-code-block p-4 leading-[1.6]')}
+      className={cn('min-w-0 flex-1', wrapOn ? wrapClassName : scrollableClassName, 'bg-code-block p-4 leading-chat')}
     >
       <code>{code}</code>
     </pre>

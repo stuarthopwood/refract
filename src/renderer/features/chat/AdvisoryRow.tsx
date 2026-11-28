@@ -10,6 +10,7 @@ import { extractAdvisoryLocations, type AdvisoryLocation } from '@/lib/advisory-
 import { notify, useSessionsStore } from '@/state'
 import type { TranscriptItem } from '../../../shared/model'
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
+import { Markdown } from './Markdown'
 import { COMPOSER_BUTTON_FOCUS_CLASS } from '@/components/ui/composerFocus'
 import { COMPOSER_DISABLED_OPACITY_CLASS } from './pickerShared'
 import { CONCERN_RUN_THRESHOLD, type AdvisoryRun } from './groupAdvisoryItems'
@@ -166,11 +167,11 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         meta={meta}
       >
         <div className="space-y-2">
-          <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
+          <Markdown text={item.text} id={`${item.id}-text`} variant="chat" className="[overflow-wrap:anywhere]" />
           {item.guidance && (
             <div>
               <div className="mb-1 text-xs text-muted-foreground">Guidance</div>
-              <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.guidance}</div>
+              <Markdown text={item.guidance} id={`${item.id}-guidance`} variant="chat" className="[overflow-wrap:anywhere]" />
             </div>
           )}
         </div>
@@ -196,11 +197,11 @@ export const AdvisoryRow = React.forwardRef<HTMLElement, AdvisoryRowProps>(funct
         contentClassName={cn(LABEL_COLUMN_CONTENT_CLASS, STRIPE_CLASS[item.severity])}
       >
         {/* Decision 2 order: note, guidance, locations, then the actions row. */}
-        <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.text}</div>
+        <Markdown text={item.text} id={`${item.id}-text`} variant="chat" className="[overflow-wrap:anywhere]" />
         {item.guidance && (
           <div>
             <div className="mb-1 text-xs text-muted-foreground">Guidance</div>
-            <div className="whitespace-pre-wrap text-sm [overflow-wrap:anywhere]">{item.guidance}</div>
+            <Markdown text={item.guidance} id={`${item.id}-guidance`} variant="chat" className="[overflow-wrap:anywhere]" />
           </div>
         )}
         {locations.length > 0 && (
