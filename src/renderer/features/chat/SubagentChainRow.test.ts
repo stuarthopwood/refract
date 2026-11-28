@@ -153,4 +153,12 @@ describe('StageGroupRow, a single-Stage turn (FR-175, FR-176)', () => {
     toggles.bySession = {}
     expect(visibleText(html).split('failed hard').length - 1).toBe(1)
   })
+
+  it('mounts its own polite settle status inside the card, with no Show button until the agent is live (#1774)', () => {
+    // Mutation: drop the status span from the card or render Show without a registry match.
+    const html = renderRow(stagesFor(['finished'])[0]!, 's1')
+    expect(html).toContain('role="status"')
+    expect(html).toContain('aria-live="polite"')
+    expect(html).not.toContain('in Subagents panel')
+  })
 })

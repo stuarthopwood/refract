@@ -2,6 +2,7 @@ import type { SubagentSummary } from '../../../../shared/model'
 import type { GroupedTranscriptItem } from '../../chat/groupToolItems'
 import { chatRowStatus } from '../subagentStatus'
 import { deriveScenario, type AgentInput, type StageInput } from './derive'
+import type { StageNumbers } from './numbering'
 import { runFacts } from './runFacts'
 import { splitSubagentRuns, type RunSlot, type TranscriptSubagentItem } from './runs'
 import type { ChatScenario } from './types'
@@ -15,14 +16,19 @@ function summaryIndex(summaries: readonly SubagentSummary[]): Map<string, Subage
   return new Map(summaries.map((summary) => [agentKey(summary.toolCallId, summary.specIndex), summary]))
 }
 
-// The summary wins wherever both sources carry a field: it is the live one (ADR 0013).
+/**
+ * The live summary wins wherever both sources carry a field (ADR 0013), with one exception: a still-running summary never reopens an
+ * agent the transcript has already settled, so a late or stale registry entry cannot make a finished agent run again.
+ */
 export function overlay(item: TranscriptSubagentItem, resultSummary: string | undefined, summary: SubagentSummary | undefined): AgentInput {
+  const itemStatus = chatRowStatus(item.status)
+  const status = summary && !(summary.status === 'running' && itemStatus !== 'running') ? summary.status : itemStatus
   return {
     id: item.id,
     toolCallId: item.toolCallId,
     specIndex: item.specIndex,
     name: item.name,
-    status: summary ? summary.status : chatRowStatus(item.status),
+    status,
     startedAt: summary?.startedAt ?? item.startedAt,
     durationMs: summary?.durationMs ?? item.durationMs,
     background: summary?.background,
@@ -30,6 +36,7 @@ export function overlay(item: TranscriptSubagentItem, resultSummary: string | un
     overallGoal: summary?.overallGoal ?? item.overallGoal,
     resultSummary,
     taskSummary: summary?.taskSummary,
+    cardSummary: summary?.cardSummary,
     filesTouched: summary?.filesTouched,
     recentSteps: summary?.recentSteps
   }
@@ -45,17 +52,17 @@ function toStageInput(items: readonly TranscriptSubagentItem[], summaries: Reado
   }
 }
 
-/** The chat card's entry point over runs `splitSubagentRuns` already found; one stage per run, in order. */
-export function fromTranscriptRuns(slots: readonly RunSlot[], summaries: readonly SubagentSummary[]): ChatScenario {
+/** The chat card's entry point over runs `splitSubagentRuns` already found; one stage per run, in order. `numbers` is the Session's Stage numbering. */
+export function fromTranscriptRuns(slots: readonly RunSlot[], summaries: readonly SubagentSummary[], numbers?: StageNumbers): ChatScenario {
   const bySummary = summaryIndex(summaries)
   const stages = slots.flatMap((slot) => (slot.kind === 'run' ? [toStageInput(slot.items, bySummary)] : []))
-  return deriveScenario(stages)
+  return deriveScenario(stages, numbers)
 }
 
 /**
  * The chat card's entry point: transcript subagent items are the base and `summaries` overlay the live fields.
  * A summary with no matching item is ignored (the transcript decides what the chat shows); an item with no summary renders from itself.
  */
-export function fromTranscript(items: readonly GroupedTranscriptItem[], summaries: readonly SubagentSummary[]): ChatScenario {
-  return fromTranscriptRuns(splitSubagentRuns(items), summaries)
+export function fromTranscript(items: readonly GroupedTranscriptItem[], summaries: readonly SubagentSummary[], numbers?: StageNumbers): ChatScenario {
+  return fromTranscriptRuns(splitSubagentRuns(items), summaries, numbers)
 }

@@ -102,6 +102,28 @@ describe('fromTranscript', () => {
       const stage = fromTranscript(two, [subagentSummary({ nameOrTask: 'Same', specIndex: 1, status: 'failed' })]).stages[0]!
       expect(stage.agents.map((a) => a.status)).toEqual(['finished', 'failed'])
     })
+
+    it('keeps a background agent running until its summary settles, then follows the summary', () => {
+      const spawned = [subagentItem({ name: 'Bg', status: 'running' })]
+      const stillRunning = fromTranscript(spawned, [subagentSummary({ nameOrTask: 'Bg', status: 'running', background: true })]).stages[0]!.agents[0]!
+      const settled = fromTranscript(spawned, [subagentSummary({ nameOrTask: 'Bg', status: 'finished', background: true })]).stages[0]!.agents[0]!
+      expect([stillRunning.status, settled.status]).toEqual(['running', 'finished'])
+    })
+
+    it('does not reopen an agent the transcript settled when a stale summary still says running', () => {
+      const [agent] = fromTranscript([subagentItem({ name: 'A', status: 'done' })], [subagentSummary({ nameOrTask: 'A', status: 'running' })]).stages[0]!.agents
+      expect(agent!.status).toBe('finished')
+    })
+
+    it('passes the summary cardSummary through and prefers it for what the agent did', () => {
+      const [agent] = fromTranscript(items, [subagentSummary({ nameOrTask: 'A', cardSummary: 'Fixed the login bug' })]).stages[0]!.agents
+      expect(agent!.whatItDid).toBe('Fixed the login bug')
+    })
+
+    it('numbers Stages with the Session numbering when given', () => {
+      const scenario = fromTranscript(items, [], new Map([['call1', 4]]))
+      expect(scenario.stages[0]!.number).toBe(4)
+    })
   })
 
   describe('given live steps from the summary', () => {

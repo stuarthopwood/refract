@@ -6,6 +6,7 @@ import { overallStatus } from '../../chat/subagentChainStatus'
 import { formatHeaderStats } from '../card/headerStats'
 import { summarizeSubagentStatuses, type SubagentRowStatus } from '../subagentStatus'
 import { cleanTitle } from './cleanTitle'
+import { numberStages, type StageNumbers } from './numbering'
 import type { ChatScenario, StageItem, SubAgentItem, SubStep } from './types'
 
 // `endedAt` is undefined unless every agent has both `startedAt` and `durationMs`, so a member with no duration cannot understate the total.
@@ -40,6 +41,8 @@ export interface AgentInput {
   /** The one-line summary of the agent's result (its first useful line), already extracted by the entry point. */
   resultSummary?: string
   taskSummary?: string
+  /** The synthesised one-line card summary (FR-217); preferred over the result and task summaries. */
+  cardSummary?: string
   filesTouched?: string[]
   recentSteps?: SubagentRecentStep[]
 }
@@ -75,7 +78,7 @@ function deriveSubSteps(steps: readonly SubagentRecentStep[]): SubStep[] {
 
 /** Exported for its own tests; the entry points reach it through `deriveScenario`. */
 export function deriveAgent(input: AgentInput, triggeredBy: string | undefined): SubAgentItem {
-  const whatItDid = input.resultSummary ?? input.taskSummary
+  const whatItDid = input.cardSummary ?? input.resultSummary ?? input.taskSummary
   const steps = input.recentSteps ?? []
   const lastStep = steps[steps.length - 1]
   const subSteps = steps.length > 0 ? deriveSubSteps(steps).map((s) => (input.status === 'running' ? s : { ...s, status: 'done' as const })) : undefined
@@ -105,9 +108,18 @@ interface StageDraft {
   input: StageInput
 }
 
-/** Builds the scenario for `stages`, in order. Pure: the same input always yields an equal result. */
-export function deriveScenario(stages: readonly StageInput[]): ChatScenario {
-  const drafts: StageDraft[] = stages.map((input, index) => ({ stageIndex: index + 1, items: input.agents, dependencies: [], input }))
+/**
+ * Builds the scenario for `stages`, in order. Pure: the same input always yields an equal result. `numbers` is the Session's
+ * numbering; without it the Stages are numbered among themselves.
+ */
+export function deriveScenario(stages: readonly StageInput[], numbers?: StageNumbers): ChatScenario {
+  const stageNumbers = numbers ?? numberStages(stages.map((input) => input.agents[0]!.toolCallId))
+  const drafts: StageDraft[] = stages.map((input, index) => ({
+    stageIndex: stageNumbers.get(input.agents[0]!.toolCallId) ?? index + 1,
+    items: input.agents,
+    dependencies: [],
+    input
+  }))
   resolveStageDependencies(
     drafts,
     (item: AgentInput) => item.name,

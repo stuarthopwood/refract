@@ -3,6 +3,10 @@ import { deriveActivity, type ActivityInput } from './activity'
 
 const idle: ActivityInput = { needsYou: false, runningSubagents: 0, todo: null }
 
+it('does not word running subagents as a status line', () => {
+  expect(deriveActivity({ ...idle, runningSubagents: 2 }).text).toBe('Working…')
+})
+
 describe('deriveActivity intent line (FR-140)', () => {
   it('shows the brief label of the latest intent, not the full intent', () => {
     const activity = deriveActivity({ ...idle, latestIntent: 'Reading config: to find the port the server binds' })

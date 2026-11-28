@@ -203,8 +203,61 @@ impl TranscriptState {
     }
 }
 
+/// A background `task` call returns at once with one still-running `progress[]` entry per agent
+/// (`id` is the job id, `task` the brief). When no `subagent` item exists for the call (its start
+/// frame or echoed call was never seen) those entries are the only record, so build the card from them.
+fn items_from_spawn_result(
+    mut items: Vec<Arc<TranscriptItem>>,
+    tool_call_id: &str,
+    is_error: bool,
+    details: &Value,
+    live: bool,
+) -> Vec<Arc<TranscriptItem>> {
+    let Some(progress) = details.get("progress").and_then(Value::as_array) else {
+        return items;
+    };
+    let entry_id = |entry: &Value| entry.get("id").and_then(Value::as_str).map(String::from);
+    let spawned = !is_error
+        && !progress.is_empty()
+        && progress.iter().all(|entry| entry_id(entry).is_some())
+        && progress.iter().any(|entry| {
+            let status = entry.get("status").and_then(Value::as_str);
+            classify_progress_status(status) == ProgressOutcome::Running
+        });
+    if !spawned {
+        return items;
+    }
+    for (index, entry) in progress.iter().enumerate() {
+        let job_id = entry_id(entry);
+        let spec = serde_json::json!({
+            "name": job_id.clone().unwrap_or_default(),
+            "task": entry.get("task").and_then(Value::as_str).unwrap_or(""),
+        });
+        let status = map_progress_status(entry.get("status").and_then(Value::as_str));
+        items.push(Arc::new(TranscriptItem::Subagent {
+            id: format!("subagent:{tool_call_id}:{index}"),
+            tool_call_id: tool_call_id.to_string(),
+            spec_index: index as u32,
+            name: subagent_name(&spec),
+            task: task_text(&spec),
+            context: None,
+            status,
+            started_at: live.then(now_ms),
+            duration_ms: None,
+            result: None,
+            job_id,
+            role: None,
+            overall_goal: None,
+            message_id: String::new(),
+            async_settled: false,
+        }));
+    }
+    items
+}
+
 /// Applies a `task` call's live end or history `toolResult` to every `subagent` item sharing
-/// `tool_call_id`; returns `items` unchanged when none exist so callers fall back to a `tool` item.
+/// `tool_call_id`; with none, a background spawn result builds them and anything else returns `items`
+/// unchanged so callers fall back to a `tool` item.
 pub(super) fn apply_batch_task_result(
     items: Vec<Arc<TranscriptItem>>,
     tool_call_id: &str,
@@ -222,7 +275,7 @@ pub(super) fn apply_batch_task_result(
         .map(|(i, _)| i)
         .collect();
     if subagent_positions.is_empty() {
-        return items;
+        return items_from_spawn_result(items, tool_call_id, is_error, details, live);
     }
     let progress = details.get("progress").and_then(Value::as_array);
     let fallback_status = if is_error {

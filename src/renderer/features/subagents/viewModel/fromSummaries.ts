@@ -2,6 +2,7 @@ import type { SubagentSummary } from '../../../../shared/model'
 import { extractAgentRefs } from '../../chat/stageMeta'
 import { deriveScenario, type AgentInput, type StageInput } from './derive'
 import { agentKey, overlay } from './fromTranscript'
+import { numberSessionStages, type StageNumbers } from './numbering'
 import { runFacts } from './runFacts'
 import type { TranscriptSubagentItem } from './runs'
 import type { ChatScenario } from './types'
@@ -19,6 +20,7 @@ function fromSummaryOnly(item: SubagentSummary): AgentInput {
     role: item.role,
     overallGoal: item.overallGoal,
     taskSummary: item.taskSummary,
+    cardSummary: item.cardSummary,
     filesTouched: item.filesTouched,
     recentSteps: item.recentSteps
   }
@@ -46,9 +48,14 @@ function toStageInput(run: readonly SubagentSummary[], itemsByKey: ReadonlyMap<s
 
 /**
  * The panel's entry point: readout summaries, one Stage per contiguous run of one `toolCallId`. `items` are the transcript's subagent
- * items; where one matches a summary it supplies the context, task and result text the summary lacks (ADR 0013).
+ * items; where one matches a summary it supplies the context, task and result text the summary lacks (ADR 0013). `numbers` is the
+ * Session's Stage numbering, derived from `items` and `summaries` when the caller has none.
  */
-export function fromSummaries(summaries: readonly SubagentSummary[], items: readonly TranscriptSubagentItem[] = []): ChatScenario {
+export function fromSummaries(
+  summaries: readonly SubagentSummary[],
+  items: readonly TranscriptSubagentItem[] = [],
+  numbers: StageNumbers = numberSessionStages(items, summaries)
+): ChatScenario {
   const itemsByKey = new Map(items.map((item) => [agentKey(item.toolCallId, item.specIndex), item]))
   const runs: SubagentSummary[][] = []
   for (const summary of summaries) {
@@ -56,5 +63,5 @@ export function fromSummaries(summaries: readonly SubagentSummary[], items: read
     if (last && last[0]!.toolCallId === summary.toolCallId) last.push(summary)
     else runs.push([summary])
   }
-  return deriveScenario(runs.map((run) => toStageInput(run, itemsByKey)))
+  return deriveScenario(runs.map((run) => toStageInput(run, itemsByKey)), numbers)
 }
