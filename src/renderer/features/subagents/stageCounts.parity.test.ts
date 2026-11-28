@@ -27,6 +27,8 @@ interface AgentSpec {
   stage: 1 | 2
   /** Which `task()` call of the message launched the agent. */
   call?: 0 | 1
+  /** Assistant text written just before this agent's call, between two calls of one message. */
+  textBefore?: boolean
   specIndex: number
   status: SubagentSummary['status']
 }
@@ -35,8 +37,8 @@ interface AgentSpec {
 function sessionOf(agents: AgentSpec[]) {
   const toolCallOf = (agent: AgentSpec) => `c${agent.stage}-${agent.call ?? 0}`
   const items = agents.flatMap((agent, index) => [
-    // Text only before a message's first agent, so a second call of the same message continues the run.
-    ...(agents[index - 1]?.stage === agent.stage ? [] : [assistantText(`t${index}`)]),
+    // Text only before a message's first agent (or when asked), so a second call of the same message normally continues the run.
+    ...(agents[index - 1]?.stage === agent.stage && !agent.textBefore ? [] : [assistantText(`t${index}`)]),
     subagentItem({
       name: agent.name,
       id: `${toolCallOf(agent)}:${agent.name}`,
@@ -116,6 +118,21 @@ describe('Stage and agent counts across the card, the Agents panel and the compo
     expect(surfaces.card.stages.map((stage) => stage.number)).toEqual([1, 2])
     expect(surfaces.panel.stages.map((stage) => stage.number)).toEqual([1, 2])
     expect(surfaces.panel.stages[1]!.agents.map((agent) => agent.name)).toEqual(['Gamma', 'Delta'])
+    expect([surfaces.cardRunning, surfaces.panelRunning, surfaces.pillRunning]).toEqual([2, 2, 2])
+  })
+
+  it('count text between two task() calls of one message as one Stage numbered 1 on the card, the panel and the pill', () => {
+    // Mutation: split the card's run on the text between the calls, so it counts 2 Stages while the panel and the pill count 1.
+    const surfaces = surfacesFor([
+      { name: 'Alpha', stage: 1, call: 0, specIndex: 0, status: 'running' },
+      { name: 'Beta', stage: 1, call: 1, specIndex: 0, status: 'running', textBefore: true }
+    ])
+    expect(surfaces.headerStats).toBe('1 stage, 2 agents, 2 running')
+    expect(surfaces.panel.headerStats).toBe(surfaces.headerStats)
+    expect([surfaces.cardStages, surfaces.panelStages]).toEqual([1, 1])
+    expect(surfaces.card.stages.map((stage) => stage.number)).toEqual([1])
+    expect(surfaces.panel.stages.map((stage) => stage.number)).toEqual([1])
+    expect(surfaces.card.stages[0]!.agents.map((agent) => agent.name)).toEqual(['Alpha', 'Beta'])
     expect([surfaces.cardRunning, surfaces.panelRunning, surfaces.pillRunning]).toEqual([2, 2, 2])
   })
 

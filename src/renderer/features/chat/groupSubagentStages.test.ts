@@ -6,10 +6,24 @@ describe('groupSubagentStages', () => {
   it('keeps non-subagent items in place around each Stage group', () => {
     const text1 = assistantText('t1')
     const text2 = assistantText('t2')
-    const grouped = groupSubagentStages([text1, subagentItem({ name: 'A' }), text2, subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2' })], [])
+    const grouped = groupSubagentStages(
+      [text1, subagentItem({ name: 'A' }), text2, subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2', messageId: 'm2' })],
+      []
+    )
     expect(grouped.map((g) => g.kind)).toEqual(['assistant-text', 'stage-group', 'assistant-text', 'stage-group'])
     expect(grouped[0]).toBe(text1)
     expect(grouped[2]).toBe(text2)
+  })
+
+  it('makes text between two task() calls of one message one Stage with both agents, the text after its card', () => {
+    // Mutation: split the run on the text, so the message gets two cards that both read "Stage 1" while the panel counts one.
+    const text = assistantText('t1')
+    const grouped = groupSubagentStages([subagentItem({ name: 'A' }), text, subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2' })], [])
+    expect(grouped.map((g) => g.kind)).toEqual(['stage-group', 'assistant-text'])
+    const [stage] = grouped.filter(isStageGroup)
+    expect(stage!.items.map((i) => i.name)).toEqual(['A', 'B'])
+    expect(stage!.view.agents.map((agent) => agent.name)).toEqual(['A', 'B'])
+    expect([stage!.stageIndex, stage!.totalStages]).toEqual([1, 1])
   })
 
   it('numbers each Stage and reports the total', () => {
