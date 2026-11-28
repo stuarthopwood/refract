@@ -250,7 +250,14 @@ async fn a_conflicted_path_counts() {
 
 #[tokio::test]
 async fn more_than_the_cap_of_rows_is_partial_with_the_cap_unchanged() {
+    // Tracked edits, not untracked files: scoring an untracked file reads it, and 200 of those take
+    // over a second idle, enough to hit `OVERALL_TIMEOUT` under a loaded parallel run.
     let repo = init_repo().await;
+    for i in 0..=MAX_FILES {
+        write(&repo, &format!("bulk/f{i:03}.txt"), "orig\n").await;
+    }
+    git_out(&repo, &["add", "-A"]).await;
+    git_out(&repo, &["commit", "-q", "-m", "bulk"]).await;
     for i in 0..=MAX_FILES {
         write(&repo, &format!("bulk/f{i:03}.txt"), "x\n").await;
     }
