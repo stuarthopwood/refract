@@ -19,7 +19,7 @@
 ## Phase 1: Setup
 
 - [ ] T001 [P] [W] Add `@xterm/xterm` and `@xterm/addon-fit` to `package.json` at exact versions (no `^`), run `pnpm install` so `pnpm-lock.yaml` updates. No WebGL addon, no node native module.
-- [ ] T002 [P] [R] Add `portable-pty` to `src-tauri/Cargo.toml` (current 0.9.x, exact version recorded in research.md R-10), run `cargo check` to refresh `Cargo.lock`. Add no `windows` crate feature (R-5) and no Tauri plugin.
+- [x] T002 [P] [R] Add `portable-pty` to `src-tauri/Cargo.toml` (current 0.9.x, exact version recorded in research.md R-10), run `cargo check` to refresh `Cargo.lock`. Add no `windows` crate feature (R-5) and no Tauri plugin.
 - [ ] T003 [P] [W] Create `src/shared/terminalLimits.ts` exporting the data-model.md constants verbatim (`MAX_TABS_PER_SESSION` 8, `SCROLLBACK_BYTES` 2097152, `ASK_FALLBACK_LINES` 200, `OUTPUT_CAP_BYTES` 32768, `NAME_MAX_CHARS` 40, `INPUT_MAX_BYTES` 65536, `INPUT_RATE_BYTES_PER_SEC` 1048576, `COLS_MAX` 500, `ROWS_MAX` 200, `ACK_EVERY_BYTES` 131072, `UNACKED_PAUSE_BYTES` 524288); add `terminalLimits.test.ts` asserting each value.
 
 ---

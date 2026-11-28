@@ -88,6 +88,10 @@ unicode-normalization = "0.1.24"
 # runs on the IPC thread or the tokio pool.
 rusqlite = { version = "0.41.1", default-features = false, features = ["bundled"] }
 
+# Spec 144 (#3, ADR 0016): the Terminal panel's ConPTY shells. `terminal/pty.rs` is the only spawn
+# site. Pinned exactly; no extra `windows` feature or Tauri plugin is needed.
+portable-pty = "=0.9.0"
+
 [dev-dependencies]
 tempfile = "3.27.0"
 tokio = { version = "1.53.2", features = ["test-util"] }
