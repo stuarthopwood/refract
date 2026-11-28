@@ -1,54 +1,37 @@
-// The panel's presentation: the card's header over a Stage/agent tree built from the same shared pieces (FR-150, ADR 0003).
-// Keyboard and selection stay in SubagentPanel; this only draws rows and reports what the pointer did.
+// The panel's presentation: one disclosure group per Session, its agents as rows, its successful finishes as one line (#490).
+// Selection and focus stay in SubagentPanel; this only draws rows and reports what the pointer did.
 import { memo, useEffect, useId, useState } from 'react'
-import type { FocusEvent, KeyboardEvent } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
-import { FileChipList, FileChipTabbableContext } from '@/components/FileChip'
-import { IconButton } from '@/components/IconButton'
+import { FileChipList } from '@/components/FileChip'
 import { cn } from '@/lib/utils'
 import { ICON_SLOT_CLASS } from '../chat/CollapsedLine'
-import { StageUsesLine } from '../chat/StageDependencies'
-import { SUBAGENT_CARD_SURFACE_CLASS, SubagentCardBody, flatBodyHasContent } from '../chat/SubagentRow'
-import { stageHeading } from '../chat/stageMeta'
-import { StageHeader } from './card/StageHeader'
-import { repeatsStageTitle } from './card/stageRowModel'
+import { STATUS_GLYPH } from '../chat/statusGlyph'
 import { ResultMarkdown } from './card/ResultMarkdown'
-import { SubagentsHeaderBelow, SubagentsHeaderMeta } from './card/SubagentsCardHeader'
-import { formatHeaderTriggerLabel, stageSegmentStates } from './card/headerStats'
-import { panelDurationMs, type PanelAgentRow, type PanelRow, type PanelStageRow } from './subagentPanelRows'
-import { SubagentStatusGlyph, type SubagentRowStatus } from './subagentStatus'
-import { FILES_TOUCHED_LABEL, type ChatScenario, type SubAgentItem } from './viewModel'
+import { agentElapsedText, agentsStatusText, finishedText, runningText, type AgentRow, type FinishedRow, type GroupRows } from './subagentPanelRows'
+import { SubagentStatusIcon } from './subagentStatus'
+import { FILES_TOUCHED_LABEL, type SubAgentItem } from './viewModel'
 
-const ROW_CLASS =
-  'relative rounded-md text-left text-sm focus-visible:outline-solid focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring aria-selected:bg-accent forced-colors:aria-selected:border forced-colors:aria-selected:border-[Highlight]'
-
-// The row the developer is on shows its whole outcome: a clamped line is unreadable from the keyboard, where there is no hover tooltip.
-const FULL_OUTCOME_CLASS = 'aria-selected:[&_p]:line-clamp-none focus:[&_p]:line-clamp-none'
-
-/** The goal, the segmented Stage bar and the roll-up: the same header the chat card draws, minus its disclosure. */
-export function PanelHeader({ scenario, status, durationMs }: { scenario: ChatScenario; status: SubagentRowStatus; durationMs: number | undefined }) {
+/** The running total as a polite live region, which doubles as the empty state; it is also where focus lands when a pruned row took it (#1085). */
+export function AgentsStatusLine({ totalRunning }: { totalRunning: number }) {
   return (
-    <div role="group" tabIndex={-1} data-panel-heading aria-label={formatHeaderTriggerLabel(scenario.headerStats, status, durationMs)} className="shrink-0 rounded-lg bg-chat-card-bg ring-1 ring-divider focus-visible:outline-solid focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-ring">
-      <div className="flex min-w-0 items-center gap-2 px-2 py-1 text-sm">
-        <span aria-hidden="true" className={ICON_SLOT_CLASS}>
-          <SubagentStatusGlyph status={status} />
-        </span>
-        <span className="shrink-0">Subagents</span>
-        <span className="min-w-0 flex-1 truncate text-muted-foreground" title={scenario.headerStats}>
-          {scenario.headerStats}
-        </span>
-        <SubagentsHeaderMeta status={status} durationMs={durationMs} />
-      </div>
-      {/* The panel sits beside the chat card, which already announces "All stages done". */}
-      <SubagentsHeaderBelow stageStates={stageSegmentStates(scenario.stages)} goal={scenario.overallGoal} goalClassName="rounded-b-lg" announceDone={false} />
-    </div>
+    <p role="status" aria-live="polite" data-panel-heading tabIndex={-1} className="px-2 py-1 text-sm text-muted-foreground focus-visible:outline-solid focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-ring">
+      {agentsStatusText(totalRunning)}
+    </p>
   )
 }
 
-/** The header with its own one-second clock: only this small subtree re-renders each tick, not the tree and the stream below it. */
-export const LivePanelHeader = memo(function LivePanelHeader({ scenario, status }: { scenario: ChatScenario; status: SubagentRowStatus }) {
-  const running = status === 'running'
+const FOCUS_RING_CLASS = 'focus-visible:outline-solid focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
+
+interface RowHandlers {
+  rowRef: (key: string, element: HTMLElement | null) => void
+  onSelect: (sessionId: string, row: AgentRow) => void
+  onToggle: (sessionId: string) => void
+}
+
+/** A running agent ticks each second on its own clock, so only this text re-renders, not the list around it. */
+function AgentElapsed({ summary }: { summary: AgentRow['summary'] }) {
+  const running = summary.status === 'running'
   const [now, setNow] = useState(Date.now)
   useEffect(() => {
     if (!running) return
@@ -56,110 +39,84 @@ export const LivePanelHeader = memo(function LivePanelHeader({ scenario, status 
     const interval = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(interval)
   }, [running])
-  return <PanelHeader scenario={scenario} status={status} durationMs={panelDurationMs(scenario, running, now)} />
-})
-
-interface RowHandlers {
-  sessionId: string
-  rowRef: (key: string, element: HTMLDivElement | null) => void
-  onKeyDown: (event: KeyboardEvent<HTMLDivElement>, index: number) => void
-  onFocusRow: (row: PanelAgentRow) => void
-  onToggleStage: (stageId: string, open: boolean) => void
+  const text = agentElapsedText(summary, now)
+  return text ? <span className="shrink-0 tabular-nums text-muted-foreground">{text}</span> : null
 }
 
-/** The row's description node: hidden (a described-by reference still reads it), so the visible text is not spoken twice in browse mode. */
-function RowDescription({ id, text }: { id: string; text: string }) {
-  return text ? (
-    <span id={id} hidden>
-      {text}
-    </span>
-  ) : null
-}
+type AgentItemProps = { row: AgentRow; sessionId: string; selected: boolean } & Pick<RowHandlers, 'rowRef' | 'onSelect'>
 
-type StageTreeRowProps = { row: PanelStageRow; index: number; tabbable: boolean } & Pick<RowHandlers, 'sessionId' | 'rowRef' | 'onKeyDown' | 'onToggleStage'>
-
-const StageTreeRow = memo(function StageTreeRow({ row, index, tabbable, sessionId, rowRef, onKeyDown, onToggleStage }: StageTreeRowProps) {
-  const { stage, open } = row
-  const heading = stageHeading(stage.number, stage.cleanTitle, true)
-  const descriptionId = useId()
-  const [focused, setFocused] = useState(false)
+const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, onSelect }: AgentItemProps) {
+  const { summary } = row
   return (
-    <div
-      ref={(element) => rowRef(row.key, element)}
-      role="treeitem"
-      aria-level={1}
-      aria-setsize={row.setsize}
-      aria-posinset={row.posinset}
-      aria-expanded={open}
-      aria-label={row.ariaLabel}
-      aria-describedby={row.description ? descriptionId : undefined}
-      tabIndex={tabbable ? 0 : -1}
-      // A Stage has no single agent to stream, so focusing it selects nothing (issue #941 part 2).
-      onKeyDown={(event) => onKeyDown(event, index)}
-      onFocus={() => setFocused(true)}
-      onBlur={(event: FocusEvent<HTMLDivElement>) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false)
-      }}
-      className={cn(ROW_CLASS, 'rounded-none', row.posinset > 1 && 'border-t border-divider')}
-      data-status={stage.status}
-    >
-      <StageHeader
-        stage={stage}
-        expanded={open}
-        fullOutcome={focused}
-        trailing={
-          // The row itself takes Enter, Space and the arrow keys, so this stays out of the tab order and out of the one tab stop.
-          <IconButton variant="ghost" size="icon-xs" tabIndex={-1} label={`${open ? 'Collapse' : 'Expand'} ${heading}`} onClick={() => onToggleStage(stage.id, !open)}>
-            <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', open && 'rotate-90')} />
-          </IconButton>
-        }
-      />
-      {/* pl-10 = the row's px-4, the 16px status column and its 8px gap, so "Uses:" starts under the title, as on the card. These links stay tab stops: they are the only
-          keyboard route to the agent a Stage depends on, the tree has no jump key, and the Stage's name already lists them. */}
-      <StageUsesLine dependencies={stage.dependencies} sessionId={sessionId} className="pl-10 pr-4" />
-      <RowDescription id={descriptionId} text={row.description} />
-    </div>
+    <li>
+      <button
+        ref={(element) => rowRef(row.key, element)}
+        type="button"
+        aria-current={selected ? 'true' : undefined}
+        onClick={() => onSelect(sessionId, row)}
+        className={cn('relative flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-surface-hover aria-[current=true]:bg-accent forced-colors:aria-[current=true]:border forced-colors:aria-[current=true]:border-[Highlight]', FOCUS_RING_CLASS)}
+      >
+        {selected && <ActiveIndicatorBar />}
+        <span className="flex shrink-0 items-center gap-1 text-xs">
+          <SubagentStatusIcon status={summary.status} />
+        </span>
+        <span className="min-w-0 flex-1 truncate" title={summary.name ?? summary.nameOrTask}>
+          {summary.name ?? summary.nameOrTask}
+          {summary.background && <span className="ml-2 text-xs text-muted-foreground">Background</span>}
+        </span>
+        <AgentElapsed summary={summary} />
+      </button>
+    </li>
   )
 })
 
-type AgentTreeRowProps = { row: PanelAgentRow; index: number; tabbable: boolean; selected: boolean } & Pick<RowHandlers, 'rowRef' | 'onKeyDown' | 'onFocusRow'>
-
-const AgentTreeRow = memo(function AgentTreeRow({ row, index, tabbable, selected, rowRef, onKeyDown, onFocusRow }: AgentTreeRowProps) {
-  const descriptionId = useId()
-  // A Stage with one agent expands flat, as on the chat card: a guide line at the 40px mark, no second card repeating the Stage's name or outcome (FR-176).
-  const flat = row.setsize === 1
-  // A row that would otherwise draw nothing names its agent, so the keyboard target is never an empty, invisible row.
-  const fallbackLabel = repeatsStageTitle(row.agent.name, row.stageTitle) && flatBodyHasContent(row.agent) ? undefined : row.agent.name
+function FinishedItem({ row }: { row: FinishedRow }) {
+  const { Icon, className } = STATUS_GLYPH['success-done']
   return (
-    <div
-      ref={(element) => rowRef(row.key, element)}
-      role="treeitem"
-      aria-level={2}
-      aria-setsize={row.setsize}
-      aria-posinset={row.posinset}
-      aria-selected={selected}
-      aria-label={row.ariaLabel}
-      aria-describedby={row.description ? descriptionId : undefined}
-      tabIndex={tabbable ? 0 : -1}
-      onFocus={() => onFocusRow(row)}
-      onKeyDown={(event) => onKeyDown(event, index)}
-      // ml-10 puts the agent under the Stage title, as on the chat card. A parallel agent is a bordered card; a lone one is flat and its row
-      // has no padding of its own. The hover fill is the surface step, which stays visible on the card fill where `row-hover-bg` does not.
-      className={cn(ROW_CLASS, FULL_OUTCOME_CLASS, 'ml-10 mr-4 hover:bg-surface-hover', flat ? 'rounded-none' : cn(SUBAGENT_CARD_SURFACE_CLASS, 'my-2'))}
-    >
-      {selected && <ActiveIndicatorBar />}
-      {/* Issue #712: a detached background job keeps its muted "Background" word. */}
-      {row.agent.background && <span className="mb-1 block text-xs text-muted-foreground">Background</span>}
-      {/* The row is the one tab stop, so the card's "+N" files button is not: the detail pane lists every file. */}
-      <FileChipTabbableContext.Provider value={false}>
-        <SubagentCardBody agent={row.agent} flat={flat} fallbackLabel={fallbackLabel} />
-      </FileChipTabbableContext.Provider>
-      <RowDescription id={descriptionId} text={row.description} />
-    </div>
+    <li className="flex min-h-9 items-center gap-2 px-2 py-1 text-sm text-muted-foreground">
+      <span aria-hidden="true" className={ICON_SLOT_CLASS}>
+        <Icon className={cn('size-4 shrink-0', className)} />
+      </span>
+      {finishedText(row.count)}
+    </li>
+  )
+}
+
+type GroupProps = { group: GroupRows; collapsed: boolean; selectedKey: string | null } & RowHandlers
+
+/** The `data-agents-group` anchor is stable per Session so a later task can scroll to the group. */
+export const AgentsGroupSection = memo(function AgentsGroupSection({ group, collapsed, selectedKey, rowRef, onSelect, onToggle }: GroupProps) {
+  const headingId = useId()
+  const listId = useId()
+  return (
+    <section data-agents-group={group.sessionId} aria-labelledby={headingId} className="flex flex-col">
+      <h3 id={headingId} className="m-0 text-sm font-medium">
+        <button
+          ref={(element) => rowRef(group.key, element)}
+          type="button"
+          aria-expanded={!collapsed}
+          aria-controls={listId}
+          onClick={() => onToggle(group.sessionId)}
+          className={cn('flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-surface-hover', FOCUS_RING_CLASS)}
+        >
+          <ChevronRightIcon aria-hidden className={cn('size-4 shrink-0 transition-transform motion-reduce:transition-none', !collapsed && 'rotate-90')} />
+          <span className="min-w-0 flex-1 truncate">
+            {group.name}
+            {group.repositoryName && <span className="ml-2 text-xs font-normal text-muted-foreground">{group.repositoryName}</span>}
+          </span>
+          <span className="shrink-0 text-xs font-normal text-muted-foreground">{runningText(group.running)}</span>
+        </button>
+      </h3>
+      <ul id={listId} hidden={collapsed} className="m-0 flex list-none flex-col gap-0.5 p-0 pl-4">
+        {group.rows.map((row) =>
+          row.kind === 'agent' ? <AgentItem key={row.key} row={row} sessionId={group.sessionId} selected={row.key === selectedKey} rowRef={rowRef} onSelect={onSelect} /> : <FinishedItem key={row.key} row={row} />
+        )}
+      </ul>
+    </section>
   )
 })
 
-/** The selected agent's whole outcome and every file it touched, which the tree row clamps and folds behind "+N". */
+/** The selected agent's whole outcome and every file it touched, which the row's single line leaves out. */
 export function AgentDetailSummary({ agent }: { agent: SubAgentItem }) {
   const outcome = agent.whatItDid?.trim()
   const files = agent.filesTouched ?? []
@@ -169,19 +126,5 @@ export function AgentDetailSummary({ agent }: { agent: SubAgentItem }) {
       {outcome && <ResultMarkdown text={outcome} interactive className="break-words text-sm text-card-foreground" />}
       <FileChipList files={files} label={FILES_TOUCHED_LABEL} limit={files.length} />
     </section>
-  )
-}
-
-export function PanelTree({ rows, selectedKey, tabbableIndex, sessionId, rowRef, onKeyDown, onFocusRow, onToggleStage }: { rows: readonly PanelRow[]; selectedKey: string | null; tabbableIndex: number } & RowHandlers) {
-  return (
-    <div role="tree" aria-label="Subagents" className="flex flex-col py-2">
-      {rows.map((row, index) =>
-        row.kind === 'stage' ? (
-          <StageTreeRow key={row.key} row={row} index={index} tabbable={index === tabbableIndex} sessionId={sessionId} rowRef={rowRef} onKeyDown={onKeyDown} onToggleStage={onToggleStage} />
-        ) : (
-          <AgentTreeRow key={row.key} row={row} index={index} tabbable={index === tabbableIndex} selected={row.key === selectedKey} rowRef={rowRef} onKeyDown={onKeyDown} onFocusRow={onFocusRow} />
-        )
-      )}
-    </div>
   )
 }

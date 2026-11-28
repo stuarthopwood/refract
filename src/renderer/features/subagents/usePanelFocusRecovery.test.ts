@@ -1,17 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { PanelFocusTracker, type Focusable, type FocusRoot } from './usePanelFocusRecovery'
-import { buildPanelRows } from './subagentPanelRows'
+import { buildGroupRows, type AgentRow } from './subagentPanelRows'
 import { subagentSummary } from './viewModel/testFixtures'
-import { selectScenarioFromSummaries } from './viewModel'
 
-const rows = buildPanelRows(
-  selectScenarioFromSummaries([
-    subagentSummary({ nameOrTask: 'Alpha', toolCallId: 'c1', specIndex: 0, id: 'a' }),
-    subagentSummary({ nameOrTask: 'Beta', toolCallId: 'c1', specIndex: 1, id: 'b' })
-  ]).stages,
-  () => true
-)
-const beta = rows.find((row) => row.kind === 'agent' && row.label === 'Beta')!
+const rows = buildGroupRows([
+  {
+    sessionId: 's1',
+    name: 'Session',
+    status: 'working',
+    subagents: [subagentSummary({ nameOrTask: 'Alpha', toolCallId: 'c1', specIndex: 0, id: 'a', status: 'running' }), subagentSummary({ nameOrTask: 'Beta', toolCallId: 'c1', specIndex: 1, id: 'b', status: 'running' })]
+  }
+])[0]!.rows
+const beta = rows.find((row): row is AgentRow => row.kind === 'agent' && row.summary.nameOrTask === 'Beta')!
 const withoutBeta = rows.filter((row) => row.key !== beta.key)
 
 const BODY = { name: 'body' }
