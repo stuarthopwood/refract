@@ -8,16 +8,32 @@ import { assistantText, subagentItem, subagentSummary } from '../subagents/viewM
 import { groupSubagentStages, isStageGroup, type StageGroup } from './groupSubagentStages'
 import { StageGroupRow, SubagentChainRow } from './SubagentChainRow'
 
-// A server render reads zustand's INITIAL state, never a later `setState`, so the toggle store is a plain selector over mutable state.
+// A server render reads zustand's INITIAL state, never a later `setState`, so the stores are plain selectors over mutable state.
 const toggles = vi.hoisted(() => ({ bySession: {} as Record<string, Record<string, boolean>> }))
+const readout = vi.hoisted(() => ({ subagents: [] as { id: string; toolCallId: string; specIndex: number }[] }))
+const openHostedPanel = vi.hoisted(() => vi.fn())
+// Wraps the real `IconButton` to capture each `onClick` by its label: the repo has no jsdom, so a click cannot be dispatched.
+const iconButtons = vi.hoisted(() => new Map<string, (event: { currentTarget: unknown }) => void>())
+vi.mock('@/components/IconButton', async (importOriginal) => {
+  // The hoisted factory cannot see the file's static imports, so `createElement` comes from a dynamic import.
+  const original = await importOriginal<{ IconButton: (props: { label: string; onClick?: unknown }) => unknown }>()
+  const { createElement: h } = await import('react')
+  return {
+    ...original,
+    IconButton: (props: { label: string; onClick?: (event: { currentTarget: unknown }) => void }) => {
+      if (props.onClick) iconButtons.set(props.label, props.onClick)
+      return h(original.IconButton as never, props)
+    }
+  }
+})
 vi.mock('@/state', () => ({
   EMPTY_READOUT_ENTRY: { subagents: [] },
-  useReadoutStore: (select: (state: { bySession: object }) => unknown) => select({ bySession: {} }),
+  useReadoutStore: (select: (state: { bySession: object }) => unknown) => select({ bySession: { s1: { subagents: readout.subagents } } }),
   useSettingsStore: (select: (state: { settings: object }) => unknown) => select({ settings: { transcriptDisplay: { toolCalls: false } } }),
   useSyntaxTheme: () => 'github-dark',
   useStageToggleStore: (select: (state: object) => unknown) => select({ bySession: toggles.bySession, setManualOpen: () => undefined })
 }))
-vi.mock('../right-pane/hosted-panel-actions', () => ({ openHostedPanel: vi.fn() }))
+vi.mock('../right-pane/hosted-panel-actions', () => ({ openHostedPanel }))
 
 function stagesFor(statuses: SubagentSummary['status'][], goals: (string | undefined)[] = []): StageGroup[] {
   const items = statuses.flatMap((status, index) => [
@@ -78,6 +94,9 @@ const cardTrigger = (html: string): string | undefined => (html.match(/<button[^
 
 beforeEach(() => {
   toggles.bySession = {}
+  readout.subagents = []
+  iconButtons.clear()
+  openHostedPanel.mockClear()
 })
 
 describe('SubagentChainRow Stage open state (FR-149)', () => {
@@ -152,5 +171,53 @@ describe('StageGroupRow, a single-Stage turn (FR-175, FR-176)', () => {
     const html = renderRow(group, 's1')
     toggles.bySession = {}
     expect(visibleText(html).split('failed hard').length - 1).toBe(1)
+  })
+
+  it('shows a Show button even before the agent is live, and leaves the settle announcement to the transcript', () => {
+    // Mutation: hide Show without a registry match, or mount a per-Stage live region back inside the log.
+    const html = renderRow(stagesFor(['finished'])[0]!, 's1')
+    expect(html).not.toContain('aria-live="polite"')
+    expect(html).toContain('in Subagents panel')
+  })
+})
+
+describe('StageGroupRow Show buttons in a multi-agent Stage (#1774, FR-213)', () => {
+  const multiAgentStage = (): StageGroup => {
+    const items = [
+      subagentItem({ name: 'Alpha', id: 'c1:Alpha', toolCallId: 'c1', specIndex: 0, status: 'running' }),
+      subagentItem({ name: 'Beta', id: 'c1:Beta', toolCallId: 'c1', specIndex: 1, status: 'running' })
+    ]
+    return groupSubagentStages(items, []).find(isStageGroup)!
+  }
+  const open = () => renderToStaticMarkup(createElement(TooltipProvider, null, createElement(StageGroupRow, { group: multiAgentStage(), sessionId: 's1' })))
+  const click = (label: string, opener: object) => iconButtons.get(label)!({ currentTarget: opener })
+
+  it('opens the panel on the clicked agent with its own ids, once its registry entry is live', () => {
+    // Mutation: pass the first agent's ids for every Show button, or drop selectSubagentId.
+    readout.subagents = [
+      { id: 'reg-alpha', toolCallId: 'c1', specIndex: 0 },
+      { id: 'reg-beta', toolCallId: 'c1', specIndex: 1 }
+    ]
+    open()
+    const opener = { tagName: 'BUTTON' }
+    click('Show Beta in Subagents panel', opener)
+    expect(openHostedPanel).toHaveBeenLastCalledWith('subagents', 's1', { selectSubagentId: 'reg-beta', selectSubagentKey: 'c1:1', opener })
+    click('Show Alpha in Subagents panel', opener)
+    expect(openHostedPanel).toHaveBeenLastCalledWith('subagents', 's1', { selectSubagentId: 'reg-alpha', selectSubagentKey: 'c1:0', opener })
+    expect(openHostedPanel).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes only the agent key before a live registry entry exists, and the button is still there', () => {
+    // Mutation: hide Show without a registry match, or send an undefined/empty selectSubagentId.
+    const html = open()
+    expect(html).toContain('aria-label="Show Alpha in Subagents panel"')
+    expect(html).toContain('aria-label="Show Beta in Subagents panel"')
+    const opener = { tagName: 'BUTTON' }
+    click('Show Beta in Subagents panel', opener)
+    expect(openHostedPanel).toHaveBeenCalledTimes(1)
+    const [panel, sessionId, options] = openHostedPanel.mock.calls[0]!
+    expect([panel, sessionId]).toEqual(['subagents', 's1'])
+    expect(options).toEqual({ selectSubagentKey: 'c1:1', opener })
+    expect(Object.keys(options)).not.toContain('selectSubagentId')
   })
 })

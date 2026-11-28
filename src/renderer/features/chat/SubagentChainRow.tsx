@@ -14,7 +14,9 @@ import { SpineList, SpineItem, SPINE_HOST_CONTENT_CLASS } from './SpineList'
 import { StageContextBrief } from './StageContextBrief'
 import { StageUsesLine } from './StageDependencies'
 import { stageRowDomId } from './stageJump'
-import { SubagentCardButton } from './SubagentRow'
+import { SubagentCardButton, openSubagentInPanel } from './SubagentRow'
+import { EMPTY_READOUT_ENTRY, useReadoutStore } from '@/state'
+import type { SubagentItem } from './subagentChainStatus'
 import { SubagentGoalPreview } from './SubagentGoalPreview'
 import { stageHeading } from './stageMeta'
 import type { StageGroup } from './groupSubagentStages'
@@ -22,12 +24,11 @@ import { deriveHeader } from '../subagents/viewModel/derive'
 import { StageHeader } from '../subagents/card/StageHeader'
 import { SubagentsCardHeader } from '../subagents/card/SubagentsCardHeader'
 import { stageAccessibleName, stageAgentsGridClass, stageRowModel } from '../subagents/card/stageRowModel'
-import { stageSegmentStates } from '../subagents/card/headerStats'
 import { useStickyDisclosure } from './useStickyDisclosure'
 import { summarizeSubagentStatuses } from '../subagents/subagentStatus'
 import { overallStatus } from './subagentChainStatus'
 
-/** One Stage rendered in place, drawn with the shared `StageHeader` so a Stage looks the same on every surface (FR-175). */
+/** One Stage rendered in place, drawn with the shared `StageHeader` so a Stage looks the same on every surface. */
 export function StageGroupRow({ group, sessionId }: { group: StageGroup; sessionId: string | null }) {
   const { status } = group.view
   const isRunning = status === 'running'
@@ -47,16 +48,16 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   }, [group.items, seenIds])
   // Once a turn has 2+ Stages (live `group.totalStages`), running alone no longer auto-opens a Stage; the per-turn chain row carries the
   // live overview. A failed/cancelled/exited member opens it at once (raw counts, not overall status). The sticky latch below keeps
-  // an already-open Stage open; a fresh mount of a multi-Stage turn starts closed. (#1000)
+  // an already-open Stage open; a fresh mount of a multi-Stage turn starts closed.
   const hasBadMember = counts.failed > 0 || counts.cancelled > 0 || counts.exited > 0
   const isMultiStageTurn = group.totalStages > 1
   const isOpenByDefault = total > 1 && (isMultiStageTurn ? hasBadMember : isRunning || hasBadMember)
-  // Upward-only: auto-opens while running/failed/cancelled/exited, but only the user's own toggle closes it (keeps focus on the trigger, WCAG 2.4.3). (#991)
+  // Upward-only: auto-opens while running/failed/cancelled/exited, but only the user's own toggle closes it (keeps focus on the trigger, WCAG 2.4.3).
   const { open, onOpenChange } = useStickyDisclosure(sessionId, group.id, isOpenByDefault)
 
   // When a 2nd agent joins, the solo SubagentBody unmounts and focus falls to <body> synchronously, so focus-inside is tracked via
   // focusin/focusout on a wrapper that survives the swap and redirected to the trigger. Pre-wrapping the solo body in a
-  // SpineList was rejected: it adds a permanent rail to every solo Stage. (#1001)
+  // SpineList was rejected: it adds a permanent rail to every solo Stage.
   // A callback ref is needed because the content is not mounted while collapsed, so a one-time effect would never attach the listeners.
   const memberContentNodeRef = React.useRef<HTMLDivElement | null>(null)
   const triggerRef = React.useRef<HTMLButtonElement>(null)
@@ -104,9 +105,9 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
     }
   }, [total])
 
-  // The Stage header and its outcome line carry the roll-up, status and duration (FR-175); no per-row "3 done" text is drawn here.
+  // The Stage header and its outcome line carry the roll-up, status and duration; no per-row "3 done" text is drawn here.
   const stageLabel = stageHeading(group.stageIndex, group.view.cleanTitle, true)
-  // A failed solo Stage's reason is the header's outcome line (FR-175); the body never repeats it (#2318).
+  // A failed solo Stage's reason is the header's outcome line; the body never repeats it.
   const soloItem = total === 1 ? group.items[0]! : undefined
   // The content sits at the header's 40px mark (16px padding, 16px status column, 8px gap), so the brief and the cards start under the title.
   const columnClassName = 'pl-10 pr-4'
@@ -127,16 +128,19 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
         expanded={open}
         columnFocusable
         trailing={
-          <IconButton
-            ref={triggerRef}
-            variant="ghost"
-            size="icon-xs"
-            aria-expanded={open}
-            label={`${stageLabel} agents`}
-            onClick={() => onOpenChange(!open)}
-          >
-            <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', open && 'rotate-90')} />
-          </IconButton>
+          <>
+            {soloItem && <AgentShowButton item={soloItem} name={group.view.agents[0]?.name ?? soloItem.name} sessionId={sessionId} />}
+            <IconButton
+              ref={triggerRef}
+              variant="ghost"
+              size="icon-xs"
+              aria-expanded={open}
+              label={`${stageLabel} agents`}
+              onClick={() => onOpenChange(!open)}
+            >
+              <ChevronRightIcon aria-hidden className={cn('size-4 transition-transform motion-reduce:transition-none', open && 'rotate-90')} />
+            </IconButton>
+          </>
         }
       />
       <FadeCollapse show={open}>
@@ -150,13 +154,19 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
             </div>
           )}
           <StageUsesLine dependencies={group.view.dependencies} sessionId={sessionId} className={columnClassName} />
-          {/* Scoped to the member content that swaps element type on a 1-to-2 transition, so focus tracking ignores the brief/Uses line. (#1001) */}
+          {/* Scoped to the member content that swaps element type on a 1-to-2 transition, so focus tracking ignores the brief/Uses line. */}
           <div ref={memberContentRef} className={columnClassName}>
             {total > 1 ? (
               <SpineList gap="member" bare className={stageAgentsGridClass(parallelCount)}>
                 {group.items.map((item, index) => (
                   <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                    <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
+                    {/* The card is one button, so Show sits beside it, never inside it. */}
+                    <div className="flex items-start gap-1">
+                      <div className="min-w-0 flex-1">
+                        <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
+                      </div>
+                      <AgentShowButton item={item} name={group.view.agents[index]?.name ?? item.name} sessionId={sessionId} />
+                    </div>
                   </SpineItem>
                 ))}
               </SpineList>
@@ -167,6 +177,18 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
         </div>
       </FadeCollapse>
     </div>
+  )
+}
+
+/** A ghost icon button opening one agent in the Subagents panel. Every agent has one: before its live registry entry exists it selects the agent by key and the panel picks it up on arrival. */
+function AgentShowButton({ item, name, sessionId }: { item: SubagentItem; name: string; sessionId: string | null }) {
+  const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
+  if (!sessionId) return null
+  const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
+  return (
+    <IconButton variant="ghost" size="icon-xs" label={`Show ${name} in Subagents panel`} onClick={(event) => openSubagentInPanel(sessionId, { id: match?.id, toolCallId: item.toolCallId, specIndex: item.specIndex }, event.currentTarget)}>
+      <BotIcon aria-hidden className="size-4" />
+    </IconButton>
   )
 }
 
@@ -237,7 +259,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
     <SubagentsCardHeader
       status={status}
       headerStats={headerStats}
-      stageStates={stageSegmentStates(stages.map((stage) => stage.view))}
+      stages={stages.map((stage) => stage.view)}
       goal={overallGoal}
       durationMs={durationMs}
       open={open}

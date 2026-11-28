@@ -3,6 +3,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
+import { TooltipProvider } from '@/components/ui/tooltip'
 import { nextAnnouncement, ProgressStrip, SEGMENT_CLASS, type ProgressStripProps } from './ProgressStrip'
 
 function render(props: Partial<ProgressStripProps> = {}) {
@@ -74,6 +75,43 @@ describe('ProgressStrip segments', () => {
 
   it('uses theme tokens only, never a hex colour', () => {
     expect(render({ segments })).not.toMatch(/#[0-9a-fA-F]{3,8}\b/)
+  })
+})
+
+describe('ProgressStrip segmentLabels (FR-216)', () => {
+  const segments = ['done', 'running', 'queued'] as const
+  const segmentLabels = ['Stage 1 · Audit · Done · 2m 3s', 'Stage 2 · Fix · Running', 'Stage 3 · Ship · Queued']
+  const renderLabelled = (props: Partial<ProgressStripProps> = {}) =>
+    renderToStaticMarkup(createElement(TooltipProvider, null, createElement(ProgressStrip, { value: 1, max: 3, label: '1/3 done', segments, segmentLabels, ...props })))
+
+  it('lists every label once for assistive tech and points the one progressbar at the list', () => {
+    // Mutation: drop the aria-describedby, or render the list per segment so the bar names itself.
+    const html = renderLabelled()
+    const describedBy = html.match(/role="progressbar"[^>]*aria-describedby="([^"]+)"/)?.[1]
+    expect(describedBy).toBeDefined()
+    expect(html).toContain(`<ul id="${describedBy}" aria-hidden="true" class="sr-only">`)
+    for (const label of segmentLabels) expect(html).toContain(`<li>${label}</li>`)
+    expect(html.match(/role="progressbar"/g)).toHaveLength(1)
+  })
+
+  it('keeps the segments aria-hidden so the list is the only spoken copy', () => {
+    const states = [...renderLabelled().matchAll(/<span aria-hidden="true"[^>]*data-segment="(\w+)"/g)].map((match) => match[1])
+    expect(states).toEqual(['done', 'running', 'queued'])
+  })
+
+  it('adds nothing without labels, and skips the tooltip for a block with no entry', () => {
+    // Mutation: always emit aria-describedby, or wrap a label-less block in a Tooltip.
+    expect(render({ segments })).not.toContain('aria-describedby')
+    expect(renderLabelled({ segmentLabels: undefined })).not.toContain('<ul')
+    const partial = renderLabelled({ segmentLabels: ['Stage 1 · Audit · Done'] })
+    expect(partial.match(/data-state=/g)).toHaveLength(1)
+  })
+
+  it('makes a labelled block a hover target taller than the 4px bar, reaching down only so it never covers the header', () => {
+    // Mutation: extend the pseudo-element above the block again.
+    const html = renderLabelled()
+    expect(html).toMatch(/data-segment="done"[^>]*class="[^"]*before:-bottom-2/)
+    expect(html).not.toContain('before:-inset-y-2')
   })
 })
 

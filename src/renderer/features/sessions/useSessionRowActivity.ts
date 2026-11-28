@@ -17,7 +17,6 @@ export function useSessionRowActivity(session: SessionSummary): string | null {
       ? deriveActivity({
           needsYou,
           pending,
-          runningSubagents: readout?.runningSubagents ?? 0,
           todo: readout?.todo ?? null,
           latestIntent: readout?.latestIntent,
           latestTool: readout?.latestTool,
