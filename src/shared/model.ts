@@ -475,6 +475,19 @@ export interface ConversationInfo {
   sizeBytes: number;
 }
 
+/** One message entry of the current Conversation's tree (#696). `parentId` is the nearest message ancestor; `label` is OMP's `set_label` value. */
+export interface ConversationTreeEntry {
+  id: string;
+  parentId: string | null;
+  role: string;
+  /** The first 200 characters of the message text, whitespace collapsed. */
+  text: string;
+  timestamp: string | null;
+  label: string | null;
+}
+/** `leafId` is the entry the Conversation currently ends at, or null when it has no message yet. */
+export interface ConversationTree { leafId: string | null; entries: ConversationTreeEntry[]; }
+
 /** Opt-in Conversation retention (#2161, FR-189): off by default; `days` is clamped to 1..3650 by Rust. */
 export interface ConversationRetention { enabled: boolean; days: number; }
 export const DEFAULT_CONVERSATION_RETENTION: Readonly<ConversationRetention> = Object.freeze({ enabled: false, days: 90 });

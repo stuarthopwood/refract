@@ -30,7 +30,7 @@ export const SUPPORTED_OMP_COMMANDS: Readonly<Record<string, readonly string[]>>
   'forget-approvals': [],
 };
 
-/** Command names Refract handles natively; refused locally even if OMP later offers the same name. */
+/** Command names Refract handles natively; refused locally even if OMP later offers the same name. `/fork` is typed-refused: Fork is a Conversation-tree action on an entry (`conversations.fork`, #696), not a slash command. */
 export const NATIVE_RESERVED_COMMANDS: Readonly<Record<string, true>> = {
   new: true,
   resume: true,

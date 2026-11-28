@@ -12,6 +12,7 @@ import type {
   ApprovalMode,
   CatalogKind,
   ConversationInfo,
+  ConversationTree,
   ConversationRetention,
   RetentionPreview,
   RetentionRun,
@@ -107,7 +108,8 @@ export type IpcErrorCode =
   | 'personal-agent-exists' | 'personal-agent-protected' | 'invalid-shape' | 'working-folder-unavailable'
   | 'no-repository'
   | 'request-gone'
-  | 'current-conversation' | 'delete-failed'; // #2161 conversations.delete
+  | 'current-conversation' | 'delete-failed' // #2161 conversations.delete
+  | 'entry-not-found' | 'tree-failed' | 'ask-reanswer-unsupported'; // #696 conversations.tree/rewind/fork/label; `not-idle` also covers a busy Rewind or Fork
 
 export interface IpcError {
   code: IpcErrorCode;
@@ -193,6 +195,11 @@ export interface SessionSnapshot {
   subagents: SubagentSummary[];
   advisorOn: boolean; // issue #937: initial Advisor-chip on/off state; subsequent changes via advisor:update
 }
+
+/** `conversations.rewind` (#696): same Conversation, `snapshot` is its rebuilt transcript. `cancelled` is a stopped summary; nothing moved then. `editorText` is the user message to put back in the composer. */
+export interface RewindResult { cancelled: boolean; editorText: string | null; snapshot: SessionSnapshot; }
+/** `conversations.fork` (#696): `file` is the new Conversation (now current), `snapshot` its transcript; the original stays listed. */
+export interface ForkResult { file: string; snapshot: SessionSnapshot; }
 
 export type TranscriptOp = { op: 'upsert'; item: TranscriptItem } | { op: 'reset'; items: TranscriptItem[] };
 
@@ -297,6 +304,11 @@ export const IPC_REQUESTS = {
   CONVERSATIONS_START_NEW: 'conversations.startNew',
   CONVERSATIONS_OPEN: 'conversations.open',
   CONVERSATIONS_DELETE: 'conversations.delete',
+  CONVERSATIONS_TREE: 'conversations.tree',
+  CONVERSATIONS_REWIND: 'conversations.rewind',
+  CONVERSATIONS_FORK: 'conversations.fork',
+  CONVERSATIONS_LABEL: 'conversations.label',
+  CONVERSATIONS_ABORT_SUMMARY: 'conversations.abortSummary',
   CONVERSATIONS_RETENTION_PREVIEW: 'conversations.retentionPreview',
   CONVERSATIONS_RETENTION_RUN: 'conversations.retentionRun',
   SESSION_LOGS_SWEEP_PREVIEW: 'sessionLogs.sweepPreview',
@@ -543,6 +555,11 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     startNew(sessionId: string): Promise<Result<SessionSnapshot>>;
     open(sessionId: string, file: string): Promise<Result<SessionSnapshot>>;
     delete(sessionId: string, file: string): Promise<Result<{ bytesFreed: number }>>;
+    tree(sessionId: string): Promise<Result<ConversationTree>>; // #696: message entries of the current Conversation with labels; works while a turn runs.
+    rewind(sessionId: string, entryId: string, summarize?: boolean): Promise<Result<RewindResult>>; // #696: idle only (`not-idle`); files in the worktree are not changed.
+    fork(sessionId: string, entryId: string): Promise<Result<ForkResult>>; // #696: idle only; creates a new Conversation file and makes it current.
+    label(sessionId: string, entryId: string, label: string): Promise<Result<null>>; // #696: empty string clears.
+    abortSummary(sessionId: string): Promise<Result<null>>; // #696: stops the branch summary a Rewind started.
     retentionPreview(): Promise<Result<RetentionPreview>>; // #2161: what the stored retention setting would delete; nothing while it is off.
     retentionRun(): Promise<Result<RetentionRun>>; // #2161: user-triggered; deletes the previewed Conversations through `conversations.delete`'s refusals.
   };

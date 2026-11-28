@@ -27,5 +27,5 @@ pub mod token_guard;
 mod usage_nudge;
 pub mod working_mode;
 
-pub use agent::{AgentError, SessionAgent, SessionStatus};
+pub use agent::{AgentError, RewindOutcome, SessionAgent, SessionStatus};
 pub use manager::SessionManager;

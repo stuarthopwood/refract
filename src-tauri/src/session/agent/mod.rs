@@ -42,6 +42,8 @@ mod status;
 mod sync_from_state;
 mod tool_host;
 mod transcript_labels;
+mod tree;
+mod tree_projection;
 mod types;
 pub use chat::{outcome_name, MessageDelivery};
 pub use command_wait::COMMANDS_WAIT;
@@ -55,6 +57,7 @@ pub use handoff_queue::{
 };
 pub use requests::is_chat_answer;
 pub use start_with_message::{FirstMessage, StartStage, StartThenSendError};
+pub use tree::RewindOutcome;
 use types::should_apply_crash_exit_verdict;
 pub use types::{AgentError, AskOption, AskQuestion, PendingRequest, SessionStatus};
 

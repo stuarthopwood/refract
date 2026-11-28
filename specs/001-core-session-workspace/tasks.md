@@ -6039,8 +6039,8 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 
 ### Lane #696 (after T762; probe first)
 
-- [ ] T764 [US1] #696: probe OMP 18.13.3 in a scratch profile: `get_tree`, `navigate_tree`, `fork` with `entryId`, `set_label`, behaviour while not idle, `get_state` after each; record in FINDINGS; no source change, per FR-197.
-- [ ] T765 [US1] #696: add tree view, Rewind, Fork and labels (Rust IPC next to `conversations_core.rs`, renderer opened from `ConversationSwitcher.tsx`), registry update and reattach tolerance for fork, no #449 notice, idle-only, inline errors, update `src/shared/slash-commands.ts` and constitution II, per FR-197 to FR-200, SC-039 (missing). Tests: `conversations_core.test.rs` and a tree view test. Branch stays out of v1.
+- [x] T764 [US1] #696: probe OMP 18.13.3 in a scratch profile: `get_tree`, `navigate_tree`, `fork` with `entryId`, `set_label`, behaviour while not idle, `get_state` after each; record in FINDINGS; no source change, per FR-197. Done on installed OMP 18.22.2 (18.13.3 not available); findings: https://github.com/stuarthopwood/refract/issues/696#issuecomment-7227217636
+- [x] T765 [US1] #696: add tree view, Rewind, Fork and labels (Rust IPC next to `conversations_core.rs`, renderer opened from `ConversationSwitcher.tsx`), registry update and reattach tolerance for fork, no #449 notice, idle-only, inline errors, update `src/shared/slash-commands.ts` and constitution II, per FR-197 to FR-200, SC-039 (done: Rust `session/agent/tree.rs` re-baselines the registry on Fork so the Rust `verify_reattach` needs no change; renderer `ConversationTreeDialog.tsx`; tests `ConversationTree.test.ts`, `conversations_tree.test.rs`, `launch_support.test.rs`). Tests: `conversations_core.test.rs` and a tree view test. Branch stays out of v1.
 
 ### Close-out
 

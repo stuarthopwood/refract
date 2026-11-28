@@ -1,12 +1,13 @@
 // Serve mode for the fake `omp` (#1861): a tape ending in `{"__serve__":"conversations"}` hands later commands to this
-// responder, because a linear tape cannot start, switch and refuse Conversations any number of times.
-// Files go in `<REFRACT_FAKE_OMP_SERVE_ROOT>/<cwd basename>/`, named like real omp files; `serve-procs.jsonl` maps pid to dir.
+// responder. Files go in `<REFRACT_FAKE_OMP_SERVE_ROOT>/<cwd basename>/`; `serve-procs.jsonl` maps pid to dir.
 // A `prompt` containing `HOLD` stays open until a `__serve_settle__` call line or `abort_and_restore_queue`.
-// `REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS` / `..._PROMPT_AFTER_NEW_REFUSALS`: scratch files holding N refusals to make.
-// `REFRACT_FAKE_OMP_PROMPT_REFUSALS` is the same for any `prompt`; a prompt sent while a turn is held answers `queued`, as omp does (#2013).
+// `REFRACT_FAKE_OMP_NEW_SESSION_REFUSALS` / `..._PROMPT_AFTER_NEW_REFUSALS` / `..._PROMPT_REFUSALS`: scratch files of N refusals.
+// A prompt sent while a turn is held answers `queued`, as omp does (#2013).
+// `REFRACT_FAKE_OMP_TREE_SEED` (see fake-omp-tree.mjs) seeds a tree answering `get_tree`/`navigate_tree`/`fork`/`set_label` (#696).
 
 import { mkdirSync, writeFileSync, appendFileSync, existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { createTree } from './verify-tauri-fake-omp-tree.mjs';
 
 const MODEL = { provider: 'example-provider', id: 'example-model-1', name: 'Example Model One' };
 
@@ -24,14 +25,18 @@ export function createServe({ emit, root, cwd, pid, env }) {
   let held = false;
   let turnId = null;
 
-  const newFile = () => {
+  const newPath = () => {
     lastMs = Math.max(Date.now(), lastMs + 1);
     counter += 1;
-    const file = path.join(dir, `${fileStamp(lastMs)}_p${pid}c${counter}.jsonl`);
+    return path.join(dir, `${fileStamp(lastMs)}_p${pid}c${counter}.jsonl`);
+  };
+  const newFile = () => {
+    const file = newPath();
     writeFileSync(file, `${JSON.stringify({ type: 'title', title: `Conversation ${counter}` })}\n`);
     return file;
   };
   current = newFile();
+  const tree = env.REFRACT_FAKE_OMP_TREE_SEED ? createTree({ seedPath: env.REFRACT_FAKE_OMP_TREE_SEED, file: current, cwd, newPath }) : null;
 
   const takeFrom = (file) => {
     if (!file || !existsSync(file)) return false;
@@ -48,6 +53,7 @@ export function createServe({ emit, root, cwd, pid, env }) {
     if (status === 'completed') {
       emit({ type: 'message_start', messageId: `msg-a${messageCount}`, message: { role: 'assistant', content: [{ type: 'text', text: '' }], timestamp: 0 } });
       emit({ type: 'message_end', messageId: `msg-a${messageCount}`, message: { role: 'assistant', content: [{ type: 'text', text: 'Noted.' }], timestamp: 0 } });
+      if (tree) tree.addMessage({ role: 'assistant', content: [{ type: 'text', text: 'Noted.' }], timestamp: 0 });
     }
     messageCount += 1;
     emit({ type: 'queue_update', steering: [], followUp: [], liveSteered: 0 });
@@ -58,17 +64,34 @@ export function createServe({ emit, root, cwd, pid, env }) {
 
   const handle = (cmd) => {
     const reply = (extra = {}) => emit({ id: cmd.id, type: 'response', command: cmd.type, success: true, ...extra });
-    const refuse = (error) => emit({ id: cmd.id, type: 'response', command: cmd.type, success: false, error });
+    const refuse = (error, code) => emit({ id: cmd.id, type: 'response', command: cmd.type, success: false, error, ...(code ? { code } : {}) });
+    const treeReply = (r) => (r.error ? refuse(r.error, r.code) : reply(r.data ? { data: r.data } : {}));
+    if (tree && held && (cmd.type === 'navigate_tree' || cmd.type === 'fork')) {
+      return refuse(`Cannot ${cmd.type === 'fork' ? 'fork' : 'navigate'} the session while session maintenance or user work is still running`, 'session_busy');
+    }
     switch (cmd.type) {
       case 'negotiate_protocol':
         return reply({ data: { protocolVersion: 2 } });
       case 'set_ask_dialog':
         return reply({ data: { enabled: true } });
       case 'get_state':
-        return reply({ data: { sessionFile: current, sessionId: `sess-1861-${pid}`, messageCount, isSettled: !held, model: MODEL, thinkingLevel: 'medium' } });
+        return reply({ data: { sessionFile: current, sessionId: tree?.sessionId ?? `sess-1861-${pid}`, messageCount: tree ? tree.messages().length : messageCount, isSettled: !held, isStreaming: held, model: MODEL, thinkingLevel: 'medium' } });
       case 'get_messages_page':
       case 'get_messages':
+        if (tree) return reply({ data: { messages: tree.messages(), totalMessages: tree.messages().length } });
         return reply({ data: { messages: [], totalMessages: 0 } });
+      case 'get_tree':
+        return tree ? reply({ data: tree.getTree() }) : reply();
+      case 'navigate_tree':
+        return tree ? treeReply(tree.navigate(cmd.entryId)) : reply();
+      case 'fork': {
+        if (!tree) return reply();
+        const result = tree.fork(cmd.entryId);
+        if (!result.error) current = tree.file;
+        return treeReply(result);
+      }
+      case 'set_label':
+        return tree ? treeReply(tree.setLabel(cmd.entryId, cmd.label)) : reply();
       case 'new_session':
         if (takeRefusal()) return refuse('fixture refused new_session');
         current = newFile();
@@ -93,7 +116,8 @@ export function createServe({ emit, root, cwd, pid, env }) {
         const message = { role: 'user', content: [{ type: 'text', text }], timestamp: 0 };
         emit({ type: 'message_start', messageId: `msg-u${messageCount}`, message });
         emit({ type: 'message_end', messageId: `msg-u${messageCount}`, message });
-        appendFileSync(current, `${JSON.stringify({ type: 'message', message })}\n`);
+        if (tree) tree.addMessage(message);
+        else appendFileSync(current, `${JSON.stringify({ type: 'message', message })}\n`);
         messageCount += 1;
         if (text.includes('HOLD')) held = true;
         else settle('completed');
