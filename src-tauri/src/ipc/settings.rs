@@ -485,7 +485,7 @@ pub fn settings_set_show_agent_stopped_bar(state: AppState, args: Vec<Value>) ->
     })
 }
 
-/// `settings.setSummariseAgentCards(enabled)` (#2308).
+/// `settings.setSummariseAgentCards(enabled)`.
 pub fn settings_set_summarise_agent_cards(state: AppState, args: Vec<Value>) -> HandlerFuture {
     Box::pin(async move {
         let enabled = require_bool(&args, 0, "settings.setSummariseAgentCards", "enabled")?;

@@ -36,7 +36,7 @@ export function SessionsSection() {
         <SettingSwitchRow
           id="summarise-agent-cards-toggle"
           label="Summarise agent cards with the tiny model"
-          description="Each agent gets a short plain-text summary when it starts and when it finishes, using your tiny model. Off shows a plain-text excerpt instead and makes no model calls."
+          description="Short agent summaries from your tiny model, including each agent's result. Off uses a plain excerpt and sends nothing."
           checked={summariseAgentCards}
           onCheckedChange={(checked) => void setSummariseAgentCards(checked)}
         />

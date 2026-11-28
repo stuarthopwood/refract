@@ -85,7 +85,7 @@ pub struct Settings {
     pub show_context_usage_bar: bool,
     /// The "Agent stopped" bar; default on (#1205).
     pub show_agent_stopped_bar: bool,
-    /// Tiny-model summaries on the Subagents card; default on (#2308).
+    /// Tiny-model summaries on the Subagents card; default on.
     pub summarise_agent_cards: bool,
     /// AI credits chip beside the Context usage chip; default on, independent of it (#1238).
     pub show_ai_credits: bool,

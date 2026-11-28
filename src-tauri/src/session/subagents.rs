@@ -83,7 +83,7 @@ pub(super) struct SummaryEntry {
     role: Option<String>,
     /// Synthesised goal of the whole `task()` call, repeated on each of its agents (#1925).
     overall_goal: Option<String>,
-    /// Synthesised one- or two-line summary of this agent: from its brief, replaced by one from its result (#2308).
+    /// Synthesised one- or two-line summary of this agent: from its brief, replaced by one from its result.
     card_summary: Option<String>,
     /// Paths this agent wrote or edited, first-seen order; live only, never replayed (#1925).
     files_touched: Vec<String>,
@@ -203,7 +203,7 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
         frame_type,
         "tool_execution_end" | "subagent_lifecycle" | "message_end"
     ) {
-        subagents_synthesis_hook::on_settled(agent).await;
+        subagents_synthesis_hook::on_settled(agent, frame_type).await;
     }
 }
 

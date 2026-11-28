@@ -1,4 +1,4 @@
-// "Summarise agent cards with the tiny model" (#2308); split out for the file-size cap (#806).
+// "Summarise agent cards with the tiny model", split out for the file-size cap.
 // Off only stops the two per-agent model calls; the card falls back to its plain-text heuristics.
 use serde_json::{Map, Value};
 

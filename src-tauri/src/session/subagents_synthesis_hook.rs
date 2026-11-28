@@ -1,5 +1,5 @@
-// Runs the `tiny` calls that label the Subagents cards: one group synthesis per live `task()` call (ADR 0013 Q3 to Q5)
-// and, unless Summarise agent cards is off, one start and one finish card summary per agent (ADR 0013 Q8).
+// Runs the `tiny` calls that label the Subagents cards: one group synthesis per live `task()` call
+// and, unless Summarise agent cards is off, one start and one finish card summary per agent.
 // History replay never reaches `handle_task_start`, so a replayed card is labelled from the cache or not at all.
 
 use std::collections::{HashMap, HashSet};
@@ -22,6 +22,9 @@ use crate::session::subagents_synthesis::{
     SynthesisInput,
 };
 use crate::session::subagents_synthesis_cache::{session_cache_dir, PendingWrite, SynthesisCache};
+
+/// `message_end` frames a settled agent may pass with no result text before its finish summary is given up.
+const MAX_RESULT_MISSES: u8 = 2;
 
 /// Model calls in flight at once per Session, so a burst of `task()` calls cannot fan out.
 const MAX_CONCURRENT_SYNTHESES: usize = 2;
@@ -74,6 +77,8 @@ struct Runner {
 struct Brief {
     name: String,
     task: String,
+    /// `message_end` frames that found the agent settled with no result text yet.
+    result_misses: u8,
 }
 
 /// One card summary call: the start call has no `result`, the finish call has one.
@@ -104,20 +109,11 @@ pub(super) async fn on_task_start(agent: &SessionAgent, tool_call_id: &str, args
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string(),
+            result_misses: 0,
         })
         .collect();
     let first_time = agent
-        .with_subagents_state(|s| {
-            let first = s.synthesis.started.insert(tool_call_id.to_string());
-            if first {
-                for (index, brief) in briefs.iter().enumerate() {
-                    s.synthesis
-                        .briefs
-                        .insert((tool_call_id.to_string(), index as u32), brief.clone());
-                }
-            }
-            first
-        })
+        .with_subagents_state(|s| s.synthesis.started.insert(tool_call_id.to_string()))
         .await;
     if !first_time {
         return;
@@ -127,6 +123,16 @@ pub(super) async fn on_task_start(agent: &SessionAgent, tool_call_id: &str, args
         return;
     };
     if agent.summarise_agent_cards_enabled().await {
+        // Kept only while a finish call can happen, so `on_settled` never scans for an agent it cannot summarise.
+        agent
+            .with_subagents_state(|s| {
+                for (index, brief) in briefs.iter().enumerate() {
+                    s.synthesis
+                        .briefs
+                        .insert((tool_call_id.to_string(), index as u32), brief.clone());
+                }
+            })
+            .await;
         for (index, brief) in briefs.iter().enumerate() {
             start_card_summary(agent, &cache, tool_call_id, index as u32, brief).await;
         }
@@ -156,15 +162,20 @@ pub(super) async fn on_task_start(agent: &SessionAgent, tool_call_id: &str, args
     tokio::spawn(synthesise_and_apply(agent, runner, cache, input));
 }
 
-/// Summarises each agent whose result has arrived since the last call, from its brief and its result.
-pub(super) async fn on_settled(agent: &SessionAgent) {
-    let due: Vec<(String, u32)> = agent
+/// Settles the Subagents card summaries: each agent whose result has arrived since the last call is
+/// summarised from its brief and its result.
+pub(super) async fn on_settled(agent: &SessionAgent, frame_type: &str) {
+    let due: Vec<(String, u32, SummaryStatus)> = agent
         .with_subagents_state(|s| {
             s.summaries
                 .iter()
                 .filter(|e| !matches!(e.status, SummaryStatus::Running))
-                .map(|e| (e.tool_call_id.clone(), e.spec_index))
-                .filter(|key| s.synthesis.briefs.contains_key(key))
+                .filter(|e| {
+                    s.synthesis
+                        .briefs
+                        .contains_key(&(e.tool_call_id.clone(), e.spec_index))
+                })
+                .map(|e| (e.tool_call_id.clone(), e.spec_index, e.status))
                 .collect()
         })
         .await;
@@ -174,13 +185,13 @@ pub(super) async fn on_settled(agent: &SessionAgent) {
     let Some(cache) = session_cache(agent).await else {
         return;
     };
-    for (tool_call_id, spec_index) in due {
+    for (tool_call_id, spec_index, status) in due {
         let result = agent
             .subagent_result_text(&tool_call_id, spec_index)
             .await
             .filter(|text| !text.trim().is_empty());
-        // Without a result the brief stays, so a later frame that carries it triggers the call.
         let Some(result) = result else {
+            note_missing_result(agent, (tool_call_id, spec_index), status, frame_type).await;
             continue;
         };
         let claimed = agent
@@ -208,6 +219,31 @@ pub(super) async fn on_settled(agent: &SessionAgent) {
         };
         spawn_card_summary(agent, &cache, job).await;
     }
+}
+
+/// A settled agent whose result text is not there yet. A stopped or exited agent never gets one, and a
+/// background agent's arrives on `message_end`, so the brief goes after a second `message_end` that
+/// still finds none; until then it stays and a later frame can trigger the call.
+async fn note_missing_result(
+    agent: &SessionAgent,
+    key: (String, u32),
+    status: SummaryStatus,
+    frame_type: &str,
+) {
+    let no_result_will_come = matches!(status, SummaryStatus::Cancelled | SummaryStatus::Exited);
+    agent
+        .with_subagents_state(|s| {
+            let Some(brief) = s.synthesis.briefs.get_mut(&key) else {
+                return;
+            };
+            if frame_type == "message_end" {
+                brief.result_misses += 1;
+            }
+            if no_result_will_come || brief.result_misses >= MAX_RESULT_MISSES {
+                s.synthesis.briefs.remove(&key);
+            }
+        })
+        .await;
 }
 
 /// The start summary of one agent, from the cache when it is there, else from one background call.

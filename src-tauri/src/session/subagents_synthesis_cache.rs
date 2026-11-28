@@ -1,4 +1,4 @@
-// Disk cache of the synthesis per `toolCallId`, in the Session's data folder (ADR 0013 Q4). Replay and
+// Disk cache of the synthesis per `toolCallId`, in the Session's data folder. Replay and
 // restart read it, and a history item with no entry stays unlabelled: nothing synthesises on render.
 
 use std::collections::HashMap;
