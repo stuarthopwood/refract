@@ -121,12 +121,7 @@ export function RightPaneShell({ sessionId }: RightPaneShellProps) {
         aria-labelledby={isTabBar && ids ? ids.tabId : 'right-pane-panel-title'}
       >
         {activeKey?.kind === 'document' && <DocumentTabView sessionId={activeKey.sessionId} tabId={activeKey.id} />}
-        {activePanelId === 'subagents' &&
-          (subagentSessionId ? (
-            <SubagentPanel sessionId={subagentSessionId} />
-          ) : (
-            <p className="p-4 text-sm text-muted-foreground">Open a Session to see its subagents.</p>
-          ))}
+        {activePanelId === 'subagents' && <SubagentPanel sessionId={subagentSessionId} />}
         {activePanelId === 'fdb-knowledge' && <FdbKnowledgePanel />}
         {activePanelId === 'agent-builder' && <AgentBuilderPanel />}
         {activePanelId === 'side-chat' && (

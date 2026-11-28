@@ -291,6 +291,8 @@ impl SessionAgent {
         let payload = self.status_event_locked(&state);
         self.events.emit_session_status(&payload);
         drop(state);
+        // The Agents panel's group header carries this status, and a stop drops the group.
+        crate::session::subagents::notify_agents_aggregate(self);
     }
 
     /// Writes the status under a lock the caller already holds, so a state change that must be atomic

@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from 'vitest'
 // The state barrel touches `window` at import. A vi.mock factory is hoisted above static
 // imports, so the real stores can only be pulled in with a dynamic import here.
 vi.mock('@/state', async () => ({
+  ...(await import('@/state/agents-store')),
   ...(await import('@/state/git-changes-store')),
   ...(await import('@/state/right-pane-store')),
   ...(await import('@/state/readout-store')),

@@ -41,6 +41,10 @@ interface SubagentPanelState {
   pendingFocusSubagentKey: string | null
   /** Resets the one-shot focus request once consumed, so a remount doesn't misread it as fresh. */
   clearPendingFocus(): void
+  /** The Session whose group the panel should open and scroll into view once it shows; the panel consumes it via `clearGroupScroll()`. Global, not per Session: the panel lists every Session (#490). */
+  scrollToGroupSessionId: string | null
+  requestGroupScroll(sessionId: string): void
+  clearGroupScroll(): void
   /** Binds the panel to `sessionId`; `options.selectSubagentId`/`Key` pre-select an agent like a row click, and `opener` is refocused on close (#563). */
   openPanel(sessionId: string, options?: { selectSubagentId?: string; selectSubagentKey?: string; opener?: HTMLElement | null }): void
   /** Closes the panel; `restoreFocus` (default true) refocuses the opener (else the Subagents chip) only if focus was inside, so non-user closes pass `false`. */
@@ -49,10 +53,12 @@ interface SubagentPanelState {
   selectSubagent(subagentId: string, key?: string | null, options?: { silent?: boolean }): Promise<string | null>
   applyPatch(sessionId: string, subagentId: string, ops: TranscriptOp[]): void
   reset(): void
-  /** Closes the panel when the Session's Conversation is reset, so a reused subagent name never inherits the previous Conversation's cached stream. No-op for other Sessions. */
+  /** Clears the selection and cached streams when the Session's Conversation is reset, so a reused subagent name never inherits the previous Conversation's stream. Never closes the global panel (FR-204). No-op for other Sessions. */
   resetForNewConversation(sessionId: string): void
   /** Clears the selection and its cached stream when a Stage prune removed the selected agent, keeping the panel open (#1085). No-op for other Sessions or a kept selection. */
   dropPrunedSelection(sessionId: string, remaining: readonly { id: string }[]): void
+  /** Clears the selection and its cached streams when the selected agent's Session is deleted, keeping the global panel open (#490). No-op when the selection belongs to another Session. */
+  clearSelectionForSession(sessionId: string): void
   /** Stops main's live stream when the pane is dragged shut, keeping the binding: collapsing is not closing. */
   suspend(): void
   /** Re-subscribes and re-fetches the selected stream after `suspend()`; no-op if not suspended, so callers may call it freely. */
@@ -68,7 +74,10 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   openerEl: null,
   pendingFocusSubagentId: null,
   pendingFocusSubagentKey: null,
+  scrollToGroupSessionId: null,
   clearPendingFocus: () => set({ pendingFocusSubagentId: null, pendingFocusSubagentKey: null }),
+  requestGroupScroll: (sessionId) => set({ scrollToGroupSessionId: sessionId }),
+  clearGroupScroll: () => set({ scrollToGroupSessionId: null }),
   openPanel: (sessionId, options) => {
     const { sessionId: prevSessionId } = get()
     const openerEl = options?.opener ?? null
@@ -106,7 +115,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
     }
     // Clearing `sessionId` unmounts the panel content; a collapsed Panel is never inert, so stale controls would stay in the Tab order.
-    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
+    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null, scrollToGroupSessionId: null })
     useRightPaneStore.getState().closePanel('subagents')
     // Refocus only when focus was inside the panel, so non-user closes (new turn, archive) never steal it.
     if (options?.restoreFocus ?? true) {
@@ -162,18 +171,19 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
         .setVisibleSubagent(sessionId, null)
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
     }
-    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
+    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null, scrollToGroupSessionId: null })
     useRightPaneStore.getState().closePanel('subagents')
   },
   resetForNewConversation: (sessionId) => {
-    const state = get()
-    if (state.sessionId !== sessionId) return
-    if (useRightPaneStore.getState().openPanelIds.includes('subagents')) {
-      state.closePanel({ restoreFocus: false })
-      return
-    }
+    if (get().sessionId !== sessionId) return
     fetchSeq += 1
     set({ selectedId: null, selectedKey: null, streams: {}, suspended: false })
+  },
+  clearSelectionForSession: (sessionId) => {
+    const { sessionId: boundId, selectedId } = get()
+    if (boundId !== sessionId || selectedId === null) return
+    fetchSeq += 1
+    set({ selectedId: null, selectedKey: null, streams: {} })
   },
   dropPrunedSelection: (sessionId, remaining) => {
     const { sessionId: boundId, selectedId, streams } = get()

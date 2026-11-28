@@ -34,6 +34,22 @@ beforeEach(() => {
   useReadoutStore.setState({ bySession: {} })
 })
 
+describe('clearSelectionForSession', () => {
+  it('clears the selection but keeps the panel open when the bound Session is deleted', () => {
+    bindPanel()
+    panel().clearSelectionForSession('s1')
+    expect(panel().selectedId).toBeNull()
+    expect(panel().streams).toEqual({})
+    expect(useRightPaneStore.getState().openPanelIds).toContain('subagents')
+  })
+
+  it('leaves a selection that belongs to another Session', () => {
+    bindPanel()
+    panel().clearSelectionForSession('s2')
+    expect(panel().selectedId).toBe('a')
+  })
+})
+
 describe('dropPrunedSelection', () => {
   it('clears the selection and its cached stream when the selected agent was pruned, keeping other streams', () => {
     bindPanel()
@@ -105,16 +121,32 @@ describe('applySubagents feeds dropPrunedSelection', () => {
 })
 
 describe('resetForNewConversation', () => {
-  it('closes the open panel for its own Session', () => {
-    bindPanel()
+  it('clears the selection and streams for its own Session but leaves the panel open (FR-204)', () => {
+    bindPanel({ streams: { a: stream('a') } })
     panel().resetForNewConversation('s1')
-    expect(panel().sessionId).toBeNull()
-    expect(useRightPaneStore.getState().openPanelIds).not.toContain('subagents')
+    expect(panel().sessionId).toBe('s1')
+    expect(panel().selectedId).toBeNull()
+    expect(panel().selectedKey).toBeNull()
+    expect(panel().streams).toEqual({})
+    expect(useRightPaneStore.getState().openPanelIds).toContain('subagents')
   })
 
   it('ignores another Session', () => {
     bindPanel()
     panel().resetForNewConversation('s2')
     expect(panel().sessionId).toBe('s1')
+  })
+})
+
+describe('group scroll request', () => {
+  it('holds the asked Session until consumed and is dropped when the panel closes', () => {
+    bindPanel()
+    panel().requestGroupScroll('s2')
+    expect(panel().scrollToGroupSessionId).toBe('s2')
+    panel().clearGroupScroll()
+    expect(panel().scrollToGroupSessionId).toBeNull()
+    panel().requestGroupScroll('s2')
+    panel().closePanel({ restoreFocus: false })
+    expect(panel().scrollToGroupSessionId).toBeNull()
   })
 })

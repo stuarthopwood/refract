@@ -196,6 +196,21 @@ export interface SessionSnapshot {
   advisorOn: boolean; // issue #937: initial Advisor-chip on/off state; subsequent changes via advisor:update
 }
 
+/** One Session's group in `agents:update` (#490): its header fields plus its current subagents. Sent for every live Session, visible or not. */
+export interface AgentsGroup {
+  sessionId: string;
+  name: string;
+  repositoryId?: string;
+  repositoryName?: string;
+  status: SessionStatus;
+  subagents: SubagentSummary[];
+}
+
+/** `agents:update`: a full replacement; a Session missing from `groups` is archived, deleted, stopped or has nothing to show. */
+export interface AgentsUpdatePayload {
+  groups: AgentsGroup[];
+}
+
 /** `conversations.rewind` (#696): same Conversation, `snapshot` is its rebuilt transcript. `cancelled` is a stopped summary; nothing moved then. `editorText` is the user message to put back in the composer. */
 export interface RewindResult { cancelled: boolean; editorText: string | null; snapshot: SessionSnapshot; }
 /** `conversations.fork` (#696): `file` is the new Conversation (now current), `snapshot` its transcript; the original stays listed. */
@@ -327,6 +342,7 @@ export const IPC_REQUESTS = {
   CHAT_PREDICT_WORD_FEEDBACK: 'chat.predictWordFeedback',
   CHAT_SET_VISIBLE_SUBAGENT: 'chat.setVisibleSubagent',
   CHAT_SUBAGENT_SNAPSHOT: 'chat.subagentSnapshot',
+  AGENTS_SNAPSHOT: 'agents.snapshot',
   SIDE_CHAT_ASK: 'sideChat.ask',
   SIDE_CHAT_CANCEL: 'sideChat.cancel',
   SIDE_CHAT_GET_HISTORY: 'sideChat.getHistory',
@@ -476,6 +492,7 @@ export const IPC_EVENTS = {
   ADVISOR_ROSTER_DETECTED: 'advisor-roster:detected',
   READOUT_UPDATE: 'readout:update',
   SUBAGENTS_UPDATE: 'subagents:update',
+  AGENTS_UPDATE: 'agents:update',
   ADVISOR_UPDATE: 'advisor:update',
   PREWALK_UPDATE: 'prewalk:update',
   SESSION_HEALTH: 'session:health',
@@ -586,6 +603,11 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setVisibleSubagent(sessionId: string, subagentId: string | null): Promise<Result<void>>;
     subagentSnapshot(sessionId: string, subagentId: string): Promise<Result<TranscriptItem[]>>;
   } & ChatPauseApi;
+
+  agents: {
+    /** The aggregate as it stands now: `agents:update` is deduped, so a renderer that subscribes late must pull once. */
+    snapshot(): Promise<Result<AgentsUpdatePayload>>;
+  };
 
   sideChat: {
     ask(sessionId: string, question: string, recordId?: string): Promise<Result<{ record: SideChatRecord }>>;
@@ -730,6 +752,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
   onAdvisorRosterDetected(handler: (payload: AdvisorRosterDetected) => void): Unsubscribe;
   onReadoutUpdate(handler: (payload: { sessionId: string; readout: SessionReadout }) => void): Unsubscribe;
   onSubagentsUpdate(handler: (payload: { sessionId: string; subagents: SubagentSummary[] }) => void): Unsubscribe;
+  onAgentsUpdate(handler: (payload: AgentsUpdatePayload) => void): Unsubscribe;
   onAdvisorUpdate(handler: (payload: { sessionId: string; advisorOn: boolean }) => void): Unsubscribe;
   /** `unknown` until OMP's own prewalk reply says otherwise (#695). */
   onPrewalkUpdate(handler: (payload: { sessionId: string; state: 'armed' | 'off' | 'unknown' }) => void): Unsubscribe;

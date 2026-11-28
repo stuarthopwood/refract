@@ -46,6 +46,7 @@ import type {
   Result,
   RewindResult,
   SessionSnapshot,
+  AgentsUpdatePayload,
   SessionStatusEvent,
   SessionSummary,
   SlashCommand,
@@ -194,6 +195,10 @@ const refract: RefractApi = {
     diffStat: (id) => request<DiffStat | null>(IPC_REQUESTS.SESSIONS_DIFF_STAT, id),
     revealWorktree: (id) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_WORKTREE, id),
     revealFile: (sessionId, path) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_FILE, sessionId, path)
+  },
+
+  agents: {
+    snapshot: () => request<AgentsUpdatePayload>(IPC_REQUESTS.AGENTS_SNAPSHOT)
   },
 
   images: {
@@ -529,6 +534,7 @@ const refract: RefractApi = {
   onReadoutUpdate: (handler) => on<{ sessionId: string; readout: SessionReadout }>(IPC_EVENTS.READOUT_UPDATE, handler),
   onSubagentsUpdate: (handler) =>
     on<{ sessionId: string; subagents: SubagentSummary[] }>(IPC_EVENTS.SUBAGENTS_UPDATE, handler),
+  onAgentsUpdate: (handler) => on<AgentsUpdatePayload>(IPC_EVENTS.AGENTS_UPDATE, handler),
   onAdvisorUpdate: (handler) => on<{ sessionId: string; advisorOn: boolean }>(IPC_EVENTS.ADVISOR_UPDATE, handler),
   onPrewalkUpdate: (handler) => on<{ sessionId: string; state: 'armed' | 'off' | 'unknown' }>(IPC_EVENTS.PREWALK_UPDATE, handler),
   onSessionHealth: (handler) => on<{ sessionId: string; rpcSlowMs: number | null; agentMemoryBytes: number | null }>(IPC_EVENTS.SESSION_HEALTH, handler),

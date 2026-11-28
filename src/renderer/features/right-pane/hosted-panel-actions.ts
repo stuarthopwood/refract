@@ -7,7 +7,12 @@ export function openHostedPanel(
   sessionId: string | null,
   options?: { selectSubagentId?: string; selectSubagentKey?: string; opener?: HTMLElement | null }
 ): void {
-  if (id === 'subagents' && sessionId) useSubagentPanelStore.getState().openPanel(sessionId, options)
+  if (id === 'subagents' && sessionId) {
+    const panel = useSubagentPanelStore.getState()
+    panel.openPanel(sessionId, options)
+    // A selected agent's row takes focus, which scrolls it into view; only a bare open asks for the Session's group.
+    if (!options?.selectSubagentId) panel.requestGroupScroll(sessionId)
+  }
   useRightPaneStore.getState().openPanel(id, { focus: !options?.selectSubagentId })
 }
 

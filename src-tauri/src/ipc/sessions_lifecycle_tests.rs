@@ -469,3 +469,86 @@ async fn sessions_delete_on_an_unknown_id_never_fires_the_hook() {
         "a refused delete must never fire the reclaim hook"
     );
 }
+
+/// The group count in the aggregate `agents:update` is built from, i.e. what the panel would show.
+async fn agent_groups(state: &AppState) -> usize {
+    state
+        .session_manager
+        .agents_snapshot()
+        .await
+        .as_array()
+        .expect("groups array")
+        .len()
+}
+
+#[tokio::test]
+async fn sessions_archive_drops_the_sessions_group_from_the_agents_aggregate() {
+    let dir = temp_registry_dir("archive-drops-agents-group");
+    let state = make_state(&dir).await;
+    state
+        .registry
+        .lock()
+        .await
+        .add_repository(make_repository("repo-1", "C:/nowhere/repo"))
+        .await
+        .expect("add_repository");
+    let session = make_session("session-agents-archive", "repo-1", "C:/nowhere/wt", "f");
+    state
+        .registry
+        .lock()
+        .await
+        .add_session(session.clone())
+        .await
+        .expect("add_session");
+    state.session_manager.seed_agents_group(&session.id).await;
+    assert_eq!(agent_groups(&state).await, 1);
+
+    sessions_archive(state.clone(), vec![Value::String(session.id.clone())])
+        .await
+        .expect("archive must succeed");
+
+    assert_eq!(agent_groups(&state).await, 0);
+}
+
+#[tokio::test]
+async fn sessions_delete_drops_the_sessions_group_from_the_agents_aggregate() {
+    let dir = temp_registry_dir("delete-drops-agents-group");
+    let state = make_state(&dir).await;
+    let repo = init_repo().await;
+    state
+        .registry
+        .lock()
+        .await
+        .add_repository(make_repository("repo-1", &repo.to_string_lossy()))
+        .await
+        .expect("add_repository");
+    let added = add_worktree_with_generated_name(&repo, "main")
+        .await
+        .expect("create worktree");
+    let session = make_session(
+        "session-agents-delete",
+        "repo-1",
+        &added.worktree_path.to_string_lossy(),
+        &added.branch,
+    );
+    state
+        .registry
+        .lock()
+        .await
+        .add_session(session.clone())
+        .await
+        .expect("add_session");
+    state.session_manager.seed_agents_group(&session.id).await;
+    assert_eq!(agent_groups(&state).await, 1);
+
+    let args = vec![
+        Value::String(session.id.clone()),
+        serde_json::json!({ "confirmed": true }),
+    ];
+    sessions_delete(state.clone(), args)
+        .await
+        .expect("delete must succeed");
+    wait_until_settled(&session.id).await;
+
+    assert_eq!(agent_groups(&state).await, 0);
+}

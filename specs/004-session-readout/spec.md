@@ -631,20 +631,26 @@ one and confirm its live stream shows, then close the panel and confirm the chat
   screen.
 - **FR-016**: The Settings screen MUST be fully operable by keyboard, with a visible focus
   indicator at every control.
-- **FR-017**: Activating the Subagents chip MUST open the Subagent panel: a `role="tree"` of the
-  Session's subagents (FR-024), each with its name or task and its state (running, finished,
-  failed, cancelled, or exited — issues #489, #563). **Amended by spec 013**: the panel opens
-  through the shared right pane shell (one permanent icon rail, one collapsible pane hosting
-  every right-hand panel) rather than a standalone right-hand region; this spec's own FR-018 to
-  FR-020 (the panel's content and behaviour) are unchanged.
-- **FR-018**: Selecting a subagent in that panel MUST show its live stream — what it is saying and
-  which tools it is running — inside the panel.
-- **FR-019**: The subagent panel MUST be closeable, and closing it MUST leave the chat pane
+- **FR-017**: Activating the Subagents chip MUST open the Agents panel at that Session's group.
+  The panel lists one group per live Session; each group holds that Session's agents, each with its
+  name or task and its state (running, finished, failed, cancelled, or exited — issues #489,
+  #563). **Amended 2026-11-27 by spec 001 FR-204 to FR-207 (issue #490)**: the panel is the
+  global Agents panel, not a per-Session panel. It is closed by default and no agent event opens or
+  closes it. Only the user's own action (the rail icon or the chip) does. A Session with no agents
+  has no group. **Amended by spec 013**: the panel opens through the shared right pane shell (one
+  permanent icon rail, one collapsible pane hosting every right-hand panel).
+- **FR-018**: Selecting an agent in the panel MUST select its Session and show the agent's live
+  stream, which is what it is saying and which tools it is running, inside the panel.
+  **Amended 2026-11-27 by spec 001 FR-205 (issue #490).**
+- **FR-019**: The Agents panel MUST be closeable, and closing it MUST leave the chat pane
   unchanged; closing it MUST return keyboard focus to whichever control opened it, if that
   control still exists, else to the Subagents chip (FR-027, issue #563; supersedes the earlier
   always-the-chip target now that spec 001's Subagent chain row, FR-068, can open the panel too).
-- **FR-020**: A subagent finishing while its stream is open in the panel MUST update that
-  subagent's shown state without closing the panel.
+  **Amended 2026-11-27 by spec 001 FR-204 (issue #490):** the panel never closes itself.
+- **FR-020**: An agent finishing while its stream is open in the panel MUST update that agent's
+  shown state without closing the panel. Within a group, successful finishes fold into one
+  "N finished" row. Failed, aborted, and exited agents stay as individual rows.
+  **Amended 2026-11-27 by spec 001 FR-206 (issue #490).**
 - **FR-021**: The Todo progress chip MUST show how many of the agent's current tasks are done out
   of the total (for example "Todo 2/5"), MUST be hidden when the agent has no task list, and MUST
   be readable by assistive technology as one phrase (for example "Todo: 2 of 5 tasks done"). It

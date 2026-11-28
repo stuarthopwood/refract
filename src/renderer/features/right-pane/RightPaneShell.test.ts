@@ -50,4 +50,14 @@ describe('RightPaneShell', () => {
     expect(html).toContain('Loading checklist')
     expect(html).not.toContain('No repository')
   })
+
+  it('Agents panel with no bound Session still renders the groups or empty state, not the open-a-Session prompt', () => {
+    seed()
+    const panes = { open: true, openPanelIds: ['subagents' as const], activePanelId: 'subagents' as const }
+    useRightPaneStore.setState(panes)
+    Object.assign(useRightPaneStore.getInitialState(), panes)
+    const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(RightPaneShell, { sessionId: null })))
+    expect(html).toContain('No agents running')
+    expect(html).not.toContain('Open a Session to see its subagents.')
+  })
 })

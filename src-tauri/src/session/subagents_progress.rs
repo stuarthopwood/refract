@@ -421,8 +421,17 @@ pub(super) fn summaries_to_value(summaries: &[super::SummaryEntry]) -> Value {
     )
 }
 
-/// A hidden Session computes its subagent list but never pushes it live.
+/// Asks the manager for the one coalesced `agents:update`, whichever Session is on screen (#490).
+pub(in crate::session) fn notify_agents_aggregate(agent: &SessionAgent) {
+    if let Some(manager) = agent.tool_manager() {
+        manager.schedule_agents_update();
+    }
+}
+
+/// A hidden Session computes its subagent list but never pushes it live as `subagents:update`;
+/// the aggregate still carries it.
 pub(super) async fn emit_subagents_update(agent: &SessionAgent, value: Value) {
+    notify_agents_aggregate(agent);
     if !agent.is_visible() {
         return;
     }
@@ -431,8 +440,8 @@ pub(super) async fn emit_subagents_update(agent: &SessionAgent, value: Value) {
         .emit_subagents_update(agent.session_id(), value);
 }
 
-/// Heartbeats arrive many times a second, so their `subagents:update` is capped to one per window.
-const SUMMARIES_COALESCE_MS: u64 = 200;
+/// Heartbeats arrive many times a second, so `subagents:update` and `agents:update` are each capped to one per window.
+pub(in crate::session) const SUMMARIES_COALESCE_MS: u64 = 200;
 
 /// The snapshot to emit now, or `None` when the change can wait for the coalescing window.
 /// A status, duration or background change is `immediate`; a heartbeat alone only marks the state dirty.
@@ -448,6 +457,7 @@ fn snapshot_for_emit(s: &mut State, immediate: bool, heartbeat: bool) -> Option<
 /// Starts the one-per-window timer while heartbeats left the summaries dirty; the timer reads the
 /// latest snapshot when it fires, so every heartbeat inside the window shares one emit.
 async fn flush_heartbeat_emit(agent: &SessionAgent) {
+    notify_agents_aggregate(agent);
     if !agent.is_visible() {
         return;
     }

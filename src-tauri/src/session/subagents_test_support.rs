@@ -9,6 +9,7 @@ use crate::store::registry::Session;
 /// A Session's agent plus the scratch data folder it lives in.
 pub(in crate::session) struct AgentFixture {
     pub agent: Arc<SessionAgent>,
+    pub manager: Arc<crate::session::manager::SessionManager>,
     pub id: String,
     pub dir: PathBuf,
 }
@@ -73,5 +74,41 @@ pub(in crate::session) async fn agent_fixture(visible: bool) -> AgentFixture {
     if visible {
         manager.set_visible(vec![id.clone()]).await;
     }
-    AgentFixture { agent, id, dir }
+    AgentFixture {
+        agent,
+        manager,
+        id,
+        dir,
+    }
+}
+
+/// Makes the agent `Idle` (an unlaunched one is `Stopped`, which the aggregate skips) holding one
+/// running subagent, so its Session has a group in `agents:update`.
+pub(in crate::session) async fn seed_running_subagent(agent: &SessionAgent) {
+    use super::{SummaryEntry, SummaryStatus};
+    agent
+        .set_status(crate::session::SessionStatus::Idle, None, None)
+        .await;
+    agent
+        .with_subagents_state(|s| {
+            s.summaries.push(SummaryEntry {
+                id: "t1:a".into(),
+                tool_call_id: "t1".into(),
+                spec_index: 0,
+                name_or_task: "a".into(),
+                name: None,
+                task_summary: None,
+                status: SummaryStatus::Running,
+                started_at: 1,
+                duration_ms: None,
+                background: false,
+                role: None,
+                overall_goal: None,
+                files_touched: Vec::new(),
+                recent_steps: Vec::new(),
+                stage_key: "m1".into(),
+                turn: 0,
+            });
+        })
+        .await;
 }

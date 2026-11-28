@@ -1,223 +1,136 @@
-// The repo has no jsdom: the panel's tree is rendered to a string and the markup is asserted on.
+// The repo has no jsdom: the panel's groups are rendered to a string and the markup is asserted on.
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-// A server render reads zustand's INITIAL state, so the readout store is a plain selector over fixed state here.
-const readout = vi.hoisted(() => ({ subagents: [] as unknown[] }))
-vi.mock('@/state', () => {
-  const entry = { subagents: [] }
-  return {
-    EMPTY_READOUT_ENTRY: entry,
-    useReadoutStore: (select: (s: unknown) => unknown) => select({ bySession: { s1: { subagents: readout.subagents } } }),
-    useSettingsStore: (select: (s: unknown) => unknown) => select({ settings: { transcriptDisplay: { thinking: true, tools: true } } }),
-    useSyntaxTheme: () => 'github-dark'
-  }
-})
-vi.mock('../right-pane/hosted-panel-actions', () => ({ openHostedPanel: vi.fn() }))
+vi.mock('@/state', () => ({
+  useSettingsStore: (select: (s: unknown) => unknown) => select({ settings: { transcriptDisplay: { thinking: true, tools: true } } }),
+  useSyntaxTheme: () => 'github-dark'
+}))
 import { TooltipProvider } from '@/components/ui/tooltip'
-import type { SubagentSummary } from '../../../shared/model'
-import { AgentDetailSummary, PanelHeader, PanelTree } from './SubagentPanelTree'
-import { buildPanelRows } from './subagentPanelRows'
+import type { AgentsGroup } from '../../../shared/ipc'
+import { AgentDetailSummary, AgentsGroupSection, AgentsStatusLine } from './SubagentPanelTree'
+import { buildGroupRows } from './subagentPanelRows'
 import { selectScenarioFromSummaries } from './viewModel'
 import { subagentSummary } from './viewModel/testFixtures'
 
 const noop = () => undefined
 
-function render(summaries: SubagentSummary[], { open = true, selectedKey = null }: { open?: boolean; selectedKey?: string | null } = {}) {
-  readout.subagents = summaries
-  const scenario = selectScenarioFromSummaries(summaries)
-  const rows = buildPanelRows(scenario.stages, () => open)
-  const status = scenario.stages.some((stage) => stage.status === 'running') ? 'running' : 'finished'
-  return renderToStaticMarkup(
-    createElement(
-      TooltipProvider,
-      null,
-      createElement(PanelHeader, { scenario, status, durationMs: undefined }),
-      createElement(PanelTree, { rows, selectedKey, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop })
-    )
-  )
+function group(subagents: AgentsGroup['subagents'], overrides: Partial<AgentsGroup> = {}): AgentsGroup {
+  return { sessionId: 's1', name: 'Fix login', status: 'working', subagents, ...overrides }
 }
 
-const PAIR = [
-  subagentSummary({ nameOrTask: 'Alpha', toolCallId: 'c1', specIndex: 0, id: 'a' }),
-  subagentSummary({ nameOrTask: 'Beta', toolCallId: 'c1', specIndex: 1, id: 'b', status: 'running' })
+function render(subagents: AgentsGroup['subagents'], { collapsed = false, selectedKey = null, ...overrides }: { collapsed?: boolean; selectedKey?: string | null } & Partial<AgentsGroup> = {}) {
+  const [rows] = buildGroupRows([group(subagents, overrides)])
+  return renderToStaticMarkup(createElement(AgentsGroupSection, { group: rows!, collapsed, selectedKey, rowRef: noop, onSelect: noop, onToggle: noop }))
+}
+
+const MIXED = [
+  subagentSummary({ nameOrTask: 'Alpha', toolCallId: 'c1', specIndex: 0, id: 'a', status: 'running' }),
+  subagentSummary({ nameOrTask: 'Beta', toolCallId: 'c1', specIndex: 1, id: 'b', status: 'failed' }),
+  subagentSummary({ nameOrTask: 'Gamma', toolCallId: 'c2', specIndex: 0, id: 'g' }),
+  subagentSummary({ nameOrTask: 'Delta', toolCallId: 'c2', specIndex: 1, id: 'd' })
 ]
 
-describe('PanelTree', () => {
-  describe('given a parallel Stage', () => {
-    const html = render(PAIR)
+/** The markup's text content, as a screen reader would join it. */
+const textOf = (html: string): string => {
+  let text = html
+  for (let prev = ''; prev !== text; ) {
+    prev = text
+    text = text.replace(/<[^>]*>/g, '')
+  }
+  return text
+}
 
-    it('draws the shared Stage header with the parallel badge and no single-agent chip', () => {
-      expect(html).toContain('data-parallel-badge')
-      expect(html).not.toContain('data-agent-chip')
-    })
-
-    it('keeps the treeitem model: Stage at level 1, agents at level 2', () => {
-      expect(html).toContain('role="tree"')
-      expect(html.match(/role="treeitem"[^>]*aria-level="1"/g)).toHaveLength(1)
-      expect(html.match(/role="treeitem"[^>]*aria-level="2"/g)).toHaveLength(2)
-    })
-
-    it('shows the header stats and progress the card shows', () => {
-      expect(html).toContain('1 stage, 2 agents, 1 running')
-      expect(html).toContain('role="progressbar"')
-    })
+describe('AgentsGroupSection', () => {
+  it('anchors the group by Session id for a later scroll-to', () => {
+    expect(render(MIXED)).toContain('data-agents-group="s1"')
   })
 
-  describe('given a one-agent Stage', () => {
-    it('draws no chip when the agent name only repeats the Stage title', () => {
-      expect(render([PAIR[0]!])).not.toContain('data-agent-chip')
-    })
-
-    describe('drawn flat (#2318, FR-176)', () => {
-      const html = render([subagentSummary({ nameOrTask: 'Alpha', role: 'Reviewer' })])
-      const agentRow = html.slice(html.indexOf('aria-level="2"'))
-
-      it('is a left guide line under the Stage title, with no nested bordered card or card fill', () => {
-        expect(agentRow).toContain('border-l-2 border-divider')
-        expect(agentRow).toContain('pl-2')
-        expect(agentRow).not.toContain('bg-surface-1')
-        expect(agentRow).not.toContain('rounded-lg')
-        expect(agentRow).not.toMatch(/\bgap-1\b|\bp-1\b|\bmy-1\b/)
-      })
-
-      it('does not repeat the agent name the Stage title already shows, and the row keeps its hover tint and selectability', () => {
-        expect(html.match(/>Alpha</g)).toHaveLength(1)
-        expect(agentRow).toContain('hover:bg-surface-hover')
-        expect(agentRow).toContain('aria-selected="false"')
-        expect(agentRow).toContain('>Reviewer<')
-      })
-    })
-
-    it('keeps the bordered card for each agent of a parallel Stage', () => {
-      const html = render(PAIR)
-      expect(html.match(/rounded-lg border border-divider bg-surface-1 p-2/g)).toHaveLength(2)
-    })
+  it('shows the Session name and running count on a header button that announces its state', () => {
+    const html = render(MIXED)
+    expect(html).toContain('Fix login')
+    expect(html).toContain('1 running')
+    expect(html).toMatch(/<button[^>]*aria-expanded="true"/)
+    expect(render(MIXED, { collapsed: true })).toMatch(/<button[^>]*aria-expanded="false"/)
   })
 
-  describe('selection', () => {
-    it('marks only the selected agent selected and draws the active bar on it', () => {
-      const html = render(PAIR, { selectedKey: 'c1:1' })
-      expect(html.match(/aria-selected="true"/g)).toHaveLength(1)
-      expect(html.match(/aria-selected="false"/g)).toHaveLength(1)
-      expect(html).toContain('aria-label="Beta, Running"')
-    })
-
-    it('draws no active bar and no selection when nothing is selected', () => {
-      expect(render(PAIR)).not.toContain('aria-selected="true"')
-    })
+  it('folds successful finishes into one line and keeps the running and failed rows', () => {
+    const html = render(MIXED)
+    expect(html).toContain('2 finished')
+    expect(html).not.toContain('Gamma')
+    expect(html).toContain('Alpha')
+    expect(html).toContain('Beta')
+    expect(html).toContain('Failed')
   })
 
-  describe('expansion', () => {
-    it('announces a Stage as expanded or collapsed and hides the agents of a closed one', () => {
-      const closed = render(PAIR, { open: false })
-      expect(closed).toContain('aria-expanded="false"')
-      expect(closed).not.toContain('aria-level="2"')
-      expect(render(PAIR)).toContain('aria-expanded="true"')
-    })
-
-    it('names the chevron for what it will do', () => {
-      expect(render(PAIR, { open: false })).toMatch(/aria-label="Expand Stage 1/)
-      expect(render(PAIR)).toMatch(/aria-label="Collapse Stage 1/)
-    })
+  it('gives each agent row an icon and a text status', () => {
+    const html = render(MIXED)
+    expect(html).toContain('Running')
+    expect(html.match(/<svg/g)!.length).toBeGreaterThanOrEqual(3)
   })
 
-  describe('background agents', () => {
-    it('labels a detached job Background on its row and in its name', () => {
-      const html = render([subagentSummary({ nameOrTask: 'Bg', id: 'bg', background: true })])
-      expect(html).toContain('aria-label="Bg, Finished, Background"')
-      expect(html).toMatch(/>Background</)
-    })
+  it('marks only the selected row current', () => {
+    const html = render(MIXED, { selectedKey: 's1|c1:1' })
+    expect(html.match(/aria-current="true"/g)).toHaveLength(1)
   })
 
-  describe('"Uses:" links', () => {
-    it('lists the earlier Stage agents a later Stage depends on', () => {
-      const html = render([
-        subagentSummary({ nameOrTask: 'Producer', toolCallId: 'c1', specIndex: 0, id: 'p' }),
-        subagentSummary({ nameOrTask: 'Consumer agent://Producer', toolCallId: 'c2', specIndex: 0, id: 'q' })
-      ])
-      expect(html).toContain('Uses:')
-    })
+  it('labels a detached job Background, set apart from its name', () => {
+    const html = render([subagentSummary({ nameOrTask: 'Bg', id: 'bg', status: 'running', background: true })])
+    expect(html).toMatch(/>Background</)
+    expect(textOf(html)).toContain('Bg Background')
+  })
+
+  it('closes the list of a closed group but keeps the header', () => {
+    const html = render(MIXED, { collapsed: true })
+    expect(html).toMatch(/<button[^>]*data-state="closed"/)
+    expect(html).not.toContain('<ul')
+    expect(html).not.toContain('Alpha')
+    expect(render(MIXED)).toMatch(/<ul[^>]*data-state="open"/)
+  })
+
+  it('keeps a space before the repository name in the accessible text', () => {
+    const html = render(MIXED, { repositoryName: 'acme/web' })
+    expect(textOf(html)).toContain('Fix login acme/web')
+  })
+
+  it('is not a named region landmark', () => {
+    const html = render(MIXED)
+    expect(html).not.toContain('aria-labelledby')
+    expect(html).not.toContain('<section')
   })
 })
 
-describe('PanelHeader', () => {
-  it('names the group from the same label the card trigger uses', () => {
-    expect(render(PAIR)).toContain('aria-label="Subagents, 1 stage, 2 agents, 1 running')
+describe('AgentsStatusLine', () => {
+  it('is a polite live region with the running total', () => {
+    const html = renderToStaticMarkup(createElement(AgentsStatusLine, { totalRunning: 3 }))
+    expect(html).toContain('aria-live="polite"')
+    expect(html).toContain('3 agents running')
   })
 
-  it('shows the goal strip when the scenario has one', () => {
-    readout.subagents = PAIR
-    const scenario = { ...selectScenarioFromSummaries(PAIR), overallGoal: 'Ship the release' }
-    const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(PanelHeader, { scenario, status: 'running', durationMs: 65_000 })))
-    expect(html).toContain('Ship the release')
-    expect(html).toContain('1m')
+  it('shows the empty-state text when nothing runs', () => {
+    expect(renderToStaticMarkup(createElement(AgentsStatusLine, { totalRunning: 0 }))).toContain('No agents running')
+  })
+
+  it('is the heading focus recovery lands on after a prune', () => {
+    expect(renderToStaticMarkup(createElement(AgentsStatusLine, { totalRunning: 1 }))).toContain('data-panel-heading')
   })
 })
 
-describe('PanelTree accessibility', () => {
-  const [stage] = selectScenarioFromSummaries(PAIR).stages
-  const detailed = { ...stage!.agents[0]!, role: 'Reviewer', duration: '2m', whatItDid: 'Found 3 issues', filesTouched: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts'] }
+describe('AgentDetailSummary', () => {
+  const [stage] = selectScenarioFromSummaries([subagentSummary({ nameOrTask: 'Alpha', id: 'a' })]).stages
+  const detailed = { ...stage!.agents[0]!, whatItDid: 'Found 3 issues', filesTouched: ['a.ts', 'b.ts', 'c.ts', 'd.ts', 'e.ts', 'f.ts'] }
 
-  it('keeps the short aria-label and points aria-describedby at hidden outcome, role, duration and files text', () => {
-    readout.subagents = PAIR
-    const rows = buildPanelRows([{ ...stage!, agents: [detailed, stage!.agents[1]!] }], () => true)
-    const html = renderToStaticMarkup(
-      createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
-    )
-    const row = html.match(/<div[^>]*role="treeitem"[^>]*aria-label="Alpha, Finished"[^>]*>/)![0]
-    const id = row.match(/aria-describedby="([^"]+)"/)![1]!
-    expect(html).toContain(`<span id="${id}" hidden="">Reviewer. 2m. Found 3 issues. Files touched: a.ts, b.ts, c.ts, d.ts, e.ts, f.ts</span>`)
-  })
-
-  it('takes the nested "+N" files button out of the tab order inside a row', () => {
-    const rows = buildPanelRows([{ ...stage!, agents: [detailed, stage!.agents[1]!] }], () => true)
-    const html = renderToStaticMarkup(
-      createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
-    )
-    expect(html).toMatch(/<button[^>]*tabindex="-1"[^>]*aria-expanded="false"/)
-  })
-
-  it('lets only the focused or selected agent row show its whole outcome', () => {
-    const rows = buildPanelRows([{ ...stage!, agents: [detailed, stage!.agents[1]!] }], () => true)
-    const html = renderToStaticMarkup(
-      createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
-    )
-    const rowTokens = html.match(/<div[^>]*aria-level="2"[^>]*>/)![0].match(/class="([^"]*)"/)![1]!.split(' ')
-    // The outcome is shared Markdown now: the clamp class sits on its wrapper and targets the paragraph inside.
-    const outcomeTokens = html.match(/<div[^>]*class="([^"]*)"[^>]*><p[^>]*>Found 3 issues<\/p>/)![1]!.split(' ')
-    // The markup escapes `&` in the attribute, so the arbitrary variant reads `[&amp;_p]`.
-    expect(rowTokens).toContain('aria-selected:[&amp;_p]:line-clamp-none')
-    expect(rowTokens).toContain('focus:[&amp;_p]:line-clamp-none')
-    const unscoped = rowTokens.filter((token) => token.endsWith('line-clamp-none') && !token.startsWith('aria-selected:') && !token.startsWith('focus:'))
-    expect(unscoped).toEqual([])
-    expect(outcomeTokens).toContain('[&amp;_p]:line-clamp-2')
-    expect(outcomeTokens).not.toContain('[&amp;_p]:line-clamp-none')
-  })
-
-  it('lists every file and the whole outcome in the detail pane, with no "+N" fold', () => {
+  it('lists every file and the whole outcome, with no "+N" fold', () => {
     const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AgentDetailSummary, { agent: detailed })))
     expect(html).toContain('Found 3 issues')
     expect(html).toContain('f.ts')
     expect(html).not.toContain('<button')
   })
 
-  describe('given an outcome with a link', () => {
+  it('makes a link in the outcome followable', () => {
     const linked = { ...detailed, whatItDid: 'Fixed in [the PR](https://x.test/pr)' }
-
-    it('makes the link followable in the detail pane', () => {
-      const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AgentDetailSummary, { agent: linked })))
-      expect(html).toMatch(/<a[^>]*href="https:\/\/x\.test\/pr"/)
-    })
-
-    it('keeps the link as plain text in the clamped tree row, so no control nests inside the row', () => {
-      const rows = buildPanelRows([{ ...stage!, agents: [linked, stage!.agents[1]!] }], () => true)
-      const html = renderToStaticMarkup(
-        createElement(TooltipProvider, null, createElement(PanelTree, { rows, selectedKey: null, tabbableIndex: 0, sessionId: 's1', rowRef: noop, onKeyDown: noop, onFocusRow: noop, onToggleStage: noop }))
-      )
-      expect(html).toContain('the PR')
-      expect(html).not.toContain('href="https://x.test/pr"')
-    })
+    const html = renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AgentDetailSummary, { agent: linked })))
+    expect(html).toMatch(/<a[^>]*href="https:\/\/x\.test\/pr"/)
   })
 
   it('renders nothing for an agent with neither outcome nor files', () => {

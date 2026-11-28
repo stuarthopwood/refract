@@ -13,6 +13,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex as StdMutex};
 
+#[path = "manager_agents.rs"]
+mod manager_agents;
+
 /// Owns every live `SessionAgent` and the shared registry and settings stores.
 pub struct SessionManager {
     pub registry: SharedRegistry,
@@ -23,6 +26,8 @@ pub struct SessionManager {
     self_ref: std::sync::Weak<SessionManager>,
     /// The one checklist store: the tool, the IPC, the delete hook and the notice take share it.
     checklists: Arc<ChecklistStore>,
+    /// Pending-emit state for the aggregated `agents:update` (#490).
+    agents_aggregate: manager_agents::AgentsAggregate,
 }
 
 /// Caps concurrent `git worktree list` calls across repositories.
@@ -79,6 +84,7 @@ impl SessionManager {
             visible_ids: Arc::new(StdMutex::new(HashSet::new())),
             self_ref: self_ref.clone(),
             checklists,
+            agents_aggregate: Default::default(),
         })
     }
 
@@ -372,12 +378,14 @@ impl SessionManager {
         summaries
     }
 
-    /// Drops the agent once its Session is deleted, so a later call cannot resurrect it.
+    /// Drops the agent once its Session is deleted, so a later call cannot resurrect it, and pushes
+    /// the aggregate without that Session's group.
     pub fn remove_agent(&self, session_id: &str) {
         self.agents
             .lock()
             .expect("agents mutex poisoned")
             .remove(session_id);
+        self.schedule_agents_update();
     }
 
     /// Sets which Sessions forward patches. A newly visible Session gets a full snapshot flush.
