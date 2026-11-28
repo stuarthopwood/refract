@@ -3,6 +3,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { normaliseFencesForSend } from '@/lib/codeSnippetFence'
 import { Markdown } from './Markdown'
 
 // The state barrel the renderer imports needs a browser `window`, so it is stubbed.
@@ -58,5 +59,25 @@ describe('Markdown embedded', () => {
     const tokens = blockTokens(html(MERMAID, { embedded: true, streaming: true }))
     expect(tokens).not.toContain('border-border')
     expect(tokens).toContain('forced-colors:border')
+  })
+})
+
+// #525: the bubble renders a sent one-line block through the shared CodeBlock, like a typed canonical fence.
+// Shiki loads asynchronously, so the server render shows the pre-highlight "text" header for any tag.
+describe('Markdown normalised one-line fences', () => {
+  const html = (text: string) => renderToStaticMarkup(createElement(TooltipProvider, null, createElement(Markdown, { id: 'm1', text })))
+
+  it('renders a normalised one-line block exactly like the canonical three-part fence', () => {
+    const sent = normaliseFencesForSend('```TS const a = 1```')
+    expect(sent).toBe('```ts\nconst a = 1\n```')
+    expect(html(sent)).toBe(html('```ts\nconst a = 1\n```'))
+    expect(html(sent)).toContain('const a = 1')
+  })
+
+  it('renders a no-language block with the "text" header and its code', () => {
+    const markup = html(normaliseFencesForSend('```hello world```'))
+    expect(markup).toContain('aria-label="text code block"')
+    expect(markup).toContain('hello world')
+    expect(markup).not.toContain('```')
   })
 })

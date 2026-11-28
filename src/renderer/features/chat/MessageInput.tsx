@@ -34,6 +34,9 @@ import { openRoleSwitcher } from './useRoleCycleShortcut'
 import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import { CommandPillOverlay, COMPOSER_MIRROR_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
+import { ComposerCodePreview } from './ComposerCodePreview'
+import { useCodeFenceRewrite } from './useCodeFenceRewrite'
+import { normaliseFencesForSend } from '@/lib/codeSnippetFence'
 import {
   buildChipLabel,
   buildImagePathAttachment,
@@ -199,6 +202,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
   // Any stop without a stop banner keeps the composer usable; a send starts the agent (#1205).
   const notStarted = status === 'stopped' && (stopReason === 'not-started' || stopReason === undefined)
   const disabled = status === 'stopped' && !notStarted
+  const codeFence = useCodeFenceRewrite(textareaRef, { sessionId, text, enabled: !disabled })
   useComposerFocusHandoff({ textareaRef, isWorking, disabled, stopHadFocusRef })
 
   const { slashMatches, showSlashMenu, slashMenuKey, slashMenuViewProps, slashAnnouncement, handleSlashMenuSelect, handleSlashMenuKey } = useSlashMenuCompletion({
@@ -284,7 +288,8 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       if (!snapshot || snapshot.runtime.status === 'stopped') return
     }
     // Chips are expanded back to their full text before `chat.send`.
-    const message = substituteChips(imageOnly ? '' : draftText, attachments.textChips)
+    const sent = codeFence.isLiteral() ? draftText : normaliseFencesForSend(draftText)
+    const message = substituteChips(imageOnly ? '' : sent, attachments.textChips)
     // #926 (D1 HIGH): typed text carrying the literal marker is refused, draft stays intact.
     if (message.includes(FILE_ATTACHMENTS_MARKER)) {
       toast.error(`The message contains the reserved "${FILE_ATTACHMENTS_MARKER}" marker line used internally for file attachments. Remove it and try again.`)
@@ -768,6 +773,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
         {sending ? 'Sending…' : ''}
       </p>
       <ComposerBox>
+        <ComposerCodePreview text={text} enabled={!disabled} />
         <ComposerField disabled={disabled}>
           {showSlashMenu && (
             <SlashMenu
@@ -809,6 +815,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
                 announceChipRemoval(attachments.textChips.filter((chip) => !prunedChips.includes(chip)))
                 useDraftStore.getState().setAttachments(sessionId, (prev) => ({ ...prev, textChips: prunedChips }))
               }
+              codeFence.handleChange(event)
             }}
             onPaste={(event) => void handlePaste(event)}
             onScroll={(event) => {
