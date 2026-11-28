@@ -6087,3 +6087,44 @@ Needs #1861's `start_conversation_then_send` (already on main in `src-tauri/src/
 ### Close-out
 
 - [ ] T787 [US1] Update `docs/PLAN.md` rows (epic #1136 child #1827), `quickstart.md` and `contracts/ipc.md` (`chat.send` `/new <prompt>`, the new error code) where T780 to T786 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check `/new <prompt>` on an idle and a Stopped Session, with an image, and a forced `AfterNew` failure.
+
+## Phase 137: Convergence (2026-11-28, epic #1272 children #1756, #1774, #2202, #2240, #2296, #2299, #2300, #2308, FR-212 to FR-219, SC-043 to SC-047)
+
+Written before the build. Five lanes with disjoint files; run them in parallel. Lane Card carries a one-line `cardSummary` seam (T794) that Lane Summary fills; Lane Stage's T798 reads Lane Card's numbering (T790), so merge Lane Card first.
+
+### Lane Card (#2296, #1774, #2299)
+
+- [ ] T788 [US1] #2296: reproduce live with two background agents, then make `src-tauri/src/omp/transcript/subagent_items.rs` (with `src-tauri/src/omp/transcript.rs`) build per-agent `subagent` items from a background `task` call's immediate result so the transcript has a card, per FR-212, US1/AC31 (missing). Tests: `src-tauri/src/omp/transcript/subagent_items_tests.rs`.
+- [ ] T789 [US1] #2296: in `src/renderer/features/subagents/viewModel/fromTranscript.ts` keep those agents "Running" and overlay live summaries until they settle, per FR-212, US1/AC31 (missing). Tests: `src/renderer/features/subagents/viewModel/fromTranscript.test.ts`.
+- [ ] T790 [US1] #2299: add `src/renderer/features/subagents/viewModel/numbering.ts` (Session-wide Stage number in start order, never reused) and use it in `groupSubagentStages.ts`, `fromTranscript.ts`, `fromSummaries.ts` and `derive.ts` instead of the per-card `stageIndex: view.number`, per FR-214, US1/AC32 (missing). Tests: new `viewModel/numbering.test.ts`, `viewModel/derive.test.ts`, `viewModel/fromSummaries.test.ts`, `src/renderer/features/chat/groupSubagentStages.test.ts`.
+- [ ] T791 [US1] #2299: make `src/renderer/features/subagents/card/headerStats.ts` and the panel header count the same Stages and agents, and add a parity test feeding one scenario to the card, the panel and `src/renderer/features/chat/readout/Readouts.tsx` (the pill), per FR-214, US1/AC32 (missing). Tests: `card/headerStats.test.ts`, `src/renderer/features/chat/readout/Readouts.test.ts`.
+- [ ] T792 [US1] #1774 (after T788 to T789): stop mounting `BackgroundAgentsBanner` in `src/renderer/features/chat/ComposerAboveStack.tsx`, delete `src/renderer/features/subagents/BackgroundAgentsBanner.tsx`, and drop the "Waiting for N subagents" row from `src/renderer/features/chat/CurrentWorkBanner.tsx` and `src/shared/activity.ts` (`deriveActivity`), per FR-213, US1/AC31 (missing). Tests: `src/shared/activity.test.ts`, new `src/renderer/features/chat/ComposerAboveStack.test.tsx`.
+- [ ] T793 [US1] #1774: in `src/renderer/features/chat/SubagentChainRow.tsx` add a per-agent Show button calling `openHostedPanel('subagents', sessionId, { selectSubagentId, selectSubagentKey, opener })` and move the polite settle announcement into the card, per FR-213, US1/AC31 (missing). Tests: `src/renderer/features/chat/SubagentChainRow.test.ts`.
+- [ ] T794 [US1] #2308 seam: add optional `cardSummary` to `AgentInput` and pass it through `fromTranscript.ts` and `fromSummaries.ts`; in `derive.ts` (`deriveAgent`, today `input.resultSummary ?? input.taskSummary`) prefer `cardSummary`, per FR-217, US1/AC33 (missing). Tests: `viewModel/derive.test.ts`, `viewModel/fromTranscript.test.ts`.
+
+### Lane Stage (#1756, #2300; T797 to T798 after T790)
+
+- [ ] T795 [US1] #1756: in `src/renderer/features/chat/stageMeta.ts` remove `LABEL_MAX_CHARS` slicing from `truncateLabel` (keep `SHELL_SCAN_MAX_CHARS`), per FR-215, US1/AC29 (missing). Tests: `src/renderer/features/chat/stageMeta.test.ts`.
+- [ ] T796 [US1] #1756: in `src/renderer/features/chat/ChainStageLine.tsx` default the Stage open while running or when any agent failed or stopped, keep the sticky choice winning, and CSS-truncate the title with the full label as tooltip, per FR-215, US1/AC29 (partial). Tests: `src/renderer/features/chat/ChainStageLine.test.ts`.
+- [ ] T797 [US1] #2300: in `src/renderer/components/ProgressStrip.tsx` add an optional per-segment label prop rendered through the shared `Tooltip` (`src/renderer/components/ui/tooltip.tsx`) and an `aria-describedby` list, keeping the `progressbar` role, per FR-216, US1/AC30 (missing). Tests: `src/renderer/components/ProgressStrip.test.ts`.
+- [ ] T798 [US1] #2300: in `src/renderer/features/subagents/card/SubagentsCardHeader.tsx` build the labels ("Stage N · title · status · duration") from T790's numbering and pass them to `ProgressStrip`, per FR-216, US1/AC30 (missing). Tests: `src/renderer/features/subagents/card/SubagentsCardHeader.test.ts`.
+
+### Lane Summary (#2308)
+
+- [ ] T799 [US1] #2308: in `src-tauri/src/session/subagents_synthesis.rs` add the per-agent start and finish prompts and a reply parser (plain text, 160 characters), reusing `run_synthesis` and the `tiny` resolver, per FR-217, US1/AC33 (missing). Tests: `src-tauri/src/session/subagents_synthesis.test.rs`.
+- [ ] T800 [US1] #2308: in `src-tauri/src/session/subagents_synthesis_hook.rs` run the two calls under `MAX_CONCURRENT_SYNTHESES`, store them per `toolCallId` and `specIndex` in `src-tauri/src/session/subagents_synthesis_cache.rs`, and emit `cardSummary` on the Subagent summary (type in `src/shared/model.ts`), per FR-217 (missing). Tests: `subagents_synthesis_hook.test.rs`, `subagents_synthesis_cache.test.rs`.
+- [ ] T801 [US1] #2308: add the `summariseAgentCards` setting (default on), mirroring `showAgentStoppedBar`: `src-tauri/src/store/` (new module beside `agent_stopped_bar.rs`) and `settings.rs`, `src-tauri/src/ipc/settings.rs`, `src/shared/ipc.ts`, `src/tauri-bridge/index.ts`, `src/renderer/state/settings-store.ts`, and a switch in `src/renderer/features/settings/SessionsSection.tsx`; the hook skips both calls when off, per FR-217 (missing). Tests: the new store module's unit tests and `subagents_synthesis_hook.test.rs`.
+- [ ] T802 [US1] #2308: amend `docs/adr/0013-subagent-view-model-and-synthesis.md` Q8 (opt-out now exists, per-agent calls), per FR-217 (missing). Tests: none (docs).
+
+### Lane Panel (#2240)
+
+- [ ] T803 [US1] #2240: in `src/renderer/features/subagents/SubagentPanel.tsx` (the tree host at ~:141 and the stream region at ~:152) and `SubagentPanelTree.tsx` replace nested borders with stepped tints, equalise the selected row's padding, make one vertical scroll bar per region, and wrap or truncate long paths with a tooltip so nothing scrolls sideways, per FR-218, US1/AC26 (missing). Tests: `src/renderer/features/subagents/SubagentPanelTree.test.ts`, `src/renderer/features/subagents/subagentPanelRows.test.ts`.
+
+### Lane Queue (#2202)
+
+- [ ] T804 [US1] #2202: in `src-tauri/src/session/agent/chat.rs` give `send_unheld_with` a steer argument, set `streamingBehavior: "steer"` from `send_session_message` when the target is Working or NeedsYou, and keep `followUp` for `send_checklist_item` and the `resume` drain, per FR-219 (missing). Tests: `src-tauri/src/session/agent/chat.test.rs`, `src-tauri/src/session/agent/frame_away.test.rs` (a steer already exists at :56).
+- [ ] T805 [US1] #2202: change the "queued behind the turn in progress" text in `src-tauri/src/agent_tools/sessions.rs` (~:66) to say the message is steered into the turn in progress, per FR-219 (partial). Tests: `src-tauri/src/agent_tools/sessions.test.rs`, `src-tauri/src/agent_tools/sessions_send.test.rs`.
+
+### Close-out
+
+- [ ] T806 [US1] Update `docs/PLAN.md` rows (epic #1272 children #1756, #1774, #2202, #2240, #2296, #2299, #2300, #2308), `quickstart.md` and `contracts/ipc.md` (the `cardSummary` field, the new setting) where T788 to T805 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check a background run, a failed Stage, the progress-bar tooltip, a tiny summary, the panel at narrow width and a Session message to a working Session.
