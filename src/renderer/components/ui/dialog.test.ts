@@ -21,7 +21,7 @@ function contentClasses(className?: string): string[] {
   return (classAttribute ?? '').split(/\s+/)
 }
 
-describe('DialogContent column (#2322, FR-222)', () => {
+describe('DialogContent column (#2322, FR-224)', () => {
   it('lays_dialog_content_in_one_shrinkable_column_so_a_long_line_cannot_widen_it_past_the_panel', () => {
     const classes = contentClasses()
     expect(classes).toContain('grid')
