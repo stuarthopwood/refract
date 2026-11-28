@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.51.0 (2026-11-28)
+
+### Features
+
+- feat(composer): turn pasted code snippets into fenced code blocks (#525) (https://github.com/stuarthopwood/refract/pull/2372)
+- feat(composer): start a new Conversation with /new <prompt> (#1827) (https://github.com/stuarthopwood/refract/pull/2373)
+- feat(chat): style Away Mode replies and Refract context lines apart (#2320) (https://github.com/stuarthopwood/refract/pull/2376)
+
+### Fixes
+
+- fix(sessions): count distinct files in the Changes pill (#2111) (https://github.com/stuarthopwood/refract/pull/2371)
+- fix(dialogs): keep dialog content inside the panel (#2322) (https://github.com/stuarthopwood/refract/pull/2374)
+- fix(chat): one line height for chat text and Markdown Advisor text (#360) (https://github.com/stuarthopwood/refract/pull/2375)
+
+### Other
+
+- docs(composer): converge epic #1136 specs (https://github.com/stuarthopwood/refract/pull/2367)
+- docs/plan 2026 11 28 html (https://github.com/stuarthopwood/refract/pull/2370)
+
 ## v0.50.0 (2026-11-28)
 
 ### Features
