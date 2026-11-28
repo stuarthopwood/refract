@@ -316,5 +316,6 @@ export function formatDiffStatAccessible(stat: DiffStat): string {
   const deletionsNoun = stat.deletions === 1 ? 'deletion' : 'deletions'
   // Lines past the file cap were never counted, so a capped total is a floor.
   const floor = stat.partial ? 'at least ' : ''
-  return `${filesPhrase}: ${floor}${additionsFull} ${additionsNoun}, ${deletionsFull} ${deletionsNoun}`
+  const separator = stat.partial ? ' and ' : ', '
+  return `${filesPhrase}: ${floor}${additionsFull} ${additionsNoun}${separator}${floor}${deletionsFull} ${deletionsNoun}`
 }

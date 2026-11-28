@@ -118,8 +118,8 @@ describe('diff stat wording (issue #2111, FR-221)', () => {
   })
 
   it('describes a capped result as "more than 200 files changed" with line counts as floors', () => {
-    expect(formatDiffStatAccessible(stat({ files: 201, partial: true }))).toBe('more than 200 files changed: at least 5 additions, 2 deletions')
-    expect(formatDiffStatAccessible(stat({ files: 200, partial: true }))).toBe('more than 200 files changed: at least 5 additions, 2 deletions')
+    expect(formatDiffStatAccessible(stat({ files: 201, partial: true }))).toBe('more than 200 files changed: at least 5 additions and at least 2 deletions')
+    expect(formatDiffStatAccessible(stat({ files: 200, partial: true }))).toBe('more than 200 files changed: at least 5 additions and at least 2 deletions')
   })
 
   it('describes an exact result with its full count and singular nouns', () => {

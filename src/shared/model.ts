@@ -250,7 +250,7 @@ export interface SessionRuntime {
   stoppedOnRequest: boolean;
 }
 
-/** `partial` marks that the 200-file or 1 MiB-per-file cap stopped counting before the real total. */
+/** `partial` is set only when the 200-file cap stopped counting before the real total. */
 export interface DiffStat {
   files: number;
   additions: number;
