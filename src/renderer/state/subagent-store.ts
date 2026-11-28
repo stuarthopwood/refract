@@ -49,10 +49,10 @@ interface SubagentPanelState {
   selectSubagent(subagentId: string, key?: string | null, options?: { silent?: boolean }): Promise<string | null>
   applyPatch(sessionId: string, subagentId: string, ops: TranscriptOp[]): void
   reset(): void
-  /** Closes the panel when a new turn starts for its Session, so a reused subagent name never inherits the previous turn's cached stream. No-op for other Sessions. */
-  resetForNewTurn(sessionId: string): void
+  /** Closes the panel when the Session's Conversation is reset, so a reused subagent name never inherits the previous Conversation's cached stream. No-op for other Sessions. */
+  resetForNewConversation(sessionId: string): void
   /** Clears the selection and its cached stream when a Stage prune removed the selected agent, keeping the panel open (#1085). No-op for other Sessions or a kept selection. */
-  dropPrunedSelection(sessionId: string, remainingIds: readonly string[]): void
+  dropPrunedSelection(sessionId: string, remaining: readonly { id: string }[]): void
   /** Stops main's live stream when the pane is dragged shut, keeping the binding: collapsing is not closing. */
   suspend(): void
   /** Re-subscribes and re-fetches the selected stream after `suspend()`; no-op if not suspended, so callers may call it freely. */
@@ -165,7 +165,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
     useRightPaneStore.getState().closePanel('subagents')
   },
-  resetForNewTurn: (sessionId) => {
+  resetForNewConversation: (sessionId) => {
     const state = get()
     if (state.sessionId !== sessionId) return
     if (useRightPaneStore.getState().openPanelIds.includes('subagents')) {
@@ -175,9 +175,9 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     fetchSeq += 1
     set({ selectedId: null, selectedKey: null, streams: {}, suspended: false })
   },
-  dropPrunedSelection: (sessionId, remainingIds) => {
+  dropPrunedSelection: (sessionId, remaining) => {
     const { sessionId: boundId, selectedId, streams } = get()
-    if (boundId !== sessionId || selectedId === null || remainingIds.includes(selectedId)) return
+    if (boundId !== sessionId || selectedId === null || remaining.some((entry) => entry.id === selectedId)) return
     // Main already stopped forwarding the removed agent, so only the local view needs rebinding.
     fetchSeq += 1
     const { [selectedId]: _removed, ...rest } = streams

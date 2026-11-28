@@ -7,6 +7,7 @@ import { useSubagentPanelStore } from './subagent-store'
 
 const panel = () => useSubagentPanelStore.getState()
 const stream = (id: string): TranscriptItem[] => [{ kind: 'assistant-text', id, text: id, streaming: false }]
+const remaining = (...ids: string[]) => ids.map((id) => ({ id }))
 
 interface PanelBinding {
   sessionId: string | null
@@ -36,7 +37,7 @@ beforeEach(() => {
 describe('dropPrunedSelection', () => {
   it('clears the selection and its cached stream when the selected agent was pruned, keeping other streams', () => {
     bindPanel()
-    panel().dropPrunedSelection('s1', ['b'])
+    panel().dropPrunedSelection('s1', remaining('b'))
     expect(panel().selectedId).toBeNull()
     expect(panel().selectedKey).toBeNull()
     expect(panel().streams).toEqual({ b: stream('b') })
@@ -51,7 +52,7 @@ describe('dropPrunedSelection', () => {
 
   it('leaves everything alone while the selected agent is still listed', () => {
     bindPanel()
-    panel().dropPrunedSelection('s1', ['a', 'b'])
+    panel().dropPrunedSelection('s1', remaining('a', 'b'))
     expect(panel().selectedId).toBe('a')
     expect(panel().selectedKey).toBe('c1:0')
     expect(Object.keys(panel().streams)).toEqual(['a', 'b'])
@@ -92,11 +93,28 @@ describe('applySubagents feeds dropPrunedSelection', () => {
     expect(panel().selectedId).toBe('a')
   })
 
-  it('treats an emptied list as a new turn, which closes the open panel instead', () => {
+  it('keeps the panel open on its empty state when a prune empties the list', () => {
     bindPanel({ streams: { a: stream('a') } })
     useReadoutStore.getState().reset('s1', EMPTY_READOUT, readout('a'))
     useReadoutStore.getState().applySubagents('s1', [])
-    expect(panel().sessionId).toBeNull()
+    expect(panel().sessionId).toBe('s1')
+    expect(useRightPaneStore.getState().openPanelIds).toContain('subagents')
     expect(panel().selectedId).toBeNull()
+    expect(panel().streams).toEqual({})
+  })
+})
+
+describe('resetForNewConversation', () => {
+  it('closes the open panel for its own Session', () => {
+    bindPanel()
+    panel().resetForNewConversation('s1')
+    expect(panel().sessionId).toBeNull()
+    expect(useRightPaneStore.getState().openPanelIds).not.toContain('subagents')
+  })
+
+  it('ignores another Session', () => {
+    bindPanel()
+    panel().resetForNewConversation('s2')
+    expect(panel().sessionId).toBe('s1')
   })
 })
