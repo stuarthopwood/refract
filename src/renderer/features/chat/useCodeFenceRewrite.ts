@@ -2,8 +2,8 @@
 // `applyEdit` so Ctrl+Z is one native undo step. An undo right after a rewrite sets the literal
 // flag: the typed backticks are then left alone, on screen and on send.
 import { useCallback, useEffect, useRef, type ChangeEvent, type RefObject } from 'react'
-import { findFenceRewrite } from '@/lib/codeSnippetFence'
-import { applyEdit } from './composerIndent'
+import { findFenceRewrite, normaliseFencesForSend } from '@/lib/codeSnippetFence'
+import { applyEdit, type ComposerEdit } from './composerIndent'
 
 export interface RewriteState {
   literal: boolean
@@ -33,6 +33,24 @@ export function nextRewriteState(state: RewriteState, inputType: string, text: s
   return { literal: state.literal, justRewrote: rewrote }
 }
 
+export interface ChangeInput extends Omit<RewriteGate, 'literal'> {
+  /** True while the hook's own edit is re-entering `onChange`. */
+  applying: boolean
+  caret: number | null
+}
+
+/** What one `onChange` does: the rewrite to apply, if any, and the state afterwards. */
+export function decideChange(state: RewriteState, { applying, caret, ...gate }: ChangeInput): { edit: ComposerEdit | null; state: RewriteState } {
+  if (applying) return { edit: null, state }
+  const edit = shouldRewrite({ ...gate, literal: state.literal }) ? findFenceRewrite(gate.text, caret ?? gate.text.length) : null
+  return { edit, state: nextRewriteState(state, gate.inputType, gate.text, edit !== null) }
+}
+
+/** A literal draft goes out as typed; callers pass false for text that was not typed in this composer, where the flag means nothing. */
+export function textForSend(draft: string, literal: boolean): string {
+  return literal ? draft : normaliseFencesForSend(draft)
+}
+
 interface CodeFenceRewriteOptions {
   sessionId: string
   text: string
@@ -52,24 +70,24 @@ export function useCodeFenceRewrite(textareaRef: RefObject<HTMLTextAreaElement |
   /** Call last in the textarea's `onChange`, after the draft store has the typed value. */
   const handleChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => {
-      if (applyingRef.current) return
       const textarea = textareaRef.current
       const { inputType = '', isComposing = false } = event.nativeEvent as InputEvent
-      const text = event.target.value
-      const state = stateRef.current
-      const edit =
-        textarea && shouldRewrite({ inputType, isComposing, literal: state.literal, text, enabled })
-          ? findFenceRewrite(text, event.target.selectionStart ?? text.length)
-          : null
-      if (edit && textarea) {
-        applyingRef.current = true
-        try {
-          applyEdit(textarea, edit)
-        } finally {
-          applyingRef.current = false
-        }
+      const decision = decideChange(stateRef.current, {
+        applying: applyingRef.current,
+        inputType,
+        isComposing,
+        text: event.target.value,
+        caret: event.target.selectionStart,
+        enabled: enabled && textarea !== null
+      })
+      stateRef.current = decision.state
+      if (!decision.edit || !textarea) return
+      applyingRef.current = true
+      try {
+        applyEdit(textarea, decision.edit)
+      } finally {
+        applyingRef.current = false
       }
-      stateRef.current = nextRewriteState(state, inputType, text, edit !== null)
     },
     [textareaRef, enabled]
   )

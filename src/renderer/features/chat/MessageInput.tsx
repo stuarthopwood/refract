@@ -35,8 +35,7 @@ import { AttachmentStrip, ChipOverlaySegments } from './AttachmentStrip'
 import { CommandPillOverlay, COMPOSER_MIRROR_CLASS, useCommandPillOverlay } from './CommandPillOverlay'
 import { attachPastedImage, attachPastedFiles } from './attachImage'
 import { ComposerCodePreview } from './ComposerCodePreview'
-import { useCodeFenceRewrite } from './useCodeFenceRewrite'
-import { normaliseFencesForSend } from '@/lib/codeSnippetFence'
+import { textForSend, useCodeFenceRewrite } from './useCodeFenceRewrite'
 import {
   buildChipLabel,
   buildImagePathAttachment,
@@ -288,7 +287,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       if (!snapshot || snapshot.runtime.status === 'stopped') return
     }
     // Chips are expanded back to their full text before `chat.send`.
-    const sent = codeFence.isLiteral() ? draftText : normaliseFencesForSend(draftText)
+    const sent = textForSend(draftText, overrideText === undefined && codeFence.isLiteral())
     const message = substituteChips(imageOnly ? '' : sent, attachments.textChips)
     // #926 (D1 HIGH): typed text carrying the literal marker is refused, draft stays intact.
     if (message.includes(FILE_ATTACHMENTS_MARKER)) {

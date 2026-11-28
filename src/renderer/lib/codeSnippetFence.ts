@@ -1,7 +1,7 @@
 // #525: finds, rewrites and describes fenced code in a composer draft. Pure text in, text out, so
 // the textarea wiring stays thin and every rule is unit-tested.
 import type { ComposerEdit } from '@/features/chat/composerIndent'
-import { languageLabel, resolveOneLineTag } from './codeFenceLanguages'
+import { languageLabel, resolveFenceTag, resolveOneLineTag } from './codeFenceLanguages'
 import { MAX_STYLED_DRAFT_LENGTH } from './markdownLineTokens'
 
 interface FenceOpen {
@@ -170,7 +170,8 @@ export function findPreviewBlock(text: string): PreviewBlock | null {
       continue
     }
     open = advanceFence(line, null)
-    if (open) last = { tag: open.info.split(/\s+/)[0]?.toLowerCase() || null, bodyStart: index + 1, bodyEnd: lines.length }
+    // Only table-known tags reach the preview; anything else fails closed to no language.
+    if (open) last = { tag: resolveFenceTag(open.info.split(/\s+/)[0] ?? '')?.tag ?? null, bodyStart: index + 1, bodyEnd: lines.length }
   }
   if (!last) return null
   const body = lines.slice(last.bodyStart, last.bodyEnd)

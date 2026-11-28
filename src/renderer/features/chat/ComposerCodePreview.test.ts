@@ -26,7 +26,7 @@ describe('ComposerCodePreview', () => {
 
   it('hides the strip from assistive tech and makes it inert', () => {
     const html = render('```ts\nconst a = 1\n```')
-    expect(html).toContain('aria-hidden="true" inert=""')
+    expect(html).toMatch(/<div(?=[^>]*\saria-hidden="true")(?=[^>]*\sinert="")[^>]*>/)
   })
 
   it('is an in-flow strip, never positioned over the textarea', () => {

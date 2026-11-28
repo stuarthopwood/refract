@@ -63,11 +63,19 @@ describe('findFenceRewrite', () => {
     expect(rewrite('```py\na\n```\n```ts b```')?.text).toBe('```py\na\n```\n```ts\nb\n```\n')
   })
 
-  it('does nothing for a slash draft, an empty block or an over-long draft', () => {
+  it('does nothing for a slash draft or an empty block', () => {
     expect(rewrite('/model ```ts a```')).toBeNull()
     expect(rewrite('``` ```')).toBeNull()
-    expect(rewrite('```ts a```' + 'x'.repeat(MAX_STYLED_DRAFT_LENGTH))).toBeNull()
-    expect(rewrite('```ts ' + 'x'.repeat(MAX_STYLED_DRAFT_LENGTH) + '```')).toBeNull()
+  })
+
+  it('rewrites a draft of exactly the styling limit and leaves one character more alone', () => {
+    const draftOfLength = (length: number) => '```ts ' + 'x'.repeat(length - 9) + '```'
+    const atLimit = draftOfLength(MAX_STYLED_DRAFT_LENGTH)
+    expect(atLimit.length).toBe(MAX_STYLED_DRAFT_LENGTH)
+    const out = rewrite(atLimit)
+    expect(out?.text).toBe('```ts\n' + 'x'.repeat(MAX_STYLED_DRAFT_LENGTH - 9) + '\n```\n')
+    expect(out?.caret).toBe(out!.text.length)
+    expect(rewrite(draftOfLength(MAX_STYLED_DRAFT_LENGTH + 1))).toBeNull()
   })
 
   it('leaves four backticks and tilde fences untouched', () => {
@@ -107,6 +115,27 @@ describe('findPreviewBlock', () => {
     expect(findPreviewBlock('```py\n```')).toBeNull()
     expect(findPreviewBlock('/cmd\n```py\nx\n```')).toBeNull()
     expect(findPreviewBlock('```ts a```')).toBeNull()
+  })
+
+  it('keeps a three-backtick fence inside a four-backtick fence as body', () => {
+    expect(findPreviewBlock('````md\n```ts\ncode\n```\n````')).toEqual({ tag: 'md', body: '```ts\ncode\n```', lineCount: 3 })
+  })
+
+  it('does not close a backtick fence with a tilde fence', () => {
+    expect(findPreviewBlock('```py\n~~~\nx\n```')).toEqual({ tag: 'py', body: '~~~\nx', lineCount: 2 })
+  })
+
+  it('does not close a fence with a closer that carries an info string', () => {
+    expect(findPreviewBlock('```py\na\n```ts\nb')).toEqual({ tag: 'py', body: 'a\n```ts\nb', lineCount: 3 })
+  })
+
+  it('lowercases a known tag', () => {
+    expect(findPreviewBlock('```TS\na\n```')?.tag).toBe('ts')
+  })
+
+  it('gives an unknown or inherited-property tag no language', () => {
+    expect(findPreviewBlock('```zig\na\n```')?.tag).toBeNull()
+    expect(findPreviewBlock('```constructor\na\n```')?.tag).toBeNull()
   })
 })
 
@@ -156,6 +185,16 @@ describe('normaliseFencesForSend', () => {
 
   it('keeps the original line endings for CRLF drafts', () => {
     expect(normaliseFencesForSend('one\r\n```ts a```\r\ntwo')).toBe('one\r\n```ts\r\na\r\n```\r\ntwo')
+  })
+
+  it('puts every block of a line on its own lines and keeps the text between them', () => {
+    expect(normaliseFencesForSend('```ts a``` and ```sh ls```')).toBe('```ts\na\n```\n and \n```sh\nls\n```')
+  })
+
+  it('leaves a one-line block after an open fence untouched, including the closing line', () => {
+    expect(normaliseFencesForSend('```ts a```\n```\nopen forever ```sh b```')).toBe('```ts\na\n```\n```\nopen forever ```sh b```')
+    expect(normaliseFencesForSend('~~~\n```ts a```\n~~~')).toBe('~~~\n```ts a```\n~~~')
+    expect(normaliseFencesForSend('````ts a````')).toBe('````ts a````')
   })
 
   it('leaves a canonical fence untouched', () => {
