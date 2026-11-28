@@ -15,7 +15,7 @@ export interface ActivityReadoutFields {
 
 export const ACTIVITY_TEXT_MAX_CHARS = 160
 
-export type ActivityKind = 'needs-you' | 'retrying' | 'compacting' | 'subagents' | 'todo' | 'intent' | 'tool' | 'working'
+export type ActivityKind = 'needs-you' | 'retrying' | 'compacting' | 'todo' | 'intent' | 'tool' | 'working'
 
 /** #526 (spec 004 FR-041): the first pending request, reduced to what the needs-you line shows. */
 export type ActivityPending =
@@ -29,7 +29,6 @@ export interface ActivityInput {
   needsYou: boolean
   /** #526: the Session's first pending request, if known; only read when `needsYou`. */
   pending?: ActivityPending | null
-  runningSubagents: number
   /** The current todo task ("n of m" is derived by the caller's todo derive); `null` when there is
    * none or the todo panel is pinned (the pinned panel already shows it, issue #687 decision 2). */
   todo: { number: number; total: number; content: string } | null
@@ -128,7 +127,7 @@ function toolPhrase(tool: NonNullable<ActivityReadoutFields['latestTool']>): str
   return TOOL_PHRASES[tool.name] ?? null
 }
 
-/** Priority: needs you, retrying, compacting, waiting on subagents, current todo task, the brief
+/** Priority: needs you, retrying, compacting, current todo task, the brief
  * label of the latest intent, a plain verb for the latest tool call, then "Working…". */
 export function deriveActivity(input: ActivityInput): Activity {
   const text = (kind: ActivityKind, line: string): Activity => ({ kind, text: sanitizeActivityText(line) })
@@ -147,10 +146,6 @@ export function deriveActivity(input: ActivityInput): Activity {
   }
   if (input.retry) return text('retrying', `Retrying · attempt ${input.retry.attempt} of ${input.retry.maxAttempts}`)
   if (input.compacting) return text('compacting', 'Compacting context…')
-  if (input.runningSubagents > 0) {
-    const n = input.runningSubagents
-    return text('subagents', `Waiting for ${n} ${n === 1 ? 'subagent' : 'subagents'}`)
-  }
   if (input.todo) return text('todo', `Task ${input.todo.number} of ${input.todo.total} · ${input.todo.content}`)
   // FR-140: the line shows the intent's brief label with trailing full stops trimmed, as OMP's working
   // message does (`normalizeIntent` after `toolIntentLabel`); the full intent is on the tool row.

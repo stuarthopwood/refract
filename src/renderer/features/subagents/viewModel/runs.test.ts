@@ -24,8 +24,21 @@ describe('splitSubagentRuns', () => {
 
   it('splits on any other item and keeps that item as its own slot', () => {
     const text = assistantText('t1')
-    const slots = splitSubagentRuns([subagentItem({ name: 'A' }), text, subagentItem({ name: 'B' })])
+    const slots = splitSubagentRuns([subagentItem({ name: 'A' }), text, subagentItem({ name: 'B', messageId: 'm2' })])
     expect(slots.map((slot) => slot.kind)).toEqual(['run', 'other', 'run'])
+    expect(slots[1]).toEqual({ kind: 'other', item: text })
+  })
+
+  it('folds a later run of the same message into the first run, leaving the text after it', () => {
+    // Mutation: flush on the text and keep both runs, so one message renders two cards that both read "Stage 1".
+    const text = assistantText('t1')
+    const slots = splitSubagentRuns([
+      subagentItem({ name: 'A', messageId: 'm1' }),
+      text,
+      subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2', messageId: 'm1' })
+    ])
+    expect(slots.map((slot) => slot.kind)).toEqual(['run', 'other'])
+    expect(slots[0]!.kind === 'run' && slots[0]!.items.map((i) => i.name)).toEqual(['A', 'B'])
     expect(slots[1]).toEqual({ kind: 'other', item: text })
   })
 

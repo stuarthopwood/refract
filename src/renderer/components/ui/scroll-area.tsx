@@ -11,10 +11,13 @@ function ScrollArea({
   className,
   children,
   viewportProps,
+  viewportRef,
   ...props
 }: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
   /** Makes the scrolling viewport itself focusable and named, so its inset focus ring shows on every edge. */
   viewportProps?: ScrollAreaViewportProps
+  /** The scrolling element, for a caller that reads or sets `scrollTop` or queries inside it. */
+  viewportRef?: React.Ref<HTMLDivElement>
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -27,6 +30,7 @@ function ScrollArea({
           `ring-inset` so a parent's `overflow-hidden` can't clip it. */}
       <ScrollAreaPrimitive.Viewport
         data-slot="scroll-area-viewport"
+        ref={viewportRef}
         {...viewportProps}
         className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-(length:--focus-ring-width) focus-visible:ring-inset focus-visible:ring-ring [&>div]:block! [&>div]:min-w-0!"
       >

@@ -1,6 +1,7 @@
 import type { SubagentSummary } from '../../../shared/model'
 import type { StageItem } from '../subagents/viewModel'
 import { fromTranscriptRuns } from '../subagents/viewModel/fromTranscript'
+import type { StageNumbers } from '../subagents/viewModel/numbering'
 import { runFacts } from '../subagents/viewModel/runFacts'
 import { splitSubagentRuns, type TranscriptSubagentItem } from '../subagents/viewModel/runs'
 import type { GroupedTranscriptItem } from './groupToolItems'
@@ -24,10 +25,13 @@ export function isStageGroup(item: { kind: string }): item is StageGroup {
   return item.kind === 'stage-group'
 }
 
-/** Positions Stages in the transcript; the Stage runs and their derived fields come from the shared view-model scenario. */
-export function groupSubagentStages(items: GroupedTranscriptItem[], summaries: readonly SubagentSummary[]): StageGroupedItem[] {
+/**
+ * Positions Stages in the transcript; the Stage runs and their derived fields come from the shared view-model scenario.
+ * `numbers` is the Session's Stage numbering, so a Stage keeps one number on every surface; without it the Stages here number among themselves.
+ */
+export function groupSubagentStages(items: GroupedTranscriptItem[], summaries: readonly SubagentSummary[], numbers?: StageNumbers): StageGroupedItem[] {
   const slots = splitSubagentRuns(items)
-  const { stages } = fromTranscriptRuns(slots, summaries)
+  const { stages } = fromTranscriptRuns(slots, summaries, numbers)
   const result: StageGroupedItem[] = []
   let runIndex = 0
   for (const slot of slots) {

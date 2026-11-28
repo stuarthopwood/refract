@@ -8,19 +8,12 @@ export interface StageDependency {
   specIndex: number
 }
 
-const LABEL_MAX_CHARS = 60
-
 // Only the head of a line is scanned for setup; the cap keeps the shell-setup regex off a pasted multi-kilobyte line.
 const SHELL_SCAN_MAX_CHARS = 1000
 
 const HEADING_ONLY_GOAL_RE = /^#{1,6}\s*goal\b:?\s*$/i
 
 const HEADING_OR_GOAL_PREFIX_RE = /^(?:#{1,6}\s*)?(?:goal\b:?\s*)?/i
-
-function truncateLabel(label: string): string {
-  if (label.length <= LABEL_MAX_CHARS) return label
-  return `${label.slice(0, LABEL_MAX_CHARS).trimEnd()}\u2026`
-}
 
 // A line of "Rules (HARD)" boilerplate ends a label search: nothing after it describes the Stage.
 const RULES_HARD_RE = /^(?:#{1,6}\s*)?[*_]*rules\s*\(hard\)/i
@@ -72,11 +65,9 @@ function findFirstContentLine(lines: string[], clean = false): { index: number; 
   return null
 }
 
-/** First useful line of a batch `task()` context, heading markers and "Goal:" stripped, truncated to about 60 characters. With `clean` (the default) worktree paths and "Rules (HARD)" boilerplate are dropped first. */
+/** First useful line of a batch `task()` context, heading markers and "Goal:" stripped, never shortened (CSS fits it to the row). With `clean` (the default) worktree paths and "Rules (HARD)" boilerplate are dropped first. */
 export function extractContextLabel(context: string, clean = true): string | null {
-  const found = findFirstContentLine(context.split('\n'), clean)
-  if (!found) return null
-  return truncateLabel(found.stripped)
+  return findFirstContentLine(context.split('\n'), clean)?.stripped ?? null
 }
 
 const GOAL_PREVIEW_MAX_CHARS = 1500
