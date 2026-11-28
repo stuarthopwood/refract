@@ -127,7 +127,7 @@ async function main() {
     await waitForSessionStatus(cdp, sessionB.id, 'working');
 
     const busy = await sendFromA(pidA, sessionB.id, PEER_BUSY);
-    check('send to busy B returned outcome "sent"', !busy.isError && busy.body.outcome === 'sent', JSON.stringify(busy));
+    check('send to busy B returned outcome "queued" (the tool name for a steer into a running turn)', !busy.isError && busy.body.outcome === 'queued', JSON.stringify(busy));
     const afterBusy = await waitForPrompts(pidB, 2);
     const steered = afterBusy[1];
     check('busy B received the peer message as streamingBehavior "steer"', steered.streamingBehavior === 'steer' && String(steered.message).includes(PEER_BUSY), JSON.stringify(steered));
