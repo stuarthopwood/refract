@@ -15,7 +15,7 @@ import { AgentsCard } from './AgentsCard'
 import { AlarmClock } from './AlarmClock'
 import { READOUT_ITEM_BASE_CLASS, READOUT_ITEM_INTERACTIVE_ADDITIONS, ReadoutItem } from './ReadoutItem'
 import { TodoCard } from './TodoCard'
-import { deriveSubagentPhrase } from './subagentDerive'
+import { deriveSubagentPhrase, isSubagentFailurePhrase } from './subagentDerive'
 import { deriveTodoTotals, hasTodoPlan } from './todoDerive'
 import { useReadoutCard } from './useReadoutCard'
 
@@ -99,6 +99,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
   }
   if (subagentCount === null) return null
   const phrase = deriveSubagentPhrase(subagentCount)
+  if (phrase === '') return null
   return (
     <Popover
       open={card.open}
@@ -113,6 +114,7 @@ export function SubagentsReadout({ sessionId }: { sessionId: string }) {
           icon={READOUT_KIND_ICONS.subagents}
           onActivate={onActivate}
           accessibleName={`Open subagents panel (${phrase})`}
+          warning={isSubagentFailurePhrase(subagentCount)}
           // Flipped so the running state stands out.
           className={subagentCount.running > 0 ? 'text-foreground' : undefined}
           onPointerEnter={card.anchorHandlers.onPointerEnter}

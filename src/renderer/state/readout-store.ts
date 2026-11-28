@@ -44,6 +44,8 @@ export const useReadoutStore = create<ReadoutState>((set, get) => ({
     set({ bySession: { ...get().bySession, [sessionId]: { readout: current.readout, subagents } } })
     if (hadSubagents && subagents.length === 0) {
       useSubagentPanelStore.getState().resetForNewTurn(sessionId)
+    } else {
+      useSubagentPanelStore.getState().dropPrunedSelection(sessionId, subagents.map((s) => s.id))
     }
   }
 }))

@@ -26,6 +26,13 @@ use subagents_progress::{
 mod subagents_synthesis_hook;
 use subagents_synthesis_hook::SynthesisState;
 
+#[path = "subagents_retention.rs"]
+mod subagents_retention;
+pub(super) use subagents_retention::subagent_count;
+use subagents_retention::{
+    drop_unavailable, note_message_start, prune_for_new_turn, stamp_new_entry,
+};
+
 #[cfg(test)]
 #[path = "subagents_test_support.rs"]
 pub(in crate::session) mod test_support;
@@ -79,6 +86,11 @@ pub(super) struct SummaryEntry {
     files_touched: Vec<String>,
     /// Latest heartbeat steps, newest last (#1925).
     recent_steps: Vec<RecentStep>,
+    /// The owning assistant message id, the key the transcript groups a Stage by; the call id
+    /// stands in when no assistant message was seen (#1085).
+    stage_key: String,
+    /// Which turn (`State::turn`) created this agent; never serialized (#1085).
+    turn: u32,
 }
 
 /// Subagent runtime state held inside `AgentState`, reached via `with_subagents_state`.
@@ -100,6 +112,10 @@ pub(super) struct State {
     summaries_timer_pending: bool,
     /// Executor, cache and per-call dedupe for the `tiny` labelling of each `task()` call (#1925).
     synthesis: SynthesisState,
+    /// Id of the latest assistant message, stamped on agents created while it runs (#1085).
+    current_message_id: String,
+    /// Bumped at each `agent_start`; separates this turn's agents from retained earlier ones (#1085).
+    turn: u32,
 }
 
 fn now_ms() -> i64 {
@@ -111,7 +127,12 @@ fn now_ms() -> i64 {
 
 pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Value) {
     match frame_type {
-        "agent_start" => prune_finished_streams(agent).await,
+        "agent_start" => prune_for_new_turn(agent).await,
+        "message_start" => {
+            agent
+                .with_subagents_state(|s| note_message_start(s, frame))
+                .await
+        }
         "tool_execution_start" => {
             if frame.get("toolName").and_then(Value::as_str) == Some("task") {
                 let tool_call_id = frame
@@ -231,7 +252,7 @@ async fn settle_running_subagents(
                 if is_empty {
                     let notice = json!({
                         "kind": "notice",
-                        "id": format!("{id}:reattach-notice"),
+                        "id": format!("{id}{}", subagents_retention::NO_OUTPUT_NOTICE_SUFFIX),
                         "level": "info",
                         "text": notice_text,
                     });
@@ -257,14 +278,10 @@ async fn settle_running_subagents(
     }
 }
 
-/// Launch hook: settles stale `Running` summaries to `Exited`; a new process can't confirm them.
+/// Launch hook: a new process can't confirm a `Running` summary and has no output for it, so such
+/// agents leave the list at once instead of lingering as "exited" (#1085).
 pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
-    settle_running_subagents(
-        agent,
-        SummaryStatus::Exited,
-        "No live output: this subagent had already exited when Refract reattached.",
-    )
-    .await;
+    drop_unavailable(agent).await;
     subscribe_to_subagent_frames(agent).await;
 }
 
@@ -293,6 +310,7 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
             s.streams.clear();
             s.stream_ids.clear();
             s.visible_id = None;
+            s.current_message_id.clear();
             s.pending_patch_ops.clear();
             had
         })
@@ -302,25 +320,6 @@ pub(super) async fn on_conversation_reset(agent: &SessionAgent) {
     }
     super::readout::schedule_readout_update(agent).await;
     subscribe_to_subagent_frames(agent).await;
-}
-
-/// At `agent_start`, frees streams of settled, non-visible subagents to bound memory.
-async fn prune_finished_streams(agent: &SessionAgent) {
-    agent
-        .with_subagents_state(|s| {
-            let visible = s.visible_id.clone();
-            let droppable: Vec<String> = s
-                .summaries
-                .iter()
-                .filter(|e| e.status != SummaryStatus::Running && Some(&e.id) != visible.as_ref())
-                .map(|e| e.id.clone())
-                .collect();
-            for id in droppable {
-                s.streams.remove(&id);
-                s.stream_ids.remove(&id);
-            }
-        })
-        .await;
 }
 
 /// Selects which subagent's live stream is forwarded as `subagent:patch`.
@@ -349,38 +348,6 @@ pub async fn snapshot(agent: &SessionAgent, subagent_id: &str) -> Option<Vec<Val
 pub async fn current_summaries_value(agent: &SessionAgent) -> Value {
     agent
         .with_subagents_state(|s| summaries_to_value(&s.summaries))
-        .await
-}
-
-/// Counts for `SessionReadout.subagentCount`; `None` hides the chip.
-pub(super) async fn subagent_count(agent: &SessionAgent) -> Option<Value> {
-    agent
-        .with_subagents_state(|s| {
-            if s.summaries.is_empty() {
-                return None;
-            }
-            let mut running = 0u32;
-            let mut finished = 0u32;
-            let mut exited = 0u32;
-            let mut failed = 0u32;
-            let mut cancelled = 0u32;
-            for entry in &s.summaries {
-                match entry.status {
-                    SummaryStatus::Running => running += 1,
-                    SummaryStatus::Finished => finished += 1,
-                    SummaryStatus::Exited => exited += 1,
-                    SummaryStatus::Failed => failed += 1,
-                    SummaryStatus::Cancelled => cancelled += 1,
-                }
-            }
-            Some(json!({
-                "running": running,
-                "finished": finished,
-                "exited": exited,
-                "failed": failed,
-                "cancelled": cancelled,
-            }))
-        })
         .await
 }
 
@@ -495,6 +462,8 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
         created.push(SummaryEntry {
             id,
             tool_call_id: tool_call_id.to_string(),
+            stage_key: String::new(),
+            turn: 0,
             spec_index: index as u32,
             name_or_task: subagent_name_or_task(spec),
             name: subagent_name(spec),
@@ -512,7 +481,8 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
 
     let summaries_value = agent
         .with_subagents_state(|s| {
-            for entry in &created {
+            for entry in &mut created {
+                stamp_new_entry(s, entry);
                 s.streams.entry(entry.id.clone()).or_default();
                 s.stream_ids.entry(entry.id.clone()).or_default();
             }

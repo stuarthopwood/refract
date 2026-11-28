@@ -183,6 +183,11 @@ export function panelKeyAction(rows: readonly PanelRow[], index: number, key: st
   }
 }
 
+/** True when a row the developer was on has been pruned and nothing else holds focus, so it fell to the page body: only then does focus move to the panel heading, never away from another control (#1085, FR-203). */
+export function focusLostToPrune(focusedKey: string | null, rows: readonly PanelRow[], activeIsBody: boolean): boolean {
+  return focusedKey !== null && activeIsBody && !rows.some((row) => row.key === focusedKey)
+}
+
 /** The next row after `fromIndex` (wrapping) whose label starts with `buffer`, or -1. */
 export function typeaheadIndex(rows: readonly PanelRow[], fromIndex: number, buffer: string): number {
   const needle = buffer.toLowerCase()

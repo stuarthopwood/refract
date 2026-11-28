@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useShallow } from 'zustand/react/shallow'
-import type { KeyboardEvent } from 'react'
+import type { FocusEvent, KeyboardEvent } from 'react'
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '@/components/ui/resizable'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { EMPTY_READOUT_ENTRY, EMPTY_TRANSCRIPT, useReadoutStore, useStageToggleStore, useSubagentPanelStore, useTranscriptStore } from '@/state'
@@ -12,6 +12,7 @@ import { overallStatus } from '../chat/subagentChainStatus'
 import { AgentDetailSummary, LivePanelHeader, PanelTree } from './SubagentPanelTree'
 import {
   buildPanelRows,
+  focusLostToPrune,
   isPanelStageOpen,
   panelKeyAction,
   panelStageToggleId,
@@ -54,6 +55,9 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
 
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const typeaheadRef = useRef<{ buffer: string; timer: number | undefined }>({ buffer: '', timer: undefined })
+  const treeHostRef = useRef<HTMLDivElement>(null)
+  // The row focus was last in, so a prune that removes exactly that row can hand focus to the heading instead of dropping it to the page.
+  const focusedKeyRef = useRef<string | null>(null)
 
   const tabbableIndex = useMemo(() => {
     if (rows.length === 0) return -1
@@ -63,6 +67,13 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
 
   const status = overallStatus(summarizeSubagentStatuses(allAgents.map((agent) => agent.status)))
   const selectedAgent = useMemo(() => allAgents.find((agent) => agent.key === selectedKey), [allAgents, selectedKey])
+
+  useEffect(() => {
+    const active = document.activeElement
+    if (!focusLostToPrune(focusedKeyRef.current, rows, active === null || active === document.body)) return
+    focusedKeyRef.current = null
+    treeHostRef.current?.querySelector<HTMLElement>('[data-panel-heading]')?.focus()
+  }, [rows])
 
   useEffect(() => {
     if (!pendingFocusSubagentKey && !pendingFocusSubagentId) return
@@ -123,6 +134,18 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     if (element) rowRefs.current.set(key, element)
     else rowRefs.current.delete(key)
   }, [])
+  const trackFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    for (const [key, element] of rowRefs.current) {
+      if (element.contains(event.target)) {
+        focusedKeyRef.current = key
+        return
+      }
+    }
+  }, [])
+  // A removed row's blur arrives on a detached node; only an attached one means focus really left the row.
+  const releaseFocus = useCallback((event: FocusEvent<HTMLDivElement>) => {
+    if (event.target.isConnected) focusedKeyRef.current = null
+  }, [])
   // Issue #941 part 2: a Stage row has no single subagent to stream, so only an agent row selects.
   const onFocusRow = useCallback((row: PanelAgentRow) => void selectSubagent(row.agent.id, row.agent.key), [selectSubagent])
   const onToggleStage = useCallback((stageId: string, open: boolean) => setManualOpen(sessionId, panelStageToggleId(stageId), open), [setManualOpen, sessionId])
@@ -135,7 +158,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
         <ResizablePanel defaultSize="60%" minSize="20%">
           {rows.length > 0 ? (
             // @container: the shared card pieces size themselves from this pane's width, not the viewport (FR-150 c).
-            <div className="@container h-full overflow-y-auto px-4 py-2">
+            <div ref={treeHostRef} onFocus={trackFocus} onBlur={releaseFocus} className="@container h-full overflow-y-auto px-4 py-2">
               <LivePanelHeader scenario={scenario} status={status} />
               <PanelTree rows={rows} selectedKey={selectedKey} tabbableIndex={tabbableIndex} sessionId={sessionId} rowRef={rowRef} onKeyDown={handleRowKeyDown} onFocusRow={onFocusRow} onToggleStage={onToggleStage} />
             </div>

@@ -29,7 +29,7 @@ const FULL_OUTCOME_CLASS = 'aria-selected:[&_p]:line-clamp-none focus:[&_p]:line
 /** The goal, the segmented Stage bar and the roll-up: the same header the chat card draws, minus its disclosure. */
 export function PanelHeader({ scenario, status, durationMs }: { scenario: ChatScenario; status: SubagentRowStatus; durationMs: number | undefined }) {
   return (
-    <div role="group" aria-label={formatHeaderTriggerLabel(scenario.headerStats, status, durationMs)} className="shrink-0 rounded-lg bg-chat-card-bg ring-1 ring-divider">
+    <div role="group" tabIndex={-1} data-panel-heading aria-label={formatHeaderTriggerLabel(scenario.headerStats, status, durationMs)} className="shrink-0 rounded-lg bg-chat-card-bg ring-1 ring-divider focus-visible:outline-solid focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-ring">
       <div className="flex min-w-0 items-center gap-2 px-2 py-1 text-sm">
         <span aria-hidden="true" className={ICON_SLOT_CLASS}>
           <SubagentStatusGlyph status={status} />

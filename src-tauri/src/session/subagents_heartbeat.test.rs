@@ -19,6 +19,8 @@ fn entry() -> SummaryEntry {
         overall_goal: None,
         files_touched: Vec::new(),
         recent_steps: Vec::new(),
+        stage_key: "m1".into(),
+        turn: 0,
     }
 }
 

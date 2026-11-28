@@ -293,6 +293,7 @@ export interface SessionReadout extends ActivityReadoutFields {
   contextUsage: ContextUsage | 'not-available' | null; aiCredits?: number | null;
   turnTime: { startedAt: number } | null;
   pullRequest: SessionPullRequest | null;
+  /** Counts of the retained list only: Refract drops an earlier turn's settled Stages (#1085). The composer pill reads it, and the field is `null` once nothing runs and the turn's last Stage had no failed or exited agent. */
   subagentCount: { running: number; finished: number; exited: number; failed: number; cancelled: number } | null;
   todoTree: TodoPhase[] | null; branch?: { name: string; detached: boolean } | null;
   todoPhases: Array<{ name: string; pendingCount: number }> | null;
@@ -320,6 +321,8 @@ export interface SubagentSummary {
   id: string;
   toolCallId: string;
   specIndex: number;
+  /** The owning assistant message id, the key the transcript groups a Stage by; Rust prunes by it. Empty when no assistant message was seen (#1085). */
+  stageKey?: string;
   nameOrTask: string;
   /** A freshly launched `OmpProcess` never reuses a previous one. Distinct from `failed`: nothing about the subagent's own work is known to have failed, only its process disappeared. */
   status: 'running' | 'finished' | 'failed' | 'cancelled' | 'exited' | 'parked';
