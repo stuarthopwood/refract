@@ -85,6 +85,8 @@ pub struct Settings {
     pub show_context_usage_bar: bool,
     /// The "Agent stopped" bar; default on (#1205).
     pub show_agent_stopped_bar: bool,
+    /// Tiny-model summaries on the Subagents card; default on.
+    pub summarise_agent_cards: bool,
     /// AI credits chip beside the Context usage chip; default on, independent of it (#1238).
     pub show_ai_credits: bool,
     /// Status-text shimmer switch; default on (#1242).
@@ -141,6 +143,8 @@ pub use alarms::Alarm;
 mod agent_stopped_bar;
 #[path = "ai_credits.rs"]
 mod ai_credits;
+#[path = "summarise_agent_cards.rs"]
+mod summarise_agent_cards;
 pub use activity_text::ActivityText;
 #[path = "status_style.rs"]
 mod status_style;
@@ -282,7 +286,7 @@ impl SettingsStore {
             .filter(|id| !id.is_empty() && id.len() <= 48)
             .map(str::to_string);
 
-        const KNOWN_FIELDS: [&str; 34] = [
+        const KNOWN_FIELDS: [&str; 35] = [
             "customTheme",
             "version",
             "approvalMode",
@@ -300,6 +304,7 @@ impl SettingsStore {
             "detectImagePathsOnPaste",
             "showContextUsageBar",
             agent_stopped_bar::KEY,
+            summarise_agent_cards::KEY,
             ai_credits::KEY,
             animated_status_text::KEY,
             code_ligatures::KEY,
@@ -342,6 +347,7 @@ impl SettingsStore {
             detect_image_paths_on_paste,
             show_context_usage_bar,
             show_agent_stopped_bar,
+            summarise_agent_cards: summarise_agent_cards::parse(&object),
             show_ai_credits,
             animated_status_text,
             code_ligatures,
@@ -427,6 +433,7 @@ impl SettingsStore {
         );
         let show_bar = self.data.show_agent_stopped_bar;
         map.insert(agent_stopped_bar::KEY.to_string(), json!(show_bar));
+        summarise_agent_cards::write(&mut map, self.data.summarise_agent_cards);
         ai_credits::write(&mut map, self.data.show_ai_credits);
         let animated = self.data.animated_status_text;
         map.insert(animated_status_text::KEY.to_string(), json!(animated));

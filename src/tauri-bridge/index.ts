@@ -327,6 +327,7 @@ const refract: RefractApi = {
     setShowContextUsageBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR, enabled),
     setShowAiCredits: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_AI_CREDITS, enabled),
     setShowAgentStoppedBar: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SHOW_AGENT_STOPPED_BAR, enabled),
+    setSummariseAgentCards: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_SUMMARISE_AGENT_CARDS, enabled),
     setAnimatedStatusText: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_ANIMATED_STATUS_TEXT, enabled),
     setCodeLigatures: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_CODE_LIGATURES, enabled),
     setReduceMotion: (enabled) => request<Settings>(IPC_REQUESTS.SETTINGS_SET_REDUCE_MOTION, enabled),

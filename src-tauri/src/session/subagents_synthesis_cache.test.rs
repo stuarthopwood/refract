@@ -251,3 +251,93 @@ async fn a_traversing_session_id_removes_nothing_outside_the_sessions_folder() {
     );
     assert!(outside.join(CACHE_FILE).exists());
 }
+
+#[test]
+fn the_best_card_summary_is_the_finish_one_else_the_start_one() {
+    let both = CardSummaries {
+        start: Some("Starting".to_string()),
+        finish: Some("Finished".to_string()),
+    };
+    assert_eq!(both.best(), Some("Finished"));
+    let start_only = CardSummaries {
+        start: Some("Starting".to_string()),
+        finish: None,
+    };
+    assert_eq!(start_only.best(), Some("Starting"));
+    assert_eq!(CardSummaries::default().best(), None);
+}
+
+#[test]
+fn card_summaries_read_from_disk_are_cleaned_like_a_live_reply() {
+    let dir = tempfile::tempdir().unwrap();
+    let long = "x".repeat(5_000);
+    let file = serde_json::json!({
+        "card:t1:0": {
+            "start": long,
+            "finish": "<b>Built</b> [it](https://evil.example)\u{202E}\u{7}"
+        },
+        "card:t1:1": { "start": "  ", "finish": "```" }
+    });
+    std::fs::write(dir.path().join(CACHE_FILE), file.to_string()).unwrap();
+
+    let loaded = SynthesisCache::load(dir.path());
+
+    let first = loaded.card_summaries("t1", 0).unwrap();
+    assert_eq!(first.start.as_deref().unwrap().chars().count(), 160);
+    assert_eq!(first.finish.as_deref(), Some("Built it"));
+    assert_eq!(
+        loaded.card_summaries("t1", 1),
+        Some(&CardSummaries::default())
+    );
+}
+
+#[test]
+fn a_card_key_never_collides_with_a_tool_call_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = SynthesisCache::load(dir.path());
+    cache.insert("t1", synthesis("Ship it")).unwrap();
+    cache.insert("t1:0", synthesis("Other")).unwrap();
+    cache
+        .set_card_summary("t1", 0, false, "Starting".to_string())
+        .unwrap();
+
+    assert_eq!(cache.get("t1"), Some(&synthesis("Ship it")));
+    assert_eq!(cache.get("t1:0"), Some(&synthesis("Other")));
+    assert_eq!(cache.get("card:t1:0"), None);
+    assert_eq!(
+        cache
+            .card_summaries("t1", 0)
+            .and_then(|c| c.start.as_deref()),
+        Some("Starting")
+    );
+    assert_eq!(cache.card_summaries("t1", 1), None);
+    assert_eq!(cache.card_summaries("t1:0", 0), None);
+}
+
+#[test]
+fn both_maps_survive_a_persist_and_reload_in_one_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut cache = SynthesisCache::load(dir.path());
+    cache
+        .insert_and_persist("t1", synthesis("Ship it"))
+        .unwrap();
+    for (is_finish, text) in [(false, "Starting"), (true, "Finished")] {
+        cache
+            .set_card_summary("t1", 0, is_finish, text.to_string())
+            .unwrap()
+            .write()
+            .unwrap();
+    }
+
+    let reloaded = SynthesisCache::load(dir.path());
+
+    assert_eq!(reloaded.get("t1"), Some(&synthesis("Ship it")));
+    let cards = reloaded.card_summaries("t1", 0).unwrap();
+    assert_eq!(cards.start.as_deref(), Some("Starting"));
+    assert_eq!(cards.finish.as_deref(), Some("Finished"));
+    let files: Vec<_> = std::fs::read_dir(dir.path())
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert_eq!(files, vec![CACHE_FILE.to_string()]);
+}

@@ -1,4 +1,4 @@
-// Disk cache of the synthesis per `toolCallId`, in the Session's data folder (ADR 0013 Q4). Replay and
+// Disk cache of the synthesis per `toolCallId`, in the Session's data folder. Replay and
 // restart read it, and a history item with no entry stays unlabelled: nothing synthesises on render.
 
 use std::collections::HashMap;
@@ -7,13 +7,16 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::subagents_synthesis::Synthesis;
+use super::subagents_synthesis::{parse_card_reply, Synthesis};
 use crate::checklist::store::is_plain_id;
 use crate::omp::transcript::synthesis_labels::{SubagentLabels, SynthesisLookup};
 
 const CACHE_FILE: &str = "subagent-synthesis.json";
+/// Marks a card-summary key in the cache file; a tool call id never starts with it.
+const CARD_KEY_PREFIX: &str = "card:";
 /// A cache holds a few short labels per `task()` call; a larger file was not written by this code.
 const MAX_FILE_BYTES: u64 = 1_048_576;
 
@@ -56,11 +59,39 @@ fn lock_writer(writer: &SharedWriter) -> MutexGuard<'_, WriterState> {
     writer.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
+/// The synthesised card summaries of one agent: from its brief, and from its brief and result.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CardSummaries {
+    pub start: Option<String>,
+    pub finish: Option<String>,
+}
+
+impl CardSummaries {
+    /// The finish summary once there is one, else the start summary.
+    pub fn best(&self) -> Option<&str> {
+        self.finish.as_deref().or(self.start.as_deref())
+    }
+
+    /// The same cleaning a live reply gets, for text read back from a disk file anyone can edit.
+    fn clamped(self) -> Self {
+        let clean = |text: Option<String>| text.and_then(|text| parse_card_reply(&text));
+        Self {
+            start: clean(self.start),
+            finish: clean(self.finish),
+        }
+    }
+}
+
+fn card_key(tool_call_id: &str, spec_index: u32) -> String {
+    format!("{CARD_KEY_PREFIX}{tool_call_id}:{spec_index}")
+}
+
 /// The syntheses of one Session, held in memory and mirrored to one JSON file.
 #[derive(Debug)]
 pub struct SynthesisCache {
     file: PathBuf,
     entries: HashMap<String, Synthesis>,
+    cards: HashMap<String, CardSummaries>,
     version: u64,
     writer: SharedWriter,
 }
@@ -82,18 +113,24 @@ impl SynthesisCache {
         for tmp in leftover_tmp_files(session_dir) {
             let _ = std::fs::remove_file(tmp);
         }
-        let entries = read_capped(&file)
+        let raw = read_capped(&file)
             .and_then(|bytes| serde_json::from_slice::<HashMap<String, Value>>(&bytes).ok())
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|(id, value)| {
-                let synthesis: Synthesis = serde_json::from_value(value).ok()?;
-                Some((id, synthesis.clamped()))
-            })
-            .collect();
+            .unwrap_or_default();
+        let mut entries = HashMap::new();
+        let mut cards = HashMap::new();
+        for (id, value) in raw {
+            if id.starts_with(CARD_KEY_PREFIX) {
+                if let Ok(stored) = serde_json::from_value::<CardSummaries>(value) {
+                    cards.insert(id, stored.clamped());
+                }
+            } else if let Ok(synthesis) = serde_json::from_value::<Synthesis>(value) {
+                entries.insert(id, synthesis.clamped());
+            }
+        }
         Self {
             file,
             entries,
+            cards,
             version: 0,
             writer: SharedWriter::default(),
         }
@@ -104,13 +141,50 @@ impl SynthesisCache {
         self.entries.get(tool_call_id)
     }
 
+    /// The cached card summaries of one agent of a `task()` call.
+    pub fn card_summaries(&self, tool_call_id: &str, spec_index: u32) -> Option<&CardSummaries> {
+        self.cards.get(&card_key(tool_call_id, spec_index))
+    }
+
     /// Keeps the entry in memory, so the same call is not synthesised twice even if the write fails.
     pub fn insert(&mut self, tool_call_id: &str, synthesis: Synthesis) -> io::Result<PendingWrite> {
         self.entries.insert(tool_call_id.to_string(), synthesis);
+        self.snapshot()
+    }
+
+    /// Stores the start or the finish summary of one agent, in memory first like `insert`.
+    pub fn set_card_summary(
+        &mut self,
+        tool_call_id: &str,
+        spec_index: u32,
+        is_finish: bool,
+        text: String,
+    ) -> io::Result<PendingWrite> {
+        let slot = self
+            .cards
+            .entry(card_key(tool_call_id, spec_index))
+            .or_default();
+        if is_finish {
+            slot.finish = Some(text);
+        } else {
+            slot.start = Some(text);
+        }
+        self.snapshot()
+    }
+
+    /// Both maps in one file: a card key carries a prefix no tool call id has, so the two never collide.
+    fn snapshot(&mut self) -> io::Result<PendingWrite> {
         self.version += 1;
+        let mut all = serde_json::Map::new();
+        for (id, synthesis) in &self.entries {
+            all.insert(id.clone(), serde_json::to_value(synthesis)?);
+        }
+        for (key, cards) in &self.cards {
+            all.insert(key.clone(), serde_json::to_value(cards)?);
+        }
         Ok(PendingWrite {
             file: self.file.clone(),
-            data: serde_json::to_vec_pretty(&self.entries)?,
+            data: serde_json::to_vec_pretty(&all)?,
             version: self.version,
             writer: self.writer.clone(),
         })

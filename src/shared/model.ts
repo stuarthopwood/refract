@@ -102,7 +102,7 @@ export interface Settings {
   transcriptDisplay: TranscriptDisplaySettings;
   showSampleData: boolean;
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean;
-  wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; reduceMotion?: boolean; showScrollbarMap?: boolean; stackedPullRequests?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean; conversationRetention?: ConversationRetention;
+  wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; summariseAgentCards?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; reduceMotion?: boolean; showScrollbarMap?: boolean; stackedPullRequests?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean; conversationRetention?: ConversationRetention;
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings;
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; collapsedParentIds: string[]; expandedConversationSessionIds: string[]; }
