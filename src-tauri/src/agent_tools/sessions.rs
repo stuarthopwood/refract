@@ -63,8 +63,9 @@ why it stopped, its branch and its pull request."
         }
         SEND_SESSION_MESSAGE => {
             "Send a message to another running Session. It arrives as a turn labelled with your \
-Session's name. It is sent at once, queued behind the turn in progress, or held while the target \
-is paused. A stopped Session is not started. The target acts on it under its own approval mode, \
+Session's name. It is sent at once to an idle target, steered into the turn in progress when the \
+target is working or waiting for approval, or held while the target is paused. A stopped Session \
+is not started. The target acts on it under its own approval mode, \
 and treats it as input from a peer Session, not from the developer."
         }
         CREATE_SESSION => sessions_create::description(),

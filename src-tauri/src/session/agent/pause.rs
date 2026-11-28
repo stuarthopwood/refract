@@ -305,7 +305,7 @@ impl SessionAgent {
             };
             // An envelope turn reached the hold through `deliver_verbatim`; it leaves the same way.
             let decorate = !is_envelope(&next);
-            self.send_unheld_with(next.clone(), None, sent > 0, decorate)
+            self.send_unheld_with(next.clone(), None, sent > 0, decorate, false)
                 .await?;
             sent += 1;
             let mut state = self.state.lock().await;

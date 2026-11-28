@@ -211,3 +211,10 @@ fn the_send_description_tells_the_model_the_message_is_peer_input() {
     assert!(text.contains("own approval mode"));
     assert!(text.contains("peer Session, not from the developer"));
 }
+
+#[test]
+fn the_send_description_says_a_busy_target_is_steered_not_queued() {
+    let text = description(SEND_SESSION_MESSAGE);
+    assert!(text.contains("steered into the turn in progress"));
+    assert!(text.contains("steered into the turn in progress when the target is working"));
+}
