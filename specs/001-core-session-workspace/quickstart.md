@@ -99,6 +99,15 @@ pnpm build        # must pass before a change lands on main
 3. Quit and reopen Refract. Expect: both default open lists show their cached rows at once with the quiet "refreshing" hint instead of the Loading card, then swap to the fresh rows (FR-181).
 4. Watch the sidebar PR count. Expect: it comes from the loaded default list, or shares the list's one in-flight request, never a second `gh search prs` (FR-183); `gh api rate_limit` is probed at most once per 60 s (FR-182).
 
+**Subagents card, panel and peer messages (FR-212 to FR-219, SC-043 to SC-047, issues #1756, #1774, #2202, #2240, #2296, #2299, #2300, #2308)**
+
+1. Ask the agent to start two background (async) subagents. Expect: the chat shows a **Subagents** card with both agents running at once (FR-212); the card header, the panel header and the composer pill give the same Stage and agent counts, and a Stage keeps one Session-wide number everywhere (FR-214).
+2. Let one Stage fail or stop. Expect: it stays expanded while the Stages whose agents all succeeded collapse to one line with a sticky chevron toggle, and a long Stage title is cut by CSS with the full title in a tooltip (FR-215).
+3. Hover, or focus with the keyboard, a progress bar segment. Expect: a tooltip with "Stage N · title · status · duration", also announced to a screen reader through the `progressbar` (FR-216).
+4. With **Summarise agent cards with the tiny model** on (Settings > Sessions), watch an agent card. Expect: a one or two line `cardSummary` from the brief at start, replaced by one from the result at finish; with the switch off, the card shows the result's first sentence or latest step as plain text and no `tiny` call is made (FR-217, `cardSummary`, `summariseAgentCards`).
+5. Open the Subagents panel and narrow it. Expect: tinted rows instead of nested borders, one vertical scroll bar per split region, none on the panel, no horizontal scroll, and long paths wrap or truncate with a tooltip (FR-218). The composer has no separate agent list; **Show** on a card agent opens the panel on that agent (FR-213).
+6. From a second Session, send a message to a Session that is `Working`. Expect: it is delivered as a steer into the turn in progress, not queued for **Send now**; a paused target still holds it, and a developer-typed message still goes to the follow-up queue (FR-219).
+
 **Memory (FR-037, FR-038, SC-010)**
 
 1. Open Sessions until free memory drops below the threshold in `src/main/memory.ts`. Expect: a warning within 10 s naming the number of live agents; **Stop agent** on an idle Session frees its memory and the Session stays listed and reopens with its conversation.
