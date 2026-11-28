@@ -13,7 +13,7 @@ Epic #1931 redesigns the Subagents card in the chat and the **Subagent panel** i
 - **Q5. Unset `tiny`, failure or timeout.** Omit `role` and `overallGoal`, and fall back to today's `computeStageLabel` heuristics. Never fall back to `default` or `smol`: an unset `tiny` resolves towards `default`, the expensive model this rule exists to avoid. No retry loop; a later spawn tries again.
 - **Q6. Files touched.** Rust accumulates them per agent in `subagents_progress.rs`: the path of each write or edit entry in `recentTools`, deduplicated, capped at 50, emitted on the summary. The renderer remounts and loses frames; Rust sees every frame. `recentTools` is a rolling window, so the UI labels the list "Files touched" and never presents it as complete. The heartbeat's `args` is a preview string today, so the reader takes it as the path and also accepts an object with a `path` key.
 - **Q7. Prompt size.** Task text is capped at 2,000 characters per agent and the shared `context` at 4,000, after worktree paths and `Rules (HARD)` boilerplate are stripped. Output is capped at 120 characters for the goal and 40 for each role.
-- **Q8. Privacy.** No new setting in #1925. The calls use the provider and model roles the user already configured, and send only the spawn arguments the Session's model already saw. An opt-out is a follow-up if Stuart wants one.
+- **Q8. Privacy.** The calls use the provider and model roles the user already configured, and send only what the Session's model already saw: the spawn arguments, and each agent's result for the finish summary. Summarise agent cards in Settings, on by default, turns off the per-agent card summaries (issue #2308); with it off, the hook makes no card call. Each agent costs at most two calls, a start summary when it spawns and a finish summary when it settles, and each result is cached by `toolCallId` and `specIndex`. The group synthesis for roles and the goal is separate and is unaffected by the setting. An unset `tiny` role never falls back to another model.
 
 **Field contract (Rust to renderer):**
 
@@ -33,7 +33,7 @@ Every field is optional, so an older Rust build, an unset `tiny` role and a repl
 - History opened before this change shows heuristic titles and no role, because its items have no cache entry. That is deliberate: it costs no tokens.
 - `filesTouched` and `recentSteps` are live only. After a restart a finished agent shows no files, because the heartbeat is not replayed.
 - The `tiny` call is the first Rust-initiated model call in Refract. The runner goes through the same `omp` executor the config reads use, so tests substitute a fake and no test spends tokens.
-- Revisit Q8 if a user asks for an opt-out, and Q5 if OMP ships a per-feature cheap-model hook.
+- Revisit Q5 if OMP ships a per-feature cheap-model hook.
 
 ## Runtime limits
 

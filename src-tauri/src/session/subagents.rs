@@ -83,6 +83,8 @@ pub(super) struct SummaryEntry {
     role: Option<String>,
     /// Synthesised goal of the whole `task()` call, repeated on each of its agents (#1925).
     overall_goal: Option<String>,
+    /// Synthesised one- or two-line summary of this agent: from its brief, replaced by one from its result (#2308).
+    card_summary: Option<String>,
     /// Paths this agent wrote or edited, first-seen order; live only, never replayed (#1925).
     files_touched: Vec<String>,
     /// Latest heartbeat steps, newest last (#1925).
@@ -195,6 +197,13 @@ pub(super) async fn on_frame(agent: &SessionAgent, frame_type: &str, frame: &Val
             }
         }
         _ => {}
+    }
+    // The transcript holds the result by now; a background agent's result arrives later, on `message_end`.
+    if matches!(
+        frame_type,
+        "tool_execution_end" | "subagent_lifecycle" | "message_end"
+    ) {
+        subagents_synthesis_hook::on_settled(agent).await;
     }
 }
 
@@ -478,6 +487,7 @@ async fn handle_task_start(agent: &SessionAgent, tool_call_id: &str, args: &Valu
             background: false,
             role: None,
             overall_goal: None,
+            card_summary: None,
             files_touched: Vec::new(),
             recent_steps: Vec::new(),
         });

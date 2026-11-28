@@ -18,7 +18,7 @@ const GOOD_REPLY: &str = r#"{"overallGoal": "Ship the card", "roles": ["Research
 /// Answers `omp config get modelRoles` from `roles` and every other call with `reply`, recording both.
 struct FakeExec {
     roles: serde_json::Value,
-    reply: String,
+    reply: StdMutex<String>,
     calls: StdMutex<Vec<Vec<String>>>,
     /// When set, a model call blocks until a permit is released, so a test controls how long calls overlap.
     gate: Option<Semaphore>,
@@ -38,12 +38,17 @@ impl FakeExec {
     fn build(roles: serde_json::Value, reply: &str, gate: Option<Semaphore>) -> Arc<Self> {
         Arc::new(Self {
             roles,
-            reply: reply.to_string(),
+            reply: StdMutex::new(reply.to_string()),
             calls: StdMutex::new(Vec::new()),
             gate,
             in_flight: AtomicUsize::new(0),
             peak_in_flight: AtomicUsize::new(0),
         })
+    }
+
+    /// Changes what every later model call answers, so a finish call can differ from the start call.
+    fn set_reply(&self, reply: &str) {
+        *self.reply.lock().unwrap() = reply.to_string();
     }
 
     /// Lets `n` blocked model calls finish.
@@ -96,7 +101,7 @@ impl OmpExecutor for FakeExec {
                     .forget();
             }
             self.in_flight.fetch_sub(1, Ordering::SeqCst);
-            Ok(self.reply.clone())
+            Ok(self.reply.lock().unwrap().clone())
         })
     }
 }
@@ -110,9 +115,18 @@ struct Fixture {
     exec: Arc<FakeExec>,
     id: String,
     dir: PathBuf,
+    manager: Arc<crate::session::manager::SessionManager>,
 }
 
+/// A Session with Summarise agent cards off, so the group synthesis tests count only their own call.
 async fn fixture(exec: Arc<FakeExec>) -> Fixture {
+    let fx = fixture_with_cards(exec).await;
+    set_summarise_agent_cards(&fx, false).await;
+    fx
+}
+
+/// A Session with Summarise agent cards at its default, on.
+async fn fixture_with_cards(exec: Arc<FakeExec>) -> Fixture {
     let base = super::super::test_support::agent_fixture(false).await;
     let injected = exec.clone();
     base.agent
@@ -123,7 +137,18 @@ async fn fixture(exec: Arc<FakeExec>) -> Fixture {
         exec,
         id: base.id,
         dir: base.dir,
+        manager: base.manager,
     }
+}
+
+async fn set_summarise_agent_cards(fx: &Fixture, on: bool) {
+    fx.manager
+        .settings
+        .lock()
+        .await
+        .set_summarise_agent_cards(on)
+        .await
+        .unwrap();
 }
 
 fn task_args() -> Value {
@@ -358,4 +383,119 @@ async fn a_task_start_after_a_delete_on_a_never_loaded_cache_calls_nothing_and_w
         .await
         .iter()
         .all(|c| c.get("role").is_none()));
+}
+
+const CARD_REPLY: &str = "Reading the sources before building";
+const FINISH_REPLY: &str = "Built the thing and it passed";
+
+fn wait_end(result: &str) -> Value {
+    json!({
+        "type": "tool_execution_end", "toolCallId": "wait-1", "toolName": "wait",
+        "isError": false,
+        "result": { "content": [], "details": { "jobs": [
+            { "jobId": "job-0", "label": "Alpha", "status": "done", "resultText": result },
+            { "jobId": "job-1", "label": "Beta", "status": "done", "resultText": result }
+        ] } }
+    })
+}
+
+fn card_summaries(cards: &[Value]) -> Vec<Option<String>> {
+    cards
+        .iter()
+        .map(|c| {
+            c.get("cardSummary")
+                .and_then(Value::as_str)
+                .map(String::from)
+        })
+        .collect()
+}
+
+/// Starts the call through the real frame path, so the transcript and the cards both know the agents.
+async fn start_task(fx: &Fixture) {
+    let frame = json!({
+        "type": "tool_execution_start", "toolCallId": "call-1", "toolName": "task", "args": task_args()
+    });
+    fx.agent.handle_frame(frame).await;
+}
+
+#[tokio::test]
+async fn a_start_result_is_stored_and_emitted_on_each_card() {
+    let fx = fixture_with_cards(FakeExec::new(roles_with_tiny(), CARD_REPLY)).await;
+
+    start_task(&fx).await;
+    wait_for(&fx.agent, |s| {
+        card_summaries(s)
+            .iter()
+            .all(|c| c.as_deref() == Some(CARD_REPLY))
+    })
+    .await;
+
+    let saved = SynthesisCache::load(&cache_dir(&fx));
+    assert_eq!(
+        saved
+            .card_summaries("call-1", 1)
+            .and_then(|c| c.start.as_deref()),
+        Some(CARD_REPLY)
+    );
+}
+
+#[tokio::test]
+async fn a_finish_result_replaces_the_start_result() {
+    let fx = fixture_with_cards(FakeExec::new(roles_with_tiny(), CARD_REPLY)).await;
+    start_task(&fx).await;
+    wait_for(&fx.agent, |s| {
+        card_summaries(s)
+            .iter()
+            .all(|c| c.as_deref() == Some(CARD_REPLY))
+    })
+    .await;
+
+    fx.exec.set_reply(FINISH_REPLY);
+    fx.agent.handle_frame(wait_end("It is built.")).await;
+    wait_for(&fx.agent, |s| {
+        card_summaries(s)
+            .iter()
+            .all(|c| c.as_deref() == Some(FINISH_REPLY))
+    })
+    .await;
+
+    let saved = SynthesisCache::load(&cache_dir(&fx));
+    let cards = saved.card_summaries("call-1", 0).unwrap();
+    assert_eq!(cards.finish.as_deref(), Some(FINISH_REPLY));
+}
+
+#[tokio::test]
+async fn with_the_setting_off_no_card_call_is_made() {
+    let fx = fixture_with_cards(FakeExec::new(roles_with_tiny(), CARD_REPLY)).await;
+    set_summarise_agent_cards(&fx, false).await;
+
+    start_task(&fx).await;
+    fx.agent.handle_frame(wait_end("It is built.")).await;
+    settle().await;
+
+    assert_eq!(
+        fx.exec.model_calls(),
+        1,
+        "only the group synthesis may call"
+    );
+    assert!(card_summaries(&summaries(&fx.agent).await)
+        .iter()
+        .all(Option::is_none));
+}
+
+#[tokio::test]
+async fn a_failed_card_call_leaves_the_card_summary_unset() {
+    let fx = fixture_with_cards(FakeExec::new(roles_with_tiny(), "")).await;
+
+    start_task(&fx).await;
+    poll_until("the model was called", || fx.exec.model_calls() > 0).await;
+    settle().await;
+
+    assert!(card_summaries(&summaries(&fx.agent).await)
+        .iter()
+        .all(Option::is_none));
+    assert_eq!(
+        SynthesisCache::load(&cache_dir(&fx)).card_summaries("call-1", 0),
+        None
+    );
 }
