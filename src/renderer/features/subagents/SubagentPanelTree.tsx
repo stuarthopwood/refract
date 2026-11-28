@@ -4,6 +4,7 @@ import { memo, useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { FileChipList } from '@/components/FileChip'
+import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { cn } from '@/lib/utils'
@@ -49,12 +50,14 @@ const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, on
   const { summary } = row
   return (
     <li>
-      <button
+      <Button
         ref={(element) => rowRef(row.key, element)}
         type="button"
+        variant="ghost"
+        size="sm"
         aria-current={selected ? 'true' : undefined}
         onClick={() => onSelect(sessionId, row)}
-        className={cn('relative flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-surface-hover aria-[current=true]:bg-accent forced-colors:aria-[current=true]:border forced-colors:aria-[current=true]:border-[Highlight]', INSET_FOCUS_OUTLINE_CLASS)}
+        className={cn('relative flex min-h-11 w-full min-w-0 items-center justify-start gap-2 rounded-md px-2 py-1 text-left text-sm whitespace-normal hover:bg-surface-hover aria-[current=true]:bg-accent forced-colors:aria-[current=true]:border forced-colors:aria-[current=true]:border-[Highlight]', INSET_FOCUS_OUTLINE_CLASS)}
       >
         {selected && <ActiveIndicatorBar />}
         <span className="flex shrink-0 items-center gap-1 text-xs">
@@ -70,7 +73,7 @@ const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, on
           )}
         </span>
         <AgentElapsed summary={summary} />
-      </button>
+      </Button>
     </li>
   )
 })
