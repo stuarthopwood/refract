@@ -6044,7 +6044,7 @@ Written before the build, assessed against `origin/main` 73cde82d. File names co
 
 ### Close-out
 
-- [ ] T766 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` (`conversations.delete`, retention, tree commands) where T754 to T765 change them; run `pnpm typecheck`, `pnpm test`, `cargo test` for the touched modules and live-check delete, the nested list and a Fork.
+- [x] T766 [US1] Update `docs/PLAN.md` rows, `quickstart.md` and `contracts/ipc.md` (`conversations.delete`, retention, tree commands) where T754 to T765 change them (done: PLAN rows marked done in PR #2355; the typecheck, test and live-check parts ran in the lane PRs #2344, #2347, #2354).
 
 ## Phase 135: Convergence (2026-11-27, epic #1272 children #1085, #490, FR-201 to FR-207, SC-040 to SC-041)
 
