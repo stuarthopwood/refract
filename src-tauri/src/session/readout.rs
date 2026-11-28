@@ -8,7 +8,8 @@ use std::time::Duration;
 
 use serde_json::{json, Value};
 
-use crate::git::diff_stat::diff_stat;
+use crate::git::changes_status::{changes_summary, read_changes_status};
+use crate::git::diff_stat::DiffStatResult;
 use crate::git::git::git_raw;
 use crate::omp::process::ReadyWaitStage;
 
@@ -431,7 +432,7 @@ async fn compute_readout(agent: &Arc<SessionAgent>) {
         async {
             // One guard per read: `join!` branches must not share or nest a guard (#1157).
             let _guard = read_guard_bounded(agent.session_id()).await.ok()?;
-            diff_stat(Path::new(binding.worktree_path), binding.base_branch).await
+            working_tree_stat(Path::new(binding.worktree_path), binding.base_branch).await
         },
         compute_branch(agent.session_id(), binding.worktree_path)
     );
@@ -456,6 +457,14 @@ async fn compute_readout(agent: &Arc<SessionAgent>) {
             .events()
             .emit_readout_update(agent.session_id(), readout);
     }
+}
+
+/// The Changes pill reads the working tree, not branch-vs-base (#2111): a committed change must
+/// drop out of the count. The Session details card keeps its own `diff_stat` read.
+async fn working_tree_stat(worktree: &Path, base_branch: &str) -> Option<DiffStatResult> {
+    read_changes_status(worktree, base_branch)
+        .await
+        .map(|snapshot| changes_summary(&snapshot))
 }
 
 /// Looks up the PR for the branch; drops the result if the branch changed meanwhile.

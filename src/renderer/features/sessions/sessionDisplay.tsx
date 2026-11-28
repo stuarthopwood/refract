@@ -282,15 +282,22 @@ export function DiffStatCounts({
   )
 }
 
-/** `"N files changed +A -D"` (singular "file" for exactly one), each figure abbreviated past 1,000 by the shared `compactNumber` formatter (issue #437, 2026-10-15 grill: one shared lower-case k/m/b formatter for this, the Changes Readout and the Context usage Readout, so the Session details card and the status line never show the same figure two ways), with a trailing " (partial)" when the diff stat's caps stopped counting before the real total. */
+/** The main process stops counting files at this many (`MAX_FILES` in `git/changes_status.rs` and `git/diff_stat.rs`), so a partial stat means "more than this". */
+const DIFF_STAT_FILE_CAP = 200
+
+/** `"N files changed"`, singular for exactly one; `"200+ files changed"` once the cap stopped the count (#2111), where the raw count is a floor, not a total. */
+export function formatDiffStatFiles(stat: DiffStat): string {
+  if (stat.partial) return `${DIFF_STAT_FILE_CAP}+ files changed`
+  return `${compactNumber(stat.files)} ${stat.files === 1 ? 'file' : 'files'} changed`
+}
+
+/** `"N files changed +A -D"` (see `formatDiffStatFiles`), each figure abbreviated past 1,000 by the shared `compactNumber` formatter (issue #437, 2026-10-15 grill: one shared lower-case k/m/b formatter for this, the Changes Readout and the Context usage Readout, so the Session details card and the status line never show the same figure two ways). */
 export function DiffStatLine({ stat }: { stat: DiffStat }) {
-  const noun = stat.files === 1 ? 'file' : 'files'
   return (
     <>
       <span className="sr-only">{formatDiffStatAccessible(stat)}</span>
       <span aria-hidden>
-        {compactNumber(stat.files)} {noun} changed <DiffStatCounts added={stat.additions} removed={stat.deletions} compact />
-        {stat.partial ? ' (partial)' : ''}
+        {formatDiffStatFiles(stat)} <DiffStatCounts added={stat.additions} removed={stat.deletions} compact />
       </span>
     </>
   )
@@ -300,11 +307,12 @@ const FULL_NUMBER_FORMAT = new Intl.NumberFormat()
 
 export function formatDiffStatAccessible(stat: DiffStat): string {
   const noun = stat.files === 1 ? 'file' : 'files'
-  const partialSuffix = stat.partial ? ' (partial)' : ''
-  const filesFull = FULL_NUMBER_FORMAT.format(stat.files)
+  const filesPhrase = stat.partial
+    ? `more than ${FULL_NUMBER_FORMAT.format(DIFF_STAT_FILE_CAP)} files changed`
+    : `${FULL_NUMBER_FORMAT.format(stat.files)} ${noun} changed`
   const additionsFull = FULL_NUMBER_FORMAT.format(stat.additions)
   const deletionsFull = FULL_NUMBER_FORMAT.format(stat.deletions)
   const additionsNoun = stat.additions === 1 ? 'addition' : 'additions'
   const deletionsNoun = stat.deletions === 1 ? 'deletion' : 'deletions'
-  return `${filesFull} ${noun} changed${partialSuffix}: ${additionsFull} ${additionsNoun}, ${deletionsFull} ${deletionsNoun}`
+  return `${filesPhrase}: ${additionsFull} ${additionsNoun}, ${deletionsFull} ${deletionsNoun}`
 }

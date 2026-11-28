@@ -163,3 +163,160 @@ async fn committing_with_nothing_staged_reports_git_failed() {
     assert_eq!(err.code, GitErrorCode::GitFailed);
     assert!(err.message.contains("git"), "{}", err.message);
 }
+
+async fn summary_of(repo: &Path) -> DiffStatResult {
+    let snapshot = read_changes_status(repo, "main")
+        .await
+        .expect("snapshot of a real repo");
+    changes_summary(&snapshot)
+}
+
+#[tokio::test]
+async fn a_clean_tree_summarises_to_zero_files() {
+    let repo = init_repo().await;
+
+    let summary = summary_of(&repo).await;
+
+    assert_eq!(
+        (summary.files, summary.additions, summary.deletions),
+        (0, 0, 0)
+    );
+    assert!(!summary.partial);
+}
+
+#[tokio::test]
+async fn staged_unstaged_and_untracked_rows_each_count() {
+    let repo = init_repo().await;
+    write(&repo, "staged.txt", "one\ntwo\n").await;
+    stage_files(&repo, &["staged.txt".to_string()])
+        .await
+        .unwrap();
+    write(&repo, "README.md", "edited\n").await;
+    write(&repo, "untracked.txt", "a\nb\nc\n").await;
+
+    let summary = summary_of(&repo).await;
+
+    assert_eq!(summary.files, 3);
+    assert_eq!(summary.additions, 2 + 1 + 3);
+    assert_eq!(summary.deletions, 1);
+    assert!(!summary.partial);
+}
+
+#[tokio::test]
+async fn a_partially_staged_path_counts_once() {
+    let repo = init_repo().await;
+    write(&repo, "README.md", "first edit\n").await;
+    stage_files(&repo, &["README.md".to_string()])
+        .await
+        .unwrap();
+    write(&repo, "README.md", "second edit\n").await;
+
+    let snapshot = read_changes_status(&repo, "main").await.unwrap();
+    assert_eq!(snapshot.groups.staged.len(), 1);
+    assert_eq!(snapshot.groups.changes.len(), 1);
+
+    assert_eq!(changes_summary(&snapshot).files, 1);
+}
+
+#[tokio::test]
+async fn a_deleted_file_counts() {
+    let repo = init_repo().await;
+    tokio::fs::remove_file(repo.join("README.md"))
+        .await
+        .unwrap();
+
+    let summary = summary_of(&repo).await;
+
+    assert_eq!((summary.files, summary.deletions), (1, 1));
+}
+
+#[tokio::test]
+async fn a_conflicted_path_counts() {
+    let repo = init_repo().await;
+    git_out(&repo, &["checkout", "-q", "-b", "other"]).await;
+    write(&repo, "README.md", "other side\n").await;
+    git_out(&repo, &["commit", "-q", "-am", "other"]).await;
+    git_out(&repo, &["checkout", "-q", "main"]).await;
+    write(&repo, "README.md", "main side\n").await;
+    git_out(&repo, &["commit", "-q", "-am", "main"]).await;
+    let merge = git_raw(&repo, &["merge", "other"], None).await;
+    assert_ne!(merge.code, 0, "the merge must conflict");
+
+    let snapshot = read_changes_status(&repo, "main").await.unwrap();
+
+    assert_eq!(snapshot.groups.conflicts.len(), 1);
+    assert_eq!(changes_summary(&snapshot).files, 1);
+}
+
+#[tokio::test]
+async fn more_than_the_cap_of_rows_is_partial_with_the_cap_unchanged() {
+    let repo = init_repo().await;
+    for i in 0..=MAX_FILES {
+        write(&repo, &format!("bulk/f{i:03}.txt"), "x\n").await;
+    }
+
+    let snapshot = read_changes_status(&repo, "main").await.unwrap();
+    let summary = changes_summary(&snapshot);
+
+    assert_eq!(MAX_FILES, 200);
+    assert!(summary.partial);
+    assert_eq!(summary.files, MAX_FILES as i64 + 1);
+    assert_eq!(summary.additions, MAX_FILES as i64, "the skipped row adds 0");
+}
+
+#[test]
+fn exactly_the_cap_of_rows_is_not_partial() {
+    let rows: Vec<GitChangesFileEntry> = (0..MAX_FILES)
+        .map(|i| GitChangesFileEntry {
+            path: format!("f{i}.txt"),
+            folder: String::new(),
+            mark: GitStatusMark::Untracked,
+            additions: 1,
+            deletions: 0,
+            partial: false,
+        })
+        .collect();
+    let snapshot = GitChangesSnapshot {
+        header: GitChangesHeader {
+            branch: "main".to_string(),
+            base_branch: "main".to_string(),
+            ahead_behind: None,
+        },
+        groups: GitChangesGroups {
+            untracked: rows,
+            ..GitChangesGroups::default()
+        },
+    };
+
+    let summary = changes_summary(&snapshot);
+
+    assert_eq!(summary.files, 200);
+    assert!(!summary.partial);
+}
+
+#[test]
+fn an_oversized_file_row_does_not_make_the_count_partial() {
+    let snapshot = GitChangesSnapshot {
+        header: GitChangesHeader {
+            branch: "main".to_string(),
+            base_branch: "main".to_string(),
+            ahead_behind: None,
+        },
+        groups: GitChangesGroups {
+            untracked: vec![GitChangesFileEntry {
+                path: "huge.log".to_string(),
+                folder: String::new(),
+                mark: GitStatusMark::Untracked,
+                additions: 0,
+                deletions: 0,
+                partial: true,
+            }],
+            ..GitChangesGroups::default()
+        },
+    };
+
+    let summary = changes_summary(&snapshot);
+
+    assert_eq!(summary.files, 1);
+    assert!(!summary.partial);
+}

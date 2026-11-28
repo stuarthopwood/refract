@@ -2,7 +2,7 @@
 // a Staged and a Changes row; `--no-renames` reports a rename as delete plus add.
 // `--no-optional-locks` avoids blocking on an agent-held lock; `-z` keeps quoted paths intact.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::time::Duration;
 
@@ -10,6 +10,7 @@ use serde::Serialize;
 
 use super::changes_parse::{folder_for, parse_porcelain_v2, GitChangesGroup, ParsedEntry};
 use super::changes_score::{parse_numstat_map, score_untracked_file};
+use super::diff_stat::DiffStatResult;
 use super::git::{git, git_raw, git_raw_with_stdin, GitError, GitErrorCode};
 use super::pathspec::validate_pathspec;
 use super::status::GitStatusMark;
@@ -227,6 +228,28 @@ pub async fn read_changes_status(
     )
     .await
     .unwrap_or_default()
+}
+
+/// The composer pill's count (#2111): distinct paths across the four groups, so a partially staged
+/// path counts once. Line counts sum only scored rows. `partial` means rows past `MAX_FILES` went
+/// unscored; a row's own `partial` also covers an oversized file, which must not read as "200+".
+pub fn changes_summary(snapshot: &GitChangesSnapshot) -> DiffStatResult {
+    let groups = &snapshot.groups;
+    let rows = || {
+        groups
+            .conflicts
+            .iter()
+            .chain(&groups.staged)
+            .chain(&groups.changes)
+            .chain(&groups.untracked)
+    };
+    let paths: HashSet<&str> = rows().map(|row| row.path.as_str()).collect();
+    DiffStatResult {
+        files: paths.len() as i64,
+        additions: rows().map(|row| row.additions).sum(),
+        deletions: rows().map(|row| row.deletions).sum(),
+        partial: rows().count() > MAX_FILES,
+    }
 }
 
 /// `git add --`. `validate_pathspec` checks every path, since callers are not trusted alone.
