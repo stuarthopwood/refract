@@ -548,6 +548,28 @@ fn unbalanced_brackets_stay_as_text_and_complete_links_still_strip() {
 }
 
 #[test]
+fn nesting_cannot_rebuild_a_link_or_a_tag() {
+    for reply in ["[[a](b)](c)", "<[a](b)b>", "[<b>[a](x)](y)"] {
+        let parsed = parse_card_reply(reply).unwrap_or_default();
+        assert!(!parsed.contains("]("), "{reply:?} -> {parsed:?}");
+        let tag = parsed.match_indices('<').any(|(i, _)| {
+            parsed[i + 1..].starts_with(|c: char| c.is_ascii_alphabetic() || c == '/')
+        });
+        assert!(!tag, "{reply:?} -> {parsed:?}");
+    }
+}
+
+#[test]
+fn zero_width_and_other_format_characters_are_removed() {
+    assert_eq!(
+        parse_card_reply("a\u{200B}b\u{FEFF}c\u{AD}d\u{2060}e"),
+        Some("abcde".into())
+    );
+    // The zero-width space must not hide the `](` from the link stripper.
+    assert_eq!(parse_card_reply("[x]\u{200B}(y)"), Some("x".into()));
+}
+
+#[test]
 fn a_blank_or_markup_only_card_reply_is_none() {
     let blanks = [
         "",
