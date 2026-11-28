@@ -15,7 +15,7 @@ use crate::terminal::tab::TabState;
 use crate::terminal::TerminalManager;
 use tokio::sync::Mutex as AsyncMutex;
 
-async fn make_state(label: &str) -> (AppState, PathBuf) {
+pub(in crate::terminal) async fn make_state(label: &str) -> (AppState, PathBuf) {
     let dir = crate::test_scratch::path(format!(
         "refract-terminal-handlers-{label}-{}",
         uuid::Uuid::new_v4()
@@ -39,7 +39,11 @@ async fn make_state(label: &str) -> (AppState, PathBuf) {
 }
 
 /// Registers a Project Session whose worktree is `worktree`.
-async fn add_session(state: &AppState, id: &str, worktree: &std::path::Path) {
+pub(in crate::terminal) async fn add_session(
+    state: &AppState,
+    id: &str,
+    worktree: &std::path::Path,
+) {
     let repo = crate::git::test_support::init_repo().await;
     let mut registry = state.registry.lock().await;
     registry

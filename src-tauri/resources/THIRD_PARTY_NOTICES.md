@@ -1,7 +1,7 @@
 # Third-party notices
 
-Refract's built-in colour themes reproduce colours from the open-source palettes below.
-Each palette is MIT licensed; its copyright notice and the licence text follow.
+Refract's built-in colour themes reproduce colours from the open-source palettes below, and its right-panel terminal bundles the open-source libraries below.
+Each palette and library is MIT licensed; its copyright notice and the licence text follow.
 
 ## Palettes
 
@@ -14,6 +14,12 @@ Each palette is MIT licensed; its copyright notice and the licence text follow.
 - One Dark, One Light: Copyright (c) 2016 GitHub Inc.
 - Rose Pine Dawn: Copyright (c) 2023 Rose Pine
 - Gruvbox Light, Gruvbox Dark: Copyright (c) Pavel Pertsev. Gruvbox declares the MIT licence in its package metadata; it ships no separate LICENSE file.
+
+## Libraries
+
+- `@xterm/xterm`: Copyright (c) 2017-2019, The xterm.js authors; Copyright (c) 2014-2016, SourceLair Private Company; Copyright (c) 2012-2013, Christopher Jeffrey
+- `@xterm/addon-fit`: Copyright (c) 2017-2019, The xterm.js authors; Copyright (c) 2014-2016, SourceLair Private Company; Copyright (c) 2012-2013, Christopher Jeffrey
+- `portable-pty`: Copyright (c) 2018 Wez Furlong
 
 ## MIT licence
 

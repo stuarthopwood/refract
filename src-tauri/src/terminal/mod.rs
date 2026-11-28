@@ -298,3 +298,11 @@ pub fn manager() -> &'static TerminalManager {
 #[cfg(test)]
 #[path = "mod.test.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "privacy.test.rs"]
+mod privacy_tests;
+
+#[cfg(test)]
+#[path = "privacy_e2e.test.rs"]
+mod privacy_e2e_tests;

@@ -300,4 +300,4 @@ fn terminal_close(state: AppState, args: Vec<Value>) -> HandlerFuture {
 
 #[cfg(test)]
 #[path = "handlers.test.rs"]
-mod tests;
+pub(in crate::terminal) mod tests;
