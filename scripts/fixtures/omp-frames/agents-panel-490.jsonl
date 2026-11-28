@@ -2,7 +2,7 @@
 // task() call) and gamma, a BACKGROUND agent, still running, so every Session that replays this tape shows one
 // running agent plus one finished one. Gamma is settled later by a `subagent_lifecycle` frame the script appends to
 // REFRACT_FAKE_OMP_HOST_TOOL_CALLS (parentToolCallId "stage-two", index 0). After the turn the tape also answers
-// `new_session` + `get_state` once, so a "New conversation" click succeeds. Preamble and frame order reuse stages-1085.jsonl.
+// `new_session` + `get_state` once, so a "New conversation" click succeeds; Refract sends `btw_cancel` first, and a command the tape isn't waiting for is dropped and blocks "New conversation" for the full 60s request timeout, so the tape answers it. Preamble and frame order reuse stages-1085.jsonl.
 {"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
 {"__wait__":["negotiate_protocol"]}
 {"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
@@ -31,6 +31,8 @@
 {"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
 {"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
 {"type":"session_settled"}
+{"__wait__":["btw_cancel"]}
+{"id":"$lastId","type":"response","command":"btw_cancel","success":true}
 {"__wait__":["new_session"]}
 {"id":"$lastId","type":"response","command":"new_session","success":true}
 {"__wait__":["get_state"]}

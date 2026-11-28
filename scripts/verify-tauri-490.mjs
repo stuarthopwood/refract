@@ -83,7 +83,8 @@ async function main() {
         REFRACT_FAKE_OMP_SCRIPT: path.join(__dirname, 'verify-tauri-fake-omp.mjs'),
         REFRACT_FAKE_OMP_NODE: process.execPath,
         REFRACT_FAKE_OMP_SCENARIO: 'agents-panel-490',
-        REFRACT_FAKE_OMP_HOST_TOOL_CALLS: injectFile
+        REFRACT_FAKE_OMP_HOST_TOOL_CALLS: injectFile,
+        REFRACT_FAKE_OMP_DEBUG_LOG: path.join(dirs.exe, 'fake-omp-invocations.log')
       }
     });
     child = launched.child;
@@ -179,6 +180,8 @@ async function main() {
     const d2 = await panelState();
     findings.push(`d (after new Conversation): ${JSON.stringify(d2)}`);
     check('panel still open after a new Conversation', d2.railPressed === 'true' && d2.headingText !== null, JSON.stringify(d2));
+    const d2Ids = d2.groups.map((g) => g.id);
+    check("the reset Session's group is gone and the other Session's group stays", !d2Ids.includes(s2.id) && d2Ids.includes(s1.id), JSON.stringify(d2Ids));
     await shoot('490-d2-after-new-conversation.png');
 
     // (e) every agent finishes: the panel stays open.
@@ -208,7 +211,9 @@ async function main() {
     if (cdp) cdp.close();
     if (child) await stopLauncher(child).catch(() => {});
     try {
-      if (dirs.exe && existsSync(path.join(dirs.exe, 'app.log'))) copyFileSync(path.join(dirs.exe, 'app.log'), path.join(SHOTS_DIR, 'app.log'));
+      for (const f of ['app.log', 'fake-omp-invocations.log']) {
+        if (dirs.exe && existsSync(path.join(dirs.exe, f))) copyFileSync(path.join(dirs.exe, f), path.join(SHOTS_DIR, f));
+      }
     } catch {}
     for (const d of Object.values(dirs)) await safeRmSync(d);
   }
