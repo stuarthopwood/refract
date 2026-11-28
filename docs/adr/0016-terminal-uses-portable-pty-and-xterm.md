@@ -24,6 +24,6 @@ Issue #3 adds a right-pane **Terminal** panel with tabs per Session. The origina
 
 ## Consequences
 
-- A new Rust dependency (`portable-pty`) and a new renderer dependency (`@xterm/xterm` with its fit addon) enter the build; both need an entry in `resources/THIRD_PARTY_NOTICES.md`.
+- A new Rust dependency (`portable-pty`) and a new renderer dependency (`@xterm/xterm` with its fit addon) enter the build; both need an entry in `src-tauri/resources/THIRD_PARTY_NOTICES.md`.
 - The renderer-callable surface stays at `refract_request` plus the opener route unless the probe forces the amendment above.
 - Deferred, not decided: the `@terminal` mention (#465) and per-repo shell profiles.
