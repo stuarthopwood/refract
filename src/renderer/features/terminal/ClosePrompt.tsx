@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
 import type { ReactNode } from 'react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { useTerminalStore } from '@/state/terminal-store'
 import type { TabInfo } from '../../../shared/ipc-terminal'
-import { closeTab } from './terminalTabs'
+import { createCloseController, type FocusTarget } from './closeFlow'
 import { focusStranded } from './terminalKeyboard'
 
 // Closing a tab ends its shell, so a tab with a running job asks first; an idle tab closes at once (spec 144 FR-012).
@@ -41,8 +41,8 @@ export function ClosePrompt({ tab, busy, error, restoreFocus, onCancel, onConfir
 }
 
 export interface CloseFlow {
-  /** Closes now, or opens the prompt when the shell has a running job. */
-  requestClose(tab: TabInfo): void
+  /** Closes now, or opens the prompt when the shell has a running job. `invoker` gets the keyboard back if the prompt is cancelled. */
+  requestClose(tab: TabInfo, invoker?: FocusTarget | null): void
   /** The dialog; mount it once beside the tabs. */
   prompt: ReactNode
   /** The last close failure outside the dialog, for a quiet status line; `null` when none. */
@@ -50,53 +50,32 @@ export interface CloseFlow {
 }
 
 export function useCloseFlow(sessionId: string, restoreFocus: () => void): CloseFlow {
-  const [pending, setPending] = useState<TabInfo | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [idleCloses, setIdleCloses] = useState(0)
+  // The panel passes a fresh function each render; the controller must not be rebuilt, or an open prompt would reset.
+  const fallback = useRef(restoreFocus)
+  useEffect(() => {
+    fallback.current = restoreFocus
+  })
+  const controller = useMemo(
+    () =>
+      createCloseController({
+        api: { close: (tabId, force) => window.refract.terminal.close(tabId, force) },
+        removeTab: (tabId) => useTerminalStore.getState().removeTab(sessionId, tabId),
+        fallbackFocus: () => fallback.current()
+      }),
+    [sessionId]
+  )
+  const state = useSyncExternalStore(controller.subscribe, controller.getState, controller.getState)
   const handledCloses = useRef(0)
 
   // An idle close has no dialog to hand the keyboard back, and the tab or button that held it is gone.
   useEffect(() => {
-    if (idleCloses === handledCloses.current) return
-    handledCloses.current = idleCloses
-    if (focusStranded(document)) restoreFocus()
-  }, [idleCloses, restoreFocus])
-
-  const run = useCallback(
-    async (tab: TabInfo, force: boolean) => {
-      setBusy(true)
-      setError(null)
-      try {
-        const outcome = await closeTab(window.refract.terminal, tab, force)
-        if (outcome.kind === 'closed') {
-          useTerminalStore.getState().removeTab(sessionId, tab.id)
-          setPending(null)
-          if (!force) setIdleCloses((count) => count + 1)
-        } else if (outcome.kind === 'confirm') {
-          setPending(tab)
-        } else {
-          setError(outcome.message)
-        }
-      } finally {
-        setBusy(false)
-      }
-    },
-    [sessionId]
-  )
+    if (state.idleCloses === handledCloses.current) return
+    handledCloses.current = state.idleCloses
+    if (focusStranded(document)) controller.restoreFocus()
+  }, [state.idleCloses, controller])
 
   const prompt = (
-    <ClosePrompt
-      tab={pending}
-      busy={busy}
-      error={pending ? error : null}
-      restoreFocus={restoreFocus}
-      onCancel={() => {
-        setPending(null)
-        setError(null)
-      }}
-      onConfirm={() => pending && void run(pending, true)}
-    />
+    <ClosePrompt tab={state.pending} busy={state.busy} error={state.pending ? state.error : null} restoreFocus={controller.restoreFocus} onCancel={controller.cancel} onConfirm={() => void controller.confirm()} />
   )
-  return { requestClose: (tab) => void run(tab, false), prompt, error: pending ? null : error }
+  return { requestClose: (tab, invoker) => void controller.requestClose(tab, invoker), prompt, error: state.pending ? null : state.error }
 }
