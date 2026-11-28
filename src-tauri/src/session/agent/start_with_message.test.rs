@@ -229,7 +229,10 @@ async fn a_paused_session_holds_the_first_message_and_reports_it_queued() {
     assert_eq!(sent, json!({ "queued": true }));
     let types = r.types().await;
     assert!(types.contains(&"new_session".to_string()), "{types:?}");
-    assert!(!types.contains(&"prompt".to_string()), "held, not sent: {types:?}");
+    assert!(
+        !types.contains(&"prompt".to_string()),
+        "held, not sent: {types:?}"
+    );
     r.fx.finish().await;
 }
 

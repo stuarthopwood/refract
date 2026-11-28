@@ -84,10 +84,7 @@ const NEW_PROMPT_SLASH_REFUSAL: &str =
     "A slash command can't be the first message of /new. Send the command on its own after /new.";
 
 /// Refused before any Conversation starts, so the Session is untouched and the draft survives.
-fn refuse_unsendable_new_prompt(
-    prompt: &str,
-    images: Option<&[Value]>,
-) -> Result<(), IpcError> {
+fn refuse_unsendable_new_prompt(prompt: &str, images: Option<&[Value]>) -> Result<(), IpcError> {
     if images.is_some_and(|attached| !attached.is_empty()) {
         return Err(IpcError::new(
             "unsupported-arguments",
