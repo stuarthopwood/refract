@@ -345,15 +345,18 @@ fn fresh_nonce(texts: &[&str]) -> String {
 /// (the link text stays), control and bidi-override characters and wrapping quotes are removed, and
 /// a blank reply is `None`.
 pub fn parse_card_reply(raw: &str) -> Option<String> {
-    let kept: Vec<&str> = raw
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("```"))
-        .collect();
-    let text = strip_markdown_links(&strip_tags(&kept.join(" "))).replace(['*', '`', '#'], "");
-    let text: String = text
+    // Before the tag and link strippers, so a control character or a markdown marker cannot sit inside
+    // `](` or `<b>` to hide it from them and then vanish, leaving a link target or tag in the label.
+    let printable: String = raw
         .chars()
         .filter(|c| c.is_whitespace() || !(c.is_control() || is_bidi_override(*c)))
         .collect();
+    let kept: Vec<&str> = printable
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("```"))
+        .collect();
+    let joined = kept.join(" ").replace(['*', '`', '#'], "");
+    let text = strip_markdown_links(&strip_tags(&joined));
     let line = collapse_whitespace(&text);
     let line = line.trim_matches(|c: char| matches!(c, '"' | '\'' | '_'));
     clean_label(line, CARD_SUMMARY_MAX_CHARS)

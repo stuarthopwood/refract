@@ -23,8 +23,10 @@ use crate::session::subagents_synthesis::{
 };
 use crate::session::subagents_synthesis_cache::{session_cache_dir, PendingWrite, SynthesisCache};
 
-/// `message_end` frames a settled agent may pass with no result text before its finish summary is given up.
-const MAX_RESULT_MISSES: u8 = 2;
+/// `message_end` frames a settled agent may pass with no result text before its brief is released. A
+/// background agent's result is injected into a later parent turn, so a turn end proves nothing and the
+/// count is only a leak bound; it is large because a busy turn emits a `message_end` per message and tool result.
+const MAX_RESULT_MISSES: u8 = 64;
 
 /// Model calls in flight at once per Session, so a burst of `task()` calls cannot fan out.
 const MAX_CONCURRENT_SYNTHESES: usize = 2;
@@ -179,7 +181,14 @@ pub(super) async fn on_settled(agent: &SessionAgent, frame_type: &str) {
                 .collect()
         })
         .await;
-    if due.is_empty() || !agent.summarise_agent_cards_enabled().await {
+    if !agent.summarise_agent_cards_enabled().await {
+        // Nothing can summarise them now, and a later frame would only scan for them again.
+        agent
+            .with_subagents_state(|s| s.synthesis.briefs.clear())
+            .await;
+        return;
+    }
+    if due.is_empty() {
         return;
     }
     let Some(cache) = session_cache(agent).await else {
@@ -221,9 +230,10 @@ pub(super) async fn on_settled(agent: &SessionAgent, frame_type: &str) {
     }
 }
 
-/// A settled agent whose result text is not there yet. A stopped or exited agent never gets one, and a
-/// background agent's arrives on `message_end`, so the brief goes after a second `message_end` that
-/// still finds none; until then it stays and a later frame can trigger the call.
+/// A settled agent whose result text is not there yet. A stopped or exited agent never gets one, so its
+/// brief goes at once. A background agent's arrives on a later `message_end`, so the brief is kept until
+/// the result comes, and is dropped only after `MAX_RESULT_MISSES` such frames so a result that never
+/// comes cannot hold it forever.
 async fn note_missing_result(
     agent: &SessionAgent,
     key: (String, u32),

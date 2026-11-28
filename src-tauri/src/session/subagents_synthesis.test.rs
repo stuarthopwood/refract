@@ -509,6 +509,45 @@ fn a_card_reply_loses_fences_markdown_tags_links_quotes_and_control_characters()
 }
 
 #[test]
+fn a_control_character_or_marker_inside_a_link_or_tag_cannot_hide_it_from_the_strippers() {
+    let cases = [
+        ("Read [x]\u{7}(http://evil) now", "Read x now"),
+        ("Read [x]\u{202E}(http://evil) now", "Read x now"),
+        ("Read [x]*(http://evil) now", "Read x now"),
+        ("Read [x](http://evil\u{7}) now", "Read x now"),
+        ("Built <\u{7}b>it</b> well", "Built it well"),
+        ("Built <b\u{7}>it<\u{202E}/b> well", "Built it well"),
+        ("Built <*b>it</b> well", "Built it well"),
+    ];
+    for (reply, expected) in cases {
+        let parsed = parse_card_reply(reply).unwrap();
+        assert_eq!(parsed, expected, "{reply:?}");
+        assert!(!parsed.contains("evil"), "{reply:?}");
+        assert!(!parsed.contains(['<', '>']), "{reply:?}");
+    }
+}
+
+#[test]
+fn unbalanced_brackets_stay_as_text_and_complete_links_still_strip() {
+    let cases = [
+        ("[a", "[a"),
+        ("a]", "a]"),
+        ("[a](b", "[a](b"),
+        ("](x) [a", "](x) [a"),
+        ("![a", "![a"),
+        ("![a](b", "![a](b"),
+        ("[a](b) and [c", "a and [c"),
+        ("[[a](b)", "[a"),
+        ("[a]](b)", "a]"),
+        ("[a](b[c](d)", "a"),
+        ("[](x)", ""),
+    ];
+    for (text, expected) in cases {
+        assert_eq!(strip_markdown_links(text), expected, "{text:?}");
+    }
+}
+
+#[test]
 fn a_blank_or_markup_only_card_reply_is_none() {
     let blanks = [
         "",

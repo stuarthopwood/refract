@@ -651,6 +651,13 @@ async fn turning_the_setting_off_between_start_and_finish_skips_the_finish_call(
     assert!(card_summaries(&summaries(&fx.agent).await)
         .iter()
         .all(|c| c.as_deref() == Some(CARD_REPLY)));
+    let saved = SynthesisCache::load(&cache_dir(&fx));
+    assert_eq!(saved.card_summaries("call-1", 0).unwrap().finish, None);
+    assert_eq!(
+        brief_count(&fx).await,
+        0,
+        "the briefs outlived the setting being turned off"
+    );
 }
 
 #[tokio::test]
@@ -687,4 +694,75 @@ async fn a_repeated_start_frame_or_end_frame_costs_no_second_call() {
     settle().await;
 
     assert_eq!(fx.exec.model_calls(), 5, "two finish calls only");
+}
+
+async fn brief_count(fx: &Fixture) -> usize {
+    fx.agent
+        .with_subagents_state(|s| s.synthesis.briefs.len())
+        .await
+}
+
+async fn message_ends(fx: &Fixture, count: u8) {
+    for _ in 0..count {
+        fx.agent
+            .handle_frame(json!({ "type": "message_end" }))
+            .await;
+    }
+}
+
+/// A one-agent call whose start summary is stored, then the agent settles with no result text yet,
+/// as a background agent does.
+async fn settled_agent_with_no_result(fx: &Fixture) {
+    start_one_agent(fx).await;
+    wait_for(&fx.agent, |s| {
+        first_card_summary(s).as_deref() == Some(CARD_REPLY)
+    })
+    .await;
+    poll_until("the start and group calls ran", || {
+        fx.exec.model_calls() == 2
+    })
+    .await;
+    fx.agent
+        .handle_frame(json!({
+            "type": "subagent_lifecycle",
+            "payload": { "parentToolCallId": "call-1", "index": 0, "status": "done" }
+        }))
+        .await;
+    wait_for(&fx.agent, |s| s[0]["status"] != "running").await;
+}
+
+#[tokio::test]
+async fn a_result_arriving_after_several_message_ends_still_triggers_the_finish_call() {
+    let fx = fixture_with_cards(FakeExec::new(roles_with_tiny(), CARD_REPLY)).await;
+    settled_agent_with_no_result(&fx).await;
+
+    message_ends(&fx, MAX_RESULT_MISSES - 1).await;
+    assert_eq!(brief_count(&fx).await, 1, "the brief was dropped too early");
+
+    fx.exec.set_reply(FINISH_REPLY);
+    fx.agent.handle_frame(wait_end_one("It is built.")).await;
+    wait_for(&fx.agent, |s| {
+        first_card_summary(s).as_deref() == Some(FINISH_REPLY)
+    })
+    .await;
+    assert_eq!(fx.exec.model_calls(), 3, "one finish call");
+    assert_eq!(brief_count(&fx).await, 0);
+}
+
+#[tokio::test]
+async fn a_result_that_never_arrives_frees_the_brief_and_a_later_one_costs_no_call() {
+    let fx = fixture_with_cards(FakeExec::new(roles_with_tiny(), CARD_REPLY)).await;
+    settled_agent_with_no_result(&fx).await;
+
+    message_ends(&fx, MAX_RESULT_MISSES).await;
+    assert_eq!(brief_count(&fx).await, 0, "the brief was never released");
+
+    fx.exec.set_reply(FINISH_REPLY);
+    fx.agent.handle_frame(wait_end_one("It is built.")).await;
+    settle().await;
+    assert_eq!(fx.exec.model_calls(), 2, "a finish call was made");
+    assert_eq!(
+        first_card_summary(&summaries(&fx.agent).await).as_deref(),
+        Some(CARD_REPLY)
+    );
 }
