@@ -83,6 +83,9 @@ jobs:
       - name: Check advisor roster
         run: pnpm check:advisor-roster
 
+      - name: Check context prefixes
+        run: pnpm check:context-prefixes
+
       - name: Check version consistency
         run: pnpm check:versions
 

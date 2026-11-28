@@ -19,6 +19,7 @@ export const STEPS = [
   'pnpm check:literal-colours',
   'pnpm check:hit-targets',
   'pnpm check:advisor-roster',
+  'pnpm check:context-prefixes',
   'pnpm check:versions',
   'pnpm check:omp-schema -- --check-pin',
   'pnpm check:omp-schema -- --self-test',

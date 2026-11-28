@@ -213,3 +213,60 @@ describe('UserMessageRow checklist source', () => {
     expect(mocks.menuText).toHaveBeenCalledWith('hello there')
   })
 })
+
+describe('UserMessageRow Refract context lines (#2320)', () => {
+  const AWAY = '[Automatic, Away mode] Answered by Away Mode: the user is away. Proceed on your best judgement.'
+  const HINT = '[Refract] Checklist p1 changed by the developer after rev 11: tick i9. Call refract_checklist get.'
+
+  it('shows_an_away_reply_as_a_notice_with_no_bubble_avatar_name_or_prefix', () => {
+    const html = render({ ...base, text: AWAY })
+    expect(html).toContain('Answered by Away Mode: the user is away.')
+    expect(html).not.toContain('[Automatic, Away mode]')
+    expect(html).toContain('Away Mode:')
+    expect(html).toContain('lucide-bell-off')
+    expect(html).not.toContain('data-slot="message-avatar"')
+    expect(html).not.toContain('Stuart')
+  })
+
+  it('keeps_the_original_text_for_copy_on_a_notice', () => {
+    render({ ...base, text: AWAY })
+    expect(mocks.menuText).toHaveBeenCalledWith(AWAY)
+  })
+
+  it('shows_a_refract_only_message_as_a_notice', () => {
+    const html = render({ ...base, text: HINT })
+    expect(html).not.toContain('data-slot="message-avatar"')
+    expect(html).toContain('lucide-list-checks')
+    expect(html).toContain('Refract:')
+  })
+
+  it('splits_leading_refract_lines_into_a_strip_above_the_typed_text', () => {
+    const text = `${HINT}\n\nPlease carry on`
+    const html = render({ ...base, text })
+    expect(html).toMatch(/data-slot="message-header"[^>]*>Stuart<\/div>/)
+    expect(html).toContain('data-slot="context-line-strip"')
+    expect(html).toContain('lucide-list-checks')
+    expect(html).not.toContain('[Refract]')
+    expect(html.indexOf('data-slot="context-line-strip"')).toBeLessThan(html.indexOf('Please carry on'))
+    expect(mocks.menuText).toHaveBeenCalledWith(text)
+  })
+
+  it('does_not_restyle_a_prefix_in_the_middle_of_a_message', () => {
+    const html = render({ ...base, text: 'Why does\n[Refract] Checklist p1 appear?' })
+    expect(html).not.toContain('data-slot="context-line-strip"')
+    expect(html).toContain('[Refract]')
+    expect(html).toMatch(/data-slot="message-header"[^>]*>Stuart<\/div>/)
+  })
+
+  it('renders_an_unknown_prefix_as_normal_text', () => {
+    const html = render({ ...base, text: '[Unknown] hello' })
+    expect(html).not.toContain('data-slot="context-line-strip"')
+    expect(html).toContain('[Unknown] hello')
+  })
+
+  it('leaves_a_sourced_turn_alone', () => {
+    const html = render({ ...base, text: HINT, source: SOURCE })
+    expect(html).not.toContain('data-slot="context-line-strip"')
+    expect(html).toContain('[Refract]')
+  })
+})

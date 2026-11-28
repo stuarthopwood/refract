@@ -91,3 +91,17 @@ describe('NoticeRow source style (#2114)', () => {
     }
   })
 })
+
+describe('NoticeRow context style (#2320)', () => {
+  const renderContext = (context: 'away' | 'checklist' | 'refract') =>
+    renderToStaticMarkup(React.createElement(NoticeRow, { level: 'info', text: 'Answered by Away Mode.', context }))
+
+  it('says_where_the_line_came_from_with_its_own_icon_in_place_of_the_severity_label', () => {
+    const away = renderContext('away')
+    expect(away).toContain('lucide-bell-off')
+    expect(away).toContain('Away Mode:')
+    expect(away).not.toContain('Info:')
+    expect(renderContext('checklist')).toContain('lucide-list-checks')
+    expect(renderContext('refract')).toContain('Refract:')
+  })
+})

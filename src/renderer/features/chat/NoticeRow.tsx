@@ -6,6 +6,8 @@ import { commandOutputSummary, parseUsageOutput } from '../../../shared/usageOut
 import { CollapsedLine, LABEL_COLUMN_CONTENT_CLASS } from './CollapsedLine'
 import { Markdown } from './Markdown'
 import { UsageNoticeCard } from './UsageNoticeCard'
+import { CONTEXT_PRESENTATION } from './contextLinePresentation'
+import type { ContextLineKind } from '../../../shared/contextLines'
 
 type NoticeLevel = Extract<TranscriptItem, { kind: 'notice' }>['level']
 
@@ -44,6 +46,8 @@ interface NoticeRowProps {
   source?: NoticeSource
   /** True for a user-run slash command's reply (`command-output:` id): rendered as Markdown, `/usage` as a card. */
   commandOutput?: boolean
+  /** Set when Refract itself sent this as a user message (#2320): its own icon and "Away Mode:" or "Refract:" in place of the severity label. */
+  context?: ContextLineKind
 }
 
 // The `×N` repeat count gets its own span so the base text's ellipsis never clips it.
@@ -59,20 +63,20 @@ function LongSummary({ text }: { text: string }) {
 }
 
 // A muted one-line notice; a long one expands to the full text, capped at about 12 lines.
-export function NoticeRow({ level, text: rawText, source, commandOutput = false }: NoticeRowProps) {
+export function NoticeRow({ level, text: rawText, source, commandOutput = false, context }: NoticeRowProps) {
   // Guards against a malformed producer sending a non-string, which would crash the pane on `.length`.
   const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText)
   const usage = React.useMemo(() => (commandOutput ? parseUsageOutput(text) : null), [commandOutput, text])
   const markdownId = React.useId()
   const fromExtension = level === 'info' && source === 'extension'
-  const Icon = fromExtension ? BotIcon : NOTICE_ICON[level]
+  const Icon = context ? CONTEXT_PRESENTATION[context].icon : fromExtension ? BotIcon : NOTICE_ICON[level]
   const toneClass = fromExtension ? EXTENSION_INFO_CLASS : NOTICE_CLASS[level]
   const expandableToneClass = fromExtension ? cn(toneClass, EXTENSION_HOVER_CLASS) : toneClass
   const isLong = text.length > LONG_NOTICE_CHARS || text.includes('\n')
   const icon = (
     <>
       <Icon className={cn('size-4 shrink-0', toneClass)} />
-      <span className="sr-only">{fromExtension ? 'Extension:' : NOTICE_LABEL[level]}</span>
+      <span className="sr-only">{context ? CONTEXT_PRESENTATION[context].label : fromExtension ? 'Extension:' : NOTICE_LABEL[level]}</span>
     </>
   )
 
