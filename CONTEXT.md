@@ -429,6 +429,10 @@ _Avoid_: comment, annotation
 A distinct, secondary tool or view hosted in the right pane, opened and closed as a whole (for example, the **Subagent panel**). The pane itself collapses and expands from the **Icon rail**'s top button or Ctrl+Shift+B; collapsing keeps every open panel, the tab order and the width, and all three survive a restart.
 _Avoid_: Sidebar, drawer
 
+**Terminal tab**:
+One shell the developer runs inside a **Session**, shown as a tab in the Terminal **Panel**. Each **Session** has its own tabs; a tab keeps running while the developer looks at another tab, **Panel** or **Session**, and ends when the developer closes it, the **Session** ends, or Refract quits. After a restart the tab comes back with its name, folder and shell kind as a fresh shell, never the old process. Its output is private to the developer: the agent sees none of it unless the developer sends a selection or a command's output to the chat.
+_Avoid_: Console, command line, shell window
+
 **Panel order**:
 The user's saved order of the **Panel**s, shared by the **Icon rail** and the launcher (not the tab bar, which keeps open order). Default: Git changes, File explorer, Subagents, Side chat, FDB Knowledge, Agent Builder. Changed by dragging a rail button or Alt+Shift+Up/Down on it; restored by "Reset panel order" in Settings (issue #730).
 _Avoid_: Rail order, button order
