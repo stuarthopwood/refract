@@ -41,6 +41,10 @@ interface SubagentPanelState {
   pendingFocusSubagentKey: string | null
   /** Resets the one-shot focus request once consumed, so a remount doesn't misread it as fresh. */
   clearPendingFocus(): void
+  /** The Session whose group the panel should open and scroll into view once it shows; the panel consumes it via `clearGroupScroll()`. Global, not per Session: the panel lists every Session (#490). */
+  scrollToGroupSessionId: string | null
+  requestGroupScroll(sessionId: string): void
+  clearGroupScroll(): void
   /** Binds the panel to `sessionId`; `options.selectSubagentId`/`Key` pre-select an agent like a row click, and `opener` is refocused on close (#563). */
   openPanel(sessionId: string, options?: { selectSubagentId?: string; selectSubagentKey?: string; opener?: HTMLElement | null }): void
   /** Closes the panel; `restoreFocus` (default true) refocuses the opener (else the Subagents chip) only if focus was inside, so non-user closes pass `false`. */
@@ -68,7 +72,10 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
   openerEl: null,
   pendingFocusSubagentId: null,
   pendingFocusSubagentKey: null,
+  scrollToGroupSessionId: null,
   clearPendingFocus: () => set({ pendingFocusSubagentId: null, pendingFocusSubagentKey: null }),
+  requestGroupScroll: (sessionId) => set({ scrollToGroupSessionId: sessionId }),
+  clearGroupScroll: () => set({ scrollToGroupSessionId: null }),
   openPanel: (sessionId, options) => {
     const { sessionId: prevSessionId } = get()
     const openerEl = options?.opener ?? null
@@ -106,7 +113,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
     }
     // Clearing `sessionId` unmounts the panel content; a collapsed Panel is never inert, so stale controls would stay in the Tab order.
-    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
+    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null, scrollToGroupSessionId: null })
     useRightPaneStore.getState().closePanel('subagents')
     // Refocus only when focus was inside the panel, so non-user closes (new turn, archive) never steal it.
     if (options?.restoreFocus ?? true) {
@@ -162,7 +169,7 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
         .setVisibleSubagent(sessionId, null)
         .catch((err: unknown) => toast.error(err instanceof Error ? err.message : String(err)))
     }
-    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null })
+    set({ sessionId: null, selectedId: null, selectedKey: null, streams: {}, suspended: false, openerEl: null, pendingFocusSubagentId: null, pendingFocusSubagentKey: null, scrollToGroupSessionId: null })
     useRightPaneStore.getState().closePanel('subagents')
   },
   resetForNewConversation: (sessionId) => {

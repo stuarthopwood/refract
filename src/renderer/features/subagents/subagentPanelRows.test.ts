@@ -7,10 +7,12 @@ import {
   agentsGroupKey,
   agentsStatusText,
   buildGroupRows,
+  expandGroup,
   findSelectedSummary,
   finishedText,
   focusLostToPrune,
   foldGroup,
+  groupScrollStep,
   panelFocusRows,
   panelStageToggleId,
   pendingFocusTarget,
@@ -108,6 +110,23 @@ describe('toggleGroupCollapsed', () => {
     expect([...closed]).toEqual(['s1'])
     expect(open.size).toBe(0)
     expect(toggleGroupCollapsed(closed, 's1').size).toBe(0)
+  })
+})
+
+describe('groupScrollStep and expandGroup', () => {
+  const groups = buildGroupRows([group('s1', ['running']), group('s2', ['running'])])
+
+  it('scrolls to an open group, opens a collapsed one first, and drops a request for a Session that is not listed', () => {
+    expect(groupScrollStep(groups, new Set(), 's2')).toBe('scroll')
+    expect(groupScrollStep(groups, new Set(['s2']), 's2')).toBe('expand')
+    expect(groupScrollStep(groups, new Set(['s2']), 's3')).toBe('drop')
+  })
+
+  it('opens only the asked group and never mutates its input', () => {
+    const closed = new Set(['s1', 's2'])
+    expect([...expandGroup(closed, 's2')]).toEqual(['s1'])
+    expect(closed.size).toBe(2)
+    expect([...expandGroup(new Set(), 's2')]).toEqual([])
   })
 })
 

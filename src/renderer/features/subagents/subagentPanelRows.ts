@@ -75,6 +75,19 @@ export function toggleGroupCollapsed(collapsed: ReadonlySet<string>, sessionId: 
   return next
 }
 
+/** The next collapsed set after a group is opened on the developer's behalf; unchanged when it is already open. */
+export function expandGroup(collapsed: ReadonlySet<string>, sessionId: string): Set<string> {
+  const next = new Set(collapsed)
+  next.delete(sessionId)
+  return next
+}
+
+/** What a request to show a Session's group needs next: open it, scroll to it, or drop the request because the group is not listed. */
+export function groupScrollStep(groups: readonly GroupRows[], collapsed: ReadonlySet<string>, sessionId: string): 'expand' | 'scroll' | 'drop' {
+  if (!groups.some((group) => group.sessionId === sessionId)) return 'drop'
+  return collapsed.has(sessionId) ? 'expand' : 'scroll'
+}
+
 type TimedSummary = Pick<SubagentSummary, 'status' | 'startedAt' | 'durationMs'>
 
 /** A running agent ticks from its start (clamped at zero for a clock behind `startedAt`); a settled one reports the duration Rust recorded. */

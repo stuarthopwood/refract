@@ -1,5 +1,5 @@
 import { focusPaneContent, focusSessionRow, focusSessionsNav } from '@/lib/focus'
-import { useSessionsStore, useSplitStore, useSubagentPanelStore } from '@/state'
+import { useSessionsStore, useSplitStore } from '@/state'
 import { STATUS_LABEL } from '@/features/sessions/sessionDisplay'
 import { useChatAreaAnnouncer } from './chatAreaAnnouncer'
 
@@ -14,9 +14,7 @@ export function closeChatPane(paneIndex: number): void {
   const activeBefore = document.activeElement
   const wasInsideClosedPaneOrBody = (paneEl?.contains(activeBefore) ?? false) || activeBefore === document.body
 
-  const panelState = useSubagentPanelStore.getState()
-  if (panelState.sessionId === closedSessionId) panelState.closePanel({ restoreFocus: false })
-
+// The Agents panel is global (FR-204): closing a Session's pane leaves it open.
   useSplitStore.getState().closePane(paneIndex)
 
   if (session) {

@@ -118,3 +118,16 @@ describe('resetForNewConversation', () => {
     expect(panel().sessionId).toBe('s1')
   })
 })
+
+describe('group scroll request', () => {
+  it('holds the asked Session until consumed and is dropped when the panel closes', () => {
+    bindPanel()
+    panel().requestGroupScroll('s2')
+    expect(panel().scrollToGroupSessionId).toBe('s2')
+    panel().clearGroupScroll()
+    expect(panel().scrollToGroupSessionId).toBeNull()
+    panel().requestGroupScroll('s2')
+    panel().closePanel({ restoreFocus: false })
+    expect(panel().scrollToGroupSessionId).toBeNull()
+  })
+})

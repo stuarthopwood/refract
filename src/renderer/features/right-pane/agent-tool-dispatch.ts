@@ -17,7 +17,13 @@ function frontSessionCheck(sessionId: string): AgentToolOutcome | null {
 /** Panels that read a Project's repository; a Personal Agent has none, so they are unavailable before any backend call. */
 const REPOSITORY_PANELS: Partial<Record<PanelId, true>> = { 'git-changes': true, 'file-explorer': true, 'pull-request': true, issue: true }
 
-function isAvailable(sessionId: string, panelId: PanelId): boolean {
+/** The Agents panel lists every Session (FR-204), so it is never tied to the front Session. */
+function isGlobalPanel(panelId: PanelId): boolean {
+  return panelId === 'subagents'
+}
+
+export function isAvailable(sessionId: string, panelId: PanelId): boolean {
+  if (isGlobalPanel(panelId)) return true
   if (focusedPaneSessionId() !== sessionId) return false
   if (!REPOSITORY_PANELS[panelId]) return true
   return useSessionsStore.getState().sessions.find((s) => s.id === sessionId)?.kind === 'project'
@@ -49,7 +55,7 @@ function openWithoutFocus(sessionId: string, panelId: PanelId, name: string, pre
 function resolve(sessionId: string, panelId: unknown): { ok: true; id: PanelId; name: string } | { ok: false; outcome: AgentToolOutcome } {
   const panel = ALL_PANELS.find((candidate) => candidate.id === panelId)
   if (!panel) return { ok: false, outcome: fail('unknown_panel', `No panel ${String(panelId)}.`) }
-  const notFront = frontSessionCheck(sessionId)
+  const notFront = isGlobalPanel(panel.id) ? null : frontSessionCheck(sessionId)
   if (notFront) return { ok: false, outcome: notFront }
   if (!isAvailable(sessionId, panel.id)) return { ok: false, outcome: fail('panel_unavailable', `${panel.name} is not available for this Session.`) }
   return { ok: true, id: panel.id, name: panel.name }

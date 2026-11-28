@@ -18,6 +18,8 @@ import {
   pendingFocusTarget,
   selectedRowKey,
   selectionRoute,
+  expandGroup,
+  groupScrollStep,
   toggleGroupCollapsed,
   type AgentRow
 } from './subagentPanelRows'
@@ -42,6 +44,8 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   const pendingFocusSubagentId = useSubagentPanelStore((s) => s.pendingFocusSubagentId)
   const pendingFocusSubagentKey = useSubagentPanelStore((s) => s.pendingFocusSubagentKey)
   const clearPendingFocus = useSubagentPanelStore((s) => s.clearPendingFocus)
+  const scrollToGroupSessionId = useSubagentPanelStore((s) => s.scrollToGroupSessionId)
+  const clearGroupScroll = useSubagentPanelStore((s) => s.clearGroupScroll)
   const grouped = useMemo(() => groupToolItems([...selectedStream]), [selectedStream])
 
   // Nothing is persisted: a group is open until the developer closes it, and every group opens afresh on a remount.
@@ -78,6 +82,20 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     if (target) rowRefs.current.get(target)?.focus()
     clearPendingFocus()
   }, [pendingFocusSubagentId, pendingFocusSubagentKey, clearPendingFocus, groups, collapsed, sessionId])
+
+  // The pill and card ask for a Session's group; open it if closed, then bring it into view.
+  useEffect(() => {
+    if (!scrollToGroupSessionId) return
+    const step = groupScrollStep(groups, collapsed, scrollToGroupSessionId)
+    if (step === 'expand') {
+      setCollapsed((current) => expandGroup(current, scrollToGroupSessionId))
+      return
+    }
+    if (step === 'scroll') {
+      treeHostRef.current?.querySelector<HTMLElement>(`[data-agents-group="${CSS.escape(scrollToGroupSessionId)}"]`)?.scrollIntoView({ block: 'nearest' })
+    }
+    clearGroupScroll()
+  }, [scrollToGroupSessionId, clearGroupScroll, groups, collapsed])
 
   const rowRef = useCallback((key: string, element: HTMLElement | null) => {
     if (element) rowRefs.current.set(key, element)
