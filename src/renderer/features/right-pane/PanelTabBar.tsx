@@ -1,10 +1,10 @@
 import { useMemo, useRef } from 'react'
-import type { ComponentProps, KeyboardEvent, RefObject } from 'react'
+import type { KeyboardEvent, RefObject } from 'react'
 import { XIcon } from 'lucide-react'
 import { PANEL_HEADER_HEIGHT_CLASS, PanelHeader } from '@/components/PanelHeader'
 import { splitDocumentPath } from '@/components/document-path'
 import { IconButton } from '@/components/IconButton'
-import { TAB_LOOK_CLASS } from '@/components/ui/tabs'
+import { TabButton } from '@/components/TabButton'
 import { Separator } from '@/components/ui/separator'
 import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
@@ -225,33 +225,6 @@ export function PanelTabStrip({ sessionId, items, labels, activeKey, wrapperRef,
         <AllTabsMenu sessionId={sessionId} items={items} labels={labels} activeKey={activeKey} onSelect={onSelect} />
       </div>
     </div>
-  )
-}
-
-const TAB_CLASS = 'inline-flex h-6 items-center gap-1 px-2 text-sm font-medium'
-
-interface TabButtonProps extends ComponentProps<'button'> {
-  ids: { tabId: string; panelId: string } | null
-  selected: boolean
-}
-
-/** The one raw tab button: panel and document tabs share its roving tabindex, ARIA wiring and middle-click guard. */
-function TabButton({ ids, selected, className, onMouseDown, ...props }: TabButtonProps) {
-  return (
-    <button
-      role="tab"
-      id={ids?.tabId}
-      aria-selected={selected}
-      aria-controls={selected ? ids?.panelId : undefined}
-      {...props}
-      tabIndex={selected ? 0 : -1}
-      className={cn(TAB_CLASS, className, INSET_FOCUS_OUTLINE_CLASS, TAB_LOOK_CLASS)}
-      onMouseDown={(event) => {
-        // Stops the browser's middle-click autoscroll so the aux click can close the tab.
-        if (event.button === 1) event.preventDefault()
-        onMouseDown?.(event)
-      }}
-    />
   )
 }
 

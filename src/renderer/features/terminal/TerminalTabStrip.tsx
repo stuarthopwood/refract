@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { PlusIcon, XIcon } from 'lucide-react'
 import { IconButton } from '@/components/IconButton'
 import { InlineStatus } from '@/components/InlineStatus'
-import { TAB_LOOK_CLASS } from '@/components/ui/tabs'
-import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
+import { TabButton } from '@/components/TabButton'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useTerminalStore } from '@/state/terminal-store'
@@ -46,6 +45,7 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
   const refocusTabId = useRef<string | null>(null)
   // With the last tab gone there is no terminal to focus, so the add button holds the keyboard.
   const returnToTerminal = useCallback(() => returnFocus(restoreFocus, () => addRef.current?.focus()), [restoreFocus])
+  const hintId = useId()
   const close = useCloseFlow(sessionId, returnToTerminal)
   const atLimit = tabs.length >= MAX_TABS_PER_SESSION
   const addLabel = atLimit ? `New terminal (the maximum of ${MAX_TABS_PER_SESSION} tabs is open)` : 'New terminal'
@@ -90,7 +90,7 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
     }
     if (event.key === 'Delete') {
       event.preventDefault()
-      close.requestClose(tab)
+      close.requestClose(tab, tabRefs.current.get(tab.id))
       return
     }
     const next = tabIndexForKey(event.key, index, tabs.length)
@@ -105,43 +105,59 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
     // drag-regions-allow: renders in the Terminal panel body, below the right pane's own header, so it never touches App.tsx's strip despite the `border-b` shape.
     <div className="flex flex-col border-b border-border">
       <div className="flex items-center gap-1 px-1 py-1">
-        <div ref={scrollerRef} role="tablist" aria-label="Terminal tabs" className="relative flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
-          {tabs.map((tab, index) => {
-            const selected = tab.id === activeTabId
-            const marker = tabMarker(tab.state)
-            return (
-              <div key={tab.id} role="presentation" className="flex shrink-0 items-center">
-                {renamingId === tab.id ? (
+        {/* Tabs, their close buttons and the rename field sit in one grid row. The tablist wrapper takes no box of its own, so it
+            holds only the tabs while each close button and the rename field stay outside it, next to their tab. */}
+        <div ref={scrollerRef} className="relative grid min-w-0 flex-1 auto-cols-max grid-flow-col items-center overflow-x-auto overflow-y-hidden [scrollbar-width:none]">
+          <span id={hintId} className="sr-only">
+            Press F2 to rename this terminal, or Delete to close it.
+          </span>
+          <div role="tablist" aria-label="Terminal tabs" className="contents">
+            {tabs.map((tab, index) => {
+              if (renamingId === tab.id) return null
+              const marker = tabMarker(tab.state)
+              return (
+                <TabButton
+                  key={tab.id}
+                  ref={(el) => {
+                    if (el) tabRefs.current.set(tab.id, el)
+                    else tabRefs.current.delete(tab.id)
+                  }}
+                  ids={{ tabId: tabDomId(tab.id), panelId: panelDomId(tab.id) }}
+                  selected={tab.id === activeTabId}
+                  aria-keyshortcuts="F2 Delete"
+                  aria-describedby={hintId}
+                  title="Double-click or press F2 to rename"
+                  className="max-w-40 gap-2"
+                  style={{ gridColumn: index * 2 + 1, gridRow: 1 }}
+                  onClick={() => onSelect(tab.id)}
+                  onDoubleClick={() => setRenamingId(tab.id)}
+                  onKeyDown={(event) => onTabKeyDown(event, tab, index)}
+                >
+                  <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', MARKER_DOT[marker.tone])} />
+                  <span className="truncate">{tab.name}</span>
+                  {marker.label && <span className="sr-only">, {marker.label}</span>}
+                </TabButton>
+              )
+            })}
+          </div>
+          {tabs.map((tab, index) => (
+            <Fragment key={tab.id}>
+              {renamingId === tab.id && (
+                <div style={{ gridColumn: index * 2 + 1, gridRow: 1 }}>
                   <RenameField tab={tab} onSettle={(draft, end) => void settleRename(tab, draft, end)} />
-                ) : (
-                  <button
-                    ref={(el) => {
-                      if (el) tabRefs.current.set(tab.id, el)
-                      else tabRefs.current.delete(tab.id)
-                    }}
-                    type="button"
-                    role="tab"
-                    id={tabDomId(tab.id)}
-                    aria-selected={selected}
-                    aria-controls={selected ? panelDomId(tab.id) : undefined}
-                    tabIndex={selected ? 0 : -1}
-                    title="Double-click or press F2 to rename"
-                    className={cn('inline-flex max-w-40 items-center gap-2 px-2 py-1 text-sm font-medium', INSET_FOCUS_OUTLINE_CLASS, TAB_LOOK_CLASS)}
-                    onClick={() => onSelect(tab.id)}
-                    onDoubleClick={() => setRenamingId(tab.id)}
-                    onKeyDown={(event) => onTabKeyDown(event, tab, index)}
-                  >
-                    <span aria-hidden className={cn('size-1.5 shrink-0 rounded-full', MARKER_DOT[marker.tone])} />
-                    <span className="truncate">{tab.name}</span>
-                    {marker.label && <span className="sr-only">, {marker.label}</span>}
-                  </button>
-                )}
-                <IconButton label={`Close ${tab.name}`} size="icon-xs" className="text-muted-foreground hover:text-foreground" onClick={() => close.requestClose(tab)}>
-                  <XIcon aria-hidden />
-                </IconButton>
-              </div>
-            )
-          })}
+                </div>
+              )}
+              <IconButton
+                label={`Close ${tab.name}`}
+                size="icon-xs"
+                className="mr-1 text-muted-foreground hover:text-foreground"
+                style={{ gridColumn: index * 2 + 2, gridRow: 1 }}
+                onClick={(event) => close.requestClose(tab, event.currentTarget)}
+              >
+                <XIcon aria-hidden />
+              </IconButton>
+            </Fragment>
+          ))}
         </div>
         <IconButton ref={addRef} label={addLabel} aria-disabled={atLimit || adding} onClick={() => !atLimit && !adding && onAdd()}>
           <PlusIcon aria-hidden />

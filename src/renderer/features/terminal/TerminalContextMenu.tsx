@@ -46,7 +46,15 @@ export function TerminalContextMenu({ sessionId, tabId, getSelection, focusTermi
           else if (action === 'ask') void askAgent(sessionId, tabId, selectionRef.current)
         }}
       >
-        <ContextMenuItem disabled={!hasSelection} onSelect={() => (pendingRef.current = 'add')}>
+        {/* aria-disabled keeps the item in the menu's keyboard order and announced as unavailable, where `disabled` would drop it. */}
+        <ContextMenuItem
+          aria-disabled={!hasSelection}
+          className={hasSelection ? undefined : 'opacity-50'}
+          onSelect={(event) => {
+            if (hasSelection) pendingRef.current = 'add'
+            else event.preventDefault()
+          }}
+        >
           Add to chat
         </ContextMenuItem>
         <ContextMenuItem onSelect={() => (pendingRef.current = 'ask')}>Ask agent about this</ContextMenuItem>

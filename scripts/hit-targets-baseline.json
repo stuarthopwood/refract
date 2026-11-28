@@ -36,6 +36,5 @@
   "src/renderer/features/sessions/SessionRowTable.tsx": 1,
   "src/renderer/features/settings/ChatWidthPicker.tsx": 1,
   "src/renderer/features/settings/SettingsNav.tsx": 1,
-  "src/renderer/features/settings/ThemePicker.tsx": 2,
-  "src/renderer/features/terminal/TerminalTabStrip.tsx": 1
+  "src/renderer/features/settings/ThemePicker.tsx": 2
 }
