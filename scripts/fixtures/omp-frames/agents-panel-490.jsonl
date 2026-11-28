@@ -1,0 +1,37 @@
+// SYNTHESIZED, not captured live: issue #490 (global Agents panel). One turn leaves alpha finished (inside its own
+// task() call) and gamma, a BACKGROUND agent, still running, so every Session that replays this tape shows one
+// running agent plus one finished one. Gamma is settled later by a `subagent_lifecycle` frame the script appends to
+// REFRACT_FAKE_OMP_HOST_TOOL_CALLS (parentToolCallId "stage-two", index 0). After the turn the tape also answers
+// `new_session` + `get_state` once, so a "New conversation" click succeeds. Preamble and frame order reuse stages-1085.jsonl.
+{"type":"ready","protocolVersion":1,"supportedProtocolVersions":[1,2],"maxFrameBytes":1048576,"maxReassembledFrameBytes":67108864}
+{"__wait__":["negotiate_protocol"]}
+{"id":"$lastId","type":"response","command":"negotiate_protocol","success":true,"data":{"protocolVersion":2}}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\agents-490\\conversation.json","sessionId":"sess-agents-490-0001","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium","todoPhases":[]}}
+{"__wait__":["set_ask_dialog"]}
+{"id":"$lastId","type":"response","command":"set_ask_dialog","success":true,"data":{"enabled":true}}
+{"__wait__":["get_messages_page","get_messages"]}
+{"id":"$lastId","type":"response","command":"get_messages_page","success":true,"data":{"messages":[],"totalMessages":0}}
+{"__wait__":["prompt"]}
+{"id":"$turnId","type":"response","command":"prompt","success":true}
+{"type":"agent_start"}
+{"type":"message_start","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-u1","message":{"role":"user","content":[{"type":"text","text":"$lastMessage"}],"timestamp":0}}
+{"type":"message_start","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage-one","name":"task","arguments":{"tasks":[{"name":"alpha","task":"Check the first Stage."}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a1","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage-one","name":"task","arguments":{"tasks":[{"name":"alpha","task":"Check the first Stage."}]}}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"stage-one","toolName":"task","args":{"tasks":[{"name":"alpha","task":"Check the first Stage."}]},"intent":"First Stage"}
+{"type":"tool_execution_end","toolCallId":"stage-one","toolName":"task","result":{"content":[{"type":"text","text":"1 of 1 subagents finished"}],"details":{"progress":[{"index":0,"id":"alpha","status":"finished","task":"Check the first Stage.","durationMs":900}]}},"isError":false}
+{"type":"message_start","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage-two","name":"task","arguments":{"tasks":[{"name":"gamma","task":"Investigate gamma in the background"}]}}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a2","message":{"role":"assistant","content":[{"type":"toolCall","id":"stage-two","name":"task","arguments":{"tasks":[{"name":"gamma","task":"Investigate gamma in the background"}]}}],"timestamp":0}}
+{"type":"tool_execution_start","toolCallId":"stage-two","toolName":"task","args":{"tasks":[{"name":"gamma","task":"Investigate gamma in the background"}]},"intent":"Background Stage"}
+{"type":"tool_execution_end","toolCallId":"stage-two","toolName":"task","result":{"content":[{"type":"text","text":"Spawned 1 background agent (async)"}],"details":{"progress":[{"index":0,"id":"gamma","status":"running","task":"Investigate gamma in the background"}]}},"isError":false}
+{"type":"message_start","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"text","text":""}],"timestamp":0}}
+{"type":"message_end","messageId":"msg-a3","message":{"role":"assistant","content":[{"type":"text","text":"Turn one done: alpha finished, gamma runs in the background."}],"timestamp":0}}
+{"type":"queue_update","steering":[],"followUp":[],"liveSteered":0}
+{"type":"agent_end","messages":[],"isTerminal":true,"yielded":false}
+{"id":"$turnId","type":"prompt_result","agentInvoked":true,"status":"completed","sessionSettled":true}
+{"type":"session_settled"}
+{"__wait__":["new_session"]}
+{"id":"$lastId","type":"response","command":"new_session","success":true}
+{"__wait__":["get_state"]}
+{"id":"$lastId","type":"response","command":"get_state","success":true,"data":{"sessionFile":"C:\\scratch\\agents-490\\conversation-2.json","sessionId":"sess-agents-490-0002","messageCount":0,"isSettled":true,"model":{"provider":"example-provider","id":"example-model-1","name":"Example Model One"},"thinkingLevel":"medium","todoPhases":[]}}
