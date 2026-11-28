@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 import type { TranscriptItem } from '../../../shared/model'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { AdvisoryRow } from './AdvisoryRow'
+import type { AdvisoryLocation } from '@/lib/advisory-locations'
+import { AdvisoryRow, buildAskAgentMessage, buildCopyText } from './AdvisoryRow'
 
 const seed = vi.hoisted(() => ({ pending: 0 }))
 vi.mock('react', async (importOriginal) => {
@@ -78,13 +79,56 @@ describe('AdvisoryRow body renders Markdown at the chat line height (#360, FR-22
 
   it('gives the message and the guidance the shared chat leading, not the plain text-sm one', () => {
     const html = render('blocker', true, markdown)
-    expect(html.match(/leading-chat/g)?.length).toBe(2)
-    expect(html).not.toContain('whitespace-pre-wrap text-sm')
+    const [message = '', guidance = ''] = html.split('>Guidance<')
+    expect(guidance).not.toBe('')
+    expect(openingTag(message, 'leading-chat')).toContain('space-y-2')
+    expect(openingTag(guidance, 'leading-chat')).toContain('space-y-2')
+    // A plain-text body (the pre-fix `whitespace-pre-wrap text-sm` div) would carry both classes on one element.
+    const plainBodies = (html.match(/<[^>]*>/g) ?? []).filter((tag) => tag.includes('whitespace-pre-wrap') && tag.includes('text-sm'))
+    expect(plainBodies).toEqual([])
+  })
+
+  it.each(['text', 'guidance'] as const)('keeps a single line break in the %s', (field) => {
+    const html = render('blocker', true, { text: 'first\nsecond', guidance: 'third\nfourth' })
+    const [message = '', guidance = ''] = html.split('>Guidance<')
+    const part = field === 'text' ? message : guidance
+    const lines = field === 'text' ? 'first\nsecond' : 'third\nfourth'
+    // The newline is in the DOM either way; it only shows as a break when the root's paragraphs are `pre-line`.
+    expect(part).toMatch(new RegExp(`<p[^>]*>${lines}</p>`))
+    expect(openingTag(part, 'leading-chat')).toContain('[&amp;_p]:whitespace-pre-line')
   })
 
   it('renders a nit body the same way once expanded', () => {
     const html = render('nit', true, markdown)
     expect(html).toContain('>pnpm test</code>')
     expect(html).toContain('leading-chat')
+  })
+})
+
+describe('AdvisoryRow copy and ask-agent text keep Markdown source verbatim (#360, FR-223)', () => {
+  const item = {
+    kind: 'advisory',
+    id: 'a-copy',
+    severity: 'blocker',
+    text: 'Run `pnpm test` first:\n\n1. Fix the type error\n2. Rerun',
+    guidance: 'Prefer `readFile` over a shell `cat`.',
+    advisor: 'reviewer'
+  } as AdvisoryItem
+  const locations = [{ raw: 'src/a.ts:12' }] as AdvisoryLocation[]
+
+  it('copies the message and guidance with backticks and list markers intact', () => {
+    const text = buildCopyText(item, locations)
+    expect(text).toContain(item.text)
+    expect(text).toContain('Guidance:\nPrefer `readFile` over a shell `cat`.')
+    expect(text).toContain('Location:\nsrc/a.ts:12')
+  })
+
+  it('sends the ask-agent payload with the same raw text inside one fenced block', () => {
+    const message = buildAskAgentMessage(item, locations)
+    expect(message).toContain('Run `pnpm test` first:\n\n1. Fix the type error\n2. Rerun')
+    expect(message).toContain('Guidance: Prefer `readFile` over a shell `cat`.')
+    // The payload's own single backticks must not close the three-backtick fence early.
+    expect(message.endsWith('\n```')).toBe(true)
+    expect(message).toContain('```advisor-note\nAdvisor: reviewer')
   })
 })
