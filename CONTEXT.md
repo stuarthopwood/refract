@@ -625,3 +625,10 @@ _Avoid_: prefetch store, offline mode
 **Composer Markdown styling**
 Live syntax styling of the chat composer while typing (#1170, spec 050): headings, lists, quotes, bold, italic and code are coloured on a mirror layer behind the transparent textarea, so text, caret, selection and IME stay the plain textarea's. Width-neutral only (text stroke for bold and headings, colour for the rest), off while a slash command is typed, plain text in forced colours and Dark (high contrast). Not the **Markdown editor** of the Pull requests view.
 _Avoid_: WYSIWYG, preview
+
+**Code snippet preview**
+A read-only, syntax-highlighted copy of the draft's last fenced code block, shown in flow above the composer field (#525, spec 143). Typing a closed one-line block such as three backticks, a language word, code and three backticks rewrites the draft itself into a canonical three-part fence, so a stored draft (spec 010) and the sent message hold the fenced text. Fenced code only; the language is the user's word, never detected. Not an overlay: the **Composer Markdown styling** mirror stays the only layer over the textarea.
+_Avoid_: code editor, language detector
+
+**Literal backticks flag**
+Set when Ctrl+Z undoes a fence rewrite: the typed backticks are then left alone on screen and on send until the draft is sent, cleared or the Session changes. Not persisted.
