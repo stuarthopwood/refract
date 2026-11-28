@@ -1,5 +1,5 @@
 import { BotIcon, CircleDotIcon, FileDiffIcon, FileIcon, FolderTreeIcon, GaugeIcon, GitBranchIcon, GitPullRequestIcon, HammerIcon, LibraryIcon, ListChecksIcon, ListTreeIcon, MessageCircleIcon, type LucideIcon } from 'lucide-react'
-import { EMPTY_READOUT_ENTRY, useGitChangesStore, useReadoutStore } from '@/state'
+import { useAgentsStore, useGitChangesStore, totalRunningAgents } from '@/state'
 import panelContract from '../../../../specs/124-tool-channel-1193/contracts/panel-actions.json'
 import type { TabItem } from './tab-items'
 
@@ -123,18 +123,13 @@ export function formatPanelCount(count: PanelCount): string {
   return parts.word ? `${parts.number} ${parts.word}` : parts.number
 }
 
-/** `getPanelCount` as a reactive hook. */
+/** `getPanelCount` as a reactive hook. The Agents panel is global, so its count sums every Session and ignores `sessionId`. */
 export function usePanelCount(id: PanelId, sessionId: string | null): PanelCount {
-  const running = useReadoutStore((s) =>
-    id === 'subagents' && sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).readout.subagentCount?.running : undefined
-  )
+  const running = useAgentsStore((s) => (id === 'subagents' ? totalRunningAgents(s.groups) : 0))
   const gitChangesSnapshot = useGitChangesStore((s) =>
     id === 'git-changes' && sessionId ? (s.bySession[sessionId]?.snapshot ?? null) : null
   )
-  if (id === 'subagents') {
-    if (!sessionId) return null
-    return running !== undefined && running > 0 ? { kind: 'running', value: running } : null
-  }
+  if (id === 'subagents') return running > 0 ? { kind: 'running', value: running } : null
   if (id === 'git-changes') {
     if (!gitChangesSnapshot) return null
     let files = 0

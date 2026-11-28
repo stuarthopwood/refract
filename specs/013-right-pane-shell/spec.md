@@ -45,12 +45,13 @@ this writing — cited by content, not by path on `main`).
   content are removed outright once the real integrations (#391, #392) land; with the switch off,
   the panes show the honest empty state (icon, one line, next action) and nothing else.
 - **Q (implicit in issue://393/#538): is the hosted Subagents panel the future global Agents
-  panel (#490), or does it keep today's per-Session behaviour?** -> **A: it keeps today's
-  per-Session behaviour, unchanged.** The global, cross-Session Agents panel is `docs/PLAN.md` row
-  C2c (issue://490), which explicitly needs this spec (C1) as a prerequisite and is not part of
-  it. This spec only moves the *presentation* of the existing per-Session Subagents panel (spec
-  004 FR-017 to FR-020) into the shared shell as its first hosted panel; none of its session
-  binding, streaming, or reconciliation logic changes.
+  panel (#490), or does it keep today's per-Session behaviour?** -> **A: it was per-Session; spec
+  001 FR-204 to FR-207 amended it on 2026-11-27 (issue #490).** The hosted panel is now the global
+  Agents panel. It is always available whatever the Session and closed by default, and no agent
+  event opens or closes it. It lists one group per live Session, and the Subagents pill opens it
+  at that Session's group. Within a group, successful finishes fold into one "N finished" row;
+  failed, aborted, and exited rows stay individual. The rail badge shows the running count across
+  all Sessions. The panel keeps its first position in the shared shell.
 
 
 ### Needs Stuart's decision (not yet resolved, found during PR2 round 3's gate)
