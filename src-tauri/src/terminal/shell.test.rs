@@ -151,3 +151,25 @@ fn only_term_and_colorterm_are_added_to_the_environment() {
         [("TERM", "xterm-256color"), ("COLORTERM", "truecolor")]
     );
 }
+
+#[test]
+fn both_powershells_keep_the_profile_and_wrap_the_prompt_once() {
+    for kind in [ShellKind::Pwsh, ShellKind::Powershell] {
+        let args = shell_args(kind);
+
+        assert_eq!(&args[..3], &["-NoLogo", "-NoExit", "-Command"]);
+        assert_eq!(args.len(), 4);
+        assert!(!args.contains(&"-NoProfile"));
+        assert!(args[3].contains("function global:prompt"));
+        assert!(args[3].contains("]133;A"));
+        assert!(
+            !args[3].contains('"'),
+            "no quotes to escape on a command line"
+        );
+    }
+}
+
+#[test]
+fn cmd_has_no_prompt_marker_arguments() {
+    assert!(shell_args(ShellKind::Cmd).is_empty());
+}

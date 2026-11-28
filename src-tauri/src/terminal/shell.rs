@@ -44,6 +44,24 @@ pub struct ResolvedShell {
 /// The only environment the terminal adds to the app's own; nothing else is injected.
 pub const ADDED_ENV: [(&str, &str); 2] = [("TERM", "xterm-256color"), ("COLORTERM", "truecolor")];
 
+// Wraps whatever `prompt` the profile left in place so every prompt first prints OSC 133 `A` (ESC ] 133 ; A
+// BEL), which is how `markers.rs` finds where a command's output begins (R-6). The profile has already
+// loaded when this runs, so a user's own prompt keeps working. No double quotes, so the command line needs
+// no escaping.
+const PROMPT_MARKER_INIT: &str = "$__refractPrompt = $function:prompt; \
+function global:prompt { [string][char]27 + ']133;A' + [char]7 + (& $__refractPrompt) }";
+
+/// Arguments that follow the executable. `cmd` cannot mark its prompt, so it gets none and the 200-line
+/// tail is used instead.
+pub fn shell_args(kind: ShellKind) -> &'static [&'static str] {
+    match kind {
+        ShellKind::Pwsh | ShellKind::Powershell => {
+            &["-NoLogo", "-NoExit", "-Command", PROMPT_MARKER_INIT]
+        }
+        ShellKind::Cmd => &[],
+    }
+}
+
 /// The two facts shell resolution reads from the machine.
 pub trait ShellEnv {
     fn var(&self, name: &str) -> Option<OsString>;

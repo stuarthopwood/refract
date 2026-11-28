@@ -8,7 +8,7 @@ use std::path::Path;
 
 use portable_pty::{native_pty_system, Child, ChildKiller, CommandBuilder, MasterPty, PtySize};
 
-use super::shell::{ResolvedShell, ADDED_ENV};
+use super::shell::{shell_args, ResolvedShell, ADDED_ENV};
 
 /// Why a shell did not start or a pty call failed. The message is safe to show: it comes from the OS or
 /// from this module, never from terminal content.
@@ -60,12 +60,16 @@ pub struct Spawned {
 /// `COLORTERM` (`ADDED_ENV`).
 pub fn spawn(shell: &ResolvedShell, cwd: &Path, cols: u16, rows: u16) -> Result<Spawned, PtyError> {
     if !cwd.is_dir() {
-        return Err(PtyError("The working folder does not exist".into()));
+        return Err(PtyError(format!(
+            "The working folder does not exist: {}",
+            cwd.display()
+        )));
     }
     let pair = native_pty_system()
         .openpty(pty_size(cols, rows))
         .map_err(|err| fail("The terminal could not be opened", err))?;
     let mut command = CommandBuilder::new(&shell.path);
+    command.args(shell_args(shell.kind));
     command.cwd(cwd);
     for (name, value) in ADDED_ENV {
         command.env(name, value);

@@ -300,3 +300,141 @@ fn input_over_the_call_limit_is_refused() {
     assert_eq!(tab.input(&big).unwrap_err().code, "invalid-argument");
     tab.terminate();
 }
+
+#[test]
+fn a_tab_that_has_not_ended_cannot_be_restarted() {
+    let (tab, notices) = new_tab(std::env::temp_dir());
+
+    let err = tab.restart_with(None).unwrap_err();
+
+    assert_eq!(err.code, "terminal-not-ended");
+    assert_eq!(tab.state(), TabState::Starting);
+    assert!(states(&notices).is_empty());
+}
+
+#[test]
+fn restarting_a_failed_tab_tries_again_and_reports_each_change() {
+    let (tab, notices) = new_tab(std::env::temp_dir());
+    tab.start_with(None, 80, 24);
+
+    let info = tab.restart_with(None).unwrap();
+
+    assert!(matches!(info.state, TabState::Failed { .. }));
+    let seen = states(&notices);
+    assert_eq!(seen.len(), 3);
+    assert_eq!(seen[1], TabState::Starting);
+}
+
+#[test]
+fn a_tab_whose_folder_is_gone_stays_failed_on_restart_and_never_uses_another_folder() {
+    let missing = std::env::temp_dir().join("refract-tab-no-such-folder-9c3a");
+    let (tab, _) = new_tab(missing.clone());
+    let shell = || ResolvedShell {
+        kind: ShellKind::Cmd,
+        path: "does-not-matter.exe".into(),
+    };
+    tab.start_with(Some(shell()), 80, 24);
+
+    let info = tab.restart_with(Some(shell())).unwrap();
+
+    match info.state {
+        TabState::Failed { message } => {
+            assert!(message.contains(&missing.display().to_string()));
+        }
+        other => panic!("expected failed, got {other:?}"),
+    }
+    assert_eq!(tab.cwd(), missing);
+}
+
+#[cfg(windows)]
+#[test]
+fn restarting_an_ended_shell_keeps_the_tab_and_empties_its_scrollback() {
+    let (tab, notices) = running_tab();
+    tab.input("echo before-restart-144 & exit 4\r").unwrap();
+    assert!(wait_until(|| tab.state() == TabState::Ended { code: 4 }));
+    let before = tab.info();
+
+    let after = tab.restart_with(Some(cmd_shell())).unwrap();
+
+    assert_eq!(after.state, TabState::Running);
+    assert_eq!(
+        (&after.id, &after.name, &after.cwd, after.order),
+        (&before.id, &before.name, &before.cwd, before.order)
+    );
+    assert!(wait_until(
+        || String::from_utf8_lossy(&tab.snapshot()).contains("Microsoft Windows")
+    ));
+    assert!(!String::from_utf8_lossy(&tab.snapshot()).contains("before-restart-144"));
+    assert_eq!(
+        states(&notices),
+        vec![
+            TabState::Running,
+            TabState::Ended { code: 4 },
+            TabState::Starting,
+            TabState::Running
+        ]
+    );
+    assert_eq!(
+        tab.restart_with(Some(cmd_shell())).unwrap_err().code,
+        "terminal-not-ended"
+    );
+    tab.terminate();
+}
+
+#[cfg(windows)]
+#[test]
+fn last_lines_reads_the_tail_without_colour_codes() {
+    let (tab, _) = running_tab();
+    tab.input("echo tail-marker-144\r").unwrap();
+    assert!(wait_until(|| tab
+        .read_output(OutputMode::LastLines)
+        .text
+        .contains("tail-marker-144")));
+
+    let out = tab.read_output(OutputMode::LastLines);
+
+    assert_eq!(out.source, crate::terminal::markers::OutputSource::Tail);
+    assert!(!out.text.contains('\x1b'));
+    tab.terminate();
+}
+
+#[cfg(windows)]
+#[test]
+fn recent_command_without_prompt_markers_falls_back_to_the_tail() {
+    let (tab, _) = running_tab();
+
+    let out = tab.read_output(OutputMode::RecentCommand);
+
+    assert_eq!(out.source, crate::terminal::markers::OutputSource::Tail);
+    assert!(out.text.contains("Microsoft Windows"));
+    tab.terminate();
+}
+
+// PowerShell is the shell that prints the markers, so this runs the real thing, profile and all.
+#[cfg(windows)]
+#[test]
+fn recent_command_is_the_last_commands_output_when_powershell_marks_its_prompt() {
+    let shell = resolve_shell(&SystemEnv).expect("a shell exists");
+    assert_ne!(
+        shell.kind,
+        ShellKind::Cmd,
+        "PowerShell is installed with Windows"
+    );
+    let (tab, _) = new_tab(std::env::temp_dir());
+    tab.start_with(Some(shell), 120, 30);
+    assert!(wait_until(
+        || String::from_utf8_lossy(&tab.snapshot()).contains("\x1b]133;A")
+    ));
+
+    tab.input("Write-Output 'marked-output-144'\r").unwrap();
+
+    assert!(wait_until(|| {
+        let out = tab.read_output(OutputMode::RecentCommand);
+        out.source == crate::terminal::markers::OutputSource::Marker
+            && out.text.contains("marked-output-144")
+    }));
+    let out = tab.read_output(OutputMode::RecentCommand);
+    assert!(!out.text.contains('\x1b'));
+    assert!(!out.truncated);
+    tab.terminate();
+}

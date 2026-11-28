@@ -6,6 +6,7 @@ pub mod frame;
 pub mod guard;
 pub mod handlers;
 pub mod limits;
+pub mod markers;
 pub mod persist;
 pub mod pty;
 pub mod ring;

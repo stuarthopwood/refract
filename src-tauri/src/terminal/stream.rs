@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 
 use super::frame::{encode_data, encode_exit, Coalescer, COALESCE_MAX_BYTES};
 use super::limits::UNACKED_PAUSE_BYTES;
+use super::markers::{extract_recent_command, MarkerScanner};
 use super::ring::Ring;
 
 /// The reader asks the pty for at most this much per call.
@@ -70,6 +71,8 @@ struct Inner {
     ring: Ring,
     coalescer: Coalescer,
     scanner: QueryScanner,
+    /// Where each prompt began, as absolute offsets into the same stream the ring counts.
+    markers: MarkerScanner,
     sink: Option<Box<dyn FrameSink>>,
     /// Payload bytes sent to the sink and not yet acknowledged.
     unacked: usize,
@@ -119,6 +122,7 @@ impl Stream {
                 ring,
                 coalescer: Coalescer::new(),
                 scanner: QueryScanner::default(),
+                markers: MarkerScanner::new(),
                 sink: None,
                 unacked: 0,
                 exit_code: None,
@@ -138,7 +142,11 @@ impl Stream {
     /// many cursor-position queries arrived with nobody attached to answer them.
     pub fn ingest(&self, data: &[u8], now: Instant) -> usize {
         let mut inner = self.lock();
+        let first_offset = inner.ring.total_written();
         inner.ring.push(data);
+        inner.markers.feed(data, first_offset);
+        let start = inner.ring.start();
+        inner.markers.drop_before(start);
         let queries = inner.scanner.count(data);
         if inner.sink.is_none() {
             return queries;
@@ -289,6 +297,21 @@ impl Stream {
     /// Everything the ring holds, oldest first.
     pub fn ring_snapshot(&self) -> Vec<u8> {
         self.lock().ring.snapshot()
+    }
+
+    /// The raw bytes of the most recent command's output, or `None` without prompt markers to name one.
+    pub fn recent_command(&self) -> Option<Vec<u8>> {
+        let inner = self.lock();
+        extract_recent_command(
+            &inner.ring.snapshot(),
+            inner.ring.start(),
+            &inner.markers.offsets(),
+        )
+    }
+
+    /// The last `n` lines the ring holds.
+    pub fn tail_lines(&self, n: usize) -> Vec<u8> {
+        self.lock().ring.tail_lines(n)
     }
 }
 

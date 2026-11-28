@@ -11,9 +11,10 @@ use tauri::ipc::{Channel, InvokeResponseBody, JavaScriptChannelId};
 use tauri::Manager;
 
 use super::guard::clamp_size;
+use super::markers::OutputMode;
 use super::persist;
 use super::stream::FrameSink;
-use super::tab::{StateNotifier, Tab, TabInfo};
+use super::tab::{StateNotifier, Tab, TabInfo, TabState};
 use super::{manager, CloseOutcome};
 use crate::events::{self, TERMINAL_TAB_STATE};
 use crate::ipc::project_session::session_working_dir;
@@ -31,6 +32,8 @@ pub fn register(d: &mut Dispatcher) {
     d.register("terminal.ack", terminal_ack);
     d.register("terminal.rename", terminal_rename);
     d.register("terminal.close", terminal_close);
+    d.register("terminal.restart", terminal_restart);
+    d.register("terminal.readOutput", terminal_read_output);
 }
 
 fn tab_not_found() -> IpcError {
@@ -236,6 +239,39 @@ fn terminal_rename(state: AppState, args: Vec<Value>) -> HandlerFuture {
         let info = find_tab(&tab_id)?.rename(&name)?;
         save_tabs(&state).await;
         Ok(json!(info))
+    })
+}
+
+fn terminal_restart(state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let tab_id = required_str(&args, 0, "terminal.restart expects a tab id")?;
+        let tab = find_tab(&tab_id)?;
+        // Starting a shell resolves it and opens a console, so it runs off the async runtime's threads.
+        let info = tokio::task::spawn_blocking(move || tab.restart())
+            .await
+            .map_err(|_| {
+                IpcError::new(
+                    "terminal-spawn-failed",
+                    "The terminal could not be restarted",
+                )
+            })??;
+        save_tabs(&state).await;
+        match &info.state {
+            TabState::Failed { message } => {
+                Err(IpcError::new("terminal-spawn-failed", message.clone()))
+            }
+            _ => Ok(json!(info)),
+        }
+    })
+}
+
+fn terminal_read_output(_state: AppState, args: Vec<Value>) -> HandlerFuture {
+    Box::pin(async move {
+        let tab_id = required_str(&args, 0, "terminal.readOutput expects a tab id")?;
+        let mode = required_str(&args, 1, "terminal.readOutput expects a mode")?;
+        let mode = OutputMode::parse(&mode)
+            .ok_or_else(|| invalid_argument("mode must be recent-command or last-lines"))?;
+        Ok(json!(find_tab(&tab_id)?.read_output(mode)))
     })
 }
 

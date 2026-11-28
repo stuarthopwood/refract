@@ -121,6 +121,8 @@ async fn every_terminal_channel_is_registered() {
         "terminal.resize",
         "terminal.ack",
         "terminal.rename",
+        "terminal.restart",
+        "terminal.readOutput",
     ] {
         let envelope = dispatcher.dispatch(channel, state.clone(), vec![]).await;
         assert_eq!(error_code(&envelope), "invalid-argument", "{channel}");
@@ -467,6 +469,146 @@ async fn creating_renaming_and_closing_keep_the_saved_tab_list_current() {
     );
     assert!(manager().find(&tab_id).is_none());
     assert!(saved_tab_ids(&dir, "session-saved").is_empty());
+}
+
+async fn created_tab(state: &AppState, dispatcher: &Dispatcher, session_id: &str) -> String {
+    let created = dispatcher
+        .dispatch(
+            "terminal.create",
+            state.clone(),
+            vec![json!(session_id), json!(100), json!(30)],
+        )
+        .await;
+    assert_eq!(created["ok"], true, "{created}");
+    created["value"]["id"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn restart_replaces_an_ended_shell_in_the_same_tab_and_refuses_a_live_one() {
+    let (state, dir) = make_state("restart").await;
+    add_session(&state, "session-restart", &dir).await;
+    let dispatcher = dispatcher();
+    let tab_id = created_tab(&state, &dispatcher, "session-restart").await;
+    let restart = |state: AppState| {
+        dispatcher.dispatch("terminal.restart", state, vec![json!(tab_id.clone())])
+    };
+
+    assert_eq!(
+        error_code(&restart(state.clone()).await),
+        "terminal-not-ended"
+    );
+    end_shell(&tab_id);
+    assert!(
+        wait_for(|| matches!(
+            manager().find(&tab_id).unwrap().state(),
+            TabState::Ended { .. }
+        ))
+        .await
+    );
+    let restarted = restart(state.clone()).await;
+
+    assert_eq!(restarted["ok"], true, "{restarted}");
+    assert_eq!(restarted["value"]["id"], tab_id.as_str());
+    assert_eq!(restarted["value"]["name"], "Terminal 1");
+    assert_eq!(restarted["value"]["state"]["kind"], "running");
+    assert_eq!(error_code(&restart(state).await), "terminal-not-ended");
+    end_shell(&tab_id);
+}
+
+#[tokio::test]
+async fn restart_in_a_folder_that_is_gone_says_which_folder_and_keeps_the_tab_failed() {
+    let (state, dir) = make_state("restart-gone").await;
+    let worktree = dir.join("worktree");
+    std::fs::create_dir_all(&worktree).unwrap();
+    add_session(&state, "session-gone", &worktree).await;
+    let dispatcher = dispatcher();
+    let tab_id = created_tab(&state, &dispatcher, "session-gone").await;
+    end_shell(&tab_id);
+    assert!(
+        wait_for(|| matches!(
+            manager().find(&tab_id).unwrap().state(),
+            TabState::Ended { .. }
+        ))
+        .await
+    );
+    std::fs::remove_dir_all(&worktree).unwrap();
+
+    let restarted = dispatcher
+        .dispatch("terminal.restart", state, vec![json!(tab_id.clone())])
+        .await;
+
+    assert_eq!(error_code(&restarted), "terminal-spawn-failed");
+    let message = restarted["error"]["message"].as_str().unwrap();
+    assert!(message.contains("worktree"), "{message}");
+    assert!(matches!(
+        manager().find(&tab_id).unwrap().state(),
+        TabState::Failed { .. }
+    ));
+}
+
+#[tokio::test]
+async fn restart_and_read_output_reject_an_unknown_tab_and_read_output_a_bad_mode() {
+    let (state, dir) = make_state("read-args").await;
+    add_session(&state, "session-read-args", &dir).await;
+    let dispatcher = dispatcher();
+    let tab_id = created_tab(&state, &dispatcher, "session-read-args").await;
+
+    for (channel, args) in [
+        ("terminal.restart", vec![json!("nope")]),
+        (
+            "terminal.readOutput",
+            vec![json!("nope"), json!("last-lines")],
+        ),
+    ] {
+        let envelope = dispatcher.dispatch(channel, state.clone(), args).await;
+        assert_eq!(error_code(&envelope), "terminal-not-found", "{channel}");
+    }
+    for args in [
+        vec![json!(tab_id.clone())],
+        vec![json!(tab_id.clone()), json!("all")],
+    ] {
+        let envelope = dispatcher
+            .dispatch("terminal.readOutput", state.clone(), args)
+            .await;
+        assert_eq!(error_code(&envelope), "invalid-argument");
+    }
+    end_shell(&tab_id);
+}
+
+#[tokio::test]
+async fn read_output_returns_the_wire_shape_with_the_tail_when_there_are_no_markers() {
+    let (state, dir) = make_state("read-tail").await;
+    add_session(&state, "session-read-tail", &dir).await;
+    let dispatcher = dispatcher();
+    let tab_id = created_tab(&state, &dispatcher, "session-read-tail").await;
+    let tab = manager().find(&tab_id).unwrap();
+    assert!(wait_for(|| String::from_utf8_lossy(&tab.snapshot()).contains("\x1b]133;A")).await);
+    tab.input("echo handler-tail-144\r").unwrap();
+    assert!(
+        wait_for(|| tab
+            .read_output(OutputMode::LastLines)
+            .text
+            .contains("handler-tail-144"))
+        .await
+    );
+
+    let out = dispatcher
+        .dispatch(
+            "terminal.readOutput",
+            state,
+            vec![json!(tab_id.clone()), json!("last-lines")],
+        )
+        .await;
+
+    assert_eq!(out["ok"], true, "{out}");
+    assert_eq!(out["value"]["source"], "tail");
+    assert_eq!(out["value"]["truncated"], false);
+    assert!(out["value"]["totalBytes"].as_u64().unwrap() > 0);
+    assert!(out["value"]["text"]
+        .as_str()
+        .unwrap()
+        .contains("handler-tail-144"));
+    end_shell(&tab_id);
 }
 
 #[tokio::test]

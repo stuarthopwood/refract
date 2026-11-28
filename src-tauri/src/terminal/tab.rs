@@ -11,6 +11,8 @@ use std::time::{Duration, Instant};
 use serde::Serialize;
 
 use super::guard::{clamp_size, validate_input_size, validate_name, RateLimiter};
+use super::limits::{ASK_FALLBACK_LINES, OUTPUT_CAP_BYTES};
+use super::markers::{compose_output, OutputMode, TerminalOutput};
 use super::pty::{spawn, Pty, Spawned};
 use super::shell::{resolve_shell, ResolvedShell, ShellKind, SystemEnv};
 use super::stream::{run_reader, FrameSink, Stream, CURSOR_REPLY};
@@ -83,6 +85,13 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 fn not_running() -> IpcError {
     IpcError::new("terminal-not-running", "The terminal is not running")
+}
+
+fn not_ended() -> IpcError {
+    IpcError::new(
+        "terminal-not-ended",
+        "Only a terminal whose shell has ended can be restarted",
+    )
 }
 
 impl Tab {
@@ -238,6 +247,46 @@ impl Tab {
                 tab.set_state(TabState::Ended { code });
             })
             .ok();
+    }
+
+    /// Starts a new shell in an `ended` or `failed` tab: same id, name, working folder, order and size, but
+    /// an empty scrollback. Any other state is `terminal-not-ended`.
+    pub fn restart(self: &Arc<Self>) -> Result<TabInfo, IpcError> {
+        self.restart_with(resolve_shell(&SystemEnv))
+    }
+
+    /// `restart` with the shell to start made explicit; `None` means no shell exists on this machine.
+    pub fn restart_with(
+        self: &Arc<Self>,
+        shell: Option<ResolvedShell>,
+    ) -> Result<TabInfo, IpcError> {
+        let (info, (cols, rows)) = {
+            let mut meta = lock(&self.meta);
+            if !matches!(meta.state, TabState::Ended { .. } | TabState::Failed { .. }) {
+                return Err(not_ended());
+            }
+            meta.state = TabState::Starting;
+            (self.info_of(&meta), meta.size)
+        };
+        (self.notify)(&info);
+        self.start_with(shell, cols, rows);
+        Ok(self.info())
+    }
+
+    /// The terminal's text for the agent (FR-020): the most recent command's output when prompt markers
+    /// name one and `mode` asks for it, otherwise the last 200 lines. ANSI stripped, capped to 32 KiB keeping
+    /// the end.
+    pub fn read_output(&self, mode: OutputMode) -> TerminalOutput {
+        let stream = self.stream();
+        let recent = match mode {
+            OutputMode::RecentCommand => stream.recent_command(),
+            OutputMode::LastLines => None,
+        };
+        compose_output(
+            recent,
+            || stream.tail_lines(ASK_FALLBACK_LINES),
+            OUTPUT_CAP_BYTES,
+        )
     }
 
     fn stream(&self) -> Arc<Stream> {
