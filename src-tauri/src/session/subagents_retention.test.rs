@@ -70,9 +70,11 @@ fn an_assistant_message_start_records_the_stage_key_and_a_user_message_does_not(
 
 #[test]
 fn a_new_agent_takes_the_current_message_id_and_turn() {
-    let mut state = State::default();
-    state.current_message_id = "m7".into();
-    state.turn = 3;
+    let state = State {
+        current_message_id: "m7".into(),
+        turn: 3,
+        ..State::default()
+    };
     let mut e = entry("a", "", 0, SummaryStatus::Running);
     stamp_new_entry(&state, &mut e);
     assert_eq!((e.stage_key.as_str(), e.turn), ("m7", 3));
@@ -191,8 +193,10 @@ fn nothing_retained_hides_the_pill() {
 
 #[test]
 fn a_running_agent_counts_the_whole_retained_list() {
-    let mut state = State::default();
-    state.turn = 1;
+    let mut state = State {
+        turn: 1,
+        ..State::default()
+    };
     add(&mut state, entry("old", "bg", 0, SummaryStatus::Running));
     add(&mut state, entry("fin", "m2", 1, SummaryStatus::Finished));
     add(&mut state, entry("bad", "m2", 1, SummaryStatus::Failed));

@@ -3,6 +3,7 @@ import {
   agentPanelAriaLabel,
   agentPanelDescription,
   buildPanelRows,
+  focusLostToPrune,
   isPanelStageOpen,
   panelDurationMs,
   panelKeyAction,
@@ -201,5 +202,37 @@ describe('panelDurationMs', () => {
   it('uses the view-model total once settled, and nothing before a start is known', () => {
     expect(panelDurationMs({ startedAt: 1_000, totalDurationMs: 9 }, false, 6_000)).toBe(9)
     expect(panelDurationMs({ startedAt: undefined, totalDurationMs: 9 }, true, 6_000)).toBeUndefined()
+  })
+})
+
+describe('focusLostToPrune', () => {
+  const rows = buildPanelRows(scenario().stages, () => true)
+  const beta = rows.find((row) => row.kind === 'agent' && row.label === 'Beta')!
+  const withoutBeta = rows.filter((row) => row.key !== beta.key)
+
+  it('is true when the focused row was pruned and focus fell to the page body', () => {
+    expect(focusLostToPrune(beta.key, withoutBeta, true)).toBe(true)
+  })
+
+  it('is false while another control holds focus, so a prune never pulls it away', () => {
+    expect(focusLostToPrune(beta.key, withoutBeta, false)).toBe(false)
+  })
+
+  it('is false while the focused row is still listed', () => {
+    expect(focusLostToPrune(beta.key, rows, true)).toBe(false)
+  })
+
+  it('is false when focus was never in a row', () => {
+    expect(focusLostToPrune(null, withoutBeta, true)).toBe(false)
+  })
+
+  it('is true for a Stage row that went with its pruned Stage', () => {
+    const stageTwo = rows.find((row) => row.kind === 'stage' && row.stage.number === 2)!
+    const remaining = rows.filter((row) => row.kind === 'stage' ? row.stage.number !== 2 : row.stageId !== stageTwo.key)
+    expect(focusLostToPrune(stageTwo.key, remaining, true)).toBe(true)
+  })
+
+  it('is true for an empty tree once everything was pruned', () => {
+    expect(focusLostToPrune(beta.key, [], true)).toBe(true)
   })
 })

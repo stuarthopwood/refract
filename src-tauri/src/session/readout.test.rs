@@ -23,3 +23,21 @@ fn a_value_without_number_and_url_is_no_link() {
     assert_eq!(link_of(&json!({ "number": 7 })), Value::Null);
     assert_eq!(link_of(&json!({ "url": "u" })), Value::Null);
 }
+
+#[test]
+fn the_readout_carries_the_subagent_count_it_is_given() {
+    let count = json!({ "running": 0, "finished": 0, "exited": 0, "failed": 2, "cancelled": 0 });
+    let readout = build_readout_value(
+        &State::default(),
+        Value::Null,
+        Value::Null,
+        Some(count.clone()),
+    );
+    assert_eq!(readout["subagentCount"], count);
+}
+
+#[test]
+fn the_readout_has_a_null_subagent_count_when_the_pill_is_hidden() {
+    let readout = build_readout_value(&State::default(), Value::Null, Value::Null, None);
+    assert_eq!(readout["subagentCount"], Value::Null);
+}
