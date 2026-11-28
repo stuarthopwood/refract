@@ -374,6 +374,7 @@ export const IPC_REQUESTS = {
   SETTINGS_SET_DETECT_IMAGE_PATHS_ON_PASTE: 'settings.setDetectImagePathsOnPaste',
   SETTINGS_SET_SHOW_CONTEXT_USAGE_BAR: 'settings.setShowContextUsageBar',
   SETTINGS_SET_SHOW_AGENT_STOPPED_BAR: 'settings.setShowAgentStoppedBar',
+  SETTINGS_SET_SUMMARISE_AGENT_CARDS: 'settings.setSummariseAgentCards',
   SETTINGS_SET_SHOW_AI_CREDITS: 'settings.setShowAiCredits',
   SETTINGS_SET_ANIMATED_STATUS_TEXT: 'settings.setAnimatedStatusText',
   SETTINGS_SET_CODE_LIGATURES: 'settings.setCodeLigatures',
@@ -638,6 +639,7 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setShowContextUsageBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1082 (spec 004 FR-034).
     setShowAiCredits(enabled: boolean): Promise<Result<Settings>>; // #1238.
     setShowAgentStoppedBar(enabled: boolean): Promise<Result<Settings>>; // Issue #1205 (FR-107): only hides the "Agent stopped" bar; never changes history-only opening.
+    setSummariseAgentCards(enabled: boolean): Promise<Result<Settings>>; // Issue #2308 (FR-217): off stops the two tiny-model calls per agent; the card uses its plain-text fallback.
     setWordPredictionEnabled(enabled: boolean): Promise<Result<Settings>>; // Issue #772
     setChatWidth(width: ChatWidth): Promise<Result<Settings>>; // Issue #554 (FR-073): whole-row persist, same race-safety pattern as every other setter here. No separate preview channel -- the live preview (`chat-width-store.ts`) is renderer-local only.
     setHolidayTouches(value: HolidayTouches): Promise<Result<Settings>>; // Issue #1048: whole-row persist, same race-safety pattern as setChatWidth. Applies live, no separate preview channel.

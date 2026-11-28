@@ -102,7 +102,7 @@ export interface Settings {
   transcriptDisplay: TranscriptDisplaySettings;
   showSampleData: boolean;
   detectImagePathsOnPaste: boolean; showContextUsageBar?: boolean;
-  wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; reduceMotion?: boolean; showScrollbarMap?: boolean; stackedPullRequests?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean; conversationRetention?: ConversationRetention;
+  wordPredictionEnabled: boolean; showAgentStoppedBar?: boolean; summariseAgentCards?: boolean; showAiCredits?: boolean; animatedStatusText?: boolean; codeLigatures?: boolean; reduceMotion?: boolean; showScrollbarMap?: boolean; stackedPullRequests?: boolean; typography?: { appScale: number; chatScale: number; codeScale: number }; showFinishedTurnTimes?: boolean; alarms?: Alarm[]; sessionNotificationSounds?: boolean; alarmSounds?: boolean; conversationRetention?: ConversationRetention;
   sessionListCollapse: SessionListCollapse; pullRequestsListWidthPx: number; rightPane: RightPaneSettings;
 }
 export interface SessionListCollapse { collapsedRepositoryIds: string[]; archivedOpen: boolean; collapsedParentIds: string[]; expandedConversationSessionIds: string[]; }
@@ -339,6 +339,8 @@ export interface SubagentSummary {
   filesTouched?: string[];
   /** The agent's last steps, newest last, at most 5. Live only. */
   recentSteps?: SubagentRecentStep[];
+  /** The synthesised one-line card summary, at most 160 characters; omitted when unset, off, failed or timed out. */
+  cardSummary?: string;
 }
 
 /** One file or folder attached via the Attach button, drag-and-drop, or a clipboard file paste, parsed back out of the prompt text. */
