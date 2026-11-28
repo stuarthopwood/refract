@@ -41,7 +41,8 @@ fn terminal_probe(state: AppState, args: Vec<Value>) -> HandlerFuture {
             .clone()
             .and_then(|app| app.get_webview_window("main"))
             .ok_or_else(|| IpcError::new("terminal-failed", "The main window is not ready"))?;
-        let channel = id.channel_on::<_, InvokeResponseBody>(webview.as_ref().clone());
+        let target: &tauri::Webview = webview.as_ref();
+        let channel = id.channel_on::<_, InvokeResponseBody>(target.clone());
         for len in [SMALL_FRAME_BYTES, LARGE_FRAME_BYTES] {
             channel
                 .send(InvokeResponseBody::Raw(pattern(len)))
