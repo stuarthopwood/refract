@@ -32,7 +32,14 @@ const MIXED = [
 ]
 
 /** The markup's text content, as a screen reader would join it. */
-const textOf = (html: string): string => html.replace(/<[^>]+>/g, '')
+const textOf = (html: string): string => {
+  let text = html
+  for (let prev = ''; prev !== text; ) {
+    prev = text
+    text = text.replace(/<[^>]*>/g, '')
+  }
+  return text
+}
 
 describe('AgentsGroupSection', () => {
   it('anchors the group by Session id for a later scroll-to', () => {
