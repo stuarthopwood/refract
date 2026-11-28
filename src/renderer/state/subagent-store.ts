@@ -57,6 +57,8 @@ interface SubagentPanelState {
   resetForNewConversation(sessionId: string): void
   /** Clears the selection and its cached stream when a Stage prune removed the selected agent, keeping the panel open (#1085). No-op for other Sessions or a kept selection. */
   dropPrunedSelection(sessionId: string, remaining: readonly { id: string }[]): void
+  /** Clears the selection and its cached streams when the selected agent's Session is deleted, keeping the global panel open (#490). No-op when the selection belongs to another Session. */
+  clearSelectionForSession(sessionId: string): void
   /** Stops main's live stream when the pane is dragged shut, keeping the binding: collapsing is not closing. */
   suspend(): void
   /** Re-subscribes and re-fetches the selected stream after `suspend()`; no-op if not suspended, so callers may call it freely. */
@@ -181,6 +183,12 @@ export const useSubagentPanelStore = create<SubagentPanelState>((set, get) => ({
     }
     fetchSeq += 1
     set({ selectedId: null, selectedKey: null, streams: {}, suspended: false })
+  },
+  clearSelectionForSession: (sessionId) => {
+    const { sessionId: boundId, selectedId } = get()
+    if (boundId !== sessionId || selectedId === null) return
+    fetchSeq += 1
+    set({ selectedId: null, selectedKey: null, streams: {} })
   },
   dropPrunedSelection: (sessionId, remaining) => {
     const { sessionId: boundId, selectedId, streams } = get()

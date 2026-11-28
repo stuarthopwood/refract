@@ -263,8 +263,7 @@ export function ChatPane({ sessionId, paneIndex, reservesWindowControls, otherSe
 
   useEffect(() => {
     if (session) return
-    const panelState = useSubagentPanelStore.getState()
-    if (panelState.sessionId === sessionId) panelState.closePanel({ restoreFocus: false })
+    useSubagentPanelStore.getState().clearSelectionForSession(sessionId)
   }, [sessionId, session])
 
   function handleFocusPane(): void {

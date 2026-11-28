@@ -34,6 +34,22 @@ beforeEach(() => {
   useReadoutStore.setState({ bySession: {} })
 })
 
+describe('clearSelectionForSession', () => {
+  it('clears the selection but keeps the panel open when the bound Session is deleted', () => {
+    bindPanel()
+    panel().clearSelectionForSession('s1')
+    expect(panel().selectedId).toBeNull()
+    expect(panel().streams).toEqual({})
+    expect(useRightPaneStore.getState().openPanelIds).toContain('subagents')
+  })
+
+  it('leaves a selection that belongs to another Session', () => {
+    bindPanel()
+    panel().clearSelectionForSession('s2')
+    expect(panel().selectedId).toBe('a')
+  })
+})
+
 describe('dropPrunedSelection', () => {
   it('clears the selection and its cached stream when the selected agent was pruned, keeping other streams', () => {
     bindPanel()
