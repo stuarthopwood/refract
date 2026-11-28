@@ -342,6 +342,7 @@ export const IPC_REQUESTS = {
   CHAT_PREDICT_WORD_FEEDBACK: 'chat.predictWordFeedback',
   CHAT_SET_VISIBLE_SUBAGENT: 'chat.setVisibleSubagent',
   CHAT_SUBAGENT_SNAPSHOT: 'chat.subagentSnapshot',
+  AGENTS_SNAPSHOT: 'agents.snapshot',
   SIDE_CHAT_ASK: 'sideChat.ask',
   SIDE_CHAT_CANCEL: 'sideChat.cancel',
   SIDE_CHAT_GET_HISTORY: 'sideChat.getHistory',
@@ -602,6 +603,11 @@ export interface RefractApi extends UpdatesApi, ImagesApi {
     setVisibleSubagent(sessionId: string, subagentId: string | null): Promise<Result<void>>;
     subagentSnapshot(sessionId: string, subagentId: string): Promise<Result<TranscriptItem[]>>;
   } & ChatPauseApi;
+
+  agents: {
+    /** The aggregate as it stands now: `agents:update` is deduped, so a renderer that subscribes late must pull once. */
+    snapshot(): Promise<Result<AgentsUpdatePayload>>;
+  };
 
   sideChat: {
     ask(sessionId: string, question: string, recordId?: string): Promise<Result<{ record: SideChatRecord }>>;

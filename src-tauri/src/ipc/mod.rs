@@ -18,6 +18,7 @@ use crate::store::settings::SettingsStore;
 pub mod accounts;
 pub mod advisor_roster;
 pub mod agent_tools;
+pub mod agents;
 pub mod app;
 pub mod attachments;
 pub mod chat;
@@ -192,6 +193,7 @@ pub fn register_handlers(dispatcher: &mut Dispatcher) {
     sessions_lifecycle::register(dispatcher);
     personal_agent::register(dispatcher);
     sessions_visibility::register(dispatcher);
+    agents::register(dispatcher);
     session_logs_sweep::register(dispatcher);
     home::register(dispatcher);
     issues::register(dispatcher);

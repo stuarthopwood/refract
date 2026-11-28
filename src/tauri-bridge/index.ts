@@ -197,6 +197,10 @@ const refract: RefractApi = {
     revealFile: (sessionId, path) => request<void>(IPC_REQUESTS.SESSIONS_REVEAL_FILE, sessionId, path)
   },
 
+  agents: {
+    snapshot: () => request<AgentsUpdatePayload>(IPC_REQUESTS.AGENTS_SNAPSHOT)
+  },
+
   images: {
     get: (imageId) => request<MessageImageData>(IPC_REQUESTS.IMAGES_GET, imageId),
   },
