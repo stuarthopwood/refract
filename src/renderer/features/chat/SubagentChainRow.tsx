@@ -270,6 +270,7 @@ export function SubagentChainRow({ stages, sessionId }: { stages: StageGroup[]; 
       status={status}
       headerStats={headerStats}
       stageStates={stageSegmentStates(stages.map((stage) => stage.view))}
+      stages={stages.map((stage) => stage.view)}
       goal={overallGoal}
       durationMs={durationMs}
       open={open}
