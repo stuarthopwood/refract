@@ -4,6 +4,21 @@ import { describe, expect, it, vi } from 'vitest'
 import type { NoticeSource } from '../../../shared/model'
 import { NoticeRow } from './NoticeRow'
 
+// A static render cannot click the row open, so the row's first boolean `useState` (its open state) is seeded to true on demand.
+const seed = vi.hoisted(() => ({ open: false }))
+vi.mock('react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('react')>()
+  return {
+    ...actual,
+    useState: ((initial: unknown) => {
+      if (seed.open && typeof initial === 'boolean') {
+        seed.open = false
+        return actual.useState(true)
+      }
+      return actual.useState(initial as never)
+    }) as typeof actual.useState
+  }
+})
 // The real `@/state` wires stores to `window` at import time, which this node-environment suite lacks.
 vi.mock('@/state', () => ({
   useSettingsStore: (select: (state: { settings: object }) => unknown) => select({ settings: {} })
@@ -64,5 +79,15 @@ describe('NoticeRow source style (#2114)', () => {
   it('adds no hover swap to a long notice with no source', () => {
     const html = render('info', undefined, 'x'.repeat(200))
     expect(html).not.toContain('group-hover/line:text-foreground')
+  })
+
+  it('gives the expanded notice text the shared chat leading', () => {
+    seed.open = true
+    try {
+      const html = render('info', undefined, 'x'.repeat(200))
+      expect(html.match(/<[^>]*aria-label="Notice text"[^>]*>/)?.[0]).toContain('leading-chat')
+    } finally {
+      seed.open = false
+    }
   })
 })

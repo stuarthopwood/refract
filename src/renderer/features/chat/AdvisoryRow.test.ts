@@ -101,7 +101,19 @@ describe('AdvisoryRow body renders Markdown at the chat line height (#360, FR-22
   it('renders a nit body the same way once expanded', () => {
     const html = render('nit', true, markdown)
     expect(html).toContain('>pnpm test</code>')
-    expect(html).toContain('leading-chat')
+    const [message = '', guidance = ''] = html.split('>Guidance<')
+    expect(guidance).not.toBe('')
+    expect(openingTag(message, 'leading-chat')).toContain('space-y-2')
+    expect(openingTag(guidance, 'leading-chat')).toContain('space-y-2')
+  })
+
+  it.each(['text', 'guidance'] as const)('keeps a single line break in the nit %s', (field) => {
+    const html = render('nit', true, { text: 'first\nsecond', guidance: 'third\nfourth' })
+    const [message = '', guidance = ''] = html.split('>Guidance<')
+    const part = field === 'text' ? message : guidance
+    const lines = field === 'text' ? 'first\nsecond' : 'third\nfourth'
+    expect(part).toMatch(new RegExp(`<p[^>]*>${lines}</p>`))
+    expect(openingTag(part, 'leading-chat')).toContain('[&amp;_p]:whitespace-pre-line')
   })
 })
 
