@@ -292,7 +292,10 @@ async fn partially_staged_paths_under_the_cap_are_not_partial_even_when_rows_exc
     let snapshot = read_changes_status(&repo, "main").await.unwrap();
     let summary = changes_summary(&snapshot);
 
-    assert_eq!(snapshot.groups.staged.len() + snapshot.groups.changes.len(), 300);
+    assert_eq!(
+        snapshot.groups.staged.len() + snapshot.groups.changes.len(),
+        300
+    );
     assert_eq!(summary.files, 150);
     assert!(!summary.partial);
     assert_eq!(

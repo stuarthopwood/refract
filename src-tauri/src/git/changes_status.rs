@@ -146,11 +146,9 @@ async fn build_groups(worktree_path: &Path, entries: Vec<ParsedEntry>) -> GitCha
         HashMap::new()
     };
 
-    let mut files_counted: usize = 0;
-    for parsed in entries {
+    for (index, parsed) in entries.into_iter().enumerate() {
         let folder = folder_for(&parsed.path);
-        let capped = files_counted >= MAX_FILES;
-        files_counted += 1;
+        let capped = index >= MAX_FILES;
         for (group, mark) in parsed.groups.iter() {
             let (additions, deletions, partial) = if capped {
                 (0, 0, true)
