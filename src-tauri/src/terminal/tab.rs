@@ -4,6 +4,7 @@
 // and the waiter (learns the exit code). No terminal bytes are logged here.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -71,6 +72,8 @@ pub struct Tab {
     stream: Mutex<Arc<Stream>>,
     pty: Mutex<Option<Pty>>,
     limiter: Mutex<RateLimiter>,
+    /// Set once the tab was closed by the developer or its Session: the shell's last exit is then not news.
+    closed: AtomicBool,
     notify: StateNotifier,
 }
 
@@ -98,6 +101,7 @@ impl Tab {
             stream: Mutex::new(Arc::new(Stream::new())),
             pty: Mutex::new(None),
             limiter: Mutex::new(RateLimiter::new(Instant::now())),
+            closed: AtomicBool::new(false),
             notify,
         })
     }
@@ -161,7 +165,10 @@ impl Tab {
             meta.state = state;
             self.info_of(&meta)
         };
-        (self.notify)(&info);
+        // The renderer has already dropped a closed tab, so its shell's exit is not announced.
+        if !self.closed.load(Ordering::Acquire) {
+            (self.notify)(&info);
+        }
     }
 
     /// Starts the shell this machine resolves (`pwsh`, Windows PowerShell, then `cmd`).
@@ -294,7 +301,7 @@ impl Tab {
         }
     }
 
-    fn pid(&self) -> Option<u32> {
+    pub(crate) fn pid(&self) -> Option<u32> {
         lock(&self.pty).as_ref().and_then(Pty::pid)
     }
 
@@ -311,6 +318,13 @@ impl Tab {
         if let Some(pty) = lock(&self.pty).as_mut() {
             pty.kill();
         }
+    }
+
+    /// Closes the tab for good: no further state notice is sent, the receiver is dropped, and the shell tree ends.
+    pub fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+        self.detach();
+        self.terminate();
     }
 }
 

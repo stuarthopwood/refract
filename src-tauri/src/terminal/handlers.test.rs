@@ -403,3 +403,215 @@ fn a_failed_tab_still_counts_and_reports_its_state() {
     assert!(matches!(info.state, TabState::Failed { .. }));
     assert_eq!(manager.list("session-failed").0.len(), 1);
 }
+
+fn saved_tab_ids(data_dir: &std::path::Path, session_id: &str) -> Vec<String> {
+    let raw = std::fs::read_to_string(persist::file_path(data_dir)).unwrap_or_default();
+    let value: Value = serde_json::from_str(&raw).unwrap_or(Value::Null);
+    value["sessions"][session_id]["tabs"]
+        .as_array()
+        .map(|tabs| {
+            tabs.iter()
+                .map(|tab| tab["id"].as_str().unwrap().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+async fn wait_for(mut condition: impl FnMut() -> bool) -> bool {
+    for _ in 0..150 {
+        if condition() {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    false
+}
+
+#[tokio::test]
+async fn creating_renaming_and_closing_keep_the_saved_tab_list_current() {
+    let (state, dir) = make_state("saved-list").await;
+    add_session(&state, "session-saved", &dir).await;
+    let dispatcher = dispatcher();
+    let created = dispatcher
+        .dispatch(
+            "terminal.create",
+            state.clone(),
+            vec![json!("session-saved"), json!(80), json!(24)],
+        )
+        .await;
+    let tab_id = created["value"]["id"].as_str().unwrap().to_string();
+    assert_eq!(saved_tab_ids(&dir, "session-saved").len(), 1);
+    assert_eq!(saved_tab_ids(&dir, "session-saved")[0], tab_id);
+
+    dispatcher
+        .dispatch(
+            "terminal.rename",
+            state.clone(),
+            vec![json!(tab_id), json!("Build")],
+        )
+        .await;
+    let raw = std::fs::read_to_string(persist::file_path(&dir)).unwrap();
+    assert!(raw.contains("\"Build\""), "{raw}");
+
+    let closed = dispatcher
+        .dispatch(
+            "terminal.close",
+            state.clone(),
+            vec![json!(tab_id), json!(false)],
+        )
+        .await;
+
+    assert_eq!(
+        closed["value"],
+        json!({ "closed": true, "needsConfirm": false })
+    );
+    assert!(manager().find(&tab_id).is_none());
+    assert!(saved_tab_ids(&dir, "session-saved").is_empty());
+}
+
+#[tokio::test]
+async fn close_needs_a_tab_id_and_a_force_flag_and_ignores_a_tab_that_is_gone() {
+    let (state, _dir) = make_state("close-args").await;
+    let dispatcher = dispatcher();
+
+    let no_force = dispatcher
+        .dispatch("terminal.close", state.clone(), vec![json!("gone")])
+        .await;
+    let no_tab = dispatcher
+        .dispatch("terminal.close", state.clone(), vec![])
+        .await;
+    let gone = dispatcher
+        .dispatch("terminal.close", state, vec![json!("gone"), json!(true)])
+        .await;
+
+    assert_eq!(error_code(&no_force), "invalid-argument");
+    assert_eq!(error_code(&no_tab), "invalid-argument");
+    assert_eq!(
+        gone["value"],
+        json!({ "closed": true, "needsConfirm": false })
+    );
+}
+
+#[tokio::test]
+async fn a_shell_with_a_running_child_asks_first_and_force_ends_the_whole_tree() {
+    let (state, dir) = make_state("close-child").await;
+    add_session(&state, "session-child", &dir).await;
+    let dispatcher = dispatcher();
+    let created = dispatcher
+        .dispatch(
+            "terminal.create",
+            state.clone(),
+            vec![json!("session-child"), json!(80), json!(24)],
+        )
+        .await;
+    let tab_id = created["value"]["id"].as_str().unwrap().to_string();
+    let tab = manager().find(&tab_id).unwrap();
+    let pid = tab.pid().expect("running shell has a pid");
+    tab.input("ping -n 60 localhost\r").unwrap();
+    assert!(
+        wait_for(|| tab.has_running_child()).await,
+        "the shell never started its child"
+    );
+
+    let asked = dispatcher
+        .dispatch(
+            "terminal.close",
+            state.clone(),
+            vec![json!(tab_id), json!(false)],
+        )
+        .await;
+
+    assert_eq!(
+        asked["value"],
+        json!({ "closed": false, "needsConfirm": true })
+    );
+    assert!(manager().find(&tab_id).is_some(), "nothing was closed");
+    assert!(tab.has_running_child(), "nothing was killed");
+
+    let forced = dispatcher
+        .dispatch(
+            "terminal.close",
+            state.clone(),
+            vec![json!(tab_id), json!(true)],
+        )
+        .await;
+
+    assert_eq!(
+        forced["value"],
+        json!({ "closed": true, "needsConfirm": false })
+    );
+    assert!(manager().find(&tab_id).is_none());
+    assert!(
+        wait_for(|| !crate::process::child_tree::has_child_process(pid)).await,
+        "the child outlived its shell"
+    );
+}
+
+#[tokio::test]
+async fn the_first_list_of_a_session_restores_its_saved_tabs_as_fresh_shells() {
+    let (state, dir) = make_state("restore").await;
+    let worktree = dir.join("worktree");
+    std::fs::create_dir_all(&worktree).unwrap();
+    add_session(&state, "session-restore", &worktree).await;
+    let saved = json!({
+        "version": 1,
+        "sessions": { "session-restore": {
+            "activeTabId": "restored-b",
+            "tabs": [
+                { "id": "restored-a", "name": "Server", "cwd": worktree, "shell": "cmd", "order": 0 },
+                { "id": "restored-b", "name": "Build", "cwd": worktree, "shell": "unknown", "order": 1 }
+            ]
+        } }
+    });
+    std::fs::write(persist::file_path(&dir), saved.to_string()).unwrap();
+    let dispatcher = dispatcher();
+
+    let first = dispatcher
+        .dispatch(
+            "terminal.list",
+            state.clone(),
+            vec![json!("session-restore")],
+        )
+        .await;
+    let second = dispatcher
+        .dispatch("terminal.list", state, vec![json!("session-restore")])
+        .await;
+
+    let tabs = first["value"]["tabs"].as_array().unwrap();
+    assert_eq!(tabs.len(), 2, "{first}");
+    assert_eq!(tabs[0]["name"], "Server");
+    assert_eq!(tabs[1]["name"], "Build");
+    assert_eq!(
+        tabs[0]["state"]["kind"], "running",
+        "a fresh shell, not the old one"
+    );
+    assert_eq!(first["value"]["activeTabId"], "restored-b");
+    assert_eq!(
+        second["value"]["tabs"].as_array().unwrap().len(),
+        2,
+        "restored once"
+    );
+    end_shell("restored-a");
+    end_shell("restored-b");
+}
+
+#[tokio::test]
+async fn ending_a_session_closes_its_shells_and_forgets_its_saved_tabs() {
+    let (state, dir) = make_state("end-session").await;
+    add_session(&state, "session-end", &dir).await;
+    let created = dispatcher()
+        .dispatch(
+            "terminal.create",
+            state.clone(),
+            vec![json!("session-end"), json!(80), json!(24)],
+        )
+        .await;
+    let tab_id = created["value"]["id"].as_str().unwrap().to_string();
+    assert_eq!(saved_tab_ids(&dir, "session-end").len(), 1);
+
+    crate::terminal::end_session(&dir, "session-end").await;
+
+    assert!(manager().find(&tab_id).is_none());
+    assert!(manager().list("session-end").0.is_empty());
+    assert!(saved_tab_ids(&dir, "session-end").is_empty());
+}

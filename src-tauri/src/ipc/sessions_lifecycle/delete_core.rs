@@ -100,6 +100,8 @@ pub(crate) async fn delete_core(state: &AppState, id: &str) -> Result<(), IpcErr
         .get_or_create_agent(id)
         .shutdown()
         .await;
+    // Terminal shells hold the worktree's cwd too, and must be gone before the cwd-holder check (FR-014).
+    crate::terminal::end_session(&state.data_dir, id).await;
 
     // A refused Delete restarts a Session that was running before the call (#891).
     if let Err(err) = worktree_holders::check_folder_in_use(
