@@ -18,6 +18,10 @@ Evidence (read, not run; the live probe is task T012 and the gate is T013):
 
 **If T013 fails** (Rust receives something other than the channel string, or `channel_on` refuses): stop. The only fallback is the ADR 0016 amendment: one extra app command `refract_terminal_stream(channel: Channel<Vec<u8>>, tab_id)`, no permission-file entry needed for an app command, Principle V text amended to say "exactly two app-defined commands", and Constitution minor version bump. Not planned.
 
+**T013 result (2026-11-28): PASS.** `node scripts/verify-terminal-probe.mjs` on the debug build (scratch data dir, committed `capabilities/default.json` and CSP unchanged, real `%APPDATA%\refract-tauri` untouched): `terminal.probe` replied `ok`; the 8-byte and 4096-byte frames arrived, in order, as `ArrayBuffer`s byte-identical to `i % 251`. 4096 B is above Tauri's 1024 B raw direct-eval threshold (`channel.rs` line 38), so that frame took the fetch path [INFERENCE: the script does not observe which path was used]. The page built the `__CHANNEL__:<id>` string by hand from `__TAURI_INTERNALS__.transformCallback`; it did not use `@tauri-apps/api`'s `Channel` class (T011), so the class's own `toJSON` is still unproven until T011's tests and T019. No fallback transport needed.
+
+Two ConPTY facts found while testing T009, for T014+: ConPTY emits `ESC[6n` (cursor position request) at startup and holds the shell until it gets a reply, so a never-attached tab stalls until xterm answers; and `portable-pty` 0.9.0's Windows `ChildKiller::kill` returns an error when `TerminateProcess` succeeds, so `Pty::kill` ignores the result and callers read the outcome from the exit waiter. Replaying a ring that holds `ESC[6n` into xterm will make xterm answer it again, which types `ESC[1;1R` into the shell: the replay must filter that request.
+
 ## R-2. Output path, ordering and back-pressure
 
 - One `std::thread` per tab reads the ConPTY master (`portable-pty` readers are blocking) in 16 KiB blocks, appends to the tab's ring buffer, and forwards to the attached sink.
