@@ -11,6 +11,7 @@ pub mod process;
 pub mod session;
 pub mod shell;
 pub mod store;
+pub mod terminal;
 #[cfg(test)]
 mod test_scratch;
 pub mod updates;
@@ -141,6 +142,9 @@ async fn refract_request(
     args: Vec<Value>,
 ) -> Result<Value, ()> {
     if let Some(refusal) = ipc::clipboard::refuse_caller(&channel, window.label()) {
+        return Ok(refusal);
+    }
+    if let Some(refusal) = terminal::guard::refuse_caller(&channel, window.label()) {
         return Ok(refusal);
     }
     Ok(state
