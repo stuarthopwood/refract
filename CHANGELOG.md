@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.49.0 (2026-11-28)
+
+### Features
+
+- feat(conversations): delete Conversations, show sizes, retention and log cleanup (https://github.com/stuarthopwood/refract/pull/2344)
+- feat(sessions): delay the Session hover card and badge collapsed Project headers (https://github.com/stuarthopwood/refract/pull/2346)
+- feat(sessions): show each Session's Conversations in the session list (https://github.com/stuarthopwood/refract/pull/2347)
+- feat(plan): mute closed issue rows in plan.html (https://github.com/stuarthopwood/refract/pull/2349)
+- feat(chat): Conversation tree with Rewind, Fork and labels (https://github.com/stuarthopwood/refract/pull/2354)
+
+### Fixes
+
+- fix(checklist): count a plain get as seen so the change hint clears (https://github.com/stuarthopwood/refract/pull/2352)
+
+### Other
+
+- docs(plan): mark #2161 and #440 done (https://github.com/stuarthopwood/refract/pull/2345)
+- docs/plan 2026 11 27 html refresh (https://github.com/stuarthopwood/refract/pull/2348)
+- docs(plan): queue #2350 Checklist hint fix after #2318 (https://github.com/stuarthopwood/refract/pull/2351)
+- docs/plan 2026 11 27 2350 done (https://github.com/stuarthopwood/refract/pull/2353)
+- docs(plan): mark epic #2225 and #2350 done (https://github.com/stuarthopwood/refract/pull/2355)
+- docs(conversations): document delete, retention and tree commands (https://github.com/stuarthopwood/refract/pull/2356)
+
 ## v0.48.1 (2026-11-27)
 
 ### Fixes
