@@ -21,7 +21,7 @@ function group(subagents: AgentsGroup['subagents'], overrides: Partial<AgentsGro
 
 function render(subagents: AgentsGroup['subagents'], { collapsed = false, selectedKey = null, ...overrides }: { collapsed?: boolean; selectedKey?: string | null } & Partial<AgentsGroup> = {}) {
   const [rows] = buildGroupRows([group(subagents, overrides)])
-  return renderToStaticMarkup(createElement(AgentsGroupSection, { group: rows!, collapsed, selectedKey, rowRef: noop, onSelect: noop, onToggle: noop }))
+  return renderToStaticMarkup(createElement(TooltipProvider, null, createElement(AgentsGroupSection, { group: rows!, collapsed, selectedKey, rowRef: noop, onSelect: noop, onToggle: noop })))
 }
 
 const MIXED = [
@@ -97,6 +97,30 @@ describe('AgentsGroupSection', () => {
     const html = render(MIXED)
     expect(html).not.toContain('aria-labelledby')
     expect(html).not.toContain('<section')
+  })
+
+  it('tells the levels apart by tint, not by a border of its own', () => {
+    const html = render(MIXED)
+    expect(html).toMatch(/<div[^>]*data-agents-group="s1"[^>]*class="[^"]*bg-surface-subtle/)
+    expect(html).toContain('bg-surface-1')
+    expect(html).not.toMatch(/border-(divider|border|strong)/)
+  })
+
+  it('gives the selected row the same horizontal padding as the others', () => {
+    const html = render(MIXED, { selectedKey: 's1|c1:0' })
+    const rows = html.match(/<button[^>]*aria-current[^>]*>|<button[^>]*class="[^"]*min-h-11[^"]*"[^>]*>/g) ?? []
+    const paddings = rows.map((row) => row.match(/\bpx-\d+\b/)?.[0])
+    expect(paddings.length).toBeGreaterThanOrEqual(3)
+    expect(new Set(paddings).size).toBe(1)
+  })
+
+  it('truncates a long name inside the row instead of scrolling sideways, with no title attribute', () => {
+    const long = `feature/${'x'.repeat(120)}`
+    const html = render([subagentSummary({ nameOrTask: long, id: 'l', status: 'running' })], { name: long })
+    expect(html).toContain(long)
+    expect(html).toMatch(/class="[^"]*\btruncate\b/)
+    expect(html).not.toContain('title=')
+    expect(html).not.toContain('overflow-x-auto')
   })
 })
 
