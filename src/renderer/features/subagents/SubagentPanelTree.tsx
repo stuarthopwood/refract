@@ -1,9 +1,11 @@
 // The panel's presentation: one disclosure group per Session, its agents as rows, its successful finishes as one line (#490).
 // Selection and focus stay in SubagentPanel; this only draws rows and reports what the pointer did.
-import { memo, useEffect, useId, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
 import { FileChipList } from '@/components/FileChip'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
 import { cn } from '@/lib/utils'
 import { ICON_SLOT_CLASS } from '../chat/CollapsedLine'
 import { STATUS_GLYPH } from '../chat/statusGlyph'
@@ -20,8 +22,6 @@ export function AgentsStatusLine({ totalRunning }: { totalRunning: number }) {
     </p>
   )
 }
-
-const FOCUS_RING_CLASS = 'focus-visible:outline-solid focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-[-2px] focus-visible:outline-ring'
 
 interface RowHandlers {
   rowRef: (key: string, element: HTMLElement | null) => void
@@ -54,7 +54,7 @@ const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, on
         type="button"
         aria-current={selected ? 'true' : undefined}
         onClick={() => onSelect(sessionId, row)}
-        className={cn('relative flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-surface-hover aria-[current=true]:bg-accent forced-colors:aria-[current=true]:border forced-colors:aria-[current=true]:border-[Highlight]', FOCUS_RING_CLASS)}
+        className={cn('relative flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left text-sm hover:bg-surface-hover aria-[current=true]:bg-accent forced-colors:aria-[current=true]:border forced-colors:aria-[current=true]:border-[Highlight]', INSET_FOCUS_OUTLINE_CLASS)}
       >
         {selected && <ActiveIndicatorBar />}
         <span className="flex shrink-0 items-center gap-1 text-xs">
@@ -62,7 +62,12 @@ const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, on
         </span>
         <span className="min-w-0 flex-1 truncate" title={summary.name ?? summary.nameOrTask}>
           {summary.name ?? summary.nameOrTask}
-          {summary.background && <span className="ml-2 text-xs text-muted-foreground">Background</span>}
+          {summary.background && (
+            <>
+              {' '}
+              <span className="ml-2 text-xs text-muted-foreground">Background</span>
+            </>
+          )}
         </span>
         <AgentElapsed summary={summary} />
       </button>
@@ -84,35 +89,36 @@ function FinishedItem({ row }: { row: FinishedRow }) {
 
 type GroupProps = { group: GroupRows; collapsed: boolean; selectedKey: string | null } & RowHandlers
 
-/** The `data-agents-group` anchor is stable per Session so a later task can scroll to the group. */
+/** The `data-agents-group` anchor is stable per Session so a later task can scroll to the group. A plain div, not a named section, so a group is not a region landmark. */
 export const AgentsGroupSection = memo(function AgentsGroupSection({ group, collapsed, selectedKey, rowRef, onSelect, onToggle }: GroupProps) {
-  const headingId = useId()
-  const listId = useId()
   return (
-    <section data-agents-group={group.sessionId} aria-labelledby={headingId} className="flex flex-col">
-      <h3 id={headingId} className="m-0 text-sm font-medium">
-        <button
+    <Collapsible data-agents-group={group.sessionId} open={!collapsed} onOpenChange={() => onToggle(group.sessionId)} className="flex flex-col">
+      <h3 className="m-0 text-sm font-medium">
+        <CollapsibleTrigger
           ref={(element) => rowRef(group.key, element)}
-          type="button"
-          aria-expanded={!collapsed}
-          aria-controls={listId}
-          onClick={() => onToggle(group.sessionId)}
-          className={cn('flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-surface-hover', FOCUS_RING_CLASS)}
+          className={cn('group/trigger flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-surface-hover', INSET_FOCUS_OUTLINE_CLASS)}
         >
-          <ChevronRightIcon aria-hidden className={cn('size-4 shrink-0 transition-transform motion-reduce:transition-none', !collapsed && 'rotate-90')} />
+          <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90 motion-reduce:transition-none" />
           <span className="min-w-0 flex-1 truncate">
             {group.name}
-            {group.repositoryName && <span className="ml-2 text-xs font-normal text-muted-foreground">{group.repositoryName}</span>}
+            {group.repositoryName && (
+              <>
+                {' '}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">{group.repositoryName}</span>
+              </>
+            )}
           </span>
           <span className="shrink-0 text-xs font-normal text-muted-foreground">{runningText(group.running)}</span>
-        </button>
+        </CollapsibleTrigger>
       </h3>
-      <ul id={listId} hidden={collapsed} className="m-0 flex list-none flex-col gap-0.5 p-0 pl-4">
-        {group.rows.map((row) =>
-          row.kind === 'agent' ? <AgentItem key={row.key} row={row} sessionId={group.sessionId} selected={row.key === selectedKey} rowRef={rowRef} onSelect={onSelect} /> : <FinishedItem key={row.key} row={row} />
-        )}
-      </ul>
-    </section>
+      <CollapsibleContent asChild>
+        <ul className="m-0 flex list-none flex-col gap-1 p-0 pl-4">
+          {group.rows.map((row) =>
+            row.kind === 'agent' ? <AgentItem key={row.key} row={row} sessionId={group.sessionId} selected={row.key === selectedKey} rowRef={rowRef} onSelect={onSelect} /> : <FinishedItem key={row.key} row={row} />
+          )}
+        </ul>
+      </CollapsibleContent>
+    </Collapsible>
   )
 })
 

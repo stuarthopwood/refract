@@ -31,6 +31,9 @@ const MIXED = [
   subagentSummary({ nameOrTask: 'Delta', toolCallId: 'c2', specIndex: 1, id: 'd' })
 ]
 
+/** The markup's text content, as a screen reader would join it. */
+const textOf = (html: string): string => html.replace(/<[^>]+>/g, '')
+
 describe('AgentsGroupSection', () => {
   it('anchors the group by Session id for a later scroll-to', () => {
     expect(render(MIXED)).toContain('data-agents-group="s1"')
@@ -64,13 +67,29 @@ describe('AgentsGroupSection', () => {
     expect(html.match(/aria-current="true"/g)).toHaveLength(1)
   })
 
-  it('labels a detached job Background', () => {
-    expect(render([subagentSummary({ nameOrTask: 'Bg', id: 'bg', status: 'running', background: true })])).toMatch(/>Background</)
+  it('labels a detached job Background, set apart from its name', () => {
+    const html = render([subagentSummary({ nameOrTask: 'Bg', id: 'bg', status: 'running', background: true })])
+    expect(html).toMatch(/>Background</)
+    expect(textOf(html)).toContain('Bg Background')
   })
 
-  it('hides the list of a closed group but keeps the header', () => {
+  it('closes the list of a closed group but keeps the header', () => {
     const html = render(MIXED, { collapsed: true })
-    expect(html).toMatch(/<ul[^>]*hidden/)
+    expect(html).toMatch(/<button[^>]*data-state="closed"/)
+    expect(html).not.toContain('<ul')
+    expect(html).not.toContain('Alpha')
+    expect(render(MIXED)).toMatch(/<ul[^>]*data-state="open"/)
+  })
+
+  it('keeps a space before the repository name in the accessible text', () => {
+    const html = render(MIXED, { repositoryName: 'acme/web' })
+    expect(textOf(html)).toContain('Fix login acme/web')
+  })
+
+  it('is not a named region landmark', () => {
+    const html = render(MIXED)
+    expect(html).not.toContain('aria-labelledby')
+    expect(html).not.toContain('<section')
   })
 })
 

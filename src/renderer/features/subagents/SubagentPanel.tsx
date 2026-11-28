@@ -11,15 +11,14 @@ import { ToolGroupRow } from '../chat/ToolRow'
 import { LinkContext, Markdown } from '../chat/Markdown'
 import { NoticeRow } from '../chat/NoticeRow'
 import { AgentDetailSummary, AgentsGroupSection, AgentsStatusLine } from './SubagentPanelTree'
+import { consumeGroupScroll, scrollHostToGroup, selectAgentRow } from './subagentPanelActions'
 import {
   buildGroupRows,
   findSelectedSummary,
   panelFocusRows,
   pendingFocusTarget,
   selectedRowKey,
-  selectionRoute,
   expandGroup,
-  groupScrollStep,
   toggleGroupCollapsed,
   type AgentRow
 } from './subagentPanelRows'
@@ -31,10 +30,11 @@ import { usePanelFocusRecovery } from './usePanelFocusRecovery'
 const NO_STREAM: readonly never[] = []
 const NO_SUMMARIES: readonly never[] = []
 
-export function SubagentPanel({ sessionId }: { sessionId: string }) {
+/** `sessionId` is null until the panel is bound; the groups and the empty state still show, and selecting a row binds it. */
+export function SubagentPanel({ sessionId }: { sessionId: string | null }) {
   const agentGroups = useAgentsStore((s) => s.groups)
   // The detail's outcome text lives on the bound Session's transcript items, not on the summaries Rust sends.
-  const subagentItems = useTranscriptStore(useShallow((s) => selectSubagentItems((s.bySession[sessionId] ?? EMPTY_TRANSCRIPT).items)))
+  const subagentItems = useTranscriptStore(useShallow((s) => selectSubagentItems((sessionId ? s.bySession[sessionId] ?? EMPTY_TRANSCRIPT : EMPTY_TRANSCRIPT).items)))
   const selectedId = useSubagentPanelStore((s) => s.selectedId)
   const storeSelectedKey = useSubagentPanelStore((s) => s.selectedKey)
   const selectSubagent = useSubagentPanelStore((s) => s.selectSubagent)
@@ -74,7 +74,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     if (!pendingFocusSubagentKey && !pendingFocusSubagentId) return
     const target = pendingFocusTarget(groups, sessionId, { pendingFocusKey: pendingFocusSubagentKey, pendingFocusId: pendingFocusSubagentId })
-    if (target && collapsed.has(sessionId)) {
+    if (target && sessionId && collapsed.has(sessionId)) {
       // A closed group has nothing to focus; opening it re-runs this effect with the row mounted.
       setCollapsed((current) => toggleGroupCollapsed(current, sessionId))
       return
@@ -86,15 +86,15 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
   // The pill and card ask for a Session's group; open it if closed, then bring it into view.
   useEffect(() => {
     if (!scrollToGroupSessionId) return
-    const step = groupScrollStep(groups, collapsed, scrollToGroupSessionId)
-    if (step === 'expand') {
-      setCollapsed((current) => expandGroup(current, scrollToGroupSessionId))
-      return
-    }
-    if (step === 'scroll') {
-      treeHostRef.current?.querySelector<HTMLElement>(`[data-agents-group="${CSS.escape(scrollToGroupSessionId)}"]`)?.scrollIntoView({ block: 'nearest' })
-    }
-    clearGroupScroll()
+    consumeGroupScroll(groups, collapsed, scrollToGroupSessionId, {
+      expand: () => setCollapsed((current) => expandGroup(current, scrollToGroupSessionId)),
+      scroll: () => {
+        const host = treeHostRef.current
+        const section = host?.querySelector<HTMLElement>(`[data-agents-group="${CSS.escape(scrollToGroupSessionId)}"]`)
+        if (host && section) scrollHostToGroup(host, section)
+      },
+      clear: clearGroupScroll
+    })
   }, [scrollToGroupSessionId, clearGroupScroll, groups, collapsed])
 
   const rowRef = useCallback((key: string, element: HTMLElement | null) => {
@@ -102,15 +102,7 @@ export function SubagentPanel({ sessionId }: { sessionId: string }) {
     else rowRefs.current.delete(key)
   }, [])
   const onToggle = useCallback((groupSessionId: string) => setCollapsed((current) => toggleGroupCollapsed(current, groupSessionId)), [])
-  // A row selects (its live stream opens); one in another Session rebinds the panel to that Session as it does.
-  const onSelect = useCallback(
-    (groupSessionId: string, row: AgentRow) => {
-      const key = agentKey(row.summary.toolCallId, row.summary.specIndex)
-      if (selectionRoute(sessionId, groupSessionId) === 'select') void selectSubagent(row.summary.id, key)
-      else openPanel(groupSessionId, { selectSubagentId: row.summary.id, selectSubagentKey: key })
-    },
-    [sessionId, selectSubagent, openPanel]
-  )
+  const onSelect = useCallback((groupSessionId: string, row: AgentRow) => selectAgentRow(sessionId, groupSessionId, row, { selectSubagent, openPanel }), [sessionId, selectSubagent, openPanel])
 
   return (
     <LinkContext.Provider value={sessionId}>
