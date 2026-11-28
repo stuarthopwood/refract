@@ -21,7 +21,8 @@ const TIMEOUT: Duration = if cfg!(test) {
 #[cfg(test)]
 const BINARY_SNIFF_BYTES: usize = 8000;
 
-/// Wire shape of `DiffStat` for `sessions.diffStat`.
+/// Wire shape of `DiffStat` for `sessions.diffStat`. `partial` is true only when counting stopped
+/// at `MAX_FILES`; counts are then floors.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiffStatResult {
@@ -148,11 +149,12 @@ async fn compute_diff_stat(worktree_path: &Path, base_branch: &str) -> Option<Di
                 break;
             }
             files += 1;
+            // An oversized file scores 0 lines but still counts as a file: `partial` means only
+            // "stopped at MAX_FILES", so a few big files never read as "200+ files" (#2111).
             // Never read through a symlink (#1115); escape/missing/unreadable score 0.
-            let (file_additions, _deletions, file_partial) =
+            let (file_additions, _deletions, _oversized) =
                 score_untracked_entry(worktree_path, relative_path).await;
             additions += file_additions;
-            partial = partial || file_partial;
         }
     }
 
@@ -317,6 +319,32 @@ mod tests {
     async fn diff_stat_returns_none_when_the_worktree_path_does_not_exist() {
         let dir = fresh_dir(); // Never created on disk.
         assert!(diff_stat(&dir, "main").await.is_none());
+    }
+
+    #[tokio::test]
+    async fn diff_stat_oversized_untracked_file_counts_as_a_file_without_being_partial() {
+        let dir = fresh_dir();
+        init_repo(&dir).await;
+        tokio::fs::write(dir.join("tracked.txt"), "line one\n")
+            .await
+            .unwrap();
+        git(&dir, &["add", "tracked.txt"]).await.unwrap();
+        git(&dir, &["commit", "-m", "initial"]).await.unwrap();
+
+        let oversized = vec![b'x'; MAX_FILE_BYTES as usize + 1];
+        tokio::fs::write(dir.join("huge.log"), oversized)
+            .await
+            .unwrap();
+        tokio::fs::write(dir.join("small.txt"), "a\nb\n")
+            .await
+            .unwrap();
+
+        let result = diff_stat(&dir, "main")
+            .await
+            .expect("diff_stat should succeed");
+        assert_eq!(result.files, 2);
+        assert_eq!(result.additions, 2, "the oversized file adds no lines");
+        assert!(!result.partial);
     }
 
     #[tokio::test]

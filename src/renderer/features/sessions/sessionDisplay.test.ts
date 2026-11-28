@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SessionSummary } from '../../../shared/ipc'
+import type { DiffStat, SessionSummary } from '../../../shared/ipc'
 
 vi.mock('@/state', () => ({
   useSettingsStore: (select: (state: { settings: object }) => unknown) => select({ settings: {} })
@@ -11,6 +11,8 @@ import {
   activeSessionsAccessibleText,
   activeSessionText,
   collapsedActiveSessions,
+  formatDiffStatAccessible,
+  formatDiffStatFiles,
   isActiveSession
 } from './sessionDisplay'
 
@@ -93,5 +95,35 @@ describe('tooltip and accessible text', () => {
   it('uses the singular for one Session and null for none', () => {
     expect(activeSessionsAccessibleText([{ id: 'a', name: 'Alpha', line: 'x' }])).toBe('1 active Session: Alpha: x')
     expect(activeSessionsAccessibleText([])).toBeNull()
+  })
+})
+
+describe('diff stat wording (issue #2111, FR-221)', () => {
+  const stat = (over: Partial<DiffStat>): DiffStat => ({ files: 3, additions: 5, deletions: 2, partial: false, ...over })
+
+  it('shows the exact count at 200 files or fewer', () => {
+    expect(formatDiffStatFiles(stat({ files: 3, partial: false }))).toBe('3 files changed')
+    expect(formatDiffStatFiles(stat({ files: 200 }))).toBe('200 files changed')
+  })
+
+  it('uses the singular for one file and reads zero for a clean tree', () => {
+    expect(formatDiffStatFiles(stat({ files: 1 }))).toBe('1 file changed')
+    expect(formatDiffStatFiles(stat({ files: 0, additions: 0, deletions: 0 }))).toBe('0 files changed')
+  })
+
+  it('shows 200+ with no "(partial)" suffix once the cap stopped the count', () => {
+    expect(formatDiffStatFiles(stat({ files: 200, partial: true }))).toBe('200+ files changed')
+    expect(formatDiffStatFiles(stat({ files: 201, partial: true }))).toBe('200+ files changed')
+    expect(formatDiffStatFiles(stat({ partial: true }))).not.toContain('partial')
+  })
+
+  it('describes a capped result as "more than 200 files changed" with line counts as floors', () => {
+    expect(formatDiffStatAccessible(stat({ files: 201, partial: true }))).toBe('more than 200 files changed: at least 5 additions and at least 2 deletions')
+    expect(formatDiffStatAccessible(stat({ files: 200, partial: true }))).toBe('more than 200 files changed: at least 5 additions and at least 2 deletions')
+  })
+
+  it('describes an exact result with its full count and singular nouns', () => {
+    expect(formatDiffStatAccessible(stat({ files: 1, additions: 1, deletions: 1 }))).toBe('1 file changed: 1 addition, 1 deletion')
+    expect(formatDiffStatAccessible(stat({ files: 1200 }))).toBe(`${new Intl.NumberFormat().format(1200)} files changed: 5 additions, 2 deletions`)
   })
 })
