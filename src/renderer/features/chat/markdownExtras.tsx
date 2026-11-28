@@ -103,7 +103,7 @@ export function MarkdownTh({ className, node: _node, ...props }: React.Component
   return (
     <th
       className={cn(
-        githubStyle ? 'border border-divider px-4 py-2 font-semibold' : 'border border-border bg-surface-subtle px-3 py-1.5 font-medium text-md-table-header-fg',
+        githubStyle ? 'border border-divider px-4 py-2 font-semibold' : 'border border-border bg-surface-subtle px-4 py-2 font-medium text-md-table-header-fg',
         className
       )}
       {...props}
@@ -113,7 +113,7 @@ export function MarkdownTh({ className, node: _node, ...props }: React.Component
 
 export function MarkdownTd({ className, node: _node, ...props }: React.ComponentProps<'td'> & ExtraProps) {
   const { githubStyle } = React.useContext(MarkdownOptionsContext)
-  return <td className={cn(githubStyle ? 'border border-divider px-4 py-2 align-top' : 'border border-border px-3 py-1.5 align-top', className)} {...props} />
+  return <td className={cn(githubStyle ? 'border border-divider px-4 py-2 align-top' : 'border border-border px-4 py-2 align-top', className)} {...props} />
 }
 
 // Renders the resolved image; while loading, or when resolution fails, shows `fallback` (the

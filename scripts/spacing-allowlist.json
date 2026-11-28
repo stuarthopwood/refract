@@ -12,7 +12,5 @@
   { "file": "src/renderer/components/ui/sidebar.tsx", "text": "top-1.5", "count": 3, "reason": "shadcn menu-action centred on its row by size variant" },
   { "file": "src/renderer/components/ui/sidebar.tsx", "text": "top-2.5", "count": 2, "reason": "shadcn menu-action centred on its row by size variant" },
   { "file": "src/renderer/features/chat/readout/ContextUsageReadout.tsx", "text": "bottom-0.5", "count": 1, "reason": "2px baseline of the usage bar inside its track" },
-  { "file": "src/renderer/features/chat-nav/MessageStepButtons.tsx", "text": "bottom-[3.25rem]", "count": 1, "reason": "sits 52px above the composer so it clears the send row" },
-  { "file": "src/renderer/features/chat/markdownExtras.tsx", "text": "px-3", "count": 2, "reason": "chat-variant table cell padding fixed by FR-222 (#360); 12px sits between the 8px and 16px grid steps" },
-  { "file": "src/renderer/features/chat/markdownExtras.tsx", "text": "py-1.5", "count": 2, "reason": "chat-variant table cell padding fixed by FR-222 (#360); 6px sits between the 4px and 8px grid steps" }
+  { "file": "src/renderer/features/chat-nav/MessageStepButtons.tsx", "text": "bottom-[3.25rem]", "count": 1, "reason": "sits 52px above the composer so it clears the send row" }
 ]
