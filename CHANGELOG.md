@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.50.0 (2026-11-28)
+
+### Features
+
+- feat(agents): keep only running and current Stages in the agent list (https://github.com/stuarthopwood/refract/pull/2358)
+- feat(agents): global Agents panel with one group per Session (https://github.com/stuarthopwood/refract/pull/2359)
+- feat(subagents): background agents in the Subagents card, Session-wide Stage numbers and per-agent Show (https://github.com/stuarthopwood/refract/pull/2361)
+- feat(subagents): full Stage titles, failed Stages stay open, per-segment tooltips (https://github.com/stuarthopwood/refract/pull/2362)
+- feat(agents): Agents panel tints, one scroll bar per region and truncated-text tooltips (https://github.com/stuarthopwood/refract/pull/2363)
+- feat(subagents): tiny model writes a summary line for each agent card (https://github.com/stuarthopwood/refract/pull/2364)
+
+### Fixes
+
+- fix(sessions): steer peer Session messages into a running turn (https://github.com/stuarthopwood/refract/pull/2365)
+
+### Other
+
+- docs(spec): converge epic #1272 Subagents follow-ups (https://github.com/stuarthopwood/refract/pull/2360)
+
 ## v0.49.0 (2026-11-28)
 
 ### Features
