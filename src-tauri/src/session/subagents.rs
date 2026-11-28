@@ -21,6 +21,7 @@ use subagents_progress::{
     apply_jobs, apply_progress_to_batch, apply_subagent_frame, emit_subagents_update,
     queue_patch_ops, subscribe_to_subagent_frames, summaries_to_value,
 };
+pub(in crate::session) use subagents_progress::{notify_agents_aggregate, SUMMARIES_COALESCE_MS};
 
 #[path = "subagents_synthesis_hook.rs"]
 mod subagents_synthesis_hook;
@@ -279,10 +280,13 @@ async fn settle_running_subagents(
 }
 
 /// Launch hook: a new process can't confirm a `Running` summary and has no output for it, so such
-/// agents leave the list at once instead of lingering as "exited" (#1085).
+/// agents leave the list at once instead of lingering as "exited" (#1085). The aggregate is pushed
+/// even when nothing dropped, so a freshly attached Session's retained agents reach the Agents
+/// panel without waiting for a frame (#490).
 pub(super) async fn on_attach_reconcile(agent: &SessionAgent) {
     drop_unavailable(agent).await;
     subscribe_to_subagent_frames(agent).await;
+    notify_agents_aggregate(agent);
 }
 
 /// Launch hook: hands the Session's synthesis cache to its transcript before history merges in, so

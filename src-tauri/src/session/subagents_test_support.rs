@@ -9,6 +9,7 @@ use crate::store::registry::Session;
 /// A Session's agent plus the scratch data folder it lives in.
 pub(in crate::session) struct AgentFixture {
     pub agent: Arc<SessionAgent>,
+    pub manager: Arc<crate::session::manager::SessionManager>,
     pub id: String,
     pub dir: PathBuf,
 }
@@ -73,5 +74,10 @@ pub(in crate::session) async fn agent_fixture(visible: bool) -> AgentFixture {
     if visible {
         manager.set_visible(vec![id.clone()]).await;
     }
-    AgentFixture { agent, id, dir }
+    AgentFixture {
+        agent,
+        manager,
+        id,
+        dir,
+    }
 }

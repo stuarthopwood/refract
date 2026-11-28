@@ -173,6 +173,90 @@ async fn a_hidden_session_emits_nothing_for_heartbeats_or_a_settle() {
     assert_eq!(kept, 1, "the hidden Session still tracks its entry");
 }
 
+/// A fixture agent made `Idle` (an unlaunched one is `Stopped`, which the aggregate skips), with
+/// the push that status change queued already flushed.
+async fn idle_fixture() -> super::super::test_support::AgentFixture {
+    let fx = agent_fixture(false).await;
+    fx.agent
+        .set_status(crate::session::SessionStatus::Idle, None, None)
+        .await;
+    past_the_coalescing_window().await;
+    fx
+}
+
+fn watch_agents(fx: &super::super::test_support::AgentFixture) -> Arc<Mutex<Vec<Value>>> {
+    let emits = Arc::new(Mutex::new(Vec::new()));
+    let sink = emits.clone();
+    fx.agent
+        .events()
+        .set_agents_probe(move |groups| sink.lock().unwrap().push(groups.clone()));
+    emits
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_hidden_session_still_reaches_the_aggregate_once_per_window() {
+    let fx = idle_fixture().await;
+    let emits = watch_agents(&fx);
+    fx.agent
+        .with_subagents_state(|s| s.summaries.push(entry()))
+        .await;
+
+    for n in 0..20 {
+        apply_subagent_frame(&fx.agent, "subagent_progress", &heartbeat_frame(n)).await;
+    }
+    past_the_coalescing_window().await;
+
+    let emits = emits.lock().unwrap();
+    assert_eq!(emits.len(), 1, "one coalesced push for the whole burst");
+    assert_eq!(emits[0][0]["sessionId"], fx.id.as_str());
+    assert_eq!(emits[0][0]["name"], "test");
+    assert_eq!(emits[0][0]["repositoryName"], "repo");
+    assert_eq!(emits[0][0]["status"], "idle");
+    assert_eq!(
+        emits[0][0]["subagents"][0]["recentSteps"][0]["target"],
+        "c19"
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_session_with_nothing_to_show_has_no_group() {
+    let fx = agent_fixture(false).await;
+    assert_eq!(fx.manager.agents_snapshot().await, json!([]));
+}
+
+#[tokio::test(start_paused = true)]
+async fn deleting_a_session_pushes_the_aggregate_without_its_group() {
+    let fx = idle_fixture().await;
+    let emits = watch_agents(&fx);
+    fx.agent
+        .with_subagents_state(|s| s.summaries.push(entry()))
+        .await;
+    assert_eq!(
+        fx.manager.agents_snapshot().await.as_array().unwrap().len(),
+        1
+    );
+
+    fx.manager.remove_agent(&fx.id);
+    past_the_coalescing_window().await;
+
+    assert_eq!(emits.lock().unwrap().last(), Some(&json!([])));
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_stopped_session_drops_out_of_the_aggregate() {
+    let fx = idle_fixture().await;
+    fx.agent
+        .with_subagents_state(|s| s.summaries.push(entry()))
+        .await;
+    assert_eq!(
+        fx.manager.agents_snapshot().await.as_array().unwrap().len(),
+        1
+    );
+    fx.agent.shutdown().await;
+
+    assert_eq!(fx.manager.agents_snapshot().await, json!([]));
+}
+
 #[test]
 fn serialisation_omits_absent_synthesis_and_progress_fields() {
     let value = summaries_to_value(&[entry()]);

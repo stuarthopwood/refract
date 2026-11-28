@@ -41,6 +41,9 @@ pub(crate) async fn archive_core(state: &AppState, id: &str) -> Result<(), IpcEr
         )
         .await
         .map_err(map_registry_error)?;
+    // The stop above queued an aggregate push before this stamp; queue another so the Agents panel
+    // sees the Session as archived.
+    state.session_manager.schedule_agents_update();
     // Disk-reclaim hook for archived worktrees (#657, #658). Fires only on success.
     on_worktree_released(id);
     worktree_guard.finish(crate::fs::explorer_watch_state::WorktreeOperationOutcome::Reset);

@@ -34,6 +34,7 @@ pub const ADVISOR_UPDATE: &str = "advisor:update";
 pub const PREWALK_UPDATE: &str = "prewalk:update";
 pub const SESSION_HEALTH: &str = "session:health";
 pub const SUBAGENTS_UPDATE: &str = "subagents:update";
+pub const AGENTS_UPDATE: &str = "agents:update";
 pub const SUBAGENT_PATCH: &str = "subagent:patch";
 pub const AGENT_TOOLS_CALL: &str = "agent-tools:call";
 pub const SIDE_CHAT_PATCH: &str = "side-chat:patch";
@@ -67,7 +68,7 @@ struct TranscriptPatchPayload<'a> {
 /// Shared across clones, so a probe set on the agent's sink is seen by every holder.
 #[cfg(test)]
 type StatusProbe = std::sync::Arc<std::sync::Mutex<Option<std::sync::Arc<dyn Fn() + Send + Sync>>>>;
-/// Sees every `subagents:update` payload, so a test can count and inspect the emits.
+/// Sees every `subagents:update` or `agents:update` payload, so a test can count and inspect the emits.
 #[cfg(test)]
 type SubagentsProbe = std::sync::Arc<
     std::sync::Mutex<Option<std::sync::Arc<dyn Fn(&serde_json::Value) + Send + Sync>>>,
@@ -86,6 +87,8 @@ pub struct EventSink {
     conversation_probe: StatusProbe,
     #[cfg(test)]
     subagents_probe: SubagentsProbe,
+    #[cfg(test)]
+    agents_probe: SubagentsProbe,
 }
 
 impl EventSink {
@@ -102,6 +105,8 @@ impl EventSink {
             conversation_probe: Default::default(),
             #[cfg(test)]
             subagents_probe: Default::default(),
+            #[cfg(test)]
+            agents_probe: Default::default(),
         }
     }
 
@@ -129,6 +134,15 @@ impl EventSink {
         probe: impl Fn(&serde_json::Value) + Send + Sync + 'static,
     ) {
         *self.subagents_probe.lock().unwrap() = Some(std::sync::Arc::new(probe));
+    }
+
+    /// Test seam: runs at every `agents:update` emit with its `groups` array.
+    #[cfg(test)]
+    pub(crate) fn set_agents_probe(
+        &self,
+        probe: impl Fn(&serde_json::Value) + Send + Sync + 'static,
+    ) {
+        *self.agents_probe.lock().unwrap() = Some(std::sync::Arc::new(probe));
     }
 
     pub(crate) fn send<P: Serialize + Clone>(&self, event: &str, payload: P) {
@@ -356,6 +370,16 @@ impl EventSink {
             SUBAGENTS_UPDATE,
             serde_json::json!({ "sessionId": session_id, "subagents": subagents }),
         );
+    }
+
+    /// `agents:update`: every live Session's group, `{ sessionId, name, repositoryId,
+    /// repositoryName, status, subagents }[]`, sent whether or not any Session is on screen.
+    pub fn emit_agents_update(&self, groups: serde_json::Value) {
+        #[cfg(test)]
+        if let Some(probe) = self.agents_probe.lock().unwrap().as_ref() {
+            probe(&groups);
+        }
+        self.send(AGENTS_UPDATE, serde_json::json!({ "groups": groups }));
     }
 
     /// `subagent:patch`: live `TranscriptOp[]` for the one visible subagent.
