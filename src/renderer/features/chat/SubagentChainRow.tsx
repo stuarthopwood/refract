@@ -166,7 +166,13 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
                 <SpineList gap="member" bare className={stageAgentsGridClass(parallelCount)}>
                   {group.items.map((item, index) => (
                     <SpineItem key={item.id} isNew={isRunning && !seenIds.has(item.id)}>
-                      <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
+                      {/* The card is one button, so Show sits beside it, never inside it. */}
+                      <div className="flex items-start gap-1">
+                        <div className="min-w-0 flex-1">
+                          <SubagentCardButton item={item} agent={group.view.agents[index]!} sessionId={sessionId} />
+                        </div>
+                        <AgentShowButton item={item} name={group.view.agents[index]?.name ?? item.name} sessionId={sessionId} />
+                      </div>
                     </SpineItem>
                   ))}
                 </SpineList>
@@ -184,13 +190,13 @@ export function StageGroupRow({ group, sessionId }: { group: StageGroup; session
   )
 }
 
-/** A ghost icon button opening one agent in the Subagents panel; absent until the agent has a live registry entry to open. */
+/** A ghost icon button opening one agent in the Subagents panel. Every agent has one: before its live registry entry exists it selects the agent by key and the panel picks it up on arrival (#1774). */
 function AgentShowButton({ item, name, sessionId }: { item: SubagentItem; name: string; sessionId: string | null }) {
   const subagents = useReadoutStore((s) => (sessionId ? (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents : EMPTY_READOUT_ENTRY.subagents))
+  if (!sessionId) return null
   const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
-  if (!sessionId || !match) return null
   return (
-    <IconButton variant="ghost" size="icon-xs" label={`Show ${name} in Subagents panel`} onClick={(event) => openSubagentInPanel(sessionId, match, event.currentTarget)}>
+    <IconButton variant="ghost" size="icon-xs" label={`Show ${name} in Subagents panel`} onClick={(event) => openSubagentInPanel(sessionId, { id: match?.id, toolCallId: item.toolCallId, specIndex: item.specIndex }, event.currentTarget)}>
       <BotIcon aria-hidden className="size-4" />
     </IconButton>
   )
