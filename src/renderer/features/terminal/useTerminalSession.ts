@@ -7,6 +7,7 @@ import { ACK_EVERY_BYTES, INPUT_MAX_BYTES } from '../../../shared/terminalLimits
 import { FRAME_TAG_DATA } from '../../../shared/ipc-terminal'
 import type { TabState, TerminalApi } from '../../../shared/ipc-terminal'
 import { readTerminalTheme } from './terminalTheme'
+import { opensContextMenu } from './terminalKeyboard'
 
 // One live xterm instance shows the active tab. Rust owns the shell and keeps the last 2 MiB; switching tab, Panel or
 // Session detaches and re-attaches, and the ring replay rebuilds the screen (spec 144 FR-008). Nothing here closes a tab.
@@ -195,6 +196,8 @@ export function useTerminalSession(sessionId: string, tabId: string | null, reat
       const fitAddon = new FitAddon()
       term.loadAddon(fitAddon)
       term.open(container)
+      // Shift+F10 and the Menu key must reach the browser so the keyboard can open the context menu.
+      term.attachCustomKeyEventHandler((event) => !opensContextMenu(event))
       fitAddon.fit()
       const link = createTerminalLink(window.refract.terminal, term, () => fitAddon.fit())
       const typing = term.onData((data) => link.sendInput(data))

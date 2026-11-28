@@ -45,6 +45,20 @@ export function renamedValue(draft: string, current: string): string | null {
   return trimmed === '' || trimmed === current ? null : trimmed
 }
 
+export type RenameEnd = 'enter' | 'escape' | 'blur'
+
+/**
+ * What ending a rename means: the name to save (`null` sends nothing) and whether the tab takes the keyboard back.
+ * A blur means the user went elsewhere on purpose, so the tab must not pull focus back.
+ */
+export function renameOutcome(draft: string, current: string, end: RenameEnd): { name: string | null; refocusTab: boolean } {
+  return { name: end === 'escape' ? null : renamedValue(draft, current), refocusTab: end !== 'blur' }
+}
+
+/** DOM ids that tie the shown tab to its panel; a tab names its panel only while that panel is mounted. */
+export const tabDomId = (tabId: string): string => `terminal-tab-${tabId}`
+export const panelDomId = (tabId: string): string => `terminal-panel-${tabId}`
+
 export type CloseOutcome = { kind: 'closed' } | { kind: 'confirm' } | { kind: 'failed'; message: string }
 
 /** One close call. A tab with a running job comes back as `confirm` and stays alive until the caller asks again with `force`. */

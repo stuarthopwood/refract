@@ -6,6 +6,7 @@ import type { TabInfo } from '../../../shared/ipc-terminal'
 import { EndedBanner } from './EndedBanner'
 import { TerminalContextMenu } from './TerminalContextMenu'
 import { useTerminalSession } from './useTerminalSession'
+import { panelDomId } from './terminalTabs'
 
 // The one live xterm view for the shown tab. The shell runs in Rust whether or not this is mounted (spec 144 FR-008).
 
@@ -46,7 +47,14 @@ export function TerminalView({ sessionId, tab, focusRef }: TerminalViewProps) {
               Starting shell
             </InlineStatus>
           )}
-          <div ref={session.containerRef} data-terminal-view role="group" aria-label={`${tab.name} terminal`} className="h-full w-full overflow-hidden px-2 pt-1" />
+          <div
+            ref={session.containerRef}
+            id={panelDomId(tab.id)}
+            data-terminal-view
+            role="tabpanel"
+            aria-label={`${tab.name} terminal`}
+            className="h-full w-full overflow-hidden px-2 pt-1"
+          />
         </div>
       </TerminalContextMenu>
     </div>

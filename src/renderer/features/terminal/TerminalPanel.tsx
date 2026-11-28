@@ -69,7 +69,11 @@ function SessionTerminal({ sessionId }: { sessionId: string }) {
         adding={adding}
         onSelect={(tabId) => useTerminalStore.getState().setActive(sessionId, tabId)}
         onAdd={() => void create()}
-        restoreFocus={() => focusRef.current?.()}
+        restoreFocus={() => {
+          const focus = focusRef.current
+          focus?.()
+          return focus != null
+        }}
       />
       {session.error && (
         <div className="flex items-center gap-2 px-2 py-2">

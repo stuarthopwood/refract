@@ -25,9 +25,9 @@ export function EndedBanner({ sessionId, tab, onRestarted }: EndedBannerProps) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const end = describeShellEnd(tab)
-  if (!end) return null
 
   const restart = async (): Promise<void> => {
+    if (busy) return
     setBusy(true)
     setError(null)
     try {
@@ -43,18 +43,21 @@ export function EndedBanner({ sessionId, tab, onRestarted }: EndedBannerProps) {
     }
   }
 
+  // The live region stays mounted: one inserted together with its text is announced by only some screen readers.
   return (
-    <>
-      <PaneBanner className="border-b border-border p-2" severity="warning" role="status" title={end.title} detail={end.detail}>
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => void restart()}>
-          Restart shell
-        </Button>
-      </PaneBanner>
-      {error && (
+    <div role="status">
+      {end && (
+        <PaneBanner className="border-b border-border p-2" severity="warning" role="none" title={end.title} detail={end.detail}>
+          <Button size="sm" variant="outline" aria-disabled={busy} className="aria-disabled:opacity-50" onClick={() => void restart()}>
+            Restart shell
+          </Button>
+        </PaneBanner>
+      )}
+      {end && error && (
         <InlineStatus tone="error" density="compact" className="px-2 py-1">
           {error}
         </InlineStatus>
       )}
-    </>
+    </div>
   )
 }

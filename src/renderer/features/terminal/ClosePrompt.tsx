@@ -1,9 +1,10 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ConfirmAlertDialog } from '@/components/ConfirmAlertDialog'
 import { useTerminalStore } from '@/state/terminal-store'
 import type { TabInfo } from '../../../shared/ipc-terminal'
 import { closeTab } from './terminalTabs'
+import { focusStranded } from './terminalKeyboard'
 
 // Closing a tab ends its shell, so a tab with a running job asks first; an idle tab closes at once (spec 144 FR-012).
 
@@ -52,6 +53,15 @@ export function useCloseFlow(sessionId: string, restoreFocus: () => void): Close
   const [pending, setPending] = useState<TabInfo | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [idleCloses, setIdleCloses] = useState(0)
+  const handledCloses = useRef(0)
+
+  // An idle close has no dialog to hand the keyboard back, and the tab or button that held it is gone.
+  useEffect(() => {
+    if (idleCloses === handledCloses.current) return
+    handledCloses.current = idleCloses
+    if (focusStranded(document)) restoreFocus()
+  }, [idleCloses, restoreFocus])
 
   const run = useCallback(
     async (tab: TabInfo, force: boolean) => {
@@ -62,6 +72,7 @@ export function useCloseFlow(sessionId: string, restoreFocus: () => void): Close
         if (outcome.kind === 'closed') {
           useTerminalStore.getState().removeTab(sessionId, tab.id)
           setPending(null)
+          if (!force) setIdleCloses((count) => count + 1)
         } else if (outcome.kind === 'confirm') {
           setPending(tab)
         } else {

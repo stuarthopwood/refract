@@ -1,17 +1,19 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { PlusIcon, XIcon } from 'lucide-react'
 import { IconButton } from '@/components/IconButton'
 import { InlineStatus } from '@/components/InlineStatus'
 import { TAB_LOOK_CLASS } from '@/components/ui/tabs'
 import { INSET_FOCUS_OUTLINE_CLASS } from '@/components/ui/focus-classes'
+import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useTerminalStore } from '@/state/terminal-store'
 import type { TabInfo } from '../../../shared/ipc-terminal'
 import { MAX_TABS_PER_SESSION, NAME_MAX_CHARS } from '../../../shared/terminalLimits'
 import { scrollLeftToReveal } from '../right-pane/tab-strip-scroll'
 import { useCloseFlow } from './ClosePrompt'
-import { renamedValue, tabIndexForKey, tabMarker, type TabMarker } from './terminalTabs'
+import { panelDomId, renameOutcome, tabDomId, tabIndexForKey, tabMarker, type RenameEnd, type TabMarker } from './terminalTabs'
+import { returnFocus } from './terminalKeyboard'
 
 // The Session's terminal tabs. Only this Session's tabs appear; switching one never stops another (spec 144 FR-003, FR-009).
 
@@ -30,8 +32,8 @@ interface TerminalTabStripProps {
   adding: boolean
   onSelect(tabId: string): void
   onAdd(): void
-  /** Returns the keyboard to the terminal after the close prompt. */
-  restoreFocus(): void
+  /** Hands the keyboard to the terminal after the close prompt; `false` when no terminal is mounted to take it. */
+  restoreFocus(): boolean
 }
 
 export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelect, onAdd, restoreFocus }: TerminalTabStripProps) {
@@ -39,7 +41,12 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
   const [renameError, setRenameError] = useState<string | null>(null)
   const scrollerRef = useRef<HTMLDivElement>(null)
   const tabRefs = useRef(new Map<string, HTMLElement>())
-  const close = useCloseFlow(sessionId, restoreFocus)
+  const addRef = useRef<HTMLButtonElement>(null)
+  // A tab the keyboard left for its rename field takes it back when the field closes.
+  const refocusTabId = useRef<string | null>(null)
+  // With the last tab gone there is no terminal to focus, so the add button holds the keyboard.
+  const returnToTerminal = useCallback(() => returnFocus(restoreFocus, () => addRef.current?.focus()), [restoreFocus])
+  const close = useCloseFlow(sessionId, returnToTerminal)
   const atLimit = tabs.length >= MAX_TABS_PER_SESSION
   const addLabel = atLimit ? `New terminal (the maximum of ${MAX_TABS_PER_SESSION} tabs is open)` : 'New terminal'
 
@@ -54,9 +61,17 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
     )
   }, [activeTabId])
 
-  const commitRename = async (tab: TabInfo, draft: string): Promise<void> => {
+  useEffect(() => {
+    const tabId = refocusTabId.current
+    if (renamingId !== null || tabId === null) return
+    refocusTabId.current = null
+    tabRefs.current.get(tabId)?.focus()
+  }, [renamingId])
+
+  const settleRename = async (tab: TabInfo, draft: string, end: RenameEnd): Promise<void> => {
+    const { name, refocusTab } = renameOutcome(draft, tab.name, end)
+    if (refocusTab) refocusTabId.current = tab.id
     setRenamingId(null)
-    const name = renamedValue(draft, tab.name)
     if (name === null) return
     const result = await window.refract.terminal.rename(tab.id, name)
     if (!result.ok) {
@@ -96,7 +111,7 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
             return (
               <div key={tab.id} role="presentation" className="flex shrink-0 items-center">
                 {renamingId === tab.id ? (
-                  <RenameField tab={tab} onCommit={(draft) => void commitRename(tab, draft)} onCancel={() => setRenamingId(null)} />
+                  <RenameField tab={tab} onSettle={(draft, end) => void settleRename(tab, draft, end)} />
                 ) : (
                   <button
                     ref={(el) => {
@@ -105,7 +120,9 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
                     }}
                     type="button"
                     role="tab"
+                    id={tabDomId(tab.id)}
                     aria-selected={selected}
+                    aria-controls={selected ? panelDomId(tab.id) : undefined}
                     tabIndex={selected ? 0 : -1}
                     title="Double-click or press F2 to rename"
                     className={cn('inline-flex max-w-40 items-center gap-2 px-2 py-1 text-sm font-medium', INSET_FOCUS_OUTLINE_CLASS, TAB_LOOK_CLASS)}
@@ -125,7 +142,7 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
             )
           })}
         </div>
-        <IconButton label={addLabel} aria-disabled={atLimit || adding} onClick={() => !atLimit && !adding && onAdd()}>
+        <IconButton ref={addRef} label={addLabel} aria-disabled={atLimit || adding} onClick={() => !atLimit && !adding && onAdd()}>
           <PlusIcon aria-hidden />
         </IconButton>
       </div>
@@ -141,33 +158,31 @@ export function TerminalTabStrip({ sessionId, tabs, activeTabId, adding, onSelec
 
 interface RenameFieldProps {
   tab: TabInfo
-  onCommit(draft: string): void
-  onCancel(): void
+  onSettle(draft: string, end: RenameEnd): void
 }
 
-function RenameField({ tab, onCommit, onCancel }: RenameFieldProps) {
+function RenameField({ tab, onSettle }: RenameFieldProps) {
   const [draft, setDraft] = useState(tab.name)
-  // Enter commits and unmounts the field, whose blur would commit a second time.
+  // Enter commits and unmounts the field, whose blur would settle a second time.
   const settled = useRef(false)
-  const settle = (commit: boolean): void => {
+  const settle = (end: RenameEnd): void => {
     if (settled.current) return
     settled.current = true
-    if (commit) onCommit(draft)
-    else onCancel()
+    onSettle(draft, end)
   }
   return (
-    <input
+    <Input
       autoFocus
       aria-label={`Rename ${tab.name}`}
       value={draft}
       maxLength={NAME_MAX_CHARS}
-      className="h-6 w-32 rounded-sm border border-input bg-background px-1 text-sm text-foreground outline-none focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-ring"
+      className="h-6 w-32 rounded-sm px-1 text-sm"
       onChange={(event) => setDraft(event.target.value)}
       onFocus={(event) => event.target.select()}
-      onBlur={() => settle(true)}
+      onBlur={() => settle('blur')}
       onKeyDown={(event) => {
-        if (event.key === 'Enter') settle(true)
-        else if (event.key === 'Escape') settle(false)
+        if (event.key === 'Enter') settle('enter')
+        else if (event.key === 'Escape') settle('escape')
         event.stopPropagation()
       }}
     />
