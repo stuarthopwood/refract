@@ -1,5 +1,5 @@
 import { initStores } from './init-stores'
-import { dismissSlashCommandRefusalToast, notify, notifyInfo, notifyPersistentError, notifyProgress } from './notify'
+import { dismissSlashCommandRefusalToast, notify, notifyComposerRefusal, notifyInfo, notifyPersistentError, notifyProgress } from './notify'
 import { useAdvisorStore } from './advisor-store'
 import { useAgentsStore } from './agents-store'
 import { useAlertDismissStore } from './alert-dismiss-store'
@@ -38,7 +38,7 @@ import { useUpdateStore } from './update-store'
 import { EMPTY_CHAT_NAV, useChatNavStore } from './chat-nav-store'
 
 export { initStores }
-export { dismissSlashCommandRefusalToast, notify, notifyInfo, notifyPersistentError, notifyProgress }
+export { dismissSlashCommandRefusalToast, notify, notifyComposerRefusal, notifyInfo, notifyPersistentError, notifyProgress }
 export { useAccountsStore }
 export { useAdvisorStore }
 export { useAlertDismissStore }

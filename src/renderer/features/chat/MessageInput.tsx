@@ -19,7 +19,7 @@ import {
 } from '@/components/ComposerBox'
 import { Kbd, KbdGroup } from '@/components/ui/kbd'
 import { cn } from '@/lib/utils'
-import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, notifyPersistentError, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore, useViewStore } from '@/state'
+import { dismissSlashCommandRefusalToast, EMPTY_QUEUE, notify, notifyComposerRefusal, notifyPersistentError, SIDE_CHAT_LOADING_HINT, useChatScrollStore, useCommandsStore, useDraftStore, useQueueStore, useRightPaneStore, useSessionsStore, useSettingsStore, useSideChatStore, useSplitStore, useViewStore } from '@/state'
 import type { SessionStatusEvent, SlashCommand } from '../../../shared/ipc'
 import { describeStopReason } from './ChatPane'
 import { SlashMenu, slashOptionId, slashRowKey } from './SlashMenu'
@@ -273,7 +273,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // `/new <prompt>` cannot carry attachments or a slash command: refuse before a stopped Session starts its agent (#1827, FR-210).
     // Persistent, like a failed send: the draft stays and the developer must act on it.
     const newPromptRefusal = isNewPromptCommand(modelsInvocation) ? sendRefusal(modelsInvocation, attachments) : undefined
-    if (newPromptRefusal) return void notifyPersistentError(newPromptRefusal)
+    if (newPromptRefusal) return void notifyComposerRefusal(newPromptRefusal, sessionId)
     // Refract-native commands run locally and must not start the agent (#1812).
     const attachmentFree = attachments.images.length === 0 && attachments.files.length === 0
     const runsWithoutAgent = attachmentFree && modelsInvocation !== undefined && isLocalNativeCommand(modelsInvocation)
@@ -352,7 +352,7 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     // Also catches a `/new` whose chip expands to a slash command, which only the expanded `message` shows.
     const attachmentRefusal = sendRefusal(slashInvocation, attachments)
     if (attachmentRefusal) {
-      notifyPersistentError(attachmentRefusal)
+      notifyComposerRefusal(attachmentRefusal, sessionId)
       return
     }
     const newConversation = isNewConversationCommand(slashInvocation)
