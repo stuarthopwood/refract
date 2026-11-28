@@ -261,7 +261,10 @@ async fn more_than_the_cap_of_rows_is_partial_with_the_cap_unchanged() {
     assert_eq!(MAX_FILES, 200);
     assert!(summary.partial);
     assert_eq!(summary.files, MAX_FILES as i64 + 1);
-    assert_eq!(summary.additions, MAX_FILES as i64, "the skipped row adds 0");
+    assert_eq!(
+        summary.additions, MAX_FILES as i64,
+        "the skipped row adds 0"
+    );
 }
 
 #[test]

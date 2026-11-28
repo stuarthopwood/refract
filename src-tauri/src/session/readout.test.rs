@@ -57,7 +57,9 @@ async fn an_uncommitted_file_with_no_commits_ahead_counts_as_one_file() {
 async fn a_clean_tree_with_a_commit_ahead_reads_zero_files() {
     let repo = init_repo().await;
     run_git(&repo, &["checkout", "-q", "-b", "feature"]).await;
-    tokio::fs::write(repo.join("done.txt"), "a\n").await.unwrap();
+    tokio::fs::write(repo.join("done.txt"), "a\n")
+        .await
+        .unwrap();
     run_git(&repo, &["add", "."]).await;
     run_git(&repo, &["commit", "-q", "-m", "ahead"]).await;
 
@@ -69,7 +71,8 @@ async fn a_clean_tree_with_a_commit_ahead_reads_zero_files() {
 
 #[tokio::test]
 async fn an_unreadable_worktree_has_no_stat() {
-    let missing = crate::test_scratch::path(format!("refract-no-worktree-{}", uuid::Uuid::new_v4()));
+    let missing =
+        crate::test_scratch::path(format!("refract-no-worktree-{}", uuid::Uuid::new_v4()));
 
     assert!(working_tree_stat(&missing, "main").await.is_none());
 }
