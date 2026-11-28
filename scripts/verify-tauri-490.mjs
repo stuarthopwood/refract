@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-// Live CDP check for #490 (the global Agents panel). Fixture: scripts/fixtures/omp-frames/agents-panel-490.jsonl.
-// Two Sessions each replay the tape: one running agent (gamma) plus one finished agent (alpha). Asserts:
-//  (a) the panel is closed at start and the rail badge shows the total running;
-//  (b) opening it from the rail shows one group per Session (the hidden one included) plus the "N finished" fold;
-//  (c) a Session's readout pill opens the panel scrolled to that Session's group;
-//  (d) switching the focused Session and starting a new Conversation leave the panel open;
-//  (e) when every agent finishes (a `subagent_lifecycle` completed frame), the panel stays open.
-// Env: REFRACT_490_SCRATCH_DIR, REFRACT_490_SHOTS_DIR. Needs CARGO_TARGET_DIR (the shared one).
+// Live CDP check for #490 (global Agents panel); tape scripts/fixtures/omp-frames/agents-panel-490.jsonl.
+// Two Sessions: gamma running, alpha finished. Scenarios a-e are named in each `scenario(...)` call below.
+// Env: REFRACT_490_SCRATCH_DIR, REFRACT_490_SHOTS_DIR. Needs the shared CARGO_TARGET_DIR.
 
 import { mkdtempSync, writeFileSync, existsSync, copyFileSync, mkdirSync, appendFileSync } from 'node:fs';
 import path from 'node:path';
