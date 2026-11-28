@@ -91,7 +91,10 @@ fn refuse_unsendable_new_prompt(prompt: &str, images: Option<&[Value]>) -> Resul
             NEW_PROMPT_ATTACHMENT_REFUSAL,
         ));
     }
-    if prompt.starts_with('/') {
+    if prompt
+        .trim_start_matches(|c: char| c.is_whitespace() || c == '\u{FEFF}')
+        .starts_with('/')
+    {
         return Err(IpcError::new(
             "unsupported-arguments",
             NEW_PROMPT_SLASH_REFUSAL,

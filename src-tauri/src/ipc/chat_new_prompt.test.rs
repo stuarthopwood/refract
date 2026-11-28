@@ -221,6 +221,19 @@ async fn new_with_a_slash_command_as_the_prompt_is_refused_before_any_conversati
 }
 
 #[tokio::test]
+async fn new_with_a_slash_command_hidden_behind_a_bom_or_newline_is_still_refused() {
+    for text in ["/new \u{FEFF}/compact", "/new \n/compact"] {
+        let r = rig(SessionStatus::Idle, json!({})).await;
+
+        let err = r.send(text, None).await.unwrap_err();
+
+        assert_eq!(err.code, "unsupported-arguments", "{text:?}");
+        assert!(r.commands().await.is_empty(), "{text:?}");
+        r.finish().await;
+    }
+}
+
+#[tokio::test]
 async fn a_slash_later_in_the_prompt_is_not_a_command_and_is_sent_as_given() {
     let r = rig(SessionStatus::Idle, json!({})).await;
 
