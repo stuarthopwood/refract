@@ -25,6 +25,7 @@ function parseLine(line: string): ContextLine | null {
     if (!line.startsWith(prefix)) continue
     const text = line.slice(prefix.length)
     if (text.trim() === '') return null
+    // The Rust hint writer marks checklist hints only by this leading word, so the prefix is the only signal.
     return { kind: kind === 'refract' && text.startsWith('Checklist ') ? 'checklist' : kind, text }
   }
   return null

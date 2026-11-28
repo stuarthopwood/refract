@@ -77,7 +77,7 @@ export function UserMessageRow({ item, sessionId, userName, userAvatarUrl, hideT
     return (
       <>
         <UserMessageTime at={item.at} hide={hideTime} />
-        <MessageMenu id={item.id} text={bodyText}>
+        <MessageMenu id={item.id} text={bodyText} align="end">
           {contextLines.map((line, index) => (
             <NoticeRow key={index} level="info" text={line.text} context={line.kind} />
           ))}
