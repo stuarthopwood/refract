@@ -3,7 +3,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { TruncatedText } from './TruncatedText'
+import { shouldOpenTooltip, TruncatedText } from './TruncatedText'
 
 describe('TruncatedText', () => {
   it('keeps the whole text in the DOM and cuts it off visually', () => {
@@ -19,5 +19,23 @@ describe('TruncatedText', () => {
     const html = renderToStaticMarkup(createElement(TooltipProvider, null, text))
     expect(html).not.toContain('title=')
     expect(html).not.toContain('full path')
+  })
+})
+
+describe('shouldOpenTooltip', () => {
+  it('stays closed when the text exactly fits', () => {
+    expect(shouldOpenTooltip(true, { scrollWidth: 120, clientWidth: 120 })).toBe(false)
+  })
+
+  it('opens when the text is one pixel wider than its box', () => {
+    expect(shouldOpenTooltip(true, { scrollWidth: 121, clientWidth: 120 })).toBe(true)
+  })
+
+  it('stays closed when the element is gone', () => {
+    expect(shouldOpenTooltip(true, null)).toBe(false)
+  })
+
+  it('stays closed when not asked to open, even if the text is cut off', () => {
+    expect(shouldOpenTooltip(false, { scrollWidth: 300, clientWidth: 120 })).toBe(false)
   })
 })

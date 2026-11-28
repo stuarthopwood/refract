@@ -3,7 +3,7 @@
 import { memo, useEffect, useState } from 'react'
 import { ChevronRightIcon } from 'lucide-react'
 import { ActiveIndicatorBar } from '@/components/ActiveIndicatorBar'
-import { TruncatedText } from '@/components/TruncatedText'
+import { TruncatedText, useFocusVisibleWithin } from '@/components/TruncatedText'
 import { FileChipList } from '@/components/FileChip'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -52,6 +52,7 @@ type AgentItemProps = { row: AgentRow; sessionId: string; selected: boolean } & 
 
 const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, onSelect }: AgentItemProps) {
   const { summary } = row
+  const { focused, focusProps } = useFocusVisibleWithin()
   return (
     <li>
       <Button
@@ -61,13 +62,14 @@ const AgentItem = memo(function AgentItem({ row, sessionId, selected, rowRef, on
         size="sm"
         aria-current={selected ? 'true' : undefined}
         onClick={() => onSelect(sessionId, row)}
+        {...focusProps}
         className={cn('relative flex min-h-11 w-full min-w-0 items-center justify-start gap-2 rounded-md bg-surface-1 text-left text-sm whitespace-normal hover:bg-surface-hover aria-[current=true]:bg-accent forced-colors:aria-[current=true]:border forced-colors:aria-[current=true]:border-[Highlight]', ROW_PADDING_CLASS, INSET_FOCUS_OUTLINE_CLASS)}
       >
         {selected && <ActiveIndicatorBar />}
         <span className="flex shrink-0 items-center gap-1 text-xs">
           <SubagentStatusIcon status={summary.status} />
         </span>
-        <TruncatedText tooltip={summary.name ?? summary.nameOrTask} className="flex-1">
+        <TruncatedText tooltip={summary.name ?? summary.nameOrTask} className="flex-1" focused={focused}>
           {summary.name ?? summary.nameOrTask}
           {summary.background && (
             <>
@@ -98,15 +100,17 @@ type GroupProps = { group: GroupRows; collapsed: boolean; selectedKey: string | 
 
 /** The `data-agents-group` anchor is stable per Session so a later task can scroll to the group. A plain div, not a named section, so a group is not a region landmark. */
 export const AgentsGroupSection = memo(function AgentsGroupSection({ group, collapsed, selectedKey, rowRef, onSelect, onToggle }: GroupProps) {
+  const { focused, focusProps } = useFocusVisibleWithin()
   return (
-    <Collapsible data-agents-group={group.sessionId} open={!collapsed} onOpenChange={() => onToggle(group.sessionId)} className="flex flex-col gap-1 rounded-lg bg-surface-subtle p-1">
+    <Collapsible data-agents-group={group.sessionId} open={!collapsed} onOpenChange={() => onToggle(group.sessionId)} className="flex flex-col gap-1 rounded-lg bg-surface-subtle p-1 forced-colors:border forced-colors:border-[CanvasText]">
       <h3 className="m-0 text-sm font-medium">
         <CollapsibleTrigger
           ref={(element) => rowRef(group.key, element)}
+          {...focusProps}
           className={cn('group/trigger flex min-h-11 w-full min-w-0 items-center gap-2 rounded-md text-left hover:bg-surface-hover', ROW_PADDING_CLASS, INSET_FOCUS_OUTLINE_CLASS)}
         >
           <ChevronRightIcon aria-hidden className="size-4 shrink-0 transition-transform group-data-[state=open]/trigger:rotate-90 motion-reduce:transition-none" />
-          <TruncatedText tooltip={group.repositoryName ? `${group.name} ${group.repositoryName}` : group.name} className="flex-1">
+          <TruncatedText tooltip={group.repositoryName ? `${group.name} ${group.repositoryName}` : group.name} className="flex-1" focused={focused}>
             {group.name}
             {group.repositoryName && (
               <>
