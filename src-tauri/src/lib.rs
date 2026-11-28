@@ -11,6 +11,7 @@ pub mod process;
 pub mod session;
 pub mod shell;
 pub mod store;
+pub mod terminal;
 #[cfg(test)]
 mod test_scratch;
 pub mod updates;
@@ -141,6 +142,9 @@ async fn refract_request(
     args: Vec<Value>,
 ) -> Result<Value, ()> {
     if let Some(refusal) = ipc::clipboard::refuse_caller(&channel, window.label()) {
+        return Ok(refusal);
+    }
+    if let Some(refusal) = terminal::guard::refuse_caller(&channel, window.label()) {
         return Ok(refusal);
     }
     Ok(state
@@ -346,6 +350,8 @@ pub fn run() {
             let update_state = update_state_for_exit.clone();
             let updates_dir = data_dir_for_exit.join("updates");
             tauri::async_runtime::spawn(async move {
+                // Every shell and its children end with the app (FR-015); the saved tab list stays for relaunch.
+                terminal::manager().shutdown_all();
                 let _ = tokio::time::timeout(
                     std::time::Duration::from_secs(15),
                     session_manager.stop_all(),

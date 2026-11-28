@@ -53,6 +53,8 @@ pub const READINESS_CHANGED: &str = "readiness:changed";
 pub const UPDATES_STATE_CHANGED: &str = "updates:state-changed";
 /// `usage:progress`, emitted by `ipc::usage`.
 pub const USAGE_PROGRESS: &str = "usage:progress";
+/// A terminal tab changed state or name: `{ sessionId, tab: TabInfo }`; carries no terminal output.
+pub const TERMINAL_TAB_STATE: &str = "terminal:tab-state";
 
 /// Clone progress and terminal events, `{ cloneId, phase, ... }`.
 pub const REPOSITORIES_CLONE_PROGRESS: &str = "repositories:clone-progress";

@@ -26,6 +26,8 @@ pub(crate) async fn archive_core(state: &AppState, id: &str) -> Result<(), IpcEr
         .get_or_create_agent(id)
         .shutdown()
         .await;
+    // A shell started in the worktree would hold it open, and restoring must not revive it (FR-014).
+    crate::terminal::end_session(&state.data_dir, id).await;
     // Clears any stale pid record.
     crate::process::pid_records::remove_process_records_for_session(id).await;
     state
