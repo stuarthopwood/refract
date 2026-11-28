@@ -1,5 +1,5 @@
-// Starts a fresh Conversation and sends its first message (#1861). The #1212 summary handoff and
-// agent handoffs share it; #1827's `/new <prompt>` will too.
+// Starts a fresh Conversation and sends its first message (#1861). The #1212 summary handoff,
+// agent handoffs and #1827's `/new <prompt>` share it.
 
 use serde_json::{json, Value};
 

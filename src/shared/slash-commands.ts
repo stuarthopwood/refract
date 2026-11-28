@@ -44,7 +44,11 @@ export const NATIVE_RESERVED_COMMANDS: Readonly<Record<string, true>> = {
 
 /** Listed here, not just handled in `chat.send`, so the menu shows both. */
 export const NATIVE_BUILT_COMMANDS: readonly SlashCommandDescriptor[] = [
-  { name: 'new', description: 'Start a new Conversation in this Session', source: 'native' },
+  {
+    name: 'new',
+    description: 'Start a new Conversation in this Session; a message after /new is sent first',
+    source: 'native',
+  },
   { name: 'btw', description: 'Ask the agent a side question', source: 'native' },
 ];
 
@@ -100,9 +104,9 @@ export function parseSlashCommand(text: string): ParsedSlashCommand | undefined 
   return { name, rest };
 }
 
-/** Refract-native commands `chat.send` handles itself, so they need no running agent (#1812). */
+/** Refract-native commands `chat.send` handles itself, so they need no running agent (#1812). `/new <prompt>` starts its own Conversation (#1827); `/pause` takes no text. */
 export function isLocalNativeCommand({ name, rest }: ParsedSlashCommand): boolean {
-  return (name === 'new' || name === 'pause') && rest === '';
+  return name === 'new' || (name === 'pause' && rest === '');
 }
 
 export type SlashInvocationClassification = 'supported' | 'unknown-command' | 'unsupported-arguments';

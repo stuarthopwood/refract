@@ -15,8 +15,11 @@ describe('isLocalNativeCommand', () => {
     expect(local('  /pause  ')).toBe(true);
   });
 
-  it('starts the agent when /new or /pause carry arguments', () => {
-    expect(local('/new fresh start')).toBe(false);
+  it('runs /new <prompt> without the agent, since it starts its own Conversation (#1827)', () => {
+    expect(local('/new fresh start')).toBe(true);
+  });
+
+  it('starts the agent when /pause carries arguments', () => {
     expect(local('/pause now')).toBe(false);
   });
 

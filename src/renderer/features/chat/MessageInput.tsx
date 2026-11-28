@@ -64,6 +64,7 @@ import { ComposerIndentHint } from './ComposerIndentHint'
 import type { ImagePathAttachFailureReason, ImagePathCandidate, PendingTextChip } from './attachments'
 import type { QueuedMessages } from './useQueuedMessages'
 import { computeEnterSendsQueuedFollowUp } from './enterSendsQueuedFollowUp'
+import { isNewConversationCommand, isNewPromptCommand, NEW_PROMPT_SEND_FAILED, promptWithoutNewCommand, slashAttachmentRefusal } from './newPromptCommand'
 import { isLocalNativeCommand, parseSlashCommand } from '../../../shared/slash-commands'
 
 type StopReason = SessionStatusEvent['stopReason']
@@ -269,6 +270,9 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       else openRoleSwitcher(sessionId)
       return
     }
+    // `/new <prompt>` cannot carry attachments: refuse before a stopped Session starts its agent (#1827, FR-210).
+    const newPromptRefusal = isNewPromptCommand(modelsInvocation) ? slashAttachmentRefusal(modelsInvocation, attachments) : undefined
+    if (newPromptRefusal) return void toast.error(newPromptRefusal)
     // Refract-native commands run locally and must not start the agent (#1812).
     const attachmentFree = attachments.images.length === 0 && attachments.files.length === 0
     const runsWithoutAgent = attachmentFree && modelsInvocation !== undefined && isLocalNativeCommand(modelsInvocation)
@@ -344,15 +348,14 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
       return
     }
     // #926 (D4 HIGH): a slash command with a pending file would append the marker text, which OMP rejects as unsupported-arguments.
-    if (slashInvocation && attachments.files.length > 0) {
-      toast.error("Slash commands can't carry attached files. Remove them and try again.")
+    const attachmentRefusal = slashAttachmentRefusal(slashInvocation, attachments)
+    if (attachmentRefusal) {
+      toast.error(attachmentRefusal)
       return
     }
-    const isNewConversationCommand = slashInvocation?.name === 'new' && slashInvocation.rest === ''
-    const previousScroll = isNewConversationCommand
-      ? useChatScrollStore.getState().bySession[sessionId]
-      : undefined
-    if (isNewConversationCommand) {
+    const newConversation = isNewConversationCommand(slashInvocation)
+    const previousScroll = newConversation ? useChatScrollStore.getState().bySession[sessionId] : undefined
+    if (newConversation) {
       useChatScrollStore.getState().clear(sessionId)
       // `inFlight` blocks `record()` until send settles so the old Conversation's scroll isn't inherited by the new one.
       useChatScrollStore.getState().setInFlight(sessionId, true)
@@ -363,12 +366,15 @@ export function MessageInput({ sessionId, stopReason, stopDetail, autoFocusOnMou
     try {
       result = await window.refract.chat.send(sessionId, outgoingMessage, images)
     } finally {
-      if (isNewConversationCommand) {
+      if (newConversation) {
         useChatScrollStore.getState().setInFlight(sessionId, false)
       }
     }
     if (!result.ok) {
-      if (isNewConversationCommand) {
+      if (result.error.code === NEW_PROMPT_SEND_FAILED) {
+        // The new Conversation exists, so the old scroll position is gone for good; keep only the prompt so a retry sends just the message (FR-209).
+        useDraftStore.getState().setText(sessionId, promptWithoutNewCommand(draftText))
+      } else if (newConversation) {
         useChatScrollStore.getState().restoreIfAbsent(sessionId, previousScroll)
       }
       notify(result.error, sessionId)
