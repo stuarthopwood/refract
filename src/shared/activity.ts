@@ -15,7 +15,7 @@ export interface ActivityReadoutFields {
 
 export const ACTIVITY_TEXT_MAX_CHARS = 160
 
-export type ActivityKind = 'needs-you' | 'retrying' | 'compacting' | 'subagents' | 'todo' | 'intent' | 'tool' | 'working'
+export type ActivityKind = 'needs-you' | 'retrying' | 'compacting' | 'todo' | 'intent' | 'tool' | 'working'
 
 /** #526 (spec 004 FR-041): the first pending request, reduced to what the needs-you line shows. */
 export type ActivityPending =
@@ -29,7 +29,6 @@ export interface ActivityInput {
   needsYou: boolean
   /** #526: the Session's first pending request, if known; only read when `needsYou`. */
   pending?: ActivityPending | null
-  runningSubagents: number
   /** The current todo task ("n of m" is derived by the caller's todo derive); `null` when there is
    * none or the todo panel is pinned (the pinned panel already shows it, issue #687 decision 2). */
   todo: { number: number; total: number; content: string } | null

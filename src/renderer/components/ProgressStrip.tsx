@@ -75,8 +75,8 @@ export function ProgressStrip({ value, max, label, doneText, state = 'ok', segme
             <span
               aria-hidden="true"
               data-segment={segment}
-              // The pseudo-element lifts the 4px block's hover target to the bar's height plus 8px above and below.
-              className={cn('h-full min-w-1 flex-1 rounded-full', SEGMENT_CLASS[segment], segmentLabels?.[index] && 'relative before:absolute before:inset-x-0 before:-inset-y-2 before:content-[""]')}
+              // The pseudo-element lifts the 4px block's hover target 8px down, into the strip's own bottom padding; nothing above it, so it never covers the header trigger.
+              className={cn('h-full min-w-1 flex-1 rounded-full', SEGMENT_CLASS[segment], segmentLabels?.[index] && 'relative before:absolute before:inset-x-0 before:top-0 before:-bottom-2 before:content-[""]')}
             />
           )
           const segmentLabel = segmentLabels?.[index]
@@ -101,7 +101,7 @@ export function ProgressStrip({ value, max, label, doneText, state = 'ok', segme
       </p>
       {bar}
       {hasLabels && (
-        <ul id={detailId} className="sr-only">
+        <ul id={detailId} aria-hidden="true" className="sr-only">
           {segmentLabels.map((segmentLabel, index) => (
             <li key={index}>{segmentLabel}</li>
           ))}

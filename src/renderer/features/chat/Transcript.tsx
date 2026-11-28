@@ -23,8 +23,8 @@ import { isToolGroup } from './groupToolItems'
 import { reuseUnchangedTurns, splitIntoTurns, type Turn } from './splitIntoTurns'
 import { groupTurnStages } from './groupTurnStages'
 import { isStageGroup } from './groupSubagentStages'
-import { numberSessionStages, reuseStageNumbers, type StageNumbers } from '../subagents/viewModel/numbering'
-import { selectSubagentItems } from '../subagents/viewModel/selectors'
+import { useSessionStageNumbers } from './useSessionStageNumbers'
+import { useStageSettleAnnouncement } from './useStageSettleAnnouncement'
 import { SubagentChainRow } from './SubagentChainRow'
 import { UpNextList } from './UpNextList'
 import { formatElapsed } from './formatElapsed'
@@ -205,17 +205,14 @@ export function Transcript({
   )
 
   const subagentSummaries = useReadoutStore((s) => (s.bySession[sessionId] ?? EMPTY_READOUT_ENTRY).subagents)
-  // Numbered from the whole transcript, not the visible window, so a Stage keeps its number when earlier turns are windowed out.
-  const stageNumbersRef = React.useRef<StageNumbers | undefined>(undefined)
-  const stageNumbers = React.useMemo(() => {
-    const next = reuseStageNumbers(stageNumbersRef.current, numberSessionStages(selectSubagentItems(items), subagentSummaries))
-    stageNumbersRef.current = next
-    return next
-  }, [items, subagentSummaries])
+  const stageNumbers = useSessionStageNumbers(items, subagentSummaries)
   const turnsWithStages = React.useMemo(
     () => visibleTurns.map((turn) => ({ turn, ...groupTurnStages(turn.items, transcriptDisplay.thinking, subagentSummaries, stageNumbers) })),
     [visibleTurns, transcriptDisplay.thinking, subagentSummaries, stageNumbers]
   )
+  // Unfiltered Stages across the visible turns, so a Stage hidden by "Show tool calls" off still announces its settling.
+  const allStages = React.useMemo(() => turnsWithStages.flatMap((entry) => entry.stages), [turnsWithStages])
+  const stageAnnouncement = useStageSettleAnnouncement(allStages)
 
   let isFirstRow = true
 
@@ -438,6 +435,9 @@ export function Transcript({
         </span>
         <span role="status" aria-live="polite" className="sr-only">
           {!isAtEnd && newContent ? 'New messages' : ''}
+        </span>
+        <span role="status" aria-live="polite" className="sr-only">
+          {stageAnnouncement}
         </span>
         <ChatNavOverlays sessionId={sessionId} />
         <IconButton

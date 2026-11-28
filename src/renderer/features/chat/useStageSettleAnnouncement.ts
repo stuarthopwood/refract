@@ -2,35 +2,41 @@ import * as React from 'react'
 import { useClearedAnnouncement } from '../../lib/use-cleared-announcement'
 import type { StageGroup } from './groupSubagentStages'
 
-interface TurnWithStages {
-  stages: StageGroup[]
+/** Stage id to whether it was seen running; a Stage absent from the map has never been seen. */
+export type StageRunningMap = ReadonlyMap<string, boolean>
+
+export interface StageSettleResult {
+  /** Text for the Stage that settled in this pass; the last one when several did. Undefined when none did. */
+  announcement: string | undefined
+  /** What to remember for the next pass: only the Stages now visible, so one that left the window and returns is a first sighting. */
+  seen: Map<string, boolean>
 }
 
-// A single out-of-log announcer (not per-row, which double-announces inside role="log"). It reads
-// unfiltered stages so a Stage hidden by "Show tool calls" off still announces (#563).
-export function useStageSettleAnnouncement(turnsWithStages: readonly TurnWithStages[]): string {
+/**
+ * A Stage settles when it was seen running and now is not. A Stage first seen already settled never announces, so loading history is
+ * silent. Pure, so the rule is tested without rendering.
+ */
+export function detectStageSettle(prevSeen: StageRunningMap, stages: readonly StageGroup[]): StageSettleResult {
+  const seen = new Map<string, boolean>()
+  let lastSettled: StageGroup | undefined
+  for (const stage of stages) {
+    const running = stage.items.some((item) => item.status === 'running')
+    if (prevSeen.get(stage.id) === true && !running) lastSettled = stage
+    seen.set(stage.id, running)
+  }
+  return { announcement: lastSettled && `Stage ${lastSettled.stageIndex} finished, ${lastSettled.view.rollupText}`, seen }
+}
+
+// One announcer for the whole transcript, mounted outside the `role="log"`: a status inside it would be announced twice. It reads
+// unfiltered stages so a Stage hidden by "Show tool calls" off still announces.
+export function useStageSettleAnnouncement(stages: readonly StageGroup[]): string {
   // Clear-then-set so identical consecutive texts still re-announce.
   const [stageAnnouncement, announce] = useClearedAnnouncement()
-  // Stage id -> seen running. A first-seen Stage never announces (nothing while history loads).
-  const stageRunningRef = React.useRef<Map<string, boolean>>(new Map())
+  const seenRef = React.useRef<StageRunningMap>(new Map())
   React.useEffect(() => {
-    const seenIds = new Set<string>()
-    let lastSettled: StageGroup | undefined
-    for (const { stages } of turnsWithStages) {
-      for (const stage of stages) {
-        seenIds.add(stage.id)
-        const running = stage.items.some((item) => item.status === 'running')
-        const wasRunning = stageRunningRef.current.get(stage.id)
-        if (wasRunning === true && !running) lastSettled = stage
-        stageRunningRef.current.set(stage.id, running)
-      }
-    }
-    // Drop Stages that left the visible window so a re-add is a first sighting, not a false settle.
-    for (const id of stageRunningRef.current.keys()) {
-      if (!seenIds.has(id)) stageRunningRef.current.delete(id)
-    }
-    // Only the last Stage settled in one pass is announced.
-    if (lastSettled) announce(`Stage ${lastSettled.stageIndex} finished, ${lastSettled.view.rollupText}`)
-  }, [turnsWithStages, announce])
+    const { announcement, seen } = detectStageSettle(seenRef.current, stages)
+    seenRef.current = seen
+    if (announcement) announce(announcement)
+  }, [stages, announce])
   return stageAnnouncement
 }

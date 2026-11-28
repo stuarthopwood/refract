@@ -14,7 +14,7 @@ describe('groupSubagentStages', () => {
 
   it('numbers each Stage and reports the total', () => {
     const stages = groupSubagentStages(
-      [subagentItem({ name: 'A' }), assistantText('t1'), subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2' })],
+      [subagentItem({ name: 'A' }), assistantText('t1'), subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2', messageId: 'm2' })],
       []
     ).filter(isStageGroup)
     expect(stages.map((s) => [s.stageIndex, s.totalStages])).toEqual([
@@ -24,8 +24,8 @@ describe('groupSubagentStages', () => {
   })
 
   it('keeps the Session number of a Stage when the Session numbering gives one', () => {
-    const numbers = new Map([['call0', 1], ['call1', 2], ['call2', 3]])
-    const stages = groupSubagentStages([subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2' })], [], numbers).filter(isStageGroup)
+    const numbers = new Map([['m0', 1], ['m1', 2], ['m2', 3]])
+    const stages = groupSubagentStages([subagentItem({ name: 'B', id: 'call2:B', toolCallId: 'call2', messageId: 'm2' })], [], numbers).filter(isStageGroup)
     expect(stages.map((s) => s.stageIndex)).toEqual([3])
   })
 

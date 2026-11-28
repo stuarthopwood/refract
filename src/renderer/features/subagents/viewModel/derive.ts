@@ -42,7 +42,7 @@ export interface AgentInput {
   /** The one-line summary of the agent's result (its first useful line), already extracted by the entry point. */
   resultSummary?: string
   taskSummary?: string
-  /** The synthesised one-line card summary (FR-217); preferred over the result and task summaries. */
+  /** The synthesised one-line card summary; preferred over the result and task summaries. */
   cardSummary?: string
   filesTouched?: string[]
   recentSteps?: SubagentRecentStep[]
@@ -51,6 +51,8 @@ export interface AgentInput {
 /** One Stage as an entry point groups it. */
 export interface StageInput {
   id: string
+  /** The Stage's identity across surfaces (`stageKeyOf`); numbering looks it up. */
+  stageKey: string
   /** The shared `task()` context, when the source has one. */
   context?: string
   /** The `agent://` ids this Stage's source text names, already extracted by the entry point. */
@@ -58,7 +60,7 @@ export interface StageInput {
   agents: AgentInput[]
 }
 
-// `clean: false` keeps the raw command; the card shows the stripped one and the raw one stays a tooltip (FR-177).
+// `clean: false` keeps the raw command; the card shows the stripped one and the raw one stays a tooltip.
 function stepLabel(step: SubagentRecentStep, clean = true): string {
   const target = clean && step.target ? stripShellSetup(step.target) : step.target
   return [step.intent ?? step.tool, target].filter(Boolean).join(' ')
@@ -114,9 +116,9 @@ interface StageDraft {
  * numbering; without it the Stages are numbered among themselves.
  */
 export function deriveScenario(stages: readonly StageInput[], numbers?: StageNumbers): ChatScenario {
-  const stageNumbers = numbers ?? numberStages(stages.map((input) => input.agents[0]!.toolCallId))
+  const stageNumbers = numbers ?? numberStages(stages.map((input) => input.stageKey))
   const drafts: StageDraft[] = stages.map((input, index) => ({
-    stageIndex: stageNumbers.get(input.agents[0]!.toolCallId) ?? index + 1,
+    stageIndex: stageNumbers.get(input.stageKey) ?? index + 1,
     items: input.agents,
     dependencies: [],
     input

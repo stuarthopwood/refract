@@ -89,7 +89,7 @@ describe('ProgressStrip segmentLabels (FR-216)', () => {
     const html = renderLabelled()
     const describedBy = html.match(/role="progressbar"[^>]*aria-describedby="([^"]+)"/)?.[1]
     expect(describedBy).toBeDefined()
-    expect(html).toContain(`<ul id="${describedBy}" class="sr-only">`)
+    expect(html).toContain(`<ul id="${describedBy}" aria-hidden="true" class="sr-only">`)
     for (const label of segmentLabels) expect(html).toContain(`<li>${label}</li>`)
     expect(html.match(/role="progressbar"/g)).toHaveLength(1)
   })
@@ -107,8 +107,11 @@ describe('ProgressStrip segmentLabels (FR-216)', () => {
     expect(partial.match(/data-state=/g)).toHaveLength(1)
   })
 
-  it('makes a labelled block a hover target taller than the 4px bar', () => {
-    expect(renderLabelled()).toMatch(/data-segment="done"[^>]*class="[^"]*before:-inset-y-2/)
+  it('makes a labelled block a hover target taller than the 4px bar, reaching down only so it never covers the header', () => {
+    // Mutation: extend the pseudo-element above the block again.
+    const html = renderLabelled()
+    expect(html).toMatch(/data-segment="done"[^>]*class="[^"]*before:-bottom-2/)
+    expect(html).not.toContain('before:-inset-y-2')
   })
 })
 

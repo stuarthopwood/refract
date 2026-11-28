@@ -19,9 +19,9 @@ export const SUBAGENT_CARD_SURFACE_CLASS = 'rounded-lg border border-divider bg-
 
 interface SubagentCardBodyProps {
   agent: SubAgentItem
-  /** A single-agent Stage's body (#2318, FR-176): no panel, name, status or outcome (the Stage row carries them), only a left guide line. */
+  /** A single-agent Stage's body: no panel, name, status or outcome (the Stage row carries them), only a left guide line. */
   flat?: boolean
-  /** False draws the files overflow as text, for a host that is itself one control, so no button nests in it (FR-178). */
+  /** False draws the files overflow as text, for a host that is itself one control, so no button nests in it. */
   interactive?: boolean
   /** The flat body's first line when the agent has no role, so a clickable body never collapses to nothing. */
   fallbackLabel?: string
@@ -31,7 +31,7 @@ interface SubagentCardBodyProps {
 
 /**
  * True when a single-agent Stage's flat body has anything to draw: a first line (the role, or the fallback label), a provenance row or
- * live sub-steps. With none, the body and its guide line are omitted so no empty stub hangs under the Stage header (#2318, FR-176).
+ * live sub-steps. With none, the body and its guide line are omitted so no empty stub hangs under the Stage header.
  */
 export function flatBodyHasContent(agent: Pick<SubAgentItem, 'status' | 'role' | 'triggeredBy' | 'filesTouched' | 'subSteps'>, fallbackLabel?: string): boolean {
   const hasLead = (agent.role != null && agent.role !== '') || (fallbackLabel != null && fallbackLabel !== '')
@@ -39,14 +39,14 @@ export function flatBodyHasContent(agent: Pick<SubAgentItem, 'status' | 'role' |
   return hasLead || hasProvenance || (agent.status === 'running' && (agent.subSteps?.length ?? 0) > 0)
 }
 
-// The card body (#1928): name, role, what it did, provenance and files, then a live heartbeat and
+// The card body: name, role, what it did, provenance and files, then a live heartbeat and
 // sub-steps while it runs. Every optional part renders nothing when absent, so no empty row or gap is
-// left behind. The chat sub-card button and the panel's tree row both draw it, so it needs no transcript item (#1930).
+// left behind. The chat sub-card button and the panel's tree row both draw it, so it needs no transcript item.
 export function SubagentCardBody({ agent, flat = false, interactive = true, fallbackLabel, outcomeId }: SubagentCardBodyProps) {
   const { status, duration, name, role, whatItDid, triggeredBy, filesTouched, liveDetail, subSteps } = agent
   const running = status === 'running'
   const hasProvenanceRow = causalBadgeText(triggeredBy) != null || (filesTouched?.length ?? 0) > 0
-  // A flat body sits under its Stage header, which already shows the running agent's live focus, so the heartbeat is not drawn twice (#2318).
+  // A flat body sits under its Stage header, which already shows the running agent's live focus, so the heartbeat is not drawn twice.
   const hasLive = running && ((!flat && heartbeatText(liveDetail) != null) || (subSteps?.length ?? 0) > 0)
   const hasRole = role != null && role !== ''
   const flatLead = hasRole ? role : fallbackLabel
@@ -94,7 +94,7 @@ export function SubagentCardBody({ agent, flat = false, interactive = true, fall
   )
 }
 
-/** The sub-card's accessible name (FR-178): the agent, its status, then what the button does. */
+/** The sub-card's accessible name: the agent, its status, then what the button does. */
 export function subagentCardButtonName(agent: Pick<SubAgentItem, 'name' | 'status'>): string {
   return `${agent.name}, ${SUBAGENT_STATUS_LABEL[agent.status]}, open in Subagents panel`
 }
@@ -115,13 +115,13 @@ interface SubagentCardButtonProps {
   item: SubagentItem
   agent: SubAgentItem
   sessionId: string | null
-  /** A single-agent Stage expands flat with a left guide line (FR-176). */
+  /** A single-agent Stage expands flat with a left guide line. */
   flat?: boolean
-  /** The Stage title; the flat body names the agent only when its name does not just repeat it (FR-176). */
+  /** The Stage title; the flat body names the agent only when its name does not just repeat it. */
   stageTitle?: string | null
 }
 
-// One sub-card is one native button element covering the whole card (FR-178): Tab, Enter, Space and click open the agent in the
+// One sub-card is one native button element covering the whole card: Tab, Enter, Space and click open the agent in the
 // Subagents panel. The body inside is non-interactive so no control nests in the button. With no live match to open, it is a plain block.
 export function SubagentCardButton({ item, agent, sessionId, flat = false, stageTitle }: SubagentCardButtonProps) {
   const outcomeId = React.useId()
@@ -129,7 +129,7 @@ export function SubagentCardButton({ item, agent, sessionId, flat = false, stage
   const match = subagents.find((s) => s.toolCallId === item.toolCallId && s.specIndex === item.specIndex)
   const hasOutcome = !flat && agent.whatItDid != null && agent.whatItDid !== ''
   const fallbackLabel = repeatsStageTitle(agent.name, stageTitle) ? undefined : agent.name
-  // Nothing to draw under the Stage header: no button either, so no empty guide line or invisible tab stop remains (#2318).
+  // Nothing to draw under the Stage header: no button either, so no empty guide line or invisible tab stop remains.
   if (flat && !flatBodyHasContent(agent, fallbackLabel)) return null
   const body = <SubagentCardBody agent={agent} flat={flat} interactive={false} fallbackLabel={fallbackLabel} outcomeId={outcomeId} />
   if (!match || !sessionId) return <div className={cn('min-w-0', !flat && SUBAGENT_CARD_SURFACE_CLASS)}>{body}</div>

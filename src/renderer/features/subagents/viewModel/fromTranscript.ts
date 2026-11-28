@@ -2,7 +2,7 @@ import type { SubagentSummary } from '../../../../shared/model'
 import type { GroupedTranscriptItem } from '../../chat/groupToolItems'
 import { chatRowStatus } from '../subagentStatus'
 import { deriveScenario, type AgentInput, type StageInput } from './derive'
-import type { StageNumbers } from './numbering'
+import { stageKeyOf, type StageNumbers } from './numbering'
 import { runFacts } from './runFacts'
 import { splitSubagentRuns, type RunSlot, type TranscriptSubagentItem } from './runs'
 import type { ChatScenario } from './types'
@@ -46,6 +46,7 @@ function toStageInput(items: readonly TranscriptSubagentItem[], summaries: Reado
   const { context, agentRefs, resultSummaries } = runFacts(items)
   return {
     id: `stage:${items[0]!.id}`,
+    stageKey: stageKeyOf(items[0]!.messageId, items[0]!.toolCallId),
     context,
     agentRefs,
     agents: items.map((item, index) => overlay(item, resultSummaries[index], summaries.get(agentKey(item.toolCallId, item.specIndex))))

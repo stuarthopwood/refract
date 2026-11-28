@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { deriveActivity, type ActivityInput } from './activity'
 
-const idle: ActivityInput = { needsYou: false, runningSubagents: 0, todo: null }
+const idle: ActivityInput = { needsYou: false, todo: null }
 
-it('does not word running subagents as a status line', () => {
-  expect(deriveActivity({ ...idle, runningSubagents: 2 }).text).toBe('Working…')
+it('words an idle Session as Working', () => {
+  expect(deriveActivity(idle).text).toBe('Working…')
 })
 
 describe('deriveActivity intent line (FR-140)', () => {

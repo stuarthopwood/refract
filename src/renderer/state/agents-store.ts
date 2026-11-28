@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { useSubagentPanelStore } from './subagent-store'
-import { countSummaryStages } from '../features/subagents/stageCounts'
 import type { AgentsGroup } from '../../shared/ipc'
 
 /** The Agents panel's empty state: shown when no Session has an agent left to list. */
@@ -46,7 +45,7 @@ export const useAgentsStore = create<AgentsState>((set, get) => ({
 }))
 
 export function runningAgentCount(group: Pick<AgentsGroup, 'subagents'>): number {
-  return countSummaryStages(group.subagents).statusCounts.running
+  return group.subagents.filter((agent) => agent.status === 'running').length
 }
 
 /** The rail badge's figure: every running agent across every Session. */
