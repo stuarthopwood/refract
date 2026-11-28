@@ -349,22 +349,36 @@ pub fn parse_card_reply(raw: &str) -> Option<String> {
     // `](` or `<b>` to hide it from them and then vanish, leaving a link target or tag in the label.
     let printable: String = raw
         .chars()
-        .filter(|c| c.is_whitespace() || !(c.is_control() || is_bidi_override(*c)))
+        .filter(|c| c.is_whitespace() || !(c.is_control() || is_format_char(*c)))
         .collect();
     let kept: Vec<&str> = printable
         .lines()
         .filter(|line| !line.trim_start().starts_with("```"))
         .collect();
-    let joined = kept.join(" ").replace(['*', '`', '#'], "");
-    let text = strip_markdown_links(&strip_tags(&joined));
+    let joined = kept.join(" ");
+    let mut text = joined.replace(['*', '`', '#'], "");
+    // One pass can rebuild what it removed (`[[a](b)](c)`, `<[a](b)b>`), so go on until it is stable.
+    loop {
+        let next = strip_markdown_links(&strip_tags(&text));
+        if next == text {
+            break;
+        }
+        text = next;
+    }
     let line = collapse_whitespace(&text);
     let line = line.trim_matches(|c: char| matches!(c, '"' | '\'' | '_'));
     clean_label(line, CARD_SUMMARY_MAX_CHARS)
 }
 
-/// They reorder the text around them, so a label could show something other than what it holds.
-fn is_bidi_override(c: char) -> bool {
-    matches!(c, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
+/// Unicode category Cf: invisible, and the bidi ones reorder the text around them, so a label could
+/// show something other than what it holds or hide a marker from the strippers.
+fn is_format_char(c: char) -> bool {
+    matches!(c,
+        '\u{AD}' | '\u{600}'..='\u{605}' | '\u{61C}' | '\u{6DD}' | '\u{70F}' | '\u{890}'..='\u{891}'
+        | '\u{8E2}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{2064}' | '\u{2066}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}'
+        | '\u{110BD}' | '\u{110CD}' | '\u{13430}'..='\u{1343F}' | '\u{1BCA0}'..='\u{1BCA3}'
+        | '\u{1D173}'..='\u{1D17A}' | '\u{E0001}' | '\u{E0020}'..='\u{E007F}')
 }
 
 /// `[text](url)` and `![alt](url)` become the text, so a reply cannot plant a link target on a card.
