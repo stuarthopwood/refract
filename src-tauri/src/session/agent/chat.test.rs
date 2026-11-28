@@ -152,3 +152,91 @@ async fn send_session_message_behaviour_unchanged() {
     assert_eq!(prompts(&fx).await, ["<env/>"]);
     fx.finish().await;
 }
+
+async fn prompt_behaviours(
+    fx: &crate::session::agent::pause_subagents::fixture::Fixture,
+) -> Vec<Option<String>> {
+    fx.rpcs()
+        .await
+        .iter()
+        .filter(|cmd| cmd["type"] == "prompt")
+        .map(|cmd| cmd["streamingBehavior"].as_str().map(str::to_string))
+        .collect()
+}
+
+#[tokio::test]
+async fn send_session_message_steers_a_busy_target() {
+    use crate::session::agent::pause_subagents::fixture::{fixture_with, Stub};
+    for status in [SessionStatus::Working, SessionStatus::NeedsYou] {
+        let fx = fixture_with(Stub {
+            queue_prompts: true,
+            ..Stub::default()
+        })
+        .await;
+        fx.agent.state.lock().await.status = status;
+
+        let delivery = fx.agent.send_session_message("<env/>".to_string()).await;
+
+        assert_eq!(delivery.unwrap(), MessageDelivery::Queued, "{status:?}");
+        assert_eq!(prompts(&fx).await, ["<env/>"]);
+        assert_eq!(
+            prompt_behaviours(&fx).await,
+            [Some("steer".to_string())],
+            "{status:?}"
+        );
+        fx.finish().await;
+    }
+}
+
+#[tokio::test]
+async fn send_session_message_to_an_idle_target_is_a_plain_prompt() {
+    use crate::session::agent::pause_subagents::fixture::{fixture_with, Stub};
+    let fx = fixture_with(Stub::default()).await;
+
+    fx.agent
+        .send_session_message("<env/>".to_string())
+        .await
+        .unwrap();
+
+    assert_eq!(prompt_behaviours(&fx).await, [None]);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn checklist_item_to_a_busy_target_stays_a_follow_up() {
+    use crate::session::agent::pause_subagents::fixture::{fixture_with, Stub};
+    let fx = fixture_with(Stub {
+        queue_prompts: true,
+        ..Stub::default()
+    })
+    .await;
+    fx.agent.state.lock().await.status = SessionStatus::Working;
+
+    fx.agent
+        .send_checklist_item("<turn/>".to_string())
+        .await
+        .unwrap();
+
+    assert_eq!(prompt_behaviours(&fx).await, [Some("followUp".to_string())]);
+    fx.finish().await;
+}
+
+#[tokio::test]
+async fn a_held_session_message_drains_as_a_follow_up_on_resume() {
+    use crate::session::agent::pause_subagents::fixture::{fixture_with, Stub};
+    let fx = fixture_with(Stub {
+        queue_prompts: true,
+        ..Stub::default()
+    })
+    .await;
+    fx.agent.state.lock().await.status = SessionStatus::Working;
+    fx.agent.state.lock().await.pause.hold_for_test(Vec::new());
+    let held = fx.agent.send_session_message("<env/>".to_string()).await;
+    assert_eq!(held.unwrap(), MessageDelivery::Held);
+
+    fx.agent.resume().await.unwrap();
+
+    assert_eq!(prompts(&fx).await, ["<env/>"]);
+    assert_eq!(prompt_behaviours(&fx).await, [Some("followUp".to_string())]);
+    fx.finish().await;
+}

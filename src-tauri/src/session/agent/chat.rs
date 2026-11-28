@@ -55,23 +55,30 @@ impl SessionAgent {
         self.send_unheld(text, images, false).await
     }
 
-    /// Delivers another Session's envelope (#1858): held while paused, queued while busy, never
-    /// decorated, since the envelope text must reach the target verbatim.
+    /// Delivers another Session's envelope (#1858): held while paused, steered into the turn in
+    /// progress while busy, never decorated, since the envelope text must reach the target verbatim.
     pub async fn send_session_message(&self, text: String) -> Result<MessageDelivery, AgentError> {
-        self.deliver_verbatim(text).await
+        self.deliver_verbatim(text, true).await
     }
 
     /// Delivers a checklist item turn the same way: its text is an envelope the agent must see
     /// byte for byte, and it must not eat the notice meant for the developer's next prompt.
     pub async fn send_checklist_item(&self, text: String) -> Result<MessageDelivery, AgentError> {
-        self.deliver_verbatim(text).await
+        self.deliver_verbatim(text, false).await
     }
 
-    async fn deliver_verbatim(&self, text: String) -> Result<MessageDelivery, AgentError> {
+    /// `steer` interrupts a busy target; without it a busy target queues the text as a follow-up.
+    async fn deliver_verbatim(
+        &self,
+        text: String,
+        steer: bool,
+    ) -> Result<MessageDelivery, AgentError> {
         if self.hold_if_paused(&text, &None).await?.is_some() {
             return Ok(delivery_of(true, &Value::Null));
         }
-        let res = self.send_unheld_with(text, None, false, false).await?;
+        let res = self
+            .send_unheld_with(text, None, false, false, steer)
+            .await?;
         Ok(delivery_of(false, &res))
     }
 
@@ -83,17 +90,19 @@ impl SessionAgent {
         images: Option<Vec<Value>>,
         force_follow_up: bool,
     ) -> Result<Value, AgentError> {
-        self.send_unheld_with(text, images, force_follow_up, true)
+        self.send_unheld_with(text, images, force_follow_up, true, false)
             .await
     }
 
     /// `decorate` adds the working-mode wrapper to an idle send; Session messages pass `false`.
+    /// `steer` sends to a busy target as a steer rather than a follow-up.
     pub(super) async fn send_unheld_with(
         &self,
         text: String,
         images: Option<Vec<Value>>,
         force_follow_up: bool,
         decorate: bool,
+        steer: bool,
     ) -> Result<Value, AgentError> {
         crate::session::token_guard::await_shake(self).await;
         let (proc, working, mut notices, line_due) = {
@@ -152,7 +161,9 @@ impl SessionAgent {
                 cmd["images"] = Value::Array(images);
             }
         }
-        if working || force_follow_up {
+        if working && steer {
+            cmd["streamingBehavior"] = Value::String("steer".to_string());
+        } else if working || force_follow_up {
             cmd["streamingBehavior"] = Value::String("followUp".to_string());
         }
         let sent = proc.request(cmd, DEFAULT_REQUEST_TIMEOUT_MS).await;
